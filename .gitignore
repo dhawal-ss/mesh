@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+target/
+
+# Logs & temp output
+*.log
+*.txt
+!README.txt
+
+# Editor
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+
+# Claude/AI artifacts
+.claude/
+claudereview/
+
+# Misc
+*.local

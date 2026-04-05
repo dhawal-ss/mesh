@@ -1,0 +1,1378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Decentralized Community Communication — Dhawal Ranka</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist+Mono:wght@300;400;500&family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #111111;
+    --border: #1e1e1e;
+    --border-light: #2a2a2a;
+    --text-primary: #f0ece4;
+    --text-secondary: #7a7570;
+    --text-muted: #3d3a36;
+    --accent: #c8b89a;
+    --accent-bright: #e8d5b0;
+    --accent-dim: #6b5d4a;
+    --mono: 'Geist Mono', monospace;
+    --serif: 'Instrument Serif', Georgia, serif;
+    --sans: 'Geist', system-ui, sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.035'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.6;
+  }
+
+  .cover {
+    min-height: 100vh;
+    display: grid;
+    grid-template-rows: 1fr auto;
+    border-bottom: 1px solid var(--border);
+    padding: 80px 64px 64px;
+    position: relative;
+    overflow: hidden;
+    animation: fadeIn 1.2s ease forwards;
+  }
+
+  .cover::after {
+    content: '';
+    position: absolute;
+    top: -200px; right: -200px;
+    width: 700px; height: 700px;
+    background: radial-gradient(circle, rgba(200,184,154,0.04) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .cover-top { display: flex; flex-direction: column; justify-content: center; max-width: 900px; }
+
+  .label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent-dim);
+    margin-bottom: 48px;
+  }
+
+  .cover-title {
+    font-family: var(--serif);
+    font-size: clamp(42px, 7vw, 88px);
+    line-height: 1.0;
+    color: var(--text-primary);
+    font-weight: 400;
+    margin-bottom: 12px;
+    letter-spacing: -0.02em;
+  }
+
+  .cover-title em { color: var(--accent); font-style: italic; }
+
+  .cover-subtitle {
+    font-family: var(--serif);
+    font-size: clamp(16px, 2.5vw, 24px);
+    color: var(--text-secondary);
+    font-style: italic;
+    margin-bottom: 56px;
+    font-weight: 400;
+  }
+
+  .cover-abstract {
+    max-width: 680px;
+    font-size: 15px;
+    color: var(--text-secondary);
+    line-height: 1.85;
+    border-left: 1px solid var(--border-light);
+    padding-left: 24px;
+  }
+
+  .cover-meta {
+    display: flex;
+    gap: 48px;
+    padding-top: 48px;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+
+  .meta-item { display: flex; flex-direction: column; gap: 4px; }
+  .meta-label { font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-muted); }
+  .meta-value { font-size: 13px; color: var(--text-secondary); }
+  .meta-value.author { color: var(--accent); font-style: italic; font-family: var(--serif); font-size: 16px; }
+
+  .toc { padding: 80px 48px; border-bottom: 1px solid var(--border); max-width: 860px; margin: 0 auto; }
+
+  .toc-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent-dim);
+    margin-bottom: 32px;
+  }
+
+  .toc-list { list-style: none; }
+
+  .toc-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .toc-list li:last-child { border-bottom: none; }
+  .toc-num { font-family: var(--mono); font-size: 10px; color: var(--text-muted); min-width: 24px; }
+
+  .toc-list a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 14px;
+    transition: color 0.2s;
+    flex: 1;
+  }
+
+  .toc-list a:hover { color: var(--accent); }
+  .toc-dots { flex: 1; border-bottom: 1px dotted var(--border-light); margin-bottom: 4px; }
+
+  .section { padding: 80px 48px; max-width: 860px; margin: 0 auto; border-bottom: 1px solid var(--border); }
+
+  .section-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent-dim);
+    margin-bottom: 20px;
+    display: block;
+  }
+
+  h2 {
+    font-family: var(--serif);
+    font-size: clamp(28px, 4vw, 42px);
+    font-weight: 400;
+    color: var(--text-primary);
+    line-height: 1.15;
+    margin-bottom: 36px;
+    letter-spacing: -0.01em;
+  }
+
+  h3 {
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 44px 0 16px;
+  }
+
+  h4 {
+    font-family: var(--serif);
+    font-size: 20px;
+    font-weight: 400;
+    color: var(--text-primary);
+    margin: 32px 0 12px;
+    font-style: italic;
+  }
+
+  p { color: var(--text-secondary); margin-bottom: 22px; font-size: 15px; line-height: 1.9; }
+  p:last-child { margin-bottom: 0; }
+  p strong { color: var(--text-primary); font-weight: 500; }
+
+  .diagram {
+    background: var(--surface);
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    padding: 40px;
+    margin: 36px 0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .diagram::before {
+    content: attr(data-label);
+    position: absolute;
+    top: 14px; right: 16px;
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .diagram pre {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.75;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .diagram pre .hi { color: var(--accent-bright); }
+  .diagram pre .dim { color: var(--text-muted); }
+  .diagram pre .green { color: #4ade80; }
+  .diagram pre .blue { color: #60a5fa; }
+
+  .mesh-viz {
+    background: var(--surface);
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    padding: 48px 40px;
+    margin: 36px 0;
+    display: flex;
+    justify-content: center;
+  }
+
+  .mesh-svg { width: 100%; max-width: 560px; }
+
+  .table-wrap { overflow-x: auto; margin: 32px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead tr { border-bottom: 1px solid var(--border-light); }
+
+  th {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 12px 16px 12px 0;
+    text-align: left;
+    font-weight: 400;
+  }
+
+  td {
+    padding: 14px 16px 14px 0;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    line-height: 1.65;
+  }
+
+  td:first-child { color: var(--text-primary); font-weight: 500; }
+  tr:last-child td { border-bottom: none; }
+
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 2px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+  }
+
+  .tag-green { background: rgba(74,222,128,0.08); color: #4ade80; border: 1px solid rgba(74,222,128,0.2); }
+  .tag-yellow { background: rgba(251,191,36,0.08); color: #fbbf24; border: 1px solid rgba(251,191,36,0.2); }
+  .tag-red { background: rgba(248,113,113,0.08); color: #f87171; border: 1px solid rgba(248,113,113,0.2); }
+  .tag-blue { background: rgba(96,165,250,0.08); color: #60a5fa; border: 1px solid rgba(96,165,250,0.2); }
+
+  .callout {
+    border-left: 2px solid var(--accent);
+    padding: 24px 28px;
+    margin: 40px 0;
+    background: rgba(200,184,154,0.03);
+    border-radius: 0 4px 4px 0;
+  }
+
+  .callout p { margin-bottom: 0; font-style: italic; font-size: 16px; color: var(--text-primary); line-height: 1.75; }
+
+  .timeline { margin: 36px 0; }
+
+  .phase {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 24px;
+    padding: 32px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .phase:last-child { border-bottom: none; }
+  .phase-num { display: flex; flex-direction: column; gap: 6px; }
+  .phase-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted); }
+  .phase-duration { font-family: var(--serif); font-size: 22px; color: var(--accent); font-style: italic; line-height: 1.3; }
+
+  .phase-content h4 { margin-top: 0; margin-bottom: 10px; font-style: normal; font-size: 16px; font-family: var(--sans); font-weight: 600; color: var(--text-primary); }
+  .phase-content p { margin-bottom: 10px; font-size: 14px; }
+  .phase-content p:last-child { margin-bottom: 0; }
+
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+    margin: 36px 0;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .compare-col { background: var(--surface); }
+
+  .compare-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border-light);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .compare-header h4 { margin: 0; font-style: normal; font-size: 14px; font-family: var(--sans); font-weight: 600; color: var(--text-primary); }
+  .compare-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-red { background: #f87171; }
+  .dot-green { background: #4ade80; }
+
+  .compare-list { list-style: none; padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; }
+
+  .compare-list li {
+    font-size: 13px;
+    color: var(--text-secondary);
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    line-height: 1.6;
+  }
+
+  .compare-list li::before { content: '/'; color: var(--text-muted); flex-shrink: 0; }
+
+  .stack-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 2px;
+    margin: 36px 0;
+  }
+
+  .stack-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 24px;
+    border-radius: 2px;
+    transition: border-color 0.2s;
+  }
+
+  .stack-card:hover { border-color: var(--border-light); }
+  .stack-layer { font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+  .stack-tech { font-size: 15px; color: var(--text-primary); font-weight: 500; margin-bottom: 8px; }
+  .stack-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+
+  .footer {
+    padding: 64px 48px;
+    max-width: 860px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+
+  .footer-text { font-family: var(--mono); font-size: 10px; color: var(--text-muted); letter-spacing: 0.12em; line-height: 1.9; }
+  .footer-mark { font-family: var(--serif); font-size: 32px; color: var(--border-light); font-style: italic; }
+
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  @media (max-width: 640px) {
+    .cover { padding: 48px 24px; }
+    .section, .toc, .footer { padding-left: 24px; padding-right: 24px; }
+    .compare-grid, .stack-grid { grid-template-columns: 1fr; }
+    .phase { grid-template-columns: 1fr; gap: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="cover-top">
+    <p class="label">Technical Research Paper &nbsp;·&nbsp; Distributed Systems &nbsp;·&nbsp; 2025</p>
+    <h1 class="cover-title">Decentralized<br /><em>Community</em><br />Communication</h1>
+    <p class="cover-subtitle">A peer-to-peer architecture for privacy-preserving,<br />censorship-resistant social platforms</p>
+    <p class="cover-abstract">
+      This paper proposes a fully distributed, peer-to-peer architecture for real-time community communication as a direct alternative to centralized platforms like Discord. The core idea is straightforward: every computer running the application becomes part of the network itself, eliminating the need for any company-owned server to store, route, or mediate communication. The paper examines how mesh networking, distributed state synchronization, end-to-end encrypted voice, and zero-friction onboarding can be combined into a product that ordinary people genuinely want to use.
+    </p>
+  </div>
+  <div class="cover-meta">
+    <div class="meta-item">
+      <span class="meta-label">Author</span>
+      <span class="meta-value author">Dhawal Ranka</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Classification</span>
+      <span class="meta-value">Distributed Systems / P2P</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Status</span>
+      <span class="meta-value">Conceptual / Pre-Implementation</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Version</span>
+      <span class="meta-value">1.0, 2025</span>
+    </div>
+  </div>
+</div>
+
+<nav class="toc">
+  <p class="toc-title">Table of Contents</p>
+  <ol class="toc-list">
+    <li><span class="toc-num">01</span><a href="#s1">The Problem with Centralization</a><span class="toc-dots"></span></li>
+    <li><span class="toc-num">02</span><a href="#s2">The Core Idea — Users as Infrastructure</a><span class="toc-dots"></span></li>
+    <li><span class="toc-num">03</span><a href="#s3">How the Network Actually Works</a><span class="toc-dots"></span></li>
+    <li><span class="toc-num">04</span><a href="#s4">Peer Discovery, Gossip and Routing</a><span class="toc-dots"></span></li>
+    <li><span class="toc-num">05</span><a href="#s5">Voice Channels Without Servers</a><span class="toc-dots"></span></li>
+    <li><span class="toc-num">06</span><a href="#s6">Identity and Cryptography</a><span class="toc-dots"></span></li>
+    <li><span class="toc-num">07</span><a href="#s7">Keeping State in Sync — CRDTs</a><span class="toc-dots"></span></li>
+    <li><span class="toc-num">08</span><a href="#s8">The User Experience Problem</a><span class="toc-dots"></span></li>
+    <li><span class="toc-num">09</span><a href="#s9">Recommended Technology Stack</a><span class="toc-dots"></span></li>
+    <li><span class="toc-num">10</span><a href="#s10">Hard Problems and Honest Mitigations</a><span class="toc-dots"></span></li>
+    <li><span class="toc-num">11</span><a href="#s11">What Has Been Tried Before</a><span class="toc-dots"></span></li>
+    <li><span class="toc-num">12</span><a href="#s12">Build Roadmap</a><span class="toc-dots"></span></li>
+    <li><span class="toc-num">13</span><a href="#s13">Conclusion</a><span class="toc-dots"></span></li>
+  </ol>
+</nav>
+
+<section class="section" id="s1">
+  <span class="section-num">01 / Problem Statement</span>
+  <h2>The Problem with Centralization</h2>
+
+  <p>Discord launched in 2015 and within a few years became the default gathering place for communities on the internet. Over 500 million registered accounts, hundreds of thousands of active servers, a product that did something genuinely hard well. It made real-time community communication feel effortless. For gamers, developers, artists, educators and study groups, Discord became the town square of the modern internet.</p>
+
+  <p>The problem is not that Discord is a bad product. The problem is what its architecture requires of its users. Every message you send, every voice conversation you have, every community you build, every file you share lives on servers owned and operated by a single private company. That company can read your data, and their privacy policy makes clear they collect a great deal of it. They can remove your community without warning. They can terminate accounts based on policy interpretations that shift over time. They can be compelled by any government with jurisdiction to hand over user information. None of this is unusual or surprising. It is simply what centralization looks like in practice.</p>
+
+  <p>Over the past few years Discord has faced criticism on all of these fronts. Communities have been removed overnight. Researchers and journalists have documented how behavioral data flows through the platform. The platform has faced legal scrutiny across multiple countries over how it handles user data, particularly for minors. These failures are not the result of bad intentions. They are predictable consequences of building a social platform on centralized infrastructure and then scaling it to hundreds of millions of people who have no real alternative.</p>
+
+  <h3>Why People Accept These Tradeoffs Anyway</h3>
+
+  <p>If the privacy and censorship risks are real and documented, why does the platform continue to grow? The honest answer is that the tradeoffs have always felt worth it. Discord is genuinely easy to use. Setting up a server takes two minutes. Inviting friends takes one click. Voice quality is excellent. The app is polished and fast. Nobody has ever built a decentralized alternative that felt as good to actually use, so people keep accepting the privacy costs because the experience available elsewhere is noticeably worse.</p>
+
+  <p>That is the real gap this paper addresses. Not "can we build something more private than Discord" — that bar is easy to clear. The actual question is whether we can build something more private and more resilient that people genuinely want to use. Something that respects user data without feeling like a command-line tool from 2008.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Failure Mode</th><th>Description</th><th>Severity</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Data Collection</td>
+          <td>User behavior, message metadata, and social graphs stored, retained indefinitely, and potentially subpoenaed or sold.</td>
+          <td><span class="tag tag-red">Critical</span></td>
+        </tr>
+        <tr>
+          <td>Censorship</td>
+          <td>Servers, accounts, and messages removed at the platform's discretion. Policy changes applied retroactively with limited recourse.</td>
+          <td><span class="tag tag-red">Critical</span></td>
+        </tr>
+        <tr>
+          <td>Single Point of Failure</td>
+          <td>When Discord goes down, every community on the planet goes down with it simultaneously. This has happened multiple times.</td>
+          <td><span class="tag tag-yellow">High</span></td>
+        </tr>
+        <tr>
+          <td>Vendor Lock-in</td>
+          <td>No meaningful data export. Communities cannot migrate their history, members, or structure to any other platform.</td>
+          <td><span class="tag tag-yellow">High</span></td>
+        </tr>
+        <tr>
+          <td>Monetization Pressure</td>
+          <td>User behavioral data becomes a commercial asset. Advertising partnerships create fundamentally misaligned incentives.</td>
+          <td><span class="tag tag-yellow">High</span></td>
+        </tr>
+        <tr>
+          <td>Policy Drift</td>
+          <td>Terms of service rewritten unilaterally. Communities built over years can become policy violations without any warning.</td>
+          <td><span class="tag tag-blue">Medium</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <p>A platform that can be compelled to hand over your data, delete your community, or simply shut you down has not given you a community. It has rented you one, on terms it can change at any time.</p>
+  </div>
+
+  <p>Building a more privacy-conscious Discord that still stores everything on company-owned servers does not solve the structural problem. It only delays it. The solution requires a different foundational assumption about where data lives and who controls access to it.</p>
+</section>
+
+<section class="section" id="s2">
+  <span class="section-num">02 / Core Idea</span>
+  <h2>Users as Infrastructure</h2>
+
+  <p>The idea at the center of this paper is simple. Every computer that runs the application becomes part of the network that <em>is</em> the application. There are no company-owned servers storing messages. There are no central machines routing voice traffic. The network is made entirely of the devices people are already running.</p>
+
+  <p>This is not a new concept in computing, but it has never been applied to consumer social software in a form that worked well enough for ordinary people to actually adopt it. What this paper proposes is combining the architectural approach that has made peer-to-peer networks like BitTorrent extraordinarily resilient with the product design philosophy that has made apps like Discord, Notion, and Linear genuinely enjoyable to use.</p>
+
+  <h3>The AirTag Analogy</h3>
+
+  <p>The best way to understand what this network looks like in practice is to think about how Apple AirTags work. When an AirTag gets separated from its owner, it does not call home to an Apple data center to report its location. It broadcasts a Bluetooth signal. Any iPhone that happens to be nearby, belonging to any Apple user anywhere in the world, silently detects that signal and sends an anonymous, encrypted location report back to the tag owner through Apple's network.</p>
+
+  <p>No single iPhone is "the server" in this transaction. Every iPhone is the network. The network is distributed across hundreds of millions of devices, and it works not because Apple maintains expensive dedicated infrastructure to power it, but because every participating device contributes a small slice of its capability to the whole. Apple's role shrinks to maintaining a small relay layer, and the actual work happens at the edges, on people's own devices.</p>
+
+  <p>Now apply that same thinking to community communication. When you turn on your computer and open the application, your machine announces to the network that you are online. It reaches a handful of peers it already knows, and those peers pass the word along to the peers they know. Within seconds, everyone in your communities knows you are online, without a single packet of your personal data passing through infrastructure you do not control.</p>
+
+  <div class="diagram" data-label="Architecture Comparison">
+    <pre>
+  <span class="dim">DISCORD TODAY</span>
+
+  [Your PC] ──────► [Discord Data Center] ◄────── [Friend's PC]
+                           │
+                    stores your data
+                    controls your access
+                    can ban your community
+                    goes down, you go down
+
+
+  <span class="hi">PROPOSED ARCHITECTURE</span>
+
+  [Your PC] ─────────────────────────────── [Friend's PC]
+       │                                          │
+       └── [User C] ──── [User D] ──── [User E] ─┘
+                │                          │
+            [User F] ─────────────── [User G]
+
+  <span class="green">Every node stores, routes, and serves.</span>
+  <span class="green">More users online means a stronger, faster, more resilient network.</span>
+    </pre>
+  </div>
+
+  <h3>Why This Flips the Scaling Equation</h3>
+
+  <p>One of the least intuitive properties of this architecture is what happens as the user base grows. On a centralized platform, growth is a problem to be managed. More users means more servers, more bandwidth costs, more infrastructure to maintain. Discord spent hundreds of millions on infrastructure as it scaled, and that cost has to be paid by someone, which is ultimately why centralized platforms need heavy monetization or significant investor subsidies to survive.</p>
+
+  <p>In a peer-to-peer network, growth is a feature rather than a liability. Every new user who joins brings their own bandwidth, their own storage, and their own connectivity. The network does not get slower under load. It gets faster and more resilient. There is no infrastructure bill to pay because the users are the infrastructure. This is not a financing trick. It is a genuinely different relationship between the platform and the people who use it.</p>
+</section>
+
+<section class="section" id="s3">
+  <span class="section-num">03 / Network Architecture</span>
+  <h2>How the Network Actually Works</h2>
+
+  <p>Understanding how a decentralized communication network operates requires thinking through three distinct problems: how peers find each other in the first place, how information spreads once they are connected, and how the system keeps working when individual nodes go offline. Each of these has well-understood solutions drawn from decades of peer-to-peer research and production deployment.</p>
+
+  <div class="mesh-viz">
+    <svg class="mesh-svg" viewBox="0 0 560 380" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="280" y1="70" x2="110" y2="170" stroke="#2a2a2a" stroke-width="1"/>
+      <line x1="280" y1="70" x2="450" y2="170" stroke="#2a2a2a" stroke-width="1"/>
+      <line x1="280" y1="70" x2="280" y2="210" stroke="#2a2a2a" stroke-width="1"/>
+      <line x1="110" y1="170" x2="450" y2="170" stroke="#2a2a2a" stroke-width="1"/>
+      <line x1="110" y1="170" x2="190" y2="310" stroke="#2a2a2a" stroke-width="1"/>
+      <line x1="110" y1="170" x2="280" y2="210" stroke="#2a2a2a" stroke-width="1"/>
+      <line x1="450" y1="170" x2="370" y2="310" stroke="#2a2a2a" stroke-width="1"/>
+      <line x1="450" y1="170" x2="280" y2="210" stroke="#2a2a2a" stroke-width="1"/>
+      <line x1="280" y1="210" x2="190" y2="310" stroke="#2a2a2a" stroke-width="1"/>
+      <line x1="280" y1="210" x2="370" y2="310" stroke="#2a2a2a" stroke-width="1"/>
+      <line x1="190" y1="310" x2="370" y2="310" stroke="#2a2a2a" stroke-width="1"/>
+      <line x1="280" y1="70" x2="110" y2="170" stroke="#c8b89a" stroke-width="1" stroke-opacity="0.5">
+        <animate attributeName="stroke-opacity" values="0.5;0.1;0.5" dur="3s" repeatCount="indefinite"/>
+      </line>
+      <line x1="280" y1="70" x2="450" y2="170" stroke="#c8b89a" stroke-width="1" stroke-opacity="0.2">
+        <animate attributeName="stroke-opacity" values="0.2;0.6;0.2" dur="4s" repeatCount="indefinite"/>
+      </line>
+      <line x1="110" y1="170" x2="190" y2="310" stroke="#4ade80" stroke-width="1" stroke-opacity="0.3">
+        <animate attributeName="stroke-opacity" values="0.3;0.07;0.3" dur="2.5s" repeatCount="indefinite"/>
+      </line>
+      <circle cx="280" cy="70" r="22" fill="#c8b89a" fill-opacity="0.1" stroke="#c8b89a" stroke-width="1" stroke-opacity="0.6"/>
+      <circle cx="280" cy="70" r="7" fill="#c8b89a"/>
+      <text x="280" y="48" text-anchor="middle" font-family="'Geist Mono', monospace" font-size="9" fill="#c8b89a" fill-opacity="0.8">YOU</text>
+      <circle cx="110" cy="170" r="17" fill="#4ade80" fill-opacity="0.07" stroke="#4ade80" stroke-width="1" stroke-opacity="0.35"/>
+      <circle cx="110" cy="170" r="5" fill="#4ade80" fill-opacity="0.7"/>
+      <text x="72" y="168" text-anchor="middle" font-family="'Geist Mono', monospace" font-size="9" fill="#7a7570">PEER A</text>
+      <circle cx="450" cy="170" r="17" fill="#4ade80" fill-opacity="0.07" stroke="#4ade80" stroke-width="1" stroke-opacity="0.35"/>
+      <circle cx="450" cy="170" r="5" fill="#4ade80" fill-opacity="0.7"/>
+      <text x="490" y="168" text-anchor="middle" font-family="'Geist Mono', monospace" font-size="9" fill="#7a7570">PEER B</text>
+      <circle cx="280" cy="210" r="17" fill="#60a5fa" fill-opacity="0.07" stroke="#60a5fa" stroke-width="1" stroke-opacity="0.35"/>
+      <circle cx="280" cy="210" r="5" fill="#60a5fa" fill-opacity="0.6"/>
+      <text x="280" y="238" text-anchor="middle" font-family="'Geist Mono', monospace" font-size="9" fill="#7a7570">PEER C</text>
+      <circle cx="190" cy="310" r="15" fill="#1a1a1a" stroke="#2a2a2a" stroke-width="1"/>
+      <circle cx="190" cy="310" r="4" fill="#3d3a36"/>
+      <text x="190" y="334" text-anchor="middle" font-family="'Geist Mono', monospace" font-size="9" fill="#3d3a36">PEER D</text>
+      <circle cx="370" cy="310" r="15" fill="#1a1a1a" stroke="#2a2a2a" stroke-width="1"/>
+      <circle cx="370" cy="310" r="4" fill="#3d3a36"/>
+      <text x="370" y="334" text-anchor="middle" font-family="'Geist Mono', monospace" font-size="9" fill="#3d3a36">PEER E</text>
+      <circle cx="32" cy="26" r="4" fill="#c8b89a"/>
+      <text x="42" y="30" font-family="'Geist Mono', monospace" font-size="9" fill="#7a7570">You</text>
+      <circle cx="80" cy="26" r="4" fill="#4ade80" fill-opacity="0.7"/>
+      <text x="90" y="30" font-family="'Geist Mono', monospace" font-size="9" fill="#7a7570">Online peer</text>
+      <circle cx="164" cy="26" r="4" fill="#3d3a36"/>
+      <text x="174" y="30" font-family="'Geist Mono', monospace" font-size="9" fill="#7a7570">Offline (state cached)</text>
+    </svg>
+  </div>
+
+  <h3>The Three Layers</h3>
+
+  <h4>Layer 1 — Global Peer Discovery via DHT</h4>
+
+  <p>The first layer is a Distributed Hash Table, or DHT. This is the same technology powering BitTorrent, and it has been running reliably at global scale for over two decades. A DHT is a decentralized lookup system: you can ask it "who is participating in community X?" and it returns a list of peer addresses, with no central server involved in the lookup.</p>
+
+  <p>Each peer in the network is responsible for storing information about a small slice of the total key space. When you want to find peers for a specific community, your node computes the community's hash and routes a query through the DHT, hopping from peer to peer until it finds nodes that have stored the relevant peer list. Finding any piece of information in a million-node network takes fewer than 20 hops. The Kademlia algorithm used by BitTorrent has been formally proven to be both correct and efficient, and it is the recommended basis for this system.</p>
+
+  <h4>Layer 2 — Community Overlay Network</h4>
+
+  <p>Once your node has found some community peers via the DHT, it forms direct connections with them. Those peers introduce you to other peers in the community, and gradually your node builds up a partial mesh: directly connected to a subset of community members, each of whom is connected to their own subset. You do not need a connection to everyone, just enough paths to reach everyone through a small number of hops.</p>
+
+  <p>The community overlay is where messages, presence updates, and community state changes propagate. When any peer produces new information, it fans out through the overlay using a gossip protocol until every online member has received it. The overlay is also self-healing: when a connected peer goes offline, messages route through other paths, and if needed, the DHT finds new peers to replace the lost connection.</p>
+
+  <h4>Layer 3 — Direct Connections for Voice and DMs</h4>
+
+  <p>For situations where two specific peers need to communicate directly — a voice call, a direct message, a file transfer — the network establishes an encrypted connection between them using WebRTC. This is the same protocol that powers browser-based video calling. It handles the difficult work of punching through NAT and firewalls automatically. Once the connection is established, data flows directly between the two machines with no intermediary involved at any point.</p>
+</section>
+
+<section class="section" id="s4">
+  <span class="section-num">04 / Protocol Design</span>
+  <h2>Peer Discovery, Gossip and Routing</h2>
+
+  <p>These three mechanisms form the invisible foundation of the network. Getting them right determines whether the system feels fast and reliable or sluggish and unreliable. Each has a well-understood solution, and the work required is integration rather than invention.</p>
+
+  <h3>How Peers Find Each Other</h3>
+
+  <p>A new node joining the network faces a bootstrapping problem: it needs at least one other peer to talk to before it can find any peers at all. This is solved through a layered approach that prioritizes the fastest and simplest options first.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Method</th><th>How It Works</th><th>When It Applies</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Local Network (mDNS)</td>
+          <td>Broadcasts a discovery packet on the local subnet. Finds peers on the same WiFi network within milliseconds, no internet required.</td>
+          <td>First priority. Works offline entirely for local networks.</td>
+        </tr>
+        <tr>
+          <td>DHT Lookup</td>
+          <td>Routes a query through the global DHT to find peers registered for a specific community. Fully decentralized once the network has density.</td>
+          <td>Primary global method once the network is self-sustaining.</td>
+        </tr>
+        <tr>
+          <td>Seed Nodes</td>
+          <td>A small list of always-on minimal nodes baked into the app binary. They only answer "who else is online?" and immediately step aside. Not servers in any meaningful sense.</td>
+          <td>Cold start fallback. Becomes unnecessary as DHT density grows.</td>
+        </tr>
+        <tr>
+          <td>Invite Link Peers</td>
+          <td>Invite links contain a short list of peer addresses from the person who generated them. Instant bootstrap into a specific community.</td>
+          <td>Any time someone joins via an invite link, which is the most common new-user path.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>The Gossip Protocol</h3>
+
+  <p>Once peers are connected, information needs to propagate reliably across the community without any coordinator directing the process. When a node receives new information — a message, a presence update, a ban list change — it forwards that information to a random subset of its connected peers. Those peers do the same. The information fans out exponentially until every online member has a copy.</p>
+
+  <p>The name comes from how rumors spread in real social networks, which is not a coincidence. The math behind gossip protocols shows that information reaches every node in a network of N peers within roughly log(N) rounds of forwarding. For a community of 10,000 members, complete propagation takes about 13 rounds of gossip, which at typical network latencies translates to well under a second.</p>
+
+  <div class="diagram" data-label="Gossip Propagation — 1000 Node Community">
+    <pre>
+  t = 0ms    <span class="hi">You</span> send a message
+                 │
+  t = 5ms    Your node forwards to 6 random peers
+                 │
+         ┌───────┼───────┐
+        <span class="green">A</span>      <span class="green">B</span>      <span class="green">C</span>      <span class="green">D</span>      <span class="green">E</span>      <span class="green">F</span>
+        │       │       │       │       │       │
+  t = 10ms  each peer forwards to 6 more random peers
+        │       │
+  <span class="green">G H I J K L</span>   <span class="green">M N O P Q R</span>   ...continuing
+
+  t = 30ms   All 1000 online members have received the message.
+             Duplicates dropped silently using message IDs.
+
+  <span class="dim">No coordinator. No central router. Peers talking to peers.</span>
+    </pre>
+  </div>
+
+  <p>Bandwidth efficiency is maintained through two mechanisms. Every message carries a unique ID, and nodes track which IDs they have already forwarded, refusing to forward the same message twice. Nodes also use push-pull gossip: rather than forwarding entire messages, they can forward just the message IDs they have seen and let the receiving peer request only the ones it is missing. This cuts redundant traffic significantly in dense networks.</p>
+
+  <h3>Routing and Self-Healing</h3>
+
+  <p>Because messages are propagated through the community overlay rather than routed along a specific path, there is no single route that can fail to prevent delivery. If several of your connected peers go offline simultaneously, the message finds alternate routes through other connected nodes. The network heals around failures automatically and continuously. Fault tolerance is not something engineered on top of the system — it emerges naturally from the gossip approach.</p>
+</section>
+
+<section class="section" id="s5">
+  <span class="section-num">05 / Voice Communication</span>
+  <h2>Voice Channels Without Servers</h2>
+
+  <p>Voice is the hardest component of this system to get right, and also the most important one to get right. Discord's voice quality is genuinely excellent, and any alternative that delivers noticeably worse audio will struggle to win users regardless of its privacy properties. The good news is that the tooling available for peer-to-peer voice in 2025 is very mature.</p>
+
+  <h3>WebRTC Was Designed for This</h3>
+
+  <p>WebRTC is the protocol standard powering browser-based video calling. It is used by Google Meet, Whereby, Clubhouse, and dozens of other products serving hundreds of millions of users. What makes it particularly well suited here is that WebRTC was designed from the ground up for direct peer-to-peer media exchange. When two peers establish a WebRTC connection, audio flows directly between their devices over a DTLS-SRTP encrypted channel. No company server receives or processes the audio stream. The peer-to-peer nature of WebRTC is the intended design, not a workaround.</p>
+
+  <h3>The NAT Problem</h3>
+
+  <p>The biggest obstacle to direct P2P connections is Network Address Translation, or NAT. Most home internet connections involve a router that sits between your computer and the public internet, assigning your machine a private IP address that is not directly reachable from outside your network. This makes it difficult for two peers to connect directly, because neither knows the other's true public address or port.</p>
+
+  <p>WebRTC solves this through a process called ICE, Interactive Connectivity Establishment. Each peer contacts a STUN server, which is a lightweight service that tells the peer what its public IP and port look like from outside its NAT. The two peers exchange this information through a signaling channel and attempt a direct connection. This works for the vast majority of home networks.</p>
+
+  <p>For the roughly 15% of users behind stricter NAT configurations — corporate firewalls, carrier-grade NAT — a TURN server acts as a fallback relay. Critically, the TURN server cannot read the content because DTLS-SRTP encryption is end-to-end between the two peers. The relay sees only encrypted bytes passing through. Running a small fleet of TURN servers for fallback cases is the minimal infrastructure footprint this platform genuinely requires, and the cost is low because TURN only handles a fraction of connections.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Scenario</th><th>Connection Type</th><th>Coverage</th><th>Privacy</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Standard home NAT</td>
+          <td>Direct P2P via STUN</td>
+          <td>~85% of users</td>
+          <td>Full E2E encryption, no relay</td>
+        </tr>
+        <tr>
+          <td>Symmetric NAT or strict firewall</td>
+          <td>Relayed via TURN</td>
+          <td>~15% of users</td>
+          <td>Encrypted in transit, relay cannot decrypt</td>
+        </tr>
+        <tr>
+          <td>Same local network</td>
+          <td>Direct LAN connection</td>
+          <td>Same WiFi</td>
+          <td>Never hits the internet at all</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Scaling Voice for Large Channels</h3>
+
+  <p>A full mesh voice connection works well for small groups. With five people in a voice channel, each person sends audio to the other four and receives from all four. Bandwidth scales quadratically: with ten people, each is sending and receiving nine streams. This becomes impractical above roughly eight participants.</p>
+
+  <p>For larger voice channels, the system uses a Selective Forwarding Unit pattern. One peer in the channel — elected automatically based on connection stability and upload bandwidth — acts as a relay hub. Every participant sends audio to this peer, which redistributes it to everyone else. This cuts bandwidth requirements for all other participants from proportional-to-group-size down to a constant cost.</p>
+
+  <p>The elected relay changes dynamically. If it disconnects, the remaining participants detect this within a couple of seconds and elect a new relay from among themselves. Users experience a brief reconnection moment at most. Even in relay configuration, audio is end-to-end encrypted: the relay forwards encrypted packets and cannot decrypt them.</p>
+
+  <div class="diagram" data-label="Voice Architecture by Channel Size">
+    <pre>
+  <span class="dim">SMALL CHANNEL (under 8 participants) — direct P2P mesh</span>
+
+  [A] ←────────────────────→ [B]
+   │  ╲                    ╱  │
+   │    ╲                ╱    │
+   ↓     ╲              ╱     ↓
+  [C] ←────────────────────→ [D]
+            ╲            ╱
+              [E] ←────→ [F]
+
+  Direct connections. Minimal latency. No relay.
+
+
+  <span class="hi">LARGE CHANNEL (9 or more participants) — auto-elected relay</span>
+
+  [A] ───┐
+  [B] ───┤                     ┌─── [G]
+  [C] ───┼──► [<span class="green">Relay Peer</span>] ◄───┼─── [H]
+  [D] ───┤     auto-elected    └─── [I]
+  [E] ───┤     rotates on
+  [F] ───┘     disconnect
+
+  <span class="dim">Audio encrypted E2E. Relay cannot read content.</span>
+    </pre>
+  </div>
+</section>
+
+<section class="section" id="s6">
+  <span class="section-num">06 / Identity and Security</span>
+  <h2>No Accounts. No Passwords. No Database.</h2>
+
+  <p>Traditional platforms authenticate users against a centralized database of usernames and hashed passwords. This database is a liability. When it gets breached, which the history of internet security suggests is a matter of when rather than if, every user's credentials are potentially compromised at once. The proposed system eliminates this attack surface entirely by replacing account-based identity with cryptographic key pairs.</p>
+
+  <h3>How Identity Is Generated</h3>
+
+  <p>On first launch, the application silently generates an Ed25519 key pair. This takes milliseconds and requires no network connection. The private key is stored in the device's secure enclave — the operating system's protected cryptographic storage, the same place that holds biometric data and payment credentials. It never leaves the device and is never transmitted anywhere. The public key becomes the user's permanent identity on the network.</p>
+
+  <p>Every message the user sends is signed with their private key. Every peer that receives the message verifies the signature using the public key. This verification is cryptographically guaranteed: only someone who possesses the private key could have produced a valid signature. There is no central authentication server involved. Trust is established mathematically, without any intermediary.</p>
+
+  <div class="diagram" data-label="Identity Architecture">
+    <pre>
+  FIRST LAUNCH (invisible, under 100ms)
+
+  App generates:
+    <span class="hi">private key</span>  →  stored in system keychain, never leaves device
+    <span class="green">public key</span>   →  your identity, shared openly with peers
+
+  Your identity on the network:
+    <span class="dim">ed25519:7f3a9c2b1e8d4f6a0b3c9d2e5f8a1b4c...</span>
+
+  When you send a message:
+    { message + timestamp + your_pubkey }
+    └─ signed with your private key
+       └─ signature travels with the message
+          └─ every receiving peer verifies before accepting
+             └─ forgery is computationally infeasible
+
+  When you join a community:
+    community owner signs { your_pubkey + role + timestamp }
+    └─ signed credential travels with you
+       └─ any peer verifies your membership without asking a server
+    </pre>
+  </div>
+
+  <h3>Community Ownership</h3>
+
+  <p>A community is created by generating a community key pair. The creator holds the private key, making them the cryptographic owner. The community's public key is its permanent identifier: encoded in every invite link, stored by every member, used to verify the authenticity of community settings and moderation actions.</p>
+
+  <p>When the community owner makes changes — adding a channel, promoting a member, updating settings — those changes are signed with the community private key. Every peer that receives the change verifies it was made by the legitimate owner without querying any server. Fake community updates are rejected by every peer because the signature does not match.</p>
+
+  <p>This has an important implication for resilience. The community does not live on the owner's computer. Every member stores a copy of the community's state locally. If the owner goes offline for a month, the community keeps running on copies held by other members. The owner's private key is only needed when making authoritative configuration changes. Day-to-day operation requires no involvement from the owner at all.</p>
+
+  <h3>End-to-End Encryption</h3>
+
+  <p>Messages are encrypted using the Double Ratchet Algorithm, the same protocol that makes Signal conversations secure. The Double Ratchet provides two critical properties. Forward secrecy means that if an attacker compromises your encryption keys today, they cannot use those keys to decrypt messages sent in the past, because each message uses a freshly derived key that is discarded immediately after use. Break-in recovery means that if keys are somehow compromised, future messages automatically re-establish security through a new key exchange. The conversation does not stay compromised indefinitely.</p>
+
+  <p>Voice is encrypted via DTLS-SRTP, which WebRTC uses by default. Encryption happens before audio leaves the sender's device, and decryption happens only when it arrives at the recipient. Any relay node or network device between them sees only encrypted bytes and cannot recover the audio content.</p>
+</section>
+
+<section class="section" id="s7">
+  <span class="section-num">07 / State Synchronization</span>
+  <h2>Keeping State in Sync</h2>
+
+  <p>One of the subtler problems in a decentralized communication system is keeping all peers synchronized on shared state. On Discord this is simple: one database, always authoritative. If two users send messages at exactly the same moment, the server picks an order and everyone sees the same thing.</p>
+
+  <p>In a peer-to-peer system, there is no single authoritative database. Different peers might have different views of the world at any given instant, depending on what messages have reached them so far. The system needs a principled way to reconcile differences and converge on a consistent shared state without any coordinator.</p>
+
+  <h3>What a CRDT Is</h3>
+
+  <p>A Conflict-free Replicated Data Type is a data structure with a mathematical guarantee: any two replicas can be merged into a consistent result regardless of the order in which updates were applied. You do not need to agree on a canonical order of operations. You apply all the operations, and the CRDT's merge function guarantees that every peer who has seen the same set of operations arrives at the same state.</p>
+
+  <p>The simplest example is a set that only supports additions, called a G-Set. If two peers add elements concurrently, merging their states is trivial: the merged set contains the union of all elements. More sophisticated CRDTs handle counters, ordered lists, rich text, and key-value maps, all with the same convergence guarantee. The math behind this is well-established and the implementations are production-tested.</p>
+
+  <div class="diagram" data-label="CRDT Sync Example">
+    <pre>
+  Peer A (London):                    Peer B (New York):
+  ┌─────────────────────┐            ┌─────────────────────┐
+  │ #general:           │            │ #general:           │
+  │   msg:001  "hey"    │            │   msg:001  "hey"    │
+  │   msg:002  "sup"    │            │   msg:003  "hello!" │  ← B wrote
+  └─────────────────────┘            └─────────────────────┘
+           │                                   │
+           └──────────── gossip sync ──────────┘
+                              │
+                              ▼
+  Both peers converge:
+  ┌─────────────────────────────────────┐
+  │   msg:001  "hey"                    │
+  │   msg:002  "sup"                    │
+  │   msg:003  "hello!"                 │  ordered by logical timestamp
+  └─────────────────────────────────────┘
+
+  <span class="green">No server arbitrated this. Math guaranteed convergence.</span>
+    </pre>
+  </div>
+
+  <h3>What Gets Stored as CRDT State</h3>
+
+  <p>Essentially everything in a community is represented as CRDT state: message history in each channel, the list of channels, the membership roster, role assignments, community settings, and user presence. When a new member joins, their node syncs current CRDT state from nearby peers and immediately has a consistent view of everything that has happened. When an offline member reconnects, their node syncs changes that occurred during their absence and merges them with any local changes made offline.</p>
+
+  <p>That last property, offline operation, is worth emphasizing. Because every peer holds a local copy of CRDT state, you can continue using the application without any internet connection. Messages written while offline are stored locally. When you reconnect, they propagate to the rest of the community and merge correctly with everything that happened in your absence. No messages are lost and no state is corrupted. The convergence guarantee holds across arbitrarily long disconnections.</p>
+</section>
+
+<section class="section" id="s8">
+  <span class="section-num">08 / User Experience</span>
+  <h2>The User Experience Problem</h2>
+
+  <p>Everything described so far is the easy part. DHTs, gossip protocols, CRDTs, WebRTC NAT traversal — these are all solved problems with mature open source implementations available today. The genuinely hard problem is making a product built on all of this that ordinary people find as natural and pleasant to use as Discord.</p>
+
+  <p>This is the reason no previous attempt at a decentralized communication platform has found mainstream adoption. Tox, Retroshare, Jami, Briar — all of them made the engineering work to some degree. None of them solved the experience problem. They exposed network complexity to users. They required manual configuration. They felt like tools built by engineers for engineers, because that is exactly what they were.</p>
+
+  <p>The philosophy here is different. The engineering complexity must be completely invisible. A user who downloads this application should never encounter the words "DHT," "NAT traversal," or "CRDT." They should never forward a port, configure a firewall, or understand anything about how the network operates. They open the app, pick a name, click a link, and are in a community. Everything else happens in the background without their knowledge or involvement.</p>
+
+  <h3>The Silent Boot Sequence</h3>
+
+  <div class="diagram" data-label="Background Boot — Zero User Interaction Required">
+    <pre>
+  Application opens
+  │
+  ├── 1. Generate Ed25519 keypair (first launch only, 40ms)
+  │       └── Store private key in OS secure keychain
+  │
+  ├── 2. Broadcast mDNS discovery on local network
+  │       └── Instant peer discovery if any known peers on same WiFi
+  │
+  ├── 3. Contact STUN server to determine NAT type
+  │       └── Decide whether direct P2P or TURN relay is needed
+  │
+  ├── 4. Register presence in DHT
+  │       └── Other peers can now discover this node
+  │
+  ├── 5. Sync communities
+  │       └── CRDT merge of state changes since last session
+  │
+  └── 6. Begin listening for incoming connections
+
+  <span class="green">Total time on typical broadband: under 1 second</span>
+  <span class="dim">What the user sees: a loading indicator, briefly.</span>
+    </pre>
+  </div>
+
+  <h3>Onboarding in Three Screens</h3>
+
+  <p>The entire onboarding flow has a hard limit of three screens. Any complexity that cannot fit inside three screens gets hidden behind a settings menu that most users will never open.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Screen</th><th>What the User Does</th><th>What Happens in the Background</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1 / Identity</td>
+          <td>Type a display name. Pick an avatar color.</td>
+          <td>Keypair generated and stored. Local profile written. Node registered in DHT.</td>
+        </tr>
+        <tr>
+          <td>2 / Join or Create</td>
+          <td>Paste an invite link, or click "Start a Community."</td>
+          <td>Invite link decoded. Bootstrap peers contacted. Community state sync begins.</td>
+        </tr>
+        <tr>
+          <td>3 / You're In</td>
+          <td>Land in the community and start chatting.</td>
+          <td>Full CRDT state synced. Channel history loaded. Voice channels available. Presence announced.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>The Invite Link</h3>
+
+  <p>Discord's invite link is one of the most effective viral growth mechanisms in consumer software history. One click and you are in a new community. The proposed platform replicates this experience exactly, but the link encodes different information underneath.</p>
+
+  <div class="diagram" data-label="Invite Link Structure">
+    <pre>
+  <span class="hi">mesh://join?c=7f3a9c2b&peers=185.12.44.1,94.23.11.8&r=relay.app.io</span>
+                    │                    │                     │
+                    │                    │                     └─ TURN relay fallback
+                    │                    └─ Bootstrap peer IPs from invite sender
+                    └─ Community public key (short form)
+
+  User experience after clicking:
+    App installs (first time) or opens (returning)
+    Community key and bootstrap peers decoded from link
+    Connects to listed peers
+    Community state syncs in background
+    User lands in the community, already connected
+
+  <span class="dim">From the user's perspective: click link, you're in.</span>
+    </pre>
+  </div>
+
+  <h3>Three Layers of Interface Depth</h3>
+
+  <p>The design uses progressive disclosure. Complexity exists but is hidden until someone goes looking for it. The vast majority of users will only ever see the first layer.</p>
+
+  <div class="compare-grid">
+    <div class="compare-col">
+      <div class="compare-header">
+        <div class="compare-dot dot-green"></div>
+        <h4>Surface Layer (90% of users, all the time)</h4>
+      </div>
+      <ul class="compare-list">
+        <li>Community list on the left, icons only with no labels</li>
+        <li>Channel list, clean text with no decoration</li>
+        <li>Chat area with messages, reactions, and file attachments</li>
+        <li>Voice channels with join, leave, mute, and deafen controls</li>
+        <li>A subtle connection indicator (a green dot when healthy)</li>
+        <li>No exposed settings. Everything simply works.</li>
+      </ul>
+    </div>
+    <div class="compare-col">
+      <div class="compare-header">
+        <div class="compare-dot" style="background:#fbbf24"></div>
+        <h4>Power Layer (accessible but not visible by default)</h4>
+      </div>
+      <ul class="compare-list">
+        <li>Community settings, roles, and permission configuration</li>
+        <li>Member list with moderation and ban tools</li>
+        <li>Voice codec selection and quality controls</li>
+        <li>Invite link generation and revocation</li>
+        <li>Optional IP relay mode for users who want to hide their address</li>
+        <li>Connection diagnostics for troubleshooting edge cases</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="s9">
+  <span class="section-num">09 / Technology Stack</span>
+  <h2>Recommended Technology Stack</h2>
+
+  <p>Every component recommended here is open source, in active development, and has demonstrated reliability at production scale. The engineering effort required is integration work, not protocol research. Nothing needs to be invented from scratch.</p>
+
+  <div class="stack-grid">
+    <div class="stack-card">
+      <p class="stack-layer">Application Shell</p>
+      <p class="stack-tech">Tauri 2.0</p>
+      <p class="stack-desc">Rust-based desktop framework. Uses the system's native WebView instead of bundling a full Chromium instance like Electron. Results in binaries roughly ten times smaller and significantly lower memory usage. Provides full access to OS APIs including the secure keychain for private key storage.</p>
+    </div>
+    <div class="stack-card">
+      <p class="stack-layer">User Interface</p>
+      <p class="stack-tech">React + Framer Motion</p>
+      <p class="stack-desc">Component-based UI with physics-based animation primitives. Framer Motion enables the fluid, spring-based transitions that make interfaces feel alive rather than mechanical. Well-understood ecosystem, massive component library, best-in-class animation tooling for desktop applications.</p>
+    </div>
+    <div class="stack-card">
+      <p class="stack-layer">P2P Networking</p>
+      <p class="stack-tech">libp2p</p>
+      <p class="stack-desc">The networking library powering IPFS and Filecoin. Handles Kademlia DHT, peer discovery via mDNS and DHT, connection multiplexing, stream encryption, and NAT traversal. Essentially solves the entire P2P plumbing layer so the product team can focus on application-level concerns.</p>
+    </div>
+    <div class="stack-card">
+      <p class="stack-layer">Voice and Real-time</p>
+      <p class="stack-tech">WebRTC + mediasoup</p>
+      <p class="stack-desc">WebRTC for all peer-to-peer audio with built-in DTLS-SRTP encryption. mediasoup as the SFU implementation for large voice channels requiring a relay peer. Both are deployed in production at scale by companies including Cloudflare and Daily.co.</p>
+    </div>
+    <div class="stack-card">
+      <p class="stack-layer">State Synchronization</p>
+      <p class="stack-tech">Yjs</p>
+      <p class="stack-desc">A mature, high-performance CRDT implementation. Handles all shared community state: message history, channel structure, membership, roles, and presence. Supports offline-first operation, efficient binary encoding for network transmission, and real-time sync with awareness of which peers have seen which updates.</p>
+    </div>
+    <div class="stack-card">
+      <p class="stack-layer">Cryptography</p>
+      <p class="stack-tech">libsodium + Double Ratchet</p>
+      <p class="stack-desc">Ed25519 keypairs for identity and message signing. X25519 for key exchange. ChaCha20-Poly1305 for authenticated encryption. Double Ratchet algorithm for forward-secret message encryption. libsodium is the most widely audited cryptographic library available and has been in production for over a decade.</p>
+    </div>
+    <div class="stack-card">
+      <p class="stack-layer">NAT Traversal Fallback</p>
+      <p class="stack-tech">Coturn</p>
+      <p class="stack-desc">Open source STUN and TURN server. Runs on minimal VPS infrastructure. Handles the roughly 15% of connections that cannot establish direct P2P due to strict NAT. Does not decrypt content — it relays encrypted packets for peers that cannot reach each other directly.</p>
+    </div>
+    <div class="stack-card">
+      <p class="stack-layer">Local Storage</p>
+      <p class="stack-tech">SQLite via Rusqlite</p>
+      <p class="stack-desc">Embedded database for local message cache, peer address book, community metadata, and media. Zero-configuration, no separate process, works entirely offline. Rusqlite bindings provide safe, idiomatic access from Tauri's Rust backend with no runtime overhead.</p>
+    </div>
+  </div>
+
+  <h3>The Minimal Server Footprint</h3>
+
+  <p>In the spirit of honesty: this platform is not 100% serverless on day one. A small amount of infrastructure is genuinely required, and it is worth being specific about what it does and why it exists.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Component</th><th>Purpose</th><th>Cost Estimate</th><th>Privacy Impact</th><th>Can It Go Away?</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Bootstrap Seed Nodes</td>
+          <td>Help new nodes find their first peers before the DHT is self-sustaining</td>
+          <td>~$20/month</td>
+          <td>Sees connection requests only, no message content</td>
+          <td>Yes, once network has sufficient density</td>
+        </tr>
+        <tr>
+          <td>TURN Relay Servers</td>
+          <td>Fallback for the ~15% of users behind strict NAT</td>
+          <td>~$50/month at small scale</td>
+          <td>Sees encrypted bytes only, cannot decrypt</td>
+          <td>Partially — power users can self-host</td>
+        </tr>
+        <tr>
+          <td>App Update Server</td>
+          <td>Distribute signed application updates to users</td>
+          <td>GitHub Releases (free)</td>
+          <td>Knows you downloaded an update, nothing else</td>
+          <td>No, but it is irrelevant to privacy</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>None of these components store messages, community data, voice audio, or user personal information. They are infrastructure glue, not data silos. Each can be self-hosted by technically sophisticated users or communities who want zero dependence on the application developer's infrastructure.</p>
+</section>
+
+<section class="section" id="s10">
+  <span class="section-num">10 / Hard Problems</span>
+  <h2>Hard Problems and Honest Mitigations</h2>
+
+  <p>This paper would be misleading if it presented the proposed architecture as solving every problem cleanly. Several genuine engineering challenges exist and deserve honest treatment rather than hand-waving. Each one is solvable, but none of them are trivial, and building this product requires understanding where the difficult work actually lives.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Challenge</th><th>Why It Is Hard</th><th>Mitigation</th><th>Severity</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>IP Address Exposure</td>
+          <td>Connecting to a community means sharing your IP address with community members. A bad actor could log IPs or target users directly.</td>
+          <td>Optional relay mode where users route through a volunteer peer to hide their real IP. Users can run their own relay nodes. Onion routing integration is a longer-term option.</td>
+          <td><span class="tag tag-yellow">High</span></td>
+        </tr>
+        <tr>
+          <td>Community State When Owner Is Offline</td>
+          <td>The community private key is held by the owner. When they are offline, no one can make authoritative configuration changes.</td>
+          <td>Day-to-day operation does not require the owner. The community runs on CRDT state held by all members. Admin changes simply require the owner to come online, which is acceptable for configuration tasks.</td>
+          <td><span class="tag tag-yellow">High</span></td>
+        </tr>
+        <tr>
+          <td>Moderation at Scale</td>
+          <td>Centralized platforms delete messages and ban users across all clients instantly. In a P2P system, a banned user's data may already be cached by peers who have not yet received the ban signal.</td>
+          <td>Ban lists signed by the community key propagate via gossip. Peers that receive a ban retroactively suppress the banned user's messages in their local view. Not instantaneous, but effective within seconds for online peers.</td>
+          <td><span class="tag tag-yellow">High</span></td>
+        </tr>
+        <tr>
+          <td>History Sync for New Members</td>
+          <td>A new user joining an active community needs to sync potentially a large volume of historical message data from peers.</td>
+          <td>Yjs supports incremental sync and compression. New members sync from the nearest peer with the most complete history. Messages older than a configurable threshold are archived and requested on demand rather than synced automatically.</td>
+          <td><span class="tag tag-blue">Medium</span></td>
+        </tr>
+        <tr>
+          <td>Large File Sharing</td>
+          <td>Sending a large video file over the gossip protocol would generate enormous redundant bandwidth usage across the community overlay.</td>
+          <td>Files are chunked and distributed via a BitTorrent-style protocol. The message contains a hash and metadata. Interested peers download directly from the sender or from other peers who already have the file cached.</td>
+          <td><span class="tag tag-blue">Medium</span></td>
+        </tr>
+        <tr>
+          <td>Voice Quality Variability</td>
+          <td>User devices vary wildly in upload speed, CPU, and network stability compared to Discord's consistent data center connections.</td>
+          <td>Adaptive bitrate codec selection via Opus, which supports 6kbps to 510kbps. Per-connection jitter buffer tuning. Graceful quality degradation rather than disconnection when bandwidth is constrained.</td>
+          <td><span class="tag tag-blue">Medium</span></td>
+        </tr>
+        <tr>
+          <td>Cold Start for Small Communities</td>
+          <td>A community with only two members and both offline has no state available for a third person trying to join via invite link.</td>
+          <td>Community state can optionally be anchored to a seed node that stores the most recent snapshot and serves it to new joiners. The seed node never receives encryption keys and cannot read message content.</td>
+          <td><span class="tag tag-blue">Medium</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section" id="s11">
+  <span class="section-num">11 / Prior Art</span>
+  <h2>What Has Been Tried Before</h2>
+
+  <p>The history of decentralized communication software is a long record of technically competent products that failed to find mainstream adoption. Understanding why they failed is more useful than cataloguing their features.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Platform</th><th>Architecture</th><th>Voice</th><th>UX Quality</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Discord</td>
+          <td>Fully centralized</td>
+          <td>Yes, excellent</td>
+          <td><span class="tag tag-green">Excellent</span></td>
+          <td>500M+ users, dominant</td>
+        </tr>
+        <tr>
+          <td>Matrix / Element</td>
+          <td>Federated (servers talk to servers)</td>
+          <td>Yes, adequate</td>
+          <td><span class="tag tag-yellow">Adequate</span></td>
+          <td>Active, strong niche adoption</td>
+        </tr>
+        <tr>
+          <td>Tox</td>
+          <td>Fully P2P, DHT-based</td>
+          <td>Yes</td>
+          <td><span class="tag tag-red">Poor</span></td>
+          <td>Largely stagnant</td>
+        </tr>
+        <tr>
+          <td>Jami (formerly Ring)</td>
+          <td>P2P with DHT discovery</td>
+          <td>Yes</td>
+          <td><span class="tag tag-red">Poor</span></td>
+          <td>Active, very niche</td>
+        </tr>
+        <tr>
+          <td>Session</td>
+          <td>Decentralized node network</td>
+          <td>No</td>
+          <td><span class="tag tag-yellow">Adequate</span></td>
+          <td>Growing among privacy-focused users</td>
+        </tr>
+        <tr>
+          <td>Retroshare</td>
+          <td>Friend-to-friend P2P</td>
+          <td>Yes</td>
+          <td><span class="tag tag-red">Poor</span></td>
+          <td>Niche, mostly stagnant</td>
+        </tr>
+        <tr>
+          <td>Briar</td>
+          <td>P2P, Tor-routed</td>
+          <td>No</td>
+          <td><span class="tag tag-blue">Functional</span></td>
+          <td>Active, security and journalism focused</td>
+        </tr>
+        <tr>
+          <td><strong>This Proposal</strong></td>
+          <td><strong>Full P2P mesh with gossip</strong></td>
+          <td><strong>Yes, WebRTC</strong></td>
+          <td><strong>Target: Discord-level</strong></td>
+          <td>Pre-implementation</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="compare-grid">
+    <div class="compare-col">
+      <div class="compare-header">
+        <div class="compare-dot dot-red"></div>
+        <h4>Why Tox and Jami Failed at UX</h4>
+      </div>
+      <ul class="compare-list">
+        <li>Exposed network concepts directly to users. Tox IDs are 76-character hex strings. Jami's account system requires understanding what a SIP account is.</li>
+        <li>No community or channel metaphor. Both are fundamentally contact-list applications. Discord users think in servers and channels, not contact lists.</li>
+        <li>Visually dated and inconsistent design that communicated "developer tool" rather than "consumer product."</li>
+        <li>Painful initial setup requiring manual configuration steps that Discord never asks anyone to perform.</li>
+        <li>No viral growth mechanism. No invite links. Growth required manually exchanging complex IDs through external channels.</li>
+      </ul>
+    </div>
+    <div class="compare-col">
+      <div class="compare-header">
+        <div class="compare-dot dot-green"></div>
+        <h4>What This Approach Does Differently</h4>
+      </div>
+      <ul class="compare-list">
+        <li>All P2P and cryptographic complexity is invisible. Users pick a name and join a community. That is the complete mental model required of them.</li>
+        <li>Full community metaphor with servers, channels, roles, and permissions. The user's existing Discord mental model transfers directly.</li>
+        <li>Design is treated as a first-class engineering concern from day one, not an afterthought applied after technical completion.</li>
+        <li>Three-screen onboarding with a hard cap. No configuration required before the user can be in a community and chatting.</li>
+        <li>Click-to-join invite links as the primary growth mechanism, working identically to Discord's from the user's perspective.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>A Note on Matrix</h3>
+
+  <p>Matrix deserves separate treatment because it is the most technically serious prior attempt at decentralized communication. Matrix's federated architecture means anyone can run a Matrix homeserver, and homeservers talk to each other to form a network. This is meaningfully better than centralized Discord. But it still requires someone to run a server, which means there is still a point of control and a point of failure. A Matrix server can be taken down, legally compelled to hand over logs, or simply shut down when someone stops paying the hosting bill.</p>
+
+  <p>The proposed architecture goes further: no server required at all, just users. Additionally, Matrix's primary client Element has improved substantially but still falls short of Discord in terms of raw polish and ease of use. The bar to clear is Discord's UX, not Element's.</p>
+</section>
+
+<section class="section" id="s12">
+  <span class="section-num">12 / Build Roadmap</span>
+  <h2>Build Roadmap</h2>
+
+  <p>The proposed implementation is structured in phases, each of which delivers a working and testable product. No phase requires the completion of a later phase to provide value. This matters because it means early testing with real users can begin within a few months, and the architecture can be validated against real usage before committing to the full build.</p>
+
+  <div class="timeline">
+    <div class="phase">
+      <div class="phase-num">
+        <span class="phase-label">Phase 01</span>
+        <span class="phase-duration">2 to 3 months</span>
+      </div>
+      <div class="phase-content">
+        <h4>Foundation — Identity, P2P, Text</h4>
+        <p>Build the Tauri application shell. Implement Ed25519 identity generation with secure keychain storage. Integrate libp2p for peer discovery via local mDNS and DHT. Build basic text messaging over encrypted P2P channels. Implement the minimum viable community and channel data model using Yjs for state sync. Build the onboarding flow and a functional channel UI.</p>
+        <p>Target outcome: two users on separate machines on different networks can find each other, form a community, and exchange messages without any central server involved at any point.</p>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">
+        <span class="phase-label">Phase 02</span>
+        <span class="phase-duration">1 to 2 months</span>
+      </div>
+      <div class="phase-content">
+        <h4>Voice — WebRTC Integration</h4>
+        <p>Integrate WebRTC for voice channels. Implement STUN-based NAT probing and automatic TURN fallback. Build push-to-talk and voice activity detection. Add per-user audio controls and visual speaking indicators. Implement the SFU election protocol for groups above eight participants, with automatic re-election when the current relay disconnects.</p>
+        <p>Target outcome: voice calls work reliably across different network configurations, including corporate firewalls and carrier-grade NAT, without any manual configuration by the user.</p>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">
+        <span class="phase-label">Phase 03</span>
+        <span class="phase-duration">1 to 2 months</span>
+      </div>
+      <div class="phase-content">
+        <h4>Communities — Full Feature Set</h4>
+        <p>Implement full community creation with cryptographic ownership. Build invite link generation and decoding. Add role and permission system with cryptographic signatures. Implement ban lists and moderation tools. Build message history sync for new members joining existing communities. Add file sharing via chunked P2P transfer with BitTorrent-style peer redistribution. Add emoji reactions and basic rich text formatting.</p>
+        <p>Target outcome: functional parity with Discord's core community features, without any servers involved in storing or routing community data.</p>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">
+        <span class="phase-label">Phase 04</span>
+        <span class="phase-duration">1 month</span>
+      </div>
+      <div class="phase-content">
+        <h4>Polish — Design and Onboarding</h4>
+        <p>Full design system implementation with the hyper-minimal aesthetic. Framer Motion transitions and micro-interactions throughout the interface. Finalize the three-screen onboarding flow with a hard cap on steps. Build the connection health indicator. Implement auto-update pipeline via Tauri's built-in updater. Code signing and notarization for macOS and Windows. Closed beta distribution to test users.</p>
+        <p>Target outcome: a new user can download the application and be actively chatting in a community within 60 seconds, with zero manual configuration required at any point.</p>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">
+        <span class="phase-label">Phase 05</span>
+        <span class="phase-duration">Ongoing</span>
+      </div>
+      <div class="phase-content">
+        <h4>Scale and Ecosystem</h4>
+        <p>Mobile clients for iOS and Android. Optional IP relay mode for users who want to hide their address. Community discovery layer so users can find public communities to join. Plugin and extension API for community customization. Screen sharing via WebRTC data channels. DHT seeding program to reduce dependence on bootstrap seed nodes as the network matures. Accessibility improvements and localization into additional languages.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="s13">
+  <span class="section-num">13 / Conclusion</span>
+  <h2>A Private Internet, Shaped Like Discord</h2>
+
+  <p>Every technical component described in this paper exists today, is open source, and has been proven to work at scale in real production environments. The DHT algorithms proposed for peer discovery are the same ones that have routed billions of BitTorrent connections for over two decades. The WebRTC voice protocols are embedded in every modern web browser and used daily by hundreds of millions of people. The CRDT data structures handling distributed state consistency are used in collaborative tools serving millions of users. The cryptographic primitives providing end-to-end privacy are the ones protecting Signal conversations globally.</p>
+
+  <p>The challenge in building this is not engineering research. Nobody needs to invent a new protocol or prove a new theorem. The challenge is product design and integration: taking all these mature, well-understood components and assembling them into something that ordinary people find as natural to use as Discord, without any of the privacy compromises Discord requires of its users.</p>
+
+  <p>That is the gap in the market. Tox proved P2P communication works. Jami proved DHT-based discovery works. Matrix proved that a meaningful portion of the population wants an alternative to centralized platforms. None of them proved you can do all of this and deliver a product that a non-technical user finds genuinely enjoyable. That proof of concept has not been built yet, which is what makes it worth building now.</p>
+
+  <div class="callout">
+    <p>The internet was designed to be decentralized. A network of peers, routing around failures, with no single point of control. Somewhere between 1995 and 2015, the social layer of the internet forgot this. The platform proposed in this paper is a return to that original design, built to the product standards of 2025, for people who should never need to understand any of it.</p>
+  </div>
+
+  <p>The timing is favorable in a way it was not five years ago. Public trust in centralized platforms has declined as data breach after data breach, ban after ban, and policy change after policy change have made the costs of centralization concrete rather than theoretical. The audience for a genuinely private, genuinely resilient community platform exists and is growing.</p>
+
+  <p>What that audience has been waiting for is something that does not ask users to care about the underlying technology in order to benefit from it. A platform whose privacy properties are a consequence of its architecture, not a feature the user has to consciously enable. Something unstoppable that happens to feel like the apps people already love.</p>
+
+  <p>That is what this paper proposes to build.</p>
+
+  <div class="table-wrap" style="margin-top:48px">
+    <table>
+      <thead>
+        <tr><th>Dimension</th><th>Discord</th><th>This Platform</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Data Ownership</td><td>Discord's servers, their control</td><td>Your device, your control</td></tr>
+        <tr><td>Censorship Resistance</td><td>None. TOS violations remove communities instantly.</td><td>Structural. There is nothing to take down.</td></tr>
+        <tr><td>Government Compliance Risk</td><td>High. Subpoenas compel data handover.</td><td>Near-zero. No central data store to subpoena.</td></tr>
+        <tr><td>Platform Downtime</td><td>Their outages become everyone's problem</td><td>Failures are isolated to affected peers only</td></tr>
+        <tr><td>Infrastructure Cost</td><td>Hundreds of millions in annual spend</td><td>Near-zero, absorbed by the user base</td></tr>
+        <tr><td>Scalability Model</td><td>More users require more servers</td><td>More users strengthen the network</td></tr>
+        <tr><td>Data Portability</td><td>Effectively none</td><td>Complete. Users hold their own data.</td></tr>
+        <tr><td>Setup Friction</td><td>Near-zero</td><td>Target: near-zero, no exceptions</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="footer-text">
+    Decentralized Community Communication<br />
+    Original idea and authorship by Dhawal Ranka<br />
+    Technical Research Paper, Version 1.0, 2025
+  </div>
+  <div class="footer-mark">§</div>
+</footer>
+
+</body>
+</html>

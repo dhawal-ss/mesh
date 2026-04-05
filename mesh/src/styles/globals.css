@@ -1,0 +1,153 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+
+  /* ── Discord-inspired surface hierarchy ── */
+  --bg-tertiary: #1e1f22;     /* server bar, inputs */
+  --bg-secondary: #2b2d31;    /* channel sidebar, member list */
+  --bg-primary: #313338;      /* main chat area */
+  --bg-modifier-hover: #2e3035;
+  --bg-modifier-active: #404249;
+  --bg-modifier-selected: #404249;
+
+  /* ── Elevated surfaces ── */
+  --bg-floating: #111214;     /* tooltips, popovers */
+  --bg-overlay: rgba(0, 0, 0, 0.7);
+
+  /* ── Borders ── */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.1);
+  --channel-divider: #3f4147;
+
+  /* ── Text hierarchy ── */
+  --text-normal: #dbdee1;
+  --text-primary: #f2f3f5;
+  --text-secondary: #b5bac1;
+  --text-muted: #949ba4;
+  --text-link: #00a8fc;
+
+  /* ── Brand / Accent ── */
+  --accent: #d4c0a1;
+  --accent-bright: #efe0c3;
+  --accent-dim: #8d7d67;
+
+  /* ── Status colors ── */
+  --green: #23a559;
+  --red: #da373c;
+  --yellow: #f0b232;
+  --blue: #5865f2;
+
+  /* ── Typography ── */
+  --font-sans: 'Inter', 'gg sans', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'Consolas', 'Andale Mono WT', 'Andale Mono', 'Menlo', monospace;
+
+  /* ── Radii (compact, Discord-like) ── */
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --radius-xl: 16px;
+
+  /* ── Transitions ── */
+  --transition-fast: 100ms ease;
+  --transition-normal: 200ms ease;
+
+  /* ── Shadows ── */
+  --shadow-elevation-low: 0 1px 0 rgba(0, 0, 0, 0.2), 0 1.5px 0 rgba(0, 0, 0, 0.05), 0 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-elevation-high: 0 8px 16px rgba(0, 0, 0, 0.24);
+  --shadow-floating: 0 0 0 1px rgba(0, 0, 0, 0.15), 0 8px 16px rgba(0, 0, 0, 0.3);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-primary);
+  color: var(--text-normal);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.375;
+  letter-spacing: 0;
+}
+
+/* ── Scrollbar — thin Discord-style ── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 4px 0;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1a1b1e;
+  border-radius: 100px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  min-height: 40px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #27292d;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::selection {
+  background: rgba(88, 101, 242, 0.3);
+}
+
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+}
+
+button,
+input,
+a,
+textarea {
+  -webkit-app-region: no-drag;
+  color: inherit;
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+  border-radius: var(--radius-md);
+}
+
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#root {
+  isolation: isolate;
+}

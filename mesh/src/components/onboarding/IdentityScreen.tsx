@@ -1,0 +1,170 @@
+import { useEffect, useMemo, useState } from 'react'
+import { motion } from 'framer-motion'
+import clsx from 'clsx'
+import { transitions } from '../../lib/motion'
+import { Button } from '../ui/Button'
+import { useIdentityStore } from '../../store/identity'
+import type { OnboardingFlowProps } from './types'
+
+type IdentityScreenProps = Pick<OnboardingFlowProps, 'onGenerateIdentity'> & {
+  onNext: () => void
+}
+
+const WAIT_MS = 950
+
+const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms))
+
+function formatFingerprint(publicKey?: string) {
+  if (!publicKey) {
+    return 'Pending'
+  }
+
+  return `${publicKey.slice(0, 6)}...${publicKey.slice(-6)}`
+}
+
+export function IdentityScreen({ onGenerateIdentity, onNext }: IdentityScreenProps) {
+  const identity = useIdentityStore((s) => s.identity)
+  const [attempt, setAttempt] = useState(0)
+  const [phase, setPhase] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
+  const [detail, setDetail] = useState('Preparing a local identity')
+
+  const steps = useMemo(
+    () => ['Creating local keys', 'Locking identity to this device', 'Finishing'],
+    []
+  )
+
+  useEffect(() => {
+    let alive = true
+
+    const run = async () => {
+      setPhase('running')
+      setDetail('Preparing a local identity')
+
+      try {
+        const existing = useIdentityStore.getState().identity
+        if (existing?.publicKey) {
+          setDetail('Device key already exists')
+          setPhase('done')
+          return
+        }
+
+        const work = onGenerateIdentity?.() ?? Promise.resolve()
+        await Promise.all([work, wait(WAIT_MS)])
+        if (!alive) return
+        setDetail('Device key created')
+        setPhase('done')
+      } catch (error) {
+        if (!alive) return
+        setPhase('error')
+        setDetail(error instanceof Error ? error.message : 'Unable to create identity')
+      }
+    }
+
+    void run()
+
+    return () => {
+      alive = false
+    }
+  }, [attempt])
+
+  return (
+    <div className="space-y-8">
+      <div className="space-y-2">
+        <p className="text-2xs uppercase tracking-[0.35em] text-muted">Step 1 of 3</p>
+        <h1 className="text-[clamp(2rem,4vw,2.6rem)] font-semibold tracking-tight text-primary">
+          Welcome to Mesh
+        </h1>
+        <p className="max-w-sm text-sm leading-6 text-secondary">
+          We are creating your identity locally. Nothing leaves this device.
+        </p>
+      </div>
+
+      <motion.div
+        className="overflow-hidden rounded-lg bg-bg-primary p-4"
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={transitions.softSpring}
+      >
+        <div className="mb-3 flex items-center justify-between gap-4">
+          <span className="text-sm font-medium text-primary">{detail}</span>
+          <span className="text-2xs uppercase tracking-[0.3em] text-muted">
+            {phase === 'done' ? 'Created' : phase === 'error' ? 'Check' : 'Private'}
+          </span>
+        </div>
+
+        <div className="h-1 overflow-hidden rounded-full bg-bg-modifier-hover">
+          <motion.div
+            className="h-full w-1/3 rounded-full bg-blue"
+            animate={
+              phase === 'done'
+                ? { x: ['-20%', '120%'], opacity: [0.45, 0.95] }
+                : { x: ['-35%', '115%'] }
+            }
+            transition={
+              phase === 'done'
+                ? { duration: 0.7, ease: [0.22, 1, 0.36, 1] }
+                : { duration: 1.15, repeat: Infinity, ease: 'linear' }
+            }
+          />
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {steps.map((step, index) => (
+            <motion.span
+              key={step}
+              className={clsx(
+                'rounded-md px-2.5 py-1 text-2xs uppercase tracking-[0.24em]',
+                index === 0
+                  ? 'bg-bg-modifier-hover text-secondary'
+                  : 'text-muted'
+              )}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2, delay: index * 0.12 }}
+            >
+              {step}
+            </motion.span>
+          ))}
+        </div>
+
+        {phase === 'done' && (
+          <motion.div
+            className="mt-5 rounded-lg bg-green/10 border border-green/20 p-4"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={transitions.softSpring}
+          >
+            <p className="text-2xs uppercase tracking-[0.32em] text-muted">Device key created</p>
+            <p className="mt-2 text-sm text-primary">
+              This identity now lives on this device and will sign your activity locally.
+            </p>
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-md bg-bg-tertiary px-3 py-2">
+              <span className="text-2xs uppercase tracking-[0.3em] text-muted">Fingerprint</span>
+              <span className="font-mono text-xs text-primary">{formatFingerprint(identity?.publicKey)}</span>
+            </div>
+          </motion.div>
+        )}
+      </motion.div>
+
+      {phase === 'done' ? (
+        <Button onClick={onNext} className="w-full">
+          Continue to profile
+        </Button>
+      ) : (
+        <Button disabled className="w-full">
+          {phase === 'error' ? 'Identity creation failed' : 'Creating your device key...'}
+        </Button>
+      )}
+
+      {phase === 'error' && (
+        <button
+          type="button"
+          onClick={() => setAttempt((value) => value + 1)}
+          className="text-sm text-secondary transition-colors hover:text-primary"
+        >
+          Retry identity generation
+        </button>
+      )}
+    </div>
+  )
+}

@@ -1,0 +1,762 @@
+import SimplePeer from 'simple-peer'
+import {
+  getIdentity,
+  isTauriRuntime,
+  joinVoice,
+  leaveVoice,
+  sendVoiceSignal,
+} from './bridge'
+import {
+  buildPeerFromMember,
+  normalizeVoiceMember,
+  normalizeVoiceSessionSnapshot,
+  shouldConnectToPeer,
+  shouldInitiatePeerConnection,
+  shortVoiceLabel,
+  voiceColorForKey,
+} from './voice-session'
+import type {
+  Peer,
+  VoiceConnectionState,
+  VoiceMemberSnapshot,
+  VoiceSessionEvent,
+  VoiceSessionSnapshot,
+  VoiceSignalEvent,
+} from '../types/ipc'
+
+type PeerConnectionRecord = {
+  peer: SimplePeer.Instance
+  initiator: boolean
+}
+
+// Reconnect attempt counts per peer for exponential backoff
+const RECONNECT_BASE_DELAY_MS = 500
+const RECONNECT_MAX_DELAY_MS = 10_000
+
+export interface VoiceEngineHandlers {
+  onSessionSnapshot?: (snapshot: VoiceSessionSnapshot) => void
+  onPeerUpsert?: (peer: Peer) => void
+  onPeerRemove?: (publicKey: string) => void
+  onConnectionState?: (state: VoiceConnectionState, reason?: string | null) => void
+  onError?: (message: string) => void
+}
+
+export class VoiceEngine {
+  private readonly peers = new Map<string, PeerConnectionRecord>()
+  private readonly peerViews = new Map<string, Peer>()
+  private localStream: MediaStream | null = null
+  private localPublicKey: string | null = null
+  private sessionSnapshot: VoiceSessionSnapshot | null = null
+  private topologyRebuildTimer: number | null = null
+  private readonly peerReconnectTimers = new Map<string, number>()
+  private readonly peerReconnectAttempts = new Map<string, number>()
+  // Relay peer stores incoming streams from other peers to forward to new connections
+  private readonly relayReceivedStreams = new Map<string, MediaStream>()
+  private destroyed = false
+  private audioContext: AudioContext | null = null
+  private readonly audioAnalysers = new Map<string, { analyser: AnalyserNode; source: MediaStreamAudioSourceNode; interval: number }>()
+
+  constructor(
+    private readonly communityId: string,
+    private readonly channelId: string,
+    private readonly handlers: VoiceEngineHandlers = {},
+  ) {}
+
+  async start(): Promise<VoiceSessionSnapshot | null> {
+    this.destroyed = false
+    this.handlers.onConnectionState?.('connecting')
+
+    const identity = await getIdentity().catch(() => null)
+    this.localPublicKey = identity?.publicKey ?? null
+
+    if (!this.localPublicKey) {
+      this.handlers.onError?.('No local identity is available for voice')
+      this.handlers.onConnectionState?.('disconnected', 'missing identity')
+      return null
+    }
+
+    try {
+      this.localStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 48_000 },
+        video: false,
+      })
+      this.startSpeakingDetection(this.localPublicKey, this.localStream)
+      this.handlers.onConnectionState?.('connecting')
+    } catch (error) {
+      this.localStream = null
+      this.handlers.onConnectionState?.('degraded', 'microphone unavailable')
+      console.error('VoiceEngine: microphone access failed, continuing in receive-only mode', error)
+    }
+
+    if (!isTauriRuntime()) {
+      const snapshot = normalizeVoiceSessionSnapshot(
+        {
+          communityId: this.communityId,
+          channelId: this.channelId,
+          sessionEpoch: Date.now(),
+          memberCount: 1,
+          members: [
+            normalizeVoiceMember({
+              publicKey: this.localPublicKey,
+              isLocal: true,
+              displayName: identity?.displayName ?? shortVoiceLabel(this.localPublicKey),
+              avatarColor: identity?.avatarColor ?? voiceColorForKey(this.localPublicKey),
+              joinedAt: new Date().toISOString(),
+              lastSeenAt: new Date().toISOString(),
+            }),
+          ],
+          relay: { relayRequired: false, relayCandidatePublicKey: null },
+          updatedAt: new Date().toISOString(),
+          localPublicKey: this.localPublicKey,
+        },
+        this.localPublicKey,
+      )
+
+      this.applySessionSnapshot(snapshot)
+      this.handlers.onConnectionState?.('connected')
+      return snapshot
+    }
+
+    const snapshot = await joinVoice(this.communityId, this.channelId).catch((error) => {
+      const message = error instanceof Error ? error.message : 'Failed to join voice channel'
+      this.handlers.onError?.(message)
+      this.handlers.onConnectionState?.('disconnected', message)
+      return null
+    })
+
+    if (snapshot) {
+      this.applySessionSnapshot(snapshot)
+      this.handlers.onConnectionState?.(this.sessionSnapshot?.memberCount ? 'connected' : 'connecting')
+    }
+
+    return snapshot
+  }
+
+  applySessionSnapshot(snapshot: VoiceSessionSnapshot): void {
+    if (
+      this.destroyed ||
+      snapshot.communityId !== this.communityId ||
+      snapshot.channelId !== this.channelId
+    ) {
+      return
+    }
+
+    const normalized = normalizeVoiceSessionSnapshot(snapshot, this.localPublicKey)
+    if (this.isSameSnapshot(normalized, this.sessionSnapshot)) {
+      return
+    }
+
+    const previousRelay = this.sessionSnapshot?.relay.relayCandidatePublicKey ?? null
+    const nextRelay = normalized.relay.relayCandidatePublicKey ?? null
+    const epochChanged =
+      this.sessionSnapshot !== null &&
+      this.sessionSnapshot.sessionEpoch !== normalized.sessionEpoch
+    const topologyChanged = epochChanged || previousRelay !== nextRelay
+
+    this.sessionSnapshot = normalized
+    this.syncPeerViews(normalized)
+    this.handlers.onSessionSnapshot?.(normalized)
+
+    if (topologyChanged) {
+      this.handlers.onConnectionState?.('reconnecting', epochChanged ? 'session epoch changed' : 'relay candidate changed')
+      this.resetPeerConnections()
+      this.scheduleRebuild(normalized)
+      return
+    }
+
+    this.reconcilePeerConnections(normalized)
+    this.handlers.onConnectionState?.(normalized.memberCount > 0 ? 'connected' : 'connecting')
+  }
+
+  applySessionEvent(event: VoiceSessionEvent): void {
+    if (event.communityId !== this.communityId || event.channelId !== this.channelId || this.destroyed) {
+      return
+    }
+
+    this.applySessionSnapshot(event.snapshot)
+  }
+
+  handleLegacyJoin(payload: { author?: string; communityId?: string; channelId?: string }): void {
+    const author = payload.author?.trim()
+    if (
+      !author ||
+      payload.communityId !== this.communityId ||
+      payload.channelId !== this.channelId ||
+      author === this.localPublicKey ||
+      this.sessionSnapshot
+    ) {
+      return
+    }
+
+    const snapshot = this.buildSyntheticSnapshot([author], [])
+    this.applySessionSnapshot(snapshot)
+  }
+
+  handleLegacyLeave(payload: { author?: string; communityId?: string; channelId?: string }): void {
+    const author = payload.author?.trim()
+    if (
+      !author ||
+      payload.communityId !== this.communityId ||
+      payload.channelId !== this.channelId ||
+      !this.sessionSnapshot
+    ) {
+      return
+    }
+
+    const members = this.sessionSnapshot.members.filter((member) => member.publicKey !== author)
+    this.applySessionSnapshot(
+      normalizeVoiceSessionSnapshot(
+        {
+          ...this.sessionSnapshot,
+          members,
+          memberCount: members.length,
+          sessionEpoch: this.sessionSnapshot.sessionEpoch + 1,
+          updatedAt: new Date().toISOString(),
+        },
+        this.localPublicKey,
+      ),
+    )
+  }
+
+  handleVoiceSignal(event: VoiceSignalEvent): void {
+    if (this.destroyed || !this.localPublicKey) {
+      return
+    }
+
+    if (event.communityId !== this.communityId || event.channelId !== this.channelId) {
+      return
+    }
+
+    const remotePublicKey = event.sourcePublicKey
+    const signal = event.signal
+
+    if (!remotePublicKey || remotePublicKey === this.localPublicKey || !signal) {
+      return
+    }
+
+    if (event.targetPeer && event.targetPeer !== this.localPublicKey) {
+      return
+    }
+
+    const peer = this.ensurePeerConnection(remotePublicKey, false)
+    peer.signal(signal as SimplePeer.SignalData)
+  }
+
+  setMuted(muted: boolean): void {
+    if (!this.localStream) {
+      return
+    }
+
+    for (const track of this.localStream.getAudioTracks()) {
+      track.enabled = !muted
+    }
+  }
+
+  async destroy(): Promise<void> {
+    this.destroyed = true
+
+    if (this.topologyRebuildTimer !== null) {
+      window.clearTimeout(this.topologyRebuildTimer)
+      this.topologyRebuildTimer = null
+    }
+
+    for (const timer of this.peerReconnectTimers.values()) {
+      window.clearTimeout(timer)
+    }
+    this.peerReconnectTimers.clear()
+
+    for (const publicKey of this.audioAnalysers.keys()) {
+      this.stopSpeakingDetection(publicKey)
+    }
+
+    if (this.audioContext) {
+      this.audioContext.close().catch(() => {})
+      this.audioContext = null
+    }
+
+    for (const record of this.peers.values()) {
+      record.peer.destroy()
+    }
+    this.peers.clear()
+    this.peerViews.clear()
+    this.peerReconnectAttempts.clear()
+    this.relayReceivedStreams.clear()
+
+    if (this.localStream) {
+      this.localStream.getTracks().forEach((track) => track.stop())
+      this.localStream = null
+    }
+
+    if (isTauriRuntime()) {
+      await leaveVoice(this.communityId, this.channelId).catch((error) => {
+        console.error('VoiceEngine: failed to leave voice channel cleanly', error)
+      })
+    }
+
+    this.handlers.onConnectionState?.('disconnected')
+  }
+
+  private reconcilePeerConnections(snapshot: VoiceSessionSnapshot): void {
+    if (!this.localPublicKey) {
+      return
+    }
+
+    const relayPublicKey = snapshot.relay.relayCandidatePublicKey ?? snapshot.relayElection?.relayPublicKey ?? null
+    const memberKeys = new Set(snapshot.members.map((member) => member.publicKey))
+
+    for (const member of snapshot.members) {
+      if (member.publicKey === this.localPublicKey) {
+        continue
+      }
+
+      const shouldConnect = shouldConnectToPeer(
+        this.localPublicKey,
+        member.publicKey,
+        relayPublicKey,
+        snapshot.memberCount,
+      )
+
+      if (!shouldConnect) {
+        const existing = this.peers.get(member.publicKey)
+        if (existing) {
+          existing.peer.destroy()
+          this.peers.delete(member.publicKey)
+        }
+        continue
+      }
+
+      const shouldInitiate = shouldInitiatePeerConnection(
+        this.localPublicKey,
+        member.publicKey,
+        relayPublicKey,
+        snapshot.memberCount,
+      )
+      const existing = this.peers.get(member.publicKey)
+
+      if (existing && existing.initiator !== shouldInitiate) {
+        existing.peer.destroy()
+        this.peers.delete(member.publicKey)
+      }
+
+      if (shouldInitiate && !this.peers.has(member.publicKey)) {
+        this.ensurePeerConnection(member.publicKey, true)
+      }
+    }
+
+    for (const [publicKey, record] of this.peers.entries()) {
+      if (publicKey === this.localPublicKey) {
+        continue
+      }
+
+      if (!memberKeys.has(publicKey)) {
+        record.peer.destroy()
+        this.peers.delete(publicKey)
+        this.peerViews.delete(publicKey)
+        this.handlers.onPeerRemove?.(publicKey)
+      }
+    }
+  }
+
+  private ensurePeerConnection(remotePublicKey: string, initiator: boolean): SimplePeer.Instance {
+    const existing = this.peers.get(remotePublicKey)
+    if (existing) {
+      return existing.peer
+    }
+
+    const peer = new SimplePeer({
+      initiator,
+      stream: this.localStream ?? undefined,
+      trickle: true,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+        ],
+      },
+    })
+
+    this.peers.set(remotePublicKey, { peer, initiator })
+    this.emitPeerView(remotePublicKey, {
+      connectionState: initiator ? 'connecting' : 'reconnecting',
+    })
+
+    peer.on('signal', (signal) => {
+      sendVoiceSignal(remotePublicKey, signal, this.communityId, this.channelId).catch((error) => {
+        console.error('VoiceEngine: failed to send voice signal', error)
+      })
+    })
+
+    peer.on('connect', () => {
+      this.peerReconnectAttempts.delete(remotePublicKey)
+      this.emitPeerView(remotePublicKey, { connectionState: 'connected' })
+
+      // If we are the relay, add all already-received streams to the newly connected peer
+      if (this.isLocalPeerRelay()) {
+        let addedTracks = false
+        for (const [senderKey, stream] of this.relayReceivedStreams.entries()) {
+          if (senderKey !== remotePublicKey) {
+            for (const track of stream.getAudioTracks()) {
+              peer.addTrack(track, stream)
+              addedTracks = true
+            }
+          }
+        }
+        // Force SDP renegotiation so the new tracks are transmitted
+        if (addedTracks) {
+          ;(peer as unknown as { negotiate: () => void }).negotiate()
+        }
+      }
+    })
+
+    peer.on('stream', (remoteStream) => {
+      this.emitPeerView(remotePublicKey, {
+        stream: remoteStream,
+        connectionState: 'connected',
+      })
+      this.startSpeakingDetection(remotePublicKey, remoteStream)
+
+      // Relay forwarding: if we are the relay, store the stream and forward to all other peers
+      if (this.isLocalPeerRelay()) {
+        this.relayReceivedStreams.set(remotePublicKey, remoteStream)
+        for (const [otherKey, otherRecord] of this.peers.entries()) {
+          if (otherKey === remotePublicKey || otherKey === this.localPublicKey) {
+            continue
+          }
+          for (const track of remoteStream.getAudioTracks()) {
+            otherRecord.peer.addTrack(track, remoteStream)
+          }
+          // Force SDP renegotiation so the forwarded tracks are transmitted
+          ;(otherRecord.peer as unknown as { negotiate: () => void }).negotiate()
+        }
+      }
+    })
+
+    peer.on('error', (error) => {
+      console.error(`VoiceEngine: peer error for ${remotePublicKey}`, error)
+      this.handlePeerDisconnect(remotePublicKey, 'error')
+    })
+
+    peer.on('close', () => {
+      this.handlePeerDisconnect(remotePublicKey, 'close')
+    })
+
+    return peer
+  }
+
+  private isLocalPeerRelay(): boolean {
+    if (!this.sessionSnapshot || !this.localPublicKey) {
+      return false
+    }
+    const relayPublicKey =
+      this.sessionSnapshot.relay.relayCandidatePublicKey ??
+      this.sessionSnapshot.relayElection?.relayPublicKey ??
+      null
+    return (
+      this.localPublicKey === relayPublicKey &&
+      this.sessionSnapshot.memberCount > 8
+    )
+  }
+
+  private handlePeerDisconnect(remotePublicKey: string, reason: 'error' | 'close'): void {
+    const record = this.peers.get(remotePublicKey)
+    if (!record) {
+      return
+    }
+
+    const pendingReconnect = this.peerReconnectTimers.get(remotePublicKey)
+    if (pendingReconnect !== undefined) {
+      window.clearTimeout(pendingReconnect)
+      this.peerReconnectTimers.delete(remotePublicKey)
+    }
+
+    this.stopSpeakingDetection(remotePublicKey)
+    record.peer.destroy()
+    this.peers.delete(remotePublicKey)
+
+    // Clean up relay stream for this peer
+    if (this.relayReceivedStreams.has(remotePublicKey)) {
+      this.relayReceivedStreams.delete(remotePublicKey)
+    }
+
+    const shouldRebuild =
+      this.sessionSnapshot !== null &&
+      this.localPublicKey !== null &&
+      shouldConnectToPeer(
+        this.localPublicKey,
+        remotePublicKey,
+        this.sessionSnapshot.relay.relayCandidatePublicKey ?? this.sessionSnapshot.relayElection?.relayPublicKey ?? null,
+        this.sessionSnapshot.memberCount,
+      )
+
+    this.emitPeerView(remotePublicKey, {
+      connectionState: shouldRebuild ? 'reconnecting' : 'disconnected',
+      stream: undefined,
+    })
+
+    if (shouldRebuild) {
+      this.scheduleReconnect(remotePublicKey, reason)
+    }
+  }
+
+  private scheduleReconnect(remotePublicKey: string, reason: string): void {
+    this.handlers.onConnectionState?.('reconnecting', reason)
+    const previous = this.peerReconnectTimers.get(remotePublicKey)
+    if (previous !== undefined) {
+      window.clearTimeout(previous)
+    }
+
+    const attempt = (this.peerReconnectAttempts.get(remotePublicKey) ?? 0) + 1
+    this.peerReconnectAttempts.set(remotePublicKey, attempt)
+    const delay = Math.min(
+      RECONNECT_BASE_DELAY_MS * Math.pow(2, attempt - 1),
+      RECONNECT_MAX_DELAY_MS,
+    )
+
+    const timer = window.setTimeout(() => {
+      this.peerReconnectTimers.delete(remotePublicKey)
+
+      if (this.destroyed || !this.sessionSnapshot || !this.localPublicKey) {
+        return
+      }
+
+      const member = this.sessionSnapshot.members.find((item) => item.publicKey === remotePublicKey)
+      if (!member) {
+        return
+      }
+
+      const relayPublicKey =
+        this.sessionSnapshot.relay.relayCandidatePublicKey ??
+        this.sessionSnapshot.relayElection?.relayPublicKey ??
+        null
+
+      const shouldConnect = shouldConnectToPeer(
+        this.localPublicKey,
+        remotePublicKey,
+        relayPublicKey,
+        this.sessionSnapshot.memberCount,
+      )
+
+      if (shouldConnect) {
+        this.ensurePeerConnection(
+          remotePublicKey,
+          shouldInitiatePeerConnection(
+            this.localPublicKey,
+            remotePublicKey,
+            relayPublicKey,
+            this.sessionSnapshot.memberCount,
+          ),
+        )
+      }
+
+      this.handlers.onConnectionState?.('connected')
+    }, delay)
+
+    this.peerReconnectTimers.set(remotePublicKey, timer)
+  }
+
+  private scheduleRebuild(snapshot: VoiceSessionSnapshot): void {
+    if (this.topologyRebuildTimer !== null) {
+      window.clearTimeout(this.topologyRebuildTimer)
+    }
+
+    this.topologyRebuildTimer = window.setTimeout(() => {
+      this.topologyRebuildTimer = null
+
+      if (this.destroyed || !this.sessionSnapshot || this.sessionSnapshot.sessionEpoch !== snapshot.sessionEpoch) {
+        return
+      }
+
+      this.reconcilePeerConnections(snapshot)
+      this.handlers.onConnectionState?.(snapshot.memberCount > 0 ? 'connected' : 'connecting')
+    }, 180)
+  }
+
+  private resetPeerConnections(): void {
+    for (const record of this.peers.values()) {
+      record.peer.destroy()
+    }
+    this.peers.clear()
+
+    for (const timer of this.peerReconnectTimers.values()) {
+      window.clearTimeout(timer)
+    }
+    this.peerReconnectTimers.clear()
+    this.peerReconnectAttempts.clear()
+    this.relayReceivedStreams.clear()
+  }
+
+  private syncPeerViews(snapshot: VoiceSessionSnapshot): void {
+    const members = snapshot.members
+    const memberKeys = new Set(members.map((member) => member.publicKey))
+
+    for (const member of members) {
+      const existing = this.peerViews.get(member.publicKey)
+      const next = buildPeerFromMember(member, existing)
+      this.peerViews.set(member.publicKey, next)
+      this.handlers.onPeerUpsert?.(next)
+    }
+
+    for (const publicKey of Array.from(this.peerViews.keys())) {
+      if (publicKey === this.localPublicKey) {
+        continue
+      }
+
+      if (!memberKeys.has(publicKey)) {
+        this.peerViews.delete(publicKey)
+        this.handlers.onPeerRemove?.(publicKey)
+      }
+    }
+  }
+
+  private startSpeakingDetection(publicKey: string, stream: MediaStream): void {
+    // Stop any existing detection for this key before starting a new one
+    this.stopSpeakingDetection(publicKey)
+
+    if (!this.audioContext) {
+      this.audioContext = new AudioContext()
+    }
+
+    // Resume AudioContext if it was suspended (browsers require user gesture)
+    if (this.audioContext.state === 'suspended') {
+      this.audioContext.resume().catch(() => {})
+    }
+
+    const source = this.audioContext.createMediaStreamSource(stream)
+    const analyser = this.audioContext.createAnalyser()
+    analyser.fftSize = 512
+    analyser.smoothingTimeConstant = 0.3
+    source.connect(analyser)
+
+    const frequencyData = new Uint8Array(analyser.frequencyBinCount)
+    let wasSpeaking = false
+    const SPEAKING_THRESHOLD = 15
+
+    const interval = window.setInterval(() => {
+      analyser.getByteFrequencyData(frequencyData)
+
+      let sum = 0
+      for (let i = 0; i < frequencyData.length; i++) {
+        sum += frequencyData[i]
+      }
+      const average = sum / frequencyData.length
+      const isSpeaking = average > SPEAKING_THRESHOLD
+
+      if (isSpeaking !== wasSpeaking) {
+        wasSpeaking = isSpeaking
+        this.emitPeerView(publicKey, { speaking: isSpeaking })
+      }
+    }, 100)
+
+    this.audioAnalysers.set(publicKey, { analyser, source, interval })
+  }
+
+  private stopSpeakingDetection(publicKey: string): void {
+    const entry = this.audioAnalysers.get(publicKey)
+    if (!entry) {
+      return
+    }
+
+    window.clearInterval(entry.interval)
+    entry.source.disconnect()
+    entry.analyser.disconnect()
+    this.audioAnalysers.delete(publicKey)
+  }
+
+  private emitPeerView(publicKey: string, patch: Partial<Peer>): void {
+    const member = this.memberForPublicKey(publicKey)
+    const existing = this.peerViews.get(publicKey)
+    const next = {
+      ...buildPeerFromMember(member, existing),
+      ...patch,
+      publicKey,
+      peerId: patch.peerId ?? existing?.peerId ?? member.peerId ?? publicKey,
+    }
+
+    this.peerViews.set(publicKey, next)
+    this.handlers.onPeerUpsert?.(next)
+  }
+
+  private memberForPublicKey(publicKey: string): VoiceMemberSnapshot {
+    const snapshotMember = this.sessionSnapshot?.members.find((member) => member.publicKey === publicKey)
+    if (snapshotMember) {
+      return snapshotMember
+    }
+
+    const fallbackName = shortVoiceLabel(publicKey)
+    const color = voiceColorForKey(publicKey)
+    const now = new Date().toISOString()
+
+    return normalizeVoiceMember(
+      {
+        publicKey,
+        displayName: fallbackName,
+        avatarColor: color,
+        joinedAt: now,
+        lastSeenAt: now,
+        isLocal: publicKey === this.localPublicKey,
+        connectionState: 'connecting',
+      },
+      publicKey,
+      publicKey === this.localPublicKey,
+    )
+  }
+
+  private buildSyntheticSnapshot(memberKeys: string[], leftKeys: string[]): VoiceSessionSnapshot {
+    const now = new Date().toISOString()
+    const currentMembers = this.sessionSnapshot?.members ?? []
+    const nextMembers = [...currentMembers.filter((member) => !leftKeys.includes(member.publicKey))]
+
+    for (const publicKey of memberKeys) {
+      if (!nextMembers.some((member) => member.publicKey === publicKey)) {
+        nextMembers.push(this.memberForPublicKey(publicKey))
+      }
+    }
+
+    return normalizeVoiceSessionSnapshot(
+        {
+          communityId: this.communityId,
+          channelId: this.channelId,
+          sessionEpoch: this.sessionSnapshot?.sessionEpoch ?? Date.now(),
+        memberCount: nextMembers.length,
+        members: nextMembers,
+        relay: {
+          relayRequired: nextMembers.length > 8,
+          relayCandidatePublicKey: null,
+        },
+        updatedAt: now,
+        localPublicKey: this.localPublicKey,
+      },
+      this.localPublicKey,
+    )
+  }
+
+  private isSameSnapshot(left: VoiceSessionSnapshot | null, right: VoiceSessionSnapshot | null): boolean {
+    if (!left || !right) {
+      return false
+    }
+
+    if (
+      left.channelId !== right.channelId ||
+      left.communityId !== right.communityId ||
+      left.sessionEpoch !== right.sessionEpoch ||
+      left.memberCount !== right.memberCount ||
+      left.updatedAt !== right.updatedAt
+    ) {
+      return false
+    }
+
+    if (left.members.length !== right.members.length) {
+      return false
+    }
+
+    return left.members.every((member, index) => {
+      const other = right.members[index]
+      return (
+        member.publicKey === other.publicKey &&
+        member.joinedAt === other.joinedAt &&
+        member.lastSeenAt === other.lastSeenAt &&
+        member.isLocal === other.isLocal
+      )
+    })
+  }
+}
