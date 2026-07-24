@@ -36,4 +36,10 @@ pub struct AttachmentDto {
     pub chunks: u32,
     #[serde(default)]
     pub source_peer_id: String,
+    /// Matrix encrypted-file metadata. Kept opaque at the product boundary so
+    /// the SDK remains the authority for key, IV, and ciphertext validation.
+    #[serde(default)]
+    pub media_source: Option<serde_json::Value>,
+    #[serde(default)]
+    pub content_type: Option<String>,
 }

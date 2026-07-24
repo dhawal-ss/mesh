@@ -1,4 +1,8 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
+
+use super::message::AttachmentDto;
 
 /// A DM conversation summary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,8 +29,16 @@ pub struct DirectMessageDto {
     pub content: String,
     pub timestamp: String,
     pub signature: String,
+    #[serde(default)]
+    pub attachments: Vec<AttachmentDto>,
+    #[serde(default)]
+    pub reactions: HashMap<String, Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub edited_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deleted_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_to_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivery_status: Option<String>,
 }

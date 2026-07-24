@@ -1,4 +1,4 @@
-use argon2::{Argon2, Params, Version, Algorithm};
+use argon2::{Algorithm, Argon2, Params, Version};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as BASE64, Engine as _};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use hkdf::Hkdf;
@@ -134,7 +134,7 @@ impl Identity {
             crate::crypto::encryption::decrypt_community_payload(
                 &derived_key,
                 &data[17..], // remainder is nonce || ciphertext
-                b"", // no community context for identity import
+                b"",         // no community context for identity import
             )?
         } else if data.first() == Some(&0x01) {
             // v1 format (legacy HKDF): [0x01] || nonce (12) || ciphertext
@@ -149,7 +149,7 @@ impl Identity {
             crate::crypto::encryption::decrypt_community_payload(
                 &derived_key,
                 &data[1..], // skip version byte; remainder is nonce || ciphertext
-                b"", // no community context for identity import
+                b"",        // no community context for identity import
             )?
         } else {
             // Legacy unencrypted format: raw 64 bytes (private + public key)

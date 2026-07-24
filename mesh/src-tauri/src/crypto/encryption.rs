@@ -47,7 +47,13 @@ pub fn encrypt_community_payload(
     let cipher = ChaCha20Poly1305::new(group_key.into());
     let nonce = Nonce::from_slice(&nonce_bytes);
     let ciphertext = cipher
-        .encrypt(nonce, Payload { msg: plaintext, aad })
+        .encrypt(
+            nonce,
+            Payload {
+                msg: plaintext,
+                aad,
+            },
+        )
         .map_err(|e| anyhow::anyhow!("encryption failed: {}", e))?;
 
     // nonce || ciphertext
@@ -73,7 +79,13 @@ pub fn decrypt_community_payload(
     let cipher = ChaCha20Poly1305::new(group_key.into());
     let nonce = Nonce::from_slice(nonce_bytes);
     cipher
-        .decrypt(nonce, Payload { msg: ciphertext, aad })
+        .decrypt(
+            nonce,
+            Payload {
+                msg: ciphertext,
+                aad,
+            },
+        )
         .map_err(|e| anyhow::anyhow!("decryption failed: {}", e))
 }
 

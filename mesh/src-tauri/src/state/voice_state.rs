@@ -10,7 +10,7 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 
 pub const VOICE_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
-pub const VOICE_MEMBER_TIMEOUT: Duration = Duration::from_secs(15);
+pub const VOICE_MEMBER_TIMEOUT: Duration = Duration::from_secs(30);
 pub const VOICE_RELAY_THRESHOLD: usize = 8;
 pub const VOICE_SESSION_MAX_MEMBERS: usize = 16;
 
@@ -184,7 +184,7 @@ impl VoiceSessionState {
         let now = Utc::now();
         let stale_before = now
             - chrono::Duration::from_std(VOICE_MEMBER_TIMEOUT)
-                .unwrap_or_else(|_| chrono::Duration::seconds(15));
+                .unwrap_or_else(|_| chrono::Duration::seconds(30));
         let stale_members: Vec<String> = self
             .members
             .iter()
@@ -266,6 +266,11 @@ impl VoiceState {
 
     pub async fn set_current_session(&self, session: Option<VoiceSessionRef>) {
         *self.current_session.write().await = session;
+    }
+
+    /// Return the number of active voice sessions. Used by the diagnostics command.
+    pub async fn session_count(&self) -> u32 {
+        self.sessions.read().await.len() as u32
     }
 
     pub async fn record_join(
@@ -599,9 +604,8 @@ mod tests {
             let session_ref = VoiceSessionRef::new("community-d", "chan-3");
             if let Some(session) = sessions.get_mut(&session_ref) {
                 if let Some(member) = session.members.get_mut("pk-stale") {
-                    // Set last_seen_at to 30 seconds ago (beyond VOICE_MEMBER_TIMEOUT of 15s)
-                    member.last_seen_at =
-                        Utc::now() - chrono::Duration::seconds(30);
+                    // Set last_seen_at to 60 seconds ago (beyond VOICE_MEMBER_TIMEOUT of 30s)
+                    member.last_seen_at = Utc::now() - chrono::Duration::seconds(60);
                 }
             }
         }
@@ -637,8 +641,8 @@ mod tests {
             let session_ref = VoiceSessionRef::new("community-e", "chan-4");
             if let Some(session) = sessions.get_mut(&session_ref) {
                 if let Some(member) = session.members.get_mut("pk-stale") {
-                    member.last_seen_at =
-                        Utc::now() - chrono::Duration::seconds(30);
+                    // Set last_seen_at to 60 seconds ago (beyond VOICE_MEMBER_TIMEOUT of 30s)
+                    member.last_seen_at = Utc::now() - chrono::Duration::seconds(60);
                 }
             }
         }
@@ -647,7 +651,10 @@ mod tests {
 
         // Session should still exist with the fresh member
         let snapshot = state.snapshot("community-e", "chan-4").await;
-        assert!(snapshot.is_some(), "Session with fresh member should survive sweep");
+        assert!(
+            snapshot.is_some(),
+            "Session with fresh member should survive sweep"
+        );
         let snapshot = snapshot.unwrap();
         assert_eq!(snapshot.member_count, 1);
         assert_eq!(snapshot.members[0].public_key, "pk-fresh");
@@ -670,20 +677,14 @@ mod tests {
             .await
             .unwrap();
         let epoch_2 = state.current_epoch("community-f", "chan-5").await.unwrap();
-        assert_ne!(
-            epoch_1, epoch_2,
-            "Epoch must change when a member joins"
-        );
+        assert_ne!(epoch_1, epoch_2, "Epoch must change when a member joins");
 
         // Remove a member — epoch should change again
         let _ = state
             .record_leave("community-f", "chan-5", "pk-alice")
             .await;
         let epoch_3 = state.current_epoch("community-f", "chan-5").await.unwrap();
-        assert_ne!(
-            epoch_2, epoch_3,
-            "Epoch must change when a member leaves"
-        );
+        assert_ne!(epoch_2, epoch_3, "Epoch must change when a member leaves");
     }
 
     #[tokio::test]

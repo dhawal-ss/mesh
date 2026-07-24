@@ -43,7 +43,7 @@ export default {
         danger: '#da373c',
       },
       fontFamily: {
-        sans: ['Inter', 'gg sans', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        sans: ['system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
         mono: ['Consolas', 'Andale Mono WT', 'Andale Mono', 'Menlo', 'monospace'],
       },
       fontSize: {

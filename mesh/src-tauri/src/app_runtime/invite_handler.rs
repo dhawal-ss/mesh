@@ -35,7 +35,10 @@ pub(super) async fn request_pending_invite_join(
             return;
         };
         if entry.created_at.elapsed() > INVITE_PENDING_TTL {
-            tracing::info!("Removing expired pending invite for community {}", community_id);
+            tracing::info!(
+                "Removing expired pending invite for community {}",
+                community_id
+            );
             pending.remove(community_id);
             return;
         }
@@ -70,11 +73,7 @@ pub(super) async fn request_pending_invite_join(
         .as_deref()
         .and_then(|owner_pk| crate::crypto::identity::ed25519_pub_to_x25519(owner_pk).ok())
         .map(|owner_x25519| {
-            encryption::encrypt_for_recipient(
-                &owner_x25519,
-                invite_secret.as_bytes(),
-                community_id,
-            )
+            encryption::encrypt_for_recipient(&owner_x25519, invite_secret.as_bytes(), community_id)
         });
 
     if encrypted_invite_secret.is_none() {
@@ -137,14 +136,12 @@ pub(super) async fn request_control_logs_for_known_communities(
         }
     };
 
-    // Get our public key for authenticated requests
-    let our_public_key = {
-        let identity = state.identity.read().await;
-        match identity.as_ref() {
-            Some(id) => id.public_key_b64.clone(),
-            None => return,
-        }
+    // Get our public key and identity for signing authenticated requests
+    let identity_guard = state.identity.read().await;
+    let Some(identity) = identity_guard.as_ref() else {
+        return;
     };
+    let our_public_key = identity.public_key_b64.clone();
 
     let network = state.network.read().await;
     let Some(net) = network.as_ref() else {
@@ -156,6 +153,12 @@ pub(super) async fn request_control_logs_for_known_communities(
             .get_latest_control_event_timestamp(&community.id)
             .ok()
             .flatten();
+        let request_timestamp = chrono::Utc::now().to_rfc3339();
+        let signable = format!(
+            "control-log-req:{}:{}:{}",
+            community.id, our_public_key, request_timestamp
+        );
+        let request_signature = identity.sign(signable.as_bytes());
         let _ = net
             .send_command(NetworkCommand::RequestControl {
                 peer_id: peer_id.map(ToString::to_string),
@@ -163,6 +166,8 @@ pub(super) async fn request_control_logs_for_known_communities(
                     community_id: community.id,
                     since_timestamp,
                     requester_public_key: our_public_key.clone(),
+                    request_signature,
+                    request_timestamp,
                 }),
             })
             .await;
@@ -199,9 +204,45 @@ pub(super) async fn build_control_response(
                 };
             }
 
+            // Require signed requests — reject unsigned requests
+            if request.request_signature.is_empty() || request.requester_public_key.is_empty() {
+                tracing::warn!(
+                    "Refusing unsigned control log request for community {}",
+                    request.community_id,
+                );
+                return ControlResponse::Error {
+                    message: "unsigned requests are not accepted".into(),
+                };
+            }
+
+            // Verify the signature
+            let signable = format!(
+                "control-log-req:{}:{}:{}",
+                request.community_id, request.requester_public_key, request.request_timestamp
+            );
+            if !crate::crypto::identity::verify_signature(
+                &request.requester_public_key,
+                signable.as_bytes(),
+                &request.request_signature,
+            )
+            .unwrap_or(false)
+            {
+                tracing::warn!(
+                    "Refusing control log for community {} — invalid signature",
+                    request.community_id,
+                );
+                return ControlResponse::Error {
+                    message: "invalid request signature".into(),
+                };
+            }
+
             // Verify the requester is a member of this community
-            if !request.requester_public_key.is_empty() {
-                if let Some(false) = security::is_active_member(app_handle, &request.community_id, &request.requester_public_key) {
+            {
+                if let Some(false) = security::is_active_member(
+                    app_handle,
+                    &request.community_id,
+                    &request.requester_public_key,
+                ) {
                     tracing::warn!(
                         "Refusing control log for community {} — requester {} is not a member",
                         request.community_id,
@@ -222,10 +263,10 @@ pub(super) async fn build_control_response(
                     .collect::<Result<Vec<_>, _>>()
                 {
                     Ok(events) => {
-                    ControlResponse::ControlLog(crate::network::behaviour::ControlLogResponse {
-                        community_id: request.community_id,
-                        events,
-                    })
+                        ControlResponse::ControlLog(crate::network::behaviour::ControlLogResponse {
+                            community_id: request.community_id,
+                            events,
+                        })
                     }
                     Err(error) => ControlResponse::Error {
                         message: format!("invalid control log row: {error}"),
@@ -295,8 +336,7 @@ async fn build_invite_challenge_response(
                 &request.community_id,
             ) {
                 Ok(plaintext) => {
-                    request.invite_secret =
-                        String::from_utf8(plaintext).unwrap_or_default();
+                    request.invite_secret = String::from_utf8(plaintext).unwrap_or_default();
                 }
                 Err(err) => {
                     tracing::warn!(
@@ -443,8 +483,7 @@ async fn build_invite_join_response(
                 &request.community_id,
             ) {
                 Ok(plaintext) => {
-                    request.invite_secret =
-                        String::from_utf8(plaintext).unwrap_or_default();
+                    request.invite_secret = String::from_utf8(plaintext).unwrap_or_default();
                 }
                 Err(err) => {
                     tracing::warn!(
@@ -538,6 +577,13 @@ async fn build_invite_join_response(
             &event,
             &owner_public_key,
         );
+        // Sync updated membership roster to the swarm task for file serving authorization.
+        super::network_router::sync_community_members_to_swarm(
+            app_handle,
+            &db,
+            &request.community_id,
+        )
+        .await;
         if let Some(state) = app_handle.try_state::<AppState>() {
             let network = state.network.read().await;
             if let Some(net) = network.as_ref() {
@@ -635,13 +681,31 @@ pub(super) async fn handle_control_response(
                 return;
             };
 
-            for event in response.events {
-                let _ = crate::commands::control::apply_control_event(
+            let mut had_membership_event = false;
+            for event in &response.events {
+                let result = crate::commands::control::apply_control_event(
                     app_handle,
                     &db,
-                    &event,
+                    event,
                     &owner_public_key,
                 );
+                if result.as_ref().map(|r| r.applied).unwrap_or(false) {
+                    if matches!(
+                        event.event_type.as_str(),
+                        "member_join" | "member_leave" | "member_ban" | "community_delete"
+                    ) {
+                        had_membership_event = true;
+                    }
+                }
+            }
+            // Sync membership roster to swarm once after all events are applied.
+            if had_membership_event {
+                super::network_router::sync_community_members_to_swarm(
+                    app_handle,
+                    &db,
+                    &response.community_id,
+                )
+                .await;
             }
         }
         ControlResponse::Error { message } => {
@@ -1010,4 +1074,3 @@ fn invite_join_response_signable(response: &InviteJoinResponse) -> Vec<u8> {
     .to_string()
     .into_bytes()
 }
-

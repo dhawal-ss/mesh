@@ -11,7 +11,8 @@ vi.mock('@tauri-apps/api/event', () => ({
 }))
 
 // Mock the bridge module so store tests don't depend on Tauri IPC
-vi.mock('./lib/bridge', () => ({
+vi.mock('./lib/bridge', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./lib/bridge')>()),
   getMessages: vi.fn(() => Promise.resolve([])),
   sendMessage: vi.fn(() => Promise.resolve()),
   addReaction: vi.fn(() => Promise.resolve()),

@@ -15,10 +15,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tracing::{error, warn};
-
-/// Maximum age for DHT records before automatic expiry.
-const RECORD_TTL_SECS: u64 = 24 * 3600; // 24 hours
+use tracing::error;
 
 pub struct SqliteDhtStore {
     conn: Mutex<Connection>,
@@ -142,7 +139,10 @@ impl RecordStore for SqliteDhtStore {
 
     fn remove(&mut self, k: &kad::RecordKey) {
         if let Ok(conn) = self.conn.lock() {
-            let _ = conn.execute("DELETE FROM dht_records WHERE key = ?1", rusqlite::params![k.as_ref()]);
+            let _ = conn.execute(
+                "DELETE FROM dht_records WHERE key = ?1",
+                rusqlite::params![k.as_ref()],
+            );
         }
     }
 
@@ -204,14 +204,13 @@ impl RecordStore for SqliteDhtStore {
             .unwrap_or(false);
 
         if is_provided {
-            if let Ok(peer_id) = PeerId::try_from(self.local_key.clone().into_preimage()) {
-                return vec![kad::ProviderRecord {
-                    key: key.clone(),
-                    provider: peer_id,
-                    expires: None,
-                    addresses: vec![],
-                }];
-            }
+            let peer_id = self.local_key.into_preimage();
+            return vec![kad::ProviderRecord {
+                key: key.clone(),
+                provider: peer_id,
+                expires: None,
+                addresses: vec![],
+            }];
         }
         vec![]
     }
@@ -222,21 +221,18 @@ impl RecordStore for SqliteDhtStore {
             .lock()
             .ok()
             .map(|provided| {
-                if let Ok(peer_id) = PeerId::try_from(self.local_key.clone().into_preimage()) {
-                    provided
-                        .iter()
-                        .map(|key| {
-                            Cow::Owned(kad::ProviderRecord {
-                                key: key.clone(),
-                                provider: peer_id,
-                                expires: None,
-                                addresses: vec![],
-                            })
+                let peer_id = self.local_key.into_preimage();
+                provided
+                    .iter()
+                    .map(|key| {
+                        Cow::Owned(kad::ProviderRecord {
+                            key: key.clone(),
+                            provider: peer_id,
+                            expires: None,
+                            addresses: vec![],
                         })
-                        .collect()
-                } else {
-                    vec![]
-                }
+                    })
+                    .collect()
             })
             .unwrap_or_default();
         records.into_iter()

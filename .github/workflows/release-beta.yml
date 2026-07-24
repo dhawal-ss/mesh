@@ -1,0 +1,274 @@
+name: Publish Matrix beta
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: matrix-beta-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  quality-gate:
+    name: Matrix beta quality gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      VITE_MESH_HOMESERVER: ${{ vars.VITE_MESH_HOMESERVER }}
+      VITE_MESH_SERVICE_NAME: ${{ vars.VITE_MESH_SERVICE_NAME }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mesh/package-lock.json
+
+      - name: Install Rust 1.92 with Clippy
+        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc # 1.92.0
+        with:
+          components: clippy
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libsqlcipher-dev
+
+      - name: Install frontend and browser dependencies
+        working-directory: mesh
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run frontend and browser gates
+        working-directory: mesh
+        run: |
+          npm audit --audit-level=high
+          pwsh -NoProfile -File ./scripts/beta-release-preflight.ps1 -RequireManagedService
+          npm test
+          npm run build
+          pwsh -NoProfile -File ./scripts/beta-release-preflight.ps1 -VerifyFrontendBundle
+          npm run e2e -- --workers=1
+
+      - name: Run Matrix backend gates
+        working-directory: mesh/src-tauri
+        run: |
+          cargo test --no-default-features --features matrix-backend --locked --jobs 1
+          cargo clippy --no-default-features --features matrix-backend --all-targets --locked --jobs 1 -- -D warnings
+          if cargo tree --no-default-features --features matrix-backend -e normal,build --locked | grep -Eq '(^| )libp2p v'; then
+            echo 'Release dependency tree unexpectedly contains legacy libp2p.' >&2
+            exit 1
+          fi
+
+      - name: Audit locked Rust dependencies
+        run: |
+          cargo install cargo-audit --version 0.22.2 --locked
+          cargo audit --file mesh/src-tauri/Cargo.lock \
+            --ignore RUSTSEC-2026-0119 \
+            --ignore RUSTSEC-2025-0009 \
+            --ignore RUSTSEC-2026-0098 \
+            --ignore RUSTSEC-2026-0099 \
+            --ignore RUSTSEC-2026-0104 \
+            --ignore RUSTSEC-2026-0194 \
+            --ignore RUSTSEC-2026-0195
+
+  windows:
+    name: Signed Windows Matrix beta
+    needs: quality-gate
+    runs-on: windows-latest
+    timeout-minutes: 90
+    environment: matrix-beta
+    env:
+      VITE_MESH_HOMESERVER: ${{ vars.VITE_MESH_HOMESERVER }}
+      VITE_MESH_SERVICE_NAME: ${{ vars.VITE_MESH_SERVICE_NAME }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Validate release tag and signing configuration
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+        run: |
+          if ($env:GITHUB_REF_TYPE -ne "tag") {
+            throw "Run this workflow from a v* tag. Branch builds cannot publish a beta."
+          }
+
+          $version = (Get-Content mesh/src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Tag $env:GITHUB_REF_NAME does not match Tauri version v$version."
+          }
+
+          $missing = @(
+            "WINDOWS_CERTIFICATE",
+            "WINDOWS_CERTIFICATE_PASSWORD",
+            "WINDOWS_CERTIFICATE_THUMBPRINT"
+          ) | Where-Object {
+            [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_))
+          }
+          if ($missing.Count -gt 0) {
+            throw "Missing required GitHub release secrets: $($missing -join ', ')."
+          }
+
+          & ./mesh/scripts/beta-release-preflight.ps1 `
+            -Tag $env:GITHUB_REF_NAME `
+            -RequireManagedService `
+            -RequireSigningEnvironment
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mesh/package-lock.json
+
+      - name: Install Rust 1.92
+        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc # 1.92.0
+
+      - name: Install frontend dependencies
+        working-directory: mesh
+        run: npm ci
+
+      - name: Import Windows signing certificate
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+        run: |
+          $certificatePath = Join-Path $env:RUNNER_TEMP "mesh-release.pfx"
+          [IO.File]::WriteAllBytes(
+            $certificatePath,
+            [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
+          )
+          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          Import-PfxCertificate `
+            -FilePath $certificatePath `
+            -CertStoreLocation Cert:\CurrentUser\My `
+            -Password $password `
+            -Exportable | Out-Null
+          Remove-Item -LiteralPath $certificatePath -Force
+
+          $thumbprint = $env:WINDOWS_CERTIFICATE_THUMBPRINT.Replace(" ", "").ToUpperInvariant()
+          $certificate = Get-Item "Cert:\CurrentUser\My\$thumbprint" -ErrorAction Stop
+          if (-not $certificate.HasPrivateKey) {
+            throw "The configured signing certificate does not include its private key."
+          }
+
+          $tauriConfig = @{
+            bundle = @{
+              windows = @{
+                certificateThumbprint = $thumbprint
+                digestAlgorithm = "sha256"
+                timestampUrl = "http://timestamp.digicert.com"
+              }
+            }
+          } | ConvertTo-Json -Depth 4 -Compress
+          "TAURI_CONFIG=$tauriConfig" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify Matrix production dependency boundary
+        working-directory: mesh/src-tauri
+        shell: bash
+        run: |
+          cargo check --no-default-features --features matrix-backend --locked --jobs 1
+          if cargo tree --no-default-features --features matrix-backend -e normal,build --locked | grep -Eq '(^| )libp2p v'; then
+            echo 'Release dependency tree unexpectedly contains legacy libp2p.' >&2
+            exit 1
+          fi
+
+      - name: Generate release SBOMs
+        shell: pwsh
+        run: |
+          Push-Location mesh
+          npm sbom --sbom-format=cyclonedx | Out-File mesh-node.cdx.json -Encoding utf8
+          Pop-Location
+          cargo install cargo-cyclonedx --version 0.5.9 --locked
+          cargo cyclonedx --manifest-path mesh/src-tauri/Cargo.toml --format json
+
+      - name: Build signed Matrix installers
+        working-directory: mesh
+        run: npm run tauri -- build --features matrix-backend -- --no-default-features --locked --jobs 1
+
+      - name: Verify installer signatures and timestamps
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+        run: |
+          & ./mesh/scripts/beta-release-preflight.ps1 `
+            -Tag $env:GITHUB_REF_NAME `
+            -VerifyFrontendBundle `
+            -VerifyArtifacts `
+            -BundleRoot mesh/src-tauri/target/release/bundle
+
+      - name: Generate release checksums
+        shell: pwsh
+        run: |
+          $bundleRoot = "mesh/src-tauri/target/release/bundle"
+          $installers = Get-ChildItem -LiteralPath $bundleRoot -Recurse -File |
+            Where-Object { $_.Extension -in @(".msi", ".exe") }
+          if ($installers.Count -eq 0) {
+            throw "No signed Windows installers were produced."
+          }
+
+          $sboms = @(
+            Get-Item mesh/mesh-node.cdx.json
+            Get-Item mesh/src-tauri/mesh.cdx.json
+          )
+          $evidence = @($installers) + $sboms
+          $checksumPath = Join-Path $env:RUNNER_TEMP "SHA256SUMS.txt"
+          $evidence |
+            ForEach-Object {
+              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$hash  $($_.Name)"
+            } |
+            Sort-Object |
+            Out-File $checksumPath -Encoding ascii
+          "MESH_CHECKSUM_PATH=$checksumPath" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Create reviewed draft prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view $env:GITHUB_REF_NAME --json tagName *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw "A release already exists for $env:GITHUB_REF_NAME. Refusing to mutate an existing version."
+          }
+
+          $bundleRoot = "mesh/src-tauri/target/release/bundle"
+          $installers = @(
+            Get-ChildItem -LiteralPath $bundleRoot -Recurse -File |
+              Where-Object { $_.Extension -in @(".msi", ".exe") } |
+              Sort-Object FullName
+          )
+          $assets = @(
+            $installers.FullName
+            $env:MESH_CHECKSUM_PATH
+            (Resolve-Path mesh/mesh-node.cdx.json).Path
+            (Resolve-Path mesh/src-tauri/mesh.cdx.json).Path
+          )
+
+          $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
+          @"
+          Matrix-only production beta build. Legacy libp2p is not included.
+
+          Verify downloads against ``SHA256SUMS.txt`` and inspect the attached CycloneDX SBOMs.
+
+          Automatic updates are intentionally disabled until Mesh has a provisioned signed-update endpoint and updater public key. Install this beta manually only after completing the operator checklist in ``docs/BETA_RELEASE.md``.
+          "@ | Out-File $notesPath -Encoding utf8
+
+          gh release create $env:GITHUB_REF_NAME @assets `
+            --draft `
+            --prerelease `
+            --title "Mesh $env:GITHUB_REF_NAME beta" `
+            --notes-file $notesPath

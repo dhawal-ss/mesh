@@ -227,8 +227,12 @@ mod tests {
 
         assert!(verify_rotation(&event, &owner_public_key));
         assert_eq!(
-            unwrap_for_self(&event, &member.public_key_b64, &member.x25519_static_secret())
-                .unwrap(),
+            unwrap_for_self(
+                &event,
+                &member.public_key_b64,
+                &member.x25519_static_secret()
+            )
+            .unwrap(),
             group_key
         );
     }
@@ -258,7 +262,10 @@ mod tests {
     #[test]
     fn epoch_monotonicity_rejects_zero_replay() {
         let result = validate_epoch_monotonicity(0, 0);
-        assert!(result.is_err(), "Epoch 0 replayed against stored 0 must be rejected");
+        assert!(
+            result.is_err(),
+            "Epoch 0 replayed against stored 0 must be rejected"
+        );
     }
 
     #[test]

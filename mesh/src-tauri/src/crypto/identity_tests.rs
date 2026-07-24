@@ -42,12 +42,8 @@ mod tests {
         let signature_b64 = BASE64.encode(signature.to_bytes());
 
         let tampered_payload = b"tampered message";
-        let result =
-            verify_signature(&public_key_b64, tampered_payload, &signature_b64).unwrap();
-        assert!(
-            !result,
-            "Signature must not verify with tampered payload"
-        );
+        let result = verify_signature(&public_key_b64, tampered_payload, &signature_b64).unwrap();
+        assert!(!result, "Signature must not verify with tampered payload");
     }
 
     #[test]
@@ -61,10 +57,7 @@ mod tests {
         let signature_b64 = BASE64.encode(signature.to_bytes());
 
         let result = verify_signature(&wrong_public_b64, payload, &signature_b64).unwrap();
-        assert!(
-            !result,
-            "Signature must not verify with wrong public key"
-        );
+        assert!(!result, "Signature must not verify with wrong public key");
     }
 
     #[test]
@@ -79,10 +72,7 @@ mod tests {
         let short_key = BASE64.encode(&[0u8; 16]);
         let sig = BASE64.encode(&[0u8; 64]);
         let result = verify_signature(&short_key, b"payload", &sig);
-        assert!(
-            result.is_err(),
-            "Wrong-length key should return an error"
-        );
+        assert!(result.is_err(), "Wrong-length key should return an error");
     }
 
     #[test]
@@ -179,8 +169,8 @@ mod tests {
 
     #[test]
     fn argon2id_export_import_roundtrip_v2() {
-        use argon2::{Algorithm, Argon2, Params, Version};
         use crate::crypto::encryption;
+        use argon2::{Algorithm, Argon2, Params, Version};
 
         let passphrase = "correct horse battery staple";
         let signing_key = SigningKey::generate(&mut OsRng);
@@ -236,8 +226,8 @@ mod tests {
 
     #[test]
     fn argon2id_wrong_passphrase_fails_import() {
-        use argon2::{Algorithm, Argon2, Params, Version};
         use crate::crypto::encryption;
+        use argon2::{Algorithm, Argon2, Params, Version};
 
         let passphrase = "real passphrase";
         let wrong_passphrase = "wrong passphrase";
@@ -285,8 +275,8 @@ mod tests {
     fn argon2id_v2_bundle_version_byte_is_correct() {
         // Ensure the v2 format starts with 0x02 and has at least
         // 1 (version) + 16 (salt) + 12 (nonce) + 16 (Poly1305 tag) = 45 bytes
-        use argon2::{Algorithm, Argon2, Params, Version};
         use crate::crypto::encryption;
+        use argon2::{Algorithm, Argon2, Params, Version};
 
         let passphrase = "test";
         let mut salt = [0u8; 16];
@@ -305,7 +295,10 @@ mod tests {
         bundle.extend_from_slice(&salt);
         bundle.extend_from_slice(&encrypted);
 
-        assert_eq!(bundle[0], 0x02, "v2 bundle must start with version byte 0x02");
+        assert_eq!(
+            bundle[0], 0x02,
+            "v2 bundle must start with version byte 0x02"
+        );
         assert!(
             bundle.len() >= 1 + 16 + 12 + 16,
             "v2 bundle must be at least 45 bytes (version + salt + nonce + tag)"

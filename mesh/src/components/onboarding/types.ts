@@ -24,6 +24,15 @@ export type BootstrapState = {
 
 export interface OnboardingFlowProps {
   onComplete: () => void
+  backendKind?: 'matrix' | 'legacy-p2p'
+  backendAuthenticated?: boolean
+  onMatrixLogin?: (request: {
+    homeserver: string
+    username: string
+    password: string
+    deviceName?: string
+  }) => Promise<void>
+  onMatrixSwitchAccount?: (profileId: string) => Promise<void>
   onGenerateIdentity?: () => Promise<void>
   onUpdateProfile?: (profile: OnboardingProfile) => Promise<void>
   onBootstrap?: (update: (state: BootstrapState) => void) => Promise<void>

@@ -14,7 +14,7 @@ pub enum RateLimitBucket {
 }
 
 impl RateLimitBucket {
-    fn key(self) -> &'static str {
+    pub fn key(self) -> &'static str {
         match self {
             Self::Message => "message",
             Self::MessageEdit => "message_edit",
@@ -65,5 +65,48 @@ impl RateLimitState {
 
         queue.push_back(now);
         true
+    }
+
+    /// Global per-actor rate limit (cross-community).
+    /// Prevents a single actor from spamming across multiple communities.
+    pub async fn check_global_rate_limit(&self, bucket: &RateLimitBucket, actor: &str) -> bool {
+        let (global_max, window) = match bucket {
+            RateLimitBucket::Message => (50, Duration::from_secs(60)),
+            RateLimitBucket::MessageEdit => (30, Duration::from_secs(60)),
+            RateLimitBucket::Reaction => (60, Duration::from_secs(60)),
+            RateLimitBucket::FileAnnouncement => (10, Duration::from_secs(60)),
+            RateLimitBucket::Presence => (20, Duration::from_secs(60)),
+            RateLimitBucket::InviteChallenge => (10, Duration::from_secs(60)),
+        };
+
+        let now = Instant::now();
+        let cutoff = now.checked_sub(window).unwrap_or(now);
+        let key = format!("global:{}:{}", bucket.key(), actor);
+
+        let mut entries = self.entries.lock().await;
+        let queue = entries.entry(key).or_default();
+        while queue.front().is_some_and(|timestamp| *timestamp < cutoff) {
+            queue.pop_front();
+        }
+
+        if queue.len() >= global_max {
+            return false;
+        }
+
+        queue.push_back(now);
+        true
+    }
+
+    /// Remove stale rate limit entries to prevent unbounded memory growth.
+    /// Call periodically (e.g., from the voice sweeper task).
+    pub async fn gc_stale_entries(&self) {
+        let mut entries = self.entries.lock().await;
+        let now = Instant::now();
+        let stale_threshold = Duration::from_secs(600); // 10 minutes
+        entries.retain(|_key, queue| {
+            queue
+                .back()
+                .map_or(false, |last| now.duration_since(*last) < stale_threshold)
+        });
     }
 }

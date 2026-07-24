@@ -367,7 +367,10 @@ impl Database {
         tx.execute("DELETE FROM peers WHERE community_id = ?1", params![id])?;
         tx.execute("DELETE FROM ban_list WHERE community_id = ?1", params![id])?;
         tx.execute("DELETE FROM members WHERE community_id = ?1", params![id])?;
-        tx.execute("DELETE FROM control_log WHERE community_id = ?1", params![id])?;
+        tx.execute(
+            "DELETE FROM control_log WHERE community_id = ?1",
+            params![id],
+        )?;
         tx.execute("DELETE FROM last_read WHERE community_id = ?1", params![id])?;
         tx.execute("DELETE FROM invites WHERE community_id = ?1", params![id])?;
         tx.execute(

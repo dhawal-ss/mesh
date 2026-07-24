@@ -1,6 +1,7 @@
 import SimplePeer from 'simple-peer'
 import {
   getIdentity,
+  getIceServers,
   isTauriRuntime,
   joinVoice,
   leaveVoice,
@@ -15,6 +16,11 @@ import {
   shortVoiceLabel,
   voiceColorForKey,
 } from './voice-session'
+import {
+  DefaultVoicePeerFactory,
+  type VoicePeer,
+  type VoicePeerFactory,
+} from './voice-peer'
 import type {
   Peer,
   VoiceConnectionState,
@@ -25,7 +31,7 @@ import type {
 } from '../types/ipc'
 
 type PeerConnectionRecord = {
-  peer: SimplePeer.Instance
+  peer: VoicePeer
   initiator: boolean
 }
 
@@ -39,6 +45,8 @@ export interface VoiceEngineHandlers {
   onPeerRemove?: (publicKey: string) => void
   onConnectionState?: (state: VoiceConnectionState, reason?: string | null) => void
   onError?: (message: string) => void
+  onRelayChanged?: () => void
+  onConnectionWarning?: (message: string) => void
 }
 
 export class VoiceEngine {
@@ -53,18 +61,57 @@ export class VoiceEngine {
   // Relay peer stores incoming streams from other peers to forward to new connections
   private readonly relayReceivedStreams = new Map<string, MediaStream>()
   private destroyed = false
+  private iceServers: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }]
   private audioContext: AudioContext | null = null
   private readonly audioAnalysers = new Map<string, { analyser: AnalyserNode; source: MediaStreamAudioSourceNode; interval: number }>()
+  // Debounced relay-failover rebuild state. When multiple peers depart rapidly
+  // we coalesce the rebuilds into a single bounded operation to avoid thrashing.
+  private relayRebuildPending = false
+  private relayRebuildTimer: number | null = null
+  private relayRebuildCount = 0
+  private lastRelayKey: string | null = null
+  // Injectable seam for peer creation — tests pass a FakeVoicePeerFactory.
+  private readonly peerFactory: VoicePeerFactory
 
   constructor(
     private readonly communityId: string,
     private readonly channelId: string,
     private readonly handlers: VoiceEngineHandlers = {},
-  ) {}
+    peerFactory?: VoicePeerFactory,
+  ) {
+    this.peerFactory = peerFactory ?? new DefaultVoicePeerFactory()
+  }
+
+  async loadIceServers(): Promise<void> {
+    try {
+      const servers = await getIceServers()
+      this.iceServers = servers.map((s) => ({
+        urls: s.urls,
+        username: s.username,
+        credential: s.credential,
+      }))
+
+      // Check if any TURN server is configured
+      const hasTurn = this.iceServers.some((s) =>
+        (Array.isArray(s.urls) ? s.urls : [s.urls]).some(
+          (u) => typeof u === 'string' && u.startsWith('turn:'),
+        ),
+      )
+      if (!hasTurn) {
+        console.warn('[VoiceEngine] No TURN server configured. Voice may fail behind strict NATs.')
+        this.handlers.onConnectionWarning?.('No TURN server configured. Voice calls may not connect behind firewalls.')
+      }
+    } catch (e) {
+      console.warn('Failed to load ICE servers, using defaults:', e)
+      this.handlers.onConnectionWarning?.('Failed to load voice server configuration.')
+    }
+  }
 
   async start(): Promise<VoiceSessionSnapshot | null> {
     this.destroyed = false
     this.handlers.onConnectionState?.('connecting')
+
+    await this.loadIceServers()
 
     const identity = await getIdentity().catch(() => null)
     this.localPublicKey = identity?.publicKey ?? null
@@ -130,6 +177,38 @@ export class VoiceEngine {
     }
 
     return snapshot
+  }
+
+  /**
+   * Test-only entry point: initializes the engine with a known local public
+   * key and no real media stream, bypassing the getUserMedia/joinVoice flow.
+   * Enables integration tests to drive the engine with a FakeVoicePeerFactory
+   * without requiring a browser WebRTC environment.
+   *
+   * Do not use in production code paths — always call `start()`.
+   */
+  initForTesting(localPublicKey: string): void {
+    this.destroyed = false
+    this.localPublicKey = localPublicKey
+    this.localStream = null
+    // Use a stable default ICE config so tests are deterministic
+    this.iceServers = [{ urls: 'stun:stun.l.google.com:19302' }]
+  }
+
+  /**
+   * Test-only accessor: returns the set of peer public keys the engine
+   * currently has connections to.
+   */
+  getPeerKeysForTesting(): string[] {
+    return Array.from(this.peers.keys())
+  }
+
+  /**
+   * Test-only accessor: returns the underlying VoicePeer for a given remote
+   * public key, if present. Used to drive peer event simulation.
+   */
+  getPeerForTesting(remotePublicKey: string): VoicePeer | undefined {
+    return this.peers.get(remotePublicKey)?.peer
   }
 
   applySessionSnapshot(snapshot: VoiceSessionSnapshot): void {
@@ -252,6 +331,45 @@ export class VoiceEngine {
     }
   }
 
+  async getConnectionStats(): Promise<{
+    type: 'direct' | 'relay' | 'unknown'
+    localCandidate: string
+    remoteCandidate: string
+    roundTripTime: number
+    packetsLost: number
+    jitter: number
+  } | null> {
+    // Get stats from the first connected peer
+    for (const [, record] of this.peers) {
+      if (!record.peer.connected) continue
+      const pc = (record.peer as unknown as { _pc: RTCPeerConnection })._pc
+      if (!pc) continue
+
+      const stats = await pc.getStats()
+      for (const report of stats.values()) {
+        if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+          const localId = report.localCandidateId
+          const remoteId = report.remoteCandidateId
+          let localType = 'unknown'
+          let remoteType = 'unknown'
+          for (const r of stats.values()) {
+            if (r.id === localId) localType = r.candidateType
+            if (r.id === remoteId) remoteType = r.candidateType
+          }
+          return {
+            type: (localType === 'relay' || remoteType === 'relay') ? 'relay' : 'direct',
+            localCandidate: localType,
+            remoteCandidate: remoteType,
+            roundTripTime: (report.currentRoundTripTime ?? 0) * 1000,
+            packetsLost: report.packetsLost ?? 0,
+            jitter: report.jitter ?? 0,
+          }
+        }
+      }
+    }
+    return null
+  }
+
   async destroy(): Promise<void> {
     this.destroyed = true
 
@@ -259,6 +377,12 @@ export class VoiceEngine {
       window.clearTimeout(this.topologyRebuildTimer)
       this.topologyRebuildTimer = null
     }
+
+    if (this.relayRebuildTimer !== null) {
+      window.clearTimeout(this.relayRebuildTimer)
+      this.relayRebuildTimer = null
+    }
+    this.relayRebuildPending = false
 
     for (const timer of this.peerReconnectTimers.values()) {
       window.clearTimeout(timer)
@@ -357,22 +481,17 @@ export class VoiceEngine {
     }
   }
 
-  private ensurePeerConnection(remotePublicKey: string, initiator: boolean): SimplePeer.Instance {
+  private ensurePeerConnection(remotePublicKey: string, initiator: boolean): VoicePeer {
     const existing = this.peers.get(remotePublicKey)
     if (existing) {
       return existing.peer
     }
 
-    const peer = new SimplePeer({
+    const peer = this.peerFactory.create({
       initiator,
       stream: this.localStream ?? undefined,
       trickle: true,
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-        ],
-      },
+      iceServers: this.iceServers,
     })
 
     this.peers.set(remotePublicKey, { peer, initiator })
@@ -403,7 +522,7 @@ export class VoiceEngine {
         }
         // Force SDP renegotiation so the new tracks are transmitted
         if (addedTracks) {
-          ;(peer as unknown as { negotiate: () => void }).negotiate()
+          peer.negotiate()
         }
       }
     })
@@ -426,7 +545,7 @@ export class VoiceEngine {
             otherRecord.peer.addTrack(track, remoteStream)
           }
           // Force SDP renegotiation so the forwarded tracks are transmitted
-          ;(otherRecord.peer as unknown as { negotiate: () => void }).negotiate()
+          otherRecord.peer.negotiate()
         }
       }
     })
@@ -496,6 +615,106 @@ export class VoiceEngine {
     if (shouldRebuild) {
       this.scheduleReconnect(remotePublicKey, reason)
     }
+
+    // ── Relay failover: if the relay peer disconnected, schedule a bounded rebuild ──
+    // We debounce rebuilds because rapid churn (e.g. three members leaving within
+    // 500ms) would otherwise trigger three full topology tear-downs. Coalescing
+    // into a single rebuild keeps the operation bounded and observable.
+    const members = this.sessionSnapshot?.members ?? []
+    if (members.length >= 8) {
+      const oldRelayKey = [...members].sort((a, b) =>
+        a.publicKey.localeCompare(b.publicKey),
+      )[0]?.publicKey
+      if (oldRelayKey === remotePublicKey) {
+        this.scheduleRelayRebuild()
+      }
+    }
+  }
+
+  /// Debounce relay rebuilds so rapid churn doesn't trigger multiple tear-downs.
+  /// Waits 250ms after the last relay departure before rebuilding, up to a
+  /// maximum of 1000ms of total delay. Bounded and observable.
+  private scheduleRelayRebuild(): void {
+    if (this.destroyed) return
+
+    const DEBOUNCE_MS = 250
+    const MAX_DELAY_MS = 1000
+
+    // Clear any pending timer
+    if (this.relayRebuildTimer !== null) {
+      window.clearTimeout(this.relayRebuildTimer)
+    }
+
+    // If this is the first scheduled rebuild in a burst, mark the start
+    if (!this.relayRebuildPending) {
+      this.relayRebuildPending = true
+      // Cap the maximum wait so we don't defer indefinitely under sustained churn
+      this.relayRebuildTimer = window.setTimeout(() => {
+        this.executeRelayRebuild()
+      }, MAX_DELAY_MS)
+      return
+    }
+
+    // On subsequent rebuilds within the burst, reset to DEBOUNCE_MS
+    this.relayRebuildTimer = window.setTimeout(() => {
+      this.executeRelayRebuild()
+    }, DEBOUNCE_MS)
+  }
+
+  private executeRelayRebuild(): void {
+    this.relayRebuildPending = false
+    if (this.relayRebuildTimer !== null) {
+      window.clearTimeout(this.relayRebuildTimer)
+      this.relayRebuildTimer = null
+    }
+    if (this.destroyed || !this.sessionSnapshot) return
+
+    const members = this.sessionSnapshot.members
+    if (members.length < 8) return
+
+    const newRelayKey = [...members].sort((a, b) =>
+      a.publicKey.localeCompare(b.publicKey),
+    )[0]?.publicKey ?? null
+
+    // If the relay hasn't actually changed, skip the rebuild.
+    // This can happen if rapid churn didn't affect the relay role.
+    if (newRelayKey === this.lastRelayKey) {
+      console.log('[VoiceEngine] Relay rebuild scheduled but relay unchanged, skipping')
+      return
+    }
+
+    this.lastRelayKey = newRelayKey
+    this.relayRebuildCount += 1
+    console.log(
+      `[VoiceEngine] Relay rebuild #${this.relayRebuildCount}: new relay ${newRelayKey?.slice(0, 16) ?? 'none'}`,
+    )
+    this.handlers.onRelayChanged?.()
+
+    // Force reconnect all peers to establish new relay topology
+    for (const [pk, peerRecord] of this.peers) {
+      peerRecord.peer.destroy()
+      this.peers.delete(pk)
+    }
+
+    // Re-establish connections with new topology
+    for (const member of members) {
+      if (member.publicKey !== this.localPublicKey) {
+        this.ensurePeerConnection(
+          member.publicKey,
+          shouldInitiatePeerConnection(
+            this.localPublicKey!,
+            member.publicKey,
+            newRelayKey,
+            members.length,
+          ),
+        )
+      }
+    }
+  }
+
+  /// Expose rebuild count for diagnostics/tests.
+  getRelayRebuildCount(): number {
+    return this.relayRebuildCount
   }
 
   private scheduleReconnect(remotePublicKey: string, reason: string): void {

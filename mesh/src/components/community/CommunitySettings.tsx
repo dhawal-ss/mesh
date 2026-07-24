@@ -8,6 +8,8 @@ import { useChannelStore } from '../../store/channels'
 import { useMembershipStore } from '../../store/membership'
 import * as bridge from '../../lib/bridge'
 import { transitions } from '../../lib/motion'
+import type { CommunityApplication } from '../../types/ipc'
+import { LegacyMigrationPanel } from './LegacyMigrationPanel'
 
 interface CommunitySettingsProps {
   isOpen: boolean
@@ -15,8 +17,9 @@ interface CommunitySettingsProps {
 }
 
 export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
-  const { communities, activeCommunityId, removeCommunity, setActiveCommunity } = useCommunityStore()
-  const { addChannel } = useChannelStore()
+  const matrixMode = bridge.isMatrixBackend()
+  const { communities, activeCommunityId, removeCommunity, setActiveCommunity, patchCommunity } = useCommunityStore()
+  const { addChannel, channels } = useChannelStore()
   const clearCommunityMembership = useMembershipStore((s) => s.clearCommunity)
 
   const community = communities.find((c) => c.id === activeCommunityId)
@@ -30,12 +33,44 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
   const [communityDescription, setCommunityDescription] = useState('')
   const [isSavingMetadata, setIsSavingMetadata] = useState(false)
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
+  const [communityAlias, setCommunityAlias] = useState('')
+  const [isDiscoverable, setIsDiscoverable] = useState(false)
+  const [isSavingAccess, setIsSavingAccess] = useState(false)
+  const [accessError, setAccessError] = useState('')
+  const [applications, setApplications] = useState<CommunityApplication[]>([])
 
   useEffect(() => {
     if (!community) return
     setCommunityName(community.name)
     setCommunityDescription(community.description)
   }, [community])
+
+  useEffect(() => {
+    if (!isOpen || !matrixMode || !community || !activeCommunityId) return
+    if (community.role !== 'owner' && community.role !== 'admin') return
+
+    let cancelled = false
+    Promise.all([
+      bridge.getCommunityAccessSettings(activeCommunityId),
+      bridge.getCommunityApplications(activeCommunityId),
+    ])
+      .then(([settings, pending]) => {
+        if (cancelled) return
+        setCommunityAlias(settings.alias ?? '')
+        setIsDiscoverable(settings.discoverable)
+        setApplications(pending)
+        setAccessError('')
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setAccessError(error instanceof Error ? error.message : 'Could not load access settings')
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeCommunityId, community, isOpen, matrixMode])
 
   if (!community || !activeCommunityId) return null
 
@@ -91,10 +126,46 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
         communityName.trim(),
         communityDescription.trim(),
       )
+      patchCommunity(activeCommunityId, {
+        name: communityName.trim(),
+        description: communityDescription.trim(),
+      })
     } catch (err) {
       console.error('Failed to update community metadata:', err)
     }
     setIsSavingMetadata(false)
+  }
+
+  const handleSaveAccess = async () => {
+    setIsSavingAccess(true)
+    setAccessError('')
+    try {
+      const settings = await bridge.updateCommunityAccess(
+        activeCommunityId,
+        communityAlias,
+        isDiscoverable,
+      )
+      setCommunityAlias(settings.alias ?? '')
+      setIsDiscoverable(settings.discoverable)
+    } catch (error) {
+      setAccessError(error instanceof Error ? error.message : 'Could not save access settings')
+    }
+    setIsSavingAccess(false)
+  }
+
+  const handleApplication = async (application: CommunityApplication, accept: boolean) => {
+    setAccessError('')
+    try {
+      await bridge.respondToCommunityApplication(
+        activeCommunityId,
+        application.userId,
+        accept,
+        accept ? undefined : 'Community application declined',
+      )
+      setApplications((current) => current.filter((entry) => entry.userId !== application.userId))
+    } catch (error) {
+      setAccessError(error instanceof Error ? error.message : 'Could not update application')
+    }
   }
 
   return (
@@ -204,6 +275,83 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                   </div>
                 )}
 
+                {matrixMode && isOwnerOrAdmin && (
+                  <div className="mb-6">
+                    <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Access & Discovery</h3>
+                    <div className="space-y-3 rounded-lg bg-bg-primary p-4">
+                      <Input
+                        label="Canonical Matrix alias"
+                        value={communityAlias}
+                        onChange={setCommunityAlias}
+                        placeholder="#design-club:example.org"
+                      />
+                      <p className="text-xs text-muted">
+                        The alias must belong to your signed-in homeserver. Private communities can still share it directly.
+                      </p>
+                      <label className="flex cursor-pointer items-start gap-3 rounded-md bg-bg-tertiary p-3">
+                        <input
+                          type="checkbox"
+                          checked={isDiscoverable}
+                          onChange={(event) => setIsDiscoverable(event.target.checked)}
+                          className="mt-0.5"
+                        />
+                        <span>
+                          <span className="block text-sm font-medium text-primary">Publish in the Matrix directory</span>
+                          <span className="block text-xs text-muted">
+                            Published communities use the standard knock flow, so an administrator must approve applicants.
+                          </span>
+                        </span>
+                      </label>
+                      {accessError && <p className="text-xs text-red">{accessError}</p>}
+                      <Button
+                        onClick={handleSaveAccess}
+                        disabled={isSavingAccess || (isDiscoverable && !communityAlias.trim())}
+                        className="w-full"
+                      >
+                        {isSavingAccess ? 'Saving…' : 'Save Access Settings'}
+                      </Button>
+                    </div>
+
+                    {applications.length > 0 && (
+                      <div className="mt-3 space-y-2 rounded-lg bg-bg-primary p-4">
+                        <h4 className="text-xs font-bold uppercase tracking-wide text-muted">
+                          Applications ({applications.length})
+                        </h4>
+                        {applications.map((application) => (
+                          <div key={application.userId} className="rounded-md bg-bg-tertiary p-3">
+                            <p className="text-sm font-medium text-primary">{application.displayName}</p>
+                            <p className="text-xs text-text-link">{application.userId}</p>
+                            {application.reason && (
+                              <p className="mt-1 text-xs text-secondary">{application.reason}</p>
+                            )}
+                            <div className="mt-3 flex gap-2">
+                              <Button
+                                onClick={() => handleApplication(application, true)}
+                                className="flex-1"
+                              >
+                                Approve
+                              </Button>
+                              <Button
+                                onClick={() => handleApplication(application, false)}
+                                variant="secondary"
+                                className="flex-1"
+                              >
+                                Decline
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <LegacyMigrationPanel
+                  communityId={activeCommunityId}
+                  channels={channels}
+                  canManage={isOwnerOrAdmin}
+                />
+
                 {/* Create channel */}
                 {isOwnerOrAdmin && (
                   <div className="mb-6">
@@ -240,7 +388,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                                 Channel Type
                               </label>
                               <div className="flex gap-2">
-                                {(['text', 'voice'] as const).map((t) => (
+                                {(matrixMode ? ['text'] as const : ['text', 'voice'] as const).map((t) => (
                                   <button
                                     key={t}
                                     onClick={() => setChannelType(t)}
@@ -254,6 +402,11 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                                   </button>
                                 ))}
                               </div>
+                              {matrixMode && (
+                                <p className="mt-2 text-xs text-muted">
+                                  MatrixRTC voice channels are a later migration slice.
+                                </p>
+                              )}
                             </div>
 
                             <Button
@@ -278,7 +431,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                       onClick={() => setShowLeaveConfirm(true)}
                       className="w-full rounded-md border border-red/30 px-4 py-2.5 text-left text-sm text-red transition-colors hover:bg-red/10"
                     >
-                      {isOwner ? 'Delete Server' : 'Leave Server'}
+                      {matrixMode ? 'Leave Community' : isOwner ? 'Delete Server' : 'Leave Server'}
                     </button>
                   ) : (
                     <motion.div
@@ -287,7 +440,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                       className="space-y-3 rounded-lg border border-red/30 bg-red/5 p-4"
                     >
                       <p className="text-sm text-secondary">
-                        {isOwner ? (
+                        {!matrixMode && isOwner ? (
                           <>
                             Delete <strong className="text-primary">{community.name}</strong>? This will shut down the server for all members.
                           </>
@@ -302,10 +455,10 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                           Cancel
                         </Button>
                         <button
-                          onClick={isOwner ? handleDelete : handleLeave}
+                          onClick={matrixMode ? handleLeave : isOwner ? handleDelete : handleLeave}
                           className="flex-1 rounded-md bg-red px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
                         >
-                          {isOwner ? 'Delete' : 'Leave'}
+                          {!matrixMode && isOwner ? 'Delete' : 'Leave'}
                         </button>
                       </div>
                     </motion.div>

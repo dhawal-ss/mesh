@@ -1,6 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { VoiceEngine } from '../lib/voice-engine'
 import {
+  getBackendStatusSnapshot,
+  getVoiceServiceStatus,
   onVoiceJoin,
   onVoiceLeave,
   onVoiceSession,
@@ -9,9 +11,12 @@ import {
   setDeafened as bridgeSetDeafened,
   setMuted as bridgeSetMuted,
 } from '../lib/bridge'
+import { canStartLegacyVoice } from '../lib/voice-runtime'
 import { useVoiceStore } from '../store/voice'
 
 export function useVoiceEngine() {
+  const voiceService = getVoiceServiceStatus()
+  const legacyVoiceReady = canStartLegacyVoice(getBackendStatusSnapshot())
   const engineRef = useRef<VoiceEngine | null>(null)
   const currentChannelId = useVoiceStore((state) => state.currentChannelId)
   const currentCommunityId = useVoiceStore((state) => state.currentCommunityId)
@@ -22,6 +27,8 @@ export function useVoiceEngine() {
   const upsertPeer = useVoiceStore((state) => state.upsertPeer)
   const removePeer = useVoiceStore((state) => state.removePeer)
   const resetVoiceState = useVoiceStore((state) => state.resetVoiceState)
+  const [connectionWarning, setConnectionWarning] = useState<string | null>(null)
+  const [relayChanged, setRelayChanged] = useState(0)
 
   useEffect(() => {
     let disposed = false
@@ -39,6 +46,13 @@ export function useVoiceEngine() {
     if (!currentCommunityId || !currentChannelId) {
       void destroyEngine()
       resetVoiceState()
+      return
+    }
+
+    if (!legacyVoiceReady) {
+      void destroyEngine()
+      setSessionSnapshot(null)
+      setConnectionState('disconnected', voiceService.reason ?? 'Calling is unavailable')
       return
     }
 
@@ -67,6 +81,12 @@ export function useVoiceEngine() {
         onError: (message) => {
           console.error('Voice engine error:', message)
           setConnectionState('disconnected', message)
+        },
+        onRelayChanged: () => {
+          setRelayChanged((prev) => prev + 1)
+        },
+        onConnectionWarning: (message) => {
+          setConnectionWarning(message)
         },
       })
 
@@ -121,9 +141,20 @@ export function useVoiceEngine() {
         }
       })
     }
-  }, [currentChannelId, currentCommunityId, removePeer, resetVoiceState, setConnectionState, setSessionSnapshot, upsertPeer])
+  }, [
+    currentChannelId,
+    currentCommunityId,
+    legacyVoiceReady,
+    removePeer,
+    resetVoiceState,
+    setConnectionState,
+    setSessionSnapshot,
+    upsertPeer,
+    voiceService.reason,
+  ])
 
   useEffect(() => {
+    if (!legacyVoiceReady) return
     if (engineRef.current) {
       engineRef.current.setMuted(isMuted)
     }
@@ -131,13 +162,14 @@ export function useVoiceEngine() {
     void bridgeSetMuted(isMuted).catch((error) => {
       console.error('Failed to sync mute state with backend:', error)
     })
-  }, [isMuted])
+  }, [isMuted, legacyVoiceReady])
 
   useEffect(() => {
+    if (!legacyVoiceReady) return
     void bridgeSetDeafened(isDeafened).catch((error) => {
       console.error('Failed to sync deafen state with backend:', error)
     })
-  }, [isDeafened])
+  }, [isDeafened, legacyVoiceReady])
 
-  return { engine: engineRef.current }
+  return { engine: engineRef.current, connectionWarning, relayChanged, voiceService }
 }

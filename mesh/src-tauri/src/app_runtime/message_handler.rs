@@ -55,6 +55,8 @@ pub(super) async fn route_signed_message(app_handle: &AppHandle, envelope: &Sign
             size: attachment.size,
             chunks: attachment.chunks,
             source_peer_id: attachment.source_peer_id,
+            media_source: None,
+            content_type: None,
         })
         .collect();
     let message = MessageDto {
@@ -77,6 +79,22 @@ pub(super) async fn route_signed_message(app_handle: &AppHandle, envelope: &Sign
     if let Some(db) = app_handle.try_state::<Database>() {
         let should_emit = helpers::insert_message_if_new(&db, &message);
         if should_emit {
+            // Append to immutable event log
+            let _ = db.append_channel_event(
+                &message.channel_id,
+                "message",
+                &message.id,
+                None,
+                &message.author_public_key,
+                &serde_json::to_string(&serde_json::json!({
+                    "content": &message.content,
+                    "attachments": &message.attachments,
+                    "replyToId": &message.reply_to_id,
+                }))
+                .unwrap_or_default(),
+                &message.signature,
+                &message.timestamp,
+            );
             let _ = app_handle.emit("message:received", &message);
 
             // Send desktop notification for messages from other users
@@ -84,28 +102,50 @@ pub(super) async fn route_signed_message(app_handle: &AppHandle, envelope: &Sign
                 .try_state::<AppState>()
                 .and_then(|state| {
                     let identity = state.identity.blocking_read();
-                    identity.as_ref().map(|id| id.public_key_b64 == message.author_public_key)
+                    identity
+                        .as_ref()
+                        .map(|id| id.public_key_b64 == message.author_public_key)
                 })
                 .unwrap_or(false);
 
-            if !is_own_message {
-                let preview = truncate_preview(&message.content, 100);
-                let _ = tauri_plugin_notification::NotificationExt::notification(app_handle)
-                    .builder()
-                    .title(&message.author_display_name)
-                    .body(&preview)
-                    .show();
+            let window_focused = app_handle
+                .get_webview_window("main")
+                .map(|w| w.is_focused().unwrap_or(false))
+                .unwrap_or(false);
+
+            if !is_own_message && !window_focused {
+                // Check if the channel is muted via kv_store
+                let is_muted = app_handle
+                    .try_state::<Database>()
+                    .and_then(|db| {
+                        let conn = db.conn.lock().ok()?;
+                        let json: String = conn
+                            .query_row(
+                                "SELECT value FROM kv_store WHERE key = 'muted_channels'",
+                                [],
+                                |row| row.get(0),
+                            )
+                            .ok()?;
+                        serde_json::from_str::<Vec<String>>(&json).ok()
+                    })
+                    .map(|muted| muted.contains(&message.channel_id))
+                    .unwrap_or(false);
+
+                if !is_muted {
+                    let preview = truncate_preview(&message.content, 100);
+                    let _ = tauri_plugin_notification::NotificationExt::notification(app_handle)
+                        .builder()
+                        .title(&message.author_display_name)
+                        .body(&preview)
+                        .show();
+                }
             }
         }
     }
 }
 
-pub(super) async fn route_signed_message_edit(
-    app_handle: &AppHandle,
-    envelope: &SignedEnvelope,
-) {
-    let Ok(payload) = serde_json::from_value::<MessageEditPayload>(envelope.payload.clone())
-    else {
+pub(super) async fn route_signed_message_edit(app_handle: &AppHandle, envelope: &SignedEnvelope) {
+    let Ok(payload) = serde_json::from_value::<MessageEditPayload>(envelope.payload.clone()) else {
         tracing::warn!("Dropping malformed message_edit payload {}", envelope.id);
         return;
     };
@@ -131,10 +171,7 @@ pub(super) async fn route_signed_message_edit(
         // Verify the envelope author matches the original message author
         if let Ok(Some(existing)) = db.get_message_by_id(&payload.message_id) {
             if existing.author_public_key != envelope.author {
-                tracing::warn!(
-                    "Dropping message_edit {} — author mismatch",
-                    envelope.id
-                );
+                tracing::warn!("Dropping message_edit {} — author mismatch", envelope.id);
                 return;
             }
         } else {
@@ -144,12 +181,28 @@ pub(super) async fn route_signed_message_edit(
             );
         }
 
-        if let Err(e) =
-            db.update_message_content(&payload.message_id, &payload.content, &envelope.author)
-        {
+        if let Err(e) = db.update_message_content(
+            &payload.message_id,
+            &payload.content,
+            &envelope.author,
+            &envelope.timestamp,
+        ) {
             tracing::warn!("Failed to apply message edit: {}", e);
             return;
         }
+
+        // Append edit to immutable event log
+        let _ = db.append_channel_event(
+            &channel_id,
+            "edit",
+            &envelope.id,
+            Some(&payload.message_id),
+            &envelope.author,
+            &serde_json::to_string(&serde_json::json!({ "content": payload.content }))
+                .unwrap_or_default(),
+            &envelope.signature,
+            &envelope.timestamp,
+        );
 
         let _ = app_handle.emit(
             "message:edited",
@@ -163,16 +216,10 @@ pub(super) async fn route_signed_message_edit(
     }
 }
 
-pub(super) async fn route_signed_message_delete(
-    app_handle: &AppHandle,
-    envelope: &SignedEnvelope,
-) {
+pub(super) async fn route_signed_message_delete(app_handle: &AppHandle, envelope: &SignedEnvelope) {
     let Ok(payload) = serde_json::from_value::<MessageDeletePayload>(envelope.payload.clone())
     else {
-        tracing::warn!(
-            "Dropping malformed message_delete payload {}",
-            envelope.id
-        );
+        tracing::warn!("Dropping malformed message_delete payload {}", envelope.id);
         return;
     };
     let channel_id = envelope.channel_id.clone().unwrap_or_default();
@@ -221,6 +268,18 @@ pub(super) async fn route_signed_message_delete(
             tracing::warn!("Failed to apply message delete: {}", e);
             return;
         }
+
+        // Append delete to immutable event log
+        let _ = db.append_channel_event(
+            &channel_id,
+            "delete",
+            &envelope.id,
+            Some(&payload.message_id),
+            &envelope.author,
+            "{}",
+            &envelope.signature,
+            &envelope.timestamp,
+        );
 
         let _ = app_handle.emit(
             "message:deleted",
@@ -294,6 +353,26 @@ pub(super) async fn route_signed_reaction(app_handle: &AppHandle, envelope: &Sig
                 );
             }
         }
+
+        // Append reaction to the immutable event log for convergence
+        let event_type = match payload.verb.as_str() {
+            "remove" => "reaction_remove",
+            _ => "reaction_add",
+        };
+        let _ = db.append_channel_event(
+            &channel_id,
+            event_type,
+            &envelope.id,
+            Some(&payload.message_id),
+            &envelope.author,
+            &serde_json::to_string(&serde_json::json!({
+                "emoji": &payload.emoji,
+                "verb": &payload.verb,
+            }))
+            .unwrap_or_default(),
+            &envelope.signature,
+            &envelope.timestamp,
+        );
     }
 
     let _ = app_handle.emit(
@@ -370,6 +449,16 @@ pub(super) async fn route_signed_file_announcement(
         return;
     }
 
+    // Record the seeder in the file_availability table
+    if let Some(db) = app_handle.try_state::<Database>() {
+        let _ = db.record_file_availability(
+            &payload.file_hash,
+            &payload.source_peer_id,
+            &payload.file_name,
+            payload.size as i64,
+        );
+    }
+
     if let Some(message) = helpers::signed_file_announcement_to_message(envelope, &payload) {
         let should_emit = if let Some(db) = app_handle.try_state::<Database>() {
             helpers::insert_message_if_new(&db, &message)
@@ -414,6 +503,21 @@ pub(super) fn route_signed_ban(app_handle: &AppHandle, envelope: &SignedEnvelope
         .unwrap_or_default();
     if banned_public_key.is_empty() {
         return;
+    }
+
+    // Check if this ban is already applied (prevent replay side effects)
+    if let Some(db) = app_handle.try_state::<Database>() {
+        if db
+            .is_banned(&envelope.community_id, banned_public_key)
+            .unwrap_or(false)
+        {
+            tracing::debug!(
+                "Ban for {} in {} already applied, skipping",
+                banned_public_key,
+                envelope.community_id
+            );
+            return;
+        }
     }
 
     if let Some(db) = app_handle.try_state::<Database>() {

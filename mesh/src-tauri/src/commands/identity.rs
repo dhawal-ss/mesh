@@ -2,6 +2,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD as BASE64, Engine as _};
 use tauri::{AppHandle, State};
 
 use crate::app_runtime;
+use crate::backend::BackendKind;
 use crate::crypto::identity::Identity;
 use crate::state::AppState;
 use crate::storage::Database;
@@ -9,7 +10,9 @@ use crate::types::identity::IdentityDto;
 
 use super::error::CommandError;
 
-async fn load_identity_public_key(state: &State<'_, AppState>) -> Result<Option<String>, CommandError> {
+async fn load_identity_public_key(
+    state: &State<'_, AppState>,
+) -> Result<Option<String>, CommandError> {
     if let Some(identity) = state.identity.read().await.as_ref() {
         return Ok(Some(identity.public_key_b64.clone()));
     }
@@ -68,14 +71,16 @@ pub async fn create_identity(
 ) -> Result<IdentityDto, CommandError> {
     let public_key = ensure_identity_public_key(&state).await?;
 
-    if let Err(err) = app_runtime::ensure_network_started(
-        app_handle,
-        state.identity.clone(),
-        state.network.clone(),
-    )
-    .await
-    {
-        tracing::error!("Failed to start network: {}", err);
+    if state.backend.kind() == BackendKind::LegacyP2p {
+        if let Err(err) = app_runtime::ensure_network_started(
+            app_handle,
+            state.identity.clone(),
+            state.network.clone(),
+        )
+        .await
+        {
+            tracing::error!("Failed to start legacy network: {}", err);
+        }
     }
 
     read_profile_or_default(public_key, &db).await
@@ -91,22 +96,26 @@ pub async fn generate_identity(
 ) -> Result<IdentityDto, CommandError> {
     let public_key = ensure_identity_public_key(&state).await?;
 
-    if let Err(err) = app_runtime::ensure_network_started(
-        app_handle,
-        state.identity.clone(),
-        state.network.clone(),
-    )
-    .await
-    {
-        tracing::error!("Failed to start network: {}", err);
+    if state.backend.kind() == BackendKind::LegacyP2p {
+        if let Err(err) = app_runtime::ensure_network_started(
+            app_handle,
+            state.identity.clone(),
+            state.network.clone(),
+        )
+        .await
+        {
+            tracing::error!("Failed to start legacy network: {}", err);
+        }
     }
 
     let public_key_c = public_key.clone();
     let display_name_c = display_name.clone();
     let avatar_color_c = avatar_color.clone();
-    db.run_blocking(move |db| db.set_local_profile(&public_key_c, &display_name_c, &avatar_color_c))
-        .await
-        .map_err(|e| CommandError::Other(e.to_string()))?;
+    db.run_blocking(move |db| {
+        db.set_local_profile(&public_key_c, &display_name_c, &avatar_color_c)
+    })
+    .await
+    .map_err(|e| CommandError::Other(e.to_string()))?;
 
     Ok(IdentityDto {
         public_key,
@@ -142,9 +151,11 @@ pub async fn update_profile(
     let public_key_c = public_key.clone();
     let display_name_c = display_name.clone();
     let avatar_color_c = avatar_color.clone();
-    db.run_blocking(move |db| db.set_local_profile(&public_key_c, &display_name_c, &avatar_color_c))
-        .await
-        .map_err(|e| CommandError::Other(e.to_string()))?;
+    db.run_blocking(move |db| {
+        db.set_local_profile(&public_key_c, &display_name_c, &avatar_color_c)
+    })
+    .await
+    .map_err(|e| CommandError::Other(e.to_string()))?;
 
     Ok(IdentityDto {
         public_key,
@@ -189,8 +200,12 @@ pub async fn export_identity(
     state: State<'_, AppState>,
 ) -> Result<String, CommandError> {
     let identity = state.identity.read().await;
-    let identity = identity.as_ref().ok_or(CommandError::Identity("No identity loaded".into()))?;
-    let bundle = identity.export_bundle(&passphrase).map_err(|e| CommandError::Other(e.to_string()))?;
+    let identity = identity
+        .as_ref()
+        .ok_or(CommandError::Identity("No identity loaded".into()))?;
+    let bundle = identity
+        .export_bundle(&passphrase)
+        .map_err(|e| CommandError::Other(e.to_string()))?;
     Ok(BASE64.encode(&bundle))
 }
 
@@ -202,22 +217,27 @@ pub async fn import_identity(
     db: State<'_, Database>,
     app_handle: AppHandle,
 ) -> Result<IdentityDto, CommandError> {
-    let bundle = BASE64.decode(&bundle_b64).map_err(|e| CommandError::Other(e.to_string()))?;
-    let identity = Identity::import_bundle(&bundle, &passphrase).map_err(|e| CommandError::Other(e.to_string()))?;
+    let bundle = BASE64
+        .decode(&bundle_b64)
+        .map_err(|e| CommandError::Other(e.to_string()))?;
+    let identity = Identity::import_bundle(&bundle, &passphrase)
+        .map_err(|e| CommandError::Other(e.to_string()))?;
     let public_key = identity.public_key_b64.clone();
     *state.identity.write().await = Some(identity);
 
     // Restart network with new identity
     *state.network.write().await = None;
 
-    if let Err(err) = app_runtime::ensure_network_started(
-        app_handle,
-        state.identity.clone(),
-        state.network.clone(),
-    )
-    .await
-    {
-        tracing::error!("Failed to restart network after import: {}", err);
+    if state.backend.kind() == BackendKind::LegacyP2p {
+        if let Err(err) = app_runtime::ensure_network_started(
+            app_handle,
+            state.identity.clone(),
+            state.network.clone(),
+        )
+        .await
+        {
+            tracing::error!("Failed to restart legacy network after import: {}", err);
+        }
     }
 
     read_profile_or_default(public_key, &db).await

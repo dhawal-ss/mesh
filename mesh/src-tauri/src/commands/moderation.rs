@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as BASE64, Engine as _};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::commands::control;
 use crate::commands::error::CommandError;
@@ -21,24 +21,30 @@ pub async fn ban_user(
     let caller_public_key =
         require_community_permission(&state, &db, &community_id, "owner").await?;
     let identity = state.identity.read().await;
-    let identity = identity.as_ref().ok_or(CommandError::Identity("No identity loaded".into()))?;
+    let identity = identity
+        .as_ref()
+        .ok_or(CommandError::Identity("No identity loaded".into()))?;
     if identity.public_key_b64 != caller_public_key {
-        return Err(CommandError::Validation("Loaded identity does not match caller permission state".into()));
+        return Err(CommandError::Validation(
+            "Loaded identity does not match caller permission state".into(),
+        ));
     }
     let community_id_c = community_id.clone();
     let community_key = db
         .run_blocking(move |db| db.get_community_keypair(&community_id_c))
         .await
         .map_err(|e| CommandError::Other(e.to_string()))?
-        .ok_or(CommandError::PermissionDenied("Only the community owner can ban members".into()))?;
+        .ok_or(CommandError::PermissionDenied(
+            "Only the community owner can ban members".into(),
+        ))?;
     let community_id_c = community_id.clone();
     let old_group_key_b64 = db
         .run_blocking(move |db| db.get_group_key(&community_id_c))
         .await
         .map_err(|e| CommandError::Other(e.to_string()))?
         .ok_or(CommandError::NotFound("Missing community group key".into()))?;
-    let old_group_key =
-        encryption::group_key_from_b64(&old_group_key_b64).map_err(|e| CommandError::Other(e.to_string()))?;
+    let old_group_key = encryption::group_key_from_b64(&old_group_key_b64)
+        .map_err(|e| CommandError::Other(e.to_string()))?;
 
     // 1. Create and apply the ban control event
     let ban_payload = serde_json::json!({
@@ -61,9 +67,10 @@ pub async fn ban_user(
         .run_blocking(move |db| db.get_members(&community_id_c))
         .await
         .map_err(|e| CommandError::Other(e.to_string()))?;
-    let rotation_payload = key_rotation::generate_rotation(&community_key, &members, &new_group_key)
-        .map_err(|e| CommandError::Other(e.to_string()))?
-        .to_control_payload();
+    let rotation_payload =
+        key_rotation::generate_rotation(&community_key, &members, &new_group_key)
+            .map_err(|e| CommandError::Other(e.to_string()))?
+            .to_control_payload();
     let rotation_event = control::create_control_event(
         &community_id,
         "key_rotation",
@@ -74,11 +81,14 @@ pub async fn ban_user(
     // 2. Broadcast the authoritative control events with the pre-rotation key.
     let network = state.network.read().await;
     if let Some(ref net) = *network {
-        let control_envelope = serde_json::to_vec(&ban_event).map_err(|e| CommandError::Other(e.to_string()))?;
+        let control_envelope =
+            serde_json::to_vec(&ban_event).map_err(|e| CommandError::Other(e.to_string()))?;
         let community_id_c = community_id.clone();
         let aad = encryption::build_community_aad(&community_id, "");
         let control_data = db
-            .run_blocking(move |db| db.encrypt_community_payload(&community_id_c, &control_envelope, &aad))
+            .run_blocking(move |db| {
+                db.encrypt_community_payload(&community_id_c, &control_envelope, &aad)
+            })
             .await
             .map_err(|e| CommandError::Other(e.to_string()))?;
         // Publish ban to meta topic
@@ -102,11 +112,15 @@ pub async fn ban_user(
             tracing::warn!("network publish ban to legacy topic failed: {}", e);
         }
 
-        let rotation_plaintext = serde_json::to_vec(&rotation_event).map_err(|e| CommandError::Other(e.to_string()))?;
+        let rotation_plaintext =
+            serde_json::to_vec(&rotation_event).map_err(|e| CommandError::Other(e.to_string()))?;
         let aad_rotation = encryption::build_community_aad(&community_id, "");
-        let rotation_data =
-            encryption::encrypt_community_payload(&old_group_key, &rotation_plaintext, &aad_rotation)
-                .map_err(|e| CommandError::Other(e.to_string()))?;
+        let rotation_data = encryption::encrypt_community_payload(
+            &old_group_key,
+            &rotation_plaintext,
+            &aad_rotation,
+        )
+        .map_err(|e| CommandError::Other(e.to_string()))?;
         // Publish key rotation to meta topic
         if let Err(e) = net
             .send_command(NetworkCommand::PublishMessage {
@@ -158,7 +172,9 @@ pub async fn update_member_role(
         .run_blocking(move |db| db.get_community_keypair(&community_id_c))
         .await
         .map_err(|e| CommandError::Other(e.to_string()))?
-        .ok_or(CommandError::PermissionDenied("Only the community owner can change member roles".into()))?;
+        .ok_or(CommandError::PermissionDenied(
+            "Only the community owner can change member roles".into(),
+        ))?;
 
     let owner_public_key = BASE64.encode(community_key.verifying_key.as_bytes());
 
@@ -179,11 +195,14 @@ pub async fn update_member_role(
     // Broadcast the control event
     let network = state.network.read().await;
     if let Some(ref net) = *network {
-        let control_envelope = serde_json::to_vec(&role_event).map_err(|e| CommandError::Other(e.to_string()))?;
+        let control_envelope =
+            serde_json::to_vec(&role_event).map_err(|e| CommandError::Other(e.to_string()))?;
         let community_id_c = community_id.clone();
         let aad = encryption::build_community_aad(&community_id, "");
         let data = db
-            .run_blocking(move |db| db.encrypt_community_payload(&community_id_c, &control_envelope, &aad))
+            .run_blocking(move |db| {
+                db.encrypt_community_payload(&community_id_c, &control_envelope, &aad)
+            })
             .await
             .map_err(|e| CommandError::Other(e.to_string()))?;
         // Publish role change to meta topic
@@ -248,4 +267,113 @@ pub struct MemberDto {
     pub join_status: String,
     pub ban_status: String,
     pub last_seen: Option<String>,
+}
+
+/// Kick a user from a community (non-permanent removal — they can rejoin).
+#[tauri::command]
+pub async fn kick_user(
+    community_id: String,
+    target_public_key: String,
+    reason: Option<String>,
+    state: State<'_, AppState>,
+    db: State<'_, Database>,
+    app_handle: AppHandle,
+) -> Result<(), CommandError> {
+    // Verify caller has admin or owner permission
+    let caller_public_key =
+        require_community_permission(&state, &db, &community_id, "admin").await?;
+
+    // Update member status to 'left' (not 'banned' — they can rejoin)
+    let community_id_c = community_id.clone();
+    let target_c = target_public_key.clone();
+    let _ = db
+        .run_blocking(move |db| {
+            let conn = db.conn.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
+            conn.execute(
+                "UPDATE members SET join_status = 'left' WHERE community_id = ?1 AND public_key = ?2",
+                rusqlite::params![community_id_c, target_c],
+            )?;
+            Ok::<_, anyhow::Error>(())
+        })
+        .await;
+
+    // Create and broadcast a kick control event
+    let identity = state.identity.read().await;
+    let identity = identity
+        .as_ref()
+        .ok_or(CommandError::Identity("No identity loaded".into()))?;
+
+    let payload = serde_json::json!({
+        "target_public_key": target_public_key,
+        "reason": reason.unwrap_or_default(),
+        "kicked_by": caller_public_key,
+        "action": "kick",
+    });
+
+    let event =
+        control::create_identity_control_event(&community_id, "member_kick", payload, identity);
+
+    // Publish via network
+    let network = state.network.read().await;
+    if let Some(ref net) = *network {
+        let topic = crate::network::gossip::community_meta_topic(&community_id);
+        let data = serde_json::to_vec(&event).unwrap_or_default();
+        let _ = net
+            .send_command(NetworkCommand::PublishMessage { topic, data })
+            .await;
+    }
+
+    let _ = app_handle.emit(
+        "member:kicked",
+        &serde_json::json!({
+            "communityId": community_id,
+            "publicKey": target_public_key,
+        }),
+    );
+
+    Ok(())
+}
+
+/// Timeout (temporarily mute) a user in a community.
+#[tauri::command]
+pub async fn timeout_user(
+    community_id: String,
+    target_public_key: String,
+    duration_minutes: u32,
+    reason: Option<String>,
+    state: State<'_, AppState>,
+    db: State<'_, Database>,
+    app_handle: AppHandle,
+) -> Result<(), CommandError> {
+    let _ = require_community_permission(&state, &db, &community_id, "admin").await?;
+
+    let expires_at = chrono::Utc::now() + chrono::Duration::minutes(duration_minutes as i64);
+    let expires_str = expires_at.to_rfc3339();
+
+    // Store timeout in database
+    let community_id_c = community_id.clone();
+    let target_c = target_public_key.clone();
+    let expires_c = expires_str.clone();
+    let reason_c = reason.unwrap_or_default();
+    let _ = db
+        .run_blocking(move |db| {
+            let conn = db.conn.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
+            conn.execute(
+                "INSERT OR REPLACE INTO member_timeouts (community_id, public_key, expires_at, reason) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![community_id_c, target_c, expires_c, reason_c],
+            )?;
+            Ok::<_, anyhow::Error>(())
+        })
+        .await;
+
+    let _ = app_handle.emit(
+        "member:timeout",
+        &serde_json::json!({
+            "communityId": community_id,
+            "publicKey": target_public_key,
+            "expiresAt": expires_str,
+        }),
+    );
+
+    Ok(())
 }

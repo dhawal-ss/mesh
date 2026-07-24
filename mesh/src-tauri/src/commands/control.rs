@@ -78,7 +78,9 @@ pub fn apply_control_event(
 
     // 1. Verify the cryptographic signature.
     if !event.verify() {
-        return Err(CommandError::Crypto("Control event has invalid signature".into()));
+        return Err(CommandError::Crypto(
+            "Control event has invalid signature".into(),
+        ));
     }
 
     // 2. Verify the signer is allowed to issue this control event.
@@ -114,19 +116,30 @@ pub fn apply_control_event(
             let name = event.payload["name"].as_str().unwrap_or("untitled");
             let channel_type = event.payload["channelType"].as_str().unwrap_or("text");
             if let Err(e) = db.create_channel(channel_id, &event.community_id, name, channel_type) {
-                tracing::error!("Failed to create channel for control event {}: {}", event.id, e);
+                tracing::error!(
+                    "Failed to create channel for control event {}: {}",
+                    event.id,
+                    e
+                );
                 mutation_ok = false;
             }
         }
         "channel_delete" => {
             let channel_id = event.payload["channelId"].as_str().unwrap_or_default();
             if !channel_id.is_empty() {
-                let conn = db.conn.lock().map_err(|e| CommandError::Other(e.to_string()))?;
+                let conn = db
+                    .conn
+                    .lock()
+                    .map_err(|e| CommandError::Other(e.to_string()))?;
                 if let Err(e) = conn.execute(
                     "DELETE FROM channels WHERE id = ?1 AND community_id = ?2",
                     rusqlite::params![channel_id, event.community_id],
                 ) {
-                    tracing::error!("Failed to delete channel for control event {}: {}", event.id, e);
+                    tracing::error!(
+                        "Failed to delete channel for control event {}: {}",
+                        event.id,
+                        e
+                    );
                     mutation_ok = false;
                 }
             }
@@ -145,7 +158,11 @@ pub fn apply_control_event(
                 role,
                 x25519_key,
             ) {
-                tracing::error!("Failed to upsert member for control event {}: {}", event.id, e);
+                tracing::error!(
+                    "Failed to upsert member for control event {}: {}",
+                    event.id,
+                    e
+                );
                 mutation_ok = false;
             }
             if let Some(membership) = &membership {
@@ -170,7 +187,10 @@ pub fn apply_control_event(
             let public_key = event.payload["publicKey"].as_str().unwrap_or_default();
             if !public_key.is_empty() {
                 {
-                    let conn = db.conn.lock().map_err(|e| CommandError::Other(e.to_string()))?;
+                    let conn = db
+                        .conn
+                        .lock()
+                        .map_err(|e| CommandError::Other(e.to_string()))?;
                     if let Err(e) = conn.execute(
                         "UPDATE members SET join_status = 'left' WHERE community_id = ?1 AND public_key = ?2",
                         rusqlite::params![event.community_id, public_key],
@@ -212,7 +232,10 @@ pub fn apply_control_event(
                 }
                 // Also add to ban_list for backward compatibility
                 {
-                    let conn = db.conn.lock().map_err(|e| CommandError::Other(e.to_string()))?;
+                    let conn = db
+                        .conn
+                        .lock()
+                        .map_err(|e| CommandError::Other(e.to_string()))?;
                     if let Err(e) = conn.execute(
                         "INSERT OR IGNORE INTO ban_list (community_id, public_key, banned_at, signed_by, signature)
                          VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -229,7 +252,11 @@ pub fn apply_control_event(
                 }
                 // Prune reactions by banned user
                 if let Err(e) = db.remove_reactions_by_author(&event.community_id, public_key) {
-                    tracing::warn!("Failed to prune reactions by banned user {}: {}", public_key, e);
+                    tracing::warn!(
+                        "Failed to prune reactions by banned user {}: {}",
+                        public_key,
+                        e
+                    );
                 }
                 if let Some(membership) = &membership {
                     if let Err(e) = membership.ban_member(&event.community_id, public_key) {
@@ -252,11 +279,17 @@ pub fn apply_control_event(
             let new_role = event.payload["role"].as_str().unwrap_or("member");
             if !public_key.is_empty() {
                 if let Err(e) = db.update_member_role(&event.community_id, public_key, new_role) {
-                    tracing::error!("Failed to update member role for control event {}: {}", event.id, e);
+                    tracing::error!(
+                        "Failed to update member role for control event {}: {}",
+                        event.id,
+                        e
+                    );
                     mutation_ok = false;
                 }
                 if let Some(membership) = &membership {
-                    if let Err(e) = membership.update_role(&event.community_id, public_key, new_role) {
+                    if let Err(e) =
+                        membership.update_role(&event.community_id, public_key, new_role)
+                    {
                         tracing::warn!("Failed to update role in in-memory state: {}", e);
                     }
                 }
@@ -284,10 +317,9 @@ pub fn apply_control_event(
             // Enforce epoch monotonicity: reject replayed or stale rotation events
             if let Ok(stored_epoch) = db.get_group_key_epoch(&event.community_id) {
                 if let Some(current_epoch) = stored_epoch {
-                    if let Err(e) = key_rotation::validate_epoch_monotonicity(
-                        rotation.epoch,
-                        current_epoch,
-                    ) {
+                    if let Err(e) =
+                        key_rotation::validate_epoch_monotonicity(rotation.epoch, current_epoch)
+                    {
                         tracing::warn!(
                             "Rejecting key_rotation for community {} — {}",
                             event.community_id,
@@ -315,7 +347,8 @@ pub fn apply_control_event(
                     applied: false,
                 });
             }
-            let identity = Identity::load().map_err(|error| CommandError::Other(error.to_string()))?;
+            let identity =
+                Identity::load().map_err(|error| CommandError::Other(error.to_string()))?;
             let next_group_key = crate::crypto::key_rotation::unwrap_for_self(
                 &rotation,
                 &local_public_key,
@@ -332,13 +365,20 @@ pub fn apply_control_event(
             let name = event.payload["name"].as_str();
             let description = event.payload["description"].as_str();
             if name.is_some() || description.is_some() {
-                let conn = db.conn.lock().map_err(|e| CommandError::Other(e.to_string()))?;
+                let conn = db
+                    .conn
+                    .lock()
+                    .map_err(|e| CommandError::Other(e.to_string()))?;
                 if let Some(name) = name {
                     if let Err(e) = conn.execute(
                         "UPDATE communities SET name = ?1 WHERE id = ?2",
                         rusqlite::params![name, event.community_id],
                     ) {
-                        tracing::error!("Failed to update community name for control event {}: {}", event.id, e);
+                        tracing::error!(
+                            "Failed to update community name for control event {}: {}",
+                            event.id,
+                            e
+                        );
                         mutation_ok = false;
                     }
                 }
@@ -347,7 +387,11 @@ pub fn apply_control_event(
                         "UPDATE communities SET description = ?1 WHERE id = ?2",
                         rusqlite::params![desc, event.community_id],
                     ) {
-                        tracing::error!("Failed to update community description for control event {}: {}", event.id, e);
+                        tracing::error!(
+                            "Failed to update community description for control event {}: {}",
+                            event.id,
+                            e
+                        );
                         mutation_ok = false;
                     }
                 }
@@ -449,7 +493,9 @@ fn authorize_control_signer(
         if leaving_public_key == event.signed_by
             && member_has_role(db, &event.community_id, &event.signed_by, "owner")?
         {
-            return Err(CommandError::Validation("Owner cannot leave community without transferring ownership".into()));
+            return Err(CommandError::Validation(
+                "Owner cannot leave community without transferring ownership".into(),
+            ));
         }
     }
 
@@ -568,7 +614,11 @@ fn local_identity_public_key(app_handle: &AppHandle) -> Option<String> {
                     .map(|identity| identity.public_key_b64.clone())
             })
         })
-        .or_else(|| Identity::load().ok().map(|identity| identity.public_key_b64))
+        .or_else(|| {
+            Identity::load()
+                .ok()
+                .map(|identity| identity.public_key_b64)
+        })
 }
 
 fn maybe_rotate_group_key_after_member_leave(
@@ -593,11 +643,17 @@ fn maybe_rotate_group_key_after_member_leave(
         .get_group_key(community_id)
         .map_err(|error| CommandError::Other(error.to_string()))?
         .ok_or_else(|| format!("missing group key for community {community_id}"))?;
-    let old_group_key =
-        encryption::group_key_from_b64(&old_group_key_b64).map_err(|error| CommandError::Other(error.to_string()))?;
-    let members = db.get_members(community_id).map_err(|error| CommandError::Other(error.to_string()))?;
+    let old_group_key = encryption::group_key_from_b64(&old_group_key_b64)
+        .map_err(|error| CommandError::Other(error.to_string()))?;
+    let members = db
+        .get_members(community_id)
+        .map_err(|error| CommandError::Other(error.to_string()))?;
 
-    if members.is_empty() || members.iter().any(|member| member.public_key == departed_public_key) {
+    if members.is_empty()
+        || members
+            .iter()
+            .any(|member| member.public_key == departed_public_key)
+    {
         return Ok(());
     }
 
@@ -606,14 +662,19 @@ fn maybe_rotate_group_key_after_member_leave(
         crate::crypto::key_rotation::generate_rotation(&community_key, &members, &next_group_key)
             .map_err(|error| CommandError::Other(error.to_string()))?
             .to_control_payload();
-    let rotation_event =
-        create_control_event(community_id, "key_rotation", rotation_payload, &community_key);
+    let rotation_event = create_control_event(
+        community_id,
+        "key_rotation",
+        rotation_payload,
+        &community_key,
+    );
 
     apply_control_event(app_handle, db, &rotation_event, trusted_owner_key)?;
 
     let app_handle = app_handle.clone();
     let community_id = community_id.to_string();
-    let rotation_plaintext = serde_json::to_vec(&rotation_event).map_err(|error| CommandError::Other(error.to_string()))?;
+    let rotation_plaintext = serde_json::to_vec(&rotation_event)
+        .map_err(|error| CommandError::Other(error.to_string()))?;
     tauri::async_runtime::spawn(async move {
         let Some(state) = app_handle.try_state::<AppState>() else {
             return;
@@ -623,7 +684,9 @@ fn maybe_rotate_group_key_after_member_leave(
             return;
         };
         let aad = encryption::build_community_aad(&community_id, "");
-        let Ok(data) = encryption::encrypt_community_payload(&old_group_key, &rotation_plaintext, &aad) else {
+        let Ok(data) =
+            encryption::encrypt_community_payload(&old_group_key, &rotation_plaintext, &aad)
+        else {
             return;
         };
         // Publish key rotation to the meta topic for control events
@@ -667,9 +730,18 @@ pub async fn request_control_log_sync(
         .await
         .map_err(|error| CommandError::Other(error.to_string()))?;
 
-    let our_public_key = {
+    let (our_public_key, request_signature, request_timestamp) = {
         let identity = state.identity.read().await;
-        identity.as_ref().map(|id| id.public_key_b64.clone()).unwrap_or_default()
+        match identity.as_ref() {
+            Some(id) => {
+                let pk = id.public_key_b64.clone();
+                let ts = chrono::Utc::now().to_rfc3339();
+                let signable = format!("control-log-req:{}:{}:{}", community_id, pk, ts);
+                let sig = id.sign(signable.as_bytes());
+                (pk, sig, ts)
+            }
+            None => (String::new(), String::new(), String::new()),
+        }
     };
 
     net.send_command(NetworkCommand::RequestControl {
@@ -678,6 +750,8 @@ pub async fn request_control_log_sync(
             community_id,
             since_timestamp,
             requester_public_key: our_public_key,
+            request_signature,
+            request_timestamp,
         }),
     })
     .await

@@ -6,6 +6,7 @@ export interface Identity {
   publicKey: string           // base64-encoded Ed25519 public key
   displayName: string
   avatarColor: string         // hex color
+  avatarUrl?: string | null   // read-only MXC URI for Matrix profiles
 }
 
 export interface Community {
@@ -15,6 +16,42 @@ export interface Community {
   memberCount: number
   role: 'owner' | 'admin' | 'member'
   joinedAt: string | null     // ISO timestamp
+}
+
+export interface CommunityAccessSettings {
+  alias: string | null
+  discoverable: boolean
+  joinRule: string
+}
+
+export interface CommunityDirectoryEntry {
+  id: string
+  alias: string | null
+  name: string
+  description: string
+  memberCount: number
+  joinRule: string
+}
+
+export interface CommunityApplication {
+  userId: string
+  displayName: string
+  reason: string | null
+  requestedAt: string | null
+}
+
+export interface CommunityAccessResult {
+  status: 'knocked' | 'joined'
+  community: Community | null
+}
+
+export interface MatrixUserPreferences {
+  schemaVersion: number
+  notificationsEnabled: boolean
+  notificationSound: boolean
+  mutedChannels: string[]
+  mutedCommunities: string[]
+  updatedAt: string
 }
 
 export interface Channel {
@@ -48,6 +85,8 @@ export interface Attachment {
   size: number
   chunks: number
   sourcePeerId: string
+  mediaSource?: Record<string, unknown> | null
+  contentType?: string | null
 }
 
 export interface FileDownloadRequest {
@@ -230,6 +269,108 @@ export interface DirectMessage {
   content: string
   timestamp: string
   signature: string
+  attachments?: Attachment[]
+  reactions?: Record<string, string[]>
   editedAt?: string | null
   deletedAt?: string | null
+  replyToId?: string | null
+  deliveryStatus?: 'sent' | 'pending' | 'failed' | null
+}
+
+export type LegacyRecordKind =
+  | 'community'
+  | 'channel'
+  | 'membership'
+  | 'message'
+  | 'control_event'
+  | 'file'
+
+export interface LegacyChannelSummary {
+  id: string
+  name: string
+  channelType: string
+}
+
+export interface LegacyCommunitySummary {
+  id: string
+  name: string
+  channels: LegacyChannelSummary[]
+}
+
+export interface LegacyArchiveSummary {
+  archiveId: string
+  archiveSha256: string
+  sourcePeerId: string
+  communities: LegacyCommunitySummary[]
+  recordCount: number
+  embeddedFileCount: number
+  missingFileCount: number
+}
+
+export interface LegacyExportRequest {
+  communityId?: string
+  filePaths?: Record<string, string>
+  fileCandidates?: string[]
+}
+
+export interface LegacyExportResult {
+  archivePath: string
+  summary: LegacyArchiveSummary
+}
+
+export interface LegacyTargetMapping {
+  legacyCommunityId: string
+  matrixSpaceId: string
+  channelRooms: Record<string, string>
+}
+
+export interface LegacyConflictResolution {
+  conflictKey: string
+  selectedRecordSha256: string
+}
+
+export interface LegacyImportRequest {
+  archivePaths: string[]
+  includeCommunityIds: string[]
+  mappings: LegacyTargetMapping[]
+  resolutions: LegacyConflictResolution[]
+}
+
+export interface LegacyConflictVariant {
+  recordSha256: string
+  sourcePeerIds: string[]
+  archiveIds: string[]
+  preview: string
+}
+
+export interface LegacyConflict {
+  conflictKey: string
+  kind: LegacyRecordKind
+  entityId: string
+  variants: LegacyConflictVariant[]
+  selectedRecordSha256?: string
+  resolved: boolean
+}
+
+export interface LegacyDryRunReport {
+  planSha256: string
+  archives: LegacyArchiveSummary[]
+  peerCount: number
+  recordGroupCount: number
+  variantCount: number
+  conflicts: LegacyConflict[]
+  unresolvedConflictCount: number
+  unmappedRecordCount: number
+  missingFileCount: number
+  errors: string[]
+  warnings: string[]
+  approvalToken?: string
+  approvalPhrase?: string
+}
+
+export interface LegacyImportResult {
+  planSha256: string
+  importedEvents: number
+  previouslyImportedEvents: number
+  matrixEventIds: string[]
 }

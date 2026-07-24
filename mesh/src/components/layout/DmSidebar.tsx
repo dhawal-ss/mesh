@@ -3,6 +3,7 @@ import { useDmStore } from '../../store/dms'
 import * as bridge from '../../lib/bridge'
 import { format } from 'date-fns'
 import { Avatar } from '../ui/Avatar'
+import { UserPanel } from './UserPanel'
 
 export function DmSidebar() {
   const { conversations, activeConversationId, setActiveConversation, loadConversations, patchConversation } = useDmStore()
@@ -16,6 +17,14 @@ export function DmSidebar() {
       loadConversations()
     })
     return () => { unsub.then((fn) => fn()) }
+  }, [loadConversations])
+
+  useEffect(() => {
+    if (!bridge.isMatrixBackend()) return
+    const interval = window.setInterval(() => {
+      void loadConversations()
+    }, 5000)
+    return () => window.clearInterval(interval)
   }, [loadConversations])
 
   const handleSelect = useCallback(async (conversationId: string) => {
@@ -92,6 +101,7 @@ export function DmSidebar() {
           </div>
         )}
       </div>
+      <UserPanel />
     </div>
   )
 }

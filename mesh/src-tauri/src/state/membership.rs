@@ -164,7 +164,11 @@ impl MembershipState {
 
     /// Check if a user is an active member. Returns `Some(true/false)` if
     /// the community roster is loaded, or `None` if no roster exists yet.
-    pub fn is_active_member(&self, community_id: &str, public_key: &str) -> Result<Option<bool>, String> {
+    pub fn is_active_member(
+        &self,
+        community_id: &str,
+        public_key: &str,
+    ) -> Result<Option<bool>, String> {
         let communities = self
             .communities
             .read()
@@ -293,22 +297,36 @@ mod tests {
         let _ = state.add_member(community_id, member("alice", "member"));
 
         // alice as member cannot perform admin actions
-        assert!(!state.has_permission(community_id, "alice", "admin").unwrap());
+        assert!(!state
+            .has_permission(community_id, "alice", "admin")
+            .unwrap());
 
         // Promote alice to admin
         let _ = state.update_role(community_id, "alice", "admin");
-        assert!(state.has_permission(community_id, "alice", "admin").unwrap());
-        assert!(state.has_permission(community_id, "alice", "member").unwrap());
+        assert!(state
+            .has_permission(community_id, "alice", "admin")
+            .unwrap());
+        assert!(state
+            .has_permission(community_id, "alice", "member")
+            .unwrap());
 
         // Promote alice to owner
         let _ = state.update_role(community_id, "alice", "owner");
-        assert!(state.has_permission(community_id, "alice", "owner").unwrap());
-        assert!(state.has_permission(community_id, "alice", "admin").unwrap());
+        assert!(state
+            .has_permission(community_id, "alice", "owner")
+            .unwrap());
+        assert!(state
+            .has_permission(community_id, "alice", "admin")
+            .unwrap());
 
         // Demote alice back to member
         let _ = state.update_role(community_id, "alice", "member");
-        assert!(!state.has_permission(community_id, "alice", "admin").unwrap());
-        assert!(state.has_permission(community_id, "alice", "member").unwrap());
+        assert!(!state
+            .has_permission(community_id, "alice", "admin")
+            .unwrap());
+        assert!(state
+            .has_permission(community_id, "alice", "member")
+            .unwrap());
     }
 
     #[test]
@@ -389,46 +407,58 @@ mod tests {
         let community_id = "community-sort";
 
         // Add members with specific display_names to test sorting
-        let _ = state.add_member(community_id, MemberRow {
-            public_key: "zara".into(),
-            display_name: "Zara".into(),
-            avatar_color: "#000000".into(),
-            role: "admin".into(),
-            join_status: "joined".into(),
-            ban_status: "none".into(),
-            x25519_public_key: None,
-            last_seen: None,
-        });
-        let _ = state.add_member(community_id, MemberRow {
-            public_key: "alice".into(),
-            display_name: "Alice".into(),
-            avatar_color: "#000000".into(),
-            role: "admin".into(),
-            join_status: "joined".into(),
-            ban_status: "none".into(),
-            x25519_public_key: None,
-            last_seen: None,
-        });
-        let _ = state.add_member(community_id, MemberRow {
-            public_key: "bob".into(),
-            display_name: "Bob".into(),
-            avatar_color: "#000000".into(),
-            role: "owner".into(),
-            join_status: "joined".into(),
-            ban_status: "none".into(),
-            x25519_public_key: None,
-            last_seen: None,
-        });
-        let _ = state.add_member(community_id, MemberRow {
-            public_key: "charlie".into(),
-            display_name: "Charlie".into(),
-            avatar_color: "#000000".into(),
-            role: "member".into(),
-            join_status: "joined".into(),
-            ban_status: "none".into(),
-            x25519_public_key: None,
-            last_seen: None,
-        });
+        let _ = state.add_member(
+            community_id,
+            MemberRow {
+                public_key: "zara".into(),
+                display_name: "Zara".into(),
+                avatar_color: "#000000".into(),
+                role: "admin".into(),
+                join_status: "joined".into(),
+                ban_status: "none".into(),
+                x25519_public_key: None,
+                last_seen: None,
+            },
+        );
+        let _ = state.add_member(
+            community_id,
+            MemberRow {
+                public_key: "alice".into(),
+                display_name: "Alice".into(),
+                avatar_color: "#000000".into(),
+                role: "admin".into(),
+                join_status: "joined".into(),
+                ban_status: "none".into(),
+                x25519_public_key: None,
+                last_seen: None,
+            },
+        );
+        let _ = state.add_member(
+            community_id,
+            MemberRow {
+                public_key: "bob".into(),
+                display_name: "Bob".into(),
+                avatar_color: "#000000".into(),
+                role: "owner".into(),
+                join_status: "joined".into(),
+                ban_status: "none".into(),
+                x25519_public_key: None,
+                last_seen: None,
+            },
+        );
+        let _ = state.add_member(
+            community_id,
+            MemberRow {
+                public_key: "charlie".into(),
+                display_name: "Charlie".into(),
+                avatar_color: "#000000".into(),
+                role: "member".into(),
+                join_status: "joined".into(),
+                ban_status: "none".into(),
+                x25519_public_key: None,
+                last_seen: None,
+            },
+        );
 
         let roster = state.get_roster(community_id).unwrap();
         let names: Vec<&str> = roster.iter().map(|m| m.display_name.as_str()).collect();

@@ -50,11 +50,7 @@ pub async fn send_message(
 
     if !state
         .rate_limits
-        .allow(
-            RateLimitBucket::Message,
-            &community_id,
-            &public_key,
-        )
+        .allow(RateLimitBucket::Message, &community_id, &public_key)
         .await
     {
         return Err(CommandError::RateLimited);
@@ -163,12 +159,17 @@ pub async fn edit_message(
         ));
     }
 
+    let edit_timestamp = chrono::Utc::now().to_rfc3339();
+
     let message_id_c = message_id.clone();
     let content_c = content.clone();
     let public_key_c = public_key.clone();
-    db.run_blocking(move |db| db.update_message_content(&message_id_c, &content_c, &public_key_c))
-        .await
-        .map_err(|e| CommandError::Other(e.to_string()))?;
+    let edit_timestamp_c = edit_timestamp.clone();
+    db.run_blocking(move |db| {
+        db.update_message_content(&message_id_c, &content_c, &public_key_c, &edit_timestamp_c)
+    })
+    .await
+    .map_err(|e| CommandError::Other(e.to_string()))?;
 
     let payload = MessageEditPayload {
         message_id: message_id.clone(),
@@ -351,9 +352,33 @@ pub async fn request_message_history(
         .run_blocking(move |db| db.get_latest_message_cursor(&channel_id_c))
         .await
         .map_err(|e| CommandError::Other(e.to_string()))?;
-    let our_public_key = {
+
+    // Look up local latest event sequence for this channel.
+    // Used for diagnostics and will be included in future
+    // event-based history request protocol messages.
+    let channel_id_c = channel_id.clone();
+    let local_seq = db
+        .run_blocking(move |db| db.get_channel_sequence(&channel_id_c).unwrap_or(0))
+        .await;
+    tracing::debug!(
+        "request_message_history: channel={} local_seq={} cursor={:?}",
+        channel_id,
+        local_seq,
+        cursor.as_ref().map(|(ts, _)| ts.as_str()),
+    );
+
+    let (our_public_key, request_signature, request_timestamp) = {
         let identity = state.identity.read().await;
-        identity.as_ref().map(|id| id.public_key_b64.clone()).unwrap_or_default()
+        match identity.as_ref() {
+            Some(id) => {
+                let pk = id.public_key_b64.clone();
+                let ts = chrono::Utc::now().to_rfc3339();
+                let signable = format!("history-req:{}:{}:{}", channel_id, pk, ts);
+                let sig = id.sign(signable.as_bytes());
+                (pk, sig, ts)
+            }
+            None => (String::new(), String::new(), String::new()),
+        }
     };
     let network = state.network.read().await;
 
@@ -366,6 +391,8 @@ pub async fn request_message_history(
                 since_id: cursor.as_ref().map(|(_, id)| id.clone()),
                 limit: limit.unwrap_or(100),
                 requester_public_key: our_public_key,
+                request_signature,
+                request_timestamp,
             })
             .await
         {
@@ -409,11 +436,7 @@ pub async fn add_reaction(
 
     if !state
         .rate_limits
-        .allow(
-            RateLimitBucket::Reaction,
-            &community_id,
-            &public_key,
-        )
+        .allow(RateLimitBucket::Reaction, &community_id, &public_key)
         .await
     {
         return Err(CommandError::RateLimited);
@@ -446,6 +469,51 @@ pub async fn add_reaction(
 }
 
 #[tauri::command]
+pub async fn broadcast_typing(
+    channel_id: String,
+    state: State<'_, AppState>,
+    db: State<'_, Database>,
+) -> Result<(), CommandError> {
+    let (public_key, private_key_bytes) = {
+        let guard = state.identity.read().await;
+        let id = guard
+            .as_ref()
+            .ok_or(CommandError::Validation("No identity loaded".into()))?;
+        (id.public_key_b64.clone(), id.private_key_bytes())
+    };
+
+    let channel_id_c = channel_id.clone();
+    let community_id = db
+        .run_blocking(move |db| db.get_community_for_channel(&channel_id_c))
+        .await
+        .map_err(|e| CommandError::Other(e.to_string()))?;
+
+    let public_key_c = public_key.clone();
+    let profile = db
+        .run_blocking(move |db| db.get_local_profile(&public_key_c))
+        .await
+        .map_err(|e| CommandError::Other(e.to_string()))?
+        .ok_or(CommandError::NotFound("No profile found".into()))?;
+
+    let payload = serde_json::json!({
+        "author_display_name": profile.display_name,
+        "author_avatar_color": profile.avatar_color,
+    });
+
+    let envelope = EnvelopeBuilder::new("typing", &public_key, &community_id)
+        .channel_id(&channel_id)
+        .payload(payload)
+        .sign(&private_key_bytes);
+
+    let network = state.network.read().await;
+    if let Some(ref net) = *network {
+        encrypt_and_publish(&db, net, &envelope, &community_id, &channel_id).await?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn search_messages(
     query: String,
     community_id: String,
@@ -453,9 +521,34 @@ pub async fn search_messages(
     db: State<'_, Database>,
 ) -> Result<Vec<MessageDto>, CommandError> {
     let limit = limit.unwrap_or(50);
-    db.run_blocking(move |db| {
-        db.search_messages(&query, &community_id, limit)
-    })
-    .await
-    .map_err(|e| CommandError::Other(e.to_string()))
+    db.run_blocking(move |db| db.search_messages(&query, &community_id, limit))
+        .await
+        .map_err(|e| CommandError::Other(e.to_string()))
+}
+
+#[tauri::command]
+pub async fn get_channel_event_log(
+    channel_id: String,
+    since_sequence: i64,
+    limit: Option<u32>,
+    db: State<'_, Database>,
+) -> Result<serde_json::Value, CommandError> {
+    let limit = limit.unwrap_or(500);
+    let channel_id_c = channel_id.clone();
+    let events = db
+        .run_blocking(move |db| db.get_channel_events(&channel_id_c, since_sequence, limit))
+        .await
+        .map_err(|e| CommandError::Other(e.to_string()))?;
+
+    let channel_id_c2 = channel_id.clone();
+    let latest_seq = db
+        .run_blocking(move |db| db.get_channel_sequence(&channel_id_c2))
+        .await
+        .unwrap_or(0);
+
+    Ok(serde_json::json!({
+        "channelId": channel_id,
+        "events": events,
+        "latestSequence": latest_seq,
+    }))
 }

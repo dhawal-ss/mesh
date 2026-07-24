@@ -70,6 +70,12 @@ impl DownloadSession {
             state: self.state.as_str().to_string(),
         }
     }
+
+    /// Serialize the set of received chunk indices as a JSON array string.
+    pub fn received_chunks_json(&self) -> String {
+        let chunks: Vec<u32> = self.received_chunks.iter().copied().collect();
+        serde_json::to_string(&chunks).unwrap_or_else(|_| "[]".to_string())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -146,6 +152,11 @@ impl DownloadManager {
         Ok(progress)
     }
 
+    /// Get a snapshot of a session for persistence purposes.
+    pub fn get_session(&self, file_hash: &str) -> Option<&DownloadSession> {
+        self.sessions.get(file_hash)
+    }
+
     pub fn mark_failed(&mut self, file_hash: &str) -> Option<FileDownloadProgress> {
         let session = self.sessions.get_mut(file_hash)?;
         session.state = DownloadState::Failed;
@@ -188,6 +199,20 @@ impl DownloadManager {
                     return Ok(Some(DownloadUpdate::Progress(session.progress())));
                 }
             }
+        }
+
+        // Validate chunk size — reject oversized chunks that could corrupt adjacent data
+        let max_chunk_size = CHUNK_SIZE_BYTES as usize;
+        if data.len() > max_chunk_size {
+            tracing::warn!(
+                file_hash = %file_hash,
+                chunk_index = chunk_index,
+                chunk_size = data.len(),
+                max_size = max_chunk_size,
+                "Rejecting oversized chunk"
+            );
+            session.received_chunks.remove(&chunk_index);
+            return Ok(Some(DownloadUpdate::Progress(session.progress())));
         }
 
         let mut part_file = OpenOptions::new()

@@ -1,0 +1,142 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  matrix-rust:
+    name: Matrix Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc # 1.92.0
+        with:
+          components: clippy, rustfmt
+
+      - name: Install system dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libsqlcipher-dev
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            mesh/src-tauri/target
+          key: ${{ runner.os }}-cargo-matrix-${{ hashFiles('mesh/src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-matrix-
+
+      - name: Check Matrix backend
+        working-directory: mesh/src-tauri
+        run: cargo check --no-default-features --features matrix-backend --locked
+
+      - name: Lint Matrix backend and tests
+        working-directory: mesh/src-tauri
+        run: cargo clippy --no-default-features --features matrix-backend --all-targets --locked -- -D warnings
+
+      - name: Check Rust formatting
+        working-directory: mesh/src-tauri
+        run: cargo fmt --check
+
+      - name: Test Matrix backend
+        working-directory: mesh/src-tauri
+        run: cargo test --no-default-features --features matrix-backend --locked --jobs 1
+
+  legacy-rust:
+    name: Legacy LAN Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc # 1.92.0
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libsqlcipher-dev
+
+      - name: Cache cargo registry & legacy build
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            mesh/src-tauri/target
+          key: ${{ runner.os }}-cargo-legacy-${{ hashFiles('mesh/src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-legacy-
+
+      - name: Check legacy LAN backend
+        working-directory: mesh/src-tauri
+        run: cargo check --no-default-features --features legacy-p2p --locked
+
+      - name: Test legacy LAN backend
+        working-directory: mesh/src-tauri
+        run: cargo test --no-default-features --features legacy-p2p --locked --jobs 1
+
+  check-frontend:
+    name: Frontend Build & Browser E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mesh/package-lock.json
+
+      - name: Install dependencies
+        working-directory: mesh
+        run: npm ci
+
+      - name: TypeScript check
+        working-directory: mesh
+        run: npx tsc --noEmit
+
+      - name: Run tests
+        working-directory: mesh
+        run: npm run test
+
+      - name: Build frontend
+        working-directory: mesh
+        run: npm run build
+
+      - name: Install Playwright browser
+        working-directory: mesh
+        run: npm run e2e:install -- --with-deps
+
+      - name: Run browser E2E tests
+        working-directory: mesh
+        run: npm run e2e

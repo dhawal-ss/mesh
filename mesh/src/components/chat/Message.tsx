@@ -19,6 +19,7 @@ interface MessageProps {
   onReply?: (message: MessageType) => void
   onRetry?: (message: MessageType) => void
   replyPreview?: MessageType | null
+  limitedActions?: boolean
 }
 
 export const MessageComponent = memo(function MessageComponent({
@@ -27,6 +28,7 @@ export const MessageComponent = memo(function MessageComponent({
   onReply,
   onRetry,
   replyPreview,
+  limitedActions = false,
 }: MessageProps) {
   const [hovered, setHovered] = useState(false)
   const [showReactions, setShowReactions] = useState(false)
@@ -34,11 +36,13 @@ export const MessageComponent = memo(function MessageComponent({
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState('')
   const [confirmBan, setConfirmBan] = useState(false)
+  const matrixMode = bridge.isMatrixBackend()
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
   const activeCommunity = useCommunityStore((s) =>
     s.communities.find((c) => c.id === s.activeCommunityId),
   )
-  const myPublicKey = useIdentityStore((s) => s.identity?.publicKey)
+  const legacyPublicKey = useIdentityStore((s) => s.identity?.publicKey)
+  const myPublicKey = bridge.isMatrixBackend() ? bridge.getMatrixUserId() ?? undefined : legacyPublicKey
   const activeChannelId = useChannelStore((s) => s.activeChannelId)
   const updateReaction = useMessageStore((s) => s.updateReaction)
   const editMessage = useMessageStore((s) => s.editMessage)
@@ -60,6 +64,7 @@ export const MessageComponent = memo(function MessageComponent({
   }, [contextMenu])
 
   const handleContextMenu = (e: React.MouseEvent) => {
+    if (limitedActions && !isOwnMessage) return
     e.preventDefault()
     setContextMenu({ x: e.clientX, y: e.clientY })
     setConfirmBan(false)
@@ -80,6 +85,26 @@ export const MessageComponent = memo(function MessageComponent({
     setConfirmBan(false)
   }
 
+  const handleKick = useCallback(async () => {
+    if (!activeCommunityId) return
+    try {
+      await bridge.kickUser(activeCommunityId, message.authorPublicKey)
+    } catch (e) {
+      console.error('Kick failed:', e)
+    }
+    setContextMenu(null)
+  }, [activeCommunityId, message.authorPublicKey])
+
+  const handleTimeout = useCallback(async () => {
+    if (!activeCommunityId) return
+    try {
+      await bridge.timeoutUser(activeCommunityId, message.authorPublicKey, 60)
+    } catch (e) {
+      console.error('Timeout failed:', e)
+    }
+    setContextMenu(null)
+  }, [activeCommunityId, message.authorPublicKey])
+
   const handleStartEdit = useCallback(() => {
     setEditContent(message.content)
     setIsEditing(true)
@@ -93,8 +118,8 @@ export const MessageComponent = memo(function MessageComponent({
       return
     }
     try {
-      await bridge.editMessage(message.id, trimmed)
       const channelId = activeChannelId ?? message.channelId
+      await bridge.editMessage(message.id, trimmed, channelId)
       if (channelId) {
         editMessage(channelId, message.id, trimmed, new Date().toISOString())
       }
@@ -111,8 +136,8 @@ export const MessageComponent = memo(function MessageComponent({
 
   const handleDelete = useCallback(async () => {
     try {
-      await bridge.deleteMessage(message.id)
       const channelId = activeChannelId ?? message.channelId
+      await bridge.deleteMessage(message.id, channelId)
       if (channelId) {
         deleteMessage(channelId, message.id)
       }
@@ -148,7 +173,7 @@ export const MessageComponent = memo(function MessageComponent({
     }
 
     try {
-      await bridge.addReaction(message.id, emoji)
+      await bridge.addReaction(message.id, emoji, channelId)
     } catch (e) {
       if (myPublicKey) {
         const revertVerb = verb === 'add' ? 'remove' : 'add'
@@ -382,7 +407,7 @@ export const MessageComponent = memo(function MessageComponent({
                 </button>
               </>
             )}
-            {canModerate && !isOwnMessage && !isDeleted && (
+            {!limitedActions && canModerate && !isOwnMessage && !isDeleted && (
               <>
                 <button
                   onClick={() => void handleDelete()}
@@ -393,6 +418,24 @@ export const MessageComponent = memo(function MessageComponent({
                   Remove Message
                 </button>
                 <button
+                  onClick={() => void handleKick()}
+                  className="w-full px-2 py-1.5 text-left text-secondary rounded-sm mx-1 transition-colors hover:bg-blue hover:text-white"
+                  style={{ width: 'calc(100% - 8px)' }}
+                  aria-label={`Kick ${message.authorDisplayName}`}
+                >
+                  Kick User
+                </button>
+                {!matrixMode && (
+                  <button
+                    onClick={() => void handleTimeout()}
+                    className="w-full px-2 py-1.5 text-left text-secondary rounded-sm mx-1 transition-colors hover:bg-blue hover:text-white"
+                    style={{ width: 'calc(100% - 8px)' }}
+                    aria-label={`Timeout ${message.authorDisplayName}`}
+                  >
+                    Timeout (1hr)
+                  </button>
+                )}
+                <button
                   onClick={handleBan}
                   className="w-full px-2 py-1.5 text-left text-red rounded-sm mx-1 transition-colors hover:bg-red hover:text-white"
                   style={{ width: 'calc(100% - 8px)' }}
@@ -402,7 +445,7 @@ export const MessageComponent = memo(function MessageComponent({
                 </button>
               </>
             )}
-            {!isOwnMessage && !canModerate && (
+            {!isOwnMessage && (!canModerate || limitedActions) && (
               <div className="px-3 py-2 text-muted">No actions available</div>
             )}
           </motion.div>
@@ -412,7 +455,7 @@ export const MessageComponent = memo(function MessageComponent({
   )
 })
 
-function FileAttachmentCard({
+export function FileAttachmentCard({
   attachment,
 }: {
   attachment: MessageType['attachments'][number]
@@ -431,6 +474,30 @@ function FileAttachmentCard({
   })()
 
   const startDownload = async () => {
+    if (bridge.isMatrixBackend() && attachment.mediaSource) {
+      const matrixSourcePeerId = sourcePeerId || 'matrix'
+      useFileDownloadStore.getState().startDownload({
+        fileHash: attachment.fileHash,
+        filename: attachment.filename,
+        sourcePeerId: matrixSourcePeerId,
+        size: attachment.size,
+        chunks: attachment.chunks,
+      })
+      try {
+        const localPath = await bridge.matrixDownloadAttachment(attachment)
+        useFileDownloadStore.getState().markDownloadAvailable({
+          fileHash: attachment.fileHash,
+          localPath,
+        })
+      } catch (error) {
+        useFileDownloadStore.getState().markDownloadFailed(
+          attachment.fileHash,
+          error instanceof Error ? error.message : 'Failed to decrypt attachment',
+        )
+      }
+      return
+    }
+
     if (!sourcePeerId) {
       useFileDownloadStore.getState().markDownloadFailed(
         attachment.fileHash,
@@ -466,6 +533,18 @@ function FileAttachmentCard({
     await bridge.openDownloadedFile(download.localPath)
   }
 
+  const cancelDownload = async () => {
+    if (!bridge.isMatrixBackend() || download?.status !== 'downloading') return
+    try {
+      await bridge.matrixCancelAttachmentDownload(attachment.fileHash)
+    } catch (error) {
+      useFileDownloadStore.getState().markDownloadFailed(
+        attachment.fileHash,
+        error instanceof Error ? error.message : 'Failed to cancel download',
+      )
+    }
+  }
+
   const status = download?.status ?? 'idle'
   const isDownloading = status === 'downloading'
   const isCompleted = status === 'completed'
@@ -494,8 +573,8 @@ function FileAttachmentCard({
       </div>
 
       <button
-        onClick={isCompleted ? handleOpen : startDownload}
-        disabled={isDownloading}
+        onClick={isCompleted ? handleOpen : isDownloading && bridge.isMatrixBackend() ? cancelDownload : startDownload}
+        disabled={isDownloading && !bridge.isMatrixBackend()}
         className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
           isCompleted
             ? 'bg-green/20 text-green hover:bg-green/30'
@@ -503,9 +582,9 @@ function FileAttachmentCard({
               ? 'bg-red/10 text-red hover:bg-red/15'
               : 'bg-bg-modifier-hover text-secondary hover:bg-bg-modifier-active'
         } disabled:opacity-60`}
-        aria-label={isCompleted ? `Open ${attachment.filename}` : `Download ${attachment.filename}`}
+        aria-label={isCompleted ? `Open ${attachment.filename}` : isDownloading && bridge.isMatrixBackend() ? `Cancel download of ${attachment.filename}` : `Download ${attachment.filename}`}
       >
-        {isCompleted ? 'Open' : isDownloading ? `${progressPercent}%` : isErrored ? 'Retry' : 'Download'}
+        {isCompleted ? 'Open' : isDownloading && bridge.isMatrixBackend() ? 'Cancel' : isDownloading ? `${progressPercent}%` : isErrored ? 'Retry' : 'Download'}
       </button>
     </div>
   )

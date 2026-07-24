@@ -285,3 +285,157 @@ describe('deleteMessage', () => {
     expect(result.deletedAt).toBeTruthy()
   })
 })
+
+// ─── Critical user flows (deep E2E at store layer) ───
+//
+// These tests exercise full multi-step user flows that span multiple
+// store methods: send → edit → react → delete → restart. They prove
+// that the store's final state reflects the expected user-visible
+// outcome after each step, and that restart-like scenarios (clearing
+// then re-hydrating from a persisted snapshot) produce a consistent view.
+
+describe('critical flow: send → edit → react → delete', () => {
+  it('converges to the expected final state across all operations', () => {
+    const store = useMessageStore.getState()
+
+    // 1. User sends a message
+    const m = msg({ id: 'flow-1', content: 'hello world', timestamp: '2025-02-01T00:00:00Z' })
+    store.addMessage('ch-1', m)
+    let state = useMessageStore.getState().messages['ch-1']
+    expect(state).toHaveLength(1)
+    expect(state[0].content).toBe('hello world')
+
+    // 2. User edits the message
+    store.editMessage('ch-1', 'flow-1', 'hello everyone', '2025-02-01T00:00:01Z')
+    state = useMessageStore.getState().messages['ch-1']
+    expect(state[0].content).toBe('hello everyone')
+    expect(state[0].editedAt).toBe('2025-02-01T00:00:01Z')
+
+    // 3. Bob reacts with 👍
+    store.updateReaction('ch-1', 'flow-1', '👍', 'bob-key', 'add')
+    state = useMessageStore.getState().messages['ch-1']
+    expect(state[0].reactions['👍']).toEqual(['bob-key'])
+
+    // 4. Carol reacts with 👍 as well
+    store.updateReaction('ch-1', 'flow-1', '👍', 'carol-key', 'add')
+    state = useMessageStore.getState().messages['ch-1']
+    expect(state[0].reactions['👍']).toEqual(['bob-key', 'carol-key'])
+
+    // 5. Bob removes his reaction
+    store.updateReaction('ch-1', 'flow-1', '👍', 'bob-key', 'remove')
+    state = useMessageStore.getState().messages['ch-1']
+    expect(state[0].reactions['👍']).toEqual(['carol-key'])
+
+    // 6. Author deletes the message
+    store.deleteMessage('ch-1', 'flow-1')
+    state = useMessageStore.getState().messages['ch-1']
+    expect(state[0].content).toBe('')
+    expect(state[0].deletedAt).toBeTruthy()
+    // Reactions are preserved on deleted messages (common convention)
+    expect(state[0].reactions['👍']).toEqual(['carol-key'])
+  })
+})
+
+describe('critical flow: restart persistence', () => {
+  it('hydrates back to a pristine state that matches the pre-restart view', () => {
+    const store = useMessageStore.getState()
+
+    // Simulate a session: 3 messages with edits, reactions, deletes
+    const m1 = msg({ id: 'r-1', content: 'first', timestamp: '2025-03-01T00:00:01Z' })
+    const m2 = msg({ id: 'r-2', content: 'second', timestamp: '2025-03-01T00:00:02Z' })
+    const m3 = msg({ id: 'r-3', content: 'third', timestamp: '2025-03-01T00:00:03Z' })
+    store.setMessages('ch-1', [m1, m2, m3])
+    store.editMessage('ch-1', 'r-2', 'second (edited)', '2025-03-01T00:00:04Z')
+    store.updateReaction('ch-1', 'r-3', '❤️', 'alice', 'add')
+    store.deleteMessage('ch-1', 'r-1')
+
+    // Capture the pre-restart state
+    const persistedMessages = structuredClone(
+      useMessageStore.getState().messages['ch-1'],
+    )
+    const preRestart = persistedMessages.map((m) => ({
+      id: m.id,
+      content: m.content,
+      editedAt: m.editedAt,
+      deletedAt: m.deletedAt,
+      reactions: { ...m.reactions },
+    }))
+
+    // Simulate restart: clear the store
+    useMessageStore.setState({
+      messages: {},
+      loadingOlder: {},
+      hasMoreOlder: {},
+      browsingOlder: {},
+      newerGapCount: {},
+    })
+    expect(useMessageStore.getState().messages['ch-1']).toBeUndefined()
+
+    // Re-hydrate the persisted projection returned by the backend. Replaying
+    // a delete action would manufacture a new client timestamp and would not
+    // model a real restart.
+    const fresh = useMessageStore.getState()
+    fresh.setMessages('ch-1', persistedMessages)
+
+    const postRestart = useMessageStore.getState().messages['ch-1'].map((m) => ({
+      id: m.id,
+      content: m.content,
+      editedAt: m.editedAt,
+      deletedAt: m.deletedAt,
+      reactions: { ...m.reactions },
+    }))
+
+    expect(postRestart).toEqual(preRestart)
+  })
+})
+
+describe('critical flow: out-of-order delivery converges', () => {
+  it('adding messages in the wrong timestamp order still yields the same final state', () => {
+    const store = useMessageStore.getState()
+
+    const m1 = msg({ id: 'ooo-1', content: 'first', timestamp: '2025-04-01T00:00:01Z' })
+    const m2 = msg({ id: 'ooo-2', content: 'second', timestamp: '2025-04-01T00:00:02Z' })
+    const m3 = msg({ id: 'ooo-3', content: 'third', timestamp: '2025-04-01T00:00:03Z' })
+
+    // Add in reverse chronological order (as if gossip reorder occurred)
+    store.addMessage('ch-1', m3)
+    store.addMessage('ch-1', m1)
+    store.addMessage('ch-1', m2)
+
+    const ids = useMessageStore.getState().messages['ch-1'].map((m) => m.id)
+    expect(ids).toEqual(['ooo-1', 'ooo-2', 'ooo-3'])
+  })
+
+  it('reaction delivered before message is a no-op (graceful handling)', () => {
+    const store = useMessageStore.getState()
+
+    // Reaction for a non-existent message
+    store.updateReaction('ch-1', 'not-yet', '👍', 'alice', 'add')
+    // Store should not crash
+    expect(useMessageStore.getState().messages['ch-1']).toBeUndefined()
+
+    // Message arrives later with no reaction
+    const m = msg({ id: 'not-yet', timestamp: '2025-04-02T00:00:00Z' })
+    store.addMessage('ch-1', m)
+    const result = useMessageStore.getState().messages['ch-1'][0]
+    // Reaction from before the message arrived was dropped
+    expect(result.reactions).toEqual({})
+  })
+
+  it('edit delivered before message stores content as-sent then applies no change on late message arrival', () => {
+    const store = useMessageStore.getState()
+
+    // Edit a non-existent message — should be a no-op
+    store.editMessage('ch-1', 'late', 'edited content', '2025-04-02T00:00:01Z')
+    expect(useMessageStore.getState().messages['ch-1']).toBeUndefined()
+
+    // Late message arrives with original content — the edit was lost at the
+    // store layer, which is the expected behavior since the store isn't
+    // the event log. This test documents the invariant.
+    const m = msg({ id: 'late', content: 'original', timestamp: '2025-04-02T00:00:00Z' })
+    store.addMessage('ch-1', m)
+    const result = useMessageStore.getState().messages['ch-1'][0]
+    expect(result.content).toBe('original')
+    expect(result.editedAt).toBeUndefined()
+  })
+})

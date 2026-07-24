@@ -8,6 +8,7 @@ export interface MemberRecord {
   joinStatus: 'invited' | 'joined' | 'left'
   banStatus: 'none' | 'banned'
   lastSeen: string | null
+  online?: boolean
 }
 
 interface MembershipStore {

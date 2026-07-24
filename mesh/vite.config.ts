@@ -1,3 +1,4 @@
+import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -7,6 +8,23 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [react()],
+  resolve: {
+    // Force simple-peer/readable-stream onto the browser EventEmitter package
+    // instead of Vite's empty shim for the Node built-in `events` module.
+    alias: [
+      {
+        find: /^events$/,
+        replacement: fileURLToPath(
+          new URL("./node_modules/events/events.js", import.meta.url),
+        ),
+      },
+    ],
+  },
+  // simple-peer's browser dependency graph still references Node's `global`
+  // identifier. Tauri's WebView only provides globalThis/window.
+  define: {
+    global: "globalThis",
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
@@ -33,5 +51,16 @@ export default defineConfig(async () => ({
   // into src-tauri/target/doc/ (tens of thousands of generated HTML files)
   optimizeDeps: {
     entries: ["index.html"],
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        // Keep slow-changing framework code cacheable and keep the interactive
+        // application shell below Vite's large-chunk threshold.
+        manualChunks: {
+          motion: ["framer-motion"],
+        },
+      },
+    },
   },
 }));

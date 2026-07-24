@@ -335,7 +335,10 @@ mod tests {
         let bytes = serde_json::to_vec(&json).unwrap();
         // Should parse successfully (it's valid v2 JSON)
         let envelope = SignedEnvelope::from_bytes(&bytes);
-        assert!(envelope.is_some(), "large payload should parse without panic");
+        assert!(
+            envelope.is_some(),
+            "large payload should parse without panic"
+        );
         let envelope = envelope.unwrap();
         assert_eq!(envelope.v, 2);
     }

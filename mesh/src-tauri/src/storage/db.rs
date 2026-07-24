@@ -76,6 +76,39 @@ impl Database {
         Ok(())
     }
 
+    // ─── Key-Value Store ─────────────────────────────
+
+    /// Get a value from the kv_store table.
+    pub fn get_kv(&self, key: &str) -> anyhow::Result<Option<String>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {}", e))?;
+        let result: Result<String, _> = conn.query_row(
+            "SELECT value FROM kv_store WHERE key = ?1",
+            rusqlite::params![key],
+            |row| row.get(0),
+        );
+        match result {
+            Ok(value) => Ok(Some(value)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Set a value in the kv_store table (upsert).
+    pub fn set_kv(&self, key: &str, value: &str) -> anyhow::Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {}", e))?;
+        conn.execute(
+            "INSERT INTO kv_store (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            rusqlite::params![key, value],
+        )?;
+        Ok(())
+    }
+
     // ─── Membership helpers ──────────────────────────
 
     /// Get the member count for a community from the members table.
@@ -515,12 +548,7 @@ impl Database {
     // ─── Pending Message Queue (Offline Support) ─────
 
     /// Queue a message that failed to publish for later retry.
-    pub fn queue_pending_message(
-        &self,
-        id: &str,
-        topic: &str,
-        data: &[u8],
-    ) -> anyhow::Result<()> {
+    pub fn queue_pending_message(&self, id: &str, topic: &str, data: &[u8]) -> anyhow::Result<()> {
         let conn = self
             .conn
             .lock()
@@ -584,6 +612,175 @@ impl Database {
         Ok(())
     }
 
+    /// Clear the entire pending_messages queue. Used on startup to drop
+    /// stale entries from the previous InsufficientPeers queueing bug —
+    /// those messages are already in the main messages table, so the
+    /// pending entry is a dead retry slot.
+    ///
+    /// Safe to call unconditionally because:
+    ///   - If the user's messages really did fail to publish, they're
+    ///     already in the local DB (send_message inserts first, then
+    ///     publishes), so they're visible to the sender.
+    ///   - Late-joining peers discover state via the message history
+    ///     request-response protocol, not via gossip replay of the
+    ///     pending queue.
+    ///
+    /// Returns the number of rows deleted.
+    pub fn clear_pending_messages(&self) -> anyhow::Result<usize> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {}", e))?;
+        let deleted = conn.execute("DELETE FROM pending_messages", [])?;
+        Ok(deleted)
+    }
+
+    // ─── Channel Event Log ──────────────────────────────
+
+    /// Append an event to the channel's immutable log. Returns the assigned sequence number.
+    pub fn append_channel_event(
+        &self,
+        channel_id: &str,
+        event_type: &str,
+        event_id: &str,
+        target_id: Option<&str>,
+        author_public_key: &str,
+        payload: &str,
+        signature: &str,
+        timestamp: &str,
+    ) -> anyhow::Result<i64> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {}", e))?;
+
+        // Wrap in explicit transaction to ensure atomicity of sequence assignment
+        conn.execute_batch("BEGIN IMMEDIATE;")?;
+
+        let result = (|| -> anyhow::Result<i64> {
+            conn.execute(
+                "INSERT OR IGNORE INTO channel_sequence (channel_id, latest_sequence) VALUES (?1, 0)",
+                rusqlite::params![channel_id],
+            )?;
+            conn.execute(
+                "UPDATE channel_sequence SET latest_sequence = latest_sequence + 1 WHERE channel_id = ?1",
+                rusqlite::params![channel_id],
+            )?;
+            let seq: i64 = conn.query_row(
+                "SELECT latest_sequence FROM channel_sequence WHERE channel_id = ?1",
+                rusqlite::params![channel_id],
+                |row| row.get(0),
+            )?;
+
+            conn.execute(
+                "INSERT OR IGNORE INTO channel_events (sequence, channel_id, event_type, event_id, target_id, author_public_key, payload, signature, timestamp)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                rusqlite::params![seq, channel_id, event_type, event_id, target_id, author_public_key, payload, signature, timestamp],
+            )?;
+
+            Ok(seq)
+        })();
+
+        match result {
+            Ok(seq) => {
+                conn.execute_batch("COMMIT;")?;
+                Ok(seq)
+            }
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK;");
+                Err(e)
+            }
+        }
+    }
+
+    /// Find the sequence number of the event closest to (but not after) a given timestamp.
+    /// Used to translate timestamp-based history cursors into sequence-based ones.
+    pub fn get_sequence_for_timestamp(
+        &self,
+        channel_id: &str,
+        timestamp: &str,
+    ) -> anyhow::Result<i64> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {}", e))?;
+        let seq: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(sequence), 0) FROM channel_events WHERE channel_id = ?1 AND timestamp <= ?2",
+            rusqlite::params![channel_id, timestamp],
+            |row| row.get(0),
+        ).unwrap_or(0);
+        Ok(seq)
+    }
+
+    /// Get the latest sequence number for a channel.
+    pub fn get_channel_sequence(&self, channel_id: &str) -> anyhow::Result<i64> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {}", e))?;
+        let seq = conn
+            .query_row(
+                "SELECT latest_sequence FROM channel_sequence WHERE channel_id = ?1",
+                rusqlite::params![channel_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        Ok(seq)
+    }
+
+    /// Remove file availability records older than the given threshold.
+    /// Returns the number of records removed.
+    pub fn sweep_stale_file_seeders(&self, max_age_minutes: i64) -> anyhow::Result<u64> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {}", e))?;
+        let deleted = conn.execute(
+            "DELETE FROM file_availability WHERE last_seen < datetime('now', ?1)",
+            rusqlite::params![format!("-{} minutes", max_age_minutes)],
+        )?;
+        Ok(deleted as u64)
+    }
+
+    /// Get events in a sequence range for history sync.
+    pub fn get_channel_events(
+        &self,
+        channel_id: &str,
+        since_sequence: i64,
+        limit: u32,
+    ) -> anyhow::Result<Vec<serde_json::Value>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT sequence, event_type, event_id, target_id, author_public_key, payload, signature, timestamp
+             FROM channel_events
+             WHERE channel_id = ?1 AND sequence > ?2
+             ORDER BY sequence ASC
+             LIMIT ?3"
+        )?;
+        let rows = stmt.query_map(
+            rusqlite::params![channel_id, since_sequence, limit],
+            |row| {
+                Ok(serde_json::json!({
+                    "sequence": row.get::<_, i64>(0)?,
+                    "eventType": row.get::<_, String>(1)?,
+                    "eventId": row.get::<_, String>(2)?,
+                    "targetId": row.get::<_, Option<String>>(3)?,
+                    "authorPublicKey": row.get::<_, String>(4)?,
+                    "payload": row.get::<_, String>(5)?,
+                    "signature": row.get::<_, String>(6)?,
+                    "timestamp": row.get::<_, String>(7)?,
+                }))
+            },
+        )?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
 }
 
 fn derive_database_key_hex() -> anyhow::Result<String> {

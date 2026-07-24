@@ -204,8 +204,12 @@ impl Database {
                 content: row.get(5)?,
                 timestamp: row.get(6)?,
                 signature: row.get(7)?,
+                attachments: Vec::new(),
+                reactions: std::collections::HashMap::new(),
                 edited_at: row.get(8)?,
                 deleted_at: row.get(9)?,
+                reply_to_id: None,
+                delivery_status: Some("sent".into()),
             })
         })?;
 

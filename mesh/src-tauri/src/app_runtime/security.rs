@@ -94,6 +94,21 @@ pub(super) async fn enforce_rate_limit(
     let Some(state) = app_handle.try_state::<AppState>() else {
         return true;
     };
+
+    // Check global per-actor rate limit first (cross-community)
+    if !state
+        .rate_limits
+        .check_global_rate_limit(&bucket, actor)
+        .await
+    {
+        tracing::warn!(
+            "Global rate limit exceeded for {} by actor {}",
+            bucket.key(),
+            actor
+        );
+        return false;
+    }
+
     state.rate_limits.allow(bucket, community_id, actor).await
 }
 
@@ -107,7 +122,10 @@ pub(super) fn is_active_member(
     public_key: &str,
 ) -> Option<bool> {
     let state = app_handle.try_state::<AppState>()?;
-    state.membership.is_active_member(community_id, public_key).ok()?
+    state
+        .membership
+        .is_active_member(community_id, public_key)
+        .ok()?
 }
 
 pub(super) fn trusted_owner_public_key(
@@ -127,4 +145,23 @@ pub(super) fn trusted_owner_public_key(
         );
         None
     }
+}
+
+/// Check if a user has an active timeout in a community.
+pub(super) fn is_timed_out(app_handle: &AppHandle, community_id: &str, public_key: &str) -> bool {
+    let Some(db) = app_handle.try_state::<Database>() else {
+        return false;
+    };
+    let community_id = community_id.to_string();
+    let public_key = public_key.to_string();
+    let conn = db.conn.lock().ok();
+    conn.and_then(|conn| {
+        conn.query_row(
+            "SELECT 1 FROM member_timeouts WHERE community_id = ?1 AND public_key = ?2 AND expires_at > datetime('now')",
+            rusqlite::params![community_id, public_key],
+            |_| Ok(true),
+        )
+        .ok()
+    })
+    .unwrap_or(false)
 }

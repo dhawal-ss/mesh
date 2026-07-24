@@ -211,10 +211,7 @@ pub(super) async fn handle_signed_voice_membership_event(
     );
 }
 
-pub(super) async fn handle_signed_voice_signal(
-    app_handle: &AppHandle,
-    envelope: &SignedEnvelope,
-) {
+pub(super) async fn handle_signed_voice_signal(app_handle: &AppHandle, envelope: &SignedEnvelope) {
     if !voice_payload_matches_current_epoch_signed(app_handle, envelope).await {
         tracing::warn!(
             "Dropping stale voice signal for channel {}",

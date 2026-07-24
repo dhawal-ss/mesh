@@ -1,0 +1,137 @@
+name: Nightly Soak
+
+# Runs long-duration soak and leak-detection tests overnight.
+# Also triggerable manually from the Actions tab for pre-release validation.
+#
+# What it runs:
+#   1. All 13 live libp2p tests (~70s)
+#   2. 60-second leak-detection soak (Phase A baseline + Phase B churn)
+#   3. 45-second topology churn soak
+#
+# Total runtime: ~4 minutes per run.
+#
+# Full output is captured as an artifact so regressions can be diagnosed
+# after the fact.
+
+on:
+  schedule:
+    # 06:00 UTC every day
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Which tests to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - soak-only
+          - fast-only
+
+env:
+  CARGO_TERM_COLOR: always
+  # Ensure live tests get deterministic behavior
+  RUST_LOG: warn
+
+jobs:
+  soak:
+    name: Long-duration soak
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc # 1.92.0
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libsqlcipher-dev
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            mesh/src-tauri/target
+          key: ${{ runner.os }}-cargo-soak-${{ hashFiles('mesh/src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Build test binary
+        working-directory: mesh/src-tauri
+        run: cargo test --no-default-features --features legacy-p2p --test live_network_tests --no-run --locked --jobs 1
+
+      - name: Run nightly soak
+        working-directory: mesh/src-tauri
+        shell: bash
+        run: |
+          mkdir -p ../soak-logs
+          LOG_FILE="../soak-logs/soak-${{ github.run_number }}.log"
+          MODE="${{ github.event.inputs.mode || 'all' }}"
+          CARGO_TEST=(cargo test --no-default-features --features legacy-p2p --locked --jobs 1 --test live_network_tests)
+          if [[ "$MODE" != "soak-only" ]]; then
+            "${CARGO_TEST[@]}" -- --ignored --test-threads=1 \
+              --skip leak_detection_soak_60s \
+              --skip repeated_topology_churn_45s 2>&1 | tee -a "$LOG_FILE"
+          fi
+          if [[ "$MODE" != "fast-only" ]]; then
+            "${CARGO_TEST[@]}" leak_detection_soak_60s -- --ignored --nocapture 2>&1 | tee -a "$LOG_FILE"
+            "${CARGO_TEST[@]}" repeated_topology_churn_45s -- --ignored --nocapture 2>&1 | tee -a "$LOG_FILE"
+          fi
+
+      - name: Upload soak logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: soak-logs-${{ github.run_number }}
+          path: mesh/soak-logs/
+          retention-days: 30
+
+  turn-probe:
+    name: TURN probe regression
+    runs-on: ubuntu-latest
+    # Only run if repo secrets for TURN creds exist. Use an environment
+    # gate so operators can wire this to a secret store without touching
+    # the workflow file.
+    if: ${{ vars.MESH_NIGHTLY_TURN_ENABLED == 'true' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc # 1.92.0
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsqlcipher-dev libssl-dev
+
+      - name: Cache cargo
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            mesh/src-tauri/target
+          key: ${{ runner.os }}-cargo-turn-${{ hashFiles('mesh/src-tauri/Cargo.lock') }}
+
+      - name: Run TURN probe regression
+        working-directory: mesh/src-tauri
+        env:
+          MESH_TURN_URL: ${{ secrets.MESH_TURN_URL }}
+          MESH_TURN_USERNAME: ${{ secrets.MESH_TURN_USERNAME }}
+          MESH_TURN_PASSWORD: ${{ secrets.MESH_TURN_PASSWORD }}
+          MESH_TURN_EXPECT: allocation_ok
+        run: |
+          cargo test --no-default-features --features legacy-p2p --locked --jobs 1 \
+            --test turn_probe_live_tests -- --ignored --nocapture \
+            probes_real_turn_server_with_credentials

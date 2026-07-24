@@ -31,12 +31,15 @@ fn ed25519_to_x25519_conversion_produces_distinct_key() {
     let signing_key = SigningKey::generate(&mut OsRng);
     let public_key_b64 = BASE64.encode(signing_key.verifying_key().as_bytes());
 
-    let x25519_pub = identity::ed25519_pub_to_x25519(&public_key_b64)
-        .expect("conversion should succeed");
+    let x25519_pub =
+        identity::ed25519_pub_to_x25519(&public_key_b64).expect("conversion should succeed");
 
     // The X25519 public key should differ from the raw Ed25519 bytes
     // (Montgomery form != Edwards form)
-    assert_ne!(x25519_pub.as_bytes(), signing_key.verifying_key().as_bytes());
+    assert_ne!(
+        x25519_pub.as_bytes(),
+        signing_key.verifying_key().as_bytes()
+    );
 }
 
 #[test]

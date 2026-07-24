@@ -1,0 +1,740 @@
+import { useEffect, useState } from 'react'
+import { Modal } from '../ui/Modal'
+import { Button } from '../ui/Button'
+import { Input } from '../ui/Input'
+import * as bridge from '../../lib/bridge'
+
+interface SecurityDevicesPanelProps {
+  open: boolean
+  onClose: () => void
+}
+
+export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProps) {
+  const [status, setStatus] = useState<bridge.BackendStatus | null>(null)
+  const [devices, setDevices] = useState<bridge.MatrixDevice[]>([])
+  const [loadingDevices, setLoadingDevices] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [recoveryInput, setRecoveryInput] = useState('')
+  const [recoveryTestInput, setRecoveryTestInput] = useState('')
+  const [newRecoveryKey, setNewRecoveryKey] = useState<string | null>(null)
+  const [recoveryHealth, setRecoveryHealth] = useState<bridge.MatrixRecoveryHealth | null>(null)
+  const [verification, setVerification] = useState<bridge.MatrixVerificationSession | null>(null)
+  const [revokeTarget, setRevokeTarget] = useState<bridge.MatrixDevice | null>(null)
+  const [accountPassword, setAccountPassword] = useState('')
+  const [lostDeviceOpen, setLostDeviceOpen] = useState(false)
+  const [lostDeviceId, setLostDeviceId] = useState('')
+  const [lostDeviceAcknowledged, setLostDeviceAcknowledged] = useState(false)
+  const [confirmRemoval, setConfirmRemoval] = useState(false)
+
+  const loadDevices = async () => {
+    setLoadingDevices(true)
+    try {
+      setDevices(await bridge.matrixDevices())
+    } finally {
+      setLoadingDevices(false)
+    }
+  }
+
+  const loadRecoveryHealth = async () => {
+    setRecoveryHealth(await bridge.matrixRecoveryHealth())
+  }
+
+  useEffect(() => {
+    if (!open) return
+    setError(null)
+    setConfirmRemoval(false)
+    setRevokeTarget(null)
+    setAccountPassword('')
+    setLostDeviceOpen(false)
+    setLostDeviceId('')
+    setLostDeviceAcknowledged(false)
+    setVerification(null)
+    void bridge
+      .getBackendStatus()
+      .then(async (nextStatus) => {
+        setStatus(nextStatus)
+        if (nextStatus.authenticated && nextStatus.capabilities.deviceManagement) {
+          await Promise.all([loadDevices(), loadRecoveryHealth()])
+        } else {
+          setDevices([])
+        }
+      })
+      .catch((cause) => {
+        setError(errorMessage(cause))
+      })
+  }, [open])
+
+  useEffect(() => {
+    if (!open || !verification || verification.phase === 'done' || verification.phase === 'cancelled') return
+    const interval = window.setInterval(() => {
+      void bridge.matrixDeviceVerificationStatus(verification.verificationId)
+        .then((next) => {
+          setVerification(next)
+          if (next.phase === 'done') void loadDevices()
+        })
+        .catch((cause) => {
+          setError(errorMessage(cause))
+          window.clearInterval(interval)
+        })
+    }, 1_000)
+    return () => window.clearInterval(interval)
+  }, [open, verification?.verificationId, verification?.phase])
+
+  const enableRecovery = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      setNewRecoveryKey(await bridge.matrixEnableRecovery())
+      await loadRecoveryHealth()
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const recover = async () => {
+    if (!recoveryInput.trim()) return
+    setBusy(true)
+    setError(null)
+    try {
+      await bridge.matrixRecover(recoveryInput.trim())
+      setRecoveryInput('')
+      await loadRecoveryHealth()
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const testRecovery = async () => {
+    if (!recoveryTestInput.trim()) return
+    setBusy(true)
+    setError(null)
+    try {
+      setRecoveryHealth(await bridge.matrixTestRecovery(recoveryTestInput.trim()))
+      setRecoveryTestInput('')
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const startVerification = async (device: bridge.MatrixDevice) => {
+    setBusy(true)
+    setError(null)
+    try {
+      setVerification(await bridge.matrixStartDeviceVerification(device.deviceId))
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const confirmVerification = async (matches: boolean) => {
+    if (!verification) return
+    setBusy(true)
+    setError(null)
+    try {
+      setVerification(await bridge.matrixConfirmDeviceVerification(verification.verificationId, matches))
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const selectVerificationMethod = async (method: 'sas' | 'qr') => {
+    if (!verification) return
+    setBusy(true)
+    setError(null)
+    try {
+      setVerification(
+        await bridge.matrixSelectDeviceVerificationMethod(verification.verificationId, method),
+      )
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const cancelVerification = async () => {
+    if (!verification) return
+    setBusy(true)
+    try {
+      await bridge.matrixCancelDeviceVerification(verification.verificationId)
+      setVerification(null)
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const revokeDevice = async () => {
+    if (!revokeTarget || !accountPassword) return
+    setBusy(true)
+    setError(null)
+    try {
+      await bridge.matrixRevokeDevice(revokeTarget.deviceId, accountPassword)
+      setRevokeTarget(null)
+      setAccountPassword('')
+      setLostDeviceId('')
+      setLostDeviceAcknowledged(false)
+      await loadDevices()
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const signOut = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await bridge.matrixLogout()
+      onClose()
+      window.location.reload()
+    } catch (cause) {
+      setError(errorMessage(cause))
+      setBusy(false)
+    }
+  }
+
+  const removeAccount = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await bridge.matrixRemoveLocalAccount()
+      onClose()
+      window.location.reload()
+    } catch (cause) {
+      setError(errorMessage(cause))
+      setBusy(false)
+    }
+  }
+
+  const warningDevices = devices.filter((device) => device.newDevice || device.identityChanged)
+  const revocableDevices = devices.filter((device) => !device.current)
+  const lostDevice = revocableDevices.find((device) => device.deviceId === lostDeviceId) ?? null
+
+  return (
+    <Modal open={open} onClose={onClose} title="Security & Devices">
+      <div className="max-h-[75vh] space-y-5 overflow-y-auto pr-1">
+        <section className="rounded-lg bg-bg-primary p-4">
+          <p className="text-2xs uppercase tracking-[0.25em] text-muted">This device</p>
+          <dl className="mt-3 space-y-2 text-sm">
+            <Row label="Account" value={status ? status.userId ?? 'Not signed in' : 'Loading…'} />
+            <Row label="Device ID" value={status ? status.deviceId ?? 'Unavailable' : 'Loading…'} mono />
+            <Row label="Homeserver" value={status ? status.homeserver ?? 'Not configured' : 'Loading…'} />
+            <Row
+              label="Room encryption"
+              value={status?.endToEndEncryption ? 'Enabled for encrypted rooms' : 'Unavailable'}
+            />
+          </dl>
+          <p className="mt-3 text-xs leading-5 text-muted">
+            Encryption protects room event content. Your homeserver may still observe account,
+            membership, timing, IP, and access-pattern metadata.
+          </p>
+        </section>
+
+        <section className="space-y-3 rounded-lg bg-bg-primary p-4">
+          <div>
+            <p className="text-sm font-medium text-primary">Recovery</p>
+            <p className="mt-1 text-xs leading-5 text-muted">
+              Create a recovery key or restore encrypted history with an existing key or passphrase.
+            </p>
+          </div>
+          {recoveryHealth && (
+            <div className={`rounded-md border p-3 ${recoveryHealth.healthy ? 'border-green/40 bg-green/10' : 'border-yellow/40 bg-yellow/10'}`}>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-medium text-primary">
+                  {recoveryHealth.healthy ? 'Recovery is healthy' : 'Recovery needs attention'}
+                </p>
+                <Button variant="ghost" size="sm" disabled={busy} onClick={() => void loadRecoveryHealth()}>
+                  Check again
+                </Button>
+              </div>
+              <dl className="mt-2 space-y-1 text-xs">
+                <Row label="Secret storage" value={recoveryHealth.recoveryState} />
+                <Row label="Key backup" value={recoveryHealth.backupState} />
+                <Row label="Server copy" value={recoveryHealth.backupExistsOnServer ? 'Confirmed' : 'Not confirmed'} />
+                <Row
+                  label="Last tested"
+                  value={recoveryHealth.lastSuccessfulTestAt
+                    ? formatLastSeen(recoveryHealth.lastSuccessfulTestAt)
+                    : 'Never on this device'}
+                />
+              </dl>
+              {recoveryHealth.warnings.length > 0 && (
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-muted">
+                  {recoveryHealth.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
+          <Button variant="secondary" size="sm" disabled={busy || !status?.capabilities.recovery} onClick={enableRecovery}>
+            Create recovery key
+          </Button>
+          {newRecoveryKey && (
+            <div role="status" className="rounded-md border border-yellow/40 bg-yellow/10 p-3">
+              <p className="text-xs font-medium text-primary">Save this key somewhere private. It is shown here once.</p>
+              <p className="mt-2 break-all font-mono text-xs text-secondary">{newRecoveryKey}</p>
+            </div>
+          )}
+          <Input
+            label="Recovery key or passphrase"
+            name="recovery-credential"
+            type="password"
+            value={recoveryInput}
+            onChange={setRecoveryInput}
+            autoComplete="off"
+          />
+          <Button variant="secondary" size="sm" disabled={busy || !recoveryInput.trim()} onClick={recover}>
+            Restore encrypted history
+          </Button>
+          <div className="space-y-2 border-t border-bg-modifier-active pt-3">
+            <p className="text-xs leading-5 text-muted">
+              Test that this credential can unlock the current server backup. This does not replace a
+              clean-room recovery drill on a fresh device.
+            </p>
+            <Input
+              label="Credential to test"
+              name="recovery-test-credential"
+              type="password"
+              value={recoveryTestInput}
+              onChange={setRecoveryTestInput}
+              autoComplete="off"
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy || !recoveryTestInput.trim()}
+              onClick={testRecovery}
+            >
+              Test recovery credential
+            </Button>
+          </div>
+        </section>
+
+        <section className="space-y-3 rounded-lg border border-bg-modifier-active p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-primary">Signed-in devices</p>
+              <p className="mt-1 text-xs leading-5 text-muted">
+                Trust comes from this encrypted store. Last-seen details are reported by your homeserver.
+              </p>
+            </div>
+            <span className="rounded-full bg-green/10 px-2 py-1 text-[10px] uppercase tracking-wide text-green">
+              {devices.length} {devices.length === 1 ? 'device' : 'devices'}
+            </span>
+          </div>
+
+          <div>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy || loadingDevices}
+              aria-expanded={lostDeviceOpen}
+              aria-controls="lost-device-workflow"
+              onClick={() => {
+                setLostDeviceOpen((current) => !current)
+                setLostDeviceId('')
+                setLostDeviceAcknowledged(false)
+                setRevokeTarget(null)
+                setAccountPassword('')
+                setError(null)
+              }}
+            >
+              {lostDeviceOpen ? 'Close lost-device help' : 'I lost a device'}
+            </Button>
+          </div>
+
+          {lostDeviceOpen && (
+            <section
+              id="lost-device-workflow"
+              aria-labelledby="lost-device-title"
+              className="space-y-3 rounded-md border border-yellow/50 bg-yellow/5 p-3"
+            >
+              <div>
+                <h3 id="lost-device-title" className="text-sm font-medium text-primary">
+                  Secure an account after device loss
+                </h3>
+                <p className="mt-1 text-xs leading-5 text-muted">
+                  Revoke the lost device promptly. Revocation asks the homeserver to reject that
+                  Matrix session, but it cannot remotely erase messages, keys, screenshots, or
+                  downloaded files already stored on the device.
+                </p>
+              </div>
+
+              <ol className="list-decimal space-y-2 pl-5 text-xs leading-5 text-muted">
+                <li>Select the device you no longer control.</li>
+                <li>
+                  Confirm recovery health. Recovering old encrypted history on a replacement device
+                  depends on a usable key backup or another verified device; login alone does not restore keys.
+                </li>
+                <li>
+                  Revoke the lost session. Verify only devices you still possess and can compare directly.
+                </li>
+              </ol>
+
+              <div
+                role="status"
+                className={`rounded-md border p-3 text-xs leading-5 ${
+                  recoveryHealth?.healthy
+                    ? 'border-green/40 bg-green/10 text-secondary'
+                    : 'border-yellow/50 bg-yellow/10 text-muted'
+                }`}
+              >
+                {recoveryHealth?.healthy
+                  ? 'Recovery currently reports healthy on this device. This is not proof that the lost device was erased or that a fresh-device restore will succeed.'
+                  : 'Recovery is not confirmed healthy. Revocation still protects the account session, but historical encrypted messages may remain unavailable on a replacement device until recovery succeeds.'}
+              </div>
+
+              {revocableDevices.length > 0 ? (
+                <fieldset className="space-y-2">
+                  <legend className="text-xs font-medium text-primary">Which device was lost?</legend>
+                  {revocableDevices.map((device) => (
+                    <label
+                      key={device.deviceId}
+                      className="flex cursor-pointer items-start gap-2 rounded-md bg-bg-primary p-2 text-xs text-secondary"
+                    >
+                      <input
+                        type="radio"
+                        name="lost-device"
+                        value={device.deviceId}
+                        checked={lostDeviceId === device.deviceId}
+                        onChange={() => {
+                          setLostDeviceId(device.deviceId)
+                          setLostDeviceAcknowledged(false)
+                        }}
+                        className="mt-0.5 h-4 w-4 accent-blue"
+                      />
+                      <span>
+                        <span className="block font-medium text-primary">
+                          {device.displayName || 'Unnamed device'}
+                        </span>
+                        <span className="block break-all font-mono text-[11px] text-muted">
+                          {device.deviceId}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </fieldset>
+              ) : (
+                <p className="text-xs leading-5 text-muted">
+                  No other registered device is available to revoke. Check from another Matrix client
+                  or contact your provider if the lost session is missing from this list.
+                </p>
+              )}
+
+              {lostDevice && (
+                <label className="flex cursor-pointer items-start gap-2 text-xs leading-5 text-muted">
+                  <input
+                    type="checkbox"
+                    checked={lostDeviceAcknowledged}
+                    onChange={(event) => setLostDeviceAcknowledged(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-blue"
+                  />
+                  I understand that revocation blocks the selected Matrix session but does not
+                  remotely wipe the lost device or guarantee encrypted-history recovery.
+                </label>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  disabled={busy || !lostDevice || !lostDeviceAcknowledged}
+                  onClick={() => {
+                    if (!lostDevice) return
+                    setRevokeTarget(lostDevice)
+                    setAccountPassword('')
+                    setLostDeviceOpen(false)
+                    setError(null)
+                  }}
+                >
+                  Continue to revoke selected device
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => {
+                    setLostDeviceOpen(false)
+                    setLostDeviceId('')
+                    setLostDeviceAcknowledged(false)
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </section>
+          )}
+
+          {warningDevices.length > 0 && (
+            <div role="alert" className="rounded-md border border-yellow/50 bg-yellow/10 p-3">
+              <p className="text-xs font-medium text-primary">
+                Review {warningDevices.length} untrusted device {warningDevices.length === 1 ? 'warning' : 'warnings'}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-muted">
+                A new device or changed identity key can indicate a legitimate sign-in, a reset client,
+                or account compromise. Verify or revoke anything you do not recognize.
+              </p>
+            </div>
+          )}
+
+          {loadingDevices && <p role="status" className="text-xs text-muted">Loading registered devices…</p>}
+          {!loadingDevices && devices.length === 0 && (
+            <p className="text-xs text-muted">No registered devices were returned.</p>
+          )}
+          <ul className="space-y-2">
+            {devices.map((device) => (
+              <li
+                key={device.deviceId}
+                className={`rounded-md border p-3 ${
+                  device.identityChanged
+                    ? 'border-red/50 bg-red/5'
+                    : device.newDevice
+                      ? 'border-yellow/40 bg-yellow/5'
+                      : 'border-transparent bg-bg-primary'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-primary">
+                      {device.displayName || 'Unnamed device'} {device.current && <span className="text-blue">(this device)</span>}
+                    </p>
+                    <p className="mt-1 break-all font-mono text-[11px] text-muted">{device.deviceId}</p>
+                    <p className="mt-1 text-xs text-muted">
+                      {trustLabel(device)} · Last seen {formatLastSeen(device.lastSeenAt)}
+                      {device.lastSeenIp ? ` from ${device.lastSeenIp}` : ''}
+                    </p>
+                    {device.firstSeenAt && (
+                      <p className="mt-1 text-xs text-muted">
+                        First observed by this encrypted store {formatLastSeen(device.firstSeenAt)}
+                      </p>
+                    )}
+                    {device.identityChanged && (
+                      <p className="mt-2 text-xs font-medium text-red">
+                        Identity keys changed since this device was trusted. Verify it again or revoke it.
+                      </p>
+                    )}
+                    {!device.identityChanged && device.newDevice && (
+                      <p className="mt-2 text-xs font-medium text-yellow">
+                        New unverified device. Confirm that you recognize this sign-in.
+                      </p>
+                    )}
+                  </div>
+                  {!device.current && (
+                    <div className="flex shrink-0 gap-1">
+                      {!device.crossSigned && (
+                        <Button variant="secondary" size="sm" disabled={busy} onClick={() => void startVerification(device)}>
+                          Verify
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => {
+                          setRevokeTarget(device)
+                          setAccountPassword('')
+                          setError(null)
+                        }}
+                      >
+                        Revoke
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {verification && (
+            <div className="space-y-3 rounded-md border border-blue/40 bg-blue/5 p-3">
+              <div>
+                <p className="text-sm font-medium text-primary">Verify device {verification.deviceId}</p>
+                <p aria-live="polite" className="mt-1 text-xs leading-5 text-muted">
+                  {verificationMessage(verification)}
+                </p>
+              </div>
+              {verification.phase === 'compare' && verification.emojis.length > 0 && (
+                <ol aria-label="Verification emoji" className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+                  {verification.emojis.map((emoji, index) => (
+                    <li key={`${emoji.description}-${index}`} className="rounded bg-bg-primary p-2 text-center">
+                      <span aria-hidden="true" className="block text-xl">{emoji.symbol}</span>
+                      <span className="mt-1 block text-[10px] text-muted">{emoji.description}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {verification.phase === 'compare' && verification.emojis.length === 0 && verification.decimals && (
+                <p className="font-mono text-lg tracking-widest text-primary">{verification.decimals.join(' · ')}</p>
+              )}
+              {verification.phase === 'qr-show' && verification.qrSvg && (
+                <div className="mx-auto w-fit rounded-md bg-white p-3">
+                  <img
+                    src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(verification.qrSvg)}`}
+                    alt="Matrix device verification QR code"
+                    className="h-64 w-64"
+                  />
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {verification.phase === 'choose-method' && (
+                  <>
+                    <Button size="sm" disabled={busy} onClick={() => void selectVerificationMethod('sas')}>
+                      Compare emoji
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void selectVerificationMethod('qr')}
+                    >
+                      Show QR code
+                    </Button>
+                  </>
+                )}
+                {verification.phase === 'compare' && (
+                  <>
+                    <Button size="sm" disabled={busy} onClick={() => void confirmVerification(true)}>They match</Button>
+                    <Button variant="secondary" size="sm" disabled={busy} onClick={() => void confirmVerification(false)}>They do not match</Button>
+                  </>
+                )}
+                {verification.phase === 'qr-scanned' && (
+                  <>
+                    <Button size="sm" disabled={busy} onClick={() => void confirmVerification(true)}>
+                      Confirm scan
+                    </Button>
+                    <Button variant="secondary" size="sm" disabled={busy} onClick={() => void confirmVerification(false)}>
+                      Reject scan
+                    </Button>
+                  </>
+                )}
+                {verification.phase !== 'done' && verification.phase !== 'cancelled' && (
+                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => void cancelVerification()}>Cancel verification</Button>
+                )}
+                {(verification.phase === 'done' || verification.phase === 'cancelled') && (
+                  <Button variant="ghost" size="sm" onClick={() => setVerification(null)}>Close</Button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {revokeTarget && (
+            <div className="space-y-3 rounded-md border border-red/40 bg-red/5 p-3">
+              <div>
+                <p className="text-sm font-medium text-primary">Revoke {revokeTarget.displayName || revokeTarget.deviceId}?</p>
+                <p className="mt-1 text-xs leading-5 text-muted">
+                  The homeserver requires your account password for this interactive authentication
+                  request. Mesh does not save it. If your browser-authenticated provider does not
+                  accept a Matrix password here, revoke the device from another compatible client or
+                  your provider's account portal.
+                </p>
+              </div>
+              <Input
+                label="Account password"
+                type="password"
+                value={accountPassword}
+                onChange={setAccountPassword}
+                autoComplete="current-password"
+              />
+              <div className="flex gap-2">
+                <Button size="sm" disabled={busy || !accountPassword} onClick={revokeDevice}>Revoke device</Button>
+                <Button variant="ghost" size="sm" disabled={busy} onClick={() => setRevokeTarget(null)}>Cancel</Button>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {error && <p role="alert" className="rounded-md bg-red/10 px-3 py-2 text-sm text-red">{error}</p>}
+
+        <section className="space-y-3 border-t border-bg-modifier-active pt-4">
+          <div>
+            <p className="text-sm font-medium text-primary">Account on this device</p>
+            <p className="mt-1 text-xs leading-5 text-muted">
+              Sign out removes the saved session but retains the encrypted cache. Removing the account also erases the local store key and cached Matrix data from this machine.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" size="sm" disabled={busy} onClick={signOut}>Sign out</Button>
+            {!confirmRemoval ? (
+              <Button variant="ghost" size="sm" disabled={busy} onClick={() => setConfirmRemoval(true)}>
+                Remove account and local data
+              </Button>
+            ) : (
+              <div className="w-full space-y-3 rounded-md border border-red/40 bg-red/5 p-3">
+                <p className="text-xs leading-5 text-muted">
+                  This cannot be undone. Mesh will try to invalidate this session, then erase its local credentials and encrypted store. If the homeserver is offline, revoke this device later from another client.
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm" disabled={busy} onClick={removeAccount}>Permanently remove local account</Button>
+                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => setConfirmRemoval(false)}>Cancel</Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+    </Modal>
+  )
+}
+
+function Row({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="grid grid-cols-[7rem_1fr] gap-3">
+      <dt className="text-muted">{label}</dt>
+      <dd className={`break-all text-secondary ${mono ? 'font-mono text-xs' : ''}`}>{value}</dd>
+    </div>
+  )
+}
+
+function trustLabel(device: bridge.MatrixDevice): string {
+  if (device.identityChanged) return 'Identity changed'
+  if (device.newDevice) return 'New device'
+  if (device.crossSigned) return 'Cross-signed'
+  if (device.verified) return device.current ? 'Trusted on this device' : 'Verified locally'
+  return 'Unverified'
+}
+
+function verificationMessage(session: bridge.MatrixVerificationSession): string {
+  switch (session.phase) {
+    case 'waiting-for-device':
+    case 'started':
+    case 'accepted':
+      return 'Open the verification request on the other device. Mesh will offer the methods both devices support when it is ready.'
+    case 'choose-method':
+      return 'Choose how to verify. Emoji comparison works with any interactive client; QR requires the other device to scan the code.'
+    case 'compare':
+      return 'Compare this code with the other device. Confirm only if every item matches in the same order.'
+    case 'qr-show':
+      return 'Scan this code with the other device. Do not share it or scan it with an untrusted app.'
+    case 'qr-scanned':
+      return 'The other device scanned the code. Confirm only if you are holding or directly supervising that device.'
+    case 'confirmed':
+      return 'You confirmed the code. Waiting for the other device to finish.'
+    case 'done':
+      return 'The device was verified successfully.'
+    case 'cancelled':
+      return session.cancellationReason ? `Verification was cancelled: ${session.cancellationReason}` : 'Verification was cancelled.'
+  }
+}
+
+function formatLastSeen(value: string | null): string {
+  if (!value) return 'time unavailable'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'time unavailable'
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+}
+
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
+}

@@ -32,3 +32,22 @@ src-tauri/target/
 
 # Claude/AI
 .claude/
+
+# E2E / Playwright
+/playwright-report/
+/test-results/
+/.playwright/
+/e2e-results/
+
+# Nightly soak logs
+/soak-logs/
+/coverage/
+
+# Generated local Matrix federation state and test certificates
+/infra/matrix-spike/runtime/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+!**/.env.example

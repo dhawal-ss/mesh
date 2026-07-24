@@ -2,15 +2,20 @@ import { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react
 import type { Channel, Message as MessageType } from '../../types/ipc'
 import { MessageComponent } from './Message'
 import { MessageInput } from './MessageInput'
+import type { StagedFile } from './FileAttachment'
 import { useMessageStore } from '../../store/messages'
 import { useChannelStore } from '../../store/channels'
 import { SearchBar } from './SearchBar'
 import { Tooltip } from '../ui/Tooltip'
 import { Spinner } from '../ui/Spinner'
+import { MessageSkeleton } from '../ui/Skeleton'
 import * as bridge from '../../lib/bridge'
 import { useFileDownloadStore } from '../../store/file-downloads'
 import { useIdentityStore } from '../../store/identity'
 import { useVirtualScroll, type VirtualItem } from '../../hooks/useVirtualScroll'
+import { useTypingStore } from '../../store/typing'
+import { TypingIndicator } from './TypingIndicator'
+import { resolveSenderIdentity } from '../../lib/matrixIdentity'
 
 interface ChatViewProps {
   channel: Channel
@@ -35,6 +40,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
     browsingOlder,
     newerGapCount,
   } = useMessageStore()
+  const matrixMode = bridge.isMatrixBackend()
   const patchChannel = useChannelStore((state) => state.patchChannel)
   const channelMessages = messages[channel.id] ?? []
   const isBrowsingOlder = browsingOlder[channel.id] ?? false
@@ -91,7 +97,9 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
     try {
       const latest = await bridge.getMessages(channel.id, 50)
       replaceMessages(channel.id, latest)
-      await bridge.requestMessageHistory(channel.id, { limit: 100 })
+      if (!matrixMode) {
+        await bridge.requestMessageHistory(channel.id, { limit: 100 })
+      }
       setShowNewMessages(false)
 
       requestAnimationFrame(() => {
@@ -103,7 +111,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
     }
 
     await markChannelSeen()
-  }, [channel.id, flushBufferedMessages, markChannelSeen, replaceMessages])
+  }, [channel.id, flushBufferedMessages, markChannelSeen, matrixMode, replaceMessages])
 
   // Load messages on channel switch
   useEffect(() => {
@@ -120,6 +128,52 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel.id])
 
+  // Matrix sync runs in Rust. Wait on the SDK room update stream, then refresh
+  // the DTO projection so federated state appears without fixed-interval polling.
+  useEffect(() => {
+    if (!matrixMode || !isViewingLatest) return
+
+    let active = true
+    const refresh = async () => {
+      if (hydratingLatestRef.current) return
+      try {
+        const existing = useMessageStore.getState().messages[channel.id] ?? []
+        const existingIds = new Set(existing.map((message) => message.id))
+        const latest = await bridge.getMessages(channel.id, 50)
+        if (!active) return
+
+        const hasNewMessage = latest.some((message) => !existingIds.has(message.id))
+        replaceMessages(channel.id, latest)
+        if (hasNewMessage) {
+          if (vsRef.current.isAtBottom) {
+            requestAnimationFrame(() => vsRef.current.scrollToBottom())
+          } else {
+            setShowNewMessages(true)
+          }
+        }
+      } catch (error) {
+        console.error('Failed to refresh Matrix timeline:', error)
+      }
+    }
+
+    const watchUpdates = async () => {
+      while (active) {
+        try {
+          await bridge.matrixWaitForRoomUpdate(channel.id)
+          if (active) await refresh()
+        } catch (error) {
+          if (!active) return
+          console.error('Matrix room update subscription failed:', error)
+          await new Promise((resolve) => window.setTimeout(resolve, 1000))
+        }
+      }
+    }
+    void watchUpdates()
+    return () => {
+      active = false
+    }
+  }, [channel.id, isViewingLatest, matrixMode, replaceMessages])
+
   // Reset scroll state on channel switch
   useEffect(() => {
     setShowNewMessages(false)
@@ -129,16 +183,18 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
 
   // Request history from new peers
   useEffect(() => {
+    if (matrixMode) return
     const unsub = bridge.onPeerJoined(({ peerId }) => {
       bridge.requestMessageHistory(channel.id, { peerId, limit: 100 }).catch((err) => {
         console.error('Failed to request message history:', err)
       })
     })
     return () => { unsub.then((fn) => fn()) }
-  }, [channel.id])
+  }, [channel.id, matrixMode])
 
   // Listen for incoming messages
   useEffect(() => {
+    if (matrixMode) return
     const unsub = bridge.onMessageReceived((msg) => {
       if (msg.channelId === channel.id) {
         if (hydratingLatestRef.current) {
@@ -158,17 +214,18 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
       }
     })
     return () => { unsub.then((fn) => fn()) }
-  }, [addMessage, channel.id, isViewingLatest, markChannelSeen, vs.isAtBottom])
+  }, [addMessage, channel.id, isViewingLatest, markChannelSeen, matrixMode, vs.isAtBottom])
 
   // Listen for reactions
   useEffect(() => {
+    if (matrixMode) return
     const unsub = bridge.onReactionReceived((data) => {
       if (data.channelId === channel.id) {
         updateReaction(channel.id, data.messageId, data.emoji, data.author, data.verb)
       }
     })
     return () => { unsub.then((fn) => fn()) }
-  }, [channel.id, updateReaction])
+  }, [channel.id, matrixMode, updateReaction])
 
   // Listen for bans
   useEffect(() => {
@@ -209,6 +266,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
 
   // Listen for edit/delete events
   useEffect(() => {
+    if (matrixMode) return
     const unsubEdit = bridge.onMessageEdited?.((data: { messageId: string; channelId: string; content: string; editedAt: string }) => {
       if (data.channelId === channel.id) {
         editMessage(channel.id, data.messageId, data.content, data.editedAt)
@@ -223,7 +281,38 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
       unsubEdit?.then((fn) => fn())
       unsubDelete?.then((fn) => fn())
     }
-  }, [channel.id, deleteMessage, editMessage])
+  }, [channel.id, deleteMessage, editMessage, matrixMode])
+
+  // Listen for typing events
+  const setTyping = useTypingStore((state) => state.setTyping)
+  useEffect(() => {
+    if (matrixMode) {
+      let active = true
+      const refreshTyping = async () => {
+        try {
+          const users = await bridge.matrixTypingUsers(channel.id)
+          if (!active) return
+          for (const user of users) {
+            setTyping(channel.id, user.userId, user.displayName)
+          }
+        } catch (error) {
+          console.error('Failed to refresh Matrix typing notifications:', error)
+        }
+      }
+      void refreshTyping()
+      const interval = window.setInterval(() => void refreshTyping(), 2000)
+      return () => {
+        active = false
+        window.clearInterval(interval)
+      }
+    }
+    const unsub = bridge.onTypingUpdate((data) => {
+      if (data.channelId === channel.id) {
+        setTyping(channel.id, data.author, data.displayName)
+      }
+    })
+    return () => { unsub.then((fn) => fn()) }
+  }, [channel.id, matrixMode, setTyping])
 
   const isGrouped = (msg: MessageType, prevMsg?: MessageType) => {
     if (!prevMsg) return false
@@ -285,16 +374,38 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
     visibleItems,
   ])
 
-  const handleSend = async (content: string) => {
-    const identity = useIdentityStore.getState().identity
+  const handleSend = async (
+    content: string,
+    files: StagedFile[] = [],
+    onAttachmentSent?: (file: StagedFile, contentConsumed: boolean) => void | Promise<void>,
+  ) => {
+    if (matrixMode && files.length > 0) {
+      const replyToId = replyingTo?.id
+      for (const [index, file] of files.entries()) {
+        const msg = await bridge.matrixSendAttachment(
+          channel.id,
+          file.grant,
+          index === 0 ? content : '',
+          index === 0 ? replyToId : undefined,
+        )
+        addMessage(channel.id, { ...msg, deliveryStatus: 'sent' })
+        if (index === 0) setReplyingTo(null)
+        await onAttachmentSent?.(file, index === 0 && content.length > 0)
+      }
+      return
+    }
+    const identity = resolveSenderIdentity(
+      useIdentityStore.getState().identity,
+      matrixMode ? bridge.getMatrixUserId() : null,
+    )
     const optimisticId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
     const optimistic: MessageType = {
       id: optimisticId,
       channelId: channel.id,
-      authorPublicKey: identity?.publicKey ?? '',
-      authorDisplayName: identity?.displayName ?? 'You',
-      authorAvatarColor: identity?.avatarColor ?? '#888',
+      authorPublicKey: identity.publicKey,
+      authorDisplayName: identity.displayName,
+      authorAvatarColor: identity.avatarColor,
       content,
       attachments: [],
       reactions: {},
@@ -318,21 +429,25 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
     } catch (err) {
       console.error('Failed to send message:', err)
       setDeliveryStatus(channel.id, optimisticId, 'failed')
+      throw err
     }
   }
 
   const handleRetry = useCallback(async (failedMessage: MessageType) => {
     removeMessage(channel.id, failedMessage.id)
 
-    const identity = useIdentityStore.getState().identity
+    const identity = resolveSenderIdentity(
+      useIdentityStore.getState().identity,
+      matrixMode ? bridge.getMatrixUserId() : null,
+    )
     const retryId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
     const optimistic: MessageType = {
       id: retryId,
       channelId: channel.id,
-      authorPublicKey: identity?.publicKey ?? '',
-      authorDisplayName: identity?.displayName ?? 'You',
-      authorAvatarColor: identity?.avatarColor ?? '#888',
+      authorPublicKey: identity.publicKey,
+      authorDisplayName: identity.displayName,
+      authorAvatarColor: identity.avatarColor,
       content: failedMessage.content,
       attachments: [],
       reactions: {},
@@ -412,8 +527,10 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
           aria-label={`Messages in #${channel.name}`}
         >
           {isLoading ? (
-            <div className="flex h-full items-center justify-center">
-              <Spinner size={24} />
+            <div className="space-y-1 pt-4">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <MessageSkeleton key={i} />
+              ))}
             </div>
           ) : channelMessages.length === 0 ? (
             <div className="flex h-full items-center justify-center">
@@ -469,6 +586,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
                       onHeightChange={vs.handleMeasuredHeight}
                       onReply={setReplyingTo}
                       onRetry={handleRetry}
+                      limitedActions={false}
                     />
                   )
                 })}
@@ -511,7 +629,14 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
         </div>
       )}
 
-      <MessageInput channelId={channel.id} channelName={channel.name} onSend={handleSend} />
+      <TypingIndicator channelId={channel.id} />
+      <MessageInput
+        channelId={channel.id}
+        channelName={channel.name}
+        onSend={handleSend}
+        communityId={channel.communityId}
+        disableAttachments={matrixMode && !bridge.getBackendCapabilities().encryptedAttachments}
+      />
     </div>
   )
 }
@@ -524,6 +649,7 @@ interface VirtualMessageRowProps {
   onHeightChange: (rowKey: string, height: number) => void
   onReply: (message: MessageType) => void
   onRetry?: (message: MessageType) => void
+  limitedActions?: boolean
 }
 
 function VirtualMessageRow({
@@ -534,6 +660,7 @@ function VirtualMessageRow({
   onHeightChange,
   onReply,
   onRetry,
+  limitedActions,
 }: VirtualMessageRowProps) {
   const rowRef = useRef<HTMLDivElement>(null)
 
@@ -557,7 +684,14 @@ function VirtualMessageRow({
 
   return (
     <div ref={rowRef}>
-      <MessageComponent message={message} isGrouped={isGrouped} disableMotion onReply={onReply} onRetry={onRetry} />
+      <MessageComponent
+        message={message}
+        isGrouped={isGrouped}
+        disableMotion
+        onReply={onReply}
+        onRetry={onRetry}
+        limitedActions={limitedActions}
+      />
     </div>
   )
 }

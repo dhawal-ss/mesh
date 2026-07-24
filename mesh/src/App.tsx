@@ -8,9 +8,11 @@ import { useIdentityStore } from './store/identity'
 import { useCommunityStore } from './store/communities'
 import { useChannelStore } from './store/channels'
 import { useNetworkStore } from './store/network'
+import { refreshMatrixPreferences } from './store/settings'
 import * as bridge from './lib/bridge'
 import { Spinner } from './components/ui/Spinner'
 import { variants } from './lib/motion'
+import { matrixIdentity, matrixProfileIdentity } from './lib/matrixIdentity'
 import type { Identity } from './types/ipc'
 
 const BOOTSTRAP_STEPS = {
@@ -20,7 +22,31 @@ const BOOTSTRAP_STEPS = {
   ready: { label: 'Mesh connection ready', progress: 100 },
 } as const
 
+const MATRIX_BOOTSTRAP_STEPS = {
+  connecting: { label: 'Connecting to Mesh', progress: 28 },
+  syncing: { label: 'Getting your conversations', progress: 62 },
+  finalizing: { label: 'Restoring recent messages', progress: 88 },
+  ready: { label: 'Your conversations are ready', progress: 100 },
+} as const
+
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms))
+
+async function loadMatrixIdentity(
+  userId: string | null,
+  isTauriRuntime: boolean,
+): Promise<Identity | null> {
+  const fallback = matrixIdentity(userId)
+  if (!fallback || !isTauriRuntime) return fallback
+
+  try {
+    return matrixProfileIdentity(await bridge.matrixGetProfile())
+  } catch (error) {
+    // A profile server outage should not lock a signed-in user out of Mesh.
+    // Editing remains explicit and will surface the server error in Settings.
+    console.warn('Could not load Matrix profile; using the account ID fallback.', error)
+    return fallback
+  }
+}
 
 function isProfileComplete(identity: Identity | null) {
   return Boolean(identity?.displayName.trim()) && Boolean(identity?.avatarColor.trim())
@@ -47,17 +73,40 @@ export default function App() {
   const setChannels = useChannelStore((s) => s.setChannels)
   const setNetworkStatus = useNetworkStore((s) => s.setStatus)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [backendStatus, setBackendStatus] = useState<bridge.BackendStatus | null>(null)
   const isTauriRuntime = bridge.isTauriRuntime()
 
   useEffect(() => {
     if (!isTauriRuntime) {
       setShowOnboarding(true)
       setLoading(false)
+      void bridge.getBackendStatus().then(setBackendStatus)
       return
     }
 
     const init = async () => {
       try {
+        const nextBackendStatus = await bridge.getBackendStatus()
+        setBackendStatus(nextBackendStatus)
+
+        if (nextBackendStatus.kind === 'matrix') {
+          if (nextBackendStatus.authenticated) {
+            const signedInIdentity = await loadMatrixIdentity(
+              nextBackendStatus.userId,
+              isTauriRuntime,
+            )
+            if (signedInIdentity) {
+              setIdentity(signedInIdentity)
+            }
+            const communities = await bridge.getCommunities()
+            setCommunities(communities)
+            setActiveCommunity(communities[0]?.id ?? null)
+          }
+          setShowOnboarding(!nextBackendStatus.authenticated)
+          setLoading(false)
+          return
+        }
+
         const existingIdentity = await bridge.getIdentity()
         if (!existingIdentity) {
           setShowOnboarding(true)
@@ -90,6 +139,14 @@ export default function App() {
       return
     }
 
+    if (backendStatus?.kind === 'matrix') {
+      setNetworkStatus({
+        state: backendStatus.authenticated && backendStatus.syncRunning ? 'connected' : 'connecting',
+        peerCount: 0,
+        averageLatency: 0,
+      })
+    }
+
     if (!activeCommunityId) {
       setChannels([])
       return
@@ -113,7 +170,30 @@ export default function App() {
     return () => {
       alive = false
     }
-  }, [activeCommunityId, isTauriRuntime, setChannels])
+  }, [activeCommunityId, backendStatus, isTauriRuntime, setChannels, setNetworkStatus])
+
+  useEffect(() => {
+    const userId = backendStatus?.kind === 'matrix' && backendStatus.authenticated
+      ? backendStatus.userId
+      : null
+    if (!isTauriRuntime || !userId) return
+
+    let alive = true
+    const refresh = () => {
+      void refreshMatrixPreferences(userId).catch((error) => {
+        if (alive) console.error('Failed to refresh Matrix preferences:', error)
+      })
+    }
+
+    refresh()
+    const interval = window.setInterval(refresh, 30_000)
+    window.addEventListener('focus', refresh)
+    return () => {
+      alive = false
+      window.clearInterval(interval)
+      window.removeEventListener('focus', refresh)
+    }
+  }, [backendStatus, isTauriRuntime])
 
   useEffect(() => {
     if (!isTauriRuntime) {
@@ -125,6 +205,10 @@ export default function App() {
       return
     }
 
+    if (backendStatus?.kind === 'matrix') {
+      return
+    }
+
     const unlisten = bridge.onNetworkStatus((status) => {
       setNetworkStatus(mapNetworkState(status))
     })
@@ -132,7 +216,7 @@ export default function App() {
     return () => {
       unlisten.then((fn) => fn())
     }
-  }, [isTauriRuntime, setNetworkStatus])
+  }, [backendStatus, isTauriRuntime, setNetworkStatus])
 
   useEffect(() => {
     if (!isTauriRuntime) {
@@ -162,7 +246,7 @@ export default function App() {
   return (
     <>
       <AnimatePresence mode="wait">
-        {showOnboarding || !identity ? (
+        {showOnboarding || (backendStatus?.kind === 'legacy-p2p' && !identity) ? (
           <ErrorBoundary level="app">
           <motion.div
             key="onboarding"
@@ -173,6 +257,39 @@ export default function App() {
             className="h-full"
           >
             <OnboardingFlow
+              backendKind={backendStatus?.kind ?? 'matrix'}
+              backendAuthenticated={backendStatus?.authenticated ?? false}
+              onMatrixLogin={async (request) => {
+                if (!isTauriRuntime) {
+                  const status: bridge.BackendStatus = {
+                    kind: 'matrix',
+                    capabilities: bridge.getBackendCapabilities(),
+                    voiceService: bridge.getVoiceServiceStatus(),
+                    authenticated: true,
+                    userId: '@preview:example.com',
+                    deviceId: 'PREVIEW',
+                    homeserver: request.homeserver,
+                    syncRunning: true,
+                    durableHistory: true,
+                    endToEndEncryption: true,
+                    warnings: [],
+                  }
+                  setBackendStatus(status)
+                  const signedInIdentity = await loadMatrixIdentity(status.userId, false)
+                  if (signedInIdentity) setIdentity(signedInIdentity)
+                  return
+                }
+                const status = await bridge.matrixLogin(request)
+                setBackendStatus(status)
+                const signedInIdentity = await loadMatrixIdentity(status.userId, true)
+                if (signedInIdentity) setIdentity(signedInIdentity)
+              }}
+              onMatrixSwitchAccount={async (profileId) => {
+                const status = await bridge.matrixSwitchAccount(profileId)
+                setBackendStatus(status)
+                const signedInIdentity = await loadMatrixIdentity(status.userId, true)
+                if (signedInIdentity) setIdentity(signedInIdentity)
+              }}
               initialProfile={identity ?? undefined}
               onGenerateIdentity={async () => {
                 if (!isTauriRuntime) {
@@ -201,6 +318,26 @@ export default function App() {
                 setIdentity(nextIdentity)
               }}
               onBootstrap={async (update) => {
+                if (backendStatus?.kind === 'matrix') {
+                  update({ phase: 'connecting', ...MATRIX_BOOTSTRAP_STEPS.connecting })
+                  if (!isTauriRuntime) {
+                    await wait(450)
+                    update({ phase: 'syncing', ...MATRIX_BOOTSTRAP_STEPS.syncing })
+                    await wait(450)
+                    update({ phase: 'ready', ...MATRIX_BOOTSTRAP_STEPS.ready })
+                    return
+                  }
+
+                  update({ phase: 'syncing', ...MATRIX_BOOTSTRAP_STEPS.syncing })
+                  // Matrix login/session restoration already completes an initial sync
+                  // before starting the continuous background sync loop. Starting a
+                  // second sync here can contend with that loop and leave onboarding
+                  // waiting indefinitely.
+                  update({ phase: 'finalizing', ...MATRIX_BOOTSTRAP_STEPS.finalizing })
+                  update({ phase: 'ready', ...MATRIX_BOOTSTRAP_STEPS.ready })
+                  return
+                }
+
                 update({ phase: 'connecting', ...BOOTSTRAP_STEPS.connecting })
 
                 if (!isTauriRuntime) {
@@ -263,6 +400,14 @@ export default function App() {
               }}
               onComplete={() => {
                 setShowOnboarding(false)
+                if (isTauriRuntime && bridge.isMatrixBackend()) {
+                  void bridge.getCommunities().then((communities) => {
+                    setCommunities(communities)
+                    setActiveCommunity(communities[0]?.id ?? null)
+                  }).catch((error) => {
+                    console.error('Failed to load Matrix communities after onboarding:', error)
+                  })
+                }
               }}
             />
           </motion.div>

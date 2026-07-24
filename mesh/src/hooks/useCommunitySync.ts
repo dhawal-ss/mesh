@@ -3,7 +3,7 @@ import { useCommunityStore } from '../store/communities'
 import { useChannelStore } from '../store/channels'
 import { useMembershipStore } from '../store/membership'
 import { useIdentityStore } from '../store/identity'
-import { getMembers, onControlEvent, requestControlLogSync } from '../lib/bridge'
+import { getMembers, isMatrixBackend, onControlEvent, requestControlLogSync } from '../lib/bridge'
 import type { Channel } from '../types/ipc'
 import type { ControlEventData } from '../lib/bridge'
 import type { MemberRecord } from '../store/membership'
@@ -21,6 +21,7 @@ import type { MemberRecord } from '../store/membership'
  * community owner (or admin for allowed actions) are applied.
  */
 export function useCommunitySync() {
+  const matrixMode = isMatrixBackend()
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
   const patchCommunity = useCommunityStore((s) => s.patchCommunity)
   const removeCommunity = useCommunityStore((s) => s.removeCommunity)
@@ -38,6 +39,42 @@ export function useCommunitySync() {
   const queuedBootstrapEventsRef = useRef<ControlEventData[]>([])
 
   useEffect(() => {
+    if (matrixMode) {
+      if (!activeCommunityId) return
+      let cancelled = false
+      const communityId = activeCommunityId
+      const refreshMatrixRoster = async () => {
+        try {
+          const members = await getMembers(communityId)
+          if (cancelled) return
+          const roster: MemberRecord[] = members.map((member) => ({
+            publicKey: member.publicKey,
+            displayName: member.displayName,
+            avatarColor: member.avatarColor,
+            role: member.role as MemberRecord['role'],
+            joinStatus: (member.joinStatus as MemberRecord['joinStatus']) ?? 'joined',
+            banStatus: (member.banStatus as MemberRecord['banStatus']) ?? 'none',
+            lastSeen: member.lastSeen,
+            online: member.online ?? false,
+          }))
+          setRoster(communityId, roster)
+          patchCommunity(communityId, {
+            memberCount: roster.filter(
+              (member) => member.joinStatus === 'joined' && member.banStatus === 'none',
+            ).length,
+          })
+        } catch (error) {
+          console.error('Failed to refresh Matrix member roster:', error)
+        }
+      }
+      void refreshMatrixRoster()
+      const interval = window.setInterval(() => void refreshMatrixRoster(), 5000)
+      return () => {
+        cancelled = true
+        window.clearInterval(interval)
+      }
+    }
+
     if (!activeCommunityId) {
       bootstrappingCommunityRef.current = null
       queuedBootstrapEventsRef.current = []
@@ -63,6 +100,7 @@ export function useCommunitySync() {
           joinStatus: (member.joinStatus as MemberRecord['joinStatus']) ?? 'joined',
           banStatus: (member.banStatus as MemberRecord['banStatus']) ?? 'none',
           lastSeen: member.lastSeen,
+          online: member.online ?? false,
         }))
 
         setRoster(communityId, roster)
@@ -127,9 +165,14 @@ export function useCommunitySync() {
     setRoster,
     updateRole,
     upsertMember,
+    matrixMode,
   ])
 
   useEffect(() => {
+    if (matrixMode) {
+      return
+    }
+
     let unlisten: (() => void) | null = null
 
     const subscribe = async () => {
@@ -174,6 +217,7 @@ export function useCommunitySync() {
     removeMember,
     updateRole,
     upsertMember,
+    matrixMode,
   ])
 
   useEffect(() => {

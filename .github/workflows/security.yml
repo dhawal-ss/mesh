@@ -1,0 +1,118 @@
+name: Security and feature boundary
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  feature-matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc # 1.92.0
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libsqlcipher-dev
+      - name: Check Matrix production artifact
+        working-directory: mesh/src-tauri
+        run: cargo check --no-default-features --features matrix-backend --locked
+      - name: Assert Matrix production tree excludes libp2p
+        working-directory: mesh/src-tauri
+        shell: bash
+        run: |
+          if cargo tree --no-default-features --features matrix-backend -e normal,build --locked | grep -Eq '(^| )libp2p v'; then
+            echo 'Matrix production dependency tree unexpectedly contains libp2p.' >&2
+            exit 1
+          fi
+      - name: Check experimental LAN artifact
+        working-directory: mesh/src-tauri
+        run: cargo check --no-default-features --features legacy-p2p --locked
+
+  dependency-and-secret-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc # 1.92.0
+      - name: Verify dependency advisory boundaries
+        working-directory: mesh/src-tauri
+        shell: bash
+        run: |
+          production_tree="$(cargo tree --target all --no-default-features --features matrix-backend --locked)"
+          for crate in \
+            'hickory-proto v0.24.4' \
+            'quick-xml v0.37.5' \
+            'ring v0.16.20' \
+            'rustls-webpki v0.101.7'
+          do
+            if grep -Fq "$crate" <<<"$production_tree"; then
+              echo "Legacy advisory crate unexpectedly entered Matrix production: $crate" >&2
+              exit 1
+            fi
+          done
+          if grep -Fq 'quick-xml v0.37.5' <<<"$production_tree"; then
+            echo 'Vulnerable legacy notification XML parser entered Matrix production.' >&2
+            exit 1
+          fi
+      - name: Audit Matrix production dependencies
+        run: |
+          cargo install cargo-audit --version 0.22.2 --locked
+          # cargo-audit scans the whole lockfile and is not feature-aware.
+          # These advisories are confined to the optional legacy-p2p graph,
+          # whose exclusion from Matrix production is asserted above.
+          cargo audit --file mesh/src-tauri/Cargo.lock \
+            --ignore RUSTSEC-2026-0119 \
+            --ignore RUSTSEC-2025-0009 \
+            --ignore RUSTSEC-2026-0098 \
+            --ignore RUSTSEC-2026-0099 \
+            --ignore RUSTSEC-2026-0104 \
+            --ignore RUSTSEC-2026-0194 \
+            --ignore RUSTSEC-2026-0195
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mesh/package-lock.json
+      - name: Audit JavaScript dependencies
+        working-directory: mesh
+        run: npm audit --audit-level=high
+      - name: Scan repository history for secrets
+        uses: trufflesecurity/trufflehog@18c7b1fc33e6c16b27ea66ff27cc7e642fb7cd0a # v3.90.6
+        with:
+          extra_args: --results=verified,unknown
+
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc # 1.92.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mesh/package-lock.json
+      - name: Install JavaScript dependencies
+        working-directory: mesh
+        run: npm ci
+      - name: Generate JavaScript CycloneDX SBOM
+        working-directory: mesh
+        run: npm sbom --sbom-format=cyclonedx > mesh-node.cdx.json
+      - name: Generate Rust CycloneDX SBOM
+        working-directory: mesh/src-tauri
+        run: |
+          cargo install cargo-cyclonedx --version 0.5.9 --locked
+          cargo cyclonedx --format json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mesh-sboms
+          path: |
+            mesh/mesh-node.cdx.json
+            mesh/src-tauri/*.cdx.json

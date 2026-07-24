@@ -1,5 +1,4 @@
 /// SQL migration strings embedded as constants.
-
 use rusqlite::Connection;
 
 /// Check whether a given migration version has already been applied.
@@ -84,6 +83,10 @@ pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
         (11, MIGRATION_011_FTS5_SEARCH, false),
         (12, MIGRATION_012_DIRECT_MESSAGES, false),
         (13, MIGRATION_013_GROUP_KEY_EPOCH, true),
+        (14, MIGRATION_014_FILE_AVAILABILITY_AND_DOWNLOADS, false),
+        (15, MIGRATION_015_CHANNEL_EVENTS, false),
+        (16, MIGRATION_016_MEMBER_TIMEOUTS, false),
+        (17, MIGRATION_017_LEGACY_IMPORT_RECEIPTS, false),
     ];
 
     for &(version, sql, allow_column_exists) in migrations {
@@ -337,4 +340,83 @@ CREATE INDEX IF NOT EXISTS idx_dm_conversations_peer
 
 pub const MIGRATION_013_GROUP_KEY_EPOCH: &str = r#"
 ALTER TABLE communities ADD COLUMN group_key_epoch INTEGER;
+"#;
+
+pub const MIGRATION_014_FILE_AVAILABILITY_AND_DOWNLOADS: &str = r#"
+CREATE TABLE IF NOT EXISTS file_availability (
+    file_hash TEXT NOT NULL,
+    peer_id TEXT NOT NULL,
+    filename TEXT NOT NULL DEFAULT '',
+    size INTEGER NOT NULL DEFAULT 0,
+    last_seen TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (file_hash, peer_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_file_availability_hash ON file_availability(file_hash);
+
+CREATE TABLE IF NOT EXISTS download_sessions (
+    file_hash TEXT PRIMARY KEY,
+    filename TEXT NOT NULL,
+    total_bytes INTEGER NOT NULL,
+    total_chunks INTEGER NOT NULL,
+    received_chunks_json TEXT NOT NULL DEFAULT '[]',
+    temp_path TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    source_peer_id TEXT,
+    community_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"#;
+
+pub const MIGRATION_015_CHANNEL_EVENTS: &str = r#"
+CREATE TABLE IF NOT EXISTS channel_events (
+    sequence INTEGER NOT NULL,
+    channel_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    target_id TEXT,
+    author_public_key TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    signature TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (channel_id, sequence)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_events_id ON channel_events(event_id);
+CREATE INDEX IF NOT EXISTS idx_channel_events_channel_ts ON channel_events(channel_id, timestamp);
+
+CREATE TABLE IF NOT EXISTS channel_sequence (
+    channel_id TEXT PRIMARY KEY,
+    latest_sequence INTEGER NOT NULL DEFAULT 0
+);
+"#;
+
+pub const MIGRATION_016_MEMBER_TIMEOUTS: &str = r#"
+CREATE TABLE IF NOT EXISTS member_timeouts (
+    community_id TEXT NOT NULL,
+    public_key TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (community_id, public_key)
+);
+"#;
+
+/// Local idempotency receipts for approval-gated legacy imports. The imported
+/// payload itself is stored as an encrypted Matrix room event; this table only
+/// prevents a retry on the same device from emitting duplicates.
+pub const MIGRATION_017_LEGACY_IMPORT_RECEIPTS: &str = r#"
+CREATE TABLE IF NOT EXISTS legacy_import_receipts (
+    plan_sha256 TEXT NOT NULL,
+    import_key TEXT NOT NULL,
+    target_room_id TEXT NOT NULL,
+    matrix_event_id TEXT NOT NULL,
+    imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (plan_sha256, import_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_legacy_import_receipts_room
+    ON legacy_import_receipts(target_room_id, imported_at);
 "#;

@@ -7,6 +7,7 @@ import { useIdentityStore } from '../../store/identity'
 import type { OnboardingFlowProps } from './types'
 
 type IdentityScreenProps = Pick<OnboardingFlowProps, 'onGenerateIdentity'> & {
+  backendKind?: 'matrix' | 'legacy-p2p'
   onNext: () => void
 }
 
@@ -22,7 +23,7 @@ function formatFingerprint(publicKey?: string) {
   return `${publicKey.slice(0, 6)}...${publicKey.slice(-6)}`
 }
 
-export function IdentityScreen({ onGenerateIdentity, onNext }: IdentityScreenProps) {
+export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onNext }: IdentityScreenProps) {
   const identity = useIdentityStore((s) => s.identity)
   const [attempt, setAttempt] = useState(0)
   const [phase, setPhase] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
@@ -75,7 +76,9 @@ export function IdentityScreen({ onGenerateIdentity, onNext }: IdentityScreenPro
           Welcome to Mesh
         </h1>
         <p className="max-w-sm text-sm leading-6 text-secondary">
-          We are creating your identity locally. Nothing leaves this device.
+          {backendKind === 'matrix'
+            ? 'We are creating a local migration key. Your Matrix account and revocable devices remain authoritative.'
+            : 'We are creating your peer identity locally. Nothing leaves this device.'}
         </p>
       </div>
 
@@ -136,7 +139,9 @@ export function IdentityScreen({ onGenerateIdentity, onNext }: IdentityScreenPro
           >
             <p className="text-2xs uppercase tracking-[0.32em] text-muted">Device key created</p>
             <p className="mt-2 text-sm text-primary">
-              This identity now lives on this device and will sign your activity locally.
+              {backendKind === 'matrix'
+                ? 'This key stays on this device as legacy migration metadata; Matrix device keys protect room activity.'
+                : 'This identity now lives on this device and will sign your peer activity locally.'}
             </p>
             <div className="mt-3 flex items-center justify-between gap-3 rounded-md bg-bg-tertiary px-3 py-2">
               <span className="text-2xs uppercase tracking-[0.3em] text-muted">Fingerprint</span>

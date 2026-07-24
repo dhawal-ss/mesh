@@ -10,6 +10,10 @@ target/
 *.log
 *.txt
 !README.txt
+coverage/
+playwright-report/
+test-results/
+soak-logs/
 
 # Editor
 .vscode/
@@ -24,6 +28,12 @@ target/
 # Claude/AI artifacts
 .claude/
 claudereview/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+!**/.env.example
 
 # Misc
 *.local

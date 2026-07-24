@@ -5,6 +5,7 @@ import { transitions } from '../../lib/motion'
 import type { BootstrapState, OnboardingFlowProps } from './types'
 
 interface ReadyScreenProps {
+  backendKind?: 'matrix' | 'legacy-p2p'
   onComplete: () => void
   onBootstrap?: OnboardingFlowProps['onBootstrap']
   onBack?: () => void
@@ -12,11 +13,11 @@ interface ReadyScreenProps {
 
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms))
 
-export function ReadyScreen({ onComplete, onBootstrap, onBack }: ReadyScreenProps) {
+export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, onBack }: ReadyScreenProps) {
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<BootstrapState>({
     phase: 'connecting',
-    label: 'Finding nearby peers',
+    label: backendKind === 'matrix' ? 'Connecting to Mesh' : 'Finding nearby peers',
     progress: 24,
   })
   const [hasErrored, setHasErrored] = useState(false)
@@ -24,12 +25,12 @@ export function ReadyScreen({ onComplete, onBootstrap, onBack }: ReadyScreenProp
 
   const timeline = useMemo(
     () => [
-      { phase: 'connecting' as const, label: 'Finding nearby peers', progress: 24, delay: 280 },
-      { phase: 'syncing' as const, label: 'Syncing channels', progress: 68, delay: 760 },
+      { phase: 'connecting' as const, label: backendKind === 'matrix' ? 'Connecting to Mesh' : 'Finding nearby peers', progress: 24, delay: 280 },
+      { phase: 'syncing' as const, label: backendKind === 'matrix' ? 'Getting your conversations' : 'Syncing channels', progress: 68, delay: 760 },
       { phase: 'finalizing' as const, label: 'Finishing setup', progress: 92, delay: 1180 },
       { phase: 'ready' as const, label: 'Ready', progress: 100, delay: 1480 },
     ],
-    []
+    [backendKind]
   )
 
   useEffect(() => {
@@ -38,7 +39,7 @@ export function ReadyScreen({ onComplete, onBootstrap, onBack }: ReadyScreenProp
     setIsDone(false)
     setState({
       phase: 'connecting',
-      label: 'Finding nearby peers',
+      label: backendKind === 'matrix' ? 'Connecting to Mesh' : 'Finding nearby peers',
       progress: 24,
     })
 
@@ -87,12 +88,16 @@ export function ReadyScreen({ onComplete, onBootstrap, onBack }: ReadyScreenProp
   return (
     <div className="space-y-8">
       <div className="space-y-2">
-        <p className="text-2xs uppercase tracking-[0.35em] text-muted">Step 3 of 3</p>
+        <p className="text-2xs uppercase tracking-[0.35em] text-muted">
+          {backendKind === 'matrix' ? 'Account setup' : 'Step 3 of 3'}
+        </p>
         <h1 className="text-[clamp(2rem,4vw,2.6rem)] font-semibold tracking-tight text-primary">
-          Starting the network
+          {backendKind === 'matrix' ? 'Getting things ready' : 'Starting the network'}
         </h1>
         <p className="max-w-sm text-sm leading-6 text-secondary">
-          Mesh is waking up the network and syncing the first shared state.
+          {backendKind === 'matrix'
+            ? 'Mesh is securely restoring your conversations. This usually takes only a moment.'
+            : 'Mesh is waking up the peer network and syncing the first shared state.'}
         </p>
       </div>
 
@@ -111,7 +116,7 @@ export function ReadyScreen({ onComplete, onBootstrap, onBack }: ReadyScreenProp
           </div>
           <div className="text-right">
             <p className="text-lg font-semibold text-primary">{state.progress}%</p>
-            <p className="text-2xs uppercase tracking-[0.3em] text-muted">Bootstrap</p>
+            <p className="text-2xs uppercase tracking-[0.3em] text-muted">Setup</p>
           </div>
         </div>
 
@@ -124,7 +129,10 @@ export function ReadyScreen({ onComplete, onBootstrap, onBack }: ReadyScreenProp
         </div>
 
         <div className="grid gap-2 text-2xs uppercase tracking-[0.3em] text-muted">
-          {['Identity secured', 'Peers discovered', 'Channels synced'].map((item, index) => (
+          {(backendKind === 'matrix'
+            ? ['Account secured', 'Service connected', 'Conversations ready']
+            : ['Identity secured', 'Peers discovered', 'Channels synced']
+          ).map((item, index) => (
             <motion.div
               key={item}
               className="flex items-center justify-between rounded-md bg-bg-modifier-hover px-3 py-2"
@@ -150,7 +158,7 @@ export function ReadyScreen({ onComplete, onBootstrap, onBack }: ReadyScreenProp
         onClick={handleContinue}
         className="w-full"
       >
-        {isDone && !hasErrored ? 'Continue to Mesh' : state.phase === 'ready' ? 'Finishing up...' : 'Connecting...'}
+        {isDone && !hasErrored ? 'Open Mesh' : state.phase === 'ready' ? 'Finishing up...' : 'Connecting...'}
       </Button>
 
       <div className="flex items-center justify-between">

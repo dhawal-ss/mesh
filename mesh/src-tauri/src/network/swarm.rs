@@ -1,8 +1,7 @@
 use libp2p::{
     connection_limits, dcutr,
     gossipsub::{self, Message as GossipMessage, MessageAuthenticity, MessageId},
-    identify, kad,
-    mdns, noise, ping, request_response,
+    identify, kad, mdns, noise, ping, request_response,
     swarm::SwarmEvent,
     tcp, yamux, Multiaddr, PeerId, SwarmBuilder,
 };
@@ -76,10 +75,10 @@ pub async fn start_network(
         let _ = event_tx.send(NetworkEvent::NetworkReady).await;
 
         let mut file_paths: HashMap<String, (std::path::PathBuf, String)> = HashMap::new();
+        let mut community_members: HashMap<String, HashSet<String>> = HashMap::new();
 
-        // Re-publish DHT registrations every 45 minutes so records don't expire
-        let mut dht_refresh_interval =
-            tokio::time::interval(Duration::from_secs(45 * 60));
+        // Re-publish DHT registrations every 2 hours so records don't expire
+        let mut dht_refresh_interval = tokio::time::interval(Duration::from_secs(2 * 3600));
         // The first tick completes immediately; skip it since we register on join
         dht_refresh_interval.tick().await;
 
@@ -92,6 +91,7 @@ pub async fn start_network(
                         &event_tx,
                         &file_paths,
                         &registered_communities,
+                        &community_members,
                     )
                     .await;
                 }
@@ -103,6 +103,7 @@ pub async fn start_network(
                             &event_tx,
                             &mut file_paths,
                             &mut registered_communities,
+                            &mut community_members,
                         )
                         .await,
                         None => break, // Channel closed, shutdown
@@ -254,6 +255,7 @@ async fn handle_swarm_event(
     event_tx: &mpsc::Sender<NetworkEvent>,
     file_paths: &HashMap<String, (std::path::PathBuf, String)>,
     registered_communities: &HashSet<String>,
+    community_members: &HashMap<String, HashSet<String>>,
 ) {
     match event {
         SwarmEvent::Behaviour(MeshBehaviourEvent::Gossipsub(gossipsub::Event::Message {
@@ -359,8 +361,65 @@ async fn handle_swarm_event(
                                 rejected = true;
                             }
 
+                            // Require signed file requests
                             if !rejected {
-                                if let Some((path, file_community_id)) = file_paths.get(&request.file_hash) {
+                                if request.requester_public_key.is_empty()
+                                    || request.request_signature.is_empty()
+                                {
+                                    warn!("Rejecting unsigned file request from {}", peer);
+                                    rejected = true;
+                                } else {
+                                    let signable = format!(
+                                        "file-req:{}:{}:{}",
+                                        request.file_hash,
+                                        request.chunk_index,
+                                        request.requester_public_key
+                                    );
+                                    if !crate::crypto::identity::verify_signature(
+                                        &request.requester_public_key,
+                                        signable.as_bytes(),
+                                        &request.request_signature,
+                                    )
+                                    .unwrap_or(false)
+                                    {
+                                        warn!(
+                                            "Rejecting file request — invalid signature from {}",
+                                            peer
+                                        );
+                                        rejected = true;
+                                    }
+                                }
+                            }
+
+                            // Verify requester is an active member of the community.
+                            // Fail-closed: if no roster is cached, reject the request.
+                            // Rosters are synced on startup and on membership changes,
+                            // so an uncached roster means we haven't finished init yet.
+                            if !rejected && !request.requester_public_key.is_empty() {
+                                match community_members.get(&request.community_id) {
+                                    Some(members) => {
+                                        if !members.contains(&request.requester_public_key) {
+                                            warn!(
+                                                "Rejecting file request from non-member {} for community {}",
+                                                request.requester_public_key, request.community_id
+                                            );
+                                            rejected = true;
+                                        }
+                                    }
+                                    None => {
+                                        warn!(
+                                            "Rejecting file request for community {} — membership roster not yet cached",
+                                            request.community_id
+                                        );
+                                        rejected = true;
+                                    }
+                                }
+                            }
+
+                            if !rejected {
+                                if let Some((path, file_community_id)) =
+                                    file_paths.get(&request.file_hash)
+                                {
                                     if *file_community_id != request.community_id {
                                         warn!(
                                             "Rejecting file chunk request from {} for {} — community_id mismatch (expected {}, got {})",
@@ -368,7 +427,8 @@ async fn handle_swarm_event(
                                         );
                                     } else if let Ok(mut f) = std::fs::File::open(path) {
                                         use std::io::{Read, Seek};
-                                        let offset = (request.chunk_index as u64) * CHUNK_SIZE_BYTES;
+                                        let offset =
+                                            (request.chunk_index as u64) * CHUNK_SIZE_BYTES;
                                         if f.seek(std::io::SeekFrom::Start(offset)).is_ok() {
                                             let mut buffer = vec![0; CHUNK_SIZE_BYTES as usize];
                                             if let Ok(n) = f.read(&mut buffer) {
@@ -404,17 +464,23 @@ async fn handle_swarm_event(
                         }
                     }
                 }
-                request_response::Event::OutboundFailure { request_id, error, .. } => {
+                request_response::Event::OutboundFailure {
+                    request_id, error, ..
+                } => {
                     warn!("File sharing request {} failed: {}", request_id, error);
-                    let _ = event_tx.send(NetworkEvent::RequestFailed {
-                        protocol: "file_sharing".to_string(),
-                        reason: error.to_string(),
-                    }).await;
+                    let _ = event_tx
+                        .send(NetworkEvent::RequestFailed {
+                            protocol: "file_sharing".to_string(),
+                            reason: error.to_string(),
+                        })
+                        .await;
                 }
                 request_response::Event::InboundFailure { error, .. } => {
                     warn!("File sharing inbound request failed: {}", error);
                 }
-                event => { tracing::debug!("Unhandled file sharing event: {:?}", event); }
+                event => {
+                    tracing::debug!("Unhandled file sharing event: {:?}", event);
+                }
             }
         }
         SwarmEvent::Behaviour(MeshBehaviourEvent::MessageHistory(event)) => match event {
@@ -455,17 +521,23 @@ async fn handle_swarm_event(
                         .await;
                 }
             },
-            request_response::Event::OutboundFailure { request_id, error, .. } => {
+            request_response::Event::OutboundFailure {
+                request_id, error, ..
+            } => {
                 warn!("Message history request {} failed: {}", request_id, error);
-                let _ = event_tx.send(NetworkEvent::RequestFailed {
-                    protocol: "message_history".to_string(),
-                    reason: error.to_string(),
-                }).await;
+                let _ = event_tx
+                    .send(NetworkEvent::RequestFailed {
+                        protocol: "message_history".to_string(),
+                        reason: error.to_string(),
+                    })
+                    .await;
             }
             request_response::Event::InboundFailure { error, .. } => {
                 warn!("Message history inbound request failed: {}", error);
             }
-            event => { tracing::debug!("Unhandled message history event: {:?}", event); }
+            event => {
+                tracing::debug!("Unhandled message history event: {:?}", event);
+            }
         },
         SwarmEvent::Behaviour(MeshBehaviourEvent::ControlLog(event)) => match event {
             libp2p::request_response::Event::Message { peer, message } => match message {
@@ -502,19 +574,27 @@ async fn handle_swarm_event(
                         .await;
                 }
             },
-            request_response::Event::OutboundFailure { request_id, error, .. } => {
+            request_response::Event::OutboundFailure {
+                request_id, error, ..
+            } => {
                 warn!("Control log request {} failed: {}", request_id, error);
-                let _ = event_tx.send(NetworkEvent::RequestFailed {
-                    protocol: "control_log".to_string(),
-                    reason: error.to_string(),
-                }).await;
+                let _ = event_tx
+                    .send(NetworkEvent::RequestFailed {
+                        protocol: "control_log".to_string(),
+                        reason: error.to_string(),
+                    })
+                    .await;
             }
             request_response::Event::InboundFailure { error, .. } => {
                 warn!("Control log inbound request failed: {}", error);
             }
-            event => { tracing::debug!("Unhandled control log event: {:?}", event); }
+            event => {
+                tracing::debug!("Unhandled control log event: {:?}", event);
+            }
         },
-        event => { tracing::debug!("Unhandled swarm event: {:?}", event); }
+        event => {
+            tracing::debug!("Unhandled swarm event: {:?}", event);
+        }
     }
 }
 
@@ -524,6 +604,7 @@ async fn handle_command(
     event_tx: &mpsc::Sender<NetworkEvent>,
     file_paths: &mut HashMap<String, (std::path::PathBuf, String)>,
     registered_communities: &mut HashSet<String>,
+    community_members: &mut HashMap<String, HashSet<String>>,
 ) {
     match cmd {
         NetworkCommand::SubscribeTopic { topic } => {
@@ -532,10 +613,10 @@ async fn handle_command(
                 warn!("Failed to subscribe to topic {}: {}", topic, e);
             } else {
                 // S15: Apply per-topic score params so topic-level spam detection is active.
-                let _ = swarm.behaviour_mut().gossipsub.set_topic_params(
-                    topic_hash,
-                    mesh_topic_score_params(),
-                );
+                let _ = swarm
+                    .behaviour_mut()
+                    .gossipsub
+                    .set_topic_params(topic_hash, mesh_topic_score_params());
                 info!("Subscribed to topic: {}", topic);
             }
         }
@@ -555,10 +636,10 @@ async fn handle_command(
                 warn!("Failed to subscribe to channel topic {}: {}", topic, e);
             } else {
                 // S15: Apply per-topic score params so topic-level spam detection is active.
-                let _ = swarm.behaviour_mut().gossipsub.set_topic_params(
-                    topic_hash,
-                    mesh_topic_score_params(),
-                );
+                let _ = swarm
+                    .behaviour_mut()
+                    .gossipsub
+                    .set_topic_params(topic_hash, mesh_topic_score_params());
                 info!("Subscribed to channel topic: {}", topic);
             }
         }
@@ -576,12 +657,43 @@ async fn handle_command(
         }
         NetworkCommand::PublishMessage { topic, data } => {
             let topic_hash = gossipsub::IdentTopic::new(&topic);
-            if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic_hash, data.clone()) {
-                warn!("Failed to publish message to {}: {} — queuing for retry", topic, e);
-                let _ = event_tx.send(NetworkEvent::PublishFailed {
-                    topic,
-                    data,
-                }).await;
+            match swarm
+                .behaviour_mut()
+                .gossipsub
+                .publish(topic_hash, data.clone())
+            {
+                Ok(_) => {
+                    // Published successfully to at least one peer
+                }
+                Err(gossipsub::PublishError::InsufficientPeers) => {
+                    // Running solo — we're the only subscriber. The message
+                    // is already stored in our local DB by send_message, so
+                    // the user sees it. We silently drop the gossip publish
+                    // because there's no one to propagate to. When another
+                    // peer subscribes and connects, they'll pick up this
+                    // message via the message history request-response
+                    // protocol, not via gossip re-play.
+                    //
+                    // NOTE: we deliberately do NOT queue as "pending". The
+                    // pending queue is for real publish failures (transient
+                    // mesh glitches, rate limit, etc.), not the normal
+                    // solo-peer case. Queueing solo sends would make every
+                    // local user see a scary "N messages pending" counter.
+                    tracing::debug!(
+                        target: "mesh::gossip",
+                        topic = %topic,
+                        "Solo publish — no other subscribers, message stored locally only"
+                    );
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to publish message to {}: {} — queuing for retry",
+                        topic, e
+                    );
+                    let _ = event_tx
+                        .send(NetworkEvent::PublishFailed { topic, data })
+                        .await;
+                }
             }
         }
         NetworkCommand::ConnectPeer { addr } => {
@@ -615,6 +727,13 @@ async fn handle_command(
             registered_communities.insert(community_id.clone());
             register_community_in_dht(swarm, &community_id);
         }
+        NetworkCommand::UnregisterFromDHT { community_id } => {
+            registered_communities.remove(&community_id);
+            info!(
+                "Stopped DHT registration refresh for community {}",
+                community_id
+            );
+        }
         NetworkCommand::FindPeers { community_id } => {
             let key = kad::RecordKey::new(&community_dht_key(&community_id));
             swarm.behaviour_mut().kademlia.get_record(key);
@@ -635,6 +754,8 @@ async fn handle_command(
             file_hash,
             chunk_index,
             community_id,
+            requester_public_key,
+            request_signature,
         } => {
             if let Ok(peer) = peer_id.parse::<PeerId>() {
                 swarm.behaviour_mut().file_sharing.send_request(
@@ -643,6 +764,8 @@ async fn handle_command(
                         file_hash,
                         chunk_index,
                         community_id,
+                        requester_public_key,
+                        request_signature,
                     },
                 );
             }
@@ -654,6 +777,8 @@ async fn handle_command(
             since_id,
             limit,
             requester_public_key,
+            request_signature,
+            request_timestamp,
         } => {
             if let Some(explicit_peer) = peer_id.and_then(|id| id.parse::<PeerId>().ok()) {
                 // Explicit peer requested — send to that peer only.
@@ -665,6 +790,8 @@ async fn handle_command(
                         since_id,
                         limit,
                         requester_public_key,
+                        request_signature,
+                        request_timestamp,
                     },
                 );
             } else {
@@ -701,6 +828,8 @@ async fn handle_command(
                             since_id: since_id.clone(),
                             limit,
                             requester_public_key: requester_public_key.clone(),
+                            request_signature: request_signature.clone(),
+                            request_timestamp: request_timestamp.clone(),
                         },
                     );
                 }
@@ -721,8 +850,23 @@ async fn handle_command(
                 .control_log
                 .send_request(&target_peer, request);
         }
-        NetworkCommand::ServeFile { file_hash, path, community_id } => {
+        NetworkCommand::ServeFile {
+            file_hash,
+            path,
+            community_id,
+        } => {
             file_paths.insert(file_hash, (path, community_id));
+        }
+        NetworkCommand::UpdateCommunityMembers {
+            community_id,
+            member_public_keys,
+        } => {
+            info!(
+                "Updated membership roster for community {} ({} members)",
+                community_id,
+                member_public_keys.len()
+            );
+            community_members.insert(community_id, member_public_keys.into_iter().collect());
         }
     }
 }
@@ -757,7 +901,7 @@ fn register_community_in_dht(swarm: &mut libp2p::Swarm<MeshBehaviour>, community
         key,
         value,
         publisher: Some(peer_id),
-        expires: Some(std::time::Instant::now() + Duration::from_secs(3600)),
+        expires: Some(std::time::Instant::now() + Duration::from_secs(4 * 3600)),
     };
     if let Err(error) = swarm
         .behaviour_mut()
@@ -854,9 +998,13 @@ async fn handle_kademlia_event(
             kad::QueryResult::PutRecord(Err(e)) => {
                 warn!("DHT community registration failed: {}", e);
             }
-            result => { tracing::debug!("Unhandled kademlia query result: {:?}", result); }
+            result => {
+                tracing::debug!("Unhandled kademlia query result: {:?}", result);
+            }
         },
-        event => { tracing::debug!("Unhandled kademlia event: {:?}", event); }
+        event => {
+            tracing::debug!("Unhandled kademlia event: {:?}", event);
+        }
     }
 }
 

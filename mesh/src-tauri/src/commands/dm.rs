@@ -22,8 +22,7 @@ pub(crate) fn dm_topic(key_a: &str, key_b: &str) -> String {
     hasher.update(b":");
     hasher.update(keys[1].as_bytes());
     let hash = hasher.finalize();
-    let topic_id = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .encode(&hash[..16]);
+    let topic_id = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&hash[..16]);
     format!("mesh/dm/{}", topic_id)
 }
 
@@ -36,7 +35,9 @@ pub async fn send_dm(
 ) -> Result<DirectMessageDto, CommandError> {
     let (public_key, private_key_bytes) = {
         let guard = state.identity.read().await;
-        let id = guard.as_ref().ok_or(CommandError::Identity("No identity loaded".into()))?;
+        let id = guard
+            .as_ref()
+            .ok_or(CommandError::Identity("No identity loaded".into()))?;
         (id.public_key_b64.clone(), id.private_key_bytes())
     };
 
@@ -52,11 +53,7 @@ pub async fn send_dm(
     let short_name = recipient_public_key[..6.min(recipient_public_key.len())].to_string();
     let conversation = db
         .run_blocking(move |db| {
-            db.get_or_create_dm_conversation(
-                &recipient_c,
-                &short_name,
-                "#7a7570",
-            )
+            db.get_or_create_dm_conversation(&recipient_c, &short_name, "#7a7570")
         })
         .await
         .map_err(|e| CommandError::Other(e.to_string()))?;
@@ -81,8 +78,12 @@ pub async fn send_dm(
         content: content.clone(),
         timestamp: envelope.timestamp.clone(),
         signature: envelope.signature.clone(),
+        attachments: Vec::new(),
+        reactions: std::collections::HashMap::new(),
         edited_at: None,
         deleted_at: None,
+        reply_to_id: None,
+        delivery_status: Some("sent".into()),
     };
 
     // Store locally
@@ -95,12 +96,10 @@ pub async fn send_dm(
     // Encrypt for recipient using X25519 ECDH
     let recipient_x25519 = ed25519_pub_to_x25519(&recipient_public_key)
         .map_err(|e| CommandError::Crypto(format!("Invalid recipient key: {}", e)))?;
-    let mut plaintext = serde_json::to_vec(&envelope).map_err(|e| CommandError::Other(e.to_string()))?;
-    let encrypted = encryption::encrypt_for_recipient(
-        &recipient_x25519,
-        &plaintext,
-        "mesh-dm-v1",
-    );
+    let mut plaintext =
+        serde_json::to_vec(&envelope).map_err(|e| CommandError::Other(e.to_string()))?;
+    let encrypted =
+        encryption::encrypt_for_recipient(&recipient_x25519, &plaintext, "mesh-dm-v1");
     plaintext.zeroize();
 
     // Subscribe to and publish on the deterministic DM topic

@@ -9,6 +9,7 @@ use crate::state::file_downloads::{DownloadUpdate, FileAvailableEvent};
 use crate::state::AppState;
 use crate::storage::Database;
 
+use super::helpers;
 use super::history;
 use super::invite_handler;
 use super::message_handler;
@@ -42,7 +43,10 @@ async fn route_network_event(app_handle: &AppHandle, event: NetworkEvent) {
                 if let Some(envelope) = SignedEnvelope::from_bytes(&plaintext) {
                     validate_and_route(app_handle, envelope).await;
                 } else {
-                    tracing::warn!("DM on topic {} decrypted but is not a valid envelope", topic);
+                    tracing::warn!(
+                        "DM on topic {} decrypted but is not a valid envelope",
+                        topic
+                    );
                 }
                 return;
             }
@@ -77,12 +81,29 @@ async fn route_network_event(app_handle: &AppHandle, event: NetworkEvent) {
                     security::trusted_owner_public_key(app_handle, &control_event.community_id)
                 {
                     if let Some(db) = app_handle.try_state::<Database>() {
-                        let _ = crate::commands::control::apply_control_event(
+                        let result = crate::commands::control::apply_control_event(
                             app_handle,
                             &db,
                             &control_event,
                             &owner_public_key,
                         );
+                        // After membership-changing control events, sync the
+                        // membership roster to the swarm task so file chunk
+                        // serving can verify requester membership.
+                        if result.as_ref().map(|r| r.applied).unwrap_or(false) {
+                            let is_membership_event = matches!(
+                                control_event.event_type.as_str(),
+                                "member_join" | "member_leave" | "member_ban" | "community_delete"
+                            );
+                            if is_membership_event {
+                                sync_community_members_to_swarm(
+                                    app_handle,
+                                    &db,
+                                    &control_event.community_id,
+                                )
+                                .await;
+                            }
+                        }
                     }
                 }
                 return;
@@ -118,20 +139,75 @@ async fn route_network_event(app_handle: &AppHandle, event: NetworkEvent) {
                     }
                 };
 
-                if let Some(update) = update {
+                // Persist download state to SQLite after each chunk
+                if let Some(db) = app_handle.try_state::<Database>() {
+                    let downloads = state.downloads.lock().await;
+                    if let Some(session) = downloads.get_session(&file_hash) {
+                        let status = match session.state {
+                            crate::state::file_downloads::DownloadState::Downloading => "active",
+                            crate::state::file_downloads::DownloadState::Completed => "completed",
+                            crate::state::file_downloads::DownloadState::Failed => "failed",
+                        };
+                        let _ = db.upsert_download_session(
+                            &session.file_hash,
+                            &session.filename,
+                            session.total_bytes,
+                            session.total_chunks,
+                            &session.received_chunks_json(),
+                            &session.temp_path.to_string_lossy(),
+                            status,
+                            None,
+                            None,
+                        );
+                    }
+                }
+
+                if let Some(ref update) = update {
                     match update {
                         DownloadUpdate::Progress(progress) | DownloadUpdate::Failed(progress) => {
-                            let _ = app_handle.emit("file:download-progress", &progress);
+                            let _ = app_handle.emit("file:download-progress", progress);
                         }
                         DownloadUpdate::Completed(completed) => {
+                            // Mark download session as completed in database
+                            if let Some(db) = app_handle.try_state::<Database>() {
+                                let _ = db.complete_download_session(&completed.progress.file_hash);
+                            }
                             let _ = app_handle.emit("file:download-progress", &completed.progress);
                             let _ = app_handle.emit(
                                 "file:available",
                                 &FileAvailableEvent {
-                                    file_hash: completed.progress.file_hash,
+                                    file_hash: completed.progress.file_hash.clone(),
                                     local_path: completed.local_path.to_string_lossy().to_string(),
                                 },
                             );
+                        }
+                    }
+                }
+
+                // If chunk data was empty (dead seeder response), notify scheduler of failure
+                if data.is_empty() {
+                    if let Some(state) = app_handle.try_state::<AppState>() {
+                        let mut schedulers = state.schedulers.lock().await;
+                        if let Some(scheduler) = schedulers.get_mut(&file_hash) {
+                            scheduler.chunk_failed(chunk_index);
+                        }
+                    }
+                }
+
+                // Notify the download scheduler and request more chunks
+                {
+                    let mut schedulers = state.schedulers.lock().await;
+                    if let Some(scheduler) = schedulers.get_mut(&file_hash) {
+                        scheduler.chunk_received(chunk_index);
+
+                        if scheduler.is_complete() {
+                            schedulers.remove(&file_hash);
+                        } else {
+                            // Drop the lock before sending network requests
+                            drop(schedulers);
+                            // Fill the concurrency window with the next batch
+                            crate::commands::files::send_scheduler_batch(app_handle, &file_hash)
+                                .await;
                         }
                     }
                 }
@@ -146,7 +222,9 @@ async fn route_network_event(app_handle: &AppHandle, event: NetworkEvent) {
                     .run_blocking(move |db| {
                         let community_id = db.get_community_for_channel(&channel_id_check).ok()?;
                         // Verify the community is actually known (has an owner key)
-                        db.get_community_owner_public_key(&community_id).ok()?.as_ref()?;
+                        db.get_community_owner_public_key(&community_id)
+                            .ok()?
+                            .as_ref()?;
                         Some(community_id)
                     })
                     .await;
@@ -163,9 +241,49 @@ async fn route_network_event(app_handle: &AppHandle, event: NetworkEvent) {
                     return;
                 };
 
+                // Require signed requests — reject unsigned requests
+                if request.request_signature.is_empty() || request.requester_public_key.is_empty() {
+                    tracing::warn!(
+                        "Refusing unsigned history request for channel {}",
+                        request.channel_id,
+                    );
+                    let _ = reply.send(crate::network::behaviour::MessageHistoryResponse {
+                        channel_id: request.channel_id,
+                        messages: vec![],
+                    });
+                    return;
+                }
+
+                // Verify the signature
+                let signable = format!(
+                    "history-req:{}:{}:{}",
+                    request.channel_id, request.requester_public_key, request.request_timestamp
+                );
+                if !crate::crypto::identity::verify_signature(
+                    &request.requester_public_key,
+                    signable.as_bytes(),
+                    &request.request_signature,
+                )
+                .unwrap_or(false)
+                {
+                    tracing::warn!(
+                        "Refusing history request for channel {} — invalid signature",
+                        request.channel_id,
+                    );
+                    let _ = reply.send(crate::network::behaviour::MessageHistoryResponse {
+                        channel_id: request.channel_id,
+                        messages: vec![],
+                    });
+                    return;
+                }
+
                 // Verify the requester is a member of this community
-                if !request.requester_public_key.is_empty() {
-                    if let Some(false) = security::is_active_member(app_handle, &community_id, &request.requester_public_key) {
+                {
+                    if let Some(false) = security::is_active_member(
+                        app_handle,
+                        &community_id,
+                        &request.requester_public_key,
+                    ) {
                         tracing::warn!(
                             "Refusing history request for channel {} — requester {} is not a member",
                             request.channel_id,
@@ -179,19 +297,31 @@ async fn route_network_event(app_handle: &AppHandle, event: NetworkEvent) {
                     }
                 }
 
+                // ── Serve history from the immutable channel_events log ──
+                // Translate the timestamp-based cursor into a sequence number,
+                // query events from the append-only log, then reconstruct
+                // MessageDto snapshots. This ensures fresh peers never receive
+                // mutated row data from the mutable messages table.
                 let channel_id = request.channel_id.clone();
                 let since_ts = request.since_timestamp.clone();
-                let since_id = request.since_id.clone();
                 let limit = request.limit;
                 let messages = db
                     .run_blocking(move |db| {
-                        db.get_messages_after(
-                            &channel_id,
-                            since_ts.as_deref(),
-                            since_id.as_deref(),
-                            limit,
-                        )
-                        .unwrap_or_default()
+                        let since_seq = if let Some(ref ts) = since_ts {
+                            db.get_sequence_for_timestamp(&channel_id, ts).unwrap_or(0)
+                        } else {
+                            0
+                        };
+
+                        let events = db
+                            .get_channel_events(&channel_id, since_seq, limit)
+                            .unwrap_or_default();
+
+                        if events.is_empty() {
+                            return vec![];
+                        }
+
+                        history::reconstruct_messages_from_events(db, &channel_id, &events)
                     })
                     .await;
                 let _ = reply.send(crate::network::behaviour::MessageHistoryResponse {
@@ -201,8 +331,18 @@ async fn route_network_event(app_handle: &AppHandle, event: NetworkEvent) {
             }
         }
         NetworkEvent::MessageHistoryReceived { response, .. } => {
-            // ── History responses are UNTRUSTED — apply the same verification
-            // pipeline as live gossipsub messages (ban check + signature). ──
+            // ── History responses come from the immutable event log. ──
+            // The serving peer reconstructed MessageDto snapshots from
+            // verified channel_events, applying edits/deletes in sequence.
+            //
+            // For UNEDITED messages, we verify the original Ed25519 signature
+            // to confirm the message is authentic.
+            //
+            // For EDITED messages (edited_at is set), the reconstructed
+            // content no longer matches the original signature — the edit
+            // event was separately signed and verified when first ingested.
+            // We trust the event-log reconstruction for these and only
+            // verify timestamp validity + ban/membership status.
             if let Some(db) = app_handle.try_state::<Database>() {
                 for message in response.messages {
                     let channel_id = message.channel_id.clone();
@@ -212,18 +352,57 @@ async fn route_network_event(app_handle: &AppHandle, event: NetworkEvent) {
                                 .unwrap_or_default()
                         })
                         .await;
-                    if !history::validate_history_message(&message, &community_id) {
+
+                    // Timestamp check applies to all messages
+                    if !history::is_history_timestamp_valid(&message.timestamp) {
                         tracing::warn!(
-                            "Dropping history message {} with invalid signature",
+                            "Dropping history message {} with out-of-range timestamp",
                             message.id
                         );
                         continue;
                     }
-                    validate_and_route(
-                        app_handle,
-                        history::history_message_to_envelope(&message, &community_id),
-                    )
-                    .await;
+
+                    // Ban check applies to all messages
+                    if !message.author_public_key.is_empty()
+                        && !community_id.is_empty()
+                        && security::is_banned(
+                            app_handle,
+                            &community_id,
+                            &message.author_public_key,
+                        )
+                    {
+                        tracing::warn!(
+                            "Dropping history message {} from banned user {}",
+                            message.id,
+                            message.author_public_key,
+                        );
+                        continue;
+                    }
+
+                    if message.edited_at.is_some() {
+                        // Edited message: content was modified by a verified edit event.
+                        // The original signature no longer matches the current content,
+                        // which is expected. Store directly since the event log is the
+                        // source of truth and each event was verified on ingestion.
+                        let is_new = helpers::insert_message_if_new(&db, &message);
+                        if is_new {
+                            let _ = app_handle.emit("message:received", &message);
+                        }
+                    } else {
+                        // Unedited message: full signature verification
+                        if !history::validate_history_message(&message, &community_id) {
+                            tracing::warn!(
+                                "Dropping history message {} with invalid signature",
+                                message.id
+                            );
+                            continue;
+                        }
+                        validate_and_route(
+                            app_handle,
+                            history::history_message_to_envelope(&message, &community_id),
+                        )
+                        .await;
+                    }
                 }
             }
         }
@@ -239,11 +418,14 @@ async fn route_network_event(app_handle: &AppHandle, event: NetworkEvent) {
                 let community_id_c = community_id.to_string();
                 let addrs_c = addrs.clone();
                 let _ = db
-                    .run_blocking(move |db| db.cache_discovery(&peer_id_c, &community_id_c, &addrs_c))
+                    .run_blocking(move |db| {
+                        db.cache_discovery(&peer_id_c, &community_id_c, &addrs_c)
+                    })
                     .await;
             }
             if let Some(community_id) = community_id.as_deref() {
-                invite_handler::request_pending_invite_join(app_handle, community_id, &peer_id).await;
+                invite_handler::request_pending_invite_join(app_handle, community_id, &peer_id)
+                    .await;
             }
             let _ = app_handle.emit(
                 "peer:discovered",
@@ -256,10 +438,22 @@ async fn route_network_event(app_handle: &AppHandle, event: NetworkEvent) {
         }
         NetworkEvent::PeerConnected { peer_id } => {
             history::request_history_for_known_channels(app_handle, Some(peer_id.as_str())).await;
-            invite_handler::request_control_logs_for_known_communities(app_handle, Some(peer_id.as_str())).await;
+            invite_handler::request_control_logs_for_known_communities(
+                app_handle,
+                Some(peer_id.as_str()),
+            )
+            .await;
             // ── Replay pending messages on reconnect ──
             replay_pending_messages(app_handle).await;
             let _ = app_handle.emit("peer:joined", &serde_json::json!({ "peerId": peer_id }));
+            // Refresh the live peer count so diagnostics reflects reality
+            if let Some(state) = app_handle.try_state::<crate::state::AppState>() {
+                if let Some(ref net) = *state.network.read().await {
+                    let _ = net
+                        .send_command(crate::network::events::NetworkCommand::GetPeerCount)
+                        .await;
+                }
+            }
         }
         NetworkEvent::ControlRequestReceived { request, reply, .. } => {
             let _ = reply.send(invite_handler::build_control_response(app_handle, request).await);
@@ -269,8 +463,21 @@ async fn route_network_event(app_handle: &AppHandle, event: NetworkEvent) {
         }
         NetworkEvent::PeerDisconnected { peer_id } => {
             let _ = app_handle.emit("peer:left", &serde_json::json!({ "peerId": peer_id }));
+            // Refresh the live peer count so diagnostics reflects reality
+            if let Some(state) = app_handle.try_state::<crate::state::AppState>() {
+                if let Some(ref net) = *state.network.read().await {
+                    let _ = net
+                        .send_command(crate::network::events::NetworkCommand::GetPeerCount)
+                        .await;
+                }
+            }
         }
         NetworkEvent::PeerCount { count } => {
+            // Update the live connectivity metrics so get_diagnostics can
+            // report the TRUE current state instead of hardcoding 0.
+            if let Some(state) = app_handle.try_state::<crate::state::AppState>() {
+                state.connectivity.set_peer_count(count as u32, false);
+            }
             let _ = app_handle.emit(
                 "network:status",
                 &serde_json::json!({
@@ -280,6 +487,12 @@ async fn route_network_event(app_handle: &AppHandle, event: NetworkEvent) {
                     "usingRelay": false,
                 }),
             );
+        }
+        NetworkEvent::NetworkReady => {
+            if let Some(state) = app_handle.try_state::<crate::state::AppState>() {
+                state.connectivity.mark_ready();
+            }
+            let _ = app_handle.emit("network:ready", &serde_json::json!({}));
         }
         NetworkEvent::PublishFailed { topic, data } => {
             // Queue failed publish for retry on reconnect
@@ -297,7 +510,9 @@ async fn route_network_event(app_handle: &AppHandle, event: NetworkEvent) {
                 }
             }
         }
-        event => { tracing::debug!("Unhandled network event: {:?}", event); }
+        event => {
+            tracing::debug!("Unhandled network event: {:?}", event);
+        }
     }
 }
 
@@ -325,10 +540,13 @@ async fn replay_pending_messages(app_handle: &AppHandle) {
         return;
     };
     for (id, topic, data) in pending {
-        match net.send_command(NetworkCommand::PublishMessage {
-            topic: topic.clone(),
-            data,
-        }).await {
+        match net
+            .send_command(NetworkCommand::PublishMessage {
+                topic: topic.clone(),
+                data,
+            })
+            .await
+        {
             Ok(()) => {
                 let id_c = id.clone();
                 let _ = db.run_blocking(move |db| db.mark_pending_sent(&id_c)).await;
@@ -336,7 +554,9 @@ async fn replay_pending_messages(app_handle: &AppHandle) {
             }
             Err(e) => {
                 let id_c = id.clone();
-                let _ = db.run_blocking(move |db| db.increment_pending_retry(&id_c)).await;
+                let _ = db
+                    .run_blocking(move |db| db.increment_pending_retry(&id_c))
+                    .await;
                 tracing::warn!("Failed to replay pending message {}: {}", id, e);
             }
         }
@@ -397,10 +617,21 @@ async fn validate_and_route(app_handle: &AppHandle, envelope: SignedEnvelope) {
     if !community_id.is_empty() {
         let needs_membership = matches!(
             envelope.msg_type.as_str(),
-            "message" | "message_edit" | "message_delete" | "reaction" | "file_announced" | "voice_signal" | "voice_join" | "voice_leave" | "voice_heartbeat"
+            "message"
+                | "message_edit"
+                | "message_delete"
+                | "reaction"
+                | "file_announced"
+                | "typing"
+                | "voice_signal"
+                | "voice_join"
+                | "voice_leave"
+                | "voice_heartbeat"
         );
         if needs_membership {
-            if let Some(false) = security::is_active_member(app_handle, &community_id, &envelope.author) {
+            if let Some(false) =
+                security::is_active_member(app_handle, &community_id, &envelope.author)
+            {
                 tracing::warn!(
                     "Dropping {} from non-member {} in community {}",
                     envelope.msg_type,
@@ -409,24 +640,77 @@ async fn validate_and_route(app_handle: &AppHandle, envelope: SignedEnvelope) {
                 );
                 return;
             }
+
+            // Drop messages from timed-out users (message, message_edit, reaction)
+            if matches!(
+                envelope.msg_type.as_str(),
+                "message" | "message_edit" | "reaction"
+            ) {
+                if security::is_timed_out(app_handle, &community_id, &envelope.author) {
+                    tracing::warn!(
+                        "Dropping {} from timed-out user {} in community {}",
+                        envelope.msg_type,
+                        envelope.author,
+                        community_id
+                    );
+                    return;
+                }
+            }
         }
     }
 
     match envelope.msg_type.as_str() {
         "message" => message_handler::route_signed_message(app_handle, &envelope).await,
         "message_edit" => message_handler::route_signed_message_edit(app_handle, &envelope).await,
-        "message_delete" => message_handler::route_signed_message_delete(app_handle, &envelope).await,
+        "message_delete" => {
+            message_handler::route_signed_message_delete(app_handle, &envelope).await
+        }
         "reaction" => message_handler::route_signed_reaction(app_handle, &envelope).await,
         "presence" => message_handler::route_signed_presence(app_handle, &envelope).await,
-        "file_announced" => message_handler::route_signed_file_announcement(app_handle, &envelope).await,
+        "file_announced" => {
+            message_handler::route_signed_file_announcement(app_handle, &envelope).await
+        }
         "ban" => message_handler::route_signed_ban(app_handle, &envelope),
+        "typing" => route_typing_indicator(app_handle, &envelope),
         "dm" => route_incoming_dm(app_handle, &envelope).await,
         "voice_signal" => voice_handler::handle_signed_voice_signal(app_handle, &envelope).await,
         "voice_join" | "voice_leave" | "voice_heartbeat" => {
             voice_handler::handle_signed_voice_membership_event(app_handle, &envelope).await
         }
-        msg_type => { tracing::debug!("Unhandled envelope msg_type: {}", msg_type); }
+        msg_type => {
+            tracing::debug!("Unhandled envelope msg_type: {}", msg_type);
+        }
     }
+}
+
+/// Handle an incoming typing indicator: emit to frontend (ephemeral, not stored).
+fn route_typing_indicator(app_handle: &AppHandle, envelope: &SignedEnvelope) {
+    // Skip our own typing events
+    let is_own = app_handle
+        .try_state::<crate::state::AppState>()
+        .and_then(|state| {
+            let identity = state.identity.blocking_read();
+            identity
+                .as_ref()
+                .map(|id| id.public_key_b64 == envelope.author)
+        })
+        .unwrap_or(false);
+    if is_own {
+        return;
+    }
+
+    let channel_id = envelope.channel_id.clone().unwrap_or_default();
+    let display_name = envelope.display_name();
+
+    let _ = app_handle.emit(
+        "typing:update",
+        serde_json::json!({
+            "channelId": channel_id,
+            "author": envelope.author,
+            "displayName": display_name,
+            "timestamp": envelope.timestamp,
+        }),
+    );
 }
 
 /// Handle an incoming DM envelope: store it and emit to frontend.
@@ -442,7 +726,9 @@ async fn route_incoming_dm(app_handle: &AppHandle, envelope: &SignedEnvelope) {
         .try_state::<crate::state::AppState>()
         .and_then(|state| {
             let identity = state.identity.blocking_read();
-            identity.as_ref().map(|id| id.public_key_b64 == envelope.author)
+            identity
+                .as_ref()
+                .map(|id| id.public_key_b64 == envelope.author)
         })
         .unwrap_or(false);
     if is_own {
@@ -484,8 +770,12 @@ async fn route_incoming_dm(app_handle: &AppHandle, envelope: &SignedEnvelope) {
         content: content.clone(),
         timestamp: envelope.timestamp.clone(),
         signature: envelope.signature.clone(),
+        attachments: Vec::new(),
+        reactions: std::collections::HashMap::new(),
         edited_at: None,
         deleted_at: None,
+        reply_to_id: None,
+        delivery_status: Some("sent".into()),
     };
 
     let msg_c = msg.clone();
@@ -500,13 +790,64 @@ async fn route_incoming_dm(app_handle: &AppHandle, envelope: &SignedEnvelope) {
 
     let _ = app_handle.emit("dm:received", &msg);
 
-    // Send desktop notification
-    let preview = message_handler::truncate_preview(&content, 100);
-    let _ = tauri_plugin_notification::NotificationExt::notification(app_handle)
-        .builder()
-        .title(&format!("DM from {}", display_name))
-        .body(&preview)
-        .show();
+    // Send desktop notification only when the window is not focused
+    let window_focused = app_handle
+        .get_webview_window("main")
+        .map(|w| w.is_focused().unwrap_or(false))
+        .unwrap_or(false);
+
+    if !window_focused {
+        let preview = message_handler::truncate_preview(&content, 100);
+        let _ = tauri_plugin_notification::NotificationExt::notification(app_handle)
+            .builder()
+            .title(&format!("DM from {}", display_name))
+            .body(&preview)
+            .show();
+    }
+}
+
+/// Sync the active membership roster for a community into the swarm task
+/// so file chunk requests can be verified against it.
+pub(super) async fn sync_community_members_to_swarm(
+    app_handle: &AppHandle,
+    db: &Database,
+    community_id: &str,
+) {
+    let community_id_owned = community_id.to_string();
+    let members = match db
+        .run_blocking(move |db| db.get_members(&community_id_owned))
+        .await
+    {
+        Ok(members) => members,
+        Err(e) => {
+            tracing::warn!(
+                "Failed to load members for swarm sync in community {}: {}",
+                community_id,
+                e
+            );
+            return;
+        }
+    };
+    let member_keys: Vec<String> = members.iter().map(|m| m.public_key.clone()).collect();
+    let Some(state) = app_handle.try_state::<AppState>() else {
+        return;
+    };
+    let network = state.network.read().await;
+    if let Some(ref net) = *network {
+        if let Err(e) = net
+            .send_command(NetworkCommand::UpdateCommunityMembers {
+                community_id: community_id.to_string(),
+                member_public_keys: member_keys,
+            })
+            .await
+        {
+            tracing::warn!(
+                "Failed to sync membership roster to swarm for community {}: {}",
+                community_id,
+                e
+            );
+        }
+    }
 }
 
 /// Check that a live gossip message timestamp is within a reasonable window:

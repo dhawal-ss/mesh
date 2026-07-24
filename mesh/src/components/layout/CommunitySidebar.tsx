@@ -4,13 +4,23 @@ import { useDmStore } from '../../store/dms'
 import { Tooltip } from '../ui/Tooltip'
 import { CommunityIcon } from '../community/CommunityIcon'
 import { CreateCommunityModal } from '../community/CreateCommunityModal'
+import { ServerDiscovery } from '../community/ServerDiscovery'
+import { DiagnosticsPanel } from '../settings/DiagnosticsPanel'
+import { SecurityDevicesPanel } from '../settings/SecurityDevicesPanel'
+import * as bridge from '../../lib/bridge'
 
 export function CommunitySidebar() {
+  const backendKind = bridge.isMatrixBackend() ? 'matrix' : 'legacy-p2p'
+  const directMessagesAvailable = bridge.getBackendCapabilities().directMessages
   const { communities, activeCommunityId, setActiveCommunity } = useCommunityStore()
   const { isDmMode, setDmMode } = useDmStore()
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showDiscovery, setShowDiscovery] = useState(false)
+  const [showDiagnostics, setShowDiagnostics] = useState(false)
+  const [showSecurity, setShowSecurity] = useState(false)
 
   const handleDmClick = () => {
+    if (!directMessagesAvailable) return
     setDmMode(!isDmMode)
   }
 
@@ -23,7 +33,7 @@ export function CommunitySidebar() {
     <>
       <div className="flex flex-col items-center gap-2 pb-3">
         {/* Home / DM button */}
-        <Tooltip content="Direct Messages" side="right">
+        {directMessagesAvailable ? <Tooltip content="Direct Messages" side="right">
           <button
             onClick={handleDmClick}
             className={`group relative flex h-12 w-12 items-center justify-center rounded-[24px] transition-all duration-200 ${
@@ -41,7 +51,7 @@ export function CommunitySidebar() {
               <div className="absolute -left-[4px] top-1/2 h-10 w-[4px] -translate-y-1/2 rounded-r-full bg-primary" />
             )}
           </button>
-        </Tooltip>
+        </Tooltip> : null}
 
         {/* Separator */}
         <div className="mx-auto h-[2px] w-8 rounded-full bg-bg-modifier-active" />
@@ -75,9 +85,59 @@ export function CommunitySidebar() {
             </svg>
           </button>
         </Tooltip>
+
+        {/* Discover communities */}
+        <Tooltip content="Discover Communities" side="right">
+          <button
+            onClick={() => setShowDiscovery(true)}
+            className="group flex h-12 w-12 items-center justify-center rounded-[24px] bg-bg-primary text-muted transition-all duration-200 hover:rounded-[16px] hover:bg-accent hover:text-white"
+            aria-label="Discover Communities"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+          </button>
+        </Tooltip>
+
+        {/* System diagnostics */}
+        {backendKind === 'matrix' && (
+          <Tooltip content="Security & Devices" side="right">
+            <button
+              onClick={() => setShowSecurity(true)}
+              className="group flex h-12 w-12 items-center justify-center rounded-[24px] bg-bg-primary text-muted transition-all duration-200 hover:rounded-[16px] hover:bg-accent hover:text-white"
+              aria-label="Security and devices"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+                <path d="m9 12 2 2 4-4" />
+              </svg>
+            </button>
+          </Tooltip>
+        )}
+
+        {/* System diagnostics */}
+        <Tooltip content="System Diagnostics" side="right">
+          <button
+            onClick={() => setShowDiagnostics(true)}
+            className="group flex h-12 w-12 items-center justify-center rounded-[24px] bg-bg-primary text-muted transition-all duration-200 hover:rounded-[16px] hover:bg-accent hover:text-white"
+            aria-label="System Diagnostics"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+            </svg>
+          </button>
+        </Tooltip>
       </div>
 
       <CreateCommunityModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} />
+      <ServerDiscovery open={showDiscovery} onClose={() => setShowDiscovery(false)} />
+      <DiagnosticsPanel
+        open={showDiagnostics}
+        onClose={() => setShowDiagnostics(false)}
+        backendKind={backendKind}
+      />
+      <SecurityDevicesPanel open={showSecurity} onClose={() => setShowSecurity(false)} />
     </>
   )
 }

@@ -11,7 +11,6 @@
 mod tests {
     use crate::crypto::encryption::*;
     use rand::rngs::OsRng;
-    use rand::RngCore;
     use x25519_dalek::{PublicKey, StaticSecret};
 
     // ─── Community Payload Encryption ─────────────────────
@@ -463,8 +462,7 @@ mod tests {
         let plaintext = b"zeroize compilation check";
 
         let encrypted = encrypt_for_recipient(&recipient_public, plaintext, "zeroize-test");
-        let decrypted =
-            decrypt_from_sender(&recipient_secret, &encrypted, "zeroize-test").unwrap();
+        let decrypted = decrypt_from_sender(&recipient_secret, &encrypted, "zeroize-test").unwrap();
         assert_eq!(decrypted, plaintext);
     }
 }

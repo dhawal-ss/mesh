@@ -77,19 +77,37 @@ impl SignedEnvelope {
         // serde_json versions or compilation settings, breaking signatures.
         let mut map = BTreeMap::<&str, serde_json::Value>::new();
         if self.signed_by.is_some() {
-            map.insert("community_id", serde_json::Value::String(self.community_id.clone()));
+            map.insert(
+                "community_id",
+                serde_json::Value::String(self.community_id.clone()),
+            );
             map.insert("id", serde_json::Value::String(self.id.clone()));
             map.insert("payload", self.payload.clone());
-            map.insert("signed_by", serde_json::to_value(&self.signed_by).unwrap_or_default());
-            map.insert("timestamp", serde_json::Value::String(self.timestamp.clone()));
+            map.insert(
+                "signed_by",
+                serde_json::to_value(&self.signed_by).unwrap_or_default(),
+            );
+            map.insert(
+                "timestamp",
+                serde_json::Value::String(self.timestamp.clone()),
+            );
             map.insert("type", serde_json::Value::String(self.msg_type.clone()));
         } else {
             map.insert("author", serde_json::Value::String(self.author.clone()));
-            map.insert("channel_id", serde_json::to_value(&self.channel_id).unwrap_or_default());
-            map.insert("community_id", serde_json::Value::String(self.community_id.clone()));
+            map.insert(
+                "channel_id",
+                serde_json::to_value(&self.channel_id).unwrap_or_default(),
+            );
+            map.insert(
+                "community_id",
+                serde_json::Value::String(self.community_id.clone()),
+            );
             map.insert("id", serde_json::Value::String(self.id.clone()));
             map.insert("payload", self.payload.clone());
-            map.insert("timestamp", serde_json::Value::String(self.timestamp.clone()));
+            map.insert(
+                "timestamp",
+                serde_json::Value::String(self.timestamp.clone()),
+            );
             map.insert("type", serde_json::Value::String(self.msg_type.clone()));
         }
         serde_json::to_string(&map)
@@ -352,8 +370,8 @@ impl EnvelopeBuilder {
         // represented as JSON (e.g., maps with non-string keys). All our
         // payload types are plain structs with #[derive(Serialize)], so
         // this conversion is infallible in practice.
-        self.payload = serde_json::to_value(payload)
-            .expect("envelope payload must be JSON-serializable");
+        self.payload =
+            serde_json::to_value(payload).expect("envelope payload must be JSON-serializable");
         self
     }
 

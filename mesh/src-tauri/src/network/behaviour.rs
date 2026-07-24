@@ -1,4 +1,7 @@
-use libp2p::{connection_limits, dcutr, gossipsub, identify, kad, mdns, ping, relay, request_response, swarm::NetworkBehaviour};
+use libp2p::{
+    connection_limits, dcutr, gossipsub, identify, kad, mdns, ping, relay, request_response,
+    swarm::NetworkBehaviour,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -83,6 +86,12 @@ pub struct ControlLogRequest {
     pub since_timestamp: Option<String>,
     #[serde(default)]
     pub requester_public_key: String,
+    /// Ed25519 signature of (control-log-req:community_id:requester_public_key:request_timestamp)
+    #[serde(default)]
+    pub request_signature: String,
+    /// ISO 8601 timestamp of the request
+    #[serde(default)]
+    pub request_timestamp: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -114,6 +123,12 @@ pub struct FileRequest {
     /// that it belongs to this community before sending chunks.
     #[serde(default)]
     pub community_id: String,
+    /// Public key of the requester for identity verification.
+    #[serde(default)]
+    pub requester_public_key: String,
+    /// Ed25519 signature of (file-req:file_hash:chunk_index:requester_public_key)
+    #[serde(default)]
+    pub request_signature: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -131,12 +146,53 @@ pub struct MessageHistoryRequest {
     pub limit: u32,
     #[serde(default)]
     pub requester_public_key: String,
+    /// Ed25519 signature of (history-req:channel_id:requester_public_key:request_timestamp)
+    #[serde(default)]
+    pub request_signature: String,
+    /// ISO 8601 timestamp of the request
+    #[serde(default)]
+    pub request_timestamp: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageHistoryResponse {
     pub channel_id: String,
     pub messages: Vec<crate::types::message::MessageDto>,
+}
+
+// ─── Event-based history sync types ────────────────────────────────
+// These types support history sync from the immutable channel_events
+// log rather than the mutable messages table, ensuring fresh peers
+// always receive convergence-safe data.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventHistoryRequest {
+    pub channel_id: String,
+    pub since_sequence: i64,
+    pub limit: u32,
+    pub requester_public_key: String,
+    pub request_signature: String,
+    pub request_timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventHistoryResponse {
+    pub channel_id: String,
+    pub events: Vec<ChannelEventDto>,
+    pub latest_sequence: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelEventDto {
+    pub sequence: i64,
+    pub event_type: String,
+    pub event_id: String,
+    pub target_id: Option<String>,
+    pub author_public_key: String,
+    pub payload: String,
+    pub signature: String,
+    pub timestamp: String,
 }
 
 /// The combined network behaviour for Mesh.

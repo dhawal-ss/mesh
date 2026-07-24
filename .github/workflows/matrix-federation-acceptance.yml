@@ -1,0 +1,114 @@
+name: Matrix federation acceptance
+
+# Development-only protocol acceptance against two disposable local Synapse
+# homeservers. This exercises federation, encrypted history, and recovery, but
+# it is not evidence that the managed production service is ready.
+
+on:
+  schedule:
+    # 07:30 UTC daily, separated from the legacy nightly soak.
+    - cron: "30 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: matrix-federation-acceptance
+  cancel-in-progress: false
+
+jobs:
+  two-homeserver:
+    name: Disposable two-homeserver acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: "1"
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: "1"
+      RUST_LOG: warn
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mesh/package-lock.json
+
+      - name: Install Rust 1.92
+        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc # 1.92.0
+
+      - name: Install Matrix test build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libsqlcipher-dev \
+            dbus-x11 \
+            gnome-keyring
+
+      - name: Cache Matrix test build
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            mesh/src-tauri/target
+          key: ${{ runner.os }}-cargo-matrix-acceptance-${{ hashFiles('mesh/src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-matrix-acceptance-
+
+      - name: Reset and start disposable homeservers
+        working-directory: mesh
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p matrix-spike-logs
+          npm run setup:matrix-spike:reset 2>&1 | tee matrix-spike-logs/setup.log
+
+      - name: Run federated encryption and recovery acceptance
+        working-directory: mesh
+        shell: bash
+        run: |
+          set -o pipefail
+          # The app's Linux keyring backend requires a Secret Service. This
+          # disposable, empty-password keyring exists only for the isolated
+          # runner and is destroyed with it; no production credential is used.
+          dbus-run-session -- bash -c '
+            set -o pipefail
+            printf "\n" | gnome-keyring-daemon \
+              --unlock --components=secrets >/dev/null
+            npm run test:matrix-spike 2>&1 |
+              tee matrix-spike-logs/acceptance.log
+          '
+
+      - name: Capture service diagnostics
+        if: ${{ always() }}
+        working-directory: mesh
+        shell: bash
+        run: |
+          mkdir -p matrix-spike-logs
+          docker compose -f infra/matrix-spike/docker-compose.yml ps --all \
+            > matrix-spike-logs/compose-ps.log 2>&1 || true
+          docker compose -f infra/matrix-spike/docker-compose.yml logs \
+            --no-color --timestamps \
+            > matrix-spike-logs/compose.log 2>&1 || true
+
+      - name: Upload acceptance logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: matrix-federation-acceptance-${{ github.run_number }}
+          path: mesh/matrix-spike-logs/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Tear down disposable homeservers
+        if: ${{ always() }}
+        working-directory: mesh
+        run: docker compose -f infra/matrix-spike/docker-compose.yml down --volumes --remove-orphans

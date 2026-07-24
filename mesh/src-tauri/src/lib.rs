@@ -1,14 +1,32 @@
+#![recursion_limit = "512"]
+
+#[cfg(feature = "legacy-p2p")]
 mod app_runtime;
+pub mod backend;
 mod commands;
 pub mod crypto;
+#[cfg(feature = "legacy-p2p")]
+pub mod migration;
+#[cfg(feature = "legacy-p2p")]
 pub mod network;
 mod state;
+#[cfg(feature = "legacy-p2p")]
 mod storage;
 mod types;
 
+// Re-export the TURN/STUN probe helpers so integration tests and operator
+// tooling can validate real TURN infrastructure without going through the
+// full Tauri command/state layer. See tests/turn_probe_live_tests.rs.
+#[cfg(feature = "legacy-p2p")]
+pub mod probe_api {
+    pub use crate::commands::voice::{
+        probe_single_ice_server, IceServerConfig, IceServerProbeResult,
+    };
+}
+
+use backend::BackendKind;
 use state::AppState;
-use storage::Database;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tracing_subscriber::EnvFilter;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -16,37 +34,170 @@ pub fn run() {
     // Initialize structured logging
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("mesh=info,libp2p=warn")),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("mesh=info")),
         )
         .init();
 
     tracing::info!("Starting Mesh...");
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_notification::init())
-        .setup(|app| {
-            // Initialize SQLite database
-            let app_data_dir = app
-                .path()
-                .app_data_dir()
-                .expect("failed to resolve app data dir");
-            let db = Database::new(app_data_dir).expect("failed to initialize database");
-
-            // Register database as managed state
-            app.manage(db);
-
-            // Initialize application state
-            let app_state = AppState::new();
-            app.manage(app_state);
-
-            app_runtime::spawn_voice_sweeper(app.handle().clone());
-
-            // Start the P2P network in a background task
-            let app_handle = app.handle().clone();
+        .plugin(tauri_plugin_dialog::init())
+        .on_webview_event(|webview, event| {
+            let tauri::WebviewEvent::DragDrop(tauri::DragDropEvent::Drop { paths, position }) =
+                event
+            else {
+                return;
+            };
+            let app = webview.app_handle().clone();
+            let drop_id = uuid::Uuid::new_v4().to_string();
+            let start = commands::attachments::NativeAttachmentDropStart {
+                drop_id: drop_id.clone(),
+                position: commands::attachments::NativeDropPosition {
+                    x: position.x,
+                    y: position.y,
+                },
+            };
+            if let Err(error) = app.emit("mesh-native-attachment-drop-start", start) {
+                tracing::warn!("Could not deliver native attachment drop start: {error}");
+                return;
+            }
+            let store = app
+                .state::<commands::attachments::AttachmentGrantStore>()
+                .inner()
+                .clone();
+            let expose_legacy_path =
+                app.state::<AppState>().backend.kind() == BackendKind::LegacyP2p;
+            let paths = paths.clone();
+            let (x, y) = (position.x, position.y);
             tauri::async_runtime::spawn(async move {
-                let state = app_handle.state::<AppState>();
+                let payload = commands::attachments::grant_native_drop(
+                    &store,
+                    drop_id,
+                    paths,
+                    x,
+                    y,
+                    expose_legacy_path,
+                )
+                .await;
+                if let Err(error) = app.emit("mesh-native-attachment-drop", payload) {
+                    tracing::warn!("Could not deliver native attachment drop: {error}");
+                }
+            });
+        });
+    #[cfg(feature = "legacy-p2p")]
+    let builder = builder.plugin(tauri_plugin_notification::init());
+    let builder = builder.setup(|app| {
+        // Initialize SQLite database
+        let app_data_dir = app
+            .path()
+            .app_data_dir()
+            .expect("failed to resolve app data dir");
+        app.manage(commands::attachments::AttachmentGrantStore::default());
+        commands::attachments::schedule_startup_cleanup(app.handle().clone());
+        #[cfg(feature = "legacy-p2p")]
+        let db = storage::Database::new(app_data_dir.clone())
+            .expect("failed to initialize legacy database");
+
+        // Purge any stale entries from the pending_messages queue.
+        // Previous versions queued messages on gossipsub InsufficientPeers,
+        // which is the normal solo-peer state — not a real failure.
+        // Those messages are already in the main messages table, so the
+        // pending entry is dead state. Clear it on startup so the
+        // diagnostics panel doesn't show phantom "N messages pending".
+        #[cfg(feature = "legacy-p2p")]
+        match db.clear_pending_messages() {
+            Ok(cleared) if cleared > 0 => {
+                tracing::info!(
+                    target: "mesh::startup",
+                    "Cleared {} stale pending message(s) from previous InsufficientPeers queueing",
+                    cleared
+                );
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!(
+                    target: "mesh::startup",
+                    "Failed to clear stale pending messages: {}",
+                    e
+                );
+            }
+        }
+
+        // Register database as managed state
+        #[cfg(feature = "legacy-p2p")]
+        app.manage(db);
+
+        // Initialize application state
+        let app_state = AppState::with_data_dir(app_data_dir);
+        #[cfg(feature = "legacy-p2p")]
+        let backend_kind = app_state.backend.kind();
+        app.manage(app_state);
+
+        #[cfg(feature = "legacy-p2p")]
+        if backend_kind == BackendKind::LegacyP2p {
+            app_runtime::spawn_voice_sweeper(app.handle().clone());
+            app_runtime::spawn_download_timeout_checker(app.handle().clone());
+            app_runtime::spawn_network_health_monitor(app.handle().clone());
+            app_runtime::spawn_reconnect_watchdog(app.handle().clone());
+        }
+
+        // Log ICE server validation status at startup for operator visibility.
+        // This makes missing/invalid TURN configuration obvious immediately
+        // rather than only when a user tries to make a voice call.
+        #[cfg(feature = "legacy-p2p")]
+        {
+            let db_ref = app.state::<storage::Database>();
+            let custom = db_ref.conn.lock().ok().and_then(|conn| {
+                conn.query_row(
+                    "SELECT value FROM kv_store WHERE key = 'ice_servers'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .ok()
+            });
+            let has_custom = custom
+                .as_deref()
+                .and_then(|json| serde_json::from_str::<Vec<serde_json::Value>>(json).ok())
+                .map(|v| !v.is_empty())
+                .unwrap_or(false);
+            if has_custom {
+                tracing::info!(
+                    target: "mesh::startup",
+                    "ICE server configuration: custom servers loaded from settings"
+                );
+            } else {
+                tracing::warn!(
+                    target: "mesh::startup",
+                    "ICE server configuration: using STUN-only defaults. \
+                     No TURN server configured — voice will fail behind symmetric NATs. \
+                     Configure a TURN server in Settings > Voice & Audio."
+                );
+            }
+        }
+
+        // Start the selected durable communication backend. Matrix is the
+        // production default; libp2p starts only when explicitly selected.
+        let app_handle = app.handle().clone();
+        tauri::async_runtime::spawn(async move {
+            let state = app_handle.state::<AppState>();
+            if let Err(error) = state.backend.backend().start().await {
+                tracing::error!(
+                    target: "mesh::startup",
+                    backend = state.backend.kind().as_str(),
+                    "Failed to start backend: {error}"
+                );
+            }
+
+            if state.backend.kind() != BackendKind::LegacyP2p {
+                tracing::info!(
+                    target: "mesh::startup",
+                    "Matrix backend selected; legacy libp2p engine is dormant"
+                );
+            }
+
+            #[cfg(feature = "legacy-p2p")]
+            if state.backend.kind() == BackendKind::LegacyP2p {
                 let identity_state = state.identity.clone();
                 let network_state = state.network.clone();
 
@@ -71,61 +222,231 @@ pub fn run() {
                 } else {
                     tracing::info!("No identity found, waiting for onboarding...");
                 }
-            });
+            }
+        });
 
-            Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![
-            // Identity
-            commands::identity::create_identity,
-            commands::identity::generate_identity,
-            commands::identity::get_identity,
-            commands::identity::update_profile,
-            commands::identity::update_display_name,
-            commands::identity::export_identity,
-            commands::identity::import_identity,
-            // Communities
-            commands::community::create_community,
-            commands::community::get_communities,
-            commands::community::get_channels,
-            commands::community::sync_local_channel,
-            commands::community::create_channel,
-            commands::community::update_community_metadata,
-            commands::community::join_community,
-            commands::community::leave_community,
-            commands::community::delete_community,
-            commands::community::generate_invite_link,
-            commands::community::subscribe_channel,
-            commands::community::unsubscribe_channel,
-            commands::control::request_control_log_sync,
-            // Messaging
-            commands::messaging::send_message,
-            commands::messaging::get_messages,
-            commands::messaging::mark_channel_read,
-            commands::messaging::request_message_history,
-            commands::messaging::add_reaction,
-            commands::messaging::edit_message,
-            commands::messaging::delete_message,
-            commands::messaging::search_messages,
-            // Voice
-            commands::voice::join_voice,
-            commands::voice::leave_voice,
-            commands::voice::set_muted,
-            commands::voice::set_deafened,
-            commands::voice::send_voice_signal,
-            // Files
-            commands::files::upload_file,
-            commands::files::request_file,
-            // Moderation
-            commands::moderation::ban_user,
-            commands::moderation::update_member_role,
-            commands::moderation::get_members,
-            // Direct Messages
-            commands::dm::send_dm,
-            commands::dm::get_dm_conversations,
-            commands::dm::get_dm_messages,
-            commands::dm::mark_dm_read,
-        ])
+        Ok(())
+    });
+
+    // Close exits normally. We do not hide the window until a tested tray
+    // icon and recovery menu exist.
+    #[cfg(not(feature = "legacy-p2p"))]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        commands::attachments::pick_attachment_grants,
+        commands::attachments::accept_attachment_drop_grants,
+        commands::attachments::stage_attachment_bytes,
+        commands::attachments::discard_attachment_grant,
+        commands::attachments::discard_staged_attachment,
+        commands::backend::get_backend_status,
+        commands::backend::matrix_login,
+        commands::backend::matrix_oidc_status,
+        commands::backend::matrix_start_oidc_login,
+        commands::backend::matrix_cancel_login,
+        commands::backend::matrix_restore_session,
+        commands::backend::matrix_logout,
+        commands::backend::matrix_devices,
+        commands::backend::matrix_revoke_device,
+        commands::backend::matrix_remove_local_account,
+        commands::backend::matrix_accounts,
+        commands::backend::matrix_get_profile,
+        commands::backend::matrix_update_profile_display_name,
+        commands::backend::matrix_switch_account,
+        commands::backend::matrix_recovery_health,
+        commands::backend::matrix_test_recovery,
+        commands::backend::matrix_start_device_verification,
+        commands::backend::matrix_device_verification_status,
+        commands::backend::matrix_select_device_verification_method,
+        commands::backend::matrix_confirm_device_verification,
+        commands::backend::matrix_cancel_device_verification,
+        commands::backend::matrix_user_preferences,
+        commands::backend::matrix_update_user_preferences,
+        commands::backend::matrix_create_community,
+        commands::backend::matrix_list_communities,
+        commands::backend::matrix_list_channels,
+        commands::backend::matrix_create_channel,
+        commands::backend::matrix_send_message,
+        commands::backend::matrix_send_attachment,
+        commands::backend::matrix_download_attachment,
+        commands::backend::matrix_cancel_attachment_download,
+        commands::backend::matrix_dm_conversations,
+        commands::backend::matrix_ensure_dm,
+        commands::backend::matrix_dm_messages,
+        commands::backend::matrix_send_dm,
+        commands::backend::matrix_send_dm_attachment,
+        commands::backend::matrix_mark_dm_read,
+        commands::backend::matrix_set_dm_blocked,
+        commands::backend::matrix_dm_blocked,
+        commands::backend::matrix_get_messages,
+        commands::backend::matrix_edit_message,
+        commands::backend::matrix_redact_message,
+        commands::backend::matrix_toggle_reaction,
+        commands::backend::matrix_mark_read,
+        commands::backend::matrix_set_typing,
+        commands::backend::matrix_typing_users,
+        commands::backend::matrix_search_messages,
+        commands::backend::matrix_wait_for_room_update,
+        commands::backend::matrix_list_members,
+        commands::backend::matrix_invite_to_community,
+        commands::backend::matrix_community_access_settings,
+        commands::backend::matrix_update_community_access,
+        commands::backend::matrix_search_community_directory,
+        commands::backend::matrix_knock_community,
+        commands::backend::matrix_list_community_applications,
+        commands::backend::matrix_respond_community_application,
+        commands::backend::matrix_join_community,
+        commands::backend::matrix_leave_community,
+        commands::backend::matrix_update_community,
+        commands::backend::matrix_update_member_role,
+        commands::backend::matrix_kick_member,
+        commands::backend::matrix_ban_member,
+        commands::backend::matrix_sync_once,
+        commands::backend::matrix_enable_recovery,
+        commands::backend::matrix_recover,
+    ]);
+
+    #[cfg(feature = "legacy-p2p")]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        commands::attachments::pick_attachment_grants,
+        commands::attachments::accept_attachment_drop_grants,
+        commands::attachments::stage_attachment_bytes,
+        commands::attachments::discard_attachment_grant,
+        commands::attachments::discard_staged_attachment,
+        // Backend / Matrix architecture spike
+        commands::backend::get_backend_status,
+        commands::backend::matrix_login,
+        commands::backend::matrix_oidc_status,
+        commands::backend::matrix_start_oidc_login,
+        commands::backend::matrix_cancel_login,
+        commands::backend::matrix_restore_session,
+        commands::backend::matrix_logout,
+        commands::backend::matrix_devices,
+        commands::backend::matrix_revoke_device,
+        commands::backend::matrix_remove_local_account,
+        commands::backend::matrix_accounts,
+        commands::backend::matrix_get_profile,
+        commands::backend::matrix_update_profile_display_name,
+        commands::backend::matrix_switch_account,
+        commands::backend::matrix_recovery_health,
+        commands::backend::matrix_test_recovery,
+        commands::backend::matrix_start_device_verification,
+        commands::backend::matrix_device_verification_status,
+        commands::backend::matrix_select_device_verification_method,
+        commands::backend::matrix_confirm_device_verification,
+        commands::backend::matrix_cancel_device_verification,
+        commands::backend::matrix_user_preferences,
+        commands::backend::matrix_update_user_preferences,
+        commands::backend::matrix_create_community,
+        commands::backend::matrix_list_communities,
+        commands::backend::matrix_list_channels,
+        commands::backend::matrix_create_channel,
+        commands::backend::matrix_send_message,
+        commands::backend::matrix_send_attachment,
+        commands::backend::matrix_download_attachment,
+        commands::backend::matrix_cancel_attachment_download,
+        commands::backend::matrix_dm_conversations,
+        commands::backend::matrix_ensure_dm,
+        commands::backend::matrix_dm_messages,
+        commands::backend::matrix_send_dm,
+        commands::backend::matrix_send_dm_attachment,
+        commands::backend::matrix_mark_dm_read,
+        commands::backend::matrix_set_dm_blocked,
+        commands::backend::matrix_dm_blocked,
+        commands::backend::matrix_get_messages,
+        commands::backend::matrix_edit_message,
+        commands::backend::matrix_redact_message,
+        commands::backend::matrix_toggle_reaction,
+        commands::backend::matrix_mark_read,
+        commands::backend::matrix_set_typing,
+        commands::backend::matrix_typing_users,
+        commands::backend::matrix_search_messages,
+        commands::backend::matrix_wait_for_room_update,
+        commands::backend::matrix_list_members,
+        commands::backend::matrix_invite_to_community,
+        commands::backend::matrix_community_access_settings,
+        commands::backend::matrix_update_community_access,
+        commands::backend::matrix_search_community_directory,
+        commands::backend::matrix_knock_community,
+        commands::backend::matrix_list_community_applications,
+        commands::backend::matrix_respond_community_application,
+        commands::backend::matrix_join_community,
+        commands::backend::matrix_leave_community,
+        commands::backend::matrix_update_community,
+        commands::backend::matrix_update_member_role,
+        commands::backend::matrix_kick_member,
+        commands::backend::matrix_ban_member,
+        commands::backend::matrix_sync_once,
+        commands::backend::matrix_enable_recovery,
+        commands::backend::matrix_recover,
+        // Provenance-preserving legacy archive migration
+        commands::migration::export_legacy_archive,
+        commands::migration::inspect_legacy_archives,
+        commands::migration::dry_run_legacy_import,
+        commands::migration::approve_legacy_import,
+        // Identity
+        commands::identity::create_identity,
+        commands::identity::generate_identity,
+        commands::identity::get_identity,
+        commands::identity::update_profile,
+        commands::identity::update_display_name,
+        commands::identity::export_identity,
+        commands::identity::import_identity,
+        // Communities
+        commands::community::create_community,
+        commands::community::get_communities,
+        commands::community::get_channels,
+        commands::community::sync_local_channel,
+        commands::community::create_channel,
+        commands::community::update_community_metadata,
+        commands::community::join_community,
+        commands::community::leave_community,
+        commands::community::delete_community,
+        commands::community::generate_invite_link,
+        commands::community::subscribe_channel,
+        commands::community::unsubscribe_channel,
+        commands::control::request_control_log_sync,
+        // Messaging
+        commands::messaging::send_message,
+        commands::messaging::get_messages,
+        commands::messaging::mark_channel_read,
+        commands::messaging::request_message_history,
+        commands::messaging::add_reaction,
+        commands::messaging::edit_message,
+        commands::messaging::delete_message,
+        commands::messaging::search_messages,
+        commands::messaging::broadcast_typing,
+        commands::messaging::get_channel_event_log,
+        // Voice
+        commands::voice::join_voice,
+        commands::voice::leave_voice,
+        commands::voice::set_muted,
+        commands::voice::set_deafened,
+        commands::voice::send_voice_signal,
+        commands::voice::get_ice_servers,
+        commands::voice::get_ice_server_status,
+        commands::voice::validate_ice_servers,
+        commands::voice::set_ice_servers,
+        commands::voice::probe_ice_servers,
+        commands::diagnostics::get_diagnostics,
+        commands::voice::set_kv,
+        // Files
+        commands::files::upload_file,
+        commands::files::upload_dm_file,
+        commands::files::request_file,
+        commands::files::get_community_files,
+        // Moderation
+        commands::moderation::ban_user,
+        commands::moderation::kick_user,
+        commands::moderation::timeout_user,
+        commands::moderation::update_member_role,
+        commands::moderation::get_members,
+        // Direct Messages
+        commands::dm::send_dm,
+        commands::dm::get_dm_conversations,
+        commands::dm::get_dm_messages,
+        commands::dm::mark_dm_read,
+    ]);
+
+    builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

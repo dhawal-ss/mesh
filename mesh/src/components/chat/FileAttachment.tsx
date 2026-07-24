@@ -3,8 +3,12 @@ import { transitions } from '../../lib/motion'
 
 interface StagedFile {
   name: string
-  size: number
-  path: string
+  size: number | null
+  grant: string
+  path?: string
+  contentType?: string
+  source: 'native' | 'temporary'
+  stagingToken?: string
 }
 
 interface FileAttachmentPreviewProps {
@@ -27,7 +31,7 @@ export function FileAttachmentPreview({ files, onRemove }: FileAttachmentPreview
         <AnimatePresence>
           {files.map((file, i) => (
             <motion.div
-              key={`${file.path}-${i}`}
+              key={`${file.grant}-${i}`}
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
@@ -40,11 +44,15 @@ export function FileAttachmentPreview({ files, onRemove }: FileAttachmentPreview
                 <p className="max-w-[140px] truncate text-xs font-medium text-primary">
                   {file.name}
                 </p>
-                <p className="text-[10px] text-muted">{formatSize(file.size)}</p>
+                <p className="text-[10px] text-muted">
+                  {file.size === null ? 'Size checked securely when sent' : formatSize(file.size)}
+                </p>
               </div>
               <button
+                type="button"
                 onClick={() => onRemove(i)}
-                className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-white/[0.06] text-muted opacity-0 transition-opacity hover:bg-white/[0.12] hover:text-primary group-hover:opacity-100"
+                aria-label={`Remove ${file.name}`}
+                className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-white/[0.06] text-muted transition-colors hover:bg-white/[0.12] hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue"
               >
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
                   <line x1="18" y1="6" x2="6" y2="18" />

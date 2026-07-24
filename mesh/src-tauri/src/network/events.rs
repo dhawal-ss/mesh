@@ -34,6 +34,10 @@ pub enum NetworkCommand {
     RegisterInDHT {
         community_id: String,
     },
+    /// Stop refreshing our DHT record for a community (e.g. after leaving).
+    UnregisterFromDHT {
+        community_id: String,
+    },
     ConnectPeer {
         addr: String,
     },
@@ -50,6 +54,8 @@ pub enum NetworkCommand {
         file_hash: String,
         chunk_index: u32,
         community_id: String,
+        requester_public_key: String,
+        request_signature: String,
     },
     RequestMessageHistory {
         peer_id: Option<String>,
@@ -58,6 +64,8 @@ pub enum NetworkCommand {
         since_id: Option<String>,
         limit: u32,
         requester_public_key: String,
+        request_signature: String,
+        request_timestamp: String,
     },
     RequestControl {
         peer_id: Option<String>,
@@ -67,6 +75,12 @@ pub enum NetworkCommand {
         file_hash: String,
         path: std::path::PathBuf,
         community_id: String,
+    },
+    /// Sync the membership roster for a community into the swarm task so it
+    /// can verify file chunk requesters are active members.
+    UpdateCommunityMembers {
+        community_id: String,
+        member_public_keys: Vec<String>,
     },
 }
 

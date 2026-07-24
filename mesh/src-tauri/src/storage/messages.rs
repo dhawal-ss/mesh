@@ -245,9 +245,7 @@ impl Database {
             .conn
             .lock()
             .map_err(|e| anyhow::anyhow!("lock: {}", e))?;
-        let sql = format!(
-            "SELECT {MSG_COLS} FROM messages m WHERE m.id = ?1"
-        );
+        let sql = format!("SELECT {MSG_COLS} FROM messages m WHERE m.id = ?1");
         let result = conn.query_row(&sql, params![message_id], |row| {
             Ok(Self::row_to_message(row))
         });
@@ -259,22 +257,27 @@ impl Database {
     }
 
     /// Update a message's content and set edited_at. Verifies author matches.
+    /// The `edit_timestamp` parameter is the event's timestamp — older edits
+    /// arriving late will be rejected if a newer edit already exists.
     pub fn update_message_content(
         &self,
         message_id: &str,
         content: &str,
         author_public_key: &str,
+        edit_timestamp: &str,
     ) -> anyhow::Result<()> {
         let conn = self
             .conn
             .lock()
             .map_err(|e| anyhow::anyhow!("lock: {}", e))?;
         let rows_affected = conn.execute(
-            "UPDATE messages SET content = ?1, edited_at = datetime('now') WHERE id = ?2 AND author_public_key = ?3",
-            params![content, message_id, author_public_key],
+            "UPDATE messages SET content = ?1, edited_at = ?4
+             WHERE id = ?2 AND author_public_key = ?3
+             AND (edited_at IS NULL OR edited_at < ?4)",
+            params![content, message_id, author_public_key, edit_timestamp],
         )?;
         if rows_affected == 0 {
-            anyhow::bail!("Message not found or not owned by caller");
+            anyhow::bail!("Message not found, not owned by caller, or newer edit already applied");
         }
         Ok(())
     }

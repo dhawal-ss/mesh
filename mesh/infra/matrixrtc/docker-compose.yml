@@ -1,0 +1,72 @@
+name: mesh-matrixrtc
+
+# This is a single-node production-shaped MatrixRTC backend. Terminate TLS in
+# the host reverse proxy and keep the HTTP control ports loopback-only.
+services:
+  livekit:
+    image: livekit/livekit-server:v1.13.1@sha256:2c6869d2d5ff6c9c0166f47be1c92dad6928bfecfa5e4060a6ece48db8accfa3
+    restart: unless-stopped
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY in the operator environment}: ${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET in the operator environment}"
+      LIVEKIT_CONFIG: |
+        port: 7880
+        log_level: info
+        rtc:
+          tcp_port: 7881
+          port_range_start: 50000
+          port_range_end: 50100
+          use_external_ip: true
+        room:
+          auto_create: false
+          empty_timeout: 300
+          departure_timeout: 20
+        prometheus_port: 6789
+        turn:
+          enabled: true
+          domain: ${LIVEKIT_TURN_DOMAIN:?Set LIVEKIT_TURN_DOMAIN to the certificate hostname}
+          tls_port: 5349
+          udp_port: 3478
+          external_tls: true
+    ports:
+      - "${MATRIXRTC_CONTROL_BIND:-127.0.0.1}:7880:7880/tcp"
+      - "7881:7881/tcp"
+      - "3478:3478/udp"
+      # external_tls means this is plaintext behind the trusted L4 TLS
+      # terminator. Keep it loopback/private and never expose it directly.
+      - "${MATRIXRTC_TURN_TLS_BIND:-127.0.0.1}:5349:5349/tcp"
+      - "50000-50100:50000-50100/udp"
+    expose:
+      - "6789"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - matrixrtc
+
+  matrixrtc-auth:
+    image: ghcr.io/element-hq/lk-jwt-service:0.4.4@sha256:9c715697c6f7c1f538f2ee41b7b59b04a8d06bf790a7cc8c8517ccac8d28813d
+    restart: unless-stopped
+    depends_on:
+      - livekit
+    environment:
+      LIVEKIT_URL: "${MESH_MATRIXRTC_LIVEKIT_SFU_URL:?Set the public wss LiveKit URL}"
+      LIVEKIT_KEY: "${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY in the operator environment}"
+      LIVEKIT_SECRET: "${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET in the operator environment}"
+      LIVEKIT_FULL_ACCESS_HOMESERVERS: "${MATRIXRTC_FULL_ACCESS_HOMESERVERS:?Set a comma-separated homeserver allowlist}"
+      LIVEKIT_JWT_BIND: ":8080"
+    ports:
+      - "${MATRIXRTC_CONTROL_BIND:-127.0.0.1}:8080:8080/tcp"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - matrixrtc
+
+networks:
+  matrixrtc:
+    driver: bridge
+    internal: false

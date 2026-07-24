@@ -137,6 +137,25 @@ pub async fn create_community(
             tracing::warn!("network register in DHT failed: {}", e);
         }
 
+        // Seed the swarm task with the initial membership roster (just the owner)
+        // so file chunk serving can verify requester membership from the start.
+        {
+            let community_id_c = community_key.community_id.clone();
+            if let Ok(members) = db
+                .run_blocking(move |db| db.get_members(&community_id_c))
+                .await
+            {
+                let member_keys: Vec<String> =
+                    members.iter().map(|m| m.public_key.clone()).collect();
+                let _ = net
+                    .send_command(NetworkCommand::UpdateCommunityMembers {
+                        community_id: community_key.community_id.clone(),
+                        member_public_keys: member_keys,
+                    })
+                    .await;
+            }
+        }
+
         announce_presence(&state, &db, net, &community_key.community_id).await?;
     }
 
@@ -205,7 +224,9 @@ pub async fn sync_local_channel(
     let name_c = name.clone();
     let channel_type_c = channel_type.clone();
     let created = db
-        .run_blocking(move |db| db.upsert_local_channel(&channel_id_c, &community_id_c, &name_c, &channel_type_c))
+        .run_blocking(move |db| {
+            db.upsert_local_channel(&channel_id_c, &community_id_c, &name_c, &channel_type_c)
+        })
         .await
         .map_err(|e| CommandError::Other(e.to_string()))?;
 
@@ -215,9 +236,18 @@ pub async fn sync_local_channel(
             .run_blocking(move |db| db.get_latest_message_cursor(&channel_id_c))
             .await
             .map_err(|e| CommandError::Other(e.to_string()))?;
-        let our_public_key = {
+        let (our_public_key, request_signature, request_timestamp) = {
             let identity = state.identity.read().await;
-            identity.as_ref().map(|id| id.public_key_b64.clone()).unwrap_or_default()
+            match identity.as_ref() {
+                Some(id) => {
+                    let pk = id.public_key_b64.clone();
+                    let ts = chrono::Utc::now().to_rfc3339();
+                    let signable = format!("history-req:{}:{}:{}", channel_id, pk, ts);
+                    let sig = id.sign(signable.as_bytes());
+                    (pk, sig, ts)
+                }
+                None => (String::new(), String::new(), String::new()),
+            }
         };
         let network = state.network.read().await;
         if let Some(ref net) = *network {
@@ -229,6 +259,8 @@ pub async fn sync_local_channel(
                     since_id: cursor.as_ref().map(|(_, id)| id.clone()),
                     limit: 100,
                     requester_public_key: our_public_key,
+                    request_signature,
+                    request_timestamp,
                 })
                 .await
             {
@@ -252,9 +284,13 @@ pub async fn create_channel(
     let caller_public_key =
         require_community_permission(&state, &db, &community_id, "admin").await?;
     let identity = state.identity.read().await;
-    let identity = identity.as_ref().ok_or(CommandError::Identity("No identity loaded".into()))?;
+    let identity = identity
+        .as_ref()
+        .ok_or(CommandError::Identity("No identity loaded".into()))?;
     if identity.public_key_b64 != caller_public_key {
-        return Err(CommandError::Validation("Loaded identity does not match caller permission state".into()));
+        return Err(CommandError::Validation(
+            "Loaded identity does not match caller permission state".into(),
+        ));
     }
     let community_id_c = community_id.clone();
     let community_key = db
@@ -301,11 +337,14 @@ pub async fn create_channel(
     // Broadcast the control event to the network (meta topic + legacy)
     let network = state.network.read().await;
     if let Some(ref net) = *network {
-        let control_envelope = serde_json::to_vec(&event).map_err(|e| CommandError::Other(e.to_string()))?;
+        let control_envelope =
+            serde_json::to_vec(&event).map_err(|e| CommandError::Other(e.to_string()))?;
         let community_id_c = community_id.clone();
         let aad = encryption::build_community_aad(&community_id, "");
         let data = db
-            .run_blocking(move |db| db.encrypt_community_payload(&community_id_c, &control_envelope, &aad))
+            .run_blocking(move |db| {
+                db.encrypt_community_payload(&community_id_c, &control_envelope, &aad)
+            })
             .await
             .map_err(|e| CommandError::Other(e.to_string()))?;
         // Publish to the meta topic for control events
@@ -326,7 +365,10 @@ pub async fn create_channel(
             })
             .await
         {
-            tracing::warn!("network publish channel create to legacy topic failed: {}", e);
+            tracing::warn!(
+                "network publish channel create to legacy topic failed: {}",
+                e
+            );
         }
     }
 
@@ -351,9 +393,13 @@ pub async fn update_community_metadata(
     let caller_public_key =
         require_community_permission(&state, &db, &community_id, "admin").await?;
     let identity = state.identity.read().await;
-    let identity = identity.as_ref().ok_or(CommandError::Identity("No identity loaded".into()))?;
+    let identity = identity
+        .as_ref()
+        .ok_or(CommandError::Identity("No identity loaded".into()))?;
     if identity.public_key_b64 != caller_public_key {
-        return Err(CommandError::Validation("Loaded identity does not match caller permission state".into()));
+        return Err(CommandError::Validation(
+            "Loaded identity does not match caller permission state".into(),
+        ));
     }
     let community_id_c = community_id.clone();
     let community_key = db
@@ -391,11 +437,14 @@ pub async fn update_community_metadata(
 
     let network = state.network.read().await;
     if let Some(ref net) = *network {
-        let control_envelope = serde_json::to_vec(&event).map_err(|e| CommandError::Other(e.to_string()))?;
+        let control_envelope =
+            serde_json::to_vec(&event).map_err(|e| CommandError::Other(e.to_string()))?;
         let community_id_c = community_id.clone();
         let aad = encryption::build_community_aad(&community_id, "");
         let data = db
-            .run_blocking(move |db| db.encrypt_community_payload(&community_id_c, &control_envelope, &aad))
+            .run_blocking(move |db| {
+                db.encrypt_community_payload(&community_id_c, &control_envelope, &aad)
+            })
             .await
             .map_err(|e| CommandError::Other(e.to_string()))?;
         // Publish to the meta topic for control events
@@ -406,7 +455,10 @@ pub async fn update_community_metadata(
             })
             .await
         {
-            tracing::warn!("network publish community update to meta topic failed: {}", e);
+            tracing::warn!(
+                "network publish community update to meta topic failed: {}",
+                e
+            );
         }
         // Backward compat: also publish to the legacy community-wide topic
         if let Err(e) = net
@@ -416,7 +468,10 @@ pub async fn update_community_metadata(
             })
             .await
         {
-            tracing::warn!("network publish community update to legacy topic failed: {}", e);
+            tracing::warn!(
+                "network publish community update to legacy topic failed: {}",
+                e
+            );
         }
     }
 
@@ -443,7 +498,9 @@ pub async fn join_community(
         let invite_secret = parsed
             .invite_secret
             .clone()
-            .ok_or(CommandError::Validation("Missing invite token in v2 invite".into()))?;
+            .ok_or(CommandError::Validation(
+                "Missing invite token in v2 invite".into(),
+            ))?;
         state.pending_invites.lock().await.insert(
             parsed.community_id.clone(),
             PendingInviteJoin {
@@ -525,6 +582,16 @@ pub async fn join_community(
             tracing::warn!("network find peers failed: {}", e);
         }
 
+        // Register ourselves in DHT so other members can discover us
+        if let Err(e) = net
+            .send_command(NetworkCommand::RegisterInDHT {
+                community_id: parsed.community_id.clone(),
+            })
+            .await
+        {
+            tracing::warn!("network register in DHT failed: {}", e);
+        }
+
         // Skip presence announcement for v2 invites without a group key — the
         // key hasn't been received yet (it arrives via the invite challenge-response
         // flow). Presence will be announced after the join completes successfully.
@@ -552,14 +619,18 @@ pub async fn leave_community(
 ) -> Result<(), CommandError> {
     let leave_event = {
         let identity = state.identity.read().await;
-        let identity = identity.as_ref().ok_or(CommandError::Identity("No identity loaded".into()))?;
+        let identity = identity
+            .as_ref()
+            .ok_or(CommandError::Identity("No identity loaded".into()))?;
 
         state.membership.load_community(&db, &community_id)?;
         if state
             .membership
             .has_permission(&community_id, &identity.public_key_b64, "owner")?
         {
-            return Err(CommandError::Validation("Owner cannot leave community without transferring ownership".into()));
+            return Err(CommandError::Validation(
+                "Owner cannot leave community without transferring ownership".into(),
+            ));
         }
 
         control::create_identity_control_event(
@@ -574,7 +645,8 @@ pub async fn leave_community(
 
     let network = state.network.read().await;
     if let Some(ref net) = *network {
-        let plaintext = serde_json::to_vec(&leave_event).map_err(|e| CommandError::Other(e.to_string()))?;
+        let plaintext =
+            serde_json::to_vec(&leave_event).map_err(|e| CommandError::Other(e.to_string()))?;
         let community_id_c = community_id.clone();
         let aad = encryption::build_community_aad(&community_id, "");
         let encrypt_result = db
@@ -626,6 +698,16 @@ pub async fn leave_community(
         {
             tracing::warn!("network unsubscribe from presence topic failed: {}", e);
         }
+
+        // Stop refreshing our DHT record for this community
+        if let Err(e) = net
+            .send_command(NetworkCommand::UnregisterFromDHT {
+                community_id: community_id.clone(),
+            })
+            .await
+        {
+            tracing::warn!("network unregister from DHT failed: {}", e);
+        }
     }
 
     let community_id_c = community_id.clone();
@@ -646,9 +728,13 @@ pub async fn delete_community(
     let caller_public_key =
         require_community_permission(&state, &db, &community_id, "owner").await?;
     let identity = state.identity.read().await;
-    let identity = identity.as_ref().ok_or(CommandError::Identity("No identity loaded".into()))?;
+    let identity = identity
+        .as_ref()
+        .ok_or(CommandError::Identity("No identity loaded".into()))?;
     if identity.public_key_b64 != caller_public_key {
-        return Err(CommandError::Validation("Loaded identity does not match caller permission state".into()));
+        return Err(CommandError::Validation(
+            "Loaded identity does not match caller permission state".into(),
+        ));
     }
 
     let community_id_c = community_id.clone();
@@ -656,7 +742,9 @@ pub async fn delete_community(
         .run_blocking(move |db| db.get_community_keypair(&community_id_c))
         .await
         .map_err(|e| CommandError::Other(e.to_string()))?
-        .ok_or(CommandError::PermissionDenied("Only the community owner can delete this community".into()))?;
+        .ok_or(CommandError::PermissionDenied(
+            "Only the community owner can delete this community".into(),
+        ))?;
     let owner_public_key = BASE64.encode(community_key.verifying_key.as_bytes());
     let delete_event = control::create_control_event(
         &community_id,
@@ -667,7 +755,8 @@ pub async fn delete_community(
 
     let network = state.network.read().await;
     if let Some(ref net) = *network {
-        let plaintext = serde_json::to_vec(&delete_event).map_err(|e| CommandError::Other(e.to_string()))?;
+        let plaintext =
+            serde_json::to_vec(&delete_event).map_err(|e| CommandError::Other(e.to_string()))?;
         let community_id_c = community_id.clone();
         let aad = encryption::build_community_aad(&community_id, "");
         let data = db
@@ -682,7 +771,10 @@ pub async fn delete_community(
             })
             .await
         {
-            tracing::warn!("network publish community delete to meta topic failed: {}", e);
+            tracing::warn!(
+                "network publish community delete to meta topic failed: {}",
+                e
+            );
         }
         if let Err(e) = net
             .send_command(NetworkCommand::PublishMessage {
@@ -691,7 +783,10 @@ pub async fn delete_community(
             })
             .await
         {
-            tracing::warn!("network publish community delete to legacy topic failed: {}", e);
+            tracing::warn!(
+                "network publish community delete to legacy topic failed: {}",
+                e
+            );
         }
     }
 
@@ -722,6 +817,16 @@ pub async fn delete_community(
         {
             tracing::warn!("network unsubscribe from presence topic failed: {}", e);
         }
+
+        // Stop refreshing our DHT record for this community
+        if let Err(e) = net
+            .send_command(NetworkCommand::UnregisterFromDHT {
+                community_id: community_id.clone(),
+            })
+            .await
+        {
+            tracing::warn!("network unregister from DHT failed: {}", e);
+        }
     }
 
     Ok(())
@@ -748,9 +853,17 @@ pub async fn generate_invite_link(
     let community_id_c = community_id.clone();
     let invite_secret_c = invite_secret.clone();
     let created_by_c = created_by.clone();
-    db.run_blocking(move |db| db.create_invite(&community_id_c, &invite_secret_c, &created_by_c, Some(1), None))
-        .await
-        .map_err(|e| CommandError::Other(e.to_string()))?;
+    db.run_blocking(move |db| {
+        db.create_invite(
+            &community_id_c,
+            &invite_secret_c,
+            &created_by_c,
+            Some(1),
+            None,
+        )
+    })
+    .await
+    .map_err(|e| CommandError::Other(e.to_string()))?;
 
     let mut serializer = url::form_urlencoded::Serializer::new(String::new());
     serializer.append_pair("v", "2");
@@ -799,7 +912,8 @@ async fn announce_presence(
     {
         return Ok(());
     }
-    let plaintext = serde_json::to_vec(&presence).map_err(|e| CommandError::Other(e.to_string()))?;
+    let plaintext =
+        serde_json::to_vec(&presence).map_err(|e| CommandError::Other(e.to_string()))?;
     let community_id_c = community_id.to_string();
     let aad = encryption::build_community_aad(community_id, "");
     let data = db

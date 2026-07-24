@@ -1,6 +1,7 @@
 use serde::Serialize;
 
 #[derive(Debug, thiserror::Error)]
+#[cfg_attr(not(feature = "legacy-p2p"), allow(dead_code))]
 pub enum CommandError {
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),

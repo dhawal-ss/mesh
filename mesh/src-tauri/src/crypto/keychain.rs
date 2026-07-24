@@ -31,9 +31,21 @@ pub fn load_secret(key_name: &str) -> anyhow::Result<Vec<u8>> {
 
 /// Check if a secret exists in the keychain.
 pub fn secret_exists(key_name: &str) -> bool {
-    Entry::new(SERVICE, key_name)
-        .and_then(|e| e.get_password())
-        .is_ok()
+    try_secret_exists(key_name).unwrap_or(false)
+}
+
+/// Check whether a secret exists without treating keychain access failures as
+/// an absent entry.
+///
+/// Destructive account cleanup must use this fallible form so it cannot report
+/// success when the operating-system credential store was unavailable.
+pub fn try_secret_exists(key_name: &str) -> anyhow::Result<bool> {
+    let entry = Entry::new(SERVICE, key_name)?;
+    match entry.get_password() {
+        Ok(_) => Ok(true),
+        Err(keyring::Error::NoEntry) => Ok(false),
+        Err(error) => Err(error.into()),
+    }
 }
 
 /// Delete a secret from the keychain.

@@ -30,6 +30,8 @@ pub fn signed_file_announcement_to_message(
             size: payload.size,
             chunks: payload.chunks,
             source_peer_id: payload.source_peer_id.clone(),
+            media_source: None,
+            content_type: None,
         }],
         reactions: Default::default(),
         timestamp: envelope.timestamp.clone(),

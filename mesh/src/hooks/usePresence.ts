@@ -18,6 +18,7 @@ interface PresenceEntry {
  * Subscribes to presence:update events from the Rust P2P layer.
  */
 export function usePresence() {
+  const matrixMode = bridge.isMatrixBackend()
   const identity = useIdentityStore((s) => s.identity)
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
   const communities = useCommunityStore((s) => s.communities)
@@ -39,6 +40,7 @@ export function usePresence() {
 
   // Subscribe to presence events
   useEffect(() => {
+    if (matrixMode) return
     const unsub = bridge.onPresenceUpdate((data) => {
       if (data.communityId !== activeCommunityId) return
 
@@ -57,7 +59,7 @@ export function usePresence() {
     return () => {
       unsub.then((fn) => fn())
     }
-  }, [activeCommunityId, touchMember])
+  }, [activeCommunityId, matrixMode, touchMember])
 
   useEffect(() => {
     setOnlinePeers(new Set())
@@ -72,7 +74,7 @@ export function usePresence() {
         displayName: member.displayName,
         avatarColor: member.avatarColor,
         role: member.role,
-        online: onlinePeers.has(member.publicKey),
+        online: matrixMode ? member.online ?? false : onlinePeers.has(member.publicKey),
         lastSeen: member.lastSeen ?? undefined,
       })
     }
@@ -81,7 +83,7 @@ export function usePresence() {
       ? roster.some((member) => member.publicKey === identity.publicKey)
       : false
 
-    if (identity && activeCommunity && selfIsActiveMember) {
+    if (!matrixMode && identity && activeCommunity && selfIsActiveMember) {
       byPublicKey.set(identity.publicKey, {
         publicKey: identity.publicKey,
         displayName: identity.displayName || 'You',
@@ -93,7 +95,7 @@ export function usePresence() {
     }
 
     return Array.from(byPublicKey.values())
-  }, [roster, identity, activeCommunity, onlinePeers])
+  }, [roster, identity, activeCommunity, onlinePeers, matrixMode])
 
   return {
     members,
