@@ -1,5 +1,5 @@
 import { Avatar } from '../ui/Avatar'
-import { useCommunityStore } from '../../store/communities'
+import { useActiveCommunity, useCommunityStore } from '../../store/communities'
 import { useIdentityStore } from '../../store/identity'
 import { useMembershipStore } from '../../store/membership'
 import { useDmStore } from '../../store/dms'
@@ -23,9 +23,7 @@ const ROLE_ORDER = { owner: 0, admin: 1, member: 2 } as const
 
 export function MemberList({ isOpen, members }: MemberListProps) {
   const activeCommunityId = useCommunityStore((state) => state.activeCommunityId)
-  const activeCommunity = useCommunityStore((state) =>
-    state.communities.find((community) => community.id === state.activeCommunityId),
-  )
+  const activeCommunity = useActiveCommunity()
   const legacyUserId = useIdentityStore((state) => state.identity?.publicKey)
   const currentUserId = bridge.isMatrixBackend() ? bridge.getMatrixUserId() : legacyUserId
   const updateRole = useMembershipStore((state) => state.updateRole)
@@ -78,12 +76,12 @@ export function MemberList({ isOpen, members }: MemberListProps) {
   const offline = sorted.filter((m) => !m.online)
 
   return (
-    <div className="mesh-member-list flex w-[240px] flex-shrink-0 flex-col overflow-hidden bg-bg-secondary">
+    <div className="mesh-member-list flex w-member-list flex-shrink-0 flex-col overflow-hidden bg-bg-secondary">
       <div className="flex-1 overflow-y-auto px-2 py-4">
         {/* Online section */}
         {online.length > 0 && (
           <div className="mb-2">
-            <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.02em] text-muted">
+            <p className="px-2 pb-1 text-meta font-semibold uppercase text-muted">
               Online — {online.length}
             </p>
             <div>
@@ -97,7 +95,7 @@ export function MemberList({ isOpen, members }: MemberListProps) {
         {/* Offline section */}
         {offline.length > 0 && (
           <div className="mb-2">
-            <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.02em] text-muted">
+            <p className="px-2 pb-1 text-meta font-semibold uppercase text-muted">
               Offline — {offline.length}
             </p>
             <div>
@@ -138,7 +136,7 @@ function MemberRow({
   const canDm = actions?.directMessages && actions.currentUserId !== member.publicKey
   return (
     <div
-      className={`group flex items-center gap-3 rounded px-2 py-[6px] cursor-pointer transition-colors hover:bg-bg-modifier-hover ${
+      className={`group flex cursor-pointer items-center gap-3 rounded px-2 py-density-row transition-colors hover:bg-bg-modifier-hover ${
         !member.online ? 'opacity-40' : ''
       }`}
     >
@@ -146,8 +144,8 @@ function MemberRow({
         <Avatar color={member.avatarColor} size={32} name={member.displayName} />
         {/* Status dot */}
         <div
-          className={`absolute -bottom-0.5 -right-0.5 h-[14px] w-[14px] rounded-full border-[3px] border-bg-secondary ${
-            member.online ? 'bg-green' : 'bg-[#80848e]'
+          className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-status border-bg-secondary ${
+            member.online ? 'bg-status-success' : 'bg-status-offline'
           }`}
         />
       </div>
@@ -157,7 +155,7 @@ function MemberRow({
             {member.displayName}
           </span>
           {member.role !== 'member' && (
-            <span className={`flex-shrink-0 text-[10px] font-semibold ${
+            <span className={`flex-shrink-0 text-caption font-semibold ${
               member.role === 'owner' ? 'text-accent' : 'text-blue'
             }`}>
               {member.role === 'owner' ? '👑' : '🛡️'}
@@ -170,7 +168,7 @@ function MemberRow({
           {canDm && (
             <button
               onClick={() => void actions.onDm(member).catch((error) => console.error('DM start failed:', error))}
-              className="rounded px-1 text-[10px] text-muted hover:bg-bg-modifier-active hover:text-primary"
+              className="rounded px-1 text-caption text-muted hover:bg-bg-modifier-active hover:text-primary"
               title="Message member"
               aria-label={`Message ${member.displayName}`}
             >
@@ -180,7 +178,7 @@ function MemberRow({
           {canAct && actions.canManageRoles && (
             <button
               onClick={() => void actions.onRole(member).catch((error) => console.error('Role update failed:', error))}
-              className="rounded px-1 text-[10px] text-muted hover:bg-bg-modifier-active hover:text-primary"
+              className="rounded px-1 text-caption text-muted hover:bg-bg-modifier-active hover:text-primary"
               title={member.role === 'admin' ? 'Make member' : 'Make admin'}
             >
               {member.role === 'admin' ? 'M' : 'A'}
@@ -188,14 +186,14 @@ function MemberRow({
           )}
           {canAct && <button
             onClick={() => void actions.onKick(member).catch((error) => console.error('Kick failed:', error))}
-            className="rounded px-1 text-[10px] text-muted hover:bg-bg-modifier-active hover:text-primary"
+            className="rounded px-1 text-caption text-muted hover:bg-bg-modifier-active hover:text-primary"
             title="Kick member"
           >
             K
           </button>}
           {canAct && <button
             onClick={() => void actions.onBan(member).catch((error) => console.error('Ban failed:', error))}
-            className="rounded px-1 text-[10px] text-red hover:bg-red/10"
+            className="rounded px-1 text-caption text-red hover:bg-red/10"
             title="Ban member"
           >
             B

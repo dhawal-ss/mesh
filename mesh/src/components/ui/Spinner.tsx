@@ -1,27 +1,12 @@
-export function Spinner({ size = 16 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      className="animate-spin"
-    >
-      <circle
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        className="opacity-20"
-      />
-      <path
-        d="M12 2a10 10 0 0 1 10 10"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-    </svg>
-  )
+import { Icon, type IconSize } from './Icon'
+
+const SPINNER_SIZES: Record<14 | 16 | 20 | 24, IconSize> = {
+  14: 'xs',
+  16: 'sm',
+  20: 'md',
+  24: 'lg',
+}
+
+export function Spinner({ size = 16 }: { size?: 14 | 16 | 20 | 24 }) {
+  return <Icon name="loader" size={SPINNER_SIZES[size]} className="animate-spin" />
 }

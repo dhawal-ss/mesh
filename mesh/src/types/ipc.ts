@@ -2,21 +2,51 @@
 // These mirror the Rust DTOs exactly. This is the single source of truth
 // for the IPC contract between frontend and backend.
 
-export interface Identity {
-  publicKey: string           // base64-encoded Ed25519 public key
-  displayName: string
-  avatarColor: string         // hex color
-  avatarUrl?: string | null   // read-only MXC URI for Matrix profiles
+import type {
+  AttachmentDto,
+  AttachmentThumbnailDto,
+  ChannelDto,
+  CommunityDto,
+  DirectMessageDto,
+  DmConversationDto,
+  IdentityDto,
+  MessageDto,
+  NetworkStatusDto,
+  PeerDto,
+  UserPreferences,
+} from './ipc.generated'
+
+export type {
+  AttachmentDto,
+  AttachmentThumbnailDto,
+  BackendCapabilities,
+  BackendKind,
+  BackendStatus,
+  ChannelDto,
+  CommunityDto,
+  DirectMessageDto,
+  DmConversationDto,
+  IdentityDto,
+  MessageDto,
+  MatrixNotification,
+  MatrixRoomNotificationMode,
+  MatrixUnreadUpdate,
+  NetworkStatusDto,
+  NotificationPresentationContext,
+  PeerDto,
+  UserPreferences,
+  VoiceProvider,
+  VoiceServiceAvailability,
+  VoiceServiceStatus,
+} from './ipc.generated'
+
+// Core wire DTOs are generated from Rust. Renderer-only enrichment stays
+// explicit here so it cannot be mistaken for data returned over Tauri IPC.
+export interface Identity extends IdentityDto {
+  avatarUrl?: string | null
 }
 
-export interface Community {
-  id: string                  // base64-encoded community public key (short)
-  name: string
-  description: string
-  memberCount: number
-  role: 'owner' | 'admin' | 'member'
-  joinedAt: string | null     // ISO timestamp
-}
+export type Community = CommunityDto
 
 export interface CommunityAccessSettings {
   alias: string | null
@@ -45,49 +75,15 @@ export interface CommunityAccessResult {
   community: Community | null
 }
 
-export interface MatrixUserPreferences {
-  schemaVersion: number
-  notificationsEnabled: boolean
-  notificationSound: boolean
-  mutedChannels: string[]
-  mutedCommunities: string[]
-  updatedAt: string
+export type MatrixUserPreferences = UserPreferences
+
+export interface Channel extends ChannelDto {
+  unreadMentions?: number
 }
 
-export interface Channel {
-  id: string
-  communityId: string
-  name: string
-  channelType: 'text' | 'voice'
-  unreadCount: number
-}
-
-export interface Message {
-  id: string
-  channelId: string
-  authorPublicKey: string
-  authorDisplayName: string
-  authorAvatarColor: string
-  content: string
-  attachments: Attachment[]
-  reactions: Record<string, string[]>   // emoji → [publicKey]
-  timestamp: string
-  signature: string
-  editedAt?: string | null
-  deletedAt?: string | null
-  replyToId?: string | null
-  deliveryStatus?: 'sent' | 'pending' | 'failed' | null
-}
-
-export interface Attachment {
-  fileHash: string
-  filename: string
-  size: number
-  chunks: number
-  sourcePeerId: string
-  mediaSource?: Record<string, unknown> | null
-  contentType?: string | null
-}
+export type Message = MessageDto
+export type Attachment = AttachmentDto
+export type AttachmentThumbnail = AttachmentThumbnailDto
 
 export interface FileDownloadRequest {
   fileHash: string
@@ -112,6 +108,36 @@ export interface FileAvailable {
 }
 
 export type FileTransferStatus = 'idle' | 'downloading' | 'completed' | 'error'
+
+export type MatrixTransferDirection = 'upload' | 'download'
+export type MatrixTransferState =
+  | 'queued'
+  | 'encrypting'
+  | 'uploading'
+  | 'publishing'
+  | 'downloading'
+  | 'validating'
+  | 'writing'
+  | 'completed'
+  | 'cancelled'
+  | 'failed'
+
+export interface MatrixTransferResult {
+  eventId?: string | null
+  localPath?: string | null
+}
+
+export interface MatrixTransferProgress {
+  transferId: string
+  direction: MatrixTransferDirection
+  transferredBytes: number
+  totalBytes?: number | null
+  state: MatrixTransferState
+  retryable: boolean
+  retryMode?: 'restart-from-zero' | null
+  result?: MatrixTransferResult | null
+  error?: string | null
+}
 
 export type VoiceConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'degraded' | 'disconnected'
 export type VoiceTopology = 'mesh' | 'relay-election'
@@ -201,13 +227,11 @@ export interface VoiceSignalPayload {
   epoch?: number
 }
 
-export interface Peer {
-  publicKey: string
-  displayName: string
-  avatarColor: string
-  peerId: string             // libp2p PeerId
-  latency: number            // ms
+export interface Peer extends PeerDto {
   stream?: MediaStream       // Local frontend reference to active WebRTC stream
+  cameraStream?: MediaStream
+  screenShareStream?: MediaStream
+  screenShareAudioStream?: MediaStream
   role?: 'member' | 'relay'
   connectionState?: VoiceConnectionState
   joinedAt?: string
@@ -218,12 +242,7 @@ export interface Peer {
   speaking?: boolean
 }
 
-export interface NetworkStatus {
-  connected: boolean
-  peerCount: number
-  averageLatency: number
-  usingRelay: boolean
-}
+export type NetworkStatus = NetworkStatusDto
 
 // ─── Network state for the frontend ─────────────────
 
@@ -250,31 +269,11 @@ export interface BanEvent {
   bannedPublicKey: string
 }
 
-export interface DmConversation {
-  id: string
-  peerPublicKey: string
-  peerDisplayName: string
-  peerAvatarColor: string
-  lastMessageAt: string | null
-  unreadCount: number
-  createdAt: string
-}
-
-export interface DirectMessage {
-  id: string
-  conversationId: string
-  authorPublicKey: string
-  authorDisplayName: string
-  authorAvatarColor: string
-  content: string
-  timestamp: string
-  signature: string
+export type DmConversation = DmConversationDto
+export type DirectMessage = Omit<DirectMessageDto, 'attachments' | 'reactions'> & {
+  // Rust defaults omitted collections when accepting optimistic/local records.
   attachments?: Attachment[]
   reactions?: Record<string, string[]>
-  editedAt?: string | null
-  deletedAt?: string | null
-  replyToId?: string | null
-  deliveryStatus?: 'sent' | 'pending' | 'failed' | null
 }
 
 export type LegacyRecordKind =

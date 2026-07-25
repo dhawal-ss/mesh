@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { lazy, Suspense, useRef, useState, type MouseEvent } from 'react'
 import { useIdentityStore } from '../../store/identity'
 import { Avatar } from '../ui/Avatar'
 import { Tooltip } from '../ui/Tooltip'
@@ -6,6 +6,21 @@ import { UserSettingsPanel } from '../settings/UserSettingsPanel'
 import { SecurityDevicesPanel } from '../settings/SecurityDevicesPanel'
 import { matrixProfileIdentity, resolveSenderIdentity } from '../../lib/matrixIdentity'
 import * as bridge from '../../lib/bridge'
+import { DialogErrorBoundary } from '../ui/ScopedErrorBoundary'
+import { Icon } from '../ui/Icon'
+import { useShellStore } from '../../store/shell'
+import { Modal } from '../ui/Modal'
+import { useActiveCommunity } from '../../store/communities'
+import { useChannelStore } from '../../store/channels'
+import { isBackupReminderDue, useSettingsStore } from '../../store/settings'
+import { Spinner } from '../ui/Spinner'
+
+const DiagnosticsPanel = lazy(() =>
+  import('../settings/DiagnosticsPanel').then((module) => ({ default: module.DiagnosticsPanel })),
+)
+const LegacyMigrationPanel = lazy(() =>
+  import('../community/LegacyMigrationPanel').then((module) => ({ default: module.LegacyMigrationPanel })),
+)
 
 export function UserPanel() {
   const storedIdentity = useIdentityStore((state) => state.identity)
@@ -13,21 +28,48 @@ export function UserPanel() {
   const matrixMode = bridge.isMatrixBackend()
   const matrixAccountId = matrixMode ? bridge.getMatrixUserId() : null
   const identity = resolveSenderIdentity(storedIdentity, matrixAccountId)
-  const [showSettings, setShowSettings] = useState(false)
+  const showSettings = useShellStore((state) => state.profileOpen)
+  const setShowSettings = useShellStore((state) => state.setProfileOpen)
   const [showSecurity, setShowSecurity] = useState(false)
+  const [showDiagnostics, setShowDiagnostics] = useState(false)
+  const [showImport, setShowImport] = useState(false)
+  const activeCommunity = useActiveCommunity()
+  const channels = useChannelStore((state) => state.channels)
+  const backupReminderDue = useSettingsStore((state) => isBackupReminderDue(state.backup))
+  const settingsTriggerRef = useRef<HTMLButtonElement | null>(null)
+
+  const openSettings = (event: MouseEvent<HTMLButtonElement>) => {
+    settingsTriggerRef.current = event.currentTarget
+    setShowSettings(true)
+  }
+
+  const closeSettings = () => {
+    setShowSettings(false)
+    window.setTimeout(() => settingsTriggerRef.current?.focus(), 0)
+  }
 
   const openSecurity = () => {
     setShowSettings(false)
     setShowSecurity(true)
   }
 
+  const openDiagnostics = () => {
+    setShowSettings(false)
+    setShowDiagnostics(true)
+  }
+
+  const openImport = () => {
+    setShowSettings(false)
+    setShowImport(true)
+  }
+
   return (
     <>
-      <div className="flex h-[52px] flex-shrink-0 items-center gap-2 bg-[#232428] px-2">
+      <div className="flex h-user-panel flex-shrink-0 items-center gap-2 bg-surface-sunken px-2">
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left transition-colors hover:bg-bg-modifier-hover"
-          onClick={() => setShowSettings(true)}
+          onClick={openSettings}
           aria-label={`Open settings for ${identity.displayName}`}
         >
           <Avatar color={identity.avatarColor} size={32} name={identity.displayName} />
@@ -35,8 +77,8 @@ export function UserPanel() {
             <span className="block truncate text-sm font-medium leading-tight text-primary">
               {identity.displayName}
             </span>
-            <span className="block truncate text-[11px] leading-tight text-muted">
-              {matrixAccountId ?? 'Local identity'}
+            <span className="block truncate text-meta leading-tight text-muted">
+              {matrixAccountId ? 'Mesh account' : 'Local identity'}
             </span>
           </span>
         </button>
@@ -46,29 +88,86 @@ export function UserPanel() {
             type="button"
             className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary"
             aria-label="User settings"
-            onClick={() => setShowSettings(true)}
+            onClick={openSettings}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
+            <Icon name="settings" size="sm" />
           </button>
         </Tooltip>
       </div>
 
-      <UserSettingsPanel
+      <DialogErrorBoundary
         open={showSettings}
-        onClose={() => setShowSettings(false)}
-        identity={identity}
-        matrixAccountId={matrixAccountId}
-        matrixMode={matrixMode}
-        onUpdateDisplayName={async (displayName) => {
-          const profile = await bridge.matrixUpdateProfileDisplayName(displayName)
-          setIdentity(matrixProfileIdentity(profile))
-        }}
-        onOpenSecurity={openSecurity}
-      />
-      <SecurityDevicesPanel open={showSecurity} onClose={() => setShowSecurity(false)} />
+        onClose={closeSettings}
+        title="User Settings"
+      >
+        <UserSettingsPanel
+          open={showSettings}
+          onClose={closeSettings}
+          identity={identity}
+          matrixAccountId={matrixAccountId}
+          matrixMode={matrixMode}
+          onUpdateDisplayName={async (displayName) => {
+            const profile = await bridge.matrixUpdateProfileDisplayName(displayName)
+            setIdentity(matrixProfileIdentity(profile))
+          }}
+          onOpenSecurity={openSecurity}
+          backupReminderDue={backupReminderDue}
+          onOpenDiagnostics={openDiagnostics}
+          onOpenImport={openImport}
+          onTestNotification={async () => {
+            await bridge.sendTestNotification()
+            const notifications = useSettingsStore.getState().notifications
+            if (notifications.sound) {
+              bridge.playNotificationSound(notifications.soundId)
+            }
+          }}
+        />
+      </DialogErrorBoundary>
+      <DialogErrorBoundary
+        open={showSecurity}
+        onClose={() => setShowSecurity(false)}
+        title="Security & Devices"
+      >
+        <SecurityDevicesPanel open={showSecurity} onClose={() => setShowSecurity(false)} />
+      </DialogErrorBoundary>
+      <DialogErrorBoundary
+        open={showDiagnostics}
+        onClose={() => setShowDiagnostics(false)}
+        title="System diagnostics"
+      >
+        <Suspense fallback={<div role="status" aria-label="Loading diagnostics"><Spinner /></div>}>
+          <DiagnosticsPanel
+            open={showDiagnostics}
+            onClose={() => setShowDiagnostics(false)}
+            backendKind={matrixMode ? 'matrix' : 'legacy-p2p'}
+          />
+        </Suspense>
+      </DialogErrorBoundary>
+      <DialogErrorBoundary
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        title="Import older Mesh data"
+      >
+        <Modal
+          open={showImport}
+          onClose={() => setShowImport(false)}
+          title="Import older Mesh data"
+        >
+          <Suspense fallback={<div role="status" aria-label="Loading import tools"><Spinner /></div>}>
+            {activeCommunity ? (
+              <LegacyMigrationPanel
+                communityId={activeCommunity.id}
+                channels={channels}
+                canManage={activeCommunity.role === 'owner' || activeCommunity.role === 'admin'}
+              />
+            ) : (
+              <p className="text-sm text-content-secondary">
+                Choose a server before importing older Mesh data.
+              </p>
+            )}
+          </Suspense>
+        </Modal>
+      </DialogErrorBoundary>
     </>
   )
 }

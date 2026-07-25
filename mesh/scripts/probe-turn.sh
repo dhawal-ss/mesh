@@ -6,10 +6,8 @@
 # CLI. It's the fastest way for an operator to answer "is my TURN server
 # working?" without launching the full Mesh app.
 #
-# Usage:
-#   ./scripts/probe-turn.sh turn:turn.example.com:3478 alice hunter2
-#
-# Or with environment variables:
+# Prefer process-scoped environment variables so credentials do not appear in
+# shell history or process arguments:
 #   MESH_TURN_URL=turn:turn.example.com:3478 \
 #   MESH_TURN_USERNAME=alice \
 #   MESH_TURN_PASSWORD=hunter2 \
@@ -26,6 +24,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Allow positional args OR env vars
 if [ "$#" -ge 3 ]; then
+  echo "WARNING: positional TURN credentials may be retained in shell history. Prefer MESH_TURN_* environment variables." >&2
   export MESH_TURN_URL="$1"
   export MESH_TURN_USERNAME="$2"
   export MESH_TURN_PASSWORD="$3"
@@ -42,6 +41,16 @@ if [ -z "${MESH_TURN_URL:-}" ] || [ -z "${MESH_TURN_USERNAME:-}" ] || [ -z "${ME
   exit 1
 fi
 
+case "$MESH_TURN_URL" in
+  turns:*)
+    if [ "${MESH_TURN_EXPECT:-}" = "allocation_ok" ]; then
+      echo "The standalone probe cannot validate TLS or Allocate for turns: URLs." >&2
+      echo "Use turn: for the authenticated UDP Allocate probe, then prove TURN/TLS with a relay-only client call." >&2
+      exit 1
+    fi
+    ;;
+esac
+
 cd "$REPO_ROOT/src-tauri"
 
 echo "────────────────────────────────────────────────"
@@ -56,6 +65,7 @@ fi
 echo "────────────────────────────────────────────────"
 echo
 
+set +e
 cargo test \
   --no-default-features \
   --features legacy-p2p \
@@ -65,6 +75,7 @@ cargo test \
   -- --ignored --nocapture probes_real_turn_server_with_credentials
 
 exit_code=$?
+set -e
 echo
 if [ "$exit_code" -eq 0 ]; then
   echo "✓ Probe completed. Review the output above for outcome classification."

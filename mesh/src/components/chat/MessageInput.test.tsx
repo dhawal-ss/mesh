@@ -185,6 +185,27 @@ describe('MessageInput attachment UX', () => {
     expect(bridge.discardStagedAttachment).toHaveBeenCalledWith('token-1')
   })
 
+  it('opens the last message for editing with ArrowUp in an empty composer', async () => {
+    const onEditLastMessage = vi.fn()
+    await act(async () => {
+      root.render(
+        <MessageInput
+          channelId="!room:mesh.test"
+          channelName="general"
+          onSend={vi.fn()}
+          onEditLastMessage={onEditLastMessage}
+        />,
+      )
+    })
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement
+
+    await act(async () => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+    })
+
+    expect(onEditLastMessage).toHaveBeenCalledOnce()
+  })
+
   it('discards a slow clipboard copy instead of moving it into the next room', async () => {
     let finishStaging: ((value: {
       token: string

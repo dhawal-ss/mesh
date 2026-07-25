@@ -2,7 +2,9 @@
 
 use std::time::Duration;
 
-use mesh_lib::backend::{MatrixBackend, MatrixLogin, MeshBackend, UserPreferences};
+use mesh_lib::backend::{
+    MatrixBackend, MatrixLogin, MatrixRoomNotificationMode, MeshBackend, UserPreferences,
+};
 
 /// Two real Synapse homeservers, real federation, E2EE, offline catch-up, and
 /// same-device session restoration. Run through `npm run test:matrix-spike`.
@@ -18,11 +20,18 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
     let nonce = uuid::Uuid::new_v4().to_string();
     let alice_store = tempfile::tempdir().unwrap();
     let bob_store = tempfile::tempdir().unwrap();
+    let bob_stale_store = tempfile::tempdir().unwrap();
+    let charlie_store = tempfile::tempdir().unwrap();
     let alice_profile = format!("matrix-spike-alice-{nonce}");
     let bob_profile = format!("matrix-spike-bob-{nonce}");
+    let bob_stale_profile = format!("matrix-spike-bob-stale-{nonce}");
+    let charlie_profile = format!("matrix-spike-charlie-{nonce}");
 
     let alice = MatrixBackend::with_profile(alice_store.path().to_owned(), &alice_profile);
     let bob = MatrixBackend::with_profile(bob_store.path().to_owned(), &bob_profile);
+    let bob_stale =
+        MatrixBackend::with_profile(bob_stale_store.path().to_owned(), &bob_stale_profile);
+    let charlie = MatrixBackend::with_profile(charlie_store.path().to_owned(), &charlie_profile);
 
     alice
         .login(MatrixLogin {
@@ -45,6 +54,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
 
     let alice_user = "@alice:hs1.mesh.test".to_owned();
     let bob_user = "@bob:hs2.mesh.test".to_owned();
+    let charlie_user = "@charlie:hs1.mesh.test".to_owned();
     if alice.dm_blocked(bob_user.clone()).await.unwrap() {
         assert!(!alice.set_dm_blocked(bob_user.clone(), false).await.unwrap());
     }
@@ -63,6 +73,54 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
     let bob_dm = bob.ensure_dm(alice_user.clone()).await.unwrap();
     assert_eq!(bob_dm.id, alice_dm.id);
     checkpoint!("federated encrypted DM room discovered and joined");
+
+    bob_stale
+        .login(MatrixLogin {
+            homeserver: "http://localhost:8009".into(),
+            username: "bob".into(),
+            password: "mesh-bob".into(),
+            device_name: Some("Mesh spike Bob stale device".into()),
+        })
+        .await
+        .unwrap();
+    bob_stale.pause_sync().await;
+    charlie
+        .login(MatrixLogin {
+            homeserver: "http://localhost:8008".into(),
+            username: "charlie".into(),
+            password: "mesh-charlie".into(),
+            device_name: Some("Mesh spike Charlie".into()),
+        })
+        .await
+        .unwrap();
+
+    let bob_charlie_dm = bob.ensure_dm(charlie_user.clone()).await.unwrap();
+    let stale_created_dm = bob_stale.ensure_dm(charlie_user.clone()).await.unwrap();
+    bob.sync_once().await.unwrap();
+    bob_stale.sync_once().await.unwrap();
+
+    let bob_after_stale_write = bob.dm_conversations().await.unwrap();
+    assert!(
+        bob_after_stale_write
+            .iter()
+            .any(|conversation| conversation.id == bob_charlie_dm.id),
+        "a stale device erased the valid Charlie DM mapping"
+    );
+    let stale_after_reconciliation = bob_stale.dm_conversations().await.unwrap();
+    assert!(
+        stale_after_reconciliation
+            .iter()
+            .any(|conversation| conversation.id == bob_charlie_dm.id),
+        "the stale device did not receive the preserved Charlie DM mapping"
+    );
+
+    let canonical_dm = bob.ensure_dm(charlie_user.clone()).await.unwrap();
+    let expected_canonical = [bob_charlie_dm.id, stale_created_dm.id]
+        .into_iter()
+        .min()
+        .unwrap();
+    assert_eq!(canonical_dm.id, expected_canonical);
+    checkpoint!("stale-device m.direct write preserved and reconciled every valid mapping");
 
     let dm_body = format!("dm-online-{nonce}");
     let dm_message = alice
@@ -620,8 +678,25 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
             schema_version: 0,
             notifications_enabled: false,
             notification_sound: true,
+            notification_sound_id: Some("mesh".into()),
+            do_not_disturb: true,
+            quiet_hours_enabled: true,
+            quiet_hours_start: Some("22:00".into()),
+            quiet_hours_end: Some("07:00".into()),
             muted_channels: vec![community.channel_id.clone(), community.channel_id.clone()],
             muted_communities: vec![community.space_id.clone()],
+            muted_channel_until: std::collections::HashMap::from([(
+                community.channel_id.clone(),
+                None,
+            )]),
+            muted_community_until: std::collections::HashMap::from([(
+                community.space_id.clone(),
+                Some("2026-07-26T00:00:00Z".into()),
+            )]),
+            channel_notification_levels: std::collections::HashMap::from([(
+                community.channel_id.clone(),
+                MatrixRoomNotificationMode::Mentions,
+            )]),
             updated_at: String::new(),
         })
         .await
@@ -678,5 +753,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
 
     alice.logout().await.unwrap();
     restored.logout().await.unwrap();
+    bob_stale.logout().await.unwrap();
+    charlie.logout().await.unwrap();
     bob_second.logout().await.unwrap();
 }

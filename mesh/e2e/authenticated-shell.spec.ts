@@ -35,6 +35,14 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
       role: 'owner',
       joinedAt: '2026-07-24T00:00:00.000Z',
     }
+    const secondCommunity = {
+      id: '!mesh-e2e-two:mesh.test',
+      name: 'Second Test Community',
+      description: 'Inactive unread fixture',
+      memberCount: 3,
+      role: 'member',
+      joinedAt: '2026-07-24T00:00:00.000Z',
+    }
     const channels = [
       {
         id: '!general:mesh.test',
@@ -49,6 +57,22 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
         name: 'random',
         channelType: 'text',
         unreadCount: 1,
+      },
+      {
+        id: '!lounge:mesh.test',
+        communityId: community.id,
+        name: 'Lounge',
+        channelType: 'voice',
+        unreadCount: 0,
+      },
+    ]
+    const secondCommunityChannels = [
+      {
+        id: '!updates:mesh.test',
+        communityId: secondCommunity.id,
+        name: 'updates',
+        channelType: 'text',
+        unreadCount: 3,
       },
     ]
     const matrixProfile = {
@@ -78,6 +102,25 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
       args: Record<string, unknown>,
     ): unknown | Promise<unknown> => {
       switch (command) {
+        case 'set_notification_context':
+        case 'matrix_set_room_notification_mode':
+        case 'send_test_notification':
+          return null
+        case 'matrix_get_room_notification_mode':
+          return 'all'
+        case 'matrix_rtc_members':
+          return args.roomId === '!lounge:mesh.test'
+            ? [
+                {
+                  roomId: '!lounge:mesh.test',
+                  userId: '@bob:mesh.test',
+                  deviceId: 'BOB-E2E',
+                  sessionId: 'bob-session',
+                  displayName: 'Bob',
+                  avatarUrl: null,
+                },
+              ]
+            : []
         case 'get_backend_status':
           return {
             kind: 'matrix',
@@ -112,14 +155,16 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
             warnings: [],
           }
         case 'matrix_list_communities':
-          return [community]
+          return [community, secondCommunity]
         case 'matrix_get_profile':
           return matrixProfile
         case 'matrix_update_profile_display_name':
           matrixProfile.displayName = String(args.displayName)
           return { ...matrixProfile }
         case 'matrix_list_channels':
-          return channels
+          return args.communityId === secondCommunity.id
+            ? secondCommunityChannels
+            : channels
         case 'matrix_list_members':
           return [
             {
@@ -238,7 +283,7 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
 async function openAuthenticatedShell(page: Page): Promise<void> {
   await installAuthenticatedMatrixMock(page)
   await page.goto('/')
-  await expect(page.getByRole('navigation', { name: 'Communities and DMs' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'Servers and DMs' })).toBeVisible()
   await expect(page.getByRole('log', { name: 'Messages in #general' })).toBeVisible()
 }
 
@@ -254,16 +299,20 @@ test.describe('authenticated desktop shell', () => {
   test('exposes communities, channels, and the signed-in Matrix identity', async ({ page }) => {
     await openAuthenticatedShell(page)
 
-    await expect(page.locator('button[aria-label="Mesh Test Community"]')).toHaveAttribute(
+    await expect(page.locator('button[aria-label^="Mesh Test Community"]')).toHaveAttribute(
       'aria-current',
       'true',
     )
+    await expect(
+      page.getByRole('button', { name: 'Second Test Community, 3 unread' }),
+    ).toBeVisible()
     await expect(page.getByRole('complementary', { name: 'Channel list' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Text channel: general' })).toHaveAttribute(
       'aria-current',
       'page',
     )
-    await expect(page.getByText('@alice:mesh.test', { exact: true })).toBeVisible()
+    await expect(page.getByText('Mesh account', { exact: true })).toBeVisible()
+    await expect(page.getByText('@alice:mesh.test', { exact: true })).toHaveCount(0)
     await expect(page.getByText('Alice Mesh', { exact: true })).toBeVisible()
     await expect(page.getByText('Anonymous', { exact: true })).toHaveCount(0)
   })
@@ -299,7 +348,7 @@ test.describe('authenticated desktop shell', () => {
 
     const dialog = page.getByRole('dialog', { name: 'User Settings' })
     await expect(dialog).toBeVisible()
-    await expect(dialog.getByText('@alice:mesh.test', { exact: true })).toBeVisible()
+    await expect(dialog.getByText('Mesh account', { exact: true })).toBeVisible()
 
     await dialog.getByRole('textbox', { name: 'Display name' }).fill('Alice Updated')
     await dialog.getByRole('button', { name: 'Save display name' }).click()
@@ -315,6 +364,62 @@ test.describe('authenticated desktop shell', () => {
       command: 'matrix_update_profile_display_name',
       args: { displayName: 'Alice Updated' },
     })
+  })
+
+  test('changes channel notification rules and marks unread state from the context menu', async ({ page }) => {
+    await openAuthenticatedShell(page)
+
+    const randomChannel = page.getByRole('button', {
+      name: 'Text channel: random, 1 unread',
+    })
+    await randomChannel.click({ button: 'right' })
+    const menu = page.getByRole('menu', { name: 'Actions for random' })
+    await expect(menu.getByRole('menuitem', { name: 'Mute for 15 minutes' })).toBeVisible()
+    await menu
+      .getByRole('menuitem', { name: 'Notifications: Only @mentions' })
+      .click()
+
+    await expect.poll(async () => ipcCalls(page)).toContainEqual({
+      command: 'matrix_set_room_notification_mode',
+      args: {
+        roomId: '!random:mesh.test',
+        mode: 'mentions',
+      },
+    })
+
+    await randomChannel.click({ button: 'right' })
+    await page
+      .getByRole('menu', { name: 'Actions for random' })
+      .getByRole('menuitem', { name: 'Mark as read' })
+      .click()
+
+    await expect.poll(async () => ipcCalls(page)).toContainEqual({
+      command: 'matrix_mark_read',
+      args: { roomId: '!random:mesh.test' },
+    })
+    await expect(
+      page.getByRole('button', { name: 'Text channel: random' }),
+    ).toBeVisible()
+  })
+
+  test('shows MatrixRTC membership but never starts media while encryption is unverified', async ({ page }) => {
+    await openAuthenticatedShell(page)
+
+    await expect(page.getByLabel('Lounge call members').getByText('Bob')).toBeVisible()
+    await page.getByRole('button', { name: 'Voice channel: Lounge' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Calling is not ready yet' })).toBeVisible()
+    await expect(
+      page.getByText('Your microphone, camera, and screen stay off until every safety check passes.'),
+    ).toBeVisible()
+
+    const calls = await ipcCalls(page)
+    expect(calls).toContainEqual({
+      command: 'matrix_rtc_members',
+      args: { roomId: '!lounge:mesh.test' },
+    })
+    expect(calls.some((call) => call.command === 'matrix_rtc_join')).toBe(false)
+    expect(calls.some((call) => call.command === 'matrix_rtc_leave')).toBe(false)
   })
 })
 
@@ -355,7 +460,7 @@ test.describe('authenticated narrow shell', () => {
     await openAuthenticatedShell(page)
 
     await page.getByRole('button', { name: 'Channels', exact: true }).click()
-    await expect(page.getByText('@alice:mesh.test', { exact: true })).toBeVisible()
+    await expect(page.getByText('Mesh account', { exact: true })).toBeVisible()
     await expect(page.getByText('Anonymous', { exact: true })).toHaveCount(0)
 
     await page.getByRole('button', { name: 'User settings' }).click()

@@ -13,24 +13,248 @@ export interface NotificationPreferences {
   enabled: boolean
   /** Whether notification sounds are enabled */
   sound: boolean
+  /** The built-in sound played for message notifications. */
+  soundId: NotificationSoundId
+  /** Suppress all notification surfaces until explicitly disabled. */
+  doNotDisturb: boolean
+  /** Daily local-time window in which notification surfaces are suppressed. */
+  quietHours: QuietHoursPreferences
   /** List of channel IDs where notifications are muted */
   mutedChannels: string[]
   /** List of community IDs where notifications are muted */
   mutedCommunities: string[]
+  /** ISO expiry for each muted channel; null means muted until turned back on. */
+  channelMuteUntil: Record<string, string | null>
+  /** ISO expiry for each muted community; null means muted until turned back on. */
+  communityMuteUntil: Record<string, string | null>
+  /** Optimistic mirror of authoritative Matrix room push-rule modes. */
+  channelNotificationLevels: Record<string, NotificationLevel>
+}
+
+export type NotificationSoundId = 'mesh' | 'chime' | 'pulse' | 'soft'
+export type NotificationLevel = 'all' | 'mentions' | 'nothing'
+
+export interface QuietHoursPreferences {
+  enabled: boolean
+  /** Local wall-clock time in HH:mm format. */
+  start: string
+  /** Local wall-clock time in HH:mm format. */
+  end: string
+}
+
+export type AppearanceTheme = 'dark' | 'light' | 'high-contrast'
+export type AppearanceDensity = 'default' | 'compact' | 'comfortable'
+export type AppearanceAccent = 'sand' | 'ocean' | 'violet' | 'forest' | 'ember' | 'rose'
+
+export interface AppearancePreferences {
+  theme: AppearanceTheme
+  density: AppearanceDensity
+  accent: AppearanceAccent
+}
+
+export interface BackupPreferences {
+  configured: boolean
+  reminderPending: boolean
+  dismissedAt: string | null
 }
 
 const PREFERENCES_SCHEMA_VERSION = 1
 const MATRIX_SAVE_DEBOUNCE_MS = 350
+const BACKUP_REMINDER_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000
+const DEFAULT_APPEARANCE: AppearancePreferences = {
+  theme: 'dark',
+  density: 'default',
+  accent: 'sand',
+}
+const DEFAULT_NOTIFICATIONS: NotificationPreferences = {
+  enabled: true,
+  sound: true,
+  soundId: 'mesh',
+  doNotDisturb: false,
+  quietHours: {
+    enabled: false,
+    start: '22:00',
+    end: '08:00',
+  },
+  mutedChannels: [],
+  mutedCommunities: [],
+  channelMuteUntil: {},
+  communityMuteUntil: {},
+  channelNotificationLevels: {},
+}
+
+const APPEARANCE_THEMES = new Set<AppearanceTheme>(['dark', 'light', 'high-contrast'])
+const APPEARANCE_DENSITIES = new Set<AppearanceDensity>([
+  'default',
+  'compact',
+  'comfortable',
+])
+const APPEARANCE_ACCENTS = new Set<AppearanceAccent>([
+  'sand',
+  'ocean',
+  'violet',
+  'forest',
+  'ember',
+  'rose',
+])
+const NOTIFICATION_SOUNDS = new Set<NotificationSoundId>(['mesh', 'chime', 'pulse', 'soft'])
+const NOTIFICATION_LEVELS = new Set<NotificationLevel>(['all', 'mentions', 'nothing'])
+const WALL_CLOCK_TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/
+
+type ExtendedMatrixUserPreferences = MatrixUserPreferences & {
+  notificationSoundId?: NotificationSoundId
+  doNotDisturb?: boolean
+  quietHoursEnabled?: boolean
+  quietHoursStart?: string
+  quietHoursEnd?: string
+  mutedChannelUntil?: Record<string, string | null>
+  mutedCommunityUntil?: Record<string, string | null>
+  channelNotificationLevels?: Record<string, NotificationLevel>
+}
+
+function normalizeWallClockTime(value: unknown, fallback: string): string {
+  return typeof value === 'string' && WALL_CLOCK_TIME.test(value) ? value : fallback
+}
+
+function normalizeMuteExpirations(
+  mutedIds: unknown,
+  expirations: unknown,
+  now = Date.now(),
+): { ids: string[]; until: Record<string, string | null> } {
+  const legacyIds = Array.isArray(mutedIds)
+    ? mutedIds.filter((id): id is string => typeof id === 'string' && id.length > 0)
+    : []
+  const rawExpirations =
+    expirations && typeof expirations === 'object'
+      ? (expirations as Record<string, unknown>)
+      : {}
+  const ids = new Set([...legacyIds, ...Object.keys(rawExpirations)])
+  const activeIds: string[] = []
+  const until: Record<string, string | null> = {}
+
+  for (const id of ids) {
+    const rawExpiry = rawExpirations[id]
+    // A legacy muted id without an expiry remains muted until turned back on.
+    if (rawExpiry == null) {
+      if (legacyIds.includes(id) || Object.prototype.hasOwnProperty.call(rawExpirations, id)) {
+        activeIds.push(id)
+        until[id] = null
+      }
+      continue
+    }
+    if (typeof rawExpiry !== 'string') continue
+    const expiry = Date.parse(rawExpiry)
+    if (!Number.isFinite(expiry) || expiry <= now) continue
+    activeIds.push(id)
+    until[id] = new Date(expiry).toISOString()
+  }
+
+  return { ids: [...new Set(activeIds)], until }
+}
+
+function normalizeNotificationLevels(value: unknown): Record<string, NotificationLevel> {
+  if (!value || typeof value !== 'object') return {}
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(
+      (entry): entry is [string, NotificationLevel] =>
+        entry[0].length > 0 &&
+        typeof entry[1] === 'string' &&
+        NOTIFICATION_LEVELS.has(entry[1] as NotificationLevel),
+    ),
+  )
+}
+
+export function normalizeNotificationPreferences(
+  preferences: Partial<NotificationPreferences> | undefined,
+  now = Date.now(),
+): NotificationPreferences {
+  const channels = normalizeMuteExpirations(
+    preferences?.mutedChannels,
+    preferences?.channelMuteUntil,
+    now,
+  )
+  const communities = normalizeMuteExpirations(
+    preferences?.mutedCommunities,
+    preferences?.communityMuteUntil,
+    now,
+  )
+
+  return {
+    enabled: preferences?.enabled ?? DEFAULT_NOTIFICATIONS.enabled,
+    sound: preferences?.sound ?? DEFAULT_NOTIFICATIONS.sound,
+    soundId:
+      preferences?.soundId && NOTIFICATION_SOUNDS.has(preferences.soundId)
+        ? preferences.soundId
+        : DEFAULT_NOTIFICATIONS.soundId,
+    doNotDisturb: preferences?.doNotDisturb ?? DEFAULT_NOTIFICATIONS.doNotDisturb,
+    quietHours: {
+      enabled: preferences?.quietHours?.enabled ?? DEFAULT_NOTIFICATIONS.quietHours.enabled,
+      start: normalizeWallClockTime(
+        preferences?.quietHours?.start,
+        DEFAULT_NOTIFICATIONS.quietHours.start,
+      ),
+      end: normalizeWallClockTime(
+        preferences?.quietHours?.end,
+        DEFAULT_NOTIFICATIONS.quietHours.end,
+      ),
+    },
+    mutedChannels: channels.ids,
+    mutedCommunities: communities.ids,
+    channelMuteUntil: channels.until,
+    communityMuteUntil: communities.until,
+    channelNotificationLevels: normalizeNotificationLevels(
+      preferences?.channelNotificationLevels,
+    ),
+  }
+}
+
+function normalizeAppearancePreferences(
+  preferences: Partial<AppearancePreferences> | undefined,
+): AppearancePreferences {
+  return {
+    theme:
+      preferences?.theme && APPEARANCE_THEMES.has(preferences.theme)
+        ? preferences.theme
+        : DEFAULT_APPEARANCE.theme,
+    density:
+      preferences?.density && APPEARANCE_DENSITIES.has(preferences.density)
+        ? preferences.density
+        : DEFAULT_APPEARANCE.density,
+    accent:
+      preferences?.accent && APPEARANCE_ACCENTS.has(preferences.accent)
+        ? preferences.accent
+        : DEFAULT_APPEARANCE.accent,
+  }
+}
+
+export function applyAppearancePreferences(preferences: AppearancePreferences): void {
+  if (typeof document === 'undefined') return
+  const root = document.documentElement
+  root.dataset.theme = preferences.theme
+  root.dataset.density = preferences.density
+  root.dataset.accent = preferences.accent
+}
 
 export function matrixPreferencesToNotifications(
   preferences: MatrixUserPreferences,
 ): NotificationPreferences {
-  return {
+  const extended = preferences as ExtendedMatrixUserPreferences
+  return normalizeNotificationPreferences({
     enabled: preferences.notificationsEnabled,
     sound: preferences.notificationSound,
-    mutedChannels: [...new Set(preferences.mutedChannels)],
-    mutedCommunities: [...new Set(preferences.mutedCommunities)],
-  }
+    soundId: extended.notificationSoundId,
+    doNotDisturb: extended.doNotDisturb,
+    quietHours: {
+      enabled: extended.quietHoursEnabled ?? false,
+      start: extended.quietHoursStart ?? DEFAULT_NOTIFICATIONS.quietHours.start,
+      end: extended.quietHoursEnd ?? DEFAULT_NOTIFICATIONS.quietHours.end,
+    },
+    mutedChannels: preferences.mutedChannels,
+    mutedCommunities: preferences.mutedCommunities,
+    channelMuteUntil: extended.mutedChannelUntil,
+    communityMuteUntil: extended.mutedCommunityUntil,
+    channelNotificationLevels: extended.channelNotificationLevels,
+  })
 }
 
 function notificationsToMatrixPreferences(notifications: NotificationPreferences) {
@@ -40,31 +264,125 @@ function notificationsToMatrixPreferences(notifications: NotificationPreferences
     notificationSound: notifications.sound,
     mutedChannels: [...new Set(notifications.mutedChannels)],
     mutedCommunities: [...new Set(notifications.mutedCommunities)],
+    notificationSoundId: notifications.soundId,
+    doNotDisturb: notifications.doNotDisturb,
+    quietHoursEnabled: notifications.quietHours.enabled,
+    quietHoursStart: notifications.quietHours.start,
+    quietHoursEnd: notifications.quietHours.end,
+    mutedChannelUntil: notifications.channelMuteUntil,
+    mutedCommunityUntil: notifications.communityMuteUntil,
+    channelNotificationLevels: notifications.channelNotificationLevels,
   }
 }
 
-interface SettingsStore {
+export interface SettingsStore {
   notifications: NotificationPreferences
+  appearance: AppearancePreferences
+  backup: BackupPreferences
   setNotificationsEnabled: (enabled: boolean) => void
   setNotificationSound: (sound: boolean) => void
+  setNotificationSoundId: (soundId: NotificationSoundId) => void
+  setDoNotDisturb: (enabled: boolean) => void
+  setQuietHoursEnabled: (enabled: boolean) => void
+  setQuietHours: (start: string, end: string) => void
+  setAppearanceTheme: (theme: AppearanceTheme) => void
+  setAppearanceDensity: (density: AppearanceDensity) => void
+  setAppearanceAccent: (accent: AppearanceAccent) => void
+  setBackupConfigured: (configured: boolean) => void
+  scheduleBackupReminder: () => void
+  dismissBackupReminder: () => void
+  muteChannelFor: (channelId: string, durationMs: number | null) => void
   muteChannel: (channelId: string) => void
   unmuteChannel: (channelId: string) => void
   toggleChannelMute: (channelId: string) => void
-  isChannelMuted: (channelId: string) => boolean
+  isChannelMuted: (channelId: string, now?: number) => boolean
+  setChannelNotificationLevel: (channelId: string, level: NotificationLevel) => void
+  getChannelNotificationLevel: (channelId: string) => NotificationLevel
+  muteCommunityFor: (communityId: string, durationMs: number | null) => void
   muteCommunity: (communityId: string) => void
   unmuteCommunity: (communityId: string) => void
   toggleCommunityMute: (communityId: string) => void
-  isCommunityMuted: (communityId: string) => boolean
+  isCommunityMuted: (communityId: string, now?: number) => boolean
+}
+
+function muteUntil(durationMs: number | null, now = Date.now()): string | null {
+  if (durationMs == null) return null
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    throw new RangeError('Mute duration must be a positive number of milliseconds or null.')
+  }
+  return new Date(now + durationMs).toISOString()
+}
+
+function hasActiveMute(
+  id: string,
+  mutedIds: string[],
+  expirations: Record<string, string | null>,
+  now = Date.now(),
+): boolean {
+  if (!mutedIds.includes(id)) return false
+  const expiry = expirations[id]
+  if (expiry == null) return true
+  const expiryTime = Date.parse(expiry)
+  return Number.isFinite(expiryTime) && expiryTime > now
+}
+
+function wallClockMinutes(value: string): number {
+  const [hours, minutes] = value.split(':').map(Number)
+  return hours * 60 + minutes
+}
+
+export function isQuietHoursActive(
+  quietHours: QuietHoursPreferences,
+  now = new Date(),
+): boolean {
+  if (!quietHours.enabled) return false
+  const start = wallClockMinutes(quietHours.start)
+  const end = wallClockMinutes(quietHours.end)
+  const current = now.getHours() * 60 + now.getMinutes()
+  if (start === end) return true
+  return start < end
+    ? current >= start && current < end
+    : current >= start || current < end
+}
+
+export function getEffectiveChannelNotificationLevel(
+  notifications: NotificationPreferences,
+  channelId: string,
+  communityId?: string | null,
+  now = new Date(),
+): NotificationLevel {
+  if (
+    !notifications.enabled ||
+    notifications.doNotDisturb ||
+    isQuietHoursActive(notifications.quietHours, now) ||
+    hasActiveMute(
+      channelId,
+      notifications.mutedChannels,
+      notifications.channelMuteUntil,
+      now.getTime(),
+    ) ||
+    (communityId != null &&
+      hasActiveMute(
+        communityId,
+        notifications.mutedCommunities,
+        notifications.communityMuteUntil,
+        now.getTime(),
+      ))
+  ) {
+    return 'nothing'
+  }
+  return notifications.channelNotificationLevels[channelId] ?? 'all'
 }
 
 export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set, get) => ({
-      notifications: {
-        enabled: true,
-        sound: true,
-        mutedChannels: [],
-        mutedCommunities: [],
+      notifications: DEFAULT_NOTIFICATIONS,
+      appearance: DEFAULT_APPEARANCE,
+      backup: {
+        configured: false,
+        reminderPending: false,
+        dismissedAt: null,
       },
 
       setNotificationsEnabled: (enabled) =>
@@ -77,74 +395,246 @@ export const useSettingsStore = create<SettingsStore>()(
           notifications: { ...state.notifications, sound },
         })),
 
-      muteChannel: (channelId) =>
+      setNotificationSoundId: (soundId) =>
+        set((state) => ({
+          notifications: { ...state.notifications, soundId },
+        })),
+
+      setDoNotDisturb: (doNotDisturb) =>
+        set((state) => ({
+          notifications: { ...state.notifications, doNotDisturb },
+        })),
+
+      setQuietHoursEnabled: (enabled) =>
+        set((state) => ({
+          notifications: {
+            ...state.notifications,
+            quietHours: { ...state.notifications.quietHours, enabled },
+          },
+        })),
+
+      setQuietHours: (start, end) => {
+        if (!WALL_CLOCK_TIME.test(start) || !WALL_CLOCK_TIME.test(end)) {
+          throw new RangeError('Quiet hours must use 24-hour HH:mm values.')
+        }
+        set((state) => ({
+          notifications: {
+            ...state.notifications,
+            quietHours: { ...state.notifications.quietHours, start, end },
+          },
+        }))
+      },
+
+      setAppearanceTheme: (theme) => {
+        const appearance = { ...get().appearance, theme }
+        set({ appearance })
+        applyAppearancePreferences(appearance)
+      },
+
+      setAppearanceDensity: (density) => {
+        const appearance = { ...get().appearance, density }
+        set({ appearance })
+        applyAppearancePreferences(appearance)
+      },
+
+      setAppearanceAccent: (accent) => {
+        const appearance = { ...get().appearance, accent }
+        set({ appearance })
+        applyAppearancePreferences(appearance)
+      },
+
+      setBackupConfigured: (configured) =>
+        set({
+          backup: {
+            configured,
+            reminderPending: !configured,
+            dismissedAt: null,
+          },
+        }),
+
+      scheduleBackupReminder: () =>
+        set({
+          backup: {
+            configured: false,
+            reminderPending: true,
+            dismissedAt: null,
+          },
+        }),
+
+      dismissBackupReminder: () =>
+        set((state) => ({
+          backup: {
+            ...state.backup,
+            dismissedAt: new Date().toISOString(),
+          },
+        })),
+
+      muteChannelFor: (channelId, durationMs) =>
         set((state) => {
-          if (state.notifications.mutedChannels.includes(channelId)) return state
+          const expiry = muteUntil(durationMs)
           return {
             notifications: {
               ...state.notifications,
-              mutedChannels: [...state.notifications.mutedChannels, channelId],
+              mutedChannels: [
+                ...state.notifications.mutedChannels.filter((id) => id !== channelId),
+                channelId,
+              ],
+              channelMuteUntil: {
+                ...state.notifications.channelMuteUntil,
+                [channelId]: expiry,
+              },
             },
           }
         }),
 
+      muteChannel: (channelId) => get().muteChannelFor(channelId, null),
+
       unmuteChannel: (channelId) =>
-        set((state) => ({
-          notifications: {
-            ...state.notifications,
-            mutedChannels: state.notifications.mutedChannels.filter((id) => id !== channelId),
-          },
-        })),
+        set((state) => {
+          const { [channelId]: _removed, ...channelMuteUntil } =
+            state.notifications.channelMuteUntil
+          return {
+            notifications: {
+              ...state.notifications,
+              mutedChannels: state.notifications.mutedChannels.filter((id) => id !== channelId),
+              channelMuteUntil,
+            },
+          }
+        }),
 
       toggleChannelMute: (channelId) => {
-        const { notifications } = get()
-        if (notifications.mutedChannels.includes(channelId)) {
+        if (get().isChannelMuted(channelId)) {
           get().unmuteChannel(channelId)
         } else {
           get().muteChannel(channelId)
         }
       },
 
-      isChannelMuted: (channelId) => get().notifications.mutedChannels.includes(channelId),
+      isChannelMuted: (channelId, now) => {
+        const { notifications } = get()
+        return hasActiveMute(
+          channelId,
+          notifications.mutedChannels,
+          notifications.channelMuteUntil,
+          now,
+        )
+      },
 
-      muteCommunity: (communityId) =>
+      setChannelNotificationLevel: (channelId, level) =>
         set((state) => {
-          if (state.notifications.mutedCommunities.includes(communityId)) return state
+          const channelNotificationLevels = { ...state.notifications.channelNotificationLevels }
+          if (level === 'all') {
+            delete channelNotificationLevels[channelId]
+          } else {
+            channelNotificationLevels[channelId] = level
+          }
           return {
             notifications: {
               ...state.notifications,
-              mutedCommunities: [...state.notifications.mutedCommunities, communityId],
+              channelNotificationLevels,
             },
           }
         }),
 
+      getChannelNotificationLevel: (channelId) =>
+        get().notifications.channelNotificationLevels[channelId] ?? 'all',
+
+      muteCommunityFor: (communityId, durationMs) =>
+        set((state) => {
+          const expiry = muteUntil(durationMs)
+          return {
+            notifications: {
+              ...state.notifications,
+              mutedCommunities: [
+                ...state.notifications.mutedCommunities.filter((id) => id !== communityId),
+                communityId,
+              ],
+              communityMuteUntil: {
+                ...state.notifications.communityMuteUntil,
+                [communityId]: expiry,
+              },
+            },
+          }
+        }),
+
+      muteCommunity: (communityId) => get().muteCommunityFor(communityId, null),
+
       unmuteCommunity: (communityId) =>
-        set((state) => ({
-          notifications: {
-            ...state.notifications,
-            mutedCommunities: state.notifications.mutedCommunities.filter((id) => id !== communityId),
-          },
-        })),
+        set((state) => {
+          const { [communityId]: _removed, ...communityMuteUntil } =
+            state.notifications.communityMuteUntil
+          return {
+            notifications: {
+              ...state.notifications,
+              mutedCommunities: state.notifications.mutedCommunities.filter(
+                (id) => id !== communityId,
+              ),
+              communityMuteUntil,
+            },
+          }
+        }),
 
       toggleCommunityMute: (communityId) => {
-        const { notifications } = get()
-        if (notifications.mutedCommunities.includes(communityId)) {
+        if (get().isCommunityMuted(communityId)) {
           get().unmuteCommunity(communityId)
         } else {
           get().muteCommunity(communityId)
         }
       },
 
-      isCommunityMuted: (communityId) => get().notifications.mutedCommunities.includes(communityId),
+      isCommunityMuted: (communityId, now) => {
+        const { notifications } = get()
+        return hasActiveMute(
+          communityId,
+          notifications.mutedCommunities,
+          notifications.communityMuteUntil,
+          now,
+        )
+      },
     }),
     {
       name: 'mesh-settings',
       partialize: (state) => ({
         notifications: state.notifications,
+        // Appearance stays device-local. MatrixUserPreferences intentionally
+        // contains notification fields only, so visual choices never sync.
+        appearance: state.appearance,
+        backup: state.backup,
       }),
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState ?? {}) as Partial<SettingsStore>
+        return {
+          ...currentState,
+          ...persisted,
+          notifications: normalizeNotificationPreferences(persisted.notifications),
+          appearance: normalizeAppearancePreferences(persisted.appearance),
+          backup: {
+            configured: persisted.backup?.configured ?? false,
+            reminderPending: persisted.backup?.reminderPending ?? false,
+            dismissedAt: persisted.backup?.dismissedAt ?? null,
+          },
+        }
+      },
+      onRehydrateStorage: () => (state) => {
+        if (state) applyAppearancePreferences(state.appearance)
+      },
     },
   ),
 )
+
+export function isBackupReminderDue(
+  backup: BackupPreferences,
+  now = Date.now(),
+): boolean {
+  if (backup.configured || !backup.reminderPending) return false
+  if (!backup.dismissedAt) return true
+  const dismissedAt = Date.parse(backup.dismissedAt)
+  return !Number.isFinite(dismissedAt) || now - dismissedAt >= BACKUP_REMINDER_INTERVAL_MS
+}
+
+// Apply defaults immediately when storage is unavailable, and make the initial
+// paint deterministic before any settings UI mounts.
+applyAppearancePreferences(useSettingsStore.getState().appearance)
 
 // Sync muted channels to backend kv_store whenever they change
 // so the Rust desktop notification filter can check them.
@@ -155,6 +645,57 @@ let matrixRemoteReady = false
 let applyingRemotePreferences = false
 let localPreferenceRevision = 0
 let matrixSaveTimer: ReturnType<typeof setTimeout> | null = null
+let channelMuteTimers = new Map<string, ReturnType<typeof setTimeout>>()
+let communityMuteTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+function replaceMuteExpiryTimers(
+  expirations: Record<string, string | null>,
+  currentTimers: Map<string, ReturnType<typeof setTimeout>>,
+  isMuted: (id: string) => boolean,
+  unmute: (id: string) => void,
+): Map<string, ReturnType<typeof setTimeout>> {
+  for (const timer of currentTimers.values()) clearTimeout(timer)
+  const nextTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const now = Date.now()
+  for (const [id, expiry] of Object.entries(expirations)) {
+    if (expiry == null) continue
+    const expiryTime = Date.parse(expiry)
+    if (!Number.isFinite(expiryTime)) continue
+    const delay = Math.max(0, Math.min(expiryTime - now, 2_147_483_647))
+    nextTimers.set(
+      id,
+      setTimeout(() => {
+        if (isMuted(id)) {
+          // The platform timeout limit can be shorter than a persisted expiry.
+          if (expiryTime > Date.now()) {
+            // Any no-op state replacement goes through the subscriber and
+            // safely schedules the remaining interval.
+            const notifications = useSettingsStore.getState().notifications
+            useSettingsStore.setState({ notifications: { ...notifications } })
+          }
+          return
+        }
+        unmute(id)
+      }, delay),
+    )
+  }
+  return nextTimers
+}
+
+function scheduleMuteExpiryCleanup(notifications: NotificationPreferences) {
+  channelMuteTimers = replaceMuteExpiryTimers(
+    notifications.channelMuteUntil,
+    channelMuteTimers,
+    (id) => useSettingsStore.getState().isChannelMuted(id),
+    (id) => useSettingsStore.getState().unmuteChannel(id),
+  )
+  communityMuteTimers = replaceMuteExpiryTimers(
+    notifications.communityMuteUntil,
+    communityMuteTimers,
+    (id) => useSettingsStore.getState().isCommunityMuted(id),
+    (id) => useSettingsStore.getState().unmuteCommunity(id),
+  )
+}
 
 async function saveMatrixPreferences() {
   if (!matrixRemoteReady || !activeMatrixUserId || !isMatrixBackend()) return
@@ -196,7 +737,17 @@ export async function refreshMatrixPreferences(userId: string): Promise<void> {
 
   if (remote && !changedWhileFetching) {
     applyingRemotePreferences = true
-    useSettingsStore.setState({ notifications: matrixPreferencesToNotifications(remote) })
+    const channelNotificationLevels =
+      useSettingsStore.getState().notifications.channelNotificationLevels
+    useSettingsStore.setState({
+      notifications: {
+        ...matrixPreferencesToNotifications(remote),
+        // Matrix push rules are authoritative for per-room levels. The custom
+        // account-data mirror is only a migration fallback and must not
+        // overwrite a newer rule changed by another Matrix client.
+        channelNotificationLevels,
+      },
+    })
     applyingRemotePreferences = false
   }
 
@@ -215,9 +766,12 @@ useSettingsStore.subscribe((state) => {
 
   if (state.notifications !== prevNotifications) {
     prevNotifications = state.notifications
+    scheduleMuteExpiryCleanup(state.notifications)
     if (!applyingRemotePreferences) {
       localPreferenceRevision += 1
       scheduleMatrixPreferenceSave()
     }
   }
 })
+
+scheduleMuteExpiryCleanup(useSettingsStore.getState().notifications)

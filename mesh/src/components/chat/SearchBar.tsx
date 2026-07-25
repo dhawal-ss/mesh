@@ -4,10 +4,12 @@ import type { Message } from '../../types/ipc'
 import * as bridge from '../../lib/bridge'
 import { useCommunityStore } from '../../store/communities'
 import { useChannelStore } from '../../store/channels'
-import { format } from 'date-fns'
+import { formatFederatedTimestamp } from '../../lib/federated-time'
+import { variants } from '../../lib/motion'
+import { Icon } from '../ui/Icon'
 
 interface SearchBarProps {
-  onNavigateToMessage?: (channelId: string, messageId: string) => void
+  onNavigateToMessage: (message: Message) => void
 }
 
 export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
@@ -18,7 +20,6 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
-  const { setActiveChannel } = useChannelStore()
   const channels = useChannelStore((s) => s.channels)
 
   const performSearch = useCallback(
@@ -58,8 +59,7 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
   }, [])
 
   const handleResultClick = (message: Message) => {
-    setActiveChannel(message.channelId)
-    onNavigateToMessage?.(message.channelId, message.id)
+    onNavigateToMessage(message)
     setIsOpen(false)
     setQuery('')
     setResults([])
@@ -75,28 +75,23 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
         onClick={() => setIsOpen(!isOpen)}
         className="flex h-6 w-6 items-center justify-center rounded text-muted transition-colors hover:text-secondary"
         title="Search messages"
+        aria-label="Search messages"
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
+        <Icon name="search" size="sm" />
       </button>
 
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.1 }}
-            className="absolute right-0 top-full z-50 mt-1 w-96 overflow-hidden rounded-lg bg-bg-floating shadow-floating"
+            variants={variants.popover}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="absolute right-0 top-full z-dropdown mt-1 w-96 overflow-hidden rounded-lg bg-bg-floating shadow-floating"
           >
             {/* Search input */}
             <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="flex-shrink-0 text-muted">
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
+              <Icon name="search" size="sm" className="flex-shrink-0 text-muted" />
               <input
                 ref={inputRef}
                 type="text"
@@ -139,7 +134,7 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
                       in #{getChannelName(message.channelId)}
                     </span>
                     <span className="ml-auto text-xs text-muted">
-                      {format(new Date(message.timestamp), 'MMM d, HH:mm')}
+                      {formatFederatedTimestamp(message.timestamp, 'MMM d, HH:mm')}
                     </span>
                   </div>
                   <p className="truncate text-sm text-secondary">

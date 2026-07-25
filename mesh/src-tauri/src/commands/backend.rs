@@ -1,13 +1,18 @@
 //! Typed Tauri IPC for the backend boundary and Matrix architecture spike.
 
+use std::sync::Arc;
+
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 use crate::backend::{
     BackendError, BackendKind, BackendStatus, CommunityAccessResult, CommunityAccessSettings,
-    CommunityApplication, CommunityDirectoryEntry, CommunityMember, MatrixAccount, MatrixDevice,
-    MatrixLogin, MatrixOidcStatus, MatrixProfile, MatrixRecoveryHealth, MatrixVerificationSession,
-    TypingUser, UserPreferences,
+    CommunityApplication, CommunityDirectoryEntry, CommunityMember, MatrixAccount,
+    MatrixAttachmentSendRequest, MatrixDevice, MatrixLogin, MatrixOidcStatus, MatrixProfile,
+    MatrixRecoveryHealth, MatrixRoomNotificationMode, MatrixRtcJoinResult, MatrixRtcMediaKey,
+    MatrixRtcMediaKeyLease, MatrixRtcMember, MatrixTransferObserver,
+    MatrixTransferProgressCallback, MatrixVerificationSession, TypingUser, UserPreferences,
+    MATRIX_TRANSFER_PROGRESS_EVENT,
 };
 use crate::state::AppState;
 use crate::types::{
@@ -20,12 +25,28 @@ use super::{attachments::AttachmentGrantStore, error::CommandError};
 
 fn map_error(error: BackendError) -> CommandError {
     match error {
-        BackendError::NotAuthenticated => CommandError::Identity(error.to_string()),
+        BackendError::NotAuthenticated => CommandError::NotAuthenticated,
+        BackendError::Network(_) => CommandError::Network(error.to_string()),
+        BackendError::RateLimited(_) => CommandError::RateLimited,
+        BackendError::PermissionDenied(_) => CommandError::PermissionDenied(error.to_string()),
+        BackendError::NotFound(_) => CommandError::NotFound(error.to_string()),
+        BackendError::Crypto(_) => CommandError::Crypto(error.to_string()),
+        BackendError::Serialization(_) => CommandError::Serialization(error.to_string()),
+        BackendError::NotEncrypted(_) => CommandError::NotEncrypted(error.to_string()),
+        BackendError::DecryptionFailed(_) => CommandError::DecryptionFailed(error.to_string()),
+        BackendError::Cancelled(_) => CommandError::Cancelled(error.to_string()),
         BackendError::InvalidConfiguration(_) => CommandError::Validation(error.to_string()),
-        BackendError::Unsupported(_) => CommandError::Other(error.to_string()),
-        BackendError::Other(_) => CommandError::Network(error.to_string()),
-        BackendError::LoginCancelled => CommandError::Network(error.to_string()),
-        BackendError::LoginTimedOut(_) => CommandError::Network(error.to_string()),
+        BackendError::ManagedHomeserverUnconfigured => CommandError::ManagedHomeserverUnconfigured,
+        BackendError::UsernameUnavailable => CommandError::UsernameUnavailable,
+        BackendError::RegistrationTermsRequired => CommandError::RegistrationTermsRequired,
+        BackendError::RegistrationAdditionalAuthRequired => {
+            CommandError::RegistrationAdditionalAuthRequired
+        }
+        BackendError::RegistrationTimedOut(_) => CommandError::RegistrationTimedOut,
+        BackendError::Unsupported(_) => CommandError::Unsupported(error.to_string()),
+        BackendError::Other(_) => CommandError::Other(error.to_string()),
+        BackendError::LoginCancelled => CommandError::LoginCancelled,
+        BackendError::LoginTimedOut(_) => CommandError::LoginTimedOut,
     }
 }
 
@@ -36,6 +57,12 @@ fn require_matrix(state: &State<'_, AppState>) -> Result<(), CommandError> {
         ));
     }
     Ok(())
+}
+
+fn matrix_transfer_progress_emitter(app: AppHandle) -> MatrixTransferProgressCallback {
+    Arc::new(move |progress| {
+        let _ = app.emit(MATRIX_TRANSFER_PROGRESS_EVENT, progress);
+    })
 }
 
 #[derive(Serialize)]
@@ -51,6 +78,35 @@ pub async fn get_backend_status(state: State<'_, AppState>) -> Result<BackendSta
 }
 
 #[tauri::command]
+pub async fn matrix_get_room_notification_mode(
+    room_id: String,
+    state: State<'_, AppState>,
+) -> Result<MatrixRoomNotificationMode, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .matrix_room_notification_mode(room_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_set_room_notification_mode(
+    room_id: String,
+    mode: MatrixRoomNotificationMode,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .matrix_set_room_notification_mode(room_id, mode)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
 pub async fn matrix_login(
     request: MatrixLogin,
     state: State<'_, AppState>,
@@ -60,6 +116,35 @@ pub async fn matrix_login(
         .backend
         .backend()
         .login(request)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn register_account(
+    username: String,
+    password: String,
+    state: State<'_, AppState>,
+) -> Result<BackendStatus, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .register_account(username, password)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn check_username_available(
+    username: String,
+    state: State<'_, AppState>,
+) -> Result<bool, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .check_username_available(username)
         .await
         .map_err(map_error)
 }
@@ -413,6 +498,123 @@ pub async fn matrix_create_channel(
 }
 
 #[tauri::command]
+pub async fn matrix_rtc_join(
+    room_id: String,
+    state: State<'_, AppState>,
+) -> Result<MatrixRtcJoinResult, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .matrix_rtc_join(room_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_rtc_refresh_membership(
+    room_id: String,
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<MatrixRtcMember>, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .matrix_rtc_refresh_membership(room_id, session_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_rtc_ack_media_key_pause(
+    room_id: String,
+    session_id: String,
+    member_id: String,
+    activation_id: String,
+    state: State<'_, AppState>,
+) -> Result<MatrixRtcMediaKey, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .matrix_rtc_ack_media_key_pause(room_id, session_id, member_id, activation_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_rtc_ack_media_key(
+    room_id: String,
+    session_id: String,
+    member_id: String,
+    activation_id: String,
+    key_index: u8,
+    sent_ts: u64,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .matrix_rtc_ack_media_key(
+            room_id,
+            session_id,
+            member_id,
+            activation_id,
+            key_index,
+            sent_ts,
+        )
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_rtc_renew_media_key_lease(
+    room_id: String,
+    session_id: String,
+    member_id: String,
+    state: State<'_, AppState>,
+) -> Result<MatrixRtcMediaKeyLease, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .matrix_rtc_renew_media_key_lease(room_id, session_id, member_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_rtc_leave(
+    room_id: String,
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .matrix_rtc_leave(room_id, session_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_rtc_members(
+    room_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<MatrixRtcMember>, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .matrix_rtc_members(room_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
 pub async fn matrix_send_message(
     room_id: String,
     body: String,
@@ -429,11 +631,14 @@ pub async fn matrix_send_message(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn matrix_send_attachment(
     room_id: String,
     attachment_grant: String,
     body: String,
     reply_to_id: Option<String>,
+    transfer_id: String,
+    app: AppHandle,
     state: State<'_, AppState>,
     grants: State<'_, AttachmentGrantStore>,
 ) -> Result<MessageDto, CommandError> {
@@ -444,11 +649,17 @@ pub async fn matrix_send_attachment(
         .backend()
         .send_attachment(
             room_id,
-            claimed.path(),
-            claimed.filename(),
-            Some(claimed.content_type()),
-            body,
-            reply_to_id,
+            MatrixAttachmentSendRequest {
+                file_path: claimed.path(),
+                filename: claimed.filename(),
+                content_type: Some(claimed.content_type()),
+                body,
+                reply_to_id,
+            },
+            MatrixTransferObserver {
+                transfer_id,
+                progress: matrix_transfer_progress_emitter(app),
+            },
         )
         .await;
     match result {
@@ -461,15 +672,37 @@ pub async fn matrix_send_attachment(
 }
 
 #[tauri::command]
+pub async fn matrix_cancel_attachment_upload(
+    transfer_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .cancel_attachment_upload(transfer_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
 pub async fn matrix_download_attachment(
     attachment: AttachmentDto,
+    transfer_id: String,
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<String, CommandError> {
     require_matrix(&state)?;
     state
         .backend
         .backend()
-        .download_attachment(attachment)
+        .download_attachment(
+            attachment,
+            MatrixTransferObserver {
+                transfer_id,
+                progress: matrix_transfer_progress_emitter(app),
+            },
+        )
         .await
         .map_err(map_error)
 }
@@ -549,11 +782,14 @@ pub async fn matrix_send_dm(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn matrix_send_dm_attachment(
     recipient_user_id: String,
     attachment_grant: String,
     body: String,
     reply_to_id: Option<String>,
+    transfer_id: String,
+    app: AppHandle,
     state: State<'_, AppState>,
     grants: State<'_, AttachmentGrantStore>,
 ) -> Result<DirectMessageDto, CommandError> {
@@ -564,11 +800,17 @@ pub async fn matrix_send_dm_attachment(
         .backend()
         .send_dm_attachment(
             recipient_user_id,
-            claimed.path(),
-            claimed.filename(),
-            Some(claimed.content_type()),
-            body,
-            reply_to_id,
+            MatrixAttachmentSendRequest {
+                file_path: claimed.path(),
+                filename: claimed.filename(),
+                content_type: Some(claimed.content_type()),
+                body,
+                reply_to_id,
+            },
+            MatrixTransferObserver {
+                transfer_id,
+                progress: matrix_transfer_progress_emitter(app),
+            },
         )
         .await;
     match result {
@@ -778,14 +1020,14 @@ pub async fn matrix_list_members(
 #[tauri::command]
 pub async fn matrix_invite_to_community(
     community_id: String,
-    user_id: String,
+    username: String,
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
     state
         .backend
         .backend()
-        .invite_to_community(community_id, user_id)
+        .invite_to_community(community_id, username)
         .await
         .map_err(map_error)
 }

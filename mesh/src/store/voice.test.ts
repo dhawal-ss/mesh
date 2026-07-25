@@ -48,6 +48,15 @@ beforeEach(() => {
     lastReconnectReason: null,
     isMuted: false,
     isDeafened: false,
+    inputMode: 'voice-activity',
+    isPushToTalking: false,
+    isCameraEnabled: false,
+    isScreenSharing: false,
+    inputDeviceId: null,
+    outputDeviceId: null,
+    localAudioLevel: 0,
+    participantVolumes: {},
+    matrixRtcMembersByRoom: {},
   })
 })
 
@@ -100,6 +109,29 @@ describe('upsertPeer / mergePeerRecord', () => {
 
     const peers = useVoiceStore.getState().peers
     expect(peers[0].stream).toBeUndefined()
+  })
+
+  it('clears stale camera and screen streams from an authoritative peer snapshot', () => {
+    const cameraStream = {} as MediaStream
+    const screenShareStream = {} as MediaStream
+    const screenShareAudioStream = {} as MediaStream
+    useVoiceStore.getState().setPeers([
+      makePeer({
+        publicKey: 'pk-bob',
+        cameraStream,
+        screenShareStream,
+        screenShareAudioStream,
+      }),
+    ])
+
+    useVoiceStore.getState().setPeers([makePeer({ publicKey: 'pk-bob' })])
+
+    expect(useVoiceStore.getState().peers[0]).toMatchObject({
+      publicKey: 'pk-bob',
+      cameraStream: undefined,
+      screenShareStream: undefined,
+      screenShareAudioStream: undefined,
+    })
   })
 })
 
@@ -182,5 +214,76 @@ describe('resetVoiceState', () => {
     expect(state.peers).toHaveLength(0)
     expect(state.connectionState).toBe('idle')
     expect(state.lastReconnectReason).toBeNull()
+  })
+})
+
+describe('voice media controls', () => {
+  it('makes push-to-talk fail closed until the user is actively talking', () => {
+    useVoiceStore.getState().setInputMode('push-to-talk')
+
+    expect(useVoiceStore.getState()).toMatchObject({
+      inputMode: 'push-to-talk',
+      isMuted: true,
+      isPushToTalking: false,
+    })
+
+    useVoiceStore.getState().setPushToTalking(true)
+    useVoiceStore.getState().setMuted(false)
+
+    expect(useVoiceStore.getState()).toMatchObject({
+      isMuted: false,
+      isPushToTalking: true,
+    })
+  })
+
+  it('clamps meters and local participant volume to safe UI ranges', () => {
+    useVoiceStore.getState().setLocalAudioLevel(4)
+    useVoiceStore.getState().setParticipantVolume('pk-bob', -1)
+    useVoiceStore.getState().setParticipantVolume('pk-carol', 3)
+
+    expect(useVoiceStore.getState().localAudioLevel).toBe(1)
+    expect(useVoiceStore.getState().participantVolumes).toEqual({
+      'pk-bob': 0,
+      'pk-carol': 2,
+    })
+  })
+
+  it('replaces MatrixRTC membership authoritatively instead of accumulating stale devices', () => {
+    const roomId = '!voice:example.org'
+    useVoiceStore.getState().setMatrixRtcMembers(roomId, [
+      {
+        roomId,
+        userId: '@alice:example.org',
+        deviceId: 'ALICE',
+        sessionId: 'session-a',
+        displayName: 'Alice',
+        avatarUrl: null,
+      },
+      {
+        roomId,
+        userId: '@bob:example.org',
+        deviceId: 'BOB',
+        sessionId: 'session-b',
+        displayName: 'Bob',
+        avatarUrl: null,
+      },
+    ])
+    useVoiceStore.getState().setMatrixRtcMembers(roomId, [
+      {
+        roomId,
+        userId: '@alice:example.org',
+        deviceId: 'ALICE',
+        sessionId: 'session-a2',
+        displayName: 'Alice',
+        avatarUrl: null,
+      },
+    ])
+
+    expect(useVoiceStore.getState().matrixRtcMembersByRoom[roomId]).toEqual([
+      expect.objectContaining({ userId: '@alice:example.org', sessionId: 'session-a2' }),
+    ])
+
+    useVoiceStore.getState().setMatrixRtcMembers(roomId, [])
+    expect(useVoiceStore.getState().matrixRtcMembersByRoom[roomId]).toBeUndefined()
   })
 })

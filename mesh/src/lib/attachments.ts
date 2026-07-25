@@ -39,6 +39,7 @@ export function stagedFileFromGrant(grant: bridge.NativeAttachmentGrant): Staged
     path: grant.legacyPath,
     contentType: grant.contentType,
     source: 'native',
+    transferId: bridge.createMatrixTransferId(),
   }
 }
 
@@ -73,6 +74,7 @@ export async function stageWebFile(file: File): Promise<StagedFile> {
     contentType: staged.contentType,
     source: 'temporary',
     stagingToken: staged.token,
+    transferId: bridge.createMatrixTransferId(),
   }
 }
 

@@ -7,6 +7,7 @@ import { getMembers, isMatrixBackend, onControlEvent, requestControlLogSync } fr
 import type { Channel } from '../types/ipc'
 import type { ControlEventData } from '../lib/bridge'
 import type { MemberRecord } from '../store/membership'
+import { registerPoll } from '../lib/scheduler'
 
 /**
  * Community sync hook for the authoritative signed control-log model.
@@ -65,13 +66,19 @@ export function useCommunitySync() {
           })
         } catch (error) {
           console.error('Failed to refresh Matrix member roster:', error)
+          throw error
         }
       }
-      void refreshMatrixRoster()
-      const interval = window.setInterval(() => void refreshMatrixRoster(), 5000)
+      const unregisterPoll = registerPoll({
+        key: `matrix-roster:${communityId}`,
+        intervalMs: 5_000,
+        run: refreshMatrixRoster,
+        pauseWhenHidden: true,
+        backoffOnError: true,
+      })
       return () => {
         cancelled = true
-        window.clearInterval(interval)
+        unregisterPoll()
       }
     }
 

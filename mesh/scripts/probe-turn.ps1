@@ -1,18 +1,13 @@
-# probe-turn.ps1 — Probe a real deployed TURN server using Mesh's RFC 5766
+# Probe a real deployed TURN server using Mesh's RFC 5766
 # Allocate-with-HMAC-SHA1 implementation.
 #
-# PowerShell equivalent of probe-turn.sh for Windows operators.
-#
-# Usage:
-#   .\scripts\probe-turn.ps1 -Url turn:turn.example.com:3478 -Username alice -Password hunter2
-#
-# Or with environment variables:
+# Prefer process-scoped environment variables so credentials do not appear in
+# shell history or process arguments:
 #   $env:MESH_TURN_URL = "turn:turn.example.com:3478"
 #   $env:MESH_TURN_USERNAME = "alice"
-#   $env:MESH_TURN_PASSWORD = "hunter2"
+#   $env:MESH_TURN_PASSWORD = "<short-lived credential>"
+#   $env:MESH_TURN_EXPECT = "allocation_ok"
 #   .\scripts\probe-turn.ps1
-#
-# Regression mode: set $env:MESH_TURN_EXPECT to assert a specific outcome.
 
 [CmdletBinding()]
 param(
@@ -24,58 +19,89 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$RepoRoot = Split-Path -Parent $ScriptDir
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$repoRoot = Split-Path -Parent $scriptDir
 
-# Map parameters to env vars (parameters win over existing env vars)
-if ($Url)      { $env:MESH_TURN_URL      = $Url      }
+$originalEnvironment = @{}
+foreach ($name in @(
+    "MESH_TURN_URL",
+    "MESH_TURN_USERNAME",
+    "MESH_TURN_PASSWORD",
+    "MESH_TURN_EXPECT"
+)) {
+    $originalEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
+}
+
+function Restore-ProbeEnvironment {
+    foreach ($entry in $originalEnvironment.GetEnumerator()) {
+        [Environment]::SetEnvironmentVariable(
+            [string]$entry.Key,
+            $entry.Value,
+            "Process"
+        )
+    }
+}
+
+# Parameters remain for compatibility. Environment injection is preferred.
+if ($Url) { $env:MESH_TURN_URL = $Url }
 if ($Username) { $env:MESH_TURN_USERNAME = $Username }
 if ($Password) { $env:MESH_TURN_PASSWORD = $Password }
-if ($Expect)   { $env:MESH_TURN_EXPECT   = $Expect   }
+if ($Expect) { $env:MESH_TURN_EXPECT = $Expect }
 
-if (-not $env:MESH_TURN_URL -or -not $env:MESH_TURN_USERNAME -or -not $env:MESH_TURN_PASSWORD) {
-    Write-Host "Usage: .\scripts\probe-turn.ps1 -Url <turn-url> -Username <user> -Password <pass>"
-    Write-Host ""
-    Write-Host "  -Url       e.g. turn:turn.example.com:3478"
-    Write-Host "  -Username  TURN long-term credential username"
-    Write-Host "  -Password  TURN long-term credential password"
-    Write-Host "  -Expect    (optional) assert a specific outcome"
-    Write-Host ""
-    Write-Host "Or set MESH_TURN_URL, MESH_TURN_USERNAME, MESH_TURN_PASSWORD."
+if ($Password) {
+    Write-Warning "Passing TURN credentials as command arguments can expose them in shell history. Prefer process-scoped MESH_TURN_* environment variables."
+}
+
+if (-not $env:MESH_TURN_URL -or
+    -not $env:MESH_TURN_USERNAME -or
+    -not $env:MESH_TURN_PASSWORD) {
+    Write-Host "Set MESH_TURN_URL, MESH_TURN_USERNAME, and MESH_TURN_PASSWORD."
+    Write-Host "Optional: set MESH_TURN_EXPECT to allocation_ok for a strict UDP Allocate check."
+    Restore-ProbeEnvironment
     exit 1
 }
 
-Set-Location (Join-Path $RepoRoot "src-tauri")
+if ($env:MESH_TURN_URL.StartsWith("turns:", [StringComparison]::OrdinalIgnoreCase) -and
+    $env:MESH_TURN_EXPECT -eq "allocation_ok") {
+    Write-Host "The standalone probe cannot validate TLS or Allocate for turns: URLs."
+    Write-Host "Use turn: for the authenticated UDP Allocate probe, then prove TURN/TLS with a relay-only client call."
+    Restore-ProbeEnvironment
+    exit 1
+}
 
-Write-Host "────────────────────────────────────────────────"
-Write-Host "  Mesh TURN Probe"
-Write-Host "────────────────────────────────────────────────"
+Write-Host "Mesh TURN probe"
 Write-Host "  URL:      $env:MESH_TURN_URL"
 Write-Host "  Username: $env:MESH_TURN_USERNAME"
-Write-Host "  Password: ***"
+Write-Host "  Password: [REDACTED]"
 if ($env:MESH_TURN_EXPECT) {
-    Write-Host "  Expect:   $env:MESH_TURN_EXPECT (regression mode)"
+    Write-Host "  Expect:   $env:MESH_TURN_EXPECT"
 }
-Write-Host "────────────────────────────────────────────────"
-Write-Host ""
 
-$exitCode = 0
+$exitCode = 1
+Push-Location (Join-Path $repoRoot "src-tauri")
 try {
-    & cargo test --no-default-features --features legacy-p2p --locked --jobs 1 --test turn_probe_live_tests -- --ignored --nocapture probes_real_turn_server_with_credentials
+    & cargo test `
+        --no-default-features `
+        --features legacy-p2p `
+        --locked `
+        --jobs 1 `
+        --test turn_probe_live_tests `
+        -- `
+        --ignored `
+        --nocapture `
+        probes_real_turn_server_with_credentials
     $exitCode = $LASTEXITCODE
-}
-catch {
+} catch {
+    Write-Host "Probe execution failed."
     $exitCode = 1
-    Write-Host "✗ Probe execution failed: $_"
+} finally {
+    Pop-Location
+    Restore-ProbeEnvironment
 }
 
-Write-Host ""
 if ($exitCode -eq 0) {
-    Write-Host "✓ Probe completed. Review the output above for outcome classification."
+    Write-Host "Probe completed. Review the outcome classification above."
 } else {
-    Write-Host "✗ Probe failed. Check logs above and verify:"
-    Write-Host "   - TURN server is running and reachable on the given port"
-    Write-Host "   - UDP is not blocked by a firewall between you and the server"
-    Write-Host "   - Credentials match the TURN long-term credential config"
+    Write-Host "Probe failed. Verify endpoint reachability, transport, and credentials."
 }
 exit $exitCode

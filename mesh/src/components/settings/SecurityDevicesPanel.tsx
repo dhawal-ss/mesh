@@ -3,6 +3,7 @@ import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import * as bridge from '../../lib/bridge'
+import { describeError } from '../../lib/errors'
 
 interface SecurityDevicesPanelProps {
   open: boolean
@@ -225,46 +226,45 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
   const lostDevice = revocableDevices.find((device) => device.deviceId === lostDeviceId) ?? null
 
   return (
-    <Modal open={open} onClose={onClose} title="Security & Devices">
-      <div className="max-h-[75vh] space-y-5 overflow-y-auto pr-1">
+    <Modal open={open} onClose={onClose} title="Your devices">
+      <div className="max-h-settings space-y-5 overflow-y-auto pr-1">
         <section className="rounded-lg bg-bg-primary p-4">
-          <p className="text-2xs uppercase tracking-[0.25em] text-muted">This device</p>
+          <p className="text-2xs uppercase tracking-signal text-muted">This device</p>
           <dl className="mt-3 space-y-2 text-sm">
             <Row label="Account" value={status ? status.userId ?? 'Not signed in' : 'Loading…'} />
-            <Row label="Device ID" value={status ? status.deviceId ?? 'Unavailable' : 'Loading…'} mono />
-            <Row label="Homeserver" value={status ? status.homeserver ?? 'Not configured' : 'Loading…'} />
+            <Row label="Device code" value={status ? status.deviceId ?? 'Unavailable' : 'Loading…'} mono />
             <Row
-              label="Room encryption"
-              value={status?.endToEndEncryption ? 'Enabled for encrypted rooms' : 'Unavailable'}
+              label="Private messages"
+              value={status?.endToEndEncryption ? 'Protected' : 'Unavailable'}
             />
           </dl>
           <p className="mt-3 text-xs leading-5 text-muted">
-            Encryption protects room event content. Your homeserver may still observe account,
-            membership, timing, IP, and access-pattern metadata.
+            Mesh protects message contents while they travel between your devices and the people
+            you talk with.
           </p>
         </section>
 
         <section className="space-y-3 rounded-lg bg-bg-primary p-4">
           <div>
-            <p className="text-sm font-medium text-primary">Recovery</p>
+            <p className="text-sm font-medium text-primary">Message backup</p>
             <p className="mt-1 text-xs leading-5 text-muted">
-              Create a recovery key or restore encrypted history with an existing key or passphrase.
+              Back up your messages or bring them back with your backup code or passphrase.
             </p>
           </div>
           {recoveryHealth && (
             <div className={`rounded-md border p-3 ${recoveryHealth.healthy ? 'border-green/40 bg-green/10' : 'border-yellow/40 bg-yellow/10'}`}>
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs font-medium text-primary">
-                  {recoveryHealth.healthy ? 'Recovery is healthy' : 'Recovery needs attention'}
+                  {recoveryHealth.healthy ? 'Message backup is ready' : 'Message backup needs attention'}
                 </p>
                 <Button variant="ghost" size="sm" disabled={busy} onClick={() => void loadRecoveryHealth()}>
                   Check again
                 </Button>
               </div>
               <dl className="mt-2 space-y-1 text-xs">
-                <Row label="Secret storage" value={recoveryHealth.recoveryState} />
-                <Row label="Key backup" value={recoveryHealth.backupState} />
-                <Row label="Server copy" value={recoveryHealth.backupExistsOnServer ? 'Confirmed' : 'Not confirmed'} />
+                <Row label="Backup setup" value={recoveryHealth.recoveryState} />
+                <Row label="Message copy" value={recoveryHealth.backupState} />
+                <Row label="Saved online" value={recoveryHealth.backupExistsOnServer ? 'Confirmed' : 'Not confirmed'} />
                 <Row
                   label="Last tested"
                   value={recoveryHealth.lastSuccessfulTestAt
@@ -273,23 +273,24 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                 />
               </dl>
               {recoveryHealth.warnings.length > 0 && (
-                <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-muted">
-                  {recoveryHealth.warnings.map((warning) => <li key={warning}>{warning}</li>)}
-                </ul>
+                <p className="mt-2 text-xs leading-5 text-muted">
+                  Mesh found a problem with this backup. Check again, or use your saved backup code
+                  before relying on a new device.
+                </p>
               )}
             </div>
           )}
           <Button variant="secondary" size="sm" disabled={busy || !status?.capabilities.recovery} onClick={enableRecovery}>
-            Create recovery key
+            Create backup code
           </Button>
           {newRecoveryKey && (
             <div role="status" className="rounded-md border border-yellow/40 bg-yellow/10 p-3">
-              <p className="text-xs font-medium text-primary">Save this key somewhere private. It is shown here once.</p>
+              <p className="text-xs font-medium text-primary">Save this backup code somewhere private. It is shown here once.</p>
               <p className="mt-2 break-all font-mono text-xs text-secondary">{newRecoveryKey}</p>
             </div>
           )}
           <Input
-            label="Recovery key or passphrase"
+            label="Backup code or passphrase"
             name="recovery-credential"
             type="password"
             value={recoveryInput}
@@ -297,15 +298,14 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
             autoComplete="off"
           />
           <Button variant="secondary" size="sm" disabled={busy || !recoveryInput.trim()} onClick={recover}>
-            Restore encrypted history
+            Restore messages
           </Button>
           <div className="space-y-2 border-t border-bg-modifier-active pt-3">
             <p className="text-xs leading-5 text-muted">
-              Test that this credential can unlock the current server backup. This does not replace a
-              clean-room recovery drill on a fresh device.
+              Check that your backup code works before you need it on another device.
             </p>
             <Input
-              label="Credential to test"
+              label="Backup code to check"
               name="recovery-test-credential"
               type="password"
               value={recoveryTestInput}
@@ -318,7 +318,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
               disabled={busy || !recoveryTestInput.trim()}
               onClick={testRecovery}
             >
-              Test recovery credential
+              Check backup code
             </Button>
           </div>
         </section>
@@ -326,12 +326,12 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
         <section className="space-y-3 rounded-lg border border-bg-modifier-active p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-medium text-primary">Signed-in devices</p>
+              <p className="text-sm font-medium text-primary">Your devices</p>
               <p className="mt-1 text-xs leading-5 text-muted">
-                Trust comes from this encrypted store. Last-seen details are reported by your homeserver.
+                Review the places where your Mesh account is signed in.
               </p>
             </div>
-            <span className="rounded-full bg-green/10 px-2 py-1 text-[10px] uppercase tracking-wide text-green">
+            <span className="rounded-full bg-status-success/10 px-2 py-1 text-caption uppercase tracking-wide text-status-success">
               {devices.length} {devices.length === 1 ? 'device' : 'devices'}
             </span>
           </div>
@@ -364,23 +364,21 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
             >
               <div>
                 <h3 id="lost-device-title" className="text-sm font-medium text-primary">
-                  Secure an account after device loss
+                  Sign out a lost device
                 </h3>
                 <p className="mt-1 text-xs leading-5 text-muted">
-                  Revoke the lost device promptly. Revocation asks the homeserver to reject that
-                  Matrix session, but it cannot remotely erase messages, keys, screenshots, or
-                  downloaded files already stored on the device.
+                  This signs that device out. It cannot delete messages, screenshots, or downloaded
+                  files already saved on it.
                 </p>
               </div>
 
               <ol className="list-decimal space-y-2 pl-5 text-xs leading-5 text-muted">
                 <li>Select the device you no longer control.</li>
                 <li>
-                  Confirm recovery health. Recovering old encrypted history on a replacement device
-                  depends on a usable key backup or another verified device; login alone does not restore keys.
+                  Make sure your message backup is ready before moving to a replacement device.
                 </li>
                 <li>
-                  Revoke the lost session. Verify only devices you still possess and can compare directly.
+                  Sign out the lost device. Only trust devices you still have and can compare directly.
                 </li>
               </ol>
 
@@ -393,8 +391,8 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                 }`}
               >
                 {recoveryHealth?.healthy
-                  ? 'Recovery currently reports healthy on this device. This is not proof that the lost device was erased or that a fresh-device restore will succeed.'
-                  : 'Recovery is not confirmed healthy. Revocation still protects the account session, but historical encrypted messages may remain unavailable on a replacement device until recovery succeeds.'}
+                  ? 'Your message backup is ready. Signing out still cannot erase anything already saved on the lost device.'
+                  : 'Your message backup is not ready. Signing out protects your account, but older messages may not appear on a replacement device.'}
               </div>
 
               {revocableDevices.length > 0 ? (
@@ -420,7 +418,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                         <span className="block font-medium text-primary">
                           {device.displayName || 'Unnamed device'}
                         </span>
-                        <span className="block break-all font-mono text-[11px] text-muted">
+                        <span className="block break-all font-mono text-meta text-muted">
                           {device.deviceId}
                         </span>
                       </span>
@@ -429,8 +427,8 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                 </fieldset>
               ) : (
                 <p className="text-xs leading-5 text-muted">
-                  No other registered device is available to revoke. Check from another Matrix client
-                  or contact your provider if the lost session is missing from this list.
+                  No other device is available to sign out. Check your account website if the lost
+                  device is missing from this list.
                 </p>
               )}
 
@@ -442,8 +440,8 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                     onChange={(event) => setLostDeviceAcknowledged(event.target.checked)}
                     className="mt-0.5 h-4 w-4 accent-blue"
                   />
-                  I understand that revocation blocks the selected Matrix session but does not
-                  remotely wipe the lost device or guarantee encrypted-history recovery.
+                  I understand that this signs the selected device out but cannot erase anything
+                  already saved on it or guarantee that older messages can be restored.
                 </label>
               )}
 
@@ -459,7 +457,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                     setError(null)
                   }}
                 >
-                  Continue to revoke selected device
+                  Continue to sign out selected device
                 </Button>
                 <Button
                   variant="ghost"
@@ -480,11 +478,12 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
           {warningDevices.length > 0 && (
             <div role="alert" className="rounded-md border border-yellow/50 bg-yellow/10 p-3">
               <p className="text-xs font-medium text-primary">
-                Review {warningDevices.length} untrusted device {warningDevices.length === 1 ? 'warning' : 'warnings'}
+                Is this you?
               </p>
               <p className="mt-1 text-xs leading-5 text-muted">
-                A new device or changed identity key can indicate a legitimate sign-in, a reset client,
-                or account compromise. Verify or revoke anything you do not recognize.
+                {warningDevices.length} new or changed sign-in
+                {warningDevices.length === 1 ? '' : 's'} need your attention. Trust the ones you
+                recognize and sign out anything you do not.
               </p>
             </div>
           )}
@@ -510,24 +509,24 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                     <p className="truncate text-sm font-medium text-primary">
                       {device.displayName || 'Unnamed device'} {device.current && <span className="text-blue">(this device)</span>}
                     </p>
-                    <p className="mt-1 break-all font-mono text-[11px] text-muted">{device.deviceId}</p>
+                    <p className="mt-1 break-all font-mono text-meta text-muted">{device.deviceId}</p>
                     <p className="mt-1 text-xs text-muted">
                       {trustLabel(device)} · Last seen {formatLastSeen(device.lastSeenAt)}
                       {device.lastSeenIp ? ` from ${device.lastSeenIp}` : ''}
                     </p>
                     {device.firstSeenAt && (
                       <p className="mt-1 text-xs text-muted">
-                        First observed by this encrypted store {formatLastSeen(device.firstSeenAt)}
+                        First seen by Mesh {formatLastSeen(device.firstSeenAt)}
                       </p>
                     )}
                     {device.identityChanged && (
                       <p className="mt-2 text-xs font-medium text-red">
-                        Identity keys changed since this device was trusted. Verify it again or revoke it.
+                        This sign-in changed since you trusted it. Check it again or sign it out.
                       </p>
                     )}
                     {!device.identityChanged && device.newDevice && (
                       <p className="mt-2 text-xs font-medium text-yellow">
-                        New unverified device. Confirm that you recognize this sign-in.
+                        New sign-in. Is this you?
                       </p>
                     )}
                   </div>
@@ -535,7 +534,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                     <div className="flex shrink-0 gap-1">
                       {!device.crossSigned && (
                         <Button variant="secondary" size="sm" disabled={busy} onClick={() => void startVerification(device)}>
-                          Verify
+                          Check device
                         </Button>
                       )}
                       <Button
@@ -548,7 +547,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                           setError(null)
                         }}
                       >
-                        Revoke
+                        Sign out
                       </Button>
                     </div>
                   )}
@@ -560,17 +559,17 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
           {verification && (
             <div className="space-y-3 rounded-md border border-blue/40 bg-blue/5 p-3">
               <div>
-                <p className="text-sm font-medium text-primary">Verify device {verification.deviceId}</p>
+                <p className="text-sm font-medium text-primary">Is this you?</p>
                 <p aria-live="polite" className="mt-1 text-xs leading-5 text-muted">
                   {verificationMessage(verification)}
                 </p>
               </div>
               {verification.phase === 'compare' && verification.emojis.length > 0 && (
-                <ol aria-label="Verification emoji" className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+                <ol aria-label="Emoji to compare" className="grid grid-cols-4 gap-2 sm:grid-cols-7">
                   {verification.emojis.map((emoji, index) => (
                     <li key={`${emoji.description}-${index}`} className="rounded bg-bg-primary p-2 text-center">
-                      <span aria-hidden="true" className="block text-xl">{emoji.symbol}</span>
-                      <span className="mt-1 block text-[10px] text-muted">{emoji.description}</span>
+                      <span aria-hidden="true" className="block text-md">{emoji.symbol}</span>
+                      <span className="mt-1 block text-caption text-muted">{emoji.description}</span>
                     </li>
                   ))}
                 </ol>
@@ -579,10 +578,10 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                 <p className="font-mono text-lg tracking-widest text-primary">{verification.decimals.join(' · ')}</p>
               )}
               {verification.phase === 'qr-show' && verification.qrSvg && (
-                <div className="mx-auto w-fit rounded-md bg-white p-3">
+                <div className="mx-auto w-fit rounded-md bg-surface-qr p-3">
                   <img
                     src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(verification.qrSvg)}`}
-                    alt="Matrix device verification QR code"
+                    alt="Code to scan with your other device"
                     className="h-64 w-64"
                   />
                 </div>
@@ -599,14 +598,14 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                       disabled={busy}
                       onClick={() => void selectVerificationMethod('qr')}
                     >
-                      Show QR code
+                      Scan with other device
                     </Button>
                   </>
                 )}
                 {verification.phase === 'compare' && (
                   <>
-                    <Button size="sm" disabled={busy} onClick={() => void confirmVerification(true)}>They match</Button>
-                    <Button variant="secondary" size="sm" disabled={busy} onClick={() => void confirmVerification(false)}>They do not match</Button>
+                    <Button size="sm" disabled={busy} onClick={() => void confirmVerification(true)}>Yes, that's me</Button>
+                    <Button variant="secondary" size="sm" disabled={busy} onClick={() => void confirmVerification(false)}>No, they do not match</Button>
                   </>
                 )}
                 {verification.phase === 'qr-scanned' && (
@@ -620,7 +619,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                   </>
                 )}
                 {verification.phase !== 'done' && verification.phase !== 'cancelled' && (
-                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => void cancelVerification()}>Cancel verification</Button>
+                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => void cancelVerification()}>Cancel check</Button>
                 )}
                 {(verification.phase === 'done' || verification.phase === 'cancelled') && (
                   <Button variant="ghost" size="sm" onClick={() => setVerification(null)}>Close</Button>
@@ -632,12 +631,11 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
           {revokeTarget && (
             <div className="space-y-3 rounded-md border border-red/40 bg-red/5 p-3">
               <div>
-                <p className="text-sm font-medium text-primary">Revoke {revokeTarget.displayName || revokeTarget.deviceId}?</p>
+                <p className="text-sm font-medium text-primary">Sign out {revokeTarget.displayName || revokeTarget.deviceId}?</p>
                 <p className="mt-1 text-xs leading-5 text-muted">
-                  The homeserver requires your account password for this interactive authentication
-                  request. Mesh does not save it. If your browser-authenticated provider does not
-                  accept a Matrix password here, revoke the device from another compatible client or
-                  your provider's account portal.
+                  This signs that device out. It cannot delete what is already saved on it. Confirm
+                  your account password to continue; Mesh does not save it. If you normally sign in
+                  through a browser, you can also use your account website.
                 </p>
               </div>
               <Input
@@ -648,7 +646,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                 autoComplete="current-password"
               />
               <div className="flex gap-2">
-                <Button size="sm" disabled={busy || !accountPassword} onClick={revokeDevice}>Revoke device</Button>
+                <Button size="sm" disabled={busy || !accountPassword} onClick={revokeDevice}>Sign out device</Button>
                 <Button variant="ghost" size="sm" disabled={busy} onClick={() => setRevokeTarget(null)}>Cancel</Button>
               </div>
             </div>
@@ -661,7 +659,8 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
           <div>
             <p className="text-sm font-medium text-primary">Account on this device</p>
             <p className="mt-1 text-xs leading-5 text-muted">
-              Sign out removes the saved session but retains the encrypted cache. Removing the account also erases the local store key and cached Matrix data from this machine.
+              Sign out removes this account from Mesh but keeps downloaded messages on this device.
+              Removing the account also deletes Mesh account data saved here.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -673,7 +672,8 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
             ) : (
               <div className="w-full space-y-3 rounded-md border border-red/40 bg-red/5 p-3">
                 <p className="text-xs leading-5 text-muted">
-                  This cannot be undone. Mesh will try to invalidate this session, then erase its local credentials and encrypted store. If the homeserver is offline, revoke this device later from another client.
+                  This cannot be undone. Mesh will sign this device out and delete its saved account
+                  data. If that sign-out cannot finish, use another trusted device or your account website.
                 </p>
                 <div className="flex gap-2">
                   <Button size="sm" disabled={busy} onClick={removeAccount}>Permanently remove local account</Button>
@@ -698,11 +698,9 @@ function Row({ label, value, mono = false }: { label: string; value: string; mon
 }
 
 function trustLabel(device: bridge.MatrixDevice): string {
-  if (device.identityChanged) return 'Identity changed'
-  if (device.newDevice) return 'New device'
-  if (device.crossSigned) return 'Cross-signed'
-  if (device.verified) return device.current ? 'Trusted on this device' : 'Verified locally'
-  return 'Unverified'
+  if (device.identityChanged || device.newDevice) return 'Not verified yet'
+  if (device.crossSigned || device.verified) return 'Trusted'
+  return 'Not verified yet'
 }
 
 function verificationMessage(session: bridge.MatrixVerificationSession): string {
@@ -710,21 +708,21 @@ function verificationMessage(session: bridge.MatrixVerificationSession): string 
     case 'waiting-for-device':
     case 'started':
     case 'accepted':
-      return 'Open the verification request on the other device. Mesh will offer the methods both devices support when it is ready.'
+      return 'Open this request on your other device. Mesh will show the choices both devices support.'
     case 'choose-method':
-      return 'Choose how to verify. Emoji comparison works with any interactive client; QR requires the other device to scan the code.'
+      return 'Choose how to check. You can compare emoji or scan with your other device.'
     case 'compare':
-      return 'Compare this code with the other device. Confirm only if every item matches in the same order.'
+      return 'Do these emoji match on the other device? Continue only if every item matches in the same order.'
     case 'qr-show':
-      return 'Scan this code with the other device. Do not share it or scan it with an untrusted app.'
+      return 'Scan this with your other device. Do not share it or scan it with an app you do not trust.'
     case 'qr-scanned':
       return 'The other device scanned the code. Confirm only if you are holding or directly supervising that device.'
     case 'confirmed':
       return 'You confirmed the code. Waiting for the other device to finish.'
     case 'done':
-      return 'The device was verified successfully.'
+      return 'This device is now trusted.'
     case 'cancelled':
-      return session.cancellationReason ? `Verification was cancelled: ${session.cancellationReason}` : 'Verification was cancelled.'
+      return session.cancellationReason ? 'The check was cancelled by the other device.' : 'The check was cancelled.'
   }
 }
 
@@ -736,5 +734,6 @@ function formatLastSeen(value: string | null): string {
 }
 
 function errorMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause)
+  const description = describeError(cause)
+  return `${description.title}. ${description.body}`
 }

@@ -7,15 +7,23 @@ import { isTauri } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { openPath } from '@tauri-apps/plugin-opener'
 import { showToast } from '../components/ui/Toast'
+import { describeError, normalizeError } from './errors'
 import { canStartLegacyVoice } from './voice-runtime'
 import type {
   Identity,
   Community,
+  BackendCapabilities,
+  BackendKind,
+  BackendStatus,
   CommunityAccessSettings,
   CommunityDirectoryEntry,
   CommunityApplication,
   CommunityAccessResult,
   MatrixUserPreferences,
+  MatrixNotification,
+  MatrixUnreadUpdate,
+  MatrixRoomNotificationMode,
+  NotificationPresentationContext,
   LegacyArchiveSummary,
   LegacyDryRunReport,
   LegacyExportRequest,
@@ -29,6 +37,7 @@ import type {
   FileDownloadRequest,
   FileDownloadProgress,
   FileAvailable,
+  MatrixTransferProgress,
   VoiceSessionSnapshot,
   VoiceSessionEvent,
   VoiceSignalEvent,
@@ -37,10 +46,11 @@ import type {
   BanEvent,
   DmConversation,
   DirectMessage,
+  VoiceServiceStatus,
 } from '../types/ipc'
 
 const tauriUnavailable = () =>
-  new Error('Tauri runtime unavailable. Use `npm run tauri dev` for real IPC.')
+  normalizeError('Tauri runtime unavailable. Use `npm run tauri dev` for real IPC.')
 
 async function tauriInvoke<T>(
   command: string,
@@ -53,10 +63,11 @@ async function tauriInvoke<T>(
 
   try {
     return await invoke<T>(command, args)
-  } catch (error) {
-    const message = typeof error === 'string' ? error : (error as Error).message ?? 'Unknown error'
+  } catch (cause) {
+    const error = normalizeError(cause)
     if (options?.toast) {
-      showToast(message, 'error')
+      const description = describeError(error)
+      showToast(`${description.title}. ${description.body}`, 'error')
     }
     throw error
   }
@@ -74,7 +85,14 @@ export function isTauriRuntime() {
   return isTauri()
 }
 
-export type BackendKind = 'matrix' | 'legacy-p2p'
+export type {
+  BackendCapabilities,
+  BackendKind,
+  BackendStatus,
+  VoiceProvider,
+  VoiceServiceAvailability,
+  VoiceServiceStatus,
+} from '../types/ipc'
 
 let cachedBackendKind: BackendKind | null = null
 const matrixCreatedChannels = new Map<string, Channel[]>()
@@ -85,50 +103,6 @@ export function isMatrixBackend(): boolean {
 
 export function getMatrixUserId(): string | null {
   return cachedBackendStatus?.userId ?? null
-}
-
-export interface BackendStatus {
-  kind: BackendKind
-  capabilities: BackendCapabilities
-  voiceService: VoiceServiceStatus
-  authenticated: boolean
-  userId: string | null
-  deviceId: string | null
-  homeserver: string | null
-  syncRunning: boolean
-  durableHistory: boolean
-  endToEndEncryption: boolean
-  warnings: string[]
-}
-
-export type VoiceProvider = 'matrix-rtc' | 'legacy-simple-peer'
-export type VoiceServiceAvailability =
-  | 'ready'
-  | 'not-configured'
-  | 'invalid-configuration'
-  | 'client-unavailable'
-
-export interface VoiceServiceStatus {
-  provider: VoiceProvider
-  availability: VoiceServiceAvailability
-  discoveryKey: string | null
-  livekitServiceUrl: string | null
-  tokenEndpoint: string | null
-  livekitSfuUrl: string | null
-  cspReady: boolean
-  mediaE2eeVerified: boolean
-  reason: string | null
-}
-
-export interface BackendCapabilities {
-  encryptedText: boolean
-  encryptedAttachments: boolean
-  directMessages: boolean
-  voice: boolean
-  durableTimeouts: boolean
-  deviceManagement: boolean
-  recovery: boolean
-  legacyMigration: boolean
 }
 
 const PREVIEW_MATRIX_CAPABILITIES: BackendCapabilities = {
@@ -281,6 +255,21 @@ export async function matrixLogin(request: MatrixLoginRequest): Promise<BackendS
   return cacheBackendStatus(status)
 }
 
+export async function matrixRegisterAccount(
+  username: string,
+  password: string,
+): Promise<BackendStatus> {
+  const status = await tauriInvoke<BackendStatus>('register_account', { username, password })
+  return cacheBackendStatus(status)
+}
+
+export async function matrixCheckUsernameAvailable(username: string): Promise<boolean> {
+  return tauriInvoke<boolean>('check_username_available', { username })
+}
+
+export const registerAccount = matrixRegisterAccount
+export const checkUsernameAvailable = matrixCheckUsernameAvailable
+
 export async function matrixOidcStatus(homeserver: string): Promise<MatrixOidcStatus> {
   return tauriInvoke<MatrixOidcStatus>('matrix_oidc_status', { homeserver })
 }
@@ -382,6 +371,29 @@ export async function updateMatrixUserPreferences(
   })
 }
 
+export async function setNotificationContext(
+  context: NotificationPresentationContext,
+): Promise<void> {
+  return tauriInvoke('set_notification_context', { context })
+}
+
+export async function sendTestNotification(): Promise<void> {
+  return tauriInvoke('send_test_notification')
+}
+
+export async function getMatrixRoomNotificationMode(
+  roomId: string,
+): Promise<MatrixRoomNotificationMode> {
+  return tauriInvoke('matrix_get_room_notification_mode', { roomId })
+}
+
+export async function setMatrixRoomNotificationMode(
+  roomId: string,
+  mode: MatrixRoomNotificationMode,
+): Promise<void> {
+  return tauriInvoke('matrix_set_room_notification_mode', { roomId, mode })
+}
+
 export async function matrixCreateCommunity(
   name: string,
   description: string,
@@ -438,19 +450,45 @@ export async function matrixSendMessage(
 export async function matrixSendAttachment(
   roomId: string,
   attachmentGrant: string,
+  transferId: string,
   body: string,
   replyToId?: string,
 ): Promise<Message> {
   return tauriInvoke('matrix_send_attachment', {
     roomId,
     attachmentGrant,
+    transferId,
     body,
     replyToId,
   })
 }
 
-export async function matrixDownloadAttachment(attachment: Attachment): Promise<string> {
-  return tauriInvoke('matrix_download_attachment', { attachment })
+export function createMatrixTransferId(): string {
+  if (typeof globalThis.crypto.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID()
+  }
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16))
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+export function onMatrixTransferProgress(
+  handler: (data: MatrixTransferProgress) => void,
+): Promise<UnlistenFn> {
+  return tauriListen('matrix:transfer-progress', handler)
+}
+
+export async function matrixCancelAttachmentUpload(transferId: string): Promise<void> {
+  return tauriInvoke('matrix_cancel_attachment_upload', { transferId })
+}
+
+export async function matrixDownloadAttachment(
+  attachment: Attachment,
+  transferId: string,
+): Promise<string> {
+  return tauriInvoke('matrix_download_attachment', { attachment, transferId })
 }
 
 export async function matrixCancelAttachmentDownload(fileHash: string): Promise<void> {
@@ -637,8 +675,8 @@ export async function deleteCommunity(communityId: string): Promise<void> {
   return tauriInvoke('delete_community', { communityId })
 }
 
-export async function inviteMatrixUser(communityId: string, userId: string): Promise<void> {
-  return tauriInvoke('matrix_invite_to_community', { communityId, userId })
+export async function inviteMatrixUser(communityId: string, username: string): Promise<void> {
+  return tauriInvoke('matrix_invite_to_community', { communityId, username })
 }
 
 export async function getCommunityAccessSettings(
@@ -1007,6 +1045,135 @@ export async function getDiagnostics(): Promise<SystemDiagnostics> {
 
 // ─── Voice Commands ─────────────────────────────────
 
+export interface MatrixRtcJoinResult {
+  roomId: string
+  sessionId: string
+  memberId: string
+  url: string
+  token: string
+  roomName: string
+  participantIdentity: string
+  mediaE2eeVerified: boolean
+  mediaKey: MatrixRtcMediaKey
+}
+
+export interface MatrixRtcMember {
+  roomId: string
+  userId: string
+  deviceId: string
+  sessionId: string
+  displayName: string
+  avatarUrl: string | null
+}
+
+export interface MatrixRtcMembershipEvent {
+  roomId: string
+  members: MatrixRtcMember[]
+}
+
+/**
+ * Ephemeral per-participant MatrixRTC media key material.
+ *
+ * This payload is delivered only through the Tauri event boundary. Callers
+ * must apply it directly to the media engine and must not persist it.
+ */
+export interface MatrixRtcMediaKey {
+  roomId: string
+  userId: string
+  deviceId: string
+  memberId: string
+  participantIdentity: string
+  keyIndex: number
+  key: string
+  sentTs: number
+  sessionId: string | null
+  activationId: string | null
+}
+
+export interface MatrixRtcMediaKeyFailure {
+  roomId: string
+  code: string
+}
+
+export interface MatrixRtcMediaKeyPause {
+  roomId: string
+  sessionId: string
+  memberId: string
+  activationId: string
+  keyIndex: number
+}
+
+export interface MatrixRtcMediaKeyLease {
+  roomId: string
+  sessionId: string
+  memberId: string
+  keyIndex: number
+  expiresAt: number
+}
+
+export async function matrixRtcJoin(roomId: string): Promise<MatrixRtcJoinResult> {
+  return tauriInvoke('matrix_rtc_join', { roomId })
+}
+
+export async function matrixRtcLeave(roomId: string, sessionId: string): Promise<void> {
+  return tauriInvoke('matrix_rtc_leave', { roomId, sessionId })
+}
+
+export async function matrixRtcMembers(roomId: string): Promise<MatrixRtcMember[]> {
+  return tauriInvoke('matrix_rtc_members', { roomId })
+}
+
+export async function matrixRtcRefreshMembership(
+  roomId: string,
+  sessionId: string,
+): Promise<MatrixRtcMember[]> {
+  return tauriInvoke('matrix_rtc_refresh_membership', { roomId, sessionId })
+}
+
+export async function matrixRtcAckMediaKeyPause(
+  roomId: string,
+  sessionId: string,
+  memberId: string,
+  activationId: string,
+): Promise<MatrixRtcMediaKey> {
+  return tauriInvoke('matrix_rtc_ack_media_key_pause', {
+    roomId,
+    sessionId,
+    memberId,
+    activationId,
+  })
+}
+
+export async function matrixRtcAckMediaKey(
+  roomId: string,
+  sessionId: string,
+  memberId: string,
+  activationId: string,
+  keyIndex: number,
+  sentTs: number,
+): Promise<void> {
+  return tauriInvoke('matrix_rtc_ack_media_key', {
+    roomId,
+    sessionId,
+    memberId,
+    activationId,
+    keyIndex,
+    sentTs,
+  })
+}
+
+export async function matrixRtcRenewMediaKeyLease(
+  roomId: string,
+  sessionId: string,
+  memberId: string,
+): Promise<MatrixRtcMediaKeyLease> {
+  return tauriInvoke('matrix_rtc_renew_media_key_lease', {
+    roomId,
+    sessionId,
+    memberId,
+  })
+}
+
 export async function joinVoice(communityId: string, channelId: string): Promise<VoiceSessionSnapshot> {
   requireLegacyVoice('join a voice channel')
   return tauriInvoke('join_voice', { communityId, channelId })
@@ -1056,26 +1223,90 @@ function requireLegacyVoice(operation: string): void {
 
 // ─── Notification Sound ────────────────────────────
 
-let notificationSound: HTMLAudioElement | null = null
+export type NotificationSoundId = 'mesh' | 'chime' | 'pulse' | 'soft'
 
-function getNotificationSound(): HTMLAudioElement {
-  if (!notificationSound) {
-    notificationSound = new Audio('/notification.mp3')
-    notificationSound.volume = 0.3
-  }
-  return notificationSound
+interface NotificationTone {
+  frequency: number
+  offset: number
+  duration: number
+  volume: number
+  type: OscillatorType
 }
 
-export function playNotificationSound() {
-  const sound = getNotificationSound()
-  sound.currentTime = 0
-  sound.play().catch(() => {})
+const NOTIFICATION_TONES: Record<NotificationSoundId, NotificationTone[]> = {
+  mesh: [
+    { frequency: 523.25, offset: 0, duration: 0.12, volume: 0.12, type: 'sine' },
+    { frequency: 783.99, offset: 0.1, duration: 0.18, volume: 0.1, type: 'sine' },
+  ],
+  chime: [
+    { frequency: 659.25, offset: 0, duration: 0.16, volume: 0.1, type: 'sine' },
+    { frequency: 987.77, offset: 0.13, duration: 0.24, volume: 0.08, type: 'sine' },
+  ],
+  pulse: [
+    { frequency: 440, offset: 0, duration: 0.08, volume: 0.08, type: 'triangle' },
+    { frequency: 440, offset: 0.13, duration: 0.08, volume: 0.08, type: 'triangle' },
+  ],
+  soft: [
+    { frequency: 392, offset: 0, duration: 0.24, volume: 0.06, type: 'sine' },
+  ],
+}
+
+let notificationAudioContext: AudioContext | null = null
+
+function playNotificationTones(context: AudioContext, tones: NotificationTone[]) {
+  const start = context.currentTime
+  for (const tone of tones) {
+    const oscillator = context.createOscillator()
+    const gain = context.createGain()
+    const toneStart = start + tone.offset
+    const toneEnd = toneStart + tone.duration
+
+    oscillator.type = tone.type
+    oscillator.frequency.setValueAtTime(tone.frequency, toneStart)
+    gain.gain.setValueAtTime(0.0001, toneStart)
+    gain.gain.exponentialRampToValueAtTime(tone.volume, toneStart + 0.015)
+    gain.gain.exponentialRampToValueAtTime(0.0001, toneEnd)
+    oscillator.connect(gain)
+    gain.connect(context.destination)
+    oscillator.start(toneStart)
+    oscillator.stop(toneEnd + 0.02)
+  }
+}
+
+export function playNotificationSound(soundId: NotificationSoundId = 'mesh') {
+  if (typeof AudioContext === 'undefined') return
+
+  try {
+    notificationAudioContext ??= new AudioContext()
+    const context = notificationAudioContext
+    const play = () => playNotificationTones(context, NOTIFICATION_TONES[soundId])
+    if (context.state === 'suspended') {
+      void context.resume().then(play).catch(() => {})
+    } else {
+      play()
+    }
+  } catch {
+    // The native desktop notification remains useful if a locked-down webview
+    // refuses background audio.
+  }
 }
 
 // ─── Event Listeners ────────────────────────────────
 
 export function onMessageReceived(handler: (message: Message) => void): Promise<UnlistenFn> {
   return tauriListen('message:received', handler)
+}
+
+export function onMatrixNotification(
+  handler: (notification: MatrixNotification) => void,
+): Promise<UnlistenFn> {
+  return tauriListen('matrix:notification', handler)
+}
+
+export function onMatrixUnreadUpdate(
+  handler: (update: MatrixUnreadUpdate) => void,
+): Promise<UnlistenFn> {
+  return tauriListen('matrix:unread-update', handler)
 }
 
 export function onReactionReceived(handler: (data: ReactionEvent) => void): Promise<UnlistenFn> {
@@ -1129,6 +1360,30 @@ export function onVoiceSession(handler: (data: VoiceSessionSnapshot) => void): P
 export function onVoiceSessionEvent(handler: (data: VoiceSessionEvent) => void): Promise<UnlistenFn> {
   if (isMatrixBackend()) return Promise.resolve(() => {})
   return tauriListen('voice:session:event', handler)
+}
+
+export function onMatrixRtcMembership(
+  handler: (data: MatrixRtcMembershipEvent) => void,
+): Promise<UnlistenFn> {
+  return tauriListen('matrix:rtc-membership', handler)
+}
+
+export function onMatrixRtcMediaKey(
+  handler: (data: MatrixRtcMediaKey) => void,
+): Promise<UnlistenFn> {
+  return tauriListen('matrix:rtc-media-key', handler)
+}
+
+export function onMatrixRtcMediaKeyFailure(
+  handler: (data: MatrixRtcMediaKeyFailure) => void,
+): Promise<UnlistenFn> {
+  return tauriListen('matrix:rtc-media-key-failure', handler)
+}
+
+export function onMatrixRtcMediaKeyPause(
+  handler: (data: MatrixRtcMediaKeyPause) => void,
+): Promise<UnlistenFn> {
+  return tauriListen('matrix:rtc-media-key-pause', handler)
 }
 
 export function onBanReceived(handler: (data: BanEvent) => void): Promise<UnlistenFn> {
@@ -1198,12 +1453,14 @@ export async function matrixDmBlocked(recipientUserId: string): Promise<boolean>
 export async function matrixSendDmAttachment(
   recipientUserId: string,
   attachmentGrant: string,
+  transferId: string,
   body: string,
   replyToId?: string,
 ): Promise<DirectMessage> {
   return tauriInvoke('matrix_send_dm_attachment', {
     recipientUserId,
     attachmentGrant,
+    transferId,
     body,
     replyToId,
   })
@@ -1319,11 +1576,3 @@ export async function openDownloadedFile(localPath: string): Promise<void> {
 }
 
 // ─── Discovery Commands ────────────────────────────
-
-export async function discoverPublicCommunities(): Promise<any[]> {
-  try {
-    return await tauriInvoke<any[]>('discover_public_communities')
-  } catch {
-    return []
-  }
-}

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { Icon } from '../ui/Icon'
 
 interface CommunityFile {
   fileHash: string
@@ -31,21 +32,23 @@ export function FileBrowser({ communityId, isOpen, onClose }: FileBrowserProps) 
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-bg-secondary rounded-lg shadow-lg w-[600px] max-h-[80vh] flex flex-col">
+    <div className="fixed inset-0 z-modal flex items-center justify-center bg-scrim">
+      <div className="flex max-h-file-browser w-file-browser flex-col rounded-lg bg-bg-secondary shadow-lg">
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <h2 className="text-lg font-semibold text-text-primary">Community Files</h2>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
+          <h2 className="text-lg font-semibold text-text-primary">Server files</h2>
+          <button
+            onClick={onClose}
+            aria-label="Close server files"
+            className="text-text-muted hover:text-text-primary"
+          >
+            <Icon name="x" size="sm" />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-4">
           {loading ? (
             <div className="text-center text-text-muted py-8">Loading files...</div>
           ) : files.length === 0 ? (
-            <div className="text-center text-text-muted py-8">No files shared in this community yet.</div>
+            <div className="text-center text-text-muted py-8">No files shared in this server yet.</div>
           ) : (
             <div className="space-y-2">
               {files.map((file) => (
@@ -57,7 +60,7 @@ export function FileBrowser({ communityId, isOpen, onClose }: FileBrowserProps) 
                     </div>
                   </div>
                   <button
-                    className="ml-3 px-3 py-1 text-xs rounded bg-accent text-white hover:bg-accent-bright"
+                    className="ml-3 rounded bg-accent px-3 py-1 text-xs text-content-on-accent hover:bg-accent-bright"
                     onClick={() => invoke('request_file', { fileHash: file.fileHash, communityId })}
                   >
                     Download

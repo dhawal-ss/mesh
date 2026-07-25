@@ -53,6 +53,7 @@ describe('DiagnosticsPanel', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     vi.clearAllMocks()
+    vi.mocked(probeIceServers).mockResolvedValue([])
   })
 
   afterEach(() => {
@@ -397,6 +398,31 @@ describe('DiagnosticsPanel', () => {
     expect(container.textContent).toContain('Reachable')
     expect(container.textContent).toContain('turn:bad.example.com:3478')
     expect(container.textContent).toContain('DNS failed')
+  })
+
+  it('translates probe failures and keeps technical detail in disclosure', async () => {
+    vi.mocked(getDiagnostics).mockResolvedValue(mockDiagnostics())
+    vi.mocked(probeIceServers).mockRejectedValue({
+      code: 'network_unavailable',
+      detail: 'connection refused by turn.internal.example',
+      retryable: true,
+    })
+
+    await act(async () => {
+      root.render(<DiagnosticsPanel open={true} onClose={() => {}} />)
+    })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
+
+    const probeButton = container.querySelector('button[aria-label="Run ICE reachability probe"]')
+    await act(async () => {
+      ;(probeButton as HTMLButtonElement).click()
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
+
+    expect(container.querySelector('h3')?.textContent).toContain('Connection interrupted')
+    expect(container.textContent).toContain('connection refused by turn.internal.example')
   })
 
   it('renders unreachable probe outcome with warning color', async () => {

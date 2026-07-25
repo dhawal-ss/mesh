@@ -148,6 +148,74 @@ function Test-ServiceUri {
     }
 }
 
+function Get-IceEndpoint([string]$Name, [string]$Value, [string]$ExpectedScheme) {
+    $match = [regex]::Match(
+        $Value,
+        "^(?<scheme>turn|turns):(?<host>\[[0-9A-Fa-f:]+\]|[A-Za-z0-9.-]+)(?::(?<port>[0-9]{1,5}))?(?:\?transport=(?<transport>udp|tcp))?$",
+        [Text.RegularExpressions.RegexOptions]::IgnoreCase
+    )
+    if (-not $match.Success) {
+        Add-Failure "$Name must be an ICE URL using $ExpectedScheme with a host and optional port/transport."
+        return $null
+    }
+
+    $scheme = $match.Groups["scheme"].Value.ToLowerInvariant()
+    if ($scheme -ne $ExpectedScheme) {
+        Add-Failure "$Name must use $ExpectedScheme. UDP Allocate and TURN/TLS reachability are separate evidence."
+    }
+
+    $port = if ($match.Groups["port"].Success) {
+        [int]$match.Groups["port"].Value
+    } elseif ($scheme -eq "turns") {
+        5349
+    } else {
+        3478
+    }
+    if ($port -lt 1 -or $port -gt 65535) {
+        Add-Failure "$Name contains an invalid port."
+        return $null
+    }
+
+    $endpointHost = $match.Groups["host"].Value.Trim("[", "]")
+    return [PSCustomObject]@{
+        Scheme = $scheme
+        Host = $endpointHost
+        Port = $port
+        Transport = $match.Groups["transport"].Value.ToLowerInvariant()
+    }
+}
+
+function Test-TurnTlsTransport([string]$Url, [int]$TimeoutMilliseconds) {
+    $endpoint = Get-IceEndpoint "MESH_SMOKE_TURN_TLS_URL" $Url "turns"
+    Assert-Check ($null -ne $endpoint -and $endpoint.Scheme -eq "turns") `
+        "TURN/TLS endpoint could not be parsed."
+
+    $tcp = [Net.Sockets.TcpClient]::new()
+    try {
+        $pending = $tcp.BeginConnect($endpoint.Host, $endpoint.Port, $null, $null)
+        try {
+            Assert-Check ($pending.AsyncWaitHandle.WaitOne($TimeoutMilliseconds)) `
+                "TURN/TLS TCP connection timed out."
+            $tcp.EndConnect($pending)
+        } finally {
+            $pending.AsyncWaitHandle.Dispose()
+        }
+
+        $tls = [Net.Security.SslStream]::new($tcp.GetStream(), $false)
+        try {
+            $tls.ReadTimeout = $TimeoutMilliseconds
+            $tls.WriteTimeout = $TimeoutMilliseconds
+            $tls.AuthenticateAsClient($endpoint.Host)
+            Assert-Check $tls.IsAuthenticated "TURN/TLS handshake did not authenticate."
+            Assert-Check $tls.IsEncrypted "TURN/TLS transport is not encrypted."
+        } finally {
+            $tls.Dispose()
+        }
+    } finally {
+        $tcp.Dispose()
+    }
+}
+
 function Get-PropertyValue {
     param(
         [object]$Object,
@@ -351,6 +419,7 @@ $requiredNames = @(
     "MESH_SMOKE_MATRIXRTC_SERVICE_URL",
     "MESH_SMOKE_SFU_URL",
     "MESH_SMOKE_TURN_URL",
+    "MESH_SMOKE_TURN_TLS_URL",
     "MESH_SMOKE_BACKUP_STATUS_URL",
     "MESH_SMOKE_BACKUP_MAX_AGE_MINUTES",
     "MESH_SMOKE_MONITORING_HEALTH_URL"
@@ -380,8 +449,18 @@ Test-ServiceUri "MESH_SMOKE_BACKUP_STATUS_URL" `
     $values["MESH_SMOKE_BACKUP_STATUS_URL"] @("https") -AllowPath
 Test-ServiceUri "MESH_SMOKE_MONITORING_HEALTH_URL" `
     $values["MESH_SMOKE_MONITORING_HEALTH_URL"] @("https") -AllowPath
-Test-ServiceUri "MESH_SMOKE_TURN_URL" `
-    $values["MESH_SMOKE_TURN_URL"] @("turn", "turns") -AllowQuery -AllowPath
+$turnUdpEndpoint = Get-IceEndpoint `
+    "MESH_SMOKE_TURN_URL" $values["MESH_SMOKE_TURN_URL"] "turn"
+$turnTlsEndpoint = Get-IceEndpoint `
+    "MESH_SMOKE_TURN_TLS_URL" $values["MESH_SMOKE_TURN_TLS_URL"] "turns"
+if ($null -ne $turnUdpEndpoint -and
+    $turnUdpEndpoint.Transport -and $turnUdpEndpoint.Transport -ne "udp") {
+    Add-Failure "MESH_SMOKE_TURN_URL must use UDP for the authenticated Allocate proof."
+}
+if ($null -ne $turnTlsEndpoint -and
+    $turnTlsEndpoint.Transport -and $turnTlsEndpoint.Transport -ne "tcp") {
+    Add-Failure "MESH_SMOKE_TURN_TLS_URL must use TCP."
+}
 
 $mediaMaxBytes = 0
 if (-not [int]::TryParse(
@@ -718,6 +797,13 @@ if (-not $Online) {
                 }
             }
         }
+
+        Invoke-LiveCheck "TURN/TLS trusted transport reachability (not allocation)" {
+            Test-TurnTlsTransport `
+                -Url $values["MESH_SMOKE_TURN_TLS_URL"] `
+                -TimeoutMilliseconds ($TimeoutSeconds * 1000)
+        }
+        Add-Warning "TURN/TLS handshake success does not prove Allocate or relayed media. A real Mesh call forced to a relay candidate over TURN/TLS remains a release gate."
 
         Invoke-LiveCheck "Backup freshness" {
             Test-StatusEndpoint `

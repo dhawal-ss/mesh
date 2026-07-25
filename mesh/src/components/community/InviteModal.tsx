@@ -4,6 +4,8 @@ import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import * as bridge from '../../lib/bridge'
+import { transitions } from '../../lib/motion'
+import { Icon } from '../ui/Icon'
 
 interface InviteModalProps {
   isOpen: boolean
@@ -17,7 +19,7 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
   const [inviteLink, setInviteLink] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [matrixUserId, setMatrixUserId] = useState('')
+  const [username, setUsername] = useState('')
   const [inviteSent, setInviteSent] = useState(false)
 
   useEffect(() => {
@@ -37,13 +39,13 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
   }, [isOpen, communityId, matrixMode])
 
   const handleMatrixInvite = async () => {
-    if (!matrixUserId.trim()) return
+    if (!username.trim()) return
     setIsLoading(true)
     setInviteSent(false)
     try {
-      await bridge.inviteMatrixUser(communityId, matrixUserId.trim())
+      await bridge.inviteMatrixUser(communityId, username.trim())
       setInviteSent(true)
-      setMatrixUserId('')
+      setUsername('')
     } catch (err) {
       console.error('Failed to invite Matrix user:', err)
     } finally {
@@ -71,7 +73,7 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
   const handleClose = () => {
     setCopied(false)
     setInviteLink('')
-    setMatrixUserId('')
+    setUsername('')
     setInviteSent(false)
     onClose()
   }
@@ -82,31 +84,31 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
         <h2 className="mb-1 text-base font-semibold text-primary">Invite to {communityName}</h2>
         <p className="mb-4 text-xs text-muted">
           {matrixMode
-            ? 'Invite a Matrix user to the Space and each current channel.'
-            : 'Share this link to let others join your community mesh.'}
+            ? 'Invite someone to this server and its current channels.'
+            : 'Share this link to let others join your server.'}
         </p>
 
         {matrixMode ? (
           <div className="space-y-3">
             <Input
-              label="Matrix user ID"
-              value={matrixUserId}
+              label="Username"
+              value={username}
               onChange={(value: string) => {
-                setMatrixUserId(value)
+                setUsername(value)
                 setInviteSent(false)
               }}
-              placeholder="@person:example.org"
+              placeholder="ashvin"
               autoFocus
             />
             <Button
               onClick={handleMatrixInvite}
-              disabled={isLoading || !matrixUserId.trim()}
+              disabled={isLoading || !username.trim()}
               className="w-full"
             >
-              {isLoading ? 'Inviting…' : inviteSent ? 'Invite sent' : 'Invite User'}
+              {isLoading ? 'Inviting…' : inviteSent ? 'Invite sent' : 'Send invite'}
             </Button>
             {inviteSent && (
-              <p className="text-center text-xs text-green">Invitation sent to the Space and channels.</p>
+              <p className="text-center text-xs text-green">Invite sent.</p>
             )}
           </div>
         ) : (
@@ -130,13 +132,11 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
             key={copied ? 'copied' : 'copy'}
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.1 }}
+            transition={transitions.fast}
           >
             {copied ? (
               <span className="flex items-center justify-center gap-1.5">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
+                <Icon name="check" size="xs" />
                 Copied!
               </span>
             ) : (
@@ -146,7 +146,7 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
         </Button>
 
         <p className="mt-3 text-center text-xs text-muted">
-          Regenerate this invite if the community key or bootstrap hints change.
+          If this link stops working, create a new one.
         </p>
           </>
         )}

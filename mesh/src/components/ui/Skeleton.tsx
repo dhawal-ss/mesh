@@ -37,12 +37,13 @@ export function MessageSkeleton() {
 }
 
 export function ChannelListSkeleton() {
+  const widths = [96, 124, 88, 112, 136, 104, 120, 92]
   return (
     <div className="space-y-1 px-2">
       {Array.from({ length: 8 }).map((_, i) => (
         <div key={i} className="flex items-center gap-2 px-2 py-1.5">
           <Skeleton width={16} height={16} />
-          <Skeleton width={80 + Math.random() * 60} height={14} />
+          <Skeleton width={widths[i]} height={14} />
         </div>
       ))}
     </div>
@@ -50,12 +51,13 @@ export function ChannelListSkeleton() {
 }
 
 export function MemberListSkeleton() {
+  const widths = [72, 84, 68, 92, 76, 88]
   return (
     <div className="space-y-1 px-2">
       {Array.from({ length: 6 }).map((_, i) => (
         <div key={i} className="flex items-center gap-2 px-2 py-1.5">
           <Skeleton width={32} height={32} rounded />
-          <Skeleton width={60 + Math.random() * 40} height={14} />
+          <Skeleton width={widths[i]} height={14} />
         </div>
       ))}
     </div>

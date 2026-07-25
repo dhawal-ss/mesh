@@ -134,6 +134,17 @@ async function installTauriMock(
   }, overrides)
 }
 
+async function openAdvancedDiagnostics(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Profile', exact: true }).click()
+  const settings = page.getByRole('dialog', { name: 'User Settings' })
+  await expect(settings).toBeVisible()
+  await page.keyboard.press('Control+Shift+D')
+  const diagnosticsButton = settings.getByRole('button', { name: 'System diagnostics' })
+  await expect(diagnosticsButton).toBeVisible()
+  await diagnosticsButton.click()
+  await expect(page.getByText('System Diagnostics').first()).toBeVisible()
+}
+
 test.describe('diagnostics panel E2E', () => {
   test.beforeEach(async ({ page }) => {
     page.on('pageerror', (err) => console.error('[page error]', err.message))
@@ -155,20 +166,13 @@ test.describe('diagnostics panel E2E', () => {
     expect(mockInstalled).toBe(true)
   })
 
-  test('diagnostics panel opens from the community sidebar', async ({ page }) => {
+  test('diagnostics panel opens from Profile Advanced', async ({ page }) => {
     await installTauriMock(page)
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    // The diagnostics button lives in the community sidebar with
-    // aria-label="System Diagnostics"
-    const diagButton = page.getByRole('button', { name: /System Diagnostics/i })
     // The fixture must reach the authenticated shell; onboarding is covered separately.
-    await expect(diagButton).toHaveCount(1)
-    await diagButton.click()
-
-    // The panel title should appear
-    await expect(page.getByText('System Diagnostics').first()).toBeVisible()
+    await openAdvancedDiagnostics(page)
   })
 
   test('diagnostics panel shows mocked peer count and TURN warning', async ({ page }) => {
@@ -176,9 +180,7 @@ test.describe('diagnostics panel E2E', () => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    const diagButton = page.getByRole('button', { name: /System Diagnostics/i })
-    await expect(diagButton).toHaveCount(1)
-    await diagButton.click()
+    await openAdvancedDiagnostics(page)
 
     // Look for a peer count number that matches our mock
     // The mock returns networkPeerCount=3 and communityCount=2
@@ -195,9 +197,7 @@ test.describe('diagnostics panel E2E', () => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    const diagButton = page.getByRole('button', { name: /System Diagnostics/i })
-    await expect(diagButton).toHaveCount(1)
-    await diagButton.click()
+    await openAdvancedDiagnostics(page)
 
     const probeButton = page.getByRole('button', {
       name: /Run ICE reachability probe/i,
@@ -230,9 +230,7 @@ test.describe('diagnostics panel E2E', () => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    const diagButton = page.getByRole('button', { name: /System Diagnostics/i })
-    await expect(diagButton).toHaveCount(1)
-    await diagButton.click()
+    await openAdvancedDiagnostics(page)
 
     await page.getByRole('button', { name: /Run ICE reachability probe/i }).click()
 
@@ -258,9 +256,7 @@ test.describe('diagnostics panel E2E', () => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    const diagButton = page.getByRole('button', { name: /System Diagnostics/i })
-    await expect(diagButton).toHaveCount(1)
-    await diagButton.click()
+    await openAdvancedDiagnostics(page)
 
     await page.getByRole('button', { name: /Run ICE reachability probe/i }).click()
 

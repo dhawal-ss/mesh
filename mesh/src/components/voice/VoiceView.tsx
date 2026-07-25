@@ -1,63 +1,64 @@
 import { useEffect, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useVoiceEngine } from '../../hooks/useVoiceEngine'
 import { useVoiceStore } from '../../store/voice'
-import { transitions } from '../../lib/motion'
+import { transitions, variants } from '../../lib/motion'
 import { VoicePeerGrid } from './VoicePeerGrid'
 import { VoiceControls } from './VoiceControls'
+import { Icon } from '../ui/Icon'
+import { voiceConnectionLabel } from '../../lib/voice-runtime'
 
 export function VoiceView({ channelId, channelName }: { channelId: string; channelName: string }) {
-  const { engine, connectionWarning, relayChanged, voiceService } = useVoiceEngine()
-
+  const {
+    connectionWarning,
+    relayChanged,
+    voiceService,
+    matrixVoiceReady,
+    matrixUnavailableReason,
+    devices,
+    stats,
+    switchInputDevice,
+    switchOutputDevice,
+    setParticipantVolume,
+    toggleCamera,
+    toggleScreenShare,
+  } = useVoiceEngine()
   const sessionSnapshot = useVoiceStore((state) => state.sessionSnapshot)
+  const peers = useVoiceStore((state) => state.peers)
   const connectionState = useVoiceStore((state) => state.connectionState)
-  const memberCount = sessionSnapshot?.memberCount ?? 0
+  const connectionLabel = voiceConnectionLabel(connectionState)
+  const memberCount = sessionSnapshot?.memberCount ?? peers.length
   const relayLabel = sessionSnapshot?.relay.relayCandidatePublicKey
     ? sessionSnapshot.relay.relayCandidatePublicKey.slice(0, 8)
-    : 'mesh'
-
-  // Connection quality stats
-  const [connStats, setConnStats] = useState<{ type: string; rtt: number } | null>(null)
-
-  // Relay failover toast
+    : voiceService.provider === 'matrix-rtc'
+      ? 'LiveKit'
+      : 'mesh'
   const [showRelayToast, setShowRelayToast] = useState(false)
 
   useEffect(() => {
-    if (!engine) return
-    const interval = setInterval(async () => {
-      const stats = await engine.getConnectionStats()
-      if (stats) {
-        setConnStats({ type: stats.type, rtt: Math.round(stats.roundTripTime) })
-      }
-    }, 5000)
-    return () => clearInterval(interval)
-  }, [engine])
-
-  // Show a brief toast when relay failover occurs
-  useEffect(() => {
-    if (relayChanged) {
-      setShowRelayToast(true)
-      const timer = setTimeout(() => setShowRelayToast(false), 4000)
-      return () => clearTimeout(timer)
+    if (!relayChanged) return
+    const showTimer = setTimeout(() => setShowRelayToast(true), 0)
+    const hideTimer = setTimeout(() => setShowRelayToast(false), 4000)
+    return () => {
+      clearTimeout(showTimer)
+      clearTimeout(hideTimer)
     }
   }, [relayChanged])
 
-  if (voiceService.provider === 'matrix-rtc' && voiceService.availability !== 'ready') {
+  if (voiceService.provider === 'matrix-rtc' && !matrixVoiceReady) {
     const statusLabel =
       voiceService.availability === 'invalid-configuration'
-        ? 'Configuration error'
+        ? 'Needs setup'
         : voiceService.availability === 'client-unavailable'
-          ? 'Client integration pending'
-          : 'Not configured'
+          ? 'Safety check'
+          : 'Unavailable'
 
     return (
       <div className="flex h-full w-full flex-col bg-bg-primary">
-        <div className="flex h-12 items-center gap-2 border-b border-black/30 px-4 shadow-elevation-low">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-muted">
-            <path d="M12 3a1 1 0 0 0-1-1h-1.06a1 1 0 0 0-.7.28L5.71 5.71A1 1 0 0 1 5 6H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2a1 1 0 0 1 .7.29l3.54 3.54a1 1 0 0 0 .7.28H11a1 1 0 0 0 1-1V3Z" />
-          </svg>
+        <div className="flex h-12 items-center gap-2 border-b border-border-subtle px-4 shadow-elevation-low">
+          <Icon name="volume" className="text-muted" />
           <span className="text-sm font-semibold text-primary">{channelName}</span>
-          <span className="ml-auto rounded-full bg-yellow-500/10 px-2 py-1 text-[11px] text-yellow">
+          <span className="ml-auto rounded-full bg-status-warning/10 px-2 py-1 text-meta text-yellow">
             {statusLabel}
           </span>
         </div>
@@ -65,35 +66,28 @@ export function VoiceView({ channelId, channelName }: { channelId: string; chann
         <div className="flex flex-1 items-center justify-center p-6">
           <section
             className="w-full max-w-lg rounded-xl border border-border bg-bg-secondary p-6 text-center shadow-elevation-low"
-            aria-labelledby="matrixrtc-title"
+            aria-labelledby="calling-unavailable-title"
           >
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-bg-modifier-hover text-xl">
-              🔒
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-bg-modifier-hover">
+              <Icon name="triangleAlert" className="text-muted" />
             </div>
-            <h2 id="matrixrtc-title" className="text-lg font-semibold text-primary">
-              MatrixRTC calling is not ready
+            <h2 id="calling-unavailable-title" className="text-lg font-semibold text-primary">
+              Calling is not ready yet
             </h2>
             <p className="mt-2 text-sm leading-6 text-secondary">
-              Mesh will not fall back to its experimental peer-to-peer calling engine for a
-              Matrix account.
+              {matrixUnavailableReason ??
+                'Mesh keeps calling off until it can protect the whole conversation. Messaging still works normally.'}
             </p>
             <div className="mt-5 grid gap-2 text-left text-xs sm:grid-cols-2">
-              <VoiceReadinessItem label="Provider" value="MatrixRTC + LiveKit" />
-              <VoiceReadinessItem label="Service" value={statusLabel} />
+              <VoiceReadinessItem label="Calling service" value={statusLabel} />
               <VoiceReadinessItem
-                label="Media E2EE"
-                value={voiceService.mediaE2eeVerified ? 'Verified' : 'Not verified'}
+                label="Private audio and video"
+                value={voiceService.mediaE2eeVerified ? 'Ready' : 'Not verified'}
                 warning={!voiceService.mediaE2eeVerified}
               />
-              <VoiceReadinessItem label="Legacy fallback" value="Blocked" />
             </div>
-            {voiceService.reason && (
-              <p className="mt-4 rounded-md bg-bg-primary px-3 py-2 text-left text-xs leading-5 text-muted">
-                {voiceService.reason}
-              </p>
-            )}
             <p className="mt-4 text-xs text-muted">
-              Operators can review endpoint validation in System Diagnostics.
+              Your microphone, camera, and screen stay off until every safety check passes.
             </p>
           </section>
         </div>
@@ -103,33 +97,38 @@ export function VoiceView({ channelId, channelName }: { channelId: string; chann
 
   return (
     <div className="relative flex h-full w-full flex-col bg-bg-primary">
-      {/* Connection warning banner */}
       <AnimatePresence>
         {connectionWarning && (
           <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="flex items-center gap-2 border-b border-yellow-600/30 bg-yellow-500/10 px-4 py-2 text-xs text-yellow-300"
+            initial={{ y: -4, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -4, opacity: 0 }}
+            className="flex items-center gap-2 border-b border-status-warning/30 bg-status-warning/10 px-4 py-2 text-xs text-yellow"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="flex-shrink-0">
-              <path d="M12 2L1 21h22L12 2zm0 4l7.53 13H4.47L12 6zm-1 5v4h2v-4h-2zm0 6v2h2v-2h-2z" />
-            </svg>
-            <span>{connectionWarning}</span>
+            <Icon name="triangleAlert" size="xs" className="flex-shrink-0" />
+            <span>Call quality needs attention.</span>
+            <details className="ml-auto">
+              <summary className="cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue">
+                Details
+              </summary>
+              <span className="mt-1 block max-w-md break-words text-meta">
+                {connectionWarning}
+              </span>
+            </details>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Relay failover toast */}
       <AnimatePresence>
         {showRelayToast && (
           <motion.div
-            initial={{ y: -20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -20, opacity: 0 }}
-            className="absolute left-1/2 top-14 z-20 -translate-x-1/2 rounded-md bg-blue-500/20 border border-blue-500/30 px-3 py-1.5 text-xs text-blue-300"
+            variants={variants.toast}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="absolute left-1/2 top-14 z-dropdown -translate-x-1/2 rounded-md border border-status-info/30 bg-status-info/20 px-3 py-1.5 text-xs text-blue"
           >
-            Relay peer changed -- rebuilding connections
+            Relay peer changed — rebuilding connections
           </motion.div>
         )}
       </AnimatePresence>
@@ -137,25 +136,34 @@ export function VoiceView({ channelId, channelName }: { channelId: string; chann
       <motion.div
         initial={{ y: -4, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={transitions.panelSpring}
-        className="flex h-12 items-center justify-between border-b border-black/30 px-4 shadow-elevation-low"
+        transition={transitions.enter}
+        className="flex h-12 items-center justify-between border-b border-border-subtle px-4 shadow-elevation-low"
         data-tauri-drag-region
       >
         <div className="flex items-center gap-2">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-muted flex-shrink-0">
-            <path d="M12 3a1 1 0 0 0-1-1h-1.06a1 1 0 0 0-.7.28L5.71 5.71A1 1 0 0 1 5 6H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2a1 1 0 0 1 .7.29l3.54 3.54a1 1 0 0 0 .7.28H11a1 1 0 0 0 1-1V3Z" />
-          </svg>
+          <Icon name="volume" className="flex-shrink-0 text-muted" />
           <span className="text-sm font-semibold text-primary">{channelName}</span>
+          <span
+            className={`rounded-full px-2 py-1 text-meta font-medium ${
+              connectionState === 'connected'
+                ? 'bg-green/10 text-green'
+                : connectionState === 'disconnected' || connectionState === 'degraded'
+                  ? 'bg-status-warning/10 text-yellow'
+                  : 'bg-bg-modifier-hover text-secondary'
+            }`}
+          >
+            {connectionLabel}
+          </span>
         </div>
 
-        <div className="flex items-center gap-1.5 text-[11px] text-muted">
-          {connStats && (
+        <div className="flex items-center gap-1.5 text-meta text-muted">
+          {stats.latencyMs !== null && (
             <span className="rounded-md bg-bg-modifier-hover px-2 py-1">
-              {connStats.type === 'relay' ? 'Relay' : 'Direct'} · {connStats.rtt}ms
+              {stats.quality} · {stats.latencyMs}ms
             </span>
           )}
           <span className="rounded-md bg-bg-modifier-hover px-2 py-1">{connectionState}</span>
-          <span className="rounded-md bg-bg-modifier-hover px-2 py-1">{memberCount} peers</span>
+          <span className="rounded-md bg-bg-modifier-hover px-2 py-1">{memberCount} people</span>
           <span className="rounded-md bg-bg-modifier-hover px-2 py-1">{relayLabel}</span>
           <span className="rounded-md bg-bg-modifier-hover px-2 py-1">{channelId.slice(0, 8)}</span>
         </div>
@@ -165,13 +173,19 @@ export function VoiceView({ channelId, channelName }: { channelId: string; chann
         className="flex flex-1 flex-col items-center justify-center overflow-hidden p-8"
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={transitions.panelSpring}
+        transition={transitions.enter}
       >
-        <VoicePeerGrid />
+        <VoicePeerGrid onParticipantVolume={setParticipantVolume} />
       </motion.div>
 
       <div className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2">
-        <VoiceControls />
+        <VoiceControls
+          devices={devices}
+          onInputDeviceChange={switchInputDevice}
+          onOutputDeviceChange={switchOutputDevice}
+          onCameraChange={toggleCamera}
+          onScreenShareChange={toggleScreenShare}
+        />
       </div>
     </div>
   )
@@ -188,7 +202,7 @@ function VoiceReadinessItem({
 }) {
   return (
     <div className="rounded-md bg-bg-primary px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-muted">{label}</div>
+      <div className="text-caption uppercase tracking-wide text-muted">{label}</div>
       <div className={`mt-1 font-medium ${warning ? 'text-yellow' : 'text-primary'}`}>{value}</div>
     </div>
   )

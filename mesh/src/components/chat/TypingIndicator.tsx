@@ -56,7 +56,7 @@ function formatTypingText(names: string[]): string {
 
 function TypingDots() {
   return (
-    <span className="inline-flex items-center gap-[2px]">
+    <span className="inline-flex items-center gap-0.5">
       <span className="h-1 w-1 animate-bounce rounded-full bg-muted [animation-delay:0ms]" />
       <span className="h-1 w-1 animate-bounce rounded-full bg-muted [animation-delay:150ms]" />
       <span className="h-1 w-1 animate-bounce rounded-full bg-muted [animation-delay:300ms]" />

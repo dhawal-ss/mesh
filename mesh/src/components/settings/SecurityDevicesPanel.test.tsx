@@ -117,7 +117,7 @@ describe('SecurityDevicesPanel', () => {
     container.remove()
   })
 
-  it('renders registered devices and their real trust states', async () => {
+  it('renders registered devices in plain-language trust states', async () => {
     await act(async () => {
       root.render(<SecurityDevicesPanel open onClose={() => {}} />)
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -126,12 +126,13 @@ describe('SecurityDevicesPanel', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    expect(container.textContent).toContain('Mesh Desktop (this device)')
-    expect(container.textContent).toContain('Cross-signed')
-    expect(container.textContent).toContain('Old phone')
-    expect(container.textContent).toContain('New device')
-    expect(container.textContent).toContain('Review 1 untrusted device warning')
-    expect(container.textContent).toContain('2 devices')
+    expect(document.body.textContent).toContain('Mesh Desktop (this device)')
+    expect(document.body.textContent).toContain('Trusted')
+    expect(document.body.textContent).toContain('Old phone')
+    expect(document.body.textContent).toContain('Not verified yet')
+    expect(document.body.textContent).toContain('Is this you?')
+    expect(document.body.textContent).toContain('Your devices')
+    expect(document.body.textContent).toContain('2 devices')
   })
 
   it('guides lost-device response with an explicit accessible device choice', async () => {
@@ -143,35 +144,35 @@ describe('SecurityDevicesPanel', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    const openWorkflow = findButton(container, 'I lost a device')
+    const openWorkflow = findButton(document.body, 'I lost a device')
     expect(openWorkflow.getAttribute('aria-expanded')).toBe('false')
     await act(async () => openWorkflow.click())
 
-    expect(container.querySelector('#lost-device-workflow[aria-labelledby="lost-device-title"]')).not.toBeNull()
-    expect(container.textContent).toContain('cannot remotely erase messages, keys, screenshots')
-    expect(container.textContent).toContain('login alone does not restore keys')
-    expect(container.textContent).toContain('Verify only devices you still possess')
-    expect(container.textContent).toContain('not proof that the lost device was erased')
-    expect(container.querySelector('legend')?.textContent).toBe('Which device was lost?')
+    expect(document.body.querySelector('#lost-device-workflow[aria-labelledby="lost-device-title"]')).not.toBeNull()
+    expect(document.body.textContent).toContain('cannot delete messages, screenshots')
+    expect(document.body.textContent).toContain('message backup is ready')
+    expect(document.body.textContent).toContain('Only trust devices you still have')
+    expect(document.body.textContent).toContain('cannot erase anything already saved')
+    expect(document.body.querySelector('legend')?.textContent).toBe('Which device was lost?')
 
-    const deviceChoices = [...container.querySelectorAll<HTMLInputElement>('input[name="lost-device"]')]
+    const deviceChoices = [...document.body.querySelectorAll<HTMLInputElement>('input[name="lost-device"]')]
     expect(deviceChoices).toHaveLength(1)
     expect(deviceChoices[0]?.value).toBe('OLDPHONE')
-    const continueButton = findButton(container, 'Continue to revoke selected device')
+    const continueButton = findButton(document.body, 'Continue to sign out selected device')
     expect(continueButton.disabled).toBe(true)
 
     await act(async () => deviceChoices[0]?.click())
-    const acknowledgement = container.querySelector<HTMLInputElement>('input[type="checkbox"]')
-    expect(acknowledgement?.parentElement?.textContent).toContain('does not remotely wipe the lost device')
+    const acknowledgement = document.body.querySelector<HTMLInputElement>('input[type="checkbox"]')
+    expect(acknowledgement?.parentElement?.textContent).toContain('cannot erase anything')
     expect(continueButton.disabled).toBe(true)
     await act(async () => acknowledgement?.click())
     expect(continueButton.disabled).toBe(false)
 
     await act(async () => continueButton.click())
-    expect(container.textContent).toContain('Revoke Old phone?')
-    expect(container.textContent).toContain('Mesh does not save it')
-    expect(container.textContent).toContain('browser-authenticated provider')
-    expect(container.querySelector('input[type="password"][autocomplete="current-password"]')).not.toBeNull()
+    expect(document.body.textContent).toContain('Sign out Old phone?')
+    expect(document.body.textContent).toContain('Mesh does not save it')
+    expect(document.body.textContent).toContain('account website')
+    expect(document.body.querySelector('input[type="password"][autocomplete="current-password"]')).not.toBeNull()
   })
 
   it('revokes only the selected lost device after interactive authentication', async () => {
@@ -182,28 +183,28 @@ describe('SecurityDevicesPanel', () => {
     })
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
-      findButton(container, 'I lost a device').click()
+      findButton(document.body, 'I lost a device').click()
     })
     await act(async () => {
-      container.querySelector<HTMLInputElement>('input[name="lost-device"][value="OLDPHONE"]')?.click()
+      document.body.querySelector<HTMLInputElement>('input[name="lost-device"][value="OLDPHONE"]')?.click()
     })
     await act(async () => {
-      container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.click()
+      document.body.querySelector<HTMLInputElement>('input[type="checkbox"]')?.click()
     })
     await act(async () => {
-      findButton(container, 'Continue to revoke selected device').click()
+      findButton(document.body, 'Continue to sign out selected device').click()
     })
 
-    const password = container.querySelector<HTMLInputElement>('input[type="password"][autocomplete="current-password"]')!
+    const password = document.body.querySelector<HTMLInputElement>('input[type="password"][autocomplete="current-password"]')!
     await act(async () => setInputValue(password, 'one-use-password'))
     await act(async () => {
-      findButton(container, 'Revoke device').click()
+      findButton(document.body, 'Sign out device').click()
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     expect(matrixRevokeDevice).toHaveBeenCalledWith('OLDPHONE', 'one-use-password')
-    expect(container.textContent).not.toContain('one-use-password')
-    expect(container.textContent).not.toContain('Revoke Old phone?')
+    expect(document.body.textContent).not.toContain('one-use-password')
+    expect(document.body.textContent).not.toContain('Sign out Old phone?')
   })
 
   it('requires a second confirmation before local account erasure', async () => {
@@ -215,14 +216,14 @@ describe('SecurityDevicesPanel', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    const removeButton = Array.from(container.querySelectorAll('button')).find(
+    const removeButton = Array.from(document.body.querySelectorAll('button')).find(
       (button) => button.textContent === 'Remove account and local data',
     )
     expect(removeButton).toBeDefined()
     act(() => removeButton?.click())
 
-    expect(container.textContent).toContain('This cannot be undone')
-    expect(container.textContent).toContain('Permanently remove local account')
+    expect(document.body.textContent).toContain('This cannot be undone')
+    expect(document.body.textContent).toContain('Permanently remove local account')
   })
 
   it('exposes an explicit accessible close control', async () => {
@@ -232,7 +233,7 @@ describe('SecurityDevicesPanel', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    const closeButton = container.querySelector<HTMLButtonElement>('button[aria-label="Close dialog"]')
+    const closeButton = document.body.querySelector<HTMLButtonElement>('button[aria-label="Close dialog"]')
     expect(closeButton).not.toBeNull()
     act(() => closeButton?.click())
     expect(onClose).toHaveBeenCalledOnce()
@@ -268,18 +269,18 @@ describe('SecurityDevicesPanel', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    const verifyButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Verify',
+    const verifyButton = Array.from(document.body.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Check device',
     )
     await act(async () => {
       verifyButton?.click()
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
-    expect(container.textContent).toContain('Compare emoji')
-    expect(container.textContent).toContain('Show QR code')
+    expect(document.body.textContent).toContain('Compare emoji')
+    expect(document.body.textContent).toContain('Scan with other device')
 
-    const qrButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Show QR code',
+    const qrButton = Array.from(document.body.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Scan with other device',
     )
     await act(async () => {
       qrButton?.click()
@@ -287,7 +288,46 @@ describe('SecurityDevicesPanel', () => {
     })
 
     expect(matrixSelectDeviceVerificationMethod).toHaveBeenCalledWith('verification-1', 'qr')
-    expect(container.querySelector('img[alt="Matrix device verification QR code"]')).not.toBeNull()
+    expect(document.body.querySelector('img[alt="Code to scan with your other device"]')).not.toBeNull()
+  })
+
+  it('keeps protocol and cryptography jargon out of the rendered device workflow', async () => {
+    vi.mocked(matrixStartDeviceVerification).mockResolvedValue({
+      verificationId: 'verification-1',
+      deviceId: 'OLDPHONE',
+      phase: 'choose-method',
+      method: null,
+      emojis: [],
+      decimals: null,
+      qrSvg: null,
+      cancellationReason: null,
+    })
+    await act(async () => {
+      root.render(<SecurityDevicesPanel open onClose={() => {}} />)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      findButton(document.body, 'Check device').click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    const visibleCopy = document.body.textContent?.toLowerCase() ?? ''
+    for (const banned of [
+      'matrix',
+      'homeserver',
+      'cross-signed',
+      'cross-signing',
+      'verification',
+      'revoke',
+      'revocation',
+      'recovery key',
+      'secret storage',
+      'ssss',
+      'sas',
+    ]) {
+      expect(visibleCopy).not.toContain(banned)
+    }
   })
 })
 

@@ -1,43 +1,96 @@
 import { useState } from 'react'
-import { useCommunityStore } from '../../store/communities'
+import { useActiveCommunity, useCommunityStore } from '../../store/communities'
 import { useChannelStore } from '../../store/channels'
 import { useVoiceStore } from '../../store/voice'
 import { ChannelItem } from '../community/ChannelItem'
 import { CommunitySettings } from '../community/CommunitySettings'
 import { UserPanel } from './UserPanel'
+import { DialogErrorBoundary, ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
+import { Icon } from '../ui/Icon'
+import { useShellStore } from '../../store/shell'
+import * as bridge from '../../lib/bridge'
+import { copyText, matrixRoomPermalink } from '../../lib/notifications'
+import { showToast } from '../ui/Toast'
+import type { Channel } from '../../types/ipc'
+import { useMatrixRtcMembershipSync } from '../../hooks/useMatrixRtcMembershipSync'
+import { canStartMatrixVoice, shouldActivateVoiceSession } from '../../lib/voice-runtime'
 
 export function ChannelSidebar() {
-  const { communities, activeCommunityId } = useCommunityStore()
-  const { channels, activeChannelId, setActiveChannel } = useChannelStore()
-  const { currentChannelId, currentCommunityId, setCurrentVoiceSession } = useVoiceStore()
+  const communityCount = useCommunityStore((state) => state.communityOrder.length)
+  const activeCommunityId = useCommunityStore((state) => state.activeCommunityId)
+  const channels = useChannelStore((state) => state.channels)
+  const activeChannelId = useChannelStore((state) => state.activeChannelId)
+  const setActiveChannel = useChannelStore((state) => state.setActiveChannel)
+  const patchChannel = useChannelStore((state) => state.patchChannel)
+  const currentChannelId = useVoiceStore((state) => state.currentChannelId)
+  const currentCommunityId = useVoiceStore((state) => state.currentCommunityId)
+  const setCurrentVoiceSession = useVoiceStore((state) => state.setCurrentVoiceSession)
+  const matrixRtcMembersByRoom = useVoiceStore((state) => state.matrixRtcMembersByRoom)
+  const setProfileOpen = useShellStore((state) => state.setProfileOpen)
   const [showSettings, setShowSettings] = useState(false)
   const [textCollapsed, setTextCollapsed] = useState(false)
   const [voiceCollapsed, setVoiceCollapsed] = useState(false)
+  const matrixMode = bridge.isMatrixBackend()
+  const matrixVoiceReady = canStartMatrixVoice(bridge.getBackendStatusSnapshot())
 
-  const activeCommunity = communities.find((c) => c.id === activeCommunityId)
+  const activeCommunity = useActiveCommunity()
   const communityChannels = channels.filter((c) => c.communityId === activeCommunityId)
   const textChannels = communityChannels.filter((c) => c.channelType === 'text')
   const voiceChannels = communityChannels.filter((c) => c.channelType === 'voice')
+  useMatrixRtcMembershipSync(
+    matrixMode
+      ? channels.filter((channel) => channel.channelType === 'voice').map((channel) => channel.id)
+      : [],
+  )
+
+  const markRead = async (channel: Channel) => {
+    const previousUnread = channel.unreadCount ?? 0
+    patchChannel(channel.id, { unreadCount: 0 })
+    try {
+      await bridge.markChannelRead(channel.id)
+    } catch {
+      patchChannel(channel.id, { unreadCount: previousUnread })
+      showToast('Could not mark this channel as read. Try again.', 'error')
+    }
+  }
+
+  const copyChannelLink = async (channel: Channel) => {
+    try {
+      const link = bridge.isMatrixBackend()
+        ? matrixRoomPermalink(channel.id)
+        : await bridge.generateInviteLink(channel.communityId)
+      await copyText(link)
+      showToast('Channel link copied.', 'success')
+    } catch {
+      showToast('Could not copy this channel link.', 'error')
+    }
+  }
 
   if (!activeCommunity) {
     return (
       <div className="flex flex-col h-full">
-        <div className="flex h-12 flex-shrink-0 items-center border-b border-black/30 px-4 shadow-elevation-low">
-          <h2 className="text-sm font-semibold text-primary">Your communities</h2>
+        <div className="flex h-12 flex-shrink-0 items-center border-b border-border-subtle px-4 shadow-elevation-low">
+          <h2 className="text-sm font-semibold text-primary">Your servers</h2>
         </div>
         <div className="flex flex-1 items-center px-5 py-8 text-center">
           <div>
             <p className="text-sm font-medium text-primary">
-              {communities.length > 0 ? 'Choose a community' : 'Find your people'}
+              {communityCount > 0 ? 'Choose a server' : 'Find your people'}
             </p>
             <p className="mt-2 text-xs leading-5 text-muted">
-              {communities.length > 0
-                ? 'Select a community icon to view its channels.'
-                : 'Use the plus button to create a community, or the compass to discover one you can join.'}
+              {communityCount > 0
+                ? 'Select a server icon to view its channels.'
+                : 'Use the plus button to create or join a server.'}
             </p>
           </div>
         </div>
-        <UserPanel />
+        <ScopedErrorBoundary
+          name="User controls"
+          description="Account controls could not be displayed."
+          className="m-2"
+        >
+          <UserPanel />
+        </ScopedErrorBoundary>
       </div>
     )
   }
@@ -47,16 +100,14 @@ export function ChannelSidebar() {
       <div className="flex flex-col h-full">
         {/* Server name header */}
         <button
-          className="flex h-12 flex-shrink-0 items-center justify-between border-b border-black/30 px-4 shadow-elevation-low hover:bg-bg-modifier-hover transition-colors"
+          className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border-subtle px-4 shadow-elevation-low transition-colors hover:bg-bg-modifier-hover"
           onClick={() => setShowSettings(true)}
           data-tauri-drag-region
         >
           <h2 className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-primary">
             {activeCommunity.name}
           </h2>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted flex-shrink-0">
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
+          <Icon name="chevronDown" size="sm" className="flex-shrink-0 text-muted" />
         </button>
 
         {/* Channel list */}
@@ -68,18 +119,12 @@ export function ChannelSidebar() {
                 onClick={() => setTextCollapsed(!textCollapsed)}
                 className="group flex w-full items-center gap-0.5 px-0.5 pb-1 text-left"
               >
-                <svg
-                  width="10"
-                  height="10"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="3"
+                <Icon
+                  name="chevronDown"
+                  size="xs"
                   className={`text-muted transition-transform duration-150 ${textCollapsed ? '-rotate-90' : ''}`}
-                >
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-                <span className="text-[11px] font-semibold uppercase tracking-[0.02em] text-muted group-hover:text-secondary">
+                />
+                <span className="text-meta font-semibold uppercase tracking-caption text-muted group-hover:text-secondary">
                   Text Channels
                 </span>
               </button>
@@ -91,6 +136,9 @@ export function ChannelSidebar() {
                       channel={channel}
                       active={channel.id === activeChannelId}
                       onClick={() => setActiveChannel(channel.id)}
+                      onMarkRead={() => void markRead(channel)}
+                      onOpenNotificationSettings={() => setProfileOpen(true)}
+                      onCopyLink={() => void copyChannelLink(channel)}
                     />
                   ))}
                 </div>
@@ -105,37 +153,109 @@ export function ChannelSidebar() {
                 onClick={() => setVoiceCollapsed(!voiceCollapsed)}
                 className="group flex w-full items-center gap-0.5 px-0.5 pb-1 text-left"
               >
-                <svg
-                  width="10"
-                  height="10"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="3"
+                <Icon
+                  name="chevronDown"
+                  size="xs"
                   className={`text-muted transition-transform duration-150 ${voiceCollapsed ? '-rotate-90' : ''}`}
-                >
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-                <span className="text-[11px] font-semibold uppercase tracking-[0.02em] text-muted group-hover:text-secondary">
+                />
+                <span className="text-meta font-semibold uppercase tracking-caption text-muted group-hover:text-secondary">
                   Voice Channels
                 </span>
               </button>
               {!voiceCollapsed && (
                 <div className="space-y-0.5">
-                  {voiceChannels.map((channel) => (
-                    <ChannelItem
-                      key={channel.id}
-                      channel={channel}
-                      active={
-                        channel.id === activeChannelId ||
-                        (channel.id === currentChannelId && channel.communityId === currentCommunityId)
-                      }
-                      onClick={() => {
-                        setActiveChannel(channel.id)
+                  {voiceChannels.map((channel) => {
+                    const members = matrixRtcMembersByRoom[channel.id] ?? []
+                    const joinChannel = () => {
+                      setActiveChannel(channel.id)
+                      if (shouldActivateVoiceSession(matrixMode, matrixVoiceReady)) {
                         setCurrentVoiceSession(activeCommunityId, channel.id)
-                      }}
-                    />
-                  ))}
+                      }
+                    }
+
+                    return (
+                      <div
+                        key={channel.id}
+                        draggable={
+                          channel.id === currentChannelId &&
+                          channel.communityId === currentCommunityId
+                        }
+                        onDragStart={(event) => {
+                          event.dataTransfer.effectAllowed = 'move'
+                          event.dataTransfer.setData(
+                            'application/x-mesh-voice-channel',
+                            channel.id,
+                          )
+                        }}
+                        onDragOver={(event) => {
+                          if (
+                            currentChannelId &&
+                            currentCommunityId === channel.communityId &&
+                            currentChannelId !== channel.id
+                          ) {
+                            event.preventDefault()
+                            event.dataTransfer.dropEffect = 'move'
+                          }
+                        }}
+                        onDrop={(event) => {
+                          const sourceChannelId = event.dataTransfer.getData(
+                            'application/x-mesh-voice-channel',
+                          )
+                          if (
+                            sourceChannelId &&
+                            sourceChannelId === currentChannelId &&
+                            currentCommunityId === channel.communityId &&
+                            sourceChannelId !== channel.id
+                          ) {
+                            event.preventDefault()
+                            joinChannel()
+                          }
+                        }}
+                      >
+                        <ChannelItem
+                          channel={channel}
+                          active={
+                            channel.id === currentChannelId &&
+                            channel.communityId === currentCommunityId
+                          }
+                          onClick={joinChannel}
+                          onMarkRead={() => void markRead(channel)}
+                          onOpenNotificationSettings={() => setProfileOpen(true)}
+                          onCopyLink={() => void copyChannelLink(channel)}
+                        />
+                        {members.length > 0 && (
+                          <div
+                            className="ml-7 mt-0.5 space-y-0.5"
+                            aria-label={`${channel.name} call members`}
+                          >
+                            {members.slice(0, 8).map((member) => (
+                              <button
+                                key={`${member.userId}:${member.deviceId}:${member.sessionId}`}
+                                type="button"
+                                onClick={joinChannel}
+                                className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs text-muted hover:bg-bg-modifier-hover hover:text-secondary"
+                              >
+                                <span
+                                  className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-bg-modifier-active text-meta font-semibold text-secondary"
+                                  aria-hidden="true"
+                                >
+                                  {(member.displayName || member.userId).slice(0, 1).toUpperCase()}
+                                </span>
+                                <span className="truncate">
+                                  {member.displayName || member.userId}
+                                </span>
+                              </button>
+                            ))}
+                            {members.length > 8 && (
+                              <div className="px-1 text-meta text-muted">
+                                +{members.length - 8} more
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -143,10 +263,22 @@ export function ChannelSidebar() {
         </div>
 
         {/* User panel — Discord-style bottom bar */}
-        <UserPanel />
+        <ScopedErrorBoundary
+          name="User controls"
+          description="Account controls could not be displayed."
+          className="m-2"
+        >
+          <UserPanel />
+        </ScopedErrorBoundary>
       </div>
 
-      <CommunitySettings isOpen={showSettings} onClose={() => setShowSettings(false)} />
+      <DialogErrorBoundary
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        title="Server Settings"
+      >
+        <CommunitySettings isOpen={showSettings} onClose={() => setShowSettings(false)} />
+      </DialogErrorBoundary>
     </>
   )
 }

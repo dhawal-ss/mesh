@@ -1,5 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import { transitions } from '../../lib/motion'
+import type { MatrixTransferProgress } from '../../types/ipc'
+import { Icon } from '../ui/Icon'
 
 interface StagedFile {
   name: string
@@ -9,58 +11,96 @@ interface StagedFile {
   contentType?: string
   source: 'native' | 'temporary'
   stagingToken?: string
+  transferId?: string
 }
 
 interface FileAttachmentPreviewProps {
   files: StagedFile[]
   onRemove: (index: number) => void
+  transfers?: Record<string, MatrixTransferProgress>
+  onCancelTransfer?: (transferId: string) => void
 }
 
-export function FileAttachmentPreview({ files, onRemove }: FileAttachmentPreviewProps) {
+export function FileAttachmentPreview({
+  files,
+  onRemove,
+  transfers = {},
+  onCancelTransfer,
+}: FileAttachmentPreviewProps) {
   if (files.length === 0) return null
 
   return (
     <motion.div
-      initial={{ height: 0, opacity: 0 }}
-      animate={{ height: 'auto', opacity: 1 }}
-      exit={{ height: 0, opacity: 0 }}
-      transition={transitions.softSpring}
-      className="border-b border-white/8 px-4 pb-3 pt-3"
+      initial={{ opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -4 }}
+      transition={transitions.enter}
+      className="border-b border-border-subtle px-4 pb-3 pt-3"
     >
       <div className="flex flex-wrap gap-2">
         <AnimatePresence>
-          {files.map((file, i) => (
+          {files.map((file, i) => {
+            const transfer = file.transferId ? transfers[file.transferId] : undefined
+            const transferActive = transfer && !['completed', 'cancelled', 'failed'].includes(transfer.state)
+            const transferCancellable = transfer && ['queued', 'encrypting', 'uploading'].includes(transfer.state)
+            const progressPercent = transfer?.totalBytes
+              ? Math.min(100, Math.round((transfer.transferredBytes / transfer.totalBytes) * 100))
+              : 0
+            return (
             <motion.div
               key={`${file.grant}-${i}`}
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              className="group relative flex items-center gap-2 rounded-[14px] border border-white/8 bg-white/[0.04] px-3 py-2 pr-8"
+              className="group relative flex items-center gap-2 rounded-control border border-border-subtle bg-surface-hover px-3 py-2 pr-8"
             >
-              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[8px] bg-white/[0.06] text-muted">
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-surface-active text-muted">
                 <FileIcon filename={file.name} />
               </div>
               <div className="min-w-0">
-                <p className="max-w-[140px] truncate text-xs font-medium text-primary">
+                <p className="max-w-attachment-name truncate text-xs font-medium text-primary">
                   {file.name}
                 </p>
-                <p className="text-[10px] text-muted">
-                  {file.size === null ? 'Size checked securely when sent' : formatSize(file.size)}
+                <p className="text-caption text-muted">
+                  {transfer
+                    ? transfer.state === 'failed' || transfer.state === 'cancelled'
+                      ? `${transfer.error ?? 'Transfer stopped'} Retry restarts from zero.`
+                      : `${transfer.state} · ${progressPercent}%`
+                    : file.size === null
+                      ? 'Size checked securely when sent'
+                      : formatSize(file.size)}
                 </p>
+                {transferActive && (
+                  <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-active">
+                    <div
+                      className="h-full rounded-full bg-blue transition-[width] duration-normal"
+                      data-design-token-exception="data-driven-transfer-progress-width"
+                      style={{ width: `${progressPercent}%` }}
+                    />
+                  </div>
+                )}
               </div>
               <button
                 type="button"
-                onClick={() => onRemove(i)}
-                aria-label={`Remove ${file.name}`}
-                className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-white/[0.06] text-muted transition-colors hover:bg-white/[0.12] hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue"
+                onClick={() => {
+                  if (transferCancellable && file.transferId) onCancelTransfer?.(file.transferId)
+                  else onRemove(i)
+                }}
+                disabled={Boolean(transferActive && !transferCancellable)}
+                aria-label={
+                  transferCancellable
+                    ? `Cancel upload of ${file.name}`
+                    : transferActive
+                      ? `Publishing ${file.name}`
+                      : `Remove ${file.name}`
+                }
+                className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-surface-hover text-muted transition-colors hover:bg-surface-active hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue"
               >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
+                <Icon name="x" size="xs" />
               </button>
             </motion.div>
-          ))}
+            )
+          })}
         </AnimatePresence>
       </div>
     </motion.div>
@@ -75,36 +115,16 @@ function FileIcon({ filename }: { filename: string }) {
   const isCode = ['ts', 'tsx', 'js', 'jsx', 'rs', 'py', 'go', 'json', 'css', 'html'].includes(ext)
 
   if (isImage) {
-    return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-        <circle cx="8.5" cy="8.5" r="1.5" />
-        <polyline points="21 15 16 10 5 21" />
-      </svg>
-    )
+    return <Icon name="image" size="xs" />
   }
   if (isVideo || isAudio) {
-    return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <polygon points="5 3 19 12 5 21 5 3" />
-      </svg>
-    )
+    return <Icon name="play" size="xs" />
   }
   if (isCode) {
-    return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <polyline points="16 18 22 12 16 6" />
-        <polyline points="8 6 2 12 8 18" />
-      </svg>
-    )
+    return <Icon name="code" size="xs" />
   }
 
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-    </svg>
-  )
+  return <Icon name="file" size="xs" />
 }
 
 function formatSize(bytes: number): string {

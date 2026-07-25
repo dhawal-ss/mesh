@@ -1,23 +1,75 @@
-import { useState } from 'react'
 import { useCommunityStore } from '../../store/communities'
 import { useDmStore } from '../../store/dms'
+import { useShellStore } from '../../store/shell'
 import { Tooltip } from '../ui/Tooltip'
 import { CommunityIcon } from '../community/CommunityIcon'
 import { CreateCommunityModal } from '../community/CreateCommunityModal'
-import { ServerDiscovery } from '../community/ServerDiscovery'
-import { DiagnosticsPanel } from '../settings/DiagnosticsPanel'
-import { SecurityDevicesPanel } from '../settings/SecurityDevicesPanel'
 import * as bridge from '../../lib/bridge'
+import { Icon } from '../ui/Icon'
+import {
+  getEffectiveChannelNotificationLevel,
+  isBackupReminderDue,
+  useSettingsStore,
+} from '../../store/settings'
+import { useChannelStore } from '../../store/channels'
+import { copyText, matrixRoomPermalink } from '../../lib/notifications'
+import { showToast } from '../ui/Toast'
 
 export function CommunitySidebar() {
-  const backendKind = bridge.isMatrixBackend() ? 'matrix' : 'legacy-p2p'
   const directMessagesAvailable = bridge.getBackendCapabilities().directMessages
-  const { communities, activeCommunityId, setActiveCommunity } = useCommunityStore()
-  const { isDmMode, setDmMode } = useDmStore()
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [showDiscovery, setShowDiscovery] = useState(false)
-  const [showDiagnostics, setShowDiagnostics] = useState(false)
-  const [showSecurity, setShowSecurity] = useState(false)
+  const communities = useCommunityStore((state) => state.communities)
+  const channels = useChannelStore((state) => state.channels)
+  const patchChannel = useChannelStore((state) => state.patchChannel)
+  const activeCommunityId = useCommunityStore((state) => state.activeCommunityId)
+  const setActiveCommunity = useCommunityStore((state) => state.setActiveCommunity)
+  const isDmMode = useDmStore((state) => state.isDmMode)
+  const setDmMode = useDmStore((state) => state.setDmMode)
+  const serverModalOpen = useShellStore((state) => state.serverModalOpen)
+  const serverModalTab = useShellStore((state) => state.serverModalTab)
+  const inviteDraft = useShellStore((state) => state.inviteDraft)
+  const openServerModal = useShellStore((state) => state.openServerModal)
+  const closeServerModal = useShellStore((state) => state.closeServerModal)
+  const setProfileOpen = useShellStore((state) => state.setProfileOpen)
+  const backupReminderDue = useSettingsStore((state) => isBackupReminderDue(state.backup))
+  const notifications = useSettingsStore((state) => state.notifications)
+
+  const copyCommunityLink = async (communityId: string) => {
+    try {
+      const link = bridge.isMatrixBackend()
+        ? matrixRoomPermalink(communityId)
+        : await bridge.generateInviteLink(communityId)
+      await copyText(link)
+      showToast('Server link copied.', 'success')
+    } catch {
+      showToast('Could not copy this server link.', 'error')
+    }
+  }
+
+  const markCommunityRead = async (communityId: string) => {
+    const unreadChannels = channels.filter(
+      (channel) => channel.communityId === communityId && (channel.unreadCount ?? 0) > 0,
+    )
+    for (const channel of unreadChannels) {
+      patchChannel(channel.id, { unreadCount: 0, unreadMentions: 0 })
+    }
+
+    const results = await Promise.allSettled(
+      unreadChannels.map((channel) => bridge.markChannelRead(channel.id)),
+    )
+    let failed = false
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') return
+      failed = true
+      const channel = unreadChannels[index]
+      patchChannel(channel.id, {
+        unreadCount: channel.unreadCount ?? 0,
+        unreadMentions: channel.unreadMentions,
+      })
+    })
+    if (failed) {
+      showToast('Some channels could not be marked as read. Try again.', 'error')
+    }
+  }
 
   const handleDmClick = () => {
     if (!directMessagesAvailable) return
@@ -32,112 +84,99 @@ export function CommunitySidebar() {
   return (
     <>
       <div className="flex flex-col items-center gap-2 pb-3">
-        {/* Home / DM button */}
-        {directMessagesAvailable ? <Tooltip content="Direct Messages" side="right">
-          <button
-            onClick={handleDmClick}
-            className={`group relative flex h-12 w-12 items-center justify-center rounded-[24px] transition-all duration-200 ${
-              isDmMode
-                ? 'rounded-[16px] bg-accent text-bg-tertiary'
-                : 'bg-bg-primary text-muted hover:rounded-[16px] hover:bg-accent hover:text-bg-tertiary'
-            }`}
-            aria-label="Direct Messages"
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19.73 4.87l-15.5 6.37a.5.5 0 00.01.95l5.25 1.68 7.09-5.45c.15-.12.33.04.22.18L10.7 15.4l-.03 4.63a.5.5 0 00.84.34l2.85-2.82 5.27 1.68a.5.5 0 00.64-.38l2.53-13.03a.5.5 0 00-.73-.53l.16-.42-.16.42z" />
-            </svg>
-            {/* Active pill indicator */}
-            {isDmMode && (
-              <div className="absolute -left-[4px] top-1/2 h-10 w-[4px] -translate-y-1/2 rounded-r-full bg-primary" />
-            )}
-          </button>
-        </Tooltip> : null}
-
-        {/* Separator */}
-        <div className="mx-auto h-[2px] w-8 rounded-full bg-bg-modifier-active" />
-
-        {/* Community icons */}
+        {/* Server icons */}
         {communities.map((c) => (
           <Tooltip key={c.id} content={c.name} side="right">
             <CommunityIcon
               community={c}
               active={c.id === activeCommunityId && !isDmMode}
+              unreadCount={channels.reduce((total, channel) => {
+                if (channel.communityId !== c.id) return total
+                if (
+                  getEffectiveChannelNotificationLevel(
+                    notifications,
+                    channel.id,
+                    channel.communityId,
+                  ) === 'nothing'
+                ) return total
+                return total + (channel.unreadCount ?? 0)
+              }, 0)}
               onClick={() => handleCommunityClick(c.id)}
+              onMarkRead={() => void markCommunityRead(c.id)}
+              onOpenNotificationSettings={() => setProfileOpen(true)}
+              onCopyLink={() => void copyCommunityLink(c.id)}
             />
           </Tooltip>
         ))}
 
         {/* Separator */}
         {communities.length > 0 && (
-          <div className="mx-auto h-[2px] w-8 rounded-full bg-bg-modifier-active" />
+          <div className="mx-auto h-rail-separator w-8 rounded-full bg-bg-modifier-active" />
         )}
 
-        {/* Add community */}
-        <Tooltip content="Add a Community" side="right">
+        {/* Add server */}
+        <Tooltip content="Add a Server" side="right">
           <button
-            onClick={() => setShowCreateModal(true)}
-            className="group flex h-12 w-12 items-center justify-center rounded-[24px] bg-bg-primary text-green transition-all duration-200 hover:rounded-[16px] hover:bg-green hover:text-white"
-            aria-label="Add a community"
+            onClick={() => openServerModal('create')}
+            className="group flex h-12 w-12 items-center justify-center rounded-community bg-bg-primary text-green transition-all duration-normal hover:rounded-community-active hover:bg-green hover:text-content-on-status"
+            aria-label="Add a server"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
+            <Icon name="plus" />
           </button>
         </Tooltip>
 
-        {/* Discover communities */}
-        <Tooltip content="Discover Communities" side="right">
+        <div className="mx-auto h-rail-separator w-8 rounded-full bg-bg-modifier-active" />
+
+        {directMessagesAvailable ? <Tooltip content="Direct Messages" side="right">
           <button
-            onClick={() => setShowDiscovery(true)}
-            className="group flex h-12 w-12 items-center justify-center rounded-[24px] bg-bg-primary text-muted transition-all duration-200 hover:rounded-[16px] hover:bg-accent hover:text-white"
-            aria-label="Discover Communities"
+            onClick={handleDmClick}
+            className={`group relative flex h-12 w-12 items-center justify-center rounded-community transition-all duration-normal ${
+              isDmMode
+                ? 'rounded-community-active bg-accent text-content-on-accent'
+                : 'bg-bg-primary text-muted hover:rounded-community-active hover:bg-accent hover:text-content-on-accent'
+            }`}
+            aria-label="Direct Messages"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
+            <Icon name="send" size="lg" />
+            {isDmMode && (
+              <div className="absolute -left-community-marker top-1/2 h-10 w-community-marker -translate-y-1/2 rounded-r-full bg-primary" />
+            )}
+          </button>
+        </Tooltip> : null}
+
+        <Tooltip content="Explore servers" side="right">
+          <button
+            onClick={() => openServerModal('discover')}
+            className="group relative flex h-12 w-12 items-center justify-center rounded-community bg-bg-primary text-muted transition-all duration-normal hover:rounded-community-active hover:bg-accent hover:text-content-on-accent"
+            aria-label="Explore servers"
+          >
+            <Icon name="search" />
           </button>
         </Tooltip>
 
-        {/* System diagnostics */}
-        {backendKind === 'matrix' && (
-          <Tooltip content="Security & Devices" side="right">
-            <button
-              onClick={() => setShowSecurity(true)}
-              className="group flex h-12 w-12 items-center justify-center rounded-[24px] bg-bg-primary text-muted transition-all duration-200 hover:rounded-[16px] hover:bg-accent hover:text-white"
-              aria-label="Security and devices"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
-                <path d="m9 12 2 2 4-4" />
-              </svg>
-            </button>
-          </Tooltip>
-        )}
-
-        {/* System diagnostics */}
-        <Tooltip content="System Diagnostics" side="right">
+        <Tooltip content="Profile" side="right">
           <button
-            onClick={() => setShowDiagnostics(true)}
-            className="group flex h-12 w-12 items-center justify-center rounded-[24px] bg-bg-primary text-muted transition-all duration-200 hover:rounded-[16px] hover:bg-accent hover:text-white"
-            aria-label="System Diagnostics"
+            onClick={() => setProfileOpen(true)}
+            className="group relative flex h-12 w-12 items-center justify-center rounded-community bg-bg-primary text-muted transition-all duration-normal hover:rounded-community-active hover:bg-accent hover:text-content-on-accent"
+            aria-label="Profile"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-            </svg>
+            <Icon name="users" />
+            {backupReminderDue && (
+              <span
+                className="absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-bg-tertiary bg-status-warning"
+                aria-label="Message backup needs attention"
+              />
+            )}
           </button>
         </Tooltip>
       </div>
 
-      <CreateCommunityModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} />
-      <ServerDiscovery open={showDiscovery} onClose={() => setShowDiscovery(false)} />
-      <DiagnosticsPanel
-        open={showDiagnostics}
-        onClose={() => setShowDiagnostics(false)}
-        backendKind={backendKind}
+      <CreateCommunityModal
+        isOpen={serverModalOpen}
+        onClose={closeServerModal}
+        initialTab={serverModalTab}
+        initialInvite={inviteDraft}
       />
-      <SecurityDevicesPanel open={showSecurity} onClose={() => setShowSecurity(false)} />
     </>
   )
 }

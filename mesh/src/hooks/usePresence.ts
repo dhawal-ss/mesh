@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useCommunityStore } from '../store/communities'
+import { useActiveCommunity, useCommunityStore } from '../store/communities'
 import { useIdentityStore } from '../store/identity'
-import { useMembershipStore } from '../store/membership'
+import { useCommunityMembers, useMembershipStore } from '../store/membership'
 import * as bridge from '../lib/bridge'
 
 interface PresenceEntry {
@@ -21,22 +21,20 @@ export function usePresence() {
   const matrixMode = bridge.isMatrixBackend()
   const identity = useIdentityStore((s) => s.identity)
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
-  const communities = useCommunityStore((s) => s.communities)
+  const activeCommunity = useActiveCommunity()
   // Select raw members map — never call .filter() inside a Zustand selector
   // because it creates a new array reference on every call, causing infinite re-renders.
-  const allMembers = useMembershipStore((s) => s.members)
+  const communityMembers = useCommunityMembers(activeCommunityId)
   const touchMember = useMembershipStore((s) => s.touchMember)
   const [onlinePeers, setOnlinePeers] = useState<Set<string>>(new Set())
-
-  const activeCommunity = communities.find((c) => c.id === activeCommunityId)
 
   // Derive active roster from raw state in useMemo (stable reference)
   const roster = useMemo(() => {
     if (!activeCommunityId) return []
-    return (allMembers[activeCommunityId] ?? []).filter(
+    return communityMembers.filter(
       (m) => m.joinStatus === 'joined' && m.banStatus === 'none',
     )
-  }, [allMembers, activeCommunityId])
+  }, [communityMembers, activeCommunityId])
 
   // Subscribe to presence events
   useEffect(() => {

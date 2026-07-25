@@ -76,6 +76,19 @@ function Test-AbsoluteServiceUri(
     }
 }
 
+function Test-MatrixServerName([string]$Value) {
+    if (-not $Value -or
+        $Value.Length -gt 255 -or
+        $Value -match "^[a-zA-Z][a-zA-Z0-9+.-]*://" -or
+        $Value -match "[/?#@\s]" -or
+        $Value -notmatch "^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::[1-9][0-9]{0,4})?$") {
+        return $false
+    }
+
+    $portMatch = [regex]::Match($Value, ":([0-9]+)$")
+    return -not $portMatch.Success -or [int]$portMatch.Groups[1].Value -le 65535
+}
+
 foreach ($path in @($composePath, $nginxPath, $EnvironmentFile, $WellKnownFile)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         Add-Failure "Required file does not exist: $path"
@@ -83,6 +96,7 @@ foreach ($path in @($composePath, $nginxPath, $EnvironmentFile, $WellKnownFile))
 }
 
 if (Test-Path -LiteralPath $composePath) {
+    $composeFailureCount = $failures.Count
     $compose = Get-Content -LiteralPath $composePath -Raw
     $liveKitImage = "image: livekit/livekit-server:v1.13.1@sha256:2c6869d2d5ff6c9c0166f47be1c92dad6928bfecfa5e4060a6ece48db8accfa3"
     $authImage = "image: ghcr.io/element-hq/lk-jwt-service:0.4.4@sha256:9c715697c6f7c1f538f2ee41b7b59b04a8d06bf790a7cc8c8517ccac8d28813d"
@@ -98,25 +112,55 @@ if (Test-Path -LiteralPath $composePath) {
     if ($compose -notmatch "(?ms)room:\s*\r?\n\s+auto_create:\s*false") {
         Add-Failure "LiveKit room.auto_create must be false for MatrixRTC authorization."
     }
+    if ($compose -notmatch "(?ms)webhook:\s*\r?\n\s+api_key:\s+\$\{LIVEKIT_API_KEY:\?.*?\}\s*\r?\n\s+urls:\s*\r?\n\s+- http://matrixrtc-auth:8080/sfu_webhook") {
+        Add-Failure "LiveKit must send signed participant lifecycle webhooks to the internal MatrixRTC Authorization Service."
+    }
+    if ($compose -notmatch "(?ms)livekit:\s*.*?depends_on:\s*\r?\n\s+matrixrtc-auth:\s*\r?\n\s+condition:\s*service_healthy" -or
+        $compose -match "(?ms)matrixrtc-auth:\s*.*?depends_on:\s*\r?\n\s+- livekit") {
+        Add-Failure "LiveKit must wait for the authorization webhook receiver to become healthy without a dependency cycle."
+    }
+    if ($compose -notmatch '(?ms)matrixrtc-auth:\s*.*?healthcheck:\s*\r?\n\s+test:\s*\["CMD",\s*"/lk-jwt-service-healthcheck"\]') {
+        Add-Failure "The MatrixRTC Authorization Service must use its pinned image healthcheck binary."
+    }
+    if ($compose -notmatch 'LIVEKIT_SANITY_CHECK_INTERVAL_SECONDS:\s*"30"') {
+        Add-Failure "The authorization service must retain the 30-second delegated-leave sanity check fallback."
+    }
     if ($compose -notmatch [regex]::Escape('${MATRIXRTC_CONTROL_BIND:-127.0.0.1}:7880:7880/tcp') -or
         $compose -notmatch [regex]::Escape('${MATRIXRTC_CONTROL_BIND:-127.0.0.1}:8080:8080/tcp')) {
         Add-Failure "LiveKit and authorization control ports must default to loopback."
     }
+    if ($compose -notmatch [regex]::Escape('${MATRIXRTC_METRICS_BIND:-127.0.0.1}:6789:6789/tcp')) {
+        Add-Failure "LiveKit Prometheus metrics must default to a loopback-only bind."
+    }
     if ($compose -notmatch [regex]::Escape('${MATRIXRTC_TURN_TLS_BIND:-127.0.0.1}:5349:5349/tcp')) {
         Add-Failure "The plaintext hop behind the TURN/TLS terminator must default to loopback."
+    }
+    if ([regex]::Matches($compose, "(?ms)cap_drop:\s*\r?\n\s+- ALL").Count -lt 2 -or
+        [regex]::Matches($compose, "no-new-privileges:true").Count -lt 2) {
+        Add-Failure "Both MatrixRTC containers must drop Linux capabilities and forbid privilege escalation."
+    }
+    if ([regex]::Matches($compose, "(?ms)logging:\s*\r?\n\s+driver:\s+json-file").Count -lt 2 -or
+        [regex]::Matches($compose, "max-size:\s+20m").Count -lt 2) {
+        Add-Failure "Both MatrixRTC containers must use bounded local log rotation."
     }
     if ($compose -match "LIVEKIT_INSECURE_SKIP_VERIFY_TLS") {
         Add-Failure "TLS verification bypass must never be present in this deployment."
     }
-    Add-Pass "Pinned images and fail-closed Compose policy are present."
+    if ($failures.Count -eq $composeFailureCount) {
+        Add-Pass "Pinned images and fail-closed Compose policy are present."
+    }
 }
 
 if (Test-Path -LiteralPath $nginxPath) {
+    $nginxFailureCount = $failures.Count
     $nginx = Get-Content -LiteralPath $nginxPath -Raw
     foreach ($route in @("/livekit/jwt/", "/livekit/sfu/")) {
         if ($nginx -notmatch [regex]::Escape($route)) {
             Add-Failure "Reverse-proxy example is missing $route."
         }
+    }
+    if ($nginx -notmatch "(?ms)location\s+\^~\s+/livekit/jwt/sfu_webhook\s*\{\s*return\s+404;") {
+        Add-Failure "The internal signed SFU webhook receiver must not be exposed through the public proxy."
     }
     if ($nginx -notmatch "proxy_set_header\s+Upgrade" -or $nginx -notmatch "proxy_buffering\s+off") {
         Add-Failure "LiveKit signalling proxy must support unbuffered WebSocket upgrades."
@@ -126,7 +170,14 @@ if (Test-Path -LiteralPath $nginxPath) {
         $nginx -notmatch "limit_req\s+zone=matrixrtc_auth") {
         Add-Failure "Authorization proxy must bound request bodies and apply the matrixrtc_auth rate limit."
     }
-    Add-Pass "Reverse-proxy routes include bounded auth traffic and WebSocket signalling."
+    if ($nginx -notmatch "log_format\s+matrixrtc_safe" -or
+        $nginx -notmatch 'matrixrtc_safe[\s\S]*\$request_method\s+\$uri\s+\$server_protocol' -or
+        $nginx -notmatch "access_log\s+\S+\s+matrixrtc_safe") {
+        Add-Failure "MatrixRTC access logs must use the query-redacting matrixrtc_safe format."
+    }
+    if ($failures.Count -eq $nginxFailureCount) {
+        Add-Pass "Reverse-proxy routes include bounded auth traffic and WebSocket signalling."
+    }
 }
 
 $environment = Get-EnvironmentMap $EnvironmentFile
@@ -176,18 +227,37 @@ $fullAccessHomeservers = @(
         Where-Object { $_ }
 )
 foreach ($serverName in $fullAccessHomeservers) {
-    if ($serverName -eq "*" -or
-        $serverName -notmatch "^[A-Za-z0-9.-]+(?::[0-9]{1,5})?$") {
+    if ($serverName -eq "*" -or -not (Test-MatrixServerName $serverName)) {
         Add-Failure "Invalid full-access Matrix server name: $serverName"
     }
 }
-if ($environment["MATRIXRTC_MATRIX_SERVER_NAME"] -match "[:/]" -or
-    $environment["MATRIXRTC_MATRIX_SERVER_NAME"] -match "\s") {
+if (-not (Test-MatrixServerName $environment["MATRIXRTC_MATRIX_SERVER_NAME"])) {
     Add-Failure "MATRIXRTC_MATRIX_SERVER_NAME must be a Matrix server name, not a URL."
+} elseif ($environment["MATRIXRTC_MATRIX_SERVER_NAME"] -notin $fullAccessHomeservers) {
+    Add-Failure "MATRIXRTC_FULL_ACCESS_HOMESERVERS must include MATRIXRTC_MATRIX_SERVER_NAME so local users can create calls."
+}
+if ($environment["LIVEKIT_TURN_DOMAIN"] -notmatch "^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])$" -or
+    $environment["LIVEKIT_TURN_DOMAIN"] -notmatch "\.") {
+    Add-Failure "LIVEKIT_TURN_DOMAIN must be a DNS hostname without a scheme, port, path, or wildcard."
+} else {
+    foreach ($publicUrlName in @(
+        "MESH_MATRIXRTC_LIVEKIT_SERVICE_URL",
+        "MESH_MATRIXRTC_LIVEKIT_SFU_URL"
+    )) {
+        $publicUri = $null
+        if ([Uri]::TryCreate(
+            $environment[$publicUrlName],
+            [UriKind]::Absolute,
+            [ref]$publicUri
+        ) -and $publicUri.Host -eq $environment["LIVEKIT_TURN_DOMAIN"]) {
+            Add-Failure "LIVEKIT_TURN_DOMAIN must use a separate hostname from $publicUrlName."
+        }
+    }
 }
 
 $wellKnown = $null
 if (Test-Path -LiteralPath $WellKnownFile) {
+    $wellKnownFailureCount = $failures.Count
     try {
         $wellKnown = Get-Content -LiteralPath $WellKnownFile -Raw | ConvertFrom-Json
         $focusProperty = $wellKnown.PSObject.Properties["org.matrix.msc4143.rtc_foci"]
@@ -203,13 +273,16 @@ if (Test-Path -LiteralPath $WellKnownFile) {
                 Add-Failure "The .well-known LiveKit service URL does not match the operator environment."
             }
         }
-        Add-Pass "The .well-known example parses and advertises a LiveKit focus."
+        if ($failures.Count -eq $wellKnownFailureCount) {
+            Add-Pass "The .well-known example parses and advertises a LiveKit focus."
+        }
     } catch {
         Add-Failure "The .well-known document is not valid JSON: $($_.Exception.Message)"
     }
 }
 
 if ($Production) {
+    $productionFailureCount = $failures.Count
     $warnings.Add(
         "This preflight validates the single-node beta baseline only; it does not certify HA, auth-service state continuity, monitoring, backups, rollback, or certificate operations."
     )
@@ -221,6 +294,10 @@ if ($Production) {
     if ($environment["MATRIXRTC_CONTROL_BIND"] -and
         $environment["MATRIXRTC_CONTROL_BIND"] -notin @("127.0.0.1", "::1")) {
         Add-Failure "Production control ports must bind only to loopback."
+    }
+    if ($environment["MATRIXRTC_METRICS_BIND"] -and
+        $environment["MATRIXRTC_METRICS_BIND"] -notin @("127.0.0.1", "::1")) {
+        Add-Failure "Production metrics must bind only to loopback."
     }
     if ($environment["MATRIXRTC_TURN_TLS_BIND"] -and
         $environment["MATRIXRTC_TURN_TLS_BIND"] -notin @("127.0.0.1", "::1")) {
@@ -241,7 +318,9 @@ if ($Production) {
     if ($environment["LIVEKIT_API_KEY"] -eq $environment["LIVEKIT_API_SECRET"]) {
         Add-Failure "LIVEKIT_API_KEY and LIVEKIT_API_SECRET must be different."
     }
-    Add-Pass "Production placeholder, allowlist, bind, and credential policy checked."
+    if ($failures.Count -eq $productionFailureCount) {
+        Add-Pass "Production placeholder, allowlist, bind, and credential policy checked."
+    }
 }
 
 if ($Online -and $failures.Count -eq 0) {
@@ -318,7 +397,11 @@ if ($Online -and $failures.Count -eq 0) {
         }
         $cors = [string]$response.Headers["Access-Control-Allow-Origin"]
         if ($cors -ne "*") {
-            $warnings.Add("Public .well-known does not advertise wildcard CORS; verify every supported Mesh origin.")
+            if ($Production) {
+                Add-Failure "Public .well-known must advertise Access-Control-Allow-Origin: * for Matrix clients."
+            } else {
+                $warnings.Add("Public .well-known does not advertise wildcard CORS; verify every supported Mesh origin.")
+            }
         }
         Add-Pass "Public Matrix discovery is reachable and consistent."
     } catch {

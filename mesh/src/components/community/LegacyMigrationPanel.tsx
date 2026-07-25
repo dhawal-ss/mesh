@@ -3,6 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import * as bridge from '../../lib/bridge'
+import { describeError } from '../../lib/errors'
 import type {
   Channel,
   LegacyArchiveSummary,
@@ -99,7 +100,8 @@ export function LegacyMigrationPanel({
       setApprovalPhrase('')
       setStatus(`Loaded ${inspected.length} independently hashed peer archive${inspected.length === 1 ? '' : 's'}.`)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not inspect the selected archives')
+      console.error('Could not inspect the selected archives:', cause)
+      setError(friendlyMigrationError(cause, 'inspect the selected archives'))
     } finally {
       setBusy(false)
     }
@@ -117,7 +119,8 @@ export function LegacyMigrationPanel({
       })
       setStatus(`Archive written to ${result.archivePath}. ${result.summary.missingFileCount} file payload(s) need a source path before they can be embedded.`)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Legacy export failed')
+      console.error('Legacy export failed:', cause)
+      setError(friendlyMigrationError(cause, 'export the legacy archive'))
     } finally {
       setBusy(false)
     }
@@ -137,7 +140,8 @@ export function LegacyMigrationPanel({
           : 'Dry run found issues that must be resolved before import.',
       )
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Legacy import dry run failed')
+      console.error('Legacy import dry run failed:', cause)
+      setError(friendlyMigrationError(cause, 'validate the legacy import'))
     } finally {
       setBusy(false)
     }
@@ -158,7 +162,8 @@ export function LegacyMigrationPanel({
         `Imported ${result.importedEvents} encrypted provenance event(s); ${result.previouslyImportedEvents} were already recorded on this device.`,
       )
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Approved legacy import failed')
+      console.error('Approved legacy import failed:', cause)
+      setError(friendlyMigrationError(cause, 'import the approved legacy archive'))
     } finally {
       setBusy(false)
     }
@@ -166,7 +171,7 @@ export function LegacyMigrationPanel({
 
   return (
     <div className="mb-6">
-      <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
         Legacy archive migration
       </h3>
       <div className="space-y-3 rounded-lg bg-bg-primary p-4">
@@ -209,7 +214,7 @@ export function LegacyMigrationPanel({
 
             {archivedCommunities.length > 0 && (
               <div>
-                <label className="mb-1.5 block text-xs font-bold uppercase text-muted">
+                <label className="mb-1.5 block text-xs font-semibold uppercase text-muted">
                   Legacy community
                 </label>
                 <select
@@ -228,7 +233,7 @@ export function LegacyMigrationPanel({
 
             {selectedLegacyCommunity?.channels.map((legacyChannel) => (
               <div key={legacyChannel.id}>
-                <label className="mb-1.5 block text-xs font-bold uppercase text-muted">
+                <label className="mb-1.5 block text-xs font-semibold uppercase text-muted">
                   #{legacyChannel.name} target
                 </label>
                 <select
@@ -269,11 +274,11 @@ export function LegacyMigrationPanel({
                 ))}
 
                 {report.conflicts.map((conflict) => (
-                  <fieldset key={conflict.conflictKey} className="rounded border border-black/30 p-2">
+                  <fieldset key={conflict.conflictKey} className="rounded border border-border-subtle p-2">
                     <legend className="px-1 text-xs font-semibold text-primary">
                       {conflict.kind} · {conflict.entityId}
                     </legend>
-                    <p className="mb-2 break-all text-[10px] text-muted">{conflict.conflictKey}</p>
+                    <p className="mb-2 break-all text-caption text-muted">{conflict.conflictKey}</p>
                     {conflict.variants.map((variant) => (
                       <label key={variant.recordSha256} className="mb-2 flex cursor-pointer gap-2 text-xs text-secondary">
                         <input
@@ -290,7 +295,7 @@ export function LegacyMigrationPanel({
                         />
                         <span>
                           <span className="block text-primary">{variant.preview || '(empty record)'}</span>
-                          <span className="block text-[10px] text-muted">
+                          <span className="block text-caption text-muted">
                             {variant.recordSha256.slice(0, 12)} · {variant.sourcePeerIds.length} peer(s)
                           </span>
                         </span>
@@ -329,4 +334,9 @@ export function LegacyMigrationPanel({
       </div>
     </div>
   )
+}
+
+function friendlyMigrationError(cause: unknown, operation: string): string {
+  const description = describeError(cause, { operation })
+  return `${description.title}. ${description.body}`
 }

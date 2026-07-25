@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Button } from '../ui/Button'
-import { transitions } from '../../lib/motion'
+import { ErrorState } from '../ui/ErrorState'
+import { motionDurations, transitions } from '../../lib/motion'
 import type { BootstrapState, OnboardingFlowProps } from './types'
 
 interface ReadyScreenProps {
@@ -20,7 +21,7 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
     label: backendKind === 'matrix' ? 'Connecting to Mesh' : 'Finding nearby peers',
     progress: 24,
   })
-  const [hasErrored, setHasErrored] = useState(false)
+  const [failure, setFailure] = useState<unknown | null>(null)
   const [isDone, setIsDone] = useState(false)
 
   const timeline = useMemo(
@@ -35,7 +36,7 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
 
   useEffect(() => {
     let alive = true
-    setHasErrored(false)
+    setFailure(null)
     setIsDone(false)
     setState({
       phase: 'connecting',
@@ -63,10 +64,10 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
         setIsDone(true)
       } catch (error) {
         if (!alive) return
-        setHasErrored(true)
+        setFailure(error)
         setState({
           phase: 'connecting',
-          label: error instanceof Error ? error.message : 'Bootstrap failed',
+          label: 'Setup interrupted',
           progress: 0,
         })
       }
@@ -80,23 +81,23 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
   }, [attempt, onBootstrap, timeline])
 
   const handleContinue = useCallback(() => {
-    if (isDone && !hasErrored) {
+    if (isDone && !failure) {
       onComplete()
     }
-  }, [isDone, hasErrored, onComplete])
+  }, [isDone, failure, onComplete])
 
   return (
     <div className="space-y-8">
       <div className="space-y-2">
-        <p className="text-2xs uppercase tracking-[0.35em] text-muted">
+        <p className="text-2xs uppercase tracking-eyebrow text-muted">
           {backendKind === 'matrix' ? 'Account setup' : 'Step 3 of 3'}
         </p>
-        <h1 className="text-[clamp(2rem,4vw,2.6rem)] font-semibold tracking-tight text-primary">
+        <h1 className="text-lg font-semibold tracking-tight text-primary">
           {backendKind === 'matrix' ? 'Getting things ready' : 'Starting the network'}
         </h1>
         <p className="max-w-sm text-sm leading-6 text-secondary">
           {backendKind === 'matrix'
-            ? 'Mesh is securely restoring your conversations. This usually takes only a moment.'
+            ? 'Mesh is loading your conversations. This usually takes only a moment.'
             : 'Mesh is waking up the peer network and syncing the first shared state.'}
         </p>
       </div>
@@ -105,32 +106,32 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
         className="space-y-5 rounded-lg bg-bg-primary p-5"
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={transitions.softSpring}
+        transition={transitions.enter}
       >
         <div className="flex items-center justify-between gap-4">
           <div className="space-y-1">
             <p className="text-sm font-medium text-primary">{state.label}</p>
-            <p className="text-2xs uppercase tracking-[0.3em] text-muted">
+            <p className="text-2xs uppercase tracking-section text-muted">
               {state.phase === 'ready' ? 'Complete' : 'In progress'}
             </p>
           </div>
           <div className="text-right">
             <p className="text-lg font-semibold text-primary">{state.progress}%</p>
-            <p className="text-2xs uppercase tracking-[0.3em] text-muted">Setup</p>
+            <p className="text-2xs uppercase tracking-section text-muted">Setup</p>
           </div>
         </div>
 
         <div className="h-1 overflow-hidden rounded-full bg-bg-modifier-hover">
           <motion.div
-            className="h-full rounded-full bg-blue"
-            animate={{ width: `${Math.max(12, state.progress)}%` }}
-            transition={transitions.softSpring}
+            className="h-full w-full origin-left rounded-full bg-blue"
+            animate={{ scaleX: Math.max(12, state.progress) / 100 }}
+            transition={transitions.enter}
           />
         </div>
 
-        <div className="grid gap-2 text-2xs uppercase tracking-[0.3em] text-muted">
+        <div className="grid gap-2 text-2xs uppercase tracking-section text-muted">
           {(backendKind === 'matrix'
-            ? ['Account secured', 'Service connected', 'Conversations ready']
+            ? ['Signed in', 'Service connected', 'Conversations ready']
             : ['Identity secured', 'Peers discovered', 'Channels synced']
           ).map((item, index) => (
             <motion.div
@@ -138,7 +139,7 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
               className="flex items-center justify-between rounded-md bg-bg-modifier-hover px-3 py-2"
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2, delay: index * 0.08 }}
+              transition={{ ...transitions.enter, delay: index * motionDurations.staggerFast }}
             >
               <span>{item}</span>
               <span className={index < 2 || state.phase === 'ready' ? 'text-primary' : 'text-muted'}>
@@ -149,16 +150,20 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
         </div>
       </motion.div>
 
-      {hasErrored ? (
-        <p className="text-sm text-red">Network bootstrap failed. Please try again.</p>
+      {failure ? (
+        <ErrorState
+          error={failure}
+          context={{ operation: 'finish setting up your account' }}
+          onAction={() => setAttempt((value) => value + 1)}
+        />
       ) : null}
 
       <Button
-        disabled={!isDone || hasErrored}
+        disabled={!isDone || !!failure}
         onClick={handleContinue}
         className="w-full"
       >
-        {isDone && !hasErrored ? 'Open Mesh' : state.phase === 'ready' ? 'Finishing up...' : 'Connecting...'}
+        {isDone && !failure ? 'Open Mesh' : state.phase === 'ready' ? 'Finishing up...' : 'Connecting...'}
       </Button>
 
       <div className="flex items-center justify-between">
@@ -169,15 +174,6 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
             className="text-sm text-secondary transition-colors hover:text-primary"
           >
             &larr; Back to profile
-          </button>
-        )}
-        {hasErrored && (
-          <button
-            type="button"
-            onClick={() => setAttempt((value) => value + 1)}
-            className="text-sm text-secondary transition-colors hover:text-primary"
-          >
-            Retry bootstrap
           </button>
         )}
       </div>

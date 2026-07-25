@@ -5,6 +5,7 @@ import { Avatar } from '../ui/Avatar'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { transitions } from '../../lib/motion'
+import { describeError } from '../../lib/errors'
 import { DEFAULT_AVATAR_COLORS } from './types'
 import type { OnboardingFlowProps, OnboardingProfile } from './types'
 
@@ -44,7 +45,9 @@ export function JoinScreen({
     try {
       await onNext?.(profile)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to save profile')
+      console.error('Unable to save profile:', cause)
+      const description = describeError(cause, { operation: 'save your profile' })
+      setError(`${description.title}. ${description.body}`)
     } finally {
       setIsSaving(false)
     }
@@ -53,8 +56,8 @@ export function JoinScreen({
   return (
     <form className="space-y-8" onSubmit={handleSubmit}>
       <div className="space-y-2">
-        <p className="text-2xs uppercase tracking-[0.35em] text-muted">Step 2 of 3</p>
-        <h1 className="text-[clamp(2rem,4vw,2.6rem)] font-semibold tracking-tight text-primary">
+        <p className="text-2xs uppercase tracking-eyebrow text-muted">Step 2 of 3</p>
+        <h1 className="text-lg font-semibold tracking-tight text-primary">
           Set your profile
         </h1>
         <p className="max-w-sm text-sm leading-6 text-secondary">
@@ -66,13 +69,13 @@ export function JoinScreen({
         className="space-y-6 rounded-lg bg-bg-primary p-5"
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={transitions.softSpring}
+        transition={transitions.enter}
       >
         <div className="flex items-center gap-4">
           <Avatar color={avatarColor} size={72} name={displayName || 'Me'} />
           <div className="space-y-1">
             <p className="text-sm font-medium text-primary">{displayName || 'Your name'}</p>
-            <p className="text-2xs uppercase tracking-[0.3em] text-muted">Local profile</p>
+            <p className="text-2xs uppercase tracking-section text-muted">Local profile</p>
           </div>
         </div>
 
@@ -86,7 +89,7 @@ export function JoinScreen({
         />
 
         <div className="space-y-3">
-          <label className="text-2xs uppercase tracking-[0.35em] text-muted">Avatar color</label>
+          <label className="text-2xs uppercase tracking-eyebrow text-muted">Avatar color</label>
           <div className="grid grid-cols-5 gap-2">
             {palette.map((color) => {
               const selected = avatarColor === color

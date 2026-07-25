@@ -124,6 +124,12 @@ async function installAuthenticatedMatrixMessagingMock(page: Page): Promise<void
       args: Record<string, unknown>,
     ): unknown | Promise<unknown> => {
       switch (command) {
+        case 'set_notification_context':
+        case 'matrix_set_room_notification_mode':
+        case 'send_test_notification':
+          return null
+        case 'matrix_get_room_notification_mode':
+          return 'all'
         case 'get_backend_status':
           return {
             kind: 'matrix',
@@ -311,7 +317,7 @@ async function installAuthenticatedMatrixMessagingMock(page: Page): Promise<void
 async function openDirectMessage(page: Page): Promise<void> {
   await installAuthenticatedMatrixMessagingMock(page)
   await page.goto('/')
-  await expect(page.getByRole('navigation', { name: 'Communities and DMs' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'Servers and DMs' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Direct Messages', exact: true }).click()
   await expect(
@@ -367,7 +373,9 @@ test.describe('Matrix direct messaging and encrypted attachments', () => {
     await composer.fill('A production-path encrypted DM')
     await composer.press('Enter')
 
-    await expect(page.getByText('A production-path encrypted DM', { exact: true })).toBeVisible()
+    await expect(
+      page.getByText('A production-path encrypted DM', { exact: true }),
+    ).toBeVisible({ timeout: 10_000 })
     await expect(composer).toHaveValue('')
 
     const calls = await ipcCalls(page)
@@ -391,7 +399,9 @@ test.describe('Matrix direct messaging and encrypted attachments', () => {
     await composer.fill('Private beta document')
     await composer.press('Enter')
 
-    await expect(page.getByText('Private beta document', { exact: true })).toBeVisible()
+    await expect(
+      page.getByText('Private beta document', { exact: true }),
+    ).toBeVisible({ timeout: 10_000 })
     await expect(page.getByText('mesh-beta.pdf', { exact: true })).toBeVisible()
     await expect(composer).toHaveValue('')
 
@@ -405,6 +415,7 @@ test.describe('Matrix direct messaging and encrypted attachments', () => {
       args: expect.objectContaining({
         recipientUserId: '@bob:mesh.test',
         attachmentGrant: 'grant-mesh-beta',
+        transferId: expect.any(String),
         body: 'Private beta document',
       }),
     })
@@ -431,6 +442,7 @@ test.describe('Matrix direct messaging and encrypted attachments', () => {
         sourcePeerId: 'matrix',
         mediaSource: expect.any(Object),
       }),
+      transferId: expect.any(String),
     })
     expect(calls).toContainEqual({
       command: 'plugin:opener|open_path',

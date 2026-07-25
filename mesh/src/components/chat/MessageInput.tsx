@@ -4,13 +4,18 @@ import { listen } from '@tauri-apps/api/event'
 import { FileAttachmentPreview, type StagedFile } from './FileAttachment'
 import { Tooltip } from '../ui/Tooltip'
 import { showToast } from '../ui/Toast'
+import { ErrorState } from '../ui/ErrorState'
 import * as bridge from '../../lib/bridge'
+import { AppError, describeError } from '../../lib/errors'
+import type { MatrixTransferProgress } from '../../types/ipc'
 import {
   discardStagedFile,
   MAX_PENDING_ATTACHMENTS,
   stagedFileFromGrant,
   stageWebFile,
 } from '../../lib/attachments'
+import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
+import { Icon } from '../ui/Icon'
 
 interface MessageInputProps {
   channelId: string
@@ -23,16 +28,40 @@ interface MessageInputProps {
   disableAttachments?: boolean
   disabled?: boolean
   communityId?: string
+  onEditLastMessage?: () => void
 }
 
 const TYPING_THROTTLE_MS = 5000
-export function MessageInput({ channelId, channelName, onSend, disableAttachments, disabled, communityId }: MessageInputProps) {
+
+export function MessageInput(props: MessageInputProps) {
+  return (
+    <ScopedErrorBoundary
+      name="Message composer"
+      description="The message composer could not be displayed. Retry it without leaving this conversation."
+      className="mx-4 mb-4"
+      resetKey={props.channelId}
+    >
+      <MessageInputContent {...props} />
+    </ScopedErrorBoundary>
+  )
+}
+
+function MessageInputContent({
+  channelId,
+  channelName,
+  onSend,
+  disableAttachments,
+  disabled,
+  communityId,
+  onEditLastMessage,
+}: MessageInputProps) {
   const [value, setValue] = useState('')
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [isStaging, setIsStaging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
-  const [attachmentError, setAttachmentError] = useState<string | null>(null)
+  const [attachmentError, setAttachmentError] = useState<unknown | null>(null)
+  const [matrixTransfers, setMatrixTransfers] = useState<Record<string, MatrixTransferProgress>>({})
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const stagedFilesRef = useRef<StagedFile[]>([])
@@ -52,6 +81,26 @@ export function MessageInput({ channelId, channelName, onSend, disableAttachment
     }
   }, [channelId])
 
+  useEffect(() => {
+    if (!isTauri() || !bridge.isMatrixBackend()) return
+    let active = true
+    let unlisten: (() => void) | undefined
+    void bridge.onMatrixTransferProgress((transfer) => {
+      if (!active || transfer.direction !== 'upload') return
+      setMatrixTransfers((current) => ({
+        ...current,
+        [transfer.transferId]: transfer,
+      }))
+    }).then((stopListening) => {
+      if (active) unlisten = stopListening
+      else stopListening()
+    })
+    return () => {
+      active = false
+      unlisten?.()
+    }
+  }, [])
+
   const broadcastTypingThrottled = useCallback(() => {
     const now = Date.now()
     if (now - lastTypingBroadcast.current >= TYPING_THROTTLE_MS) {
@@ -64,6 +113,9 @@ export function MessageInput({ channelId, channelName, onSend, disableAttachment
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       void handleSubmit()
+    } else if (e.key === 'ArrowUp' && !value && stagedFiles.length === 0 && onEditLastMessage) {
+      e.preventDefault()
+      onEditLastMessage()
     } else if (e.key === 'Escape' && !value && stagedFiles.length > 0) {
       e.preventDefault()
       void handleRemoveFile(stagedFiles.length - 1)
@@ -77,6 +129,10 @@ export function MessageInput({ channelId, channelName, onSend, disableAttachment
 
     const sendGeneration = intakeGenerationRef.current
     const filesAtStart = [...stagedFiles]
+    if (bridge.isMatrixBackend()) {
+      for (const file of filesAtStart) file.transferId = bridge.createMatrixTransferId()
+      setStagedFiles([...filesAtStart])
+    }
     for (const file of filesAtStart) sendingFilesRef.current.add(file)
     setIsUploading(true)
     setAttachmentError(null)
@@ -140,11 +196,7 @@ export function MessageInput({ channelId, channelName, onSend, disableAttachment
     } catch (error) {
       console.error('Failed to send message or attachment:', error)
       if (intakeGenerationRef.current === sendGeneration) {
-        setAttachmentError(
-          error instanceof Error
-            ? `Could not send: ${error.message}`
-            : 'Could not send this attachment. It is still pending so you can retry.',
-        )
+        setAttachmentError(error)
       } else {
         await Promise.allSettled(filesAtStart.map(discardStagedFile))
       }
@@ -182,9 +234,17 @@ export function MessageInput({ channelId, channelName, onSend, disableAttachment
     }
     if (errors.length > 0) {
       const message = errors.join(' ')
-      setAttachmentError(message)
-      showToast(message, 'error')
+      const error = new AppError('invalid_input', message, false)
+      const description = describeError(error, { operation: 'attach the selected file' })
+      setAttachmentError(error)
+      showToast(`${description.title}. ${description.body}`, 'error')
     }
+  }, [])
+
+  const cancelMatrixUpload = useCallback((transferId: string) => {
+    void bridge.matrixCancelAttachmentUpload(transferId).catch((error) => {
+      setAttachmentError(error)
+    })
   }, [])
 
   const handleFilePick = useCallback(async () => {
@@ -194,7 +254,7 @@ export function MessageInput({ channelId, channelName, onSend, disableAttachment
       appendFiles(intake.files.map(stagedFileFromGrant), intake.errors)
     } catch (err) {
       console.error('File picker error:', err)
-      setAttachmentError('The native file picker could not attach that file.')
+      setAttachmentError(err)
     }
   }, [appendFiles, disabled])
 
@@ -248,7 +308,8 @@ export function MessageInput({ channelId, channelName, onSend, disableAttachment
         }
       } catch (error) {
         if (mountedRef.current && intakeGenerationRef.current === generation) {
-          errors.push(error instanceof Error ? error.message : `${file.name || 'This file'} could not be attached.`)
+          console.error(`Failed to stage attachment ${file.name || '(unnamed)'}:`, error)
+          errors.push(`${file.name || 'This file'} could not be attached.`)
         }
       }
     }
@@ -344,10 +405,8 @@ export function MessageInput({ channelId, channelName, onSend, disableAttachment
         appendFiles(intake.files.map(stagedFileFromGrant), intake.errors)
       }).catch((error) => {
         for (const grant of grants) void bridge.discardAttachmentGrant(grant)
-        const message = error instanceof Error
-          ? error.message
-          : 'The native attachment drop expired. Drop the files again.'
-        appendFiles([], [...intake.errors, message])
+        console.error('Failed to accept secure native attachment drop:', error)
+        appendFiles([], [...intake.errors, 'The file drop expired. Drop the files again.'])
       })
     }).then((dispose) => {
       if (active) unlistenComplete = dispose
@@ -398,14 +457,15 @@ export function MessageInput({ channelId, channelName, onSend, disableAttachment
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.style.height = 'auto'
-      inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 200)}px`
+      // design-token-exception: height follows measured content; CSS owns the max-height token.
+      inputRef.current.style.height = `${inputRef.current.scrollHeight}px`
     }
   }, [value])
 
   return (
     <div
       ref={rootRef}
-      className="mx-4 mb-6 mt-[-4px]"
+      className="-mt-1 mx-4 mb-6"
       onDragOver={disabled || disableAttachments ? undefined : handleDragOver}
       onDragLeave={disabled || disableAttachments ? undefined : handleDragLeave}
       onDrop={disabled || disableAttachments ? undefined : handleDrop}
@@ -414,30 +474,34 @@ export function MessageInput({ channelId, channelName, onSend, disableAttachment
         className={`rounded-lg transition-colors ${
           isDragOver
             ? 'bg-blue/10 ring-2 ring-blue/40'
-            : 'bg-[#383a40]'
+            : 'bg-surface-raised'
         }`}
       >
         {/* Drag overlay */}
         {isDragOver && (
           <div className="flex items-center justify-center gap-2 px-4 py-3">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
+            <Icon name="upload" size="sm" className="text-blue" />
             <span className="text-sm font-medium text-blue">Drop files to attach</span>
           </div>
         )}
 
         {/* Staged files preview */}
         {stagedFiles.length > 0 && (
-          <FileAttachmentPreview files={stagedFiles} onRemove={handleRemoveFile} />
+          <FileAttachmentPreview
+            files={stagedFiles}
+            onRemove={handleRemoveFile}
+            transfers={matrixTransfers}
+            onCancelTransfer={cancelMatrixUpload}
+          />
         )}
 
-        {attachmentError && (
-          <div role="alert" className="border-b border-red/20 bg-red/5 px-4 py-2 text-xs text-red">
-            {attachmentError}
-          </div>
+        {attachmentError != null && (
+          <ErrorState
+            error={attachmentError}
+            context={{ operation: 'send this attachment' }}
+            className="mx-2 mb-2"
+            compact
+          />
         )}
 
         {/* Input row */}
@@ -452,9 +516,7 @@ export function MessageInput({ channelId, channelName, onSend, disableAttachment
                 aria-label="Attach file"
                 className="mb-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded text-muted transition-colors hover:text-secondary disabled:opacity-40"
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2.00098C6.486 2.00098 2 6.48698 2 12.001C2 17.515 6.486 22.001 12 22.001C17.514 22.001 22 17.515 22 12.001C22 6.48698 17.514 2.00098 12 2.00098ZM17 13.001H13V17.001H11V13.001H7V11.001H11V7.00098H13V11.001H17V13.001Z" />
-                </svg>
+                <Icon name="circlePlus" />
               </button>
             </Tooltip>
           )}
@@ -477,8 +539,7 @@ export function MessageInput({ channelId, channelName, onSend, disableAttachment
             aria-describedby={stagedFiles.length > 0 ? `pending-attachments-${channelId}` : undefined}
             rows={1}
             disabled={disabled || isUploading || isStaging}
-            className="w-full resize-none bg-transparent px-2 py-2.5 text-sm text-primary placeholder:text-muted focus:outline-none disabled:opacity-60"
-            style={{ minHeight: '44px', maxHeight: '200px' }}
+            className="min-h-control-lg max-h-composer w-full resize-none bg-transparent px-2 py-2.5 text-sm text-primary placeholder:text-muted focus:outline-none disabled:opacity-60"
           />
         </div>
         <p id={`pending-attachments-${channelId}`} className="sr-only" aria-live="polite">

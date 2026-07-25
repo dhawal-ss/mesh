@@ -2,14 +2,16 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
+import { ErrorState } from '../ui/ErrorState'
 import { InviteModal } from './InviteModal'
-import { useCommunityStore } from '../../store/communities'
+import { useActiveCommunity, useCommunityStore } from '../../store/communities'
 import { useChannelStore } from '../../store/channels'
 import { useMembershipStore } from '../../store/membership'
 import * as bridge from '../../lib/bridge'
 import { transitions } from '../../lib/motion'
+import { canStartMatrixVoice } from '../../lib/voice-runtime'
 import type { CommunityApplication } from '../../types/ipc'
-import { LegacyMigrationPanel } from './LegacyMigrationPanel'
+import { Icon } from '../ui/Icon'
 
 interface CommunitySettingsProps {
   isOpen: boolean
@@ -18,11 +20,16 @@ interface CommunitySettingsProps {
 
 export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
   const matrixMode = bridge.isMatrixBackend()
-  const { communities, activeCommunityId, removeCommunity, setActiveCommunity, patchCommunity } = useCommunityStore()
-  const { addChannel, channels } = useChannelStore()
+  const matrixVoiceReady = canStartMatrixVoice(bridge.getBackendStatusSnapshot())
+  const communityOrder = useCommunityStore((state) => state.communityOrder)
+  const activeCommunityId = useCommunityStore((state) => state.activeCommunityId)
+  const removeCommunity = useCommunityStore((state) => state.removeCommunity)
+  const setActiveCommunity = useCommunityStore((state) => state.setActiveCommunity)
+  const patchCommunity = useCommunityStore((state) => state.patchCommunity)
+  const addChannel = useChannelStore((state) => state.addChannel)
   const clearCommunityMembership = useMembershipStore((s) => s.clearCommunity)
 
-  const community = communities.find((c) => c.id === activeCommunityId)
+  const community = useActiveCommunity()
 
   const [showInvite, setShowInvite] = useState(false)
   const [showCreateChannel, setShowCreateChannel] = useState(false)
@@ -36,7 +43,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
   const [communityAlias, setCommunityAlias] = useState('')
   const [isDiscoverable, setIsDiscoverable] = useState(false)
   const [isSavingAccess, setIsSavingAccess] = useState(false)
-  const [accessError, setAccessError] = useState('')
+  const [accessError, setAccessError] = useState<unknown | null>(null)
   const [applications, setApplications] = useState<CommunityApplication[]>([])
 
   useEffect(() => {
@@ -59,11 +66,11 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
         setCommunityAlias(settings.alias ?? '')
         setIsDiscoverable(settings.discoverable)
         setApplications(pending)
-        setAccessError('')
+        setAccessError(null)
       })
       .catch((error) => {
         if (!cancelled) {
-          setAccessError(error instanceof Error ? error.message : 'Could not load access settings')
+          setAccessError(error)
         }
       })
 
@@ -96,8 +103,8 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
       await bridge.leaveCommunity(activeCommunityId)
       clearCommunityMembership(activeCommunityId)
       removeCommunity(activeCommunityId)
-      const remaining = communities.filter((c) => c.id !== activeCommunityId)
-      setActiveCommunity(remaining.length > 0 ? remaining[0].id : null)
+      const remaining = communityOrder.filter((id) => id !== activeCommunityId)
+      setActiveCommunity(remaining[0] ?? null)
       onClose()
     } catch (err) {
       console.error('Failed to leave community:', err)
@@ -109,8 +116,8 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
       await bridge.deleteCommunity(activeCommunityId)
       clearCommunityMembership(activeCommunityId)
       removeCommunity(activeCommunityId)
-      const remaining = communities.filter((c) => c.id !== activeCommunityId)
-      setActiveCommunity(remaining.length > 0 ? remaining[0].id : null)
+      const remaining = communityOrder.filter((id) => id !== activeCommunityId)
+      setActiveCommunity(remaining[0] ?? null)
       onClose()
     } catch (err) {
       console.error('Failed to delete community:', err)
@@ -138,7 +145,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
 
   const handleSaveAccess = async () => {
     setIsSavingAccess(true)
-    setAccessError('')
+    setAccessError(null)
     try {
       const settings = await bridge.updateCommunityAccess(
         activeCommunityId,
@@ -148,23 +155,23 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
       setCommunityAlias(settings.alias ?? '')
       setIsDiscoverable(settings.discoverable)
     } catch (error) {
-      setAccessError(error instanceof Error ? error.message : 'Could not save access settings')
+      setAccessError(error)
     }
     setIsSavingAccess(false)
   }
 
   const handleApplication = async (application: CommunityApplication, accept: boolean) => {
-    setAccessError('')
+    setAccessError(null)
     try {
       await bridge.respondToCommunityApplication(
         activeCommunityId,
         application.userId,
         accept,
-        accept ? undefined : 'Community application declined',
+        accept ? undefined : 'Server application declined',
       )
       setApplications((current) => current.filter((entry) => entry.userId !== application.userId))
     } catch (error) {
-      setAccessError(error instanceof Error ? error.message : 'Could not update application')
+      setAccessError(error)
     }
   }
 
@@ -178,7 +185,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40 bg-black/60"
+              className="fixed inset-0 z-overlay bg-scrim"
               onClick={onClose}
             />
 
@@ -187,20 +194,18 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
               initial={{ x: '100%', opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: '100%', opacity: 0 }}
-              transition={transitions.panelSpring}
-              className="fixed right-0 top-0 z-50 flex h-full w-[420px] flex-col bg-bg-secondary shadow-floating"
+              transition={transitions.enter}
+              className="fixed right-0 top-0 z-drawer flex h-full w-settings-drawer flex-col bg-bg-secondary shadow-floating"
             >
               {/* Header */}
-              <div className="flex h-14 flex-shrink-0 items-center justify-between border-b border-black/30 px-5">
+              <div className="flex h-14 flex-shrink-0 items-center justify-between border-b border-border-subtle px-5">
                 <h2 className="text-base font-semibold text-primary">Server Settings</h2>
                 <button
                   onClick={onClose}
+                  aria-label="Close server settings"
                   className="flex h-8 w-8 items-center justify-center rounded text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary"
                 >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
+                  <Icon name="x" size="sm" />
                 </button>
               </div>
 
@@ -209,10 +214,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                 {/* Community info card */}
                 <div className="mb-6 rounded-lg bg-bg-primary p-4">
                   <div className="mb-3 flex items-center gap-3">
-                    <div
-                      className="flex h-12 w-12 items-center justify-center rounded-xl text-lg font-semibold text-white"
-                      style={{ backgroundColor: '#5865f2' }}
-                    >
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-status-info text-lg font-semibold text-content-on-status">
                       {community.name[0]?.toUpperCase()}
                     </div>
                     <div className="min-w-0 flex-1">
@@ -231,12 +233,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                 <div className="mb-4">
                   <Button onClick={() => setShowInvite(true)} className="w-full" variant="secondary">
                     <span className="flex items-center gap-2">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                        <circle cx="9" cy="7" r="4" />
-                        <line x1="19" y1="8" x2="19" y2="14" />
-                        <line x1="22" y1="11" x2="16" y2="11" />
-                      </svg>
+                      <Icon name="userPlus" size="sm" />
                       Invite People
                     </span>
                   </Button>
@@ -244,16 +241,16 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
 
                 {isOwnerOrAdmin && (
                   <div className="mb-6">
-                    <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Overview</h3>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Overview</h3>
                     <div className="space-y-3 rounded-lg bg-bg-primary p-4">
                       <Input
                         label="Server Name"
                         value={communityName}
                         onChange={setCommunityName}
-                        placeholder="Community name"
+                        placeholder="Server name"
                       />
                       <div>
-                        <label className="mb-1.5 block text-xs font-bold uppercase text-muted">
+                        <label className="mb-1.5 block text-xs font-semibold uppercase text-muted">
                           Description
                         </label>
                         <textarea
@@ -261,7 +258,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                           onChange={(e) => setCommunityDescription(e.target.value)}
                           rows={3}
                           className="w-full resize-none rounded-md bg-bg-tertiary px-3 py-2 text-sm text-primary placeholder:text-muted focus:outline-none"
-                          placeholder="What is this community about?"
+                          placeholder="What is this server about?"
                         />
                       </div>
                       <Button
@@ -277,16 +274,16 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
 
                 {matrixMode && isOwnerOrAdmin && (
                   <div className="mb-6">
-                    <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Access & Discovery</h3>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Access & Discovery</h3>
                     <div className="space-y-3 rounded-lg bg-bg-primary p-4">
                       <Input
-                        label="Canonical Matrix alias"
+                        label="Public link"
                         value={communityAlias}
                         onChange={setCommunityAlias}
-                        placeholder="#design-club:example.org"
+                        placeholder="design-club"
                       />
                       <p className="text-xs text-muted">
-                        The alias must belong to your signed-in homeserver. Private communities can still share it directly.
+                        Choose a short name people can use to find this server.
                       </p>
                       <label className="flex cursor-pointer items-start gap-3 rounded-md bg-bg-tertiary p-3">
                         <input
@@ -296,13 +293,19 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                           className="mt-0.5"
                         />
                         <span>
-                          <span className="block text-sm font-medium text-primary">Publish in the Matrix directory</span>
+                          <span className="block text-sm font-medium text-primary">List this server publicly</span>
                           <span className="block text-xs text-muted">
-                            Published communities use the standard knock flow, so an administrator must approve applicants.
+                            New members need approval to join.
                           </span>
                         </span>
                       </label>
-                      {accessError && <p className="text-xs text-red">{accessError}</p>}
+                      {accessError != null && (
+                        <ErrorState
+                          error={accessError}
+                          context={{ operation: 'update server access settings', resource: 'server' }}
+                          compact
+                        />
+                      )}
                       <Button
                         onClick={handleSaveAccess}
                         disabled={isSavingAccess || (isDiscoverable && !communityAlias.trim())}
@@ -314,7 +317,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
 
                     {applications.length > 0 && (
                       <div className="mt-3 space-y-2 rounded-lg bg-bg-primary p-4">
-                        <h4 className="text-xs font-bold uppercase tracking-wide text-muted">
+                        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted">
                           Applications ({applications.length})
                         </h4>
                         {applications.map((application) => (
@@ -346,17 +349,11 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                   </div>
                 )}
 
-                <LegacyMigrationPanel
-                  communityId={activeCommunityId}
-                  channels={channels}
-                  canManage={isOwnerOrAdmin}
-                />
-
                 {/* Create channel */}
                 {isOwnerOrAdmin && (
                   <div className="mb-6">
                     <div className="mb-2 flex items-center justify-between">
-                      <h3 className="text-xs font-bold uppercase tracking-wide text-muted">Channels</h3>
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Channels</h3>
                       <button
                         onClick={() => setShowCreateChannel(!showCreateChannel)}
                         className="text-xs text-text-link transition-colors hover:underline"
@@ -368,10 +365,10 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                     <AnimatePresence>
                       {showCreateChannel && (
                         <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.15 }}
+                          initial={{ opacity: 0, y: -4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -4 }}
+                          transition={transitions.enter}
                           className="overflow-hidden"
                         >
                           <div className="space-y-3 rounded-lg bg-bg-primary p-4">
@@ -384,11 +381,14 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                             />
 
                             <div>
-                              <label className="mb-1.5 block text-xs font-bold uppercase text-muted">
+                              <label className="mb-1.5 block text-xs font-semibold uppercase text-muted">
                                 Channel Type
                               </label>
                               <div className="flex gap-2">
-                                {(matrixMode ? ['text'] as const : ['text', 'voice'] as const).map((t) => (
+                                {(!matrixMode || matrixVoiceReady
+                                  ? (['text', 'voice'] as const)
+                                  : (['text'] as const)
+                                ).map((t) => (
                                   <button
                                     key={t}
                                     onClick={() => setChannelType(t)}
@@ -402,9 +402,9 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                                   </button>
                                 ))}
                               </div>
-                              {matrixMode && (
+                              {matrixMode && !matrixVoiceReady && (
                                 <p className="mt-2 text-xs text-muted">
-                                  MatrixRTC voice channels are a later migration slice.
+                                  Voice channels appear after private calling passes its service checks.
                                 </p>
                               )}
                             </div>
@@ -425,13 +425,13 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
 
                 {/* Danger zone */}
                 <div className="mt-auto border-t border-border pt-5">
-                  <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-red">Danger Zone</h3>
+                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-red">Danger Zone</h3>
                   {!showLeaveConfirm ? (
                     <button
                       onClick={() => setShowLeaveConfirm(true)}
                       className="w-full rounded-md border border-red/30 px-4 py-2.5 text-left text-sm text-red transition-colors hover:bg-red/10"
                     >
-                      {matrixMode ? 'Leave Community' : isOwner ? 'Delete Server' : 'Leave Server'}
+                      {matrixMode ? 'Leave Server' : isOwner ? 'Delete Server' : 'Leave Server'}
                     </button>
                   ) : (
                     <motion.div
@@ -456,7 +456,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                         </Button>
                         <button
                           onClick={matrixMode ? handleLeave : isOwner ? handleDelete : handleLeave}
-                          className="flex-1 rounded-md bg-red px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+                          className="flex-1 rounded-md bg-status-danger px-4 py-2 text-sm font-medium text-content-on-status transition-opacity hover:opacity-90"
                         >
                           {!matrixMode && isOwner ? 'Delete' : 'Leave'}
                         </button>

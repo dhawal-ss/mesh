@@ -57,5 +57,7 @@ describe('consumer Matrix sign-in helpers', () => {
     expect(friendlySignInError('DNS discovery request failed')).toContain('could not reach')
     expect(friendlySignInError('Matrix sign-in was cancelled')).toContain('cancelled')
     expect(friendlySignInError('Matrix sign-in timed out after 45 seconds')).toContain('took too long')
+    expect(friendlySignInError({ code: 'login_cancelled', detail: 'callback closed' })).toContain('cancelled')
+    expect(friendlySignInError({ code: 'login_timed_out', detail: 'callback timeout' })).toContain('took too long')
   })
 })

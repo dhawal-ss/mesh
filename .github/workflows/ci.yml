@@ -62,6 +62,10 @@ jobs:
         working-directory: mesh/src-tauri
         run: cargo fmt --check
 
+      - name: Check generated TypeScript IPC DTOs
+        working-directory: mesh
+        run: npm run check:ipc-types
+
       - name: Test Matrix backend
         working-directory: mesh/src-tauri
         run: cargo test --no-default-features --features matrix-backend --locked --jobs 1
@@ -124,6 +128,22 @@ jobs:
       - name: TypeScript check
         working-directory: mesh
         run: npx tsc --noEmit
+
+      - name: Lint React compiler and Zustand selector contracts
+        working-directory: mesh
+        run: npm run lint
+
+      - name: Check Tauri IPC command contract
+        working-directory: mesh
+        run: npm run check:ipc-contract
+
+      - name: Check design token source of truth
+        working-directory: mesh
+        run: npm run check:design-tokens
+
+      - name: Check icon source of truth
+        working-directory: mesh
+        run: npm run check:icons
 
       - name: Run tests
         working-directory: mesh

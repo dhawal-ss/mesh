@@ -1,7 +1,12 @@
 import { create } from 'zustand'
 import type { Channel } from '../types/ipc'
+import { patchChanges } from '../lib/state'
 
 interface ChannelsStore {
+  /** Normalized source of truth. */
+  channelEntities: Record<string, Channel>
+  channelOrder: string[]
+  /** Ordered compatibility snapshot for list consumers. */
   channels: Channel[]
   activeChannelId: string | null
   setChannels: (channels: Channel[]) => void
@@ -12,56 +17,126 @@ interface ChannelsStore {
   setActiveChannel: (id: string | null) => void
 }
 
-function mergeChannel(existing: Channel | undefined, channel: Channel): Channel {
-  if (!existing) {
-    return channel
+function mergeChannel(existing: Channel | undefined, incoming: Channel): Channel {
+  if (!existing || patchChanges(existing, incoming)) return incoming
+  return existing
+}
+
+function sameOrder(left: string[], right: string[]) {
+  return left.length === right.length && left.every((id, index) => id === right[index])
+}
+
+function normalizeChannels(channels: Channel[], existing: Record<string, Channel>) {
+  const channelEntities: Record<string, Channel> = {}
+  const channelOrder: string[] = []
+
+  for (const incoming of channels) {
+    if (channelEntities[incoming.id]) continue
+    channelEntities[incoming.id] = mergeChannel(existing[incoming.id], incoming)
+    channelOrder.push(incoming.id)
   }
 
   return {
-    ...existing,
-    ...channel,
-    id: channel.id,
-    communityId: channel.communityId,
+    channelEntities,
+    channelOrder,
+    channels: channelOrder.map((id) => channelEntities[id]),
   }
 }
 
 export const useChannelStore = create<ChannelsStore>((set) => ({
+  channelEntities: {},
+  channelOrder: [],
   channels: [],
   activeChannelId: null,
-  setChannels: (channels) =>
-    set((state) => ({
-      channels: channels.map((channel) =>
-        mergeChannel(state.channels.find((entry) => entry.id === channel.id), channel),
-      ),
-      activeChannelId:
-        state.activeChannelId && channels.some((channel) => channel.id === state.activeChannelId)
+
+  setChannels: (incoming) =>
+    set((state) => {
+      const normalized = normalizeChannels(incoming, state.channelEntities)
+      const activeChannelId =
+        state.activeChannelId && normalized.channelEntities[state.activeChannelId]
           ? state.activeChannelId
-          : channels[0]?.id ?? null,
-    })),
+          : normalized.channelOrder[0] ?? null
+      const entitiesUnchanged =
+        sameOrder(state.channelOrder, normalized.channelOrder) &&
+        normalized.channelOrder.every(
+          (id) => state.channelEntities[id] === normalized.channelEntities[id],
+        )
+
+      if (entitiesUnchanged && activeChannelId === state.activeChannelId) return state
+      return { ...normalized, activeChannelId }
+    }),
+
   addChannel: (channel) =>
-    set((state) => ({
-      channels: [
-        ...state.channels.filter((entry) => entry.id !== channel.id),
-        mergeChannel(state.channels.find((entry) => entry.id === channel.id), channel),
-      ],
-    })),
+    set((state) => upsertChannelState(state, channel)),
+
   upsertChannel: (channel) =>
-    set((state) => ({
-      channels: [
-        ...state.channels.filter((entry) => entry.id !== channel.id),
-        mergeChannel(state.channels.find((entry) => entry.id === channel.id), channel),
-      ],
-    })),
+    set((state) => upsertChannelState(state, channel)),
+
   removeChannel: (id) =>
-    set((state) => ({
-      channels: state.channels.filter((channel) => channel.id !== id),
-      activeChannelId: state.activeChannelId === id ? null : state.activeChannelId,
-    })),
+    set((state) => {
+      if (!state.channelEntities[id]) return state
+      const channelEntities = { ...state.channelEntities }
+      delete channelEntities[id]
+      const channelOrder = state.channelOrder.filter((channelId) => channelId !== id)
+      return {
+        channelEntities,
+        channelOrder,
+        channels: channelOrder.map((channelId) => channelEntities[channelId]),
+        activeChannelId: state.activeChannelId === id ? null : state.activeChannelId,
+      }
+    }),
+
   patchChannel: (id, patch) =>
-    set((state) => ({
-      channels: state.channels.map((channel) =>
-        channel.id === id ? { ...channel, ...patch } : channel,
-      ),
-    })),
+    set((state) => {
+      const current = state.channelEntities[id]
+      if (!current || !patchChanges(current, patch)) return state
+      const next = { ...current, ...patch }
+      const index = state.channelOrder.indexOf(id)
+      const channels = [...state.channels]
+      if (index >= 0) channels[index] = next
+      return {
+        channelEntities: { ...state.channelEntities, [id]: next },
+        channels,
+      }
+    }),
+
   setActiveChannel: (id) => set({ activeChannelId: id }),
 }))
+
+function upsertChannelState(
+  state: ChannelsStore,
+  incoming: Channel,
+): Partial<ChannelsStore> | ChannelsStore {
+  const current = state.channelEntities[incoming.id]
+  const next = mergeChannel(current, incoming)
+  if (current === next) return state
+
+  const channelOrder = current
+    ? state.channelOrder
+    : [...state.channelOrder, incoming.id]
+  const channels = current
+    ? [...state.channels]
+    : [...state.channels, next]
+  if (current) {
+    const index = state.channelOrder.indexOf(incoming.id)
+    if (index >= 0) channels[index] = next
+  }
+
+  return {
+    channelEntities: { ...state.channelEntities, [incoming.id]: next },
+    channelOrder,
+    channels,
+  }
+}
+
+export function useChannel(id: string | null | undefined) {
+  return useChannelStore((state) => (id ? state.channelEntities[id] : undefined))
+}
+
+export function useActiveChannel() {
+  return useChannelStore((state) =>
+    state.activeChannelId
+      ? state.channelEntities[state.activeChannelId]
+      : undefined,
+  )
+}

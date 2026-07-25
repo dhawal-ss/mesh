@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Peer, VoiceConnectionState, VoiceSessionSnapshot } from '../types/ipc'
+import type { MatrixRtcMember } from '../lib/bridge'
 import {
   buildPeerFromMember,
   normalizeVoiceSessionSnapshot,
@@ -16,6 +17,15 @@ interface VoiceStore {
   lastReconnectReason: string | null
   isMuted: boolean
   isDeafened: boolean
+  inputMode: 'voice-activity' | 'push-to-talk'
+  isPushToTalking: boolean
+  isCameraEnabled: boolean
+  isScreenSharing: boolean
+  inputDeviceId: string | null
+  outputDeviceId: string | null
+  localAudioLevel: number
+  participantVolumes: Record<string, number>
+  matrixRtcMembersByRoom: Record<string, MatrixRtcMember[]>
   setCurrentVoiceSession: (communityId: string | null, channelId: string | null) => void
   setLocalPublicKey: (publicKey: string | null) => void
   setSessionSnapshot: (snapshot: VoiceSessionSnapshot | null) => void
@@ -25,14 +35,30 @@ interface VoiceStore {
   setConnectionState: (state: VoiceConnectionState, reason?: string | null) => void
   setMuted: (muted: boolean) => void
   setDeafened: (deafened: boolean) => void
+  setInputMode: (mode: 'voice-activity' | 'push-to-talk') => void
+  setPushToTalking: (talking: boolean) => void
+  setCameraEnabled: (enabled: boolean) => void
+  setScreenSharing: (sharing: boolean) => void
+  setInputDeviceId: (deviceId: string | null) => void
+  setOutputDeviceId: (deviceId: string | null) => void
+  setLocalAudioLevel: (level: number) => void
+  setParticipantVolume: (publicKey: string, volume: number) => void
+  setMatrixRtcMembers: (roomId: string, members: MatrixRtcMember[]) => void
   resetVoiceState: () => void
 }
+
+const MAX_MATRIX_RTC_ROOMS = 100
+const MAX_MATRIX_RTC_MEMBERS_PER_ROOM = 100
 
 function isStreamActive(stream: MediaStream): boolean {
   return stream.getAudioTracks().some((track) => track.readyState === 'live')
 }
 
-function mergePeerRecord(existing: Peer | undefined, next: Peer): Peer {
+function mergePeerRecord(
+  existing: Peer | undefined,
+  next: Peer,
+  mediaSnapshotIsAuthoritative = false,
+): Peer {
   const peer = existing ?? next
 
   return {
@@ -42,6 +68,13 @@ function mergePeerRecord(existing: Peer | undefined, next: Peer): Peer {
     avatarColor: next.avatarColor || peer.avatarColor || '#c8b89a',
     latency: Number.isFinite(next.latency) ? next.latency : peer.latency ?? 0,
     stream: next.stream ?? (peer.stream && isStreamActive(peer.stream) ? peer.stream : undefined),
+    cameraStream: mediaSnapshotIsAuthoritative ? next.cameraStream : next.cameraStream ?? peer.cameraStream,
+    screenShareStream: mediaSnapshotIsAuthoritative
+      ? next.screenShareStream
+      : next.screenShareStream ?? peer.screenShareStream,
+    screenShareAudioStream: mediaSnapshotIsAuthoritative
+      ? next.screenShareAudioStream
+      : next.screenShareAudioStream ?? peer.screenShareAudioStream,
     role: next.role ?? peer.role ?? (next.isRelay ? 'relay' : 'member'),
     connectionState: next.connectionState ?? peer.connectionState ?? 'connected',
     joinedAt: next.joinedAt ?? peer.joinedAt,
@@ -72,6 +105,15 @@ export const useVoiceStore = create<VoiceStore>((set) => ({
   lastReconnectReason: null,
   isMuted: false,
   isDeafened: false,
+  inputMode: 'voice-activity',
+  isPushToTalking: false,
+  isCameraEnabled: false,
+  isScreenSharing: false,
+  inputDeviceId: null,
+  outputDeviceId: null,
+  localAudioLevel: 0,
+  participantVolumes: {},
+  matrixRtcMembersByRoom: {},
   setCurrentVoiceSession: (communityId, channelId) =>
     set((state) => {
       if (channelId === null || communityId === null) {
@@ -139,7 +181,13 @@ export const useVoiceStore = create<VoiceStore>((set) => ({
     })),
   setPeers: (peers) =>
     set((state) => ({
-      peers: peers.map((peer) => mergePeerRecord(state.peers.find((item) => item.publicKey === peer.publicKey), peer)),
+      peers: peers.map((peer) =>
+        mergePeerRecord(
+          state.peers.find((item) => item.publicKey === peer.publicKey),
+          peer,
+          true,
+        ),
+      ),
     })),
   setConnectionState: (connectionState, reason = null) =>
     set({
@@ -148,6 +196,45 @@ export const useVoiceStore = create<VoiceStore>((set) => ({
     }),
   setMuted: (isMuted) => set({ isMuted }),
   setDeafened: (isDeafened) => set({ isDeafened }),
+  setInputMode: (inputMode) =>
+    set({
+      inputMode,
+      isPushToTalking: false,
+      isMuted: inputMode === 'push-to-talk',
+    }),
+  setPushToTalking: (isPushToTalking) => set({ isPushToTalking }),
+  setCameraEnabled: (isCameraEnabled) => set({ isCameraEnabled }),
+  setScreenSharing: (isScreenSharing) => set({ isScreenSharing }),
+  setInputDeviceId: (inputDeviceId) => set({ inputDeviceId }),
+  setOutputDeviceId: (outputDeviceId) => set({ outputDeviceId }),
+  setLocalAudioLevel: (localAudioLevel) =>
+    set({ localAudioLevel: Math.max(0, Math.min(1, localAudioLevel)) }),
+  setParticipantVolume: (publicKey, volume) =>
+    set((state) => ({
+      participantVolumes: {
+        ...state.participantVolumes,
+        [publicKey]: Math.max(0, Math.min(2, volume)),
+      },
+    })),
+  setMatrixRtcMembers: (roomId, members) =>
+    set((state) => {
+      const next = { ...state.matrixRtcMembersByRoom }
+      const authoritativeMembers = members
+        .filter((member) => member.roomId === roomId)
+        .slice(0, MAX_MATRIX_RTC_MEMBERS_PER_ROOM)
+
+      if (authoritativeMembers.length === 0) {
+        delete next[roomId]
+        return { matrixRtcMembersByRoom: next }
+      }
+
+      if (!(roomId in next) && Object.keys(next).length >= MAX_MATRIX_RTC_ROOMS) {
+        const oldestRoomId = Object.keys(next)[0]
+        delete next[oldestRoomId]
+      }
+      next[roomId] = authoritativeMembers
+      return { matrixRtcMembersByRoom: next }
+    }),
   resetVoiceState: () =>
     set({
       currentChannelId: null,
@@ -157,6 +244,11 @@ export const useVoiceStore = create<VoiceStore>((set) => ({
       peers: [],
       connectionState: 'idle',
       lastReconnectReason: null,
+      isPushToTalking: false,
+      isCameraEnabled: false,
+      isScreenSharing: false,
+      localAudioLevel: 0,
+      participantVolumes: {},
     }),
 }))
 

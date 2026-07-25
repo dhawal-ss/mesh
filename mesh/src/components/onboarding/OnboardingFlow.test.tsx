@@ -1,0 +1,113 @@
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { OnboardingFlow } from './OnboardingFlow'
+
+vi.mock('./MatrixAccountScreen', () => ({
+  MatrixAccountScreen: ({
+    onNext,
+  }: {
+    onNext: (outcome: 'registered' | 'signed-in') => void
+  }) => (
+    <div>
+      <button type="button" onClick={() => onNext('registered')}>Registered</button>
+      <button type="button" onClick={() => onNext('signed-in')}>Signed in</button>
+    </div>
+  ),
+}))
+
+vi.mock('./BackupCodeScreen', () => ({
+  BackupCodeScreen: ({
+    backupCode,
+    onContinue,
+    onSkip,
+  }: {
+    backupCode: string
+    onContinue: () => void
+    onSkip: () => void
+  }) => (
+    <div>
+      <p>Backup: {backupCode}</p>
+      <button type="button" onClick={onContinue}>Confirm backup</button>
+      <button type="button" onClick={onSkip}>Skip backup</button>
+    </div>
+  ),
+}))
+
+vi.mock('./ReadyScreen', () => ({
+  ReadyScreen: () => <p>Ready step</p>,
+}))
+
+describe('OnboardingFlow account outcomes', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('requires the backup-code step immediately after registration', async () => {
+    const createBackupCode = vi.fn().mockResolvedValue('MESH-ONE-TWO-THREE-FOUR')
+    const configured = vi.fn()
+    await act(async () => {
+      root.render(
+        <OnboardingFlow
+          backendKind="matrix"
+          onComplete={() => {}}
+          onCreateBackupCode={createBackupCode}
+          onBackupConfigured={configured}
+        />,
+      )
+    })
+
+    const registered = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent === 'Registered')
+    await act(async () => {
+      registered?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 350))
+    })
+
+    expect(createBackupCode).toHaveBeenCalledOnce()
+    expect(container.textContent).toContain('Backup: MESH-ONE-TWO-THREE-FOUR')
+    expect(container.textContent).not.toContain('Ready step')
+
+    const confirm = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent === 'Confirm backup')
+    await act(async () => {
+      confirm?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 350))
+    })
+    expect(configured).toHaveBeenCalledOnce()
+    expect(container.textContent).toContain('Ready step')
+  })
+
+  it('does not create a new backup code for an existing-account sign-in', async () => {
+    const createBackupCode = vi.fn()
+    await act(async () => {
+      root.render(
+        <OnboardingFlow
+          backendKind="matrix"
+          onComplete={() => {}}
+          onCreateBackupCode={createBackupCode}
+        />,
+      )
+    })
+
+    const signedIn = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent === 'Signed in')
+    await act(async () => {
+      signedIn?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 350))
+    })
+
+    expect(createBackupCode).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Ready step')
+  })
+})

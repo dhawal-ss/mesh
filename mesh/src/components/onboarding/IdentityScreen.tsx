@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import clsx from 'clsx'
-import { transitions } from '../../lib/motion'
+import { motionDurations, transitions } from '../../lib/motion'
+import { describeError } from '../../lib/errors'
 import { Button } from '../ui/Button'
 import { useIdentityStore } from '../../store/identity'
 import type { OnboardingFlowProps } from './types'
@@ -56,8 +57,10 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
         setPhase('done')
       } catch (error) {
         if (!alive) return
+        console.error('Unable to create identity:', error)
+        const description = describeError(error, { operation: 'create your local identity' })
         setPhase('error')
-        setDetail(error instanceof Error ? error.message : 'Unable to create identity')
+        setDetail(`${description.title}. ${description.body}`)
       }
     }
 
@@ -71,8 +74,8 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
   return (
     <div className="space-y-8">
       <div className="space-y-2">
-        <p className="text-2xs uppercase tracking-[0.35em] text-muted">Step 1 of 3</p>
-        <h1 className="text-[clamp(2rem,4vw,2.6rem)] font-semibold tracking-tight text-primary">
+        <p className="text-2xs uppercase tracking-eyebrow text-muted">Step 1 of 3</p>
+        <h1 className="text-lg font-semibold tracking-tight text-primary">
           Welcome to Mesh
         </h1>
         <p className="max-w-sm text-sm leading-6 text-secondary">
@@ -86,11 +89,11 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
         className="overflow-hidden rounded-lg bg-bg-primary p-4"
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={transitions.softSpring}
+        transition={transitions.enter}
       >
         <div className="mb-3 flex items-center justify-between gap-4">
           <span className="text-sm font-medium text-primary">{detail}</span>
-          <span className="text-2xs uppercase tracking-[0.3em] text-muted">
+          <span className="text-2xs uppercase tracking-section text-muted">
             {phase === 'done' ? 'Created' : phase === 'error' ? 'Check' : 'Private'}
           </span>
         </div>
@@ -105,8 +108,8 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
             }
             transition={
               phase === 'done'
-                ? { duration: 0.7, ease: [0.22, 1, 0.36, 1] }
-                : { duration: 1.15, repeat: Infinity, ease: 'linear' }
+                ? transitions.celebration
+                : transitions.ambientLoop
             }
           />
         </div>
@@ -116,14 +119,14 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
             <motion.span
               key={step}
               className={clsx(
-                'rounded-md px-2.5 py-1 text-2xs uppercase tracking-[0.24em]',
+                'rounded-md px-2.5 py-1 text-2xs uppercase tracking-control',
                 index === 0
                   ? 'bg-bg-modifier-hover text-secondary'
                   : 'text-muted'
               )}
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2, delay: index * 0.12 }}
+              transition={{ ...transitions.enter, delay: index * motionDurations.stagger }}
             >
               {step}
             </motion.span>
@@ -135,16 +138,16 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
             className="mt-5 rounded-lg bg-green/10 border border-green/20 p-4"
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={transitions.softSpring}
+            transition={transitions.enter}
           >
-            <p className="text-2xs uppercase tracking-[0.32em] text-muted">Device key created</p>
+            <p className="text-2xs uppercase tracking-status text-muted">Device key created</p>
             <p className="mt-2 text-sm text-primary">
               {backendKind === 'matrix'
                 ? 'This key stays on this device as legacy migration metadata; Matrix device keys protect room activity.'
                 : 'This identity now lives on this device and will sign your peer activity locally.'}
             </p>
             <div className="mt-3 flex items-center justify-between gap-3 rounded-md bg-bg-tertiary px-3 py-2">
-              <span className="text-2xs uppercase tracking-[0.3em] text-muted">Fingerprint</span>
+              <span className="text-2xs uppercase tracking-section text-muted">Fingerprint</span>
               <span className="font-mono text-xs text-primary">{formatFingerprint(identity?.publicKey)}</span>
             </div>
           </motion.div>

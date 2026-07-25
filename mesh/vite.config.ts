@@ -7,7 +7,15 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react()],
+  plugins: [
+    react({
+      babel: {
+        // React Compiler must see the original component source before other
+        // Babel transforms. React 19 needs no compatibility target override.
+        plugins: ["babel-plugin-react-compiler"],
+      },
+    }),
+  ],
   resolve: {
     // Force simple-peer/readable-stream onto the browser EventEmitter package
     // instead of Vite's empty shim for the Node built-in `events` module.

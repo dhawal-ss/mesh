@@ -9,10 +9,16 @@ import { useChannelStore } from '../../store/channels'
 import { useCommunityStore } from '../../store/communities'
 import { useDmStore } from '../../store/dms'
 import { useIdentityStore } from '../../store/identity'
-import { useSettingsStore } from '../../store/settings'
+import { isBackupReminderDue, useSettingsStore } from '../../store/settings'
+import { useShellStore } from '../../store/shell'
 import * as bridge from '../../lib/bridge'
 import { playNotificationSound } from '../../lib/bridge'
 import type { NetworkStatus } from '../../types/ipc'
+import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
+import { Icon } from '../ui/Icon'
+import { useNotificationSync } from '../../hooks/useNotificationSync'
+import { getEffectiveChannelNotificationLevel } from '../../store/settings'
+import { CommandPalette } from '../navigation/CommandPalette'
 
 export function AppLayout() {
   useCommunitySync()
@@ -22,11 +28,18 @@ export function AppLayout() {
   const activeCommunityId = useCommunityStore((state) => state.activeCommunityId)
   const patchChannel = useChannelStore((state) => state.patchChannel)
   const isDmMode = useDmStore((state) => state.isDmMode)
+  const activeConversationId = useDmStore((state) => state.activeConversationId)
   const setDmMode = useDmStore((state) => state.setDmMode)
+  const backup = useSettingsStore((state) => state.backup)
+  const dismissBackupReminder = useSettingsStore((state) => state.dismissBackupReminder)
+  const setProfileOpen = useShellStore((state) => state.setProfileOpen)
+  const backupReminderDue = isBackupReminderDue(backup)
 
   const myPublicKey = useIdentityStore((state) => state.identity?.publicKey)
   const [networkStatus, setNetworkStatus] = useState<NetworkStatus | null>(null)
   const [contextNavigationOpen, setContextNavigationOpen] = useState(false)
+  const activeRoomId = isDmMode ? activeConversationId : activeChannelId
+  useNotificationSync({ matrixMode, activeRoomId })
 
   useEffect(() => {
     if (!directMessagesAvailable && isDmMode) setDmMode(false)
@@ -45,32 +58,37 @@ export function AppLayout() {
   }, [matrixMode])
 
   useEffect(() => {
-    if (matrixMode) return
-    const unlisten = bridge.onMessageReceived((message) => {
-      const isOwnMessage = myPublicKey && message.authorPublicKey === myPublicKey
-      const isActiveChannel = message.channelId === activeChannelId && !isDmMode
+    const unlisten = matrixMode
+      ? Promise.resolve(() => {})
+      : bridge.onMessageReceived((message) => {
+        const isOwnMessage = myPublicKey && message.authorPublicKey === myPublicKey
+        const isActiveChannel = message.channelId === activeChannelId && !isDmMode
 
-      if (isActiveChannel) {
-        return
-      }
-
-      const channel = useChannelStore
-        .getState()
-        .channels
-        .find((entry) => entry.id === message.channelId)
-      patchChannel(message.channelId, {
-        unreadCount: (channel?.unreadCount ?? 0) + 1,
-      })
-
-      // Play notification sound for messages from other users in non-active channels
-      if (!isOwnMessage) {
-        const { notifications } = useSettingsStore.getState()
-        const isMuted = notifications.mutedChannels.includes(message.channelId)
-        if (notifications.enabled && notifications.sound && !isMuted) {
-          playNotificationSound()
+        if (isActiveChannel) {
+          return
         }
-      }
-    })
+
+        const channel = useChannelStore
+          .getState()
+          .channelEntities[message.channelId]
+        patchChannel(message.channelId, {
+          unreadCount: (channel?.unreadCount ?? 0) + 1,
+        })
+
+        // Legacy builds retain their renderer event while Matrix uses the
+        // SDK-owned notification and unread streams installed above.
+        if (!isOwnMessage) {
+          const { notifications } = useSettingsStore.getState()
+          const level = getEffectiveChannelNotificationLevel(
+            notifications,
+            message.channelId,
+            channel?.communityId,
+          )
+          if (notifications.sound && level === 'all') {
+            playNotificationSound(notifications.soundId)
+          }
+        }
+      })
 
     return () => {
       unlisten.then((fn) => fn())
@@ -90,18 +108,48 @@ export function AppLayout() {
 
   return (
     <div className="relative flex h-screen flex-col overflow-hidden">
+      <CommandPalette />
+      {backupReminderDue && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-status-warning/30 bg-status-warning/10 px-4 py-2 text-xs text-content"
+        >
+          <span>Your messages are not backed up yet. Save a backup code in Your devices.</span>
+          <button
+            type="button"
+            className="font-semibold text-accent hover:underline"
+            onClick={() => setProfileOpen(true)}
+          >
+            Open profile
+          </button>
+          <button
+            type="button"
+            className="text-content-secondary hover:text-content"
+            aria-label="Dismiss backup reminder"
+            onClick={dismissBackupReminder}
+          >
+            Not now
+          </button>
+        </div>
+      )}
       <div className="flex flex-1 overflow-hidden">
         {/* Server icon bar — Discord: 72px, dark */}
         <nav
           className="mesh-community-rail flex flex-shrink-0 flex-col items-center overflow-y-auto bg-bg-tertiary pt-3"
-          aria-label="Communities and DMs"
+          aria-label="Servers and DMs"
         >
-          <CommunitySidebar />
+          <ScopedErrorBoundary
+            name="Server navigation"
+            description="Server shortcuts could not be displayed."
+            resetKey={activeCommunityId}
+          >
+            <CommunitySidebar />
+          </ScopedErrorBoundary>
           <div className="mt-auto pb-3 flex flex-col items-center">
-            <div className="flex items-center gap-1.5 text-[10px] text-muted px-1 text-center"
+            <div className="flex items-center gap-1.5 px-1 text-center text-caption text-muted"
               title={
                 matrixMode
-                  ? 'Connected through your Matrix homeserver'
+                  ? 'Connected to Mesh'
                   : isRunningSolo
                   ? 'You are running as a solo peer. Messages are stored locally and will sync when other peers join.'
                   : `Connected to ${remotePeerCount} other peer${remotePeerCount === 1 ? '' : 's'}`
@@ -122,7 +170,7 @@ export function AppLayout() {
               />
               <span>
                 {matrixMode
-                  ? 'Matrix'
+                  ? 'Online'
                   : networkStatus === null
                   ? 'Starting'
                   : isRunningSolo
@@ -149,7 +197,14 @@ export function AppLayout() {
           className="mesh-context-sidebar flex flex-shrink-0 flex-col bg-bg-secondary"
           aria-label={isDmMode && directMessagesAvailable ? 'Direct message conversations' : 'Channel list'}
         >
-          {isDmMode && directMessagesAvailable ? <DmSidebar /> : <ChannelSidebar />}
+          <ScopedErrorBoundary
+            name={isDmMode && directMessagesAvailable ? 'Conversation list' : 'Channel list'}
+            description="Navigation failed to render. The current conversation remains available."
+            className="m-2"
+            resetKey={`${isDmMode ? 'dm' : 'channel'}:${activeCommunityId ?? ''}`}
+          >
+            {isDmMode && directMessagesAvailable ? <DmSidebar /> : <ChannelSidebar />}
+          </ScopedErrorBoundary>
         </aside>
 
         {/* Main content area */}
@@ -162,28 +217,26 @@ export function AppLayout() {
               aria-expanded={contextNavigationOpen}
               onClick={() => setContextNavigationOpen((open) => !open)}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                {contextNavigationOpen ? (
-                  <>
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </>
-                ) : (
-                  <>
-                    <line x1="4" y1="6" x2="20" y2="6" />
-                    <line x1="4" y1="12" x2="20" y2="12" />
-                    <line x1="4" y1="18" x2="20" y2="18" />
-                  </>
-                )}
-              </svg>
+              <Icon name={contextNavigationOpen ? 'x' : 'menu'} size="sm" />
               {contextNavigationOpen ? 'Close' : isDmMode ? 'Conversations' : 'Channels'}
             </button>
             <span className="truncate text-xs text-muted">
-              {matrixMode ? 'Encrypted Matrix session' : 'Local Mesh session'}
+              {matrixMode ? 'Encrypted session' : 'Local Mesh session'}
             </span>
           </div>
           <div className="flex min-h-0 flex-1">
-            {isDmMode && directMessagesAvailable ? <DmView /> : <ContentArea />}
+            {isDmMode && directMessagesAvailable ? (
+              <ScopedErrorBoundary
+                name="Direct messages"
+                description="This conversation could not be displayed. Choose another conversation or retry."
+                className="m-4"
+                resetKey={activeConversationId}
+              >
+                <DmView />
+              </ScopedErrorBoundary>
+            ) : (
+              <ContentArea />
+            )}
           </div>
         </main>
       </div>

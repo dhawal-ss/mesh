@@ -155,11 +155,14 @@ try {
 
     & docker compose exec -T synapse1 register_new_matrix_user -c /data/homeserver.yaml `
         http://localhost:8008 -u alice -p mesh-alice --no-admin 2>&1 | Out-Host
+    & docker compose exec -T synapse1 register_new_matrix_user -c /data/homeserver.yaml `
+        http://localhost:8008 -u charlie -p mesh-charlie --no-admin 2>&1 | Out-Host
     & docker compose exec -T synapse2 register_new_matrix_user -c /data/homeserver.yaml `
         http://localhost:8008 -u bob -p mesh-bob --no-admin 2>&1 | Out-Host
 
     Write-Output 'Matrix spike homeservers are ready:'
     Write-Output '  Alice: @alice:hs1.mesh.test at http://localhost:8008 (password mesh-alice)'
+    Write-Output '  Charlie: @charlie:hs1.mesh.test at http://localhost:8008 (password mesh-charlie)'
     Write-Output '  Bob:   @bob:hs2.mesh.test at http://localhost:8009 (password mesh-bob)'
     Write-Output 'Run: npm run test:matrix-spike'
 } finally {

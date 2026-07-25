@@ -1,3 +1,5 @@
+import { errorDetail, normalizeError } from '../../lib/errors'
+
 const LOOPBACK_ADDRESS = /^(?:localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?$/i
 
 export type MatrixSignInMode = 'recommended' | 'advanced'
@@ -65,7 +67,7 @@ export function recommendedServiceConfigError(value: string): string | null {
       return 'The configured service must use HTTPS.'
     }
     if (!value.includes('://') && (url.pathname !== '/' || url.search || url.hash)) {
-      return 'The configured Matrix server name is invalid.'
+      return 'The configured server name is invalid.'
     }
     return null
   } catch {
@@ -74,7 +76,21 @@ export function recommendedServiceConfigError(value: string): string | null {
 }
 
 export function friendlySignInError(cause: unknown): string {
-  const technical = cause instanceof Error ? cause.message : String(cause)
+  const error = normalizeError(cause)
+  if (error.code === 'login_cancelled' || error.code === 'cancelled') {
+    return 'Sign-in was cancelled. No account session was saved.'
+  }
+  if (error.code === 'login_timed_out') {
+    return 'Sign-in took too long. Check your connection or service address, then try again.'
+  }
+  if (error.code === 'not_authenticated' || error.code === 'permission_denied') {
+    return 'That username or password did not work. Check both and try again.'
+  }
+  if (error.code === 'network_unavailable') {
+    return 'We could not reach your messaging service. Check your connection and try again.'
+  }
+
+  const technical = error.detail
   const message = technical.toLowerCase()
   if (message.includes('sign-in was cancelled') || message.includes('login was cancelled')) {
     return 'Sign-in was cancelled. No account session was saved.'
@@ -112,5 +128,5 @@ export function friendlySignInError(cause: unknown): string {
 }
 
 export function technicalSignInError(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause)
+  return errorDetail(cause)
 }

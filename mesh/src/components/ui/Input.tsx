@@ -1,15 +1,20 @@
 import { forwardRef, useId } from 'react'
 import clsx from 'clsx'
+import type { UiSize } from './Button'
 
-interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
+export interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'size'> {
   label?: string
+  hint?: string
+  error?: string
+  size?: UiSize
   onChange?: ((value: string) => void) | React.ChangeEventHandler<HTMLInputElement>
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, className, onChange, id, ...props }, ref) => {
+  ({ label, hint, error, size = 'md', className, onChange, id, 'aria-describedby': describedBy, ...props }, ref) => {
     const generatedId = useId()
     const inputId = id ?? generatedId
+    const supportingTextId = `${inputId}-supporting`
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       if (!onChange) return
       if (onChange.length <= 1) {
@@ -24,9 +29,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     }
 
     return (
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1.5">
         {label && (
-          <label htmlFor={inputId} className="text-xs font-bold uppercase text-muted">
+          <label htmlFor={inputId} className="text-xs font-medium text-content-secondary">
             {label}
           </label>
         )}
@@ -34,15 +39,27 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           ref={ref}
           id={inputId}
           onChange={handleChange}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error || hint ? supportingTextId : describedBy}
           className={clsx(
-            'w-full rounded-md bg-bg-tertiary px-3 py-2.5',
-            'text-sm text-primary placeholder:text-muted',
-            'transition-colors duration-100',
-            'focus:outline-none focus-visible:ring-2 focus-visible:ring-blue',
-            className
+            'w-full rounded-md border border-border bg-surface-sunken text-content placeholder:text-content-muted',
+            'transition-colors duration-fast focus:border-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
+            error && 'border-status-danger focus:border-status-danger focus-visible:ring-status-danger/30',
+            size === 'sm' && 'px-2.5 py-1.5 text-xs',
+            size === 'md' && 'px-3 py-2 text-sm',
+            size === 'lg' && 'px-3.5 py-2.5 text-base',
+            className,
           )}
           {...props}
         />
+        {(error || hint) && (
+          <p
+            id={supportingTextId}
+            className={clsx('text-xs', error ? 'text-status-danger' : 'text-content-muted')}
+          >
+            {error ?? hint}
+          </p>
+        )}
       </div>
     )
   }

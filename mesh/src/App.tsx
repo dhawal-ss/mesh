@@ -8,12 +8,13 @@ import { useIdentityStore } from './store/identity'
 import { useCommunityStore } from './store/communities'
 import { useChannelStore } from './store/channels'
 import { useNetworkStore } from './store/network'
-import { refreshMatrixPreferences } from './store/settings'
+import { refreshMatrixPreferences, useSettingsStore } from './store/settings'
 import * as bridge from './lib/bridge'
 import { Spinner } from './components/ui/Spinner'
 import { variants } from './lib/motion'
 import { matrixIdentity, matrixProfileIdentity } from './lib/matrixIdentity'
 import type { Identity } from './types/ipc'
+import { registerPoll } from './lib/scheduler'
 
 const BOOTSTRAP_STEPS = {
   connecting: { label: 'Connecting to the DHT', progress: 28 },
@@ -65,13 +66,20 @@ function mapNetworkState(status: { connected: boolean; peerCount: number; averag
 }
 
 export default function App() {
-  const { identity, isLoading, setIdentity, setLoading } = useIdentityStore()
+  const identity = useIdentityStore((state) => state.identity)
+  const isLoading = useIdentityStore((state) => state.isLoading)
+  const setIdentity = useIdentityStore((state) => state.setIdentity)
+  const setLoading = useIdentityStore((state) => state.setLoading)
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
+  const communityIdsKey = useCommunityStore((s) => s.communityOrder.join('\u0000'))
   const setCommunities = useCommunityStore((s) => s.setCommunities)
   const upsertCommunity = useCommunityStore((s) => s.upsertCommunity)
   const setActiveCommunity = useCommunityStore((s) => s.setActiveCommunity)
   const setChannels = useChannelStore((s) => s.setChannels)
+  const setActiveChannel = useChannelStore((s) => s.setActiveChannel)
   const setNetworkStatus = useNetworkStore((s) => s.setStatus)
+  const setBackupConfigured = useSettingsStore((s) => s.setBackupConfigured)
+  const scheduleBackupReminder = useSettingsStore((s) => s.scheduleBackupReminder)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [backendStatus, setBackendStatus] = useState<bridge.BackendStatus | null>(null)
   const isTauriRuntime = bridge.isTauriRuntime()
@@ -147,7 +155,8 @@ export default function App() {
       })
     }
 
-    if (!activeCommunityId) {
+    const communityIds = communityIdsKey ? communityIdsKey.split('\u0000') : []
+    if (communityIds.length === 0) {
       setChannels([])
       return
     }
@@ -156,9 +165,20 @@ export default function App() {
 
     const loadChannels = async () => {
       try {
-        const channels = await bridge.getChannels(activeCommunityId)
+        const channels = (
+          await Promise.all(communityIds.map((communityId) => bridge.getChannels(communityId)))
+        ).flat()
         if (alive) {
           setChannels(channels)
+          const currentActiveChannelId = useChannelStore.getState().activeChannelId
+          const currentActiveChannel = currentActiveChannelId
+            ? channels.find((channel) => channel.id === currentActiveChannelId)
+            : undefined
+          if (currentActiveChannel?.communityId !== activeCommunityId) {
+            setActiveChannel(
+              channels.find((channel) => channel.communityId === activeCommunityId)?.id ?? null,
+            )
+          }
         }
       } catch (err) {
         console.error('Failed to load channels:', err)
@@ -170,7 +190,15 @@ export default function App() {
     return () => {
       alive = false
     }
-  }, [activeCommunityId, backendStatus, isTauriRuntime, setChannels, setNetworkStatus])
+  }, [
+    activeCommunityId,
+    backendStatus,
+    communityIdsKey,
+    isTauriRuntime,
+    setActiveChannel,
+    setChannels,
+    setNetworkStatus,
+  ])
 
   useEffect(() => {
     const userId = backendStatus?.kind === 'matrix' && backendStatus.authenticated
@@ -179,19 +207,23 @@ export default function App() {
     if (!isTauriRuntime || !userId) return
 
     let alive = true
-    const refresh = () => {
-      void refreshMatrixPreferences(userId).catch((error) => {
-        if (alive) console.error('Failed to refresh Matrix preferences:', error)
-      })
-    }
-
-    refresh()
-    const interval = window.setInterval(refresh, 30_000)
-    window.addEventListener('focus', refresh)
+    const unregisterPoll = registerPoll({
+      key: `matrix-preferences:${userId}`,
+      intervalMs: 30_000,
+      run: async () => {
+        try {
+          await refreshMatrixPreferences(userId)
+        } catch (error) {
+          if (alive) console.error('Failed to refresh Matrix preferences:', error)
+          throw error
+        }
+      },
+      pauseWhenHidden: true,
+      backoffOnError: true,
+    })
     return () => {
       alive = false
-      window.clearInterval(interval)
-      window.removeEventListener('focus', refresh)
+      unregisterPoll()
     }
   }, [backendStatus, isTauriRuntime])
 
@@ -247,7 +279,7 @@ export default function App() {
     <>
       <AnimatePresence mode="wait">
         {showOnboarding || (backendStatus?.kind === 'legacy-p2p' && !identity) ? (
-          <ErrorBoundary level="app">
+          <ErrorBoundary scope="app">
           <motion.div
             key="onboarding"
             variants={variants.screen}
@@ -259,6 +291,37 @@ export default function App() {
             <OnboardingFlow
               backendKind={backendStatus?.kind ?? 'matrix'}
               backendAuthenticated={backendStatus?.authenticated ?? false}
+              onMatrixCheckUsernameAvailable={async (username) => {
+                if (!isTauriRuntime) {
+                  return !['admin', 'support', 'taken'].includes(username)
+                }
+                return bridge.matrixCheckUsernameAvailable(username)
+              }}
+              onMatrixRegisterAccount={async (username, password) => {
+                if (!isTauriRuntime) {
+                  const status: bridge.BackendStatus = {
+                    kind: 'matrix',
+                    capabilities: bridge.getBackendCapabilities(),
+                    voiceService: bridge.getVoiceServiceStatus(),
+                    authenticated: true,
+                    userId: `@${username}:preview.mesh`,
+                    deviceId: 'PREVIEW',
+                    homeserver: 'https://preview.mesh',
+                    syncRunning: true,
+                    durableHistory: true,
+                    endToEndEncryption: true,
+                    warnings: [],
+                  }
+                  setBackendStatus(status)
+                  const registeredIdentity = await loadMatrixIdentity(status.userId, false)
+                  if (registeredIdentity) setIdentity(registeredIdentity)
+                  return
+                }
+                const status = await bridge.matrixRegisterAccount(username, password)
+                setBackendStatus(status)
+                const registeredIdentity = await loadMatrixIdentity(status.userId, true)
+                if (registeredIdentity) setIdentity(registeredIdentity)
+              }}
               onMatrixLogin={async (request) => {
                 if (!isTauriRuntime) {
                   const status: bridge.BackendStatus = {
@@ -290,6 +353,14 @@ export default function App() {
                 const signedInIdentity = await loadMatrixIdentity(status.userId, true)
                 if (signedInIdentity) setIdentity(signedInIdentity)
               }}
+              onCreateBackupCode={async () => {
+                if (!isTauriRuntime) {
+                  return 'MESH-FROST-LANTERN-HARBOR-COPPER-ORBIT-MEADOW'
+                }
+                return bridge.matrixEnableRecovery()
+              }}
+              onBackupConfigured={() => setBackupConfigured(true)}
+              onBackupSkipped={scheduleBackupReminder}
               initialProfile={identity ?? undefined}
               onGenerateIdentity={async () => {
                 if (!isTauriRuntime) {
@@ -413,7 +484,7 @@ export default function App() {
           </motion.div>
           </ErrorBoundary>
         ) : (
-          <ErrorBoundary level="app">
+          <ErrorBoundary scope="app">
           <motion.div
             key="app"
             variants={variants.screen}

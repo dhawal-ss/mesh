@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { patchChanges } from '../lib/state'
 
 export interface MemberRecord {
   publicKey: string
@@ -12,122 +13,179 @@ export interface MemberRecord {
 }
 
 interface MembershipStore {
-  /** Members indexed by community ID */
+  /** Normalized member source of truth, scoped by community ID. */
+  memberEntities: Record<string, Record<string, MemberRecord>>
+  memberOrder: Record<string, string[]>
+  /** Ordered compatibility snapshots for roster consumers. */
   members: Record<string, MemberRecord[]>
-
-  /** Set the full roster for a community (from initial load) */
   setRoster: (communityId: string, roster: MemberRecord[]) => void
-
-  /** Clear all cached membership state for a community */
   clearCommunity: (communityId: string) => void
-
-  /** Insert or update a single member */
   upsertMember: (communityId: string, member: MemberRecord) => void
-
-  /** Remove a member from the roster */
   removeMember: (communityId: string, publicKey: string) => void
-
-  /** Mark a member as banned (removes from active roster) */
   banMember: (communityId: string, publicKey: string) => void
-
-  /** Update a member's role */
   updateRole: (communityId: string, publicKey: string, role: MemberRecord['role']) => void
-
-  /** Update last seen timestamp */
   touchMember: (communityId: string, publicKey: string) => void
-
-  /** Get members for a community */
   getMembersForCommunity: (communityId: string) => MemberRecord[]
-
-  /** Get active members for a community */
   getActiveMembersForCommunity: (communityId: string) => MemberRecord[]
-
-  /** Get member count for a community */
   getMemberCount: (communityId: string) => number
 }
 
+function sameOrder(left: string[], right: string[]) {
+  return left.length === right.length && left.every((id, index) => id === right[index])
+}
+
+function normalizeRoster(
+  roster: MemberRecord[],
+  existing: Record<string, MemberRecord>,
+) {
+  const entities: Record<string, MemberRecord> = {}
+  const order: string[] = []
+
+  for (const incoming of roster) {
+    if (entities[incoming.publicKey]) continue
+    const current = existing[incoming.publicKey]
+    entities[incoming.publicKey] =
+      !current || patchChanges(current, incoming) ? incoming : current
+    order.push(incoming.publicKey)
+  }
+
+  return {
+    entities,
+    order,
+    members: order.map((publicKey) => entities[publicKey]),
+  }
+}
+
 export const useMembershipStore = create<MembershipStore>((set, get) => ({
+  memberEntities: {},
+  memberOrder: {},
   members: {},
 
   setRoster: (communityId, roster) =>
-    set((state) => ({
-      members: { ...state.members, [communityId]: roster },
-    })),
+    set((state) => {
+      const normalized = normalizeRoster(
+        roster,
+        state.memberEntities[communityId] ?? {},
+      )
+      const currentOrder = state.memberOrder[communityId] ?? []
+      const unchanged =
+        sameOrder(currentOrder, normalized.order) &&
+        normalized.order.every(
+          (publicKey) =>
+            state.memberEntities[communityId]?.[publicKey] === normalized.entities[publicKey],
+        )
+      if (unchanged) return state
+
+      return {
+        memberEntities: {
+          ...state.memberEntities,
+          [communityId]: normalized.entities,
+        },
+        memberOrder: {
+          ...state.memberOrder,
+          [communityId]: normalized.order,
+        },
+        members: {
+          ...state.members,
+          [communityId]: normalized.members,
+        },
+      }
+    }),
 
   clearCommunity: (communityId) =>
     set((state) => {
+      if (
+        !state.memberEntities[communityId] &&
+        !state.memberOrder[communityId] &&
+        !state.members[communityId]
+      ) {
+        return state
+      }
+      const memberEntities = { ...state.memberEntities }
+      const memberOrder = { ...state.memberOrder }
       const members = { ...state.members }
+      delete memberEntities[communityId]
+      delete memberOrder[communityId]
       delete members[communityId]
-      return { members }
+      return { memberEntities, memberOrder, members }
     }),
 
-  upsertMember: (communityId, member) =>
+  upsertMember: (communityId, incoming) =>
     set((state) => {
-      const current = state.members[communityId] ?? []
-      const existing = current.findIndex((m) => m.publicKey === member.publicKey)
-      const updated =
-        existing >= 0
-          ? current.map((m, i) => (i === existing ? { ...m, ...member } : m))
-          : [...current, member]
-      return { members: { ...state.members, [communityId]: updated } }
+      const communityEntities = state.memberEntities[communityId] ?? {}
+      const current = communityEntities[incoming.publicKey]
+      const next = !current || patchChanges(current, incoming) ? incoming : current
+      if (current === next) return state
+
+      const order = state.memberOrder[communityId] ?? []
+      if (!current) {
+        return {
+          memberEntities: {
+            ...state.memberEntities,
+            [communityId]: { ...communityEntities, [incoming.publicKey]: next },
+          },
+          memberOrder: {
+            ...state.memberOrder,
+            [communityId]: [...order, incoming.publicKey],
+          },
+          members: {
+            ...state.members,
+            [communityId]: [...(state.members[communityId] ?? []), next],
+          },
+        }
+      }
+
+      return patchMemberState(state, communityId, incoming.publicKey, next)
     }),
 
   removeMember: (communityId, publicKey) =>
     set((state) => {
-      const current = state.members[communityId] ?? []
-      return {
-        members: {
-          ...state.members,
-          [communityId]: current.map((member) =>
-            member.publicKey === publicKey
-              ? { ...member, joinStatus: 'left' }
-              : member,
-          ),
-        },
-      }
+      const current = state.memberEntities[communityId]?.[publicKey]
+      if (!current || current.joinStatus === 'left') return state
+      return patchMemberState(
+        state,
+        communityId,
+        publicKey,
+        { ...current, joinStatus: 'left' },
+      )
     }),
 
   banMember: (communityId, publicKey) =>
     set((state) => {
-      const current = state.members[communityId] ?? []
-      return {
-        members: {
-          ...state.members,
-          [communityId]: current.map((member) =>
-            member.publicKey === publicKey
-              ? { ...member, joinStatus: 'left', banStatus: 'banned' }
-              : member,
-          ),
-        },
+      const current = state.memberEntities[communityId]?.[publicKey]
+      if (!current || (current.joinStatus === 'left' && current.banStatus === 'banned')) {
+        return state
       }
+      return patchMemberState(
+        state,
+        communityId,
+        publicKey,
+        { ...current, joinStatus: 'left', banStatus: 'banned' },
+      )
     }),
 
   updateRole: (communityId, publicKey, role) =>
     set((state) => {
-      const current = state.members[communityId] ?? []
-      return {
-        members: {
-          ...state.members,
-          [communityId]: current.map((m) =>
-            m.publicKey === publicKey ? { ...m, role } : m,
-          ),
-        },
-      }
+      const current = state.memberEntities[communityId]?.[publicKey]
+      if (!current || current.role === role) return state
+      return patchMemberState(
+        state,
+        communityId,
+        publicKey,
+        { ...current, role },
+      )
     }),
 
   touchMember: (communityId, publicKey) =>
     set((state) => {
-      const current = state.members[communityId] ?? []
-      return {
-        members: {
-          ...state.members,
-          [communityId]: current.map((m) =>
-            m.publicKey === publicKey
-              ? { ...m, lastSeen: new Date().toISOString() }
-              : m,
-          ),
-        },
-      }
+      const current = state.memberEntities[communityId]?.[publicKey]
+      if (!current) return state
+      return patchMemberState(
+        state,
+        communityId,
+        publicKey,
+        { ...current, lastSeen: new Date().toISOString() },
+      )
     }),
 
   getMembersForCommunity: (communityId) => get().members[communityId] ?? [],
@@ -142,3 +200,46 @@ export const useMembershipStore = create<MembershipStore>((set, get) => ({
       (member) => member.joinStatus === 'joined' && member.banStatus === 'none',
     ).length,
 }))
+
+function patchMemberState(
+  state: MembershipStore,
+  communityId: string,
+  publicKey: string,
+  next: MemberRecord,
+): Partial<MembershipStore> {
+  const index = (state.memberOrder[communityId] ?? []).indexOf(publicKey)
+  const members = [...(state.members[communityId] ?? [])]
+  if (index >= 0) members[index] = next
+
+  return {
+    memberEntities: {
+      ...state.memberEntities,
+      [communityId]: {
+        ...state.memberEntities[communityId],
+        [publicKey]: next,
+      },
+    },
+    members: { ...state.members, [communityId]: members },
+  }
+}
+
+export function useMember(
+  communityId: string | null | undefined,
+  publicKey: string | null | undefined,
+) {
+  return useMembershipStore((state) =>
+    communityId && publicKey
+      ? state.memberEntities[communityId]?.[publicKey]
+      : undefined,
+  )
+}
+
+const EMPTY_MEMBERS: MemberRecord[] = []
+
+export function useCommunityMembers(communityId: string | null | undefined) {
+  return useMembershipStore((state) =>
+    communityId
+      ? state.members[communityId] ?? EMPTY_MEMBERS
+      : EMPTY_MEMBERS,
+  )
+}

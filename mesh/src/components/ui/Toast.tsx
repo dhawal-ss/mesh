@@ -1,26 +1,28 @@
 import { useState, useEffect, useCallback } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { variants } from '../../lib/motion'
 
-type ToastType = 'success' | 'error' | 'info'
+export type ToastTone = 'success' | 'danger' | 'info' | 'warning'
 
 interface ToastState {
   id: number
   message: string
-  type: ToastType
+  tone: ToastTone
 }
 
 let toastId = 0
-let addToastFn: ((message: string, type: ToastType) => void) | null = null
+let addToastFn: ((message: string, tone: ToastTone) => void) | null = null
 
-export function showToast(message: string, type: ToastType = 'info') {
-  addToastFn?.(message, type)
+export function showToast(message: string, tone: ToastTone | 'error' = 'info') {
+  addToastFn?.(message, tone === 'error' ? 'danger' : tone)
 }
 
 export function ToastContainer() {
   const [toasts, setToasts] = useState<ToastState[]>([])
 
-  const addToast = useCallback((message: string, type: ToastType) => {
+  const addToast = useCallback((message: string, tone: ToastTone) => {
     const id = ++toastId
-    setToasts((prev) => [...prev, { id, message, type }])
+    setToasts((prev) => [...prev, { id, message, tone }])
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id))
     }, 4000)
@@ -34,21 +36,35 @@ export function ToastContainer() {
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
-      {toasts.map((toast) => (
-        <div
-          key={toast.id}
-          className={`rounded-lg px-4 py-3 text-sm font-medium shadow-floating animate-in slide-in-from-bottom-2 ${
-            toast.type === 'error'
-              ? 'bg-red text-white'
-              : toast.type === 'success'
-                ? 'bg-green text-white'
-                : 'bg-bg-floating text-primary border border-border'
-          }`}
-        >
-          {toast.message}
-        </div>
-      ))}
+    <div
+      className="fixed bottom-4 right-4 z-toast flex flex-col gap-2"
+      role="status"
+      aria-live="polite"
+      aria-atomic="false"
+      aria-label="Notifications"
+    >
+      <AnimatePresence initial={false}>
+        {toasts.map((toast) => (
+          <motion.div
+            key={toast.id}
+            variants={variants.toast}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className={`rounded-lg border px-4 py-3 text-sm font-medium shadow-floating ${
+              toast.tone === 'danger'
+                ? 'border-status-danger/30 bg-status-danger text-content-on-status'
+                : toast.tone === 'success'
+                  ? 'border-status-success/30 bg-status-success text-content-on-status'
+                  : toast.tone === 'warning'
+                    ? 'border-status-warning/30 bg-status-warning text-surface-sunken'
+                    : 'border-border bg-surface-overlay text-content'
+            }`}
+          >
+            {toast.message}
+          </motion.div>
+        ))}
+      </AnimatePresence>
     </div>
   )
 }

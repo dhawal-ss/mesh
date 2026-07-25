@@ -12,7 +12,7 @@ pub mod network;
 mod state;
 #[cfg(feature = "legacy-p2p")]
 mod storage;
-mod types;
+pub mod types;
 
 // Re-export the TURN/STUN probe helpers so integration tests and operator
 // tooling can validate real TURN infrastructure without going through the
@@ -85,7 +85,6 @@ pub fn run() {
                 }
             });
         });
-    #[cfg(feature = "legacy-p2p")]
     let builder = builder.plugin(tauri_plugin_notification::init());
     let builder = builder.setup(|app| {
         // Initialize SQLite database
@@ -129,9 +128,19 @@ pub fn run() {
         app.manage(db);
 
         // Initialize application state
+        app.manage(commands::notifications::NotificationRuntimeState::default());
+        commands::notifications::configure_tray(app);
+
         let app_state = AppState::with_data_dir(app_data_dir);
         #[cfg(feature = "legacy-p2p")]
         let backend_kind = app_state.backend.kind();
+        let notification_app = app.handle().clone();
+        app_state
+            .backend
+            .backend()
+            .set_matrix_event_callback(Some(std::sync::Arc::new(move |event| {
+                commands::notifications::handle_matrix_backend_event(&notification_app, event);
+            })));
         app.manage(app_state);
 
         #[cfg(feature = "legacy-p2p")]
@@ -228,8 +237,8 @@ pub fn run() {
         Ok(())
     });
 
-    // Close exits normally. We do not hide the window until a tested tray
-    // icon and recovery menu exist.
+    // The tray reflects unread state. Closing still exits normally; close-to-tray
+    // behavior remains disabled until a recovery menu and lifecycle are tested.
     #[cfg(not(feature = "legacy-p2p"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::attachments::pick_attachment_grants,
@@ -238,7 +247,13 @@ pub fn run() {
         commands::attachments::discard_attachment_grant,
         commands::attachments::discard_staged_attachment,
         commands::backend::get_backend_status,
+        commands::notifications::set_notification_context,
+        commands::notifications::send_test_notification,
+        commands::backend::matrix_get_room_notification_mode,
+        commands::backend::matrix_set_room_notification_mode,
         commands::backend::matrix_login,
+        commands::backend::register_account,
+        commands::backend::check_username_available,
         commands::backend::matrix_oidc_status,
         commands::backend::matrix_start_oidc_login,
         commands::backend::matrix_cancel_login,
@@ -264,8 +279,16 @@ pub fn run() {
         commands::backend::matrix_list_communities,
         commands::backend::matrix_list_channels,
         commands::backend::matrix_create_channel,
+        commands::backend::matrix_rtc_join,
+        commands::backend::matrix_rtc_ack_media_key_pause,
+        commands::backend::matrix_rtc_ack_media_key,
+        commands::backend::matrix_rtc_renew_media_key_lease,
+        commands::backend::matrix_rtc_refresh_membership,
+        commands::backend::matrix_rtc_leave,
+        commands::backend::matrix_rtc_members,
         commands::backend::matrix_send_message,
         commands::backend::matrix_send_attachment,
+        commands::backend::matrix_cancel_attachment_upload,
         commands::backend::matrix_download_attachment,
         commands::backend::matrix_cancel_attachment_download,
         commands::backend::matrix_dm_conversations,
@@ -313,7 +336,13 @@ pub fn run() {
         commands::attachments::discard_staged_attachment,
         // Backend / Matrix architecture spike
         commands::backend::get_backend_status,
+        commands::notifications::set_notification_context,
+        commands::notifications::send_test_notification,
+        commands::backend::matrix_get_room_notification_mode,
+        commands::backend::matrix_set_room_notification_mode,
         commands::backend::matrix_login,
+        commands::backend::register_account,
+        commands::backend::check_username_available,
         commands::backend::matrix_oidc_status,
         commands::backend::matrix_start_oidc_login,
         commands::backend::matrix_cancel_login,
@@ -339,8 +368,16 @@ pub fn run() {
         commands::backend::matrix_list_communities,
         commands::backend::matrix_list_channels,
         commands::backend::matrix_create_channel,
+        commands::backend::matrix_rtc_join,
+        commands::backend::matrix_rtc_ack_media_key_pause,
+        commands::backend::matrix_rtc_ack_media_key,
+        commands::backend::matrix_rtc_renew_media_key_lease,
+        commands::backend::matrix_rtc_refresh_membership,
+        commands::backend::matrix_rtc_leave,
+        commands::backend::matrix_rtc_members,
         commands::backend::matrix_send_message,
         commands::backend::matrix_send_attachment,
+        commands::backend::matrix_cancel_attachment_upload,
         commands::backend::matrix_download_attachment,
         commands::backend::matrix_cancel_attachment_download,
         commands::backend::matrix_dm_conversations,

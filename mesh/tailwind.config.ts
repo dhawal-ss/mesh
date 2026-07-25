@@ -1,74 +1,196 @@
 import type { Config } from 'tailwindcss'
 
+const withAlpha = (variable: string) => `rgb(var(${variable}) / <alpha-value>)`
+
 export default {
   content: ['./src/**/*.{tsx,ts}', './index.html'],
   theme: {
     extend: {
       colors: {
-        // ── Surface hierarchy ──
-        'bg-tertiary': '#1e1f22',
-        'bg-secondary': '#2b2d31',
-        'bg-primary': '#313338',
-        'bg-modifier-hover': '#2e3035',
-        'bg-modifier-active': '#404249',
-        'bg-modifier-selected': '#404249',
-        'bg-floating': '#111214',
+        surface: {
+          DEFAULT: withAlpha('--surface-sidebar-rgb'),
+          sunken: withAlpha('--surface-sunken-rgb'),
+          sidebar: withAlpha('--surface-sidebar-rgb'),
+          base: withAlpha('--surface-base-rgb'),
+          raised: withAlpha('--surface-raised-rgb'),
+          overlay: withAlpha('--surface-overlay-rgb'),
+          hover: withAlpha('--surface-hover-rgb'),
+          active: withAlpha('--surface-active-rgb'),
+          scrim: 'var(--surface-scrim)',
+          qr: withAlpha('--surface-qr-rgb'),
+        },
+        content: {
+          DEFAULT: withAlpha('--content-primary-rgb'),
+          normal: withAlpha('--content-normal-rgb'),
+          secondary: withAlpha('--content-secondary-rgb'),
+          muted: withAlpha('--content-muted-rgb'),
+          link: withAlpha('--content-link-rgb'),
+          'on-accent': withAlpha('--content-on-accent-rgb'),
+          'on-status': withAlpha('--content-on-status-rgb'),
+        },
+        accent: {
+          DEFAULT: withAlpha('--accent-rgb'),
+          hover: withAlpha('--accent-hover-rgb'),
+          muted: withAlpha('--accent-muted-rgb'),
+          content: withAlpha('--content-on-accent-rgb'),
+        },
+        status: {
+          success: withAlpha('--success-rgb'),
+          danger: withAlpha('--danger-rgb'),
+          warning: withAlpha('--warning-rgb'),
+          info: withAlpha('--info-rgb'),
+          offline: withAlpha('--presence-offline-rgb'),
+        },
+        scrim: 'var(--surface-scrim)',
+        'pane-tint': 'var(--surface-pane-tint)',
+        'border-subtle': 'var(--border-subtle)',
+        'border-strong': 'var(--border-strong)',
 
-        // ── Legacy aliases (used by shared components) ──
-        bg: '#313338',
-        surface: '#2b2d31',
-        'surface-raised': '#35373c',
-        'surface-float': '#111214',
+        // Compatibility names. Values live in globals.css.
+        'bg-tertiary': withAlpha('--bg-tertiary-rgb'),
+        'bg-secondary': withAlpha('--bg-secondary-rgb'),
+        'bg-primary': withAlpha('--bg-primary-rgb'),
+        'bg-modifier-hover': withAlpha('--bg-modifier-hover-rgb'),
+        'bg-modifier-active': withAlpha('--bg-modifier-active-rgb'),
+        'bg-modifier-selected': withAlpha('--bg-modifier-selected-rgb'),
+        'bg-floating': withAlpha('--bg-floating-rgb'),
 
-        // ── Borders ──
-        border: '#3f4147',
-        'border-light': '#4e5058',
+        // Legacy aliases used by shared components.
+        bg: withAlpha('--surface-base-rgb'),
+        'surface-raised': withAlpha('--surface-raised-rgb'),
+        'surface-float': withAlpha('--surface-overlay-rgb'),
 
-        // ── Text ──
-        primary: '#f2f3f5',
-        secondary: '#b5bac1',
-        muted: '#949ba4',
-        'text-link': '#00a8fc',
+        // Borders.
+        border: withAlpha('--border-default-rgb'),
+        'border-light': withAlpha('--border-emphasis-rgb'),
 
-        // ── Accent (warm gold — Mesh brand) ──
-        accent: '#d4c0a1',
-        'accent-bright': '#efe0c3',
-        'accent-dim': '#8d7d67',
+        // Content.
+        primary: withAlpha('--content-primary-rgb'),
+        secondary: withAlpha('--content-secondary-rgb'),
+        muted: withAlpha('--content-muted-rgb'),
+        'text-link': withAlpha('--content-link-rgb'),
 
-        // ── Status ──
-        green: '#23a559',
-        red: '#da373c',
-        yellow: '#f0b232',
-        blue: '#5865f2',
-        danger: '#da373c',
+        // Brand.
+        'accent-bright': withAlpha('--accent-hover-rgb'),
+        'accent-dim': withAlpha('--accent-muted-rgb'),
+
+        // Status.
+        green: withAlpha('--success-rgb'),
+        red: withAlpha('--danger-rgb'),
+        yellow: withAlpha('--warning-rgb'),
+        blue: withAlpha('--info-rgb'),
+        danger: withAlpha('--danger-rgb'),
       },
       fontFamily: {
-        sans: ['system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
-        mono: ['Consolas', 'Andale Mono WT', 'Andale Mono', 'Menlo', 'monospace'],
+        sans: ['var(--font-sans)'],
+        mono: ['var(--font-mono)'],
+      },
+      fontWeight: {
+        normal: 'var(--font-weight-regular)',
+        medium: 'var(--font-weight-medium)',
+        semibold: 'var(--font-weight-semibold)',
       },
       fontSize: {
-        '2xs': ['10px', { lineHeight: '1.4', letterSpacing: '0.02em' }],
-        'xs':  ['12px', { lineHeight: '1.35' }],
-        'sm':  ['14px', { lineHeight: '1.375' }],
-        'base': ['16px', { lineHeight: '1.375' }],
-        'md':  ['20px', { lineHeight: '1.3' }],
-        'lg':  ['24px', { lineHeight: '1.25' }],
+        micro: ['var(--font-size-micro)', { lineHeight: 'var(--line-height-micro)' }],
+        caption: ['var(--font-size-2xs)', { lineHeight: 'var(--line-height-2xs)' }],
+        meta: ['var(--font-size-meta)', { lineHeight: 'var(--line-height-meta)' }],
+        code: ['var(--font-size-code)', { lineHeight: 'var(--line-height-code)' }],
+        '2xs': ['var(--font-size-2xs)', { lineHeight: 'var(--line-height-2xs)', letterSpacing: 'var(--letter-spacing-2xs)' }],
+        'xs': ['var(--font-size-xs)', { lineHeight: 'var(--line-height-xs)' }],
+        'sm': ['var(--font-size-sm)', { lineHeight: 'var(--line-height-sm)' }],
+        'base': ['var(--font-size-base)', { lineHeight: 'var(--line-height-base)' }],
+        'md': ['var(--font-size-md)', { lineHeight: 'var(--line-height-md)' }],
+        'lg': ['var(--font-size-lg)', { lineHeight: 'var(--line-height-lg)' }],
+      },
+      lineHeight: {
+        prose: 'var(--line-height-prose)',
+      },
+      letterSpacing: {
+        signal: 'var(--letter-spacing-signal)',
+        caption: 'var(--letter-spacing-2xs)',
+        eyebrow: 'var(--letter-spacing-eyebrow)',
+        section: 'var(--letter-spacing-section)',
+        control: 'var(--letter-spacing-control)',
+        status: 'var(--letter-spacing-status)',
       },
       borderRadius: {
-        DEFAULT: '4px',
-        sm: '3px',
-        md: '4px',
-        lg: '8px',
-        xl: '16px',
+        DEFAULT: 'var(--radius-default)',
+        sm: 'var(--radius-sm)',
+        md: 'var(--radius-md)',
+        lg: 'var(--radius-lg)',
+        xl: 'var(--radius-xl)',
+        control: 'var(--radius-control)',
+        panel: 'var(--radius-panel)',
+        community: 'var(--radius-community-rest)',
+        'community-active': 'var(--radius-community-active)',
+      },
+      spacing: {
+        'density-row': 'var(--density-row-block)',
+        'control-sm': 'var(--density-control-sm)',
+        'control-md': 'var(--density-control-md)',
+        'control-lg': 'var(--density-control-lg)',
+        'panel-gap': 'var(--density-panel-gap)',
+        'message-gutter': 'var(--message-gutter)',
+        'message-group': 'var(--message-group-gap)',
+        'empty-icon': 'var(--empty-state-icon)',
+        'community-marker': 'var(--community-marker)',
+        'user-panel': 'var(--user-panel-height)',
+        'rail-separator': 'var(--rail-separator-height)',
+      },
+      width: {
+        'member-list': 'var(--member-list-width)',
+        'settings-drawer': 'var(--settings-drawer-width)',
+        'context-action': 'var(--context-action-width)',
+        'file-browser': 'var(--file-browser-width)',
+        'content-error': 'var(--content-error-width)',
+        'onboarding-shell': 'var(--onboarding-shell-width)',
+        'voice-label': 'var(--voice-controls-label-width)',
+      },
+      maxWidth: {
+        'attachment-name': 'var(--attachment-name-width)',
+        'onboarding-shell': 'var(--onboarding-shell-width)',
+      },
+      maxHeight: {
+        modal: 'var(--modal-content-height)',
+        settings: 'var(--settings-content-height)',
+        composer: 'var(--composer-content-height)',
+        'file-browser': 'var(--file-browser-height)',
+      },
+      minHeight: {
+        'onboarding-shell': 'var(--onboarding-shell-height)',
+        'voice-tile': 'var(--voice-tile-min-height)',
+      },
+      gridAutoRows: {
+        voice: 'minmax(var(--voice-tile-min-height), 1fr)',
+      },
+      borderWidth: {
+        status: 'var(--border-width-status)',
+      },
+      zIndex: {
+        base: 'var(--z-base)',
+        sticky: 'var(--z-sticky)',
+        dropdown: 'var(--z-dropdown)',
+        drawer: 'var(--z-drawer)',
+        overlay: 'var(--z-overlay)',
+        modal: 'var(--z-modal)',
+        popover: 'var(--z-popover)',
+        toast: 'var(--z-toast)',
+        tooltip: 'var(--z-tooltip)',
+      },
+      transitionDuration: {
+        instant: 'var(--duration-instant)',
+        fast: 'var(--duration-fast)',
+        normal: 'var(--duration-normal)',
+        slow: 'var(--duration-slow)',
       },
       boxShadow: {
-        'elevation-low': '0 1px 0 rgba(0, 0, 0, 0.2), 0 1.5px 0 rgba(0, 0, 0, 0.05), 0 2px 0 rgba(0, 0, 0, 0.05)',
-        'elevation-high': '0 8px 16px rgba(0, 0, 0, 0.24)',
-        floating: '0 0 0 1px rgba(0, 0, 0, 0.15), 0 8px 16px rgba(0, 0, 0, 0.3)',
-        pane: '0 8px 16px rgba(0, 0, 0, 0.24)',
+        'elevation-low': 'var(--shadow-elevation-low)',
+        'elevation-high': 'var(--shadow-elevation-high)',
+        floating: 'var(--shadow-floating)',
+        pane: 'var(--shadow-pane)',
       },
       animation: {
-        'pulse-soft': 'pulseSoft 2s ease infinite',
+        'pulse-soft': 'var(--animation-pulse-soft)',
       },
       keyframes: {
         pulseSoft: { '0%, 100%': { opacity: '1' }, '50%': { opacity: '0.4' } },

@@ -19,6 +19,7 @@ pub mod messaging;
 pub mod migration;
 #[cfg(feature = "legacy-p2p")]
 pub mod moderation;
+pub mod notifications;
 #[cfg(feature = "legacy-p2p")]
 pub mod permissions;
 #[cfg(feature = "legacy-p2p")]

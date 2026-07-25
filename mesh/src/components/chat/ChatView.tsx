@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react'
+import { memo, useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from 'react'
 import type { Channel, Message as MessageType } from '../../types/ipc'
 import { MessageComponent } from './Message'
 import { MessageInput } from './MessageInput'
@@ -16,6 +16,11 @@ import { useVirtualScroll, type VirtualItem } from '../../hooks/useVirtualScroll
 import { useTypingStore } from '../../store/typing'
 import { TypingIndicator } from './TypingIndicator'
 import { resolveSenderIdentity } from '../../lib/matrixIdentity'
+import { federatedTimestampMilliseconds } from '../../lib/federated-time'
+import { getBackoffDelay, registerPoll, waitForDelay } from '../../lib/scheduler'
+import { useMessageNavigationStore } from '../../store/message-navigation'
+import { ErrorBoundary } from '../ui/ErrorBoundary'
+import { Icon } from '../ui/Icon'
 
 interface ChatViewProps {
   channel: Channel
@@ -24,47 +29,72 @@ interface ChatViewProps {
   onToggleMembers?: () => void
 }
 
+const EMPTY_MESSAGES: MessageType[] = []
+
 export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMembers }: ChatViewProps) {
-  const {
-    messages,
-    replaceMessages,
-    addMessage,
-    updateReaction,
-    editMessage,
-    deleteMessage,
-    removeMessage,
-    removeMessagesByAuthorAllChannels,
-    setDeliveryStatus,
-    loadOlderMessages,
-    loadingOlder,
-    browsingOlder,
-    newerGapCount,
-  } = useMessageStore()
+  const channelMessages = useMessageStore((state) => state.messages[channel.id] ?? EMPTY_MESSAGES)
+  const replaceMessages = useMessageStore((state) => state.replaceMessages)
+  const prependMessages = useMessageStore((state) => state.prependMessages)
+  const addMessage = useMessageStore((state) => state.addMessage)
+  const updateReaction = useMessageStore((state) => state.updateReaction)
+  const editMessage = useMessageStore((state) => state.editMessage)
+  const deleteMessage = useMessageStore((state) => state.deleteMessage)
+  const removeMessage = useMessageStore((state) => state.removeMessage)
+  const removeMessagesByAuthorAllChannels = useMessageStore((state) => state.removeMessagesByAuthorAllChannels)
+  const setDeliveryStatus = useMessageStore((state) => state.setDeliveryStatus)
+  const loadOlderMessages = useMessageStore((state) => state.loadOlderMessages)
+  const isLoadingOlder = useMessageStore((state) => state.loadingOlder[channel.id] ?? false)
+  const isBrowsingOlder = useMessageStore((state) => state.browsingOlder[channel.id] ?? false)
+  const hiddenNewerCount = useMessageStore((state) => state.newerGapCount[channel.id] ?? 0)
   const matrixMode = bridge.isMatrixBackend()
   const patchChannel = useChannelStore((state) => state.patchChannel)
-  const channelMessages = messages[channel.id] ?? []
-  const isBrowsingOlder = browsingOlder[channel.id] ?? false
-  const hiddenNewerCount = newerGapCount[channel.id] ?? 0
+  const setActiveChannel = useChannelStore((state) => state.setActiveChannel)
+  const navigationRequest = useMessageNavigationStore((state) => (
+    state.pending?.message.channelId === channel.id ? state.pending : null
+  ))
   const isViewingLatest = !isBrowsingOlder && hiddenNewerCount === 0
   const hydratingLatestRef = useRef(false)
   const bufferedMessagesRef = useRef<MessageType[]>([])
+  const loadGenerationRef = useRef(0)
+  const windowLoadRef = useRef<Promise<void>>(Promise.resolve())
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const [isLoading, setIsLoading] = useState(false)
   const [showNewMessages, setShowNewMessages] = useState(false)
   const [replyingTo, setReplyingTo] = useState<MessageType | null>(null)
-  const isLoadingOlder = loadingOlder[channel.id] ?? false
+  const [preparedNavigationId, setPreparedNavigationId] = useState<number | null>(null)
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
+  const [jumpAnnouncement, setJumpAnnouncement] = useState('')
+  const [editRequest, setEditRequest] = useState<{ messageId: string; token: number } | null>(null)
+  const legacyPublicKey = useIdentityStore((state) => state.identity?.publicKey)
+  const ownAuthorId = matrixMode
+    ? bridge.getMatrixUserId() ?? undefined
+    : legacyPublicKey
 
   // Build the virtual item list
-  const virtualItems: VirtualItem[] = channelMessages.map((message) => ({
-    key: message.id,
-    type: 'message' as const,
-  }))
-
-  if (hiddenNewerCount > 0) {
-    virtualItems.push({
-      key: `history-gap:${channel.id}`,
-      type: 'gap' as const,
-    })
-  }
+  const virtualItems = useMemo<VirtualItem[]>(() => {
+    const items: VirtualItem[] = channelMessages.map((message) => ({
+      key: message.id,
+      type: 'message' as const,
+      height:
+        56
+        + Math.min(
+          160,
+          Math.max(
+            1,
+            Math.ceil((typeof message.content === 'string' ? message.content.length : 0) / 80),
+          ) * 20,
+        )
+        + (Array.isArray(message.attachments) && message.attachments.length > 0 ? 96 : 0),
+    }))
+    if (hiddenNewerCount > 0) {
+      items.push({
+        key: `history-gap:${channel.id}`,
+        type: 'gap' as const,
+        height: 88,
+      })
+    }
+    return items
+  }, [channel.id, channelMessages, hiddenNewerCount])
 
   const vs = useVirtualScroll(virtualItems)
   const visibleItems = virtualItems.length === 0
@@ -91,42 +121,142 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
   }, [addMessage, channel.id])
 
   const resetToLatestWindow = useCallback(async () => {
+    const generation = ++loadGenerationRef.current
     hydratingLatestRef.current = true
     bufferedMessagesRef.current = []
 
     try {
       const latest = await bridge.getMessages(channel.id, 50)
+      if (generation !== loadGenerationRef.current) return
+
       replaceMessages(channel.id, latest)
       if (!matrixMode) {
         await bridge.requestMessageHistory(channel.id, { limit: 100 })
+        if (generation !== loadGenerationRef.current) return
       }
       setShowNewMessages(false)
 
       requestAnimationFrame(() => {
+        if (generation !== loadGenerationRef.current) return
         vsRef.current.scrollToBottom()
       })
     } finally {
-      hydratingLatestRef.current = false
-      flushBufferedMessages()
+      if (generation === loadGenerationRef.current) {
+        hydratingLatestRef.current = false
+        flushBufferedMessages()
+      }
     }
 
-    await markChannelSeen()
+    if (generation === loadGenerationRef.current) {
+      await markChannelSeen()
+    }
   }, [channel.id, flushBufferedMessages, markChannelSeen, matrixMode, replaceMessages])
 
   // Load messages on channel switch
   useEffect(() => {
     const loadMessages = async () => {
       setIsLoading(true)
+      const pendingLoad = resetToLatestWindow()
+      windowLoadRef.current = pendingLoad
+      const generation = loadGenerationRef.current
       try {
-        await resetToLatestWindow()
+        await pendingLoad
       } catch (err) {
         console.error('Failed to load messages:', err)
+      } finally {
+        if (generation === loadGenerationRef.current) {
+          setIsLoading(false)
+        }
       }
-      setIsLoading(false)
     }
-    loadMessages()
+    void loadMessages()
+    return () => {
+      loadGenerationRef.current += 1
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel.id])
+
+  // Search can target another channel or a message outside the bounded hot
+  // window. Wait for the channel-switch load first, then merge older context
+  // around the search result so the latest load cannot evict the target.
+  useEffect(() => {
+    if (!navigationRequest) {
+      setPreparedNavigationId(null)
+      return
+    }
+
+    let active = true
+    const prepareNavigation = async () => {
+      try {
+        await windowLoadRef.current
+      } catch {
+        // The target DTO from search still lets navigation proceed when the
+        // latest-window refresh is temporarily unavailable.
+      }
+      if (!active) return
+
+      const currentRequest = useMessageNavigationStore.getState().pending
+      if (currentRequest?.requestId !== navigationRequest.requestId) return
+
+      const target = navigationRequest.message
+      const currentMessages =
+        useMessageStore.getState().messages[channel.id] ?? EMPTY_MESSAGES
+      if (!currentMessages.some((message) => message.id === target.id)) {
+        let olderContext: MessageType[] = []
+        try {
+          olderContext = await bridge.getMessages(channel.id, 49, {
+            timestamp: target.timestamp,
+            id: target.id,
+          })
+        } catch (error) {
+          console.error('Failed to load context for searched message:', error)
+        }
+        if (!active) return
+
+        const latestRequest = useMessageNavigationStore.getState().pending
+        if (latestRequest?.requestId !== navigationRequest.requestId) return
+        prependMessages(channel.id, [...olderContext, target])
+      }
+
+      setPreparedNavigationId(navigationRequest.requestId)
+    }
+
+    void prepareNavigation()
+    return () => {
+      active = false
+    }
+  }, [channel.id, navigationRequest, prependMessages])
+
+  // Once the target is in the virtual layout, center it and leave both a
+  // visible and screen-reader-visible indication for exactly two seconds.
+  useLayoutEffect(() => {
+    if (
+      !navigationRequest
+      || preparedNavigationId !== navigationRequest.requestId
+      || !virtualItems.some((item) => item.key === navigationRequest.message.id)
+    ) {
+      return
+    }
+
+    const target = navigationRequest.message
+    if (!vsRef.current.scrollToItem(target.id, 'center')) return
+
+    clearTimeout(highlightTimerRef.current)
+    setHighlightedMessageId(target.id)
+    setJumpAnnouncement(`Jumped to message from ${target.authorDisplayName}`)
+    highlightTimerRef.current = setTimeout(() => {
+      setHighlightedMessageId(null)
+      setJumpAnnouncement('')
+    }, 2_000)
+    useMessageNavigationStore.getState().completeNavigation(navigationRequest.requestId)
+  }, [navigationRequest, preparedNavigationId, virtualItems])
+
+  useEffect(
+    () => () => {
+      clearTimeout(highlightTimerRef.current)
+    },
+    [],
+  )
 
   // Matrix sync runs in Rust. Wait on the SDK room update stream, then refresh
   // the DTO projection so federated state appears without fixed-interval polling.
@@ -156,21 +286,31 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
       }
     }
 
+    const retryController = new AbortController()
+    let retryAttempt = 0
     const watchUpdates = async () => {
       while (active) {
         try {
           await bridge.matrixWaitForRoomUpdate(channel.id)
+          retryAttempt = 0
           if (active) await refresh()
         } catch (error) {
           if (!active) return
           console.error('Matrix room update subscription failed:', error)
-          await new Promise((resolve) => window.setTimeout(resolve, 1000))
+          const retryDelay = getBackoffDelay(retryAttempt, {
+            baseMs: 1_000,
+            maxMs: 30_000,
+            jitterRatio: 0.2,
+          })
+          retryAttempt += 1
+          await waitForDelay(retryDelay, retryController.signal)
         }
       }
     }
     void watchUpdates()
     return () => {
       active = false
+      retryController.abort()
     }
   }, [channel.id, isViewingLatest, matrixMode, replaceMessages])
 
@@ -297,13 +437,19 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
           }
         } catch (error) {
           console.error('Failed to refresh Matrix typing notifications:', error)
+          throw error
         }
       }
-      void refreshTyping()
-      const interval = window.setInterval(() => void refreshTyping(), 2000)
+      const unregisterPoll = registerPoll({
+        key: `matrix-typing:${channel.id}`,
+        intervalMs: 2_000,
+        run: refreshTyping,
+        pauseWhenHidden: true,
+        backoffOnError: true,
+      })
       return () => {
         active = false
-        window.clearInterval(interval)
+        unregisterPoll()
       }
     }
     const unsub = bridge.onTypingUpdate((data) => {
@@ -317,7 +463,10 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
   const isGrouped = (msg: MessageType, prevMsg?: MessageType) => {
     if (!prevMsg) return false
     if (msg.authorPublicKey !== prevMsg.authorPublicKey) return false
-    const timeDiff = new Date(msg.timestamp).getTime() - new Date(prevMsg.timestamp).getTime()
+    const timestamp = federatedTimestampMilliseconds(msg.timestamp)
+    const previousTimestamp = federatedTimestampMilliseconds(prevMsg.timestamp)
+    if (timestamp === null || previousTimestamp === null) return false
+    const timeDiff = timestamp - previousTimestamp
     return timeDiff < 5 * 60 * 1000
   }
 
@@ -337,6 +486,11 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
       console.error('Failed to mark channel as read:', err)
     })
   }, [hiddenNewerCount, isBrowsingOlder, markChannelSeen, resetToLatestWindow])
+
+  const handleNavigateToMessage = useCallback((message: MessageType) => {
+    useMessageNavigationStore.getState().requestNavigation(message)
+    setActiveChannel(message.channelId)
+  }, [setActiveChannel])
 
   const handleScroll = useCallback(async () => {
     vsRef.current.handleScroll()
@@ -385,6 +539,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
         const msg = await bridge.matrixSendAttachment(
           channel.id,
           file.grant,
+          file.transferId ?? bridge.createMatrixTransferId(),
           index === 0 ? content : '',
           index === 0 ? replyToId : undefined,
         )
@@ -411,7 +566,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
       reactions: {},
       timestamp: new Date().toISOString(),
       signature: '',
-      replyToId: replyingTo?.id ?? null,
+      replyToId: replyingTo?.id,
       deliveryStatus: 'pending',
     }
 
@@ -453,7 +608,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
       reactions: {},
       timestamp: new Date().toISOString(),
       signature: '',
-      replyToId: failedMessage.replyToId ?? null,
+      replyToId: failedMessage.replyToId,
       deliveryStatus: 'pending',
     }
 
@@ -482,34 +637,29 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
     <div className="flex h-full flex-1 flex-col">
       {/* Channel header */}
       <div
-        className="flex h-12 flex-shrink-0 items-center justify-between border-b border-black/30 px-4 shadow-elevation-low"
+        className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border-subtle px-4 shadow-elevation-low"
         data-tauri-drag-region
       >
         <div className="flex items-center gap-2">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-muted flex-shrink-0">
-            <path d="M5.88657 21C5.57547 21 5.3399 20.7189 5.39427 20.4126L6.00001 17H2.59511C2.28449 17 2.04905 16.7198 2.10259 16.4138L2.27759 15.4138C2.31946 15.1746 2.52722 15 2.77011 15H6.35001L7.41001 9H4.00511C3.69449 9 3.45905 8.71977 3.51259 8.41381L3.68759 7.41381C3.72946 7.17456 3.93722 7 4.18011 7H7.76001L8.39677 3.41262C8.43914 3.17391 8.64664 3 8.88907 3H9.88907C10.2002 3 10.4357 3.28107 10.3814 3.58738L9.76001 7H15.76L16.3968 3.41262C16.4391 3.17391 16.6466 3 16.8891 3H17.8891C18.2002 3 18.4357 3.28107 18.3814 3.58738L17.76 7H21.1649C21.4755 7 21.711 7.28023 21.6574 7.58619L21.4824 8.58619C21.4406 8.82544 21.2328 9 20.9899 9H17.41L16.35 15H19.7549C20.0655 15 20.301 15.2802 20.2474 15.5862L20.0724 16.5862C20.0306 16.8254 19.8228 17 19.5799 17H16L15.3632 20.5874C15.3209 20.8261 15.1134 21 14.8709 21H13.8709C13.5598 21 13.3243 20.7189 13.3786 20.4126L14 17H8.00001L7.36325 20.5874C7.32088 20.8261 7.11337 21 6.87094 21H5.88657ZM9.41045 9L8.35045 15H14.3504L15.4104 9H9.41045Z" />
-          </svg>
+          <Icon name="hash" className="flex-shrink-0 text-muted" />
           <span className="text-sm font-semibold text-primary">{channel.name}</span>
         </div>
 
         <div className="flex items-center gap-1">
-          <SearchBar />
+          <SearchBar onNavigateToMessage={handleNavigateToMessage} />
 
           {showMembersToggle && (
             <Tooltip content={isMembersOpen ? 'Hide Member List' : 'Show Member List'} side="bottom">
               <button
                 onClick={onToggleMembers}
+                aria-label={isMembersOpen ? 'Hide member list' : 'Show member list'}
                 className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${
                   isMembersOpen
                     ? 'text-primary'
                     : 'text-muted hover:text-secondary'
                 }`}
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M14 8.00598C14 10.211 12.206 12.006 10 12.006C7.795 12.006 6 10.211 6 8.00598C6 5.80098 7.794 4.00598 10 4.00598C12.206 4.00598 14 5.80098 14 8.00598ZM2 19.006C2 15.473 5.29 13.006 10 13.006C14.711 13.006 18 15.473 18 19.006V20.006H2V19.006Z" />
-                  <path d="M14 8.00598C14 10.211 12.206 12.006 10 12.006C7.795 12.006 6 10.211 6 8.00598C6 5.80098 7.794 4.00598 10 4.00598C12.206 4.00598 14 5.80098 14 8.00598ZM2 19.006C2 15.473 5.29 13.006 10 13.006C14.711 13.006 18 15.473 18 19.006V20.006H2V19.006ZM20 20.006H19V18.006C19 16.4229 18.2757 15.0182 17.044 13.9547C20.078 14.3816 22 16.1248 22 19.006V20.006H20Z" />
-                  <path d="M14 8.006C14 10.211 12.206 12.006 10 12.006C7.795 12.006 6 10.211 6 8.006C6 5.801 7.794 4.006 10 4.006C12.206 4.006 14 5.801 14 8.006ZM18 17.006V20.006H2V17.006C2 14.2 4.686 12.006 10 12.006C15.314 12.006 18 14.2 18 17.006ZM20 20.006H22V17.006C22 14.687 20.397 13.085 17.939 12.226C19.245 13.307 20 14.937 20 17.006V20.006Z" />
-                </svg>
+                <Icon name="users" />
               </button>
             </Tooltip>
           )}
@@ -518,6 +668,9 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
 
       {/* Message area */}
       <div className="relative flex-1">
+        <p className="sr-only" role="status" aria-live="polite">
+          {jumpAnnouncement}
+        </p>
         <div
           ref={vs.scrollRef}
           onScroll={() => void handleScroll()}
@@ -535,12 +688,10 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
           ) : channelMessages.length === 0 ? (
             <div className="flex h-full items-center justify-center">
               <div className="text-center px-4">
-                <div className="mx-auto mb-4 flex h-[68px] w-[68px] items-center justify-center rounded-full bg-bg-modifier-hover">
-                  <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor" className="text-muted">
-                    <path d="M5.88657 21C5.57547 21 5.3399 20.7189 5.39427 20.4126L6.00001 17H2.59511C2.28449 17 2.04905 16.7198 2.10259 16.4138L2.27759 15.4138C2.31946 15.1746 2.52722 15 2.77011 15H6.35001L7.41001 9H4.00511C3.69449 9 3.45905 8.71977 3.51259 8.41381L3.68759 7.41381C3.72946 7.17456 3.93722 7 4.18011 7H7.76001L8.39677 3.41262C8.43914 3.17391 8.64664 3 8.88907 3H9.88907C10.2002 3 10.4357 3.28107 10.3814 3.58738L9.76001 7H15.76L16.3968 3.41262C16.4391 3.17391 16.6466 3 16.8891 3H17.8891C18.2002 3 18.4357 3.28107 18.3814 3.58738L17.76 7H21.1649C21.4755 7 21.711 7.28023 21.6574 7.58619L21.4824 8.58619C21.4406 8.82544 21.2328 9 20.9899 9H17.41L16.35 15H19.7549C20.0655 15 20.301 15.2802 20.2474 15.5862L20.0724 16.5862C20.0306 16.8254 19.8228 17 19.5799 17H16L15.3632 20.5874C15.3209 20.8261 15.1134 21 14.8709 21H13.8709C13.5598 21 13.3243 20.7189 13.3786 20.4126L14 17H8.00001L7.36325 20.5874C7.32088 20.8261 7.11337 21 6.87094 21H5.88657ZM9.41045 9L8.35045 15H14.3504L15.4104 9H9.41045Z" />
-                  </svg>
+                <div className="mx-auto mb-4 flex h-empty-icon w-empty-icon items-center justify-center rounded-full bg-bg-modifier-hover">
+                  <Icon name="hash" size="lg" className="text-muted" />
                 </div>
-                <h3 className="text-lg font-bold text-primary mb-1">Welcome to #{channel.name}!</h3>
+                <h3 className="mb-1 text-lg font-semibold text-primary">Welcome to #{channel.name}!</h3>
                 <p className="text-sm text-muted">This is the start of the #{channel.name} channel.</p>
               </div>
             </div>
@@ -552,6 +703,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
                 </div>
               )}
               <div
+                data-design-token-exception="data-driven-virtual-spacer-geometry"
                 style={{
                   paddingTop: `${vs.topSpacerHeight}px`,
                   paddingBottom: `${vs.bottomSpacerHeight}px`,
@@ -587,6 +739,10 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
                       onReply={setReplyingTo}
                       onRetry={handleRetry}
                       limitedActions={false}
+                      isHighlighted={highlightedMessageId === message.id}
+                      editRequestToken={
+                        editRequest?.messageId === message.id ? editRequest.token : 0
+                      }
                     />
                   )
                 })}
@@ -599,7 +755,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
         {showNewMessages && (
           <button
             onClick={() => void jumpToLatest()}
-            className="absolute left-0 right-0 top-0 z-10 flex items-center justify-center bg-blue px-4 py-1.5 text-sm font-medium text-white hover:bg-blue/90 transition-colors"
+            className="absolute left-0 right-0 top-0 z-sticky flex items-center justify-center bg-status-info px-4 py-1.5 text-sm font-medium text-content-on-status transition-colors hover:bg-status-info/90"
           >
             {hiddenNewerCount > 0 || isBrowsingOlder ? 'Jump to latest messages' : 'New messages ↓'}
           </button>
@@ -609,22 +765,17 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
       {/* Reply bar */}
       {replyingTo && (
         <div className="flex items-center gap-2 bg-bg-secondary px-4 py-2">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-secondary">
-            <polyline points="9 17 4 12 9 7" />
-            <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
-          </svg>
+          <Icon name="reply" size="sm" className="shrink-0 text-secondary" />
           <span className="text-sm text-secondary">
             Replying to <span className="font-medium text-primary">{replyingTo.authorDisplayName}</span>
           </span>
           <span className="truncate text-sm text-muted flex-1">{replyingTo.content.slice(0, 100)}</span>
           <button
             onClick={() => setReplyingTo(null)}
+            aria-label="Cancel reply"
             className="shrink-0 rounded p-1 text-muted transition-colors hover:text-primary"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
+            <Icon name="x" size="sm" />
           </button>
         </div>
       )}
@@ -636,6 +787,16 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
         onSend={handleSend}
         communityId={channel.communityId}
         disableAttachments={matrixMode && !bridge.getBackendCapabilities().encryptedAttachments}
+        onEditLastMessage={() => {
+          const ownMessage = [...channelMessages]
+            .reverse()
+            .find((message) => message.authorPublicKey === ownAuthorId && !message.deletedAt)
+          if (!ownMessage) return
+          setEditRequest((current) => ({
+            messageId: ownMessage.id,
+            token: (current?.token ?? 0) + 1,
+          }))
+        }}
       />
     </div>
   )
@@ -650,9 +811,11 @@ interface VirtualMessageRowProps {
   onReply: (message: MessageType) => void
   onRetry?: (message: MessageType) => void
   limitedActions?: boolean
+  isHighlighted: boolean
+  editRequestToken: number
 }
 
-function VirtualMessageRow({
+const VirtualMessageRow = memo(function VirtualMessageRow({
   rowKey,
   message,
   isGrouped,
@@ -661,6 +824,8 @@ function VirtualMessageRow({
   onReply,
   onRetry,
   limitedActions,
+  isHighlighted,
+  editRequestToken,
 }: VirtualMessageRowProps) {
   const rowRef = useRef<HTMLDivElement>(null)
 
@@ -682,19 +847,56 @@ function VirtualMessageRow({
     return () => observer.disconnect()
   }, [hasGap, isGrouped, message, onHeightChange, rowKey])
 
+  useLayoutEffect(() => {
+    if (isHighlighted) {
+      rowRef.current?.focus({ preventScroll: true })
+    }
+  }, [isHighlighted])
+
   return (
-    <div ref={rowRef}>
-      <MessageComponent
-        message={message}
-        isGrouped={isGrouped}
-        disableMotion
-        onReply={onReply}
-        onRetry={onRetry}
-        limitedActions={limitedActions}
-      />
+    <div
+      ref={rowRef}
+      data-message-id={message.id}
+      data-jump-highlighted={isHighlighted ? 'true' : undefined}
+      aria-current={isHighlighted ? 'true' : undefined}
+      tabIndex={isHighlighted ? -1 : undefined}
+      className={
+        isHighlighted
+          ? 'animate-[pulse_2s_ease-in-out_1] rounded-md bg-blue/10 ring-2 ring-inset ring-blue'
+          : undefined
+      }
+    >
+      <ErrorBoundary
+        scope="feature"
+        fallback={(resetError) => (
+          <div
+            className="mx-4 my-1 flex min-w-0 items-center justify-between gap-3 rounded bg-bg-secondary px-4 py-3"
+            role="alert"
+          >
+            <p className="text-xs text-muted">This message couldn't be displayed.</p>
+            <button
+              type="button"
+              onClick={resetError}
+              className="shrink-0 text-xs font-medium text-text-link transition-colors hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue"
+            >
+              Try again
+            </button>
+          </div>
+        )}
+      >
+        <MessageComponent
+          message={message}
+          isGrouped={isGrouped}
+          disableMotion
+          onReply={onReply}
+          onRetry={onRetry}
+          limitedActions={limitedActions}
+          editRequestToken={editRequestToken}
+        />
+      </ErrorBoundary>
     </div>
   )
-}
+})
 
 function HistoryGapRow({
   rowKey,
@@ -737,7 +939,7 @@ function HistoryGapRow({
         </div>
         <button
           onClick={onJumpToLatest}
-          className="rounded bg-blue px-3 py-1 text-sm font-medium text-white hover:bg-blue/80 transition-colors"
+          className="rounded bg-status-info px-3 py-1 text-sm font-medium text-content-on-status transition-colors hover:bg-status-info/80"
         >
           Jump to latest
         </button>

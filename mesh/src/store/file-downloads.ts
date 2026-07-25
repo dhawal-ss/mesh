@@ -1,5 +1,10 @@
 import { create } from 'zustand'
-import type { FileDownloadProgress, FileTransferStatus } from '../types/ipc'
+import type {
+  FileDownloadProgress,
+  FileTransferStatus,
+  MatrixTransferProgress,
+  MatrixTransferState,
+} from '../types/ipc'
 
 interface FileDownloadDetails {
   fileHash: string
@@ -7,6 +12,7 @@ interface FileDownloadDetails {
   sourcePeerId: string
   size: number
   chunks: number
+  transferId?: string
 }
 
 interface FileDownloadRecord {
@@ -22,12 +28,17 @@ interface FileDownloadRecord {
   totalBytes: number
   localPath: string | null
   error: string | null
+  transferId: string | null
+  matrixState: MatrixTransferState | null
+  retryable: boolean
+  retryMode: 'restart-from-zero' | null
 }
 
 interface FileDownloadStore {
   downloads: Record<string, FileDownloadRecord>
   startDownload: (details: FileDownloadDetails) => void
   updateDownloadProgress: (payload: FileDownloadProgress) => void
+  updateMatrixTransferProgress: (payload: MatrixTransferProgress) => void
   markDownloadAvailable: (payload: { fileHash: string; localPath: string }) => void
   markDownloadFailed: (fileHash: string, error: string) => void
   clearDownload: (fileHash: string) => void
@@ -47,6 +58,10 @@ function buildBaseRecord(details: FileDownloadDetails): FileDownloadRecord {
     totalBytes: details.size,
     localPath: null,
     error: null,
+    transferId: details.transferId ?? null,
+    matrixState: details.transferId ? 'queued' : null,
+    retryable: false,
+    retryMode: null,
   }
 }
 
@@ -86,6 +101,39 @@ export const useFileDownloadStore = create<FileDownloadStore>((set) => ({
             totalBytes,
             localPath: current?.localPath ?? null,
             error: payload.state === 'error' ? current?.error ?? 'Download failed' : null,
+            transferId: current?.transferId ?? null,
+            matrixState: current?.matrixState ?? null,
+            retryable: current?.retryable ?? false,
+            retryMode: current?.retryMode ?? null,
+          },
+        },
+      }
+    }),
+
+  updateMatrixTransferProgress: (payload) =>
+    set((state) => {
+      if (payload.direction !== 'download') return state
+      const entry = Object.entries(state.downloads).find(
+        ([, record]) => record.transferId === payload.transferId,
+      )
+      if (!entry) return state
+      const [fileHash, current] = entry
+      const failed = payload.state === 'failed' || payload.state === 'cancelled'
+      const completed = payload.state === 'completed'
+      return {
+        downloads: {
+          ...state.downloads,
+          [fileHash]: {
+            ...current,
+            status: completed ? 'completed' : failed ? 'error' : 'downloading',
+            receivedBytes: payload.transferredBytes,
+            totalBytes: payload.totalBytes ?? current.totalBytes,
+            receivedChunks: completed ? current.totalChunks : current.receivedChunks,
+            localPath: payload.result?.localPath ?? current.localPath,
+            error: failed ? payload.error ?? 'Download stopped' : null,
+            matrixState: payload.state,
+            retryable: payload.retryable,
+            retryMode: payload.retryMode ?? null,
           },
         },
       }
@@ -110,6 +158,10 @@ export const useFileDownloadStore = create<FileDownloadStore>((set) => ({
             totalBytes: current?.totalBytes ?? current?.size ?? 0,
             localPath: payload.localPath,
             error: null,
+            transferId: current?.transferId ?? null,
+            matrixState: current?.matrixState ?? null,
+            retryable: false,
+            retryMode: null,
           },
         },
       }
@@ -135,6 +187,10 @@ export const useFileDownloadStore = create<FileDownloadStore>((set) => ({
               totalBytes: 0,
               localPath: null,
               error,
+              transferId: null,
+              matrixState: null,
+              retryable: true,
+              retryMode: null,
             },
           },
         }

@@ -3,9 +3,10 @@ interface AvatarProps {
   size?: number
   name?: string
   className?: string
+  imageUrl?: string | null
 }
 
-export function Avatar({ color, size = 32, name, className }: AvatarProps) {
+export function Avatar({ color, size = 32, name, className, imageUrl }: AvatarProps) {
   const initials = name
     ? name
         .split(' ')
@@ -17,18 +18,19 @@ export function Avatar({ color, size = 32, name, className }: AvatarProps) {
 
   return (
     <div
-      className={`flex items-center justify-center rounded-full flex-shrink-0 no-select ${className ?? ''}`}
+      className={`no-select flex flex-shrink-0 items-center justify-center overflow-hidden rounded-full font-semibold text-surface-sunken ${className ?? ''}`}
       style={{
         width: size,
         height: size,
         backgroundColor: color,
         fontSize: size * 0.35,
         lineHeight: 1,
-        color: '#0a0a0a',
-        fontWeight: 600,
       }}
+      aria-label={name || undefined}
     >
-      {initials}
+      {imageUrl ? (
+        <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+      ) : initials}
     </div>
   )
 }

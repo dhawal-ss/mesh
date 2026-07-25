@@ -1,103 +1,118 @@
-import { type ReactNode, useEffect, useId, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
+import { Dialog as DialogPrimitive } from 'radix-ui'
+import { motion } from 'framer-motion'
+import clsx from 'clsx'
 import { variants } from '../../lib/motion'
+import { Icon } from './Icon'
 
-interface ModalProps {
+export interface ModalProps {
   open: boolean
   onClose: () => void
   children: ReactNode
   title?: string
+  description?: string
+  size?: 'sm' | 'md' | 'lg'
+  className?: string
 }
 
-export function Modal({ open, onClose, children, title }: ModalProps) {
-  const overlayRef = useRef<HTMLDivElement>(null)
-  const dialogRef = useRef<HTMLDivElement>(null)
-  const titleId = useId()
+const sizeClasses = {
+  sm: 'max-w-sm',
+  md: 'max-w-md',
+  lg: 'max-w-2xl',
+} as const
 
-  useEffect(() => {
-    const previouslyFocused = document.activeElement instanceof HTMLElement
+/**
+ * Product dialog abstraction. Radix owns focus trapping, Escape handling,
+ * background inertness, announcements, and focus restoration.
+ */
+export function Modal({
+  open,
+  onClose,
+  children,
+  title,
+  description,
+  size = 'md',
+  className,
+}: ModalProps) {
+  const openerRef = useRef<HTMLElement | null>(null)
+  const openingFocusTarget = useMemo(
+    () => open && typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
       ? document.activeElement
-      : null
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-      if (e.key !== 'Tab' || !dialogRef.current) return
-      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ))
-      if (focusable.length === 0) {
-        e.preventDefault()
-        dialogRef.current.focus()
-        return
-      }
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault()
-        last.focus()
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault()
-        first.focus()
-      }
+      : null,
+    [open],
+  )
+  useLayoutEffect(() => {
+    if (open && openingFocusTarget) {
+      openerRef.current = openingFocusTarget
     }
-    if (open) {
-      document.addEventListener('keydown', handleEscape)
-      window.requestAnimationFrame(() => {
-        const first = dialogRef.current?.querySelector<HTMLElement>(
-          'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
-        )
-        ;(first ?? dialogRef.current)?.focus()
-      })
-      return () => {
-        document.removeEventListener('keydown', handleEscape)
-        previouslyFocused?.focus()
-      }
-    }
-  }, [open, onClose])
+  }, [open, openingFocusTarget])
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          ref={overlayRef}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-6"
-          variants={variants.overlay}
-          initial="initial"
-          animate="animate"
-          exit="exit"
-          onClick={(e) => {
-            if (e.target === overlayRef.current) onClose()
+    <DialogPrimitive.Root
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) return
+        onClose()
+        window.setTimeout(() => {
+          openerRef.current?.focus()
+          openerRef.current = null
+        }, 0)
+      }}
+    >
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay asChild>
+          <motion.div
+            className="fixed inset-0 z-overlay bg-surface-scrim"
+            variants={variants.overlay}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+          />
+        </DialogPrimitive.Overlay>
+        <DialogPrimitive.Content
+          aria-modal="true"
+          className={clsx(
+            'fixed left-1/2 top-1/2 z-modal max-h-screen w-11/12 -translate-x-1/2 -translate-y-1/2 overflow-auto focus:outline-none',
+            sizeClasses[size],
+            className,
+          )}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            openerRef.current?.focus()
           }}
         >
           <motion.div
-            ref={dialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={title ? titleId : undefined}
-            aria-label={title ? undefined : 'Dialog'}
-            tabIndex={-1}
-            className="w-full max-w-md rounded-md bg-bg-secondary p-4 shadow-floating"
+            className="relative rounded-lg bg-surface-raised p-4 text-content shadow-floating"
             variants={variants.modal}
             initial="initial"
             animate="animate"
             exit="exit"
           >
-            {title && (
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <h2 id={titleId} className="text-base font-semibold text-primary">{title}</h2>
-                <button
-                  type="button"
-                  aria-label="Close dialog"
-                  className="rounded px-2 py-1 text-lg leading-none text-muted hover:bg-bg-modifier-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue"
-                  onClick={onClose}
-                >
-                  <span aria-hidden="true">×</span>
-                </button>
-              </div>
+            <DialogPrimitive.Title
+              className={title ? 'pr-10 text-base font-semibold text-content' : 'sr-only'}
+            >
+              {title ?? 'Dialog'}
+            </DialogPrimitive.Title>
+            {description && (
+              <DialogPrimitive.Description className="mt-1 pr-10 text-sm text-content-secondary">
+                {description}
+              </DialogPrimitive.Description>
             )}
-            {children}
+            <DialogPrimitive.Close asChild>
+              <button
+                type="button"
+                aria-label="Close dialog"
+                className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-md text-content-muted hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                <Icon name="x" size="sm" />
+              </button>
+            </DialogPrimitive.Close>
+            <div className={clsx(title || description ? 'mt-4' : undefined)}>{children}</div>
           </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   )
 }
+
+export const Dialog = Modal

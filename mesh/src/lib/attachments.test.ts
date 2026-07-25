@@ -23,6 +23,7 @@ describe('attachment intake', () => {
       size: 123,
       contentType: 'image/gif',
       source: 'native',
+      transferId: expect.any(String),
     })
   })
 
@@ -50,6 +51,7 @@ describe('attachment intake', () => {
       contentType: 'image/png',
       source: 'temporary',
       stagingToken: 'opaque-token',
+      transferId: expect.any(String),
     })
     expect(stage).toHaveBeenCalledWith('pasted-image.png', [1, 2, 3, 4])
   })

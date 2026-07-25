@@ -57,6 +57,7 @@ pub(super) async fn route_signed_message(app_handle: &AppHandle, envelope: &Sign
             source_peer_id: attachment.source_peer_id,
             media_source: None,
             content_type: None,
+            thumbnail: None,
         })
         .collect();
     let message = MessageDto {

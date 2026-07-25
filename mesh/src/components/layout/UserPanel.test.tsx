@@ -53,7 +53,7 @@ describe('UserPanel Matrix profile editing', () => {
     )
     await act(async () => settingsButton?.click())
 
-    const input = container.querySelector<HTMLInputElement>('input[autocomplete="nickname"]')
+    const input = document.body.querySelector<HTMLInputElement>('input[autocomplete="nickname"]')
     await act(async () => {
       const setValue = Object.getOwnPropertyDescriptor(
         HTMLInputElement.prototype,
@@ -63,7 +63,7 @@ describe('UserPanel Matrix profile editing', () => {
       input?.dispatchEvent(new Event('input', { bubbles: true }))
     })
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find((button) =>
+    const saveButton = Array.from(document.body.querySelectorAll('button')).find((button) =>
       button.textContent?.includes('Save display name'),
     )
     await act(async () => {

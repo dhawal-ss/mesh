@@ -11,6 +11,7 @@ import {
   type IceServerProbeResult,
 } from '../../lib/bridge'
 import { Spinner } from '../ui/Spinner'
+import { ErrorState } from '../ui/ErrorState'
 
 interface DiagnosticsPanelProps {
   open: boolean
@@ -27,7 +28,7 @@ const REFRESH_INTERVAL_MS = 3000
 export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: DiagnosticsPanelProps) {
   const [diagnostics, setDiagnostics] = useState<SystemDiagnostics | null>(null)
   const [matrixStatus, setMatrixStatus] = useState<BackendStatus | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<unknown | null>(null)
   const [loading, setLoading] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [probeResults, setProbeResults] = useState<IceServerProbeResult[] | null>(null)
@@ -38,6 +39,11 @@ export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: 
     try {
       const results = await probeIceServers()
       setProbeResults(results)
+      setError(null)
+    } catch (cause) {
+      console.error('ICE reachability probe failed:', cause)
+      setProbeResults(null)
+      setError(cause)
     } finally {
       setProbeLoading(false)
     }
@@ -58,7 +64,7 @@ export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: 
       setError(null)
       setLastUpdated(new Date())
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(err)
     } finally {
       setLoading(false)
     }
@@ -84,7 +90,7 @@ export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: 
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-[50] flex items-center justify-center bg-black/70 px-6"
+          className="fixed inset-0 z-modal flex items-center justify-center bg-scrim px-6"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -93,7 +99,7 @@ export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: 
           }}
         >
           <motion.div
-            className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-bg-secondary shadow-floating"
+            className="flex max-h-modal w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-bg-secondary shadow-floating"
             initial={{ opacity: 0, scale: 0.95, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -128,10 +134,14 @@ export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: 
 
             {/* Body */}
             <div className="flex-1 overflow-y-auto px-5 py-4">
-              {error && (
-                <div className="mb-4 rounded border border-red/50 bg-red/10 px-3 py-2 text-xs text-red">
-                  Error: {error}
-                </div>
+              {error != null && (
+                <ErrorState
+                  error={error}
+                  context={{ operation: 'load diagnostics' }}
+                  onAction={refresh}
+                  className="mb-4"
+                  compact
+                />
               )}
 
               {!diagnostics && !matrixStatus && !error && (
@@ -395,13 +405,13 @@ function DiagnosticsContent({
         {/* Reachability probe */}
         <div className="mt-3 border-t border-border pt-3">
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+            <span className="text-meta font-semibold uppercase tracking-wider text-muted">
               Reachability probe
             </span>
             <button
               onClick={onRunProbe}
               disabled={probeLoading}
-              className="rounded bg-bg-tertiary px-2 py-1 text-[11px] text-secondary hover:bg-bg-primary disabled:opacity-50"
+              className="rounded bg-bg-tertiary px-2 py-1 text-meta text-secondary hover:bg-bg-primary disabled:opacity-50"
               aria-label="Run ICE reachability probe"
             >
               {probeLoading ? 'Probing…' : 'Run probe'}
@@ -453,7 +463,7 @@ function Section({
   return (
     <div>
       <h3
-        className={`mb-2 text-[11px] font-semibold uppercase tracking-wider ${
+        className={`mb-2 text-meta font-semibold uppercase tracking-wider ${
           tone === 'warning' ? 'text-yellow' : 'text-muted'
         }`}
       >
@@ -471,7 +481,7 @@ function Grid({ children }: { children: React.ReactNode }) {
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded bg-bg-primary px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-muted">{label}</div>
+      <div className="text-caption uppercase tracking-wide text-muted">{label}</div>
       <div className="mt-0.5 break-all font-mono text-xs text-primary">{value}</div>
     </div>
   )
@@ -480,7 +490,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 function StatCell({ label, value, ok }: { label: string; value: string; ok?: boolean }) {
   return (
     <div className="rounded bg-bg-primary px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-muted">{label}</div>
+      <div className="text-caption uppercase tracking-wide text-muted">{label}</div>
       <div
         className={`mt-0.5 font-mono text-sm ${
           ok === false ? 'text-red' : ok === true ? 'text-green' : 'text-primary'
@@ -507,7 +517,7 @@ function StatusCell({
   const dotColor = warn ? 'bg-yellow' : ok ? 'bg-green' : 'bg-red'
   return (
     <div className="rounded bg-bg-primary px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-muted">{label}</div>
+      <div className="text-caption uppercase tracking-wide text-muted">{label}</div>
       <div className="mt-0.5 flex items-center gap-1.5 text-sm">
         <span className={`inline-block h-2 w-2 rounded-full ${dotColor}`} aria-hidden />
         <span className={color}>{value}</span>
@@ -543,10 +553,11 @@ function DownloadCard({ stats }: { stats: SchedulerStats }) {
       <div className="mb-2 h-1 overflow-hidden rounded-full bg-bg-tertiary">
         <div
           className="h-full bg-accent transition-all"
+          data-design-token-exception="data-driven-diagnostic-progress-width"
           style={{ width: `${Math.round(progress * 100)}%` }}
         />
       </div>
-      <div className="grid grid-cols-4 gap-2 text-[10px] text-muted">
+      <div className="grid grid-cols-4 gap-2 text-caption text-muted">
         <div>
           <span className="text-secondary">{stats.receivedChunks}</span>/{stats.totalChunks}{' '}
           chunks
@@ -630,7 +641,7 @@ function ProbeRow({ result }: { result: IceServerProbeResult }) {
     severity === 'success' ? 'bg-green' : severity === 'error' ? 'bg-red' : 'bg-yellow'
   const label = probeOutcomeLabel(result.outcome)
   return (
-    <div className="rounded bg-bg-primary px-2 py-1.5 text-[11px]">
+    <div className="rounded bg-bg-primary px-2 py-1.5 text-meta">
       <div className="flex items-center gap-1.5">
         <span className={`inline-block h-2 w-2 rounded-full ${dot}`} aria-hidden />
         <span className="truncate font-mono text-secondary" title={result.url}>
@@ -640,7 +651,7 @@ function ProbeRow({ result }: { result: IceServerProbeResult }) {
           {label}
         </span>
       </div>
-      <div className="mt-0.5 text-[10px] text-muted">
+      <div className="mt-0.5 text-caption text-muted">
         {result.detail}
         {result.latencyMs !== null && <span> · {result.latencyMs}ms</span>}
       </div>

@@ -5,59 +5,403 @@
 :root {
   color-scheme: dark;
 
-  /* ── Discord-inspired surface hierarchy ── */
-  --bg-tertiary: #1e1f22;     /* server bar, inputs */
-  --bg-secondary: #2b2d31;    /* channel sidebar, member list */
-  --bg-primary: #313338;      /* main chat area */
-  --bg-modifier-hover: #2e3035;
-  --bg-modifier-active: #404249;
-  --bg-modifier-selected: #404249;
+  /*
+   * Primitive color channels are the only raw color values. Semantic tokens
+   * expose complete colors for CSS, while the `-rgb` companions let Tailwind
+   * preserve opacity modifiers such as `bg-green/10`.
+   */
+  --gray-0-rgb: 11 11 13;
+  --gray-1-rgb: 17 18 20;
+  --gray-2-rgb: 26 27 30;
+  --gray-3-rgb: 30 31 34;
+  --gray-4-rgb: 43 45 49;
+  --gray-5-rgb: 49 51 56;
+  --gray-6-rgb: 63 65 71;
+  --gray-7-rgb: 78 80 88;
+  --gray-8-rgb: 148 155 164;
+  --gray-9-rgb: 181 186 193;
+  --gray-10-rgb: 219 222 225;
+  --gray-11-rgb: 242 243 245;
+  --gray-hover-rgb: 46 48 53;
+  --gray-active-rgb: 64 66 73;
+  --gray-raised-rgb: 53 55 60;
+  --white-rgb: 255 255 255;
+  --black-rgb: 0 0 0;
+  --link-rgb: 0 168 252;
+  --accent-rgb: 212 192 161;
+  --accent-hover-rgb: 239 224 195;
+  --accent-muted-rgb: 141 125 103;
+  --success-rgb: 35 165 89;
+  --danger-rgb: 218 55 60;
+  --warning-rgb: 240 178 50;
+  --info-rgb: 88 101 242;
+  --scrollbar-rgb: 26 27 30;
+  --scrollbar-hover-rgb: 39 41 45;
+  --accent-content-rgb: var(--gray-0-rgb);
+  --content-on-status-rgb: var(--gray-11-rgb);
+  --offline-rgb: var(--gray-8-rgb);
+  --avatar-sand-rgb: 200 184 154;
+  --avatar-blue-rgb: 96 165 250;
+  --avatar-green-rgb: 74 222 128;
+  --avatar-red-rgb: 248 113 113;
+  --avatar-violet-rgb: 167 139 250;
+  --avatar-orange-rgb: 251 146 60;
+  --avatar-pink-rgb: 244 114 182;
+  --avatar-emerald-rgb: 52 211 153;
+  --avatar-yellow-rgb: 250 204 21;
+  --avatar-cyan-rgb: 56 189 248;
+  --avatar-sand: rgb(var(--avatar-sand-rgb));
+  --avatar-blue: rgb(var(--avatar-blue-rgb));
+  --avatar-green: rgb(var(--avatar-green-rgb));
+  --avatar-red: rgb(var(--avatar-red-rgb));
+  --avatar-violet: rgb(var(--avatar-violet-rgb));
+  --avatar-orange: rgb(var(--avatar-orange-rgb));
+  --avatar-pink: rgb(var(--avatar-pink-rgb));
+  --avatar-emerald: rgb(var(--avatar-emerald-rgb));
+  --avatar-yellow: rgb(var(--avatar-yellow-rgb));
+  --avatar-cyan: rgb(var(--avatar-cyan-rgb));
 
-  /* ── Elevated surfaces ── */
-  --bg-floating: #111214;     /* tooltips, popovers */
-  --bg-overlay: rgba(0, 0, 0, 0.7);
+  /* Theme primitives. Semantic roles below are the only component-facing values. */
+  --light-surface-sunken-rgb: 219 222 225;
+  --light-surface-sidebar-rgb: 242 243 245;
+  --light-surface-base-rgb: 255 255 255;
+  --light-surface-raised-rgb: 255 255 255;
+  --light-surface-overlay-rgb: 242 243 245;
+  --light-surface-hover-rgb: 230 232 235;
+  --light-surface-active-rgb: 219 222 225;
+  --light-content-primary-rgb: 17 18 20;
+  --light-content-secondary-rgb: 63 65 71;
+  --light-content-muted-rgb: 78 80 88;
+  --light-border-default-rgb: 181 186 193;
+  --light-border-emphasis-rgb: 78 80 88;
+  --contrast-black-rgb: 0 0 0;
+  --contrast-white-rgb: 255 255 255;
 
-  /* ── Borders ── */
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-strong: rgba(255, 255, 255, 0.1);
-  --channel-divider: #3f4147;
+  /* Accent presets. Applications may override the semantic channels inline. */
+  --accent-sand-rgb: 212 192 161;
+  --accent-sand-hover-rgb: 239 224 195;
+  --accent-sand-muted-rgb: 141 125 103;
+  --accent-ocean-rgb: 73 151 255;
+  --accent-ocean-hover-rgb: 133 188 255;
+  --accent-ocean-muted-rgb: 47 96 158;
+  --accent-violet-rgb: 168 132 255;
+  --accent-violet-hover-rgb: 199 178 255;
+  --accent-violet-muted-rgb: 102 78 166;
+  --accent-forest-rgb: 64 184 126;
+  --accent-forest-hover-rgb: 114 214 164;
+  --accent-forest-muted-rgb: 43 116 82;
+  --accent-ember-rgb: 238 139 67;
+  --accent-ember-hover-rgb: 255 180 119;
+  --accent-ember-muted-rgb: 151 85 41;
+  --accent-rose-rgb: 232 105 145;
+  --accent-rose-hover-rgb: 255 158 187;
+  --accent-rose-muted-rgb: 151 66 93;
 
-  /* ── Text hierarchy ── */
-  --text-normal: #dbdee1;
-  --text-primary: #f2f3f5;
-  --text-secondary: #b5bac1;
-  --text-muted: #949ba4;
-  --text-link: #00a8fc;
+  /* Semantic surface hierarchy. New components should consume these roles. */
+  --surface-sunken-rgb: var(--gray-3-rgb);
+  --surface-sunken: rgb(var(--surface-sunken-rgb));
+  --surface-sidebar-rgb: var(--surface-sunken-rgb);
+  --surface-sidebar: rgb(var(--surface-sidebar-rgb));
+  --surface-base-rgb: var(--gray-5-rgb);
+  --surface-base: rgb(var(--surface-base-rgb));
+  --surface-raised-rgb: var(--gray-raised-rgb);
+  --surface-raised: rgb(var(--surface-raised-rgb));
+  --surface-overlay-rgb: var(--surface-raised-rgb);
+  --surface-overlay: rgb(var(--surface-overlay-rgb));
+  --surface-hover-rgb: var(--gray-hover-rgb);
+  --surface-hover: rgb(var(--surface-hover-rgb));
+  --surface-active-rgb: var(--gray-active-rgb);
+  --surface-active: rgb(var(--surface-active-rgb));
+  --surface-scrim: rgb(var(--black-rgb) / 0.7);
+  --surface-nav-scrim: rgb(var(--black-rgb) / 0.58);
+  --surface-pane-tint: rgb(var(--white-rgb) / 0.015);
+  --surface-qr-rgb: var(--contrast-white-rgb);
+  --surface-qr: rgb(var(--surface-qr-rgb));
 
-  /* ── Brand / Accent ── */
-  --accent: #d4c0a1;
-  --accent-bright: #efe0c3;
-  --accent-dim: #8d7d67;
+  /* Semantic content, border, brand, and status roles. */
+  --content-normal-rgb: var(--gray-10-rgb);
+  --content-normal: rgb(var(--content-normal-rgb));
+  --content-primary-rgb: var(--gray-11-rgb);
+  --content-primary: rgb(var(--content-primary-rgb));
+  --content-secondary-rgb: var(--gray-9-rgb);
+  --content-secondary: rgb(var(--content-secondary-rgb));
+  --content-muted-rgb: var(--gray-8-rgb);
+  --content-muted: rgb(var(--content-muted-rgb));
+  --content-link-rgb: var(--link-rgb);
+  --content-link: rgb(var(--content-link-rgb));
+  --content-on-accent-rgb: var(--accent-content-rgb);
+  --content-on-accent: rgb(var(--content-on-accent-rgb));
+  --content-on-status: rgb(var(--content-on-status-rgb));
+  --border-default-rgb: var(--gray-6-rgb);
+  --border-default: rgb(var(--border-default-rgb));
+  --border-emphasis-rgb: var(--gray-7-rgb);
+  --border-emphasis: rgb(var(--border-emphasis-rgb));
+  --border-subtle: rgb(var(--white-rgb) / 0.06);
+  --border-strong: rgb(var(--white-rgb) / 0.1);
+  --presence-offline-rgb: var(--offline-rgb);
+  --presence-offline: rgb(var(--presence-offline-rgb));
+  --accent: rgb(var(--accent-rgb));
+  --accent-hover: rgb(var(--accent-hover-rgb));
+  --accent-muted: rgb(var(--accent-muted-rgb));
+  --status-success: rgb(var(--success-rgb));
+  --status-danger: rgb(var(--danger-rgb));
+  --status-warning: rgb(var(--warning-rgb));
+  --status-info: rgb(var(--info-rgb));
+  --scrollbar: rgb(var(--scrollbar-rgb));
+  --scrollbar-hover: rgb(var(--scrollbar-hover-rgb));
 
-  /* ── Status colors ── */
-  --green: #23a559;
-  --red: #da373c;
-  --yellow: #f0b232;
-  --blue: #5865f2;
+  /*
+   * Compatibility aliases preserve every existing class and CSS call site.
+   * They can be retired incrementally after components adopt semantic roles.
+   */
+  --bg-tertiary-rgb: var(--surface-sunken-rgb);
+  --bg-tertiary: var(--surface-sunken);
+  --bg-secondary-rgb: var(--surface-sidebar-rgb);
+  --bg-secondary: var(--surface-sidebar);
+  --bg-primary-rgb: var(--surface-base-rgb);
+  --bg-primary: var(--surface-base);
+  --bg-modifier-hover-rgb: var(--surface-hover-rgb);
+  --bg-modifier-hover: var(--surface-hover);
+  --bg-modifier-active-rgb: var(--surface-active-rgb);
+  --bg-modifier-active: var(--surface-active);
+  --bg-modifier-selected-rgb: var(--surface-active-rgb);
+  --bg-modifier-selected: var(--surface-active);
+  --bg-floating-rgb: var(--surface-overlay-rgb);
+  --bg-floating: var(--surface-overlay);
+  --bg-overlay: var(--surface-scrim);
+  --channel-divider: var(--border-default);
+  --text-normal: var(--content-normal);
+  --text-primary: var(--content-primary);
+  --text-secondary: var(--content-secondary);
+  --text-muted: var(--content-muted);
+  --text-link: var(--content-link);
+  --accent-bright: var(--accent-hover);
+  --accent-dim: var(--accent-muted);
+  --green: var(--status-success);
+  --red: var(--status-danger);
+  --yellow: var(--status-warning);
+  --blue: var(--status-info);
 
-  /* ── Typography ── */
-  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* Typography */
+  --font-sans: 'Inter Variable', sans-serif;
   --font-mono: 'Consolas', 'Andale Mono WT', 'Andale Mono', 'Menlo', monospace;
+  --font-size-2xs: 11px;
+  --font-size-micro: 11px;
+  --font-size-meta: 11px;
+  --font-size-code: 13px;
+  --font-size-xs: 12px;
+  --font-size-sm: 15px;
+  --font-size-base: 17px;
+  --font-size-md: 22px;
+  --font-size-lg: 28px;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --line-height-2xs: 1.4;
+  --line-height-micro: 1.35;
+  --line-height-meta: 1.35;
+  --line-height-code: 1.45;
+  --line-height-prose: 1.375rem;
+  --line-height-xs: 1.35;
+  --line-height-sm: 1.375;
+  --line-height-base: 1.375;
+  --line-height-md: 1.3;
+  --line-height-lg: 1.25;
+  --letter-spacing-2xs: 0.02em;
+  --letter-spacing-signal: 0.25em;
+  --letter-spacing-eyebrow: 0.35em;
+  --letter-spacing-section: 0.3em;
+  --letter-spacing-control: 0.24em;
+  --letter-spacing-status: 0.32em;
 
-  /* ── Radii (compact, Discord-like) ── */
+  /* Radii */
+  --radius-default: 4px;
   --radius-sm: 3px;
   --radius-md: 4px;
   --radius-lg: 8px;
   --radius-xl: 16px;
+  --radius-control: 14px;
+  --radius-panel: 28px;
+  --radius-community-rest: 24px;
+  --radius-community-active: 16px;
+  --border-width-status: 3px;
 
-  /* ── Transitions ── */
-  --transition-fast: 100ms ease;
-  --transition-normal: 200ms ease;
+  /* Motion */
+  --duration-instant: 80ms;
+  --duration-fast: 100ms;
+  --duration-normal: 200ms;
+  --duration-slow: 320ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --transition-fast: var(--duration-fast) var(--ease-standard);
+  --transition-normal: var(--duration-normal) var(--ease-standard);
+  --animation-pulse-soft: pulseSoft 2s var(--ease-standard) infinite;
 
-  /* ── Shadows ── */
-  --shadow-elevation-low: 0 1px 0 rgba(0, 0, 0, 0.2), 0 1.5px 0 rgba(0, 0, 0, 0.05), 0 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-elevation-high: 0 8px 16px rgba(0, 0, 0, 0.24);
-  --shadow-floating: 0 0 0 1px rgba(0, 0, 0, 0.15), 0 8px 16px rgba(0, 0, 0, 0.3);
+  /* Density and component geometry. */
+  --density-row-block: 6px;
+  --density-control-sm: 28px;
+  --density-control-md: 36px;
+  --density-control-lg: 44px;
+  --density-panel-gap: 16px;
+  --message-gutter: 72px;
+  --message-group-gap: 17px;
+  --empty-state-icon: 68px;
+  --community-marker: 4px;
+  --member-list-width: 240px;
+  --settings-drawer-width: 420px;
+  --attachment-name-width: 140px;
+  --modal-content-height: 90vh;
+  --settings-content-height: 75vh;
+  --composer-content-height: 200px;
+  --context-action-width: calc(100% - 8px);
+  --file-browser-width: 600px;
+  --file-browser-height: 80vh;
+  --content-error-width: 224px;
+  --user-panel-height: 52px;
+  --onboarding-shell-height: calc(100vh - 3rem);
+  --onboarding-shell-width: 460px;
+  --voice-controls-label-width: 140px;
+  --voice-tile-min-height: 220px;
+  --rail-separator-height: 2px;
+
+  /* Layering */
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-dropdown: 20;
+  --z-drawer: 30;
+  --z-overlay: 40;
+  --z-modal: 50;
+  --z-popover: 60;
+  --z-toast: 70;
+  --z-tooltip: 80;
+
+  /* Shadows */
+  --shadow-elevation-low: 0 1px 0 rgb(var(--black-rgb) / 0.2), 0 1.5px 0 rgb(var(--black-rgb) / 0.05), 0 2px 0 rgb(var(--black-rgb) / 0.05);
+  --shadow-elevation-high: 0 8px 16px rgb(var(--black-rgb) / 0.24);
+  --shadow-floating: 0 0 0 1px rgb(var(--black-rgb) / 0.15), 0 8px 16px rgb(var(--black-rgb) / 0.3);
+  --shadow-pane: var(--shadow-elevation-high);
+}
+
+:root[data-theme='dark'],
+[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+:root[data-theme='light'],
+[data-theme='light'] {
+  color-scheme: light;
+  --surface-sunken-rgb: var(--light-surface-sunken-rgb);
+  --surface-sidebar-rgb: var(--surface-sunken-rgb);
+  --surface-base-rgb: var(--light-surface-base-rgb);
+  --surface-raised-rgb: var(--light-surface-raised-rgb);
+  --surface-overlay-rgb: var(--surface-raised-rgb);
+  --surface-hover-rgb: var(--light-surface-hover-rgb);
+  --surface-active-rgb: var(--light-surface-active-rgb);
+  --content-normal-rgb: var(--light-content-primary-rgb);
+  --content-primary-rgb: var(--light-content-primary-rgb);
+  --content-secondary-rgb: var(--light-content-secondary-rgb);
+  --content-muted-rgb: var(--light-content-muted-rgb);
+  --border-default-rgb: var(--light-border-default-rgb);
+  --border-emphasis-rgb: var(--light-border-emphasis-rgb);
+  --white-rgb: var(--contrast-black-rgb);
+  --black-rgb: var(--contrast-black-rgb);
+  --content-on-status-rgb: var(--contrast-white-rgb);
+}
+
+:root[data-theme='high-contrast'],
+:root[data-contrast='high'],
+[data-theme='high-contrast'],
+[data-contrast='high'] {
+  color-scheme: dark;
+  --surface-sunken-rgb: var(--contrast-black-rgb);
+  --surface-sidebar-rgb: var(--contrast-black-rgb);
+  --surface-base-rgb: var(--contrast-black-rgb);
+  --surface-raised-rgb: 24 24 24;
+  --surface-overlay-rgb: var(--surface-raised-rgb);
+  --surface-hover-rgb: 45 45 45;
+  --surface-active-rgb: 68 68 68;
+  --content-normal-rgb: var(--contrast-white-rgb);
+  --content-primary-rgb: var(--contrast-white-rgb);
+  --content-secondary-rgb: var(--contrast-white-rgb);
+  --content-muted-rgb: 224 224 224;
+  --border-default-rgb: var(--contrast-white-rgb);
+  --border-emphasis-rgb: var(--contrast-white-rgb);
+  --accent-content-rgb: var(--contrast-black-rgb);
+}
+
+:root[data-accent='sand'],
+[data-accent='sand'] {
+  --accent-rgb: var(--accent-sand-rgb);
+  --accent-hover-rgb: var(--accent-sand-hover-rgb);
+  --accent-muted-rgb: var(--accent-sand-muted-rgb);
+}
+
+:root[data-accent='ocean'],
+[data-accent='ocean'] {
+  --accent-rgb: var(--accent-ocean-rgb);
+  --accent-hover-rgb: var(--accent-ocean-hover-rgb);
+  --accent-muted-rgb: var(--accent-ocean-muted-rgb);
+  --accent-content-rgb: var(--contrast-black-rgb);
+}
+
+:root[data-accent='violet'],
+[data-accent='violet'] {
+  --accent-rgb: var(--accent-violet-rgb);
+  --accent-hover-rgb: var(--accent-violet-hover-rgb);
+  --accent-muted-rgb: var(--accent-violet-muted-rgb);
+  --accent-content-rgb: var(--contrast-black-rgb);
+}
+
+:root[data-accent='forest'],
+[data-accent='forest'] {
+  --accent-rgb: var(--accent-forest-rgb);
+  --accent-hover-rgb: var(--accent-forest-hover-rgb);
+  --accent-muted-rgb: var(--accent-forest-muted-rgb);
+  --accent-content-rgb: var(--contrast-black-rgb);
+}
+
+:root[data-accent='ember'],
+[data-accent='ember'] {
+  --accent-rgb: var(--accent-ember-rgb);
+  --accent-hover-rgb: var(--accent-ember-hover-rgb);
+  --accent-muted-rgb: var(--accent-ember-muted-rgb);
+  --accent-content-rgb: var(--contrast-black-rgb);
+}
+
+:root[data-accent='rose'],
+[data-accent='rose'] {
+  --accent-rgb: var(--accent-rose-rgb);
+  --accent-hover-rgb: var(--accent-rose-hover-rgb);
+  --accent-muted-rgb: var(--accent-rose-muted-rgb);
+  --accent-content-rgb: var(--contrast-black-rgb);
+}
+
+:root[data-density='compact'] {
+  --density-row-block: 4px;
+  --density-control-sm: 24px;
+  --density-control-md: 32px;
+  --density-control-lg: 40px;
+  --density-panel-gap: 12px;
+  --message-group-gap: 12px;
+}
+
+:root[data-density='default'] {
+  --density-row-block: 6px;
+  --density-control-sm: 28px;
+  --density-control-md: 36px;
+  --density-control-lg: 44px;
+  --density-panel-gap: 16px;
+  --message-group-gap: 17px;
+}
+
+:root[data-density='comfortable'] {
+  --density-row-block: 8px;
+  --density-control-sm: 32px;
+  --density-control-md: 40px;
+  --density-control-lg: 48px;
+  --density-panel-gap: 20px;
+  --message-group-gap: 20px;
 }
 
 *, *::before, *::after {
@@ -101,7 +445,7 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1a1b1e;
+  background: var(--scrollbar);
   border-radius: 100px;
   border: 2px solid transparent;
   background-clip: padding-box;
@@ -109,7 +453,7 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #27292d;
+  background: var(--scrollbar-hover);
   border: 2px solid transparent;
   background-clip: padding-box;
 }
@@ -119,7 +463,7 @@ body {
 }
 
 ::selection {
-  background: rgba(88, 101, 242, 0.3);
+  background: rgb(var(--info-rgb) / 0.3);
 }
 
 [data-tauri-drag-region] {
@@ -227,7 +571,7 @@ textarea {
     display: block;
     border: 0;
     border-radius: 0;
-    background: rgba(0, 0, 0, 0.58);
+    background: var(--surface-nav-scrim);
   }
 
   .mesh-compact-header {

@@ -1,0 +1,96 @@
+import type { ReactNode } from 'react'
+import { ErrorBoundary } from './ErrorBoundary'
+import { Modal } from './Modal'
+
+interface ScopedErrorBoundaryProps {
+  children: ReactNode
+  name: string
+  description?: string
+  className?: string
+  resetKey?: string | number | null
+}
+
+export function ScopedErrorBoundary({
+  children,
+  name,
+  description = 'You can retry this section without reloading Mesh.',
+  className = '',
+  resetKey,
+}: ScopedErrorBoundaryProps) {
+  return (
+    <ErrorBoundary
+      key={resetKey ?? name}
+      scope="feature"
+      fallback={(resetError) => (
+        <div
+          className={`flex min-w-0 flex-col items-start gap-2 rounded bg-bg-secondary px-4 py-3 ${className}`}
+          role="alert"
+          aria-live="assertive"
+        >
+          <p className="text-xs font-medium text-secondary">{name} is unavailable</p>
+          <p className="text-xs text-muted">{description}</p>
+          <button
+            type="button"
+            onClick={resetError}
+            className="text-xs font-medium text-text-link transition-colors hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+    >
+      {children}
+    </ErrorBoundary>
+  )
+}
+
+interface DialogErrorBoundaryProps {
+  children: ReactNode
+  open: boolean
+  onClose: () => void
+  title: string
+}
+
+export function DialogErrorBoundary({
+  children,
+  open,
+  onClose,
+  title,
+}: DialogErrorBoundaryProps) {
+  return (
+    <ErrorBoundary
+      key={`${title}:${open ? 'open' : 'closed'}`}
+      scope="feature"
+      fallback={(resetError) => (
+        <Modal open={open} onClose={onClose} title={title}>
+          <div role="alert" aria-live="assertive" className="space-y-3">
+            <p className="text-sm font-medium text-secondary">
+              This settings panel could not be displayed.
+            </p>
+            <p className="text-xs leading-5 text-muted">
+              Your other conversations and controls are still available.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={resetError}
+                className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-content-on-accent hover:bg-accent-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                Try again
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded bg-bg-modifier-hover px-3 py-1.5 text-xs font-medium text-primary hover:bg-bg-modifier-active focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    >
+      {children}
+    </ErrorBoundary>
+  )
+}

@@ -1,14 +1,14 @@
 export const DEFAULT_AVATAR_COLORS = [
-  '#c8b89a',
-  '#60a5fa',
-  '#4ade80',
-  '#f87171',
-  '#a78bfa',
-  '#fb923c',
-  '#f472b6',
-  '#34d399',
-  '#facc15',
-  '#38bdf8',
+  'var(--avatar-sand)',
+  'var(--avatar-blue)',
+  'var(--avatar-green)',
+  'var(--avatar-red)',
+  'var(--avatar-violet)',
+  'var(--avatar-orange)',
+  'var(--avatar-pink)',
+  'var(--avatar-emerald)',
+  'var(--avatar-yellow)',
+  'var(--avatar-cyan)',
 ] as const
 
 export type OnboardingProfile = {
@@ -32,7 +32,12 @@ export interface OnboardingFlowProps {
     password: string
     deviceName?: string
   }) => Promise<void>
+  onMatrixCheckUsernameAvailable?: (username: string) => Promise<boolean>
+  onMatrixRegisterAccount?: (username: string, password: string) => Promise<void>
   onMatrixSwitchAccount?: (profileId: string) => Promise<void>
+  onCreateBackupCode?: () => Promise<string>
+  onBackupConfigured?: () => void
+  onBackupSkipped?: () => void
   onGenerateIdentity?: () => Promise<void>
   onUpdateProfile?: (profile: OnboardingProfile) => Promise<void>
   onBootstrap?: (update: (state: BootstrapState) => void) => Promise<void>

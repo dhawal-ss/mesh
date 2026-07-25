@@ -9,8 +9,14 @@ edition = "2021"
 # Matrix is the durable, federated production backend. The legacy libp2p
 # engine remains available during migration and for future LAN/off-grid work.
 default = ["matrix-backend"]
-matrix-backend = ["dep:matrix-sdk", "dep:matrix-sdk-crypto", "dep:qrcode"]
-legacy-p2p = ["dep:libp2p", "dep:tauri-plugin-notification"]
+matrix-backend = [
+  "dep:image",
+  "dep:matrix-sdk",
+  "dep:matrix-sdk-crypto",
+  "dep:qrcode",
+  "dep:reqwest",
+]
+legacy-p2p = ["dep:libp2p"]
 
 [lib]
 name = "mesh_lib"
@@ -40,7 +46,7 @@ required-features = ["matrix-backend"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "=2.5.3"
 
 # P2P Networking
@@ -70,11 +76,14 @@ matrix-sdk = { version = "0.16", optional = true, default-features = false, feat
   "e2e-encryption",
   "automatic-room-key-forwarding",
   "bundled-sqlite",
+  "experimental-send-custom-to-device",
   "qrcode",
   "rustls-tls",
 ] }
 matrix-sdk-crypto = { version = "0.16", optional = true }
 qrcode = { version = "0.14", optional = true, default-features = false, features = ["svg"] }
+image = { version = "0.25", optional = true, default-features = false, features = ["jpeg", "png", "webp"] }
+reqwest = { version = "0.12", optional = true, default-features = false, features = ["json", "rustls-tls"] }
 
 # Cryptography
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
@@ -102,6 +111,7 @@ tokio-util = { version = "0.7", features = ["rt"] }
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+ts-rs = { version = "11.1", features = ["serde-compat"] }
 
 # Utilities
 uuid = { version = "1.8", features = ["v4"] }
@@ -118,7 +128,7 @@ futures = "0.3"
 async-trait = "0.1"
 
 # Tauri Plugins
-tauri-plugin-notification = { version = "2", optional = true }
+tauri-plugin-notification = { version = "2" }
 tauri-plugin-dialog = "=2.7.2"
 
 # Security

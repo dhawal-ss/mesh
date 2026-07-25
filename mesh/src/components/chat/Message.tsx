@@ -4,13 +4,16 @@ import type { Message as MessageType } from '../../types/ipc'
 import { Avatar } from '../ui/Avatar'
 import { ReactionPicker } from './ReactionPicker'
 import { MarkdownContent } from './MarkdownContent'
-import { format } from 'date-fns'
 import { useCommunityStore } from '../../store/communities'
 import { useIdentityStore } from '../../store/identity'
 import { useChannelStore } from '../../store/channels'
 import { useMessageStore } from '../../store/messages'
 import * as bridge from '../../lib/bridge'
 import { useFileDownloadStore } from '../../store/file-downloads'
+import { formatFederatedTimestamp } from '../../lib/federated-time'
+import { describeError } from '../../lib/errors'
+import { variants } from '../../lib/motion'
+import { Icon } from '../ui/Icon'
 
 interface MessageProps {
   message: MessageType
@@ -20,6 +23,7 @@ interface MessageProps {
   onRetry?: (message: MessageType) => void
   replyPreview?: MessageType | null
   limitedActions?: boolean
+  editRequestToken?: number
 }
 
 export const MessageComponent = memo(function MessageComponent({
@@ -29,6 +33,7 @@ export const MessageComponent = memo(function MessageComponent({
   onRetry,
   replyPreview,
   limitedActions = false,
+  editRequestToken = 0,
 }: MessageProps) {
   const [hovered, setHovered] = useState(false)
   const [showReactions, setShowReactions] = useState(false)
@@ -38,8 +43,8 @@ export const MessageComponent = memo(function MessageComponent({
   const [confirmBan, setConfirmBan] = useState(false)
   const matrixMode = bridge.isMatrixBackend()
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
-  const activeCommunity = useCommunityStore((s) =>
-    s.communities.find((c) => c.id === s.activeCommunityId),
+  const myRole = useCommunityStore((s) =>
+    s.activeCommunityId ? s.communityEntities[s.activeCommunityId]?.role : undefined,
   )
   const legacyPublicKey = useIdentityStore((s) => s.identity?.publicKey)
   const myPublicKey = bridge.isMatrixBackend() ? bridge.getMatrixUserId() ?? undefined : legacyPublicKey
@@ -49,7 +54,6 @@ export const MessageComponent = memo(function MessageComponent({
   const deleteMessage = useMessageStore((s) => s.deleteMessage)
 
   const isOwnMessage = myPublicKey === message.authorPublicKey
-  const myRole = activeCommunity?.role
   const canModerate = myRole === 'owner' || myRole === 'admin'
   const isDeleted = !!message.deletedAt
 
@@ -110,6 +114,10 @@ export const MessageComponent = memo(function MessageComponent({
     setIsEditing(true)
     setContextMenu(null)
   }, [message.content])
+
+  useEffect(() => {
+    if (editRequestToken > 0 && isOwnMessage && !isDeleted) handleStartEdit()
+  }, [editRequestToken, handleStartEdit, isDeleted, isOwnMessage])
 
   const handleSaveEdit = useCallback(async () => {
     const trimmed = editContent.trim()
@@ -186,8 +194,8 @@ export const MessageComponent = memo(function MessageComponent({
   return (
     <>
       <div
-        className={`group relative flex gap-4 py-0.5 pl-[72px] pr-12 hover:bg-bg-modifier-hover ${
-          !isGrouped ? 'mt-[17px]' : ''
+        className={`group relative flex gap-4 py-0.5 pl-message-gutter pr-12 hover:bg-bg-modifier-hover ${
+          !isGrouped ? 'mt-message-group' : ''
         }`}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => {
@@ -202,11 +210,11 @@ export const MessageComponent = memo(function MessageComponent({
             <Avatar color={message.authorAvatarColor} size={40} name={message.authorDisplayName} />
           ) : (
             <span
-              className={`flex h-full items-center justify-end pr-1 text-[11px] text-muted transition-opacity ${
+              className={`flex h-full items-center justify-end pr-1 text-meta text-muted transition-opacity ${
                 hovered ? 'opacity-100' : 'opacity-0'
               }`}
             >
-              {format(new Date(message.timestamp), 'HH:mm')}
+              {formatFederatedTimestamp(message.timestamp, 'HH:mm')}
             </span>
           )}
         </div>
@@ -215,24 +223,22 @@ export const MessageComponent = memo(function MessageComponent({
         <div className="min-w-0 flex-1">
           {!isGrouped && (
             <div className="flex items-baseline gap-2">
-              <span className="text-sm font-medium text-primary hover:underline cursor-pointer">
+              <span className="text-sm font-medium text-primary">
                 {message.authorDisplayName}
               </span>
-              <span className="text-[11px] text-muted">
-                {format(new Date(message.timestamp), 'MM/dd/yyyy h:mm a')}
+              <span className="text-meta text-muted">
+                {formatFederatedTimestamp(message.timestamp, 'MM/dd/yyyy h:mm a')}
               </span>
               {message.deliveryStatus && message.deliveryStatus !== 'sent' && (
                 <span
-                  className={`ml-1 inline-flex items-center gap-1 text-[11px] ${
+                  className={`ml-1 inline-flex items-center gap-1 text-meta ${
                     message.deliveryStatus === 'pending'
                       ? 'text-yellow'
                       : 'text-red'
                   }`}
                 >
                   {message.deliveryStatus === 'pending' ? (
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
-                      <circle cx="12" cy="12" r="9" strokeDasharray="28" strokeDashoffset="10" />
-                    </svg>
+                    <Icon name="loader" size="xs" className="animate-spin" />
                   ) : (
                     'Failed'
                   )}
@@ -244,10 +250,7 @@ export const MessageComponent = memo(function MessageComponent({
           {/* Reply preview */}
           {replyPreview && (
             <div className="mb-1 flex items-center gap-1.5 text-sm">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted">
-                <polyline points="9 17 4 12 9 7" />
-                <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
-              </svg>
+              <Icon name="reply" size="xs" className="text-muted" />
               <span className="text-xs font-medium text-secondary">{replyPreview.authorDisplayName}</span>
               <span className="truncate text-xs text-muted">{replyPreview.content.slice(0, 80)}</span>
             </div>
@@ -259,11 +262,11 @@ export const MessageComponent = memo(function MessageComponent({
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
                 onKeyDown={handleEditKeyDown}
-                className="w-full resize-none rounded-lg bg-[#383a40] px-3 py-2 text-sm text-primary outline-none"
+                className="w-full resize-none rounded-lg bg-surface-raised px-3 py-2 text-sm text-primary outline-none"
                 rows={Math.min(8, editContent.split('\n').length + 1)}
                 autoFocus
               />
-              <div className="flex items-center gap-2 text-[11px] text-muted">
+              <div className="flex items-center gap-2 text-meta text-muted">
                 <span>escape to <button onClick={handleCancelEdit} className="text-text-link hover:underline">cancel</button></span>
                 <span>•</span>
                 <span>enter to <button onClick={() => void handleSaveEdit()} className="text-text-link hover:underline">save</button></span>
@@ -273,7 +276,7 @@ export const MessageComponent = memo(function MessageComponent({
             <>
               <MarkdownContent content={message.content} />
               {message.editedAt && (
-                <span className="ml-1 text-[10px] text-muted">(edited)</span>
+                <span className="ml-1 text-caption text-muted">(edited)</span>
               )}
             </>
           )}
@@ -282,11 +285,9 @@ export const MessageComponent = memo(function MessageComponent({
           {message.deliveryStatus === 'failed' && (
             <button
               onClick={() => { if (onRetry) onRetry(message) }}
-              className="mt-1 inline-flex items-center gap-1 rounded bg-red/10 px-2 py-1 text-[11px] font-medium text-red transition-colors hover:bg-red/20"
+              className="mt-1 inline-flex items-center gap-1 rounded bg-red/10 px-2 py-1 text-meta font-medium text-red transition-colors hover:bg-red/20"
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v6h6M20 20v-6h-6M5 19a9 9 0 0114-14M19 5a9 9 0 00-14 14" />
-              </svg>
+              <Icon name="refresh" size="xs" />
               Retry
             </button>
           )}
@@ -314,7 +315,7 @@ export const MessageComponent = memo(function MessageComponent({
                   }`}
                 >
                   <span>{emoji}</span>
-                  <span className="text-[11px]">{users.length}</span>
+                  <span className="text-meta">{users.length}</span>
                 </button>
               ))}
             </div>
@@ -324,19 +325,14 @@ export const MessageComponent = memo(function MessageComponent({
         {/* Hover action bar */}
         {hovered && !contextMenu && !isEditing && !isDeleted && (
           <div
-            className="absolute -top-4 right-4 z-10 flex items-center rounded-md border border-border bg-bg-secondary shadow-elevation-high"
+            className="absolute -top-4 right-4 z-sticky flex items-center rounded-md border border-border bg-bg-secondary shadow-elevation-high"
           >
             <button
               onClick={() => setShowReactions(!showReactions)}
               className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary"
               aria-label="Add reaction"
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="10" />
-                <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-                <line x1="9" y1="9" x2="9.01" y2="9" />
-                <line x1="15" y1="9" x2="15.01" y2="9" />
-              </svg>
+              <Icon name="smile" size="sm" />
             </button>
             {isOwnMessage && (
               <button
@@ -344,10 +340,7 @@ export const MessageComponent = memo(function MessageComponent({
                 className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary"
                 aria-label="Edit message"
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                </svg>
+                <Icon name="squarePen" size="sm" />
               </button>
             )}
             {onReply && (
@@ -356,10 +349,7 @@ export const MessageComponent = memo(function MessageComponent({
                 className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary"
                 aria-label="Reply"
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="9 17 4 12 9 7" />
-                  <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
-                </svg>
+                <Icon name="reply" size="sm" />
               </button>
             )}
           </div>
@@ -368,7 +358,7 @@ export const MessageComponent = memo(function MessageComponent({
         {/* Reaction picker */}
         <AnimatePresence>
           {showReactions && (
-            <div className="absolute -top-10 right-4 z-20">
+            <div className="absolute -top-10 right-4 z-dropdown">
               <ReactionPicker onSelect={handleReaction} onClose={() => setShowReactions(false)} />
             </div>
           )}
@@ -379,11 +369,12 @@ export const MessageComponent = memo(function MessageComponent({
       <AnimatePresence>
         {contextMenu && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.1 }}
-            className="fixed z-50 w-48 rounded-lg border border-black/20 bg-bg-floating py-1.5 text-sm shadow-floating"
+            variants={variants.popover}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="fixed z-popover w-48 rounded-lg border border-border-subtle bg-bg-floating py-1.5 text-sm shadow-floating"
+            data-design-token-exception="data-driven-pointer-position"
             style={{ left: contextMenu.x, top: contextMenu.y }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -391,16 +382,14 @@ export const MessageComponent = memo(function MessageComponent({
               <>
                 <button
                   onClick={handleStartEdit}
-                  className="w-full px-2 py-1.5 text-left text-secondary rounded-sm mx-1 transition-colors hover:bg-blue hover:text-white"
-                  style={{ width: 'calc(100% - 8px)' }}
+                  className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-secondary transition-colors hover:bg-status-info hover:text-content-on-status"
                   aria-label="Edit message"
                 >
                   Edit Message
                 </button>
                 <button
                   onClick={() => void handleDelete()}
-                  className="w-full px-2 py-1.5 text-left text-red rounded-sm mx-1 transition-colors hover:bg-red hover:text-white"
-                  style={{ width: 'calc(100% - 8px)' }}
+                  className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-red transition-colors hover:bg-status-danger hover:text-content-on-status"
                   aria-label="Delete message"
                 >
                   Delete Message
@@ -411,16 +400,14 @@ export const MessageComponent = memo(function MessageComponent({
               <>
                 <button
                   onClick={() => void handleDelete()}
-                  className="w-full px-2 py-1.5 text-left text-secondary rounded-sm mx-1 transition-colors hover:bg-blue hover:text-white"
-                  style={{ width: 'calc(100% - 8px)' }}
+                  className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-secondary transition-colors hover:bg-status-info hover:text-content-on-status"
                   aria-label="Remove message"
                 >
                   Remove Message
                 </button>
                 <button
                   onClick={() => void handleKick()}
-                  className="w-full px-2 py-1.5 text-left text-secondary rounded-sm mx-1 transition-colors hover:bg-blue hover:text-white"
-                  style={{ width: 'calc(100% - 8px)' }}
+                  className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-secondary transition-colors hover:bg-status-info hover:text-content-on-status"
                   aria-label={`Kick ${message.authorDisplayName}`}
                 >
                   Kick User
@@ -428,8 +415,7 @@ export const MessageComponent = memo(function MessageComponent({
                 {!matrixMode && (
                   <button
                     onClick={() => void handleTimeout()}
-                    className="w-full px-2 py-1.5 text-left text-secondary rounded-sm mx-1 transition-colors hover:bg-blue hover:text-white"
-                    style={{ width: 'calc(100% - 8px)' }}
+                    className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-secondary transition-colors hover:bg-status-info hover:text-content-on-status"
                     aria-label={`Timeout ${message.authorDisplayName}`}
                   >
                     Timeout (1hr)
@@ -437,8 +423,7 @@ export const MessageComponent = memo(function MessageComponent({
                 )}
                 <button
                   onClick={handleBan}
-                  className="w-full px-2 py-1.5 text-left text-red rounded-sm mx-1 transition-colors hover:bg-red hover:text-white"
-                  style={{ width: 'calc(100% - 8px)' }}
+                  className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-red transition-colors hover:bg-status-danger hover:text-content-on-status"
                   aria-label={`Ban ${message.authorDisplayName}`}
                 >
                   {confirmBan ? 'Confirm Ban?' : `Ban ${message.authorDisplayName}`}
@@ -463,6 +448,25 @@ export function FileAttachmentCard({
   const download = useFileDownloadStore((s) => s.downloads[attachment.fileHash])
   const sourcePeerId = attachment.sourcePeerId
 
+  useEffect(() => {
+    if (!bridge.isMatrixBackend() || !attachment.mediaSource) return
+    let active = true
+    let unlisten: (() => void) | undefined
+    void bridge.onMatrixTransferProgress((payload) => {
+      if (!active || payload.direction !== 'download') return
+      const current = useFileDownloadStore.getState().downloads[attachment.fileHash]
+      if (current?.transferId !== payload.transferId) return
+      useFileDownloadStore.getState().updateMatrixTransferProgress(payload)
+    }).then((stopListening) => {
+      if (active) unlisten = stopListening
+      else stopListening()
+    })
+    return () => {
+      active = false
+      unlisten?.()
+    }
+  }, [attachment.fileHash, attachment.mediaSource])
+
   const progressPercent = (() => {
     const totalBytes = download?.totalBytes ?? attachment.size
     const receivedBytes = download?.receivedBytes ?? 0
@@ -476,23 +480,26 @@ export function FileAttachmentCard({
   const startDownload = async () => {
     if (bridge.isMatrixBackend() && attachment.mediaSource) {
       const matrixSourcePeerId = sourcePeerId || 'matrix'
+      const transferId = bridge.createMatrixTransferId()
       useFileDownloadStore.getState().startDownload({
         fileHash: attachment.fileHash,
         filename: attachment.filename,
         sourcePeerId: matrixSourcePeerId,
         size: attachment.size,
         chunks: attachment.chunks,
+        transferId,
       })
       try {
-        const localPath = await bridge.matrixDownloadAttachment(attachment)
+        const localPath = await bridge.matrixDownloadAttachment(attachment, transferId)
         useFileDownloadStore.getState().markDownloadAvailable({
           fileHash: attachment.fileHash,
           localPath,
         })
       } catch (error) {
+        console.error('Failed to download encrypted attachment:', error)
         useFileDownloadStore.getState().markDownloadFailed(
           attachment.fileHash,
-          error instanceof Error ? error.message : 'Failed to decrypt attachment',
+          attachmentErrorMessage(error, 'download this attachment'),
         )
       }
       return
@@ -521,9 +528,10 @@ export function FileAttachmentCard({
         chunks: attachment.chunks,
       })
     } catch (error) {
+      console.error('Failed to start attachment download:', error)
       useFileDownloadStore.getState().markDownloadFailed(
         attachment.fileHash,
-        error instanceof Error ? error.message : 'Failed to start download',
+        attachmentErrorMessage(error, 'start this download'),
       )
     }
   }
@@ -538,9 +546,10 @@ export function FileAttachmentCard({
     try {
       await bridge.matrixCancelAttachmentDownload(attachment.fileHash)
     } catch (error) {
+      console.error('Failed to cancel attachment download:', error)
       useFileDownloadStore.getState().markDownloadFailed(
         attachment.fileHash,
-        error instanceof Error ? error.message : 'Failed to cancel download',
+        attachmentErrorMessage(error, 'cancel this download'),
       )
     }
   }
@@ -553,20 +562,27 @@ export function FileAttachmentCard({
   return (
     <div className="flex max-w-sm items-center gap-3 rounded-lg border border-border bg-bg-secondary p-3">
       <div className="flex h-10 w-10 items-center justify-center rounded bg-bg-modifier-hover text-muted">
-        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
+        <Icon name="fileText" />
       </div>
 
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-text-link hover:underline cursor-pointer">{attachment.filename}</div>
+        <div className="truncate text-sm font-medium text-text-link">{attachment.filename}</div>
         <div className="text-xs text-muted">{(attachment.size / 1024 / 1024).toFixed(2)} MB</div>
 
         {isDownloading && (
           <div className="mt-1.5">
             <div className="h-1 overflow-hidden rounded-full bg-bg-modifier-hover">
-              <div className="h-full rounded-full bg-blue transition-[width] duration-300" style={{ width: `${progressPercent}%` }} />
+              <div
+                className="h-full rounded-full bg-blue transition-[width] duration-normal"
+                data-design-token-exception="data-driven-transfer-progress-width"
+                style={{ width: `${progressPercent}%` }}
+              />
             </div>
+            {download?.matrixState && (
+              <div className="mt-1 text-caption capitalize text-muted">
+                {download.matrixState}
+              </div>
+            )}
           </div>
         )}
         {isErrored && <div className="mt-1 text-xs text-red">{download?.error ?? 'Download failed'}</div>}
@@ -584,8 +600,23 @@ export function FileAttachmentCard({
         } disabled:opacity-60`}
         aria-label={isCompleted ? `Open ${attachment.filename}` : isDownloading && bridge.isMatrixBackend() ? `Cancel download of ${attachment.filename}` : `Download ${attachment.filename}`}
       >
-        {isCompleted ? 'Open' : isDownloading && bridge.isMatrixBackend() ? 'Cancel' : isDownloading ? `${progressPercent}%` : isErrored ? 'Retry' : 'Download'}
+        {isCompleted
+          ? 'Open'
+          : isDownloading && bridge.isMatrixBackend()
+            ? 'Cancel'
+            : isDownloading
+              ? `${progressPercent}%`
+              : isErrored && download?.retryMode === 'restart-from-zero'
+                ? 'Restart'
+                : isErrored
+                  ? 'Retry'
+                  : 'Download'}
       </button>
     </div>
   )
+}
+
+function attachmentErrorMessage(error: unknown, operation: string): string {
+  const description = describeError(error, { operation })
+  return `${description.title}. ${description.body}`
 }

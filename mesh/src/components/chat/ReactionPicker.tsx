@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { transitions } from '../../lib/motion'
+import { variants } from '../../lib/motion'
 
 const REACTIONS = ['👍', '❤️', '😂', '🔥', '👀', '🎉', '💯', '✅', '🤔', '👋']
 
@@ -11,11 +11,11 @@ interface ReactionPickerProps {
 export function ReactionPicker({ onSelect, onClose }: ReactionPickerProps) {
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.92, y: 4 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.92, y: 4 }}
-      transition={transitions.softSpring}
-      className="flex items-center gap-0.5 rounded-full border border-white/10 bg-surface-float/95 px-2 py-1.5 shadow-floating backdrop-blur-2xl"
+      variants={variants.popover}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      className="flex items-center gap-0.5 rounded-full border border-border-strong bg-surface-overlay/95 px-2 py-1.5 shadow-floating backdrop-blur-2xl"
       onMouseLeave={onClose}
     >
       {REACTIONS.map((emoji) => (
@@ -25,7 +25,7 @@ export function ReactionPicker({ onSelect, onClose }: ReactionPickerProps) {
             onSelect(emoji)
             onClose()
           }}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-base transition-colors hover:bg-white/[0.08] active:scale-95"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-base transition-colors hover:bg-surface-active active:scale-95"
         >
           {emoji}
         </button>

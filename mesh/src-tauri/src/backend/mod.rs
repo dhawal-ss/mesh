@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::types::{
     community::{ChannelDto, CommunityDto},
@@ -17,6 +18,256 @@ use crate::types::{
 };
 
 pub const LEGACY_MATRIX_EVENT_TYPE: &str = "org.mesh.legacy_archive.v1";
+pub const MATRIX_TRANSFER_PROGRESS_EVENT: &str = "matrix:transfer-progress";
+pub const MATRIX_NOTIFICATION_EVENT: &str = "matrix:notification";
+pub const MATRIX_UNREAD_UPDATE_EVENT: &str = "matrix:unread-update";
+pub const MATRIX_RTC_MEMBERSHIP_EVENT: &str = "matrix:rtc-membership";
+pub const MATRIX_RTC_MEDIA_KEY_EVENT: &str = "matrix:rtc-media-key";
+pub const MATRIX_RTC_MEDIA_KEY_FAILURE_EVENT: &str = "matrix:rtc-media-key-failure";
+pub const MATRIX_RTC_MEDIA_KEY_PAUSE_EVENT: &str = "matrix:rtc-media-key-pause";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixRtcMember {
+    pub room_id: String,
+    pub user_id: String,
+    pub device_id: String,
+    pub session_id: String,
+    pub display_name: String,
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixRtcMembershipUpdate {
+    pub room_id: String,
+    pub members: Vec<MatrixRtcMember>,
+}
+
+/// Ephemeral MatrixRTC publisher key delivered only after an Olm-authenticated
+/// to-device event has been bound to a current room membership.
+///
+/// This DTO must never be persisted or logged. The renderer uses it to update
+/// the in-memory LiveKit media encryption keyring for one publisher.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixRtcMediaKey {
+    pub room_id: String,
+    pub user_id: String,
+    pub device_id: String,
+    pub member_id: String,
+    pub session_id: Option<String>,
+    pub activation_id: Option<String>,
+    pub participant_identity: String,
+    pub key_index: u8,
+    pub key: String,
+    #[ts(type = "number")]
+    pub sent_ts: u64,
+}
+
+impl std::fmt::Debug for MatrixRtcMediaKey {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MatrixRtcMediaKey")
+            .field("room_id", &self.room_id)
+            .field("user_id", &self.user_id)
+            .field("device_id", &self.device_id)
+            .field("member_id", &self.member_id)
+            .field("session_id", &self.session_id)
+            .field("activation_id", &self.activation_id)
+            .field("participant_identity", &self.participant_identity)
+            .field("key_index", &self.key_index)
+            .field("key", &"[REDACTED]")
+            .field("sent_ts", &self.sent_ts)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixRtcMediaKeyPause {
+    pub room_id: String,
+    pub session_id: String,
+    pub member_id: String,
+    pub activation_id: String,
+    pub key_index: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixRtcMediaKeyLease {
+    pub room_id: String,
+    pub session_id: String,
+    pub member_id: String,
+    pub key_index: u8,
+    #[ts(type = "number")]
+    pub expires_at: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixRtcMediaKeyFailure {
+    pub room_id: String,
+    pub code: String,
+}
+
+/// Short-lived authorization material for joining one LiveKit room.
+///
+/// The JWT is intentionally returned only from the explicit join command. It
+/// is never persisted in Matrix state, account data, environment variables, or
+/// the SDK store.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixRtcJoinResult {
+    pub room_id: String,
+    pub session_id: String,
+    pub member_id: String,
+    pub url: String,
+    pub token: String,
+    pub room_name: String,
+    pub participant_identity: String,
+    pub media_e2ee_verified: bool,
+    pub media_key: MatrixRtcMediaKey,
+}
+
+impl std::fmt::Debug for MatrixRtcJoinResult {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MatrixRtcJoinResult")
+            .field("room_id", &self.room_id)
+            .field("session_id", &self.session_id)
+            .field("member_id", &self.member_id)
+            .field("url", &self.url)
+            .field("token", &"[REDACTED]")
+            .field("room_name", &self.room_name)
+            .field("participant_identity", &self.participant_identity)
+            .field("media_e2ee_verified", &self.media_e2ee_verified)
+            .field("media_key", &self.media_key)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixNotification {
+    pub room_id: String,
+    pub event_id: String,
+    pub sender: String,
+    pub display_name: String,
+    pub preview: String,
+    pub is_mention: bool,
+    pub is_dm: bool,
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixUnreadUpdate {
+    pub room_id: String,
+    #[ts(type = "number")]
+    pub unread_messages: i64,
+    #[ts(type = "number")]
+    pub unread_mentions: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MatrixBackendEvent {
+    Notification(MatrixNotification),
+    UnreadUpdate(MatrixUnreadUpdate),
+    RtcMembership(MatrixRtcMembershipUpdate),
+    RtcMediaKey(MatrixRtcMediaKey),
+    RtcMediaKeyFailure(MatrixRtcMediaKeyFailure),
+    RtcMediaKeyPause(MatrixRtcMediaKeyPause),
+}
+
+pub type MatrixBackendEventCallback = Arc<dyn Fn(MatrixBackendEvent) + Send + Sync>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum MatrixRoomNotificationMode {
+    #[serde(rename = "all")]
+    All,
+    #[serde(rename = "mentions")]
+    Mentions,
+    #[serde(rename = "nothing")]
+    Nothing,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationPresentationContext {
+    pub active_room_id: Option<String>,
+    pub notifications_enabled: bool,
+    pub do_not_disturb: bool,
+    pub quiet_hours_active: bool,
+    #[serde(default)]
+    pub muted_room_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MatrixTransferDirection {
+    Upload,
+    Download,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MatrixTransferState {
+    Queued,
+    Encrypting,
+    Uploading,
+    Publishing,
+    Downloading,
+    Validating,
+    Writing,
+    Completed,
+    Cancelled,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MatrixTransferRetryMode {
+    RestartFromZero,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixTransferResult {
+    pub event_id: Option<String>,
+    pub local_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixTransferProgress {
+    pub transfer_id: String,
+    pub direction: MatrixTransferDirection,
+    pub transferred_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub state: MatrixTransferState,
+    pub retryable: bool,
+    pub retry_mode: Option<MatrixTransferRetryMode>,
+    pub result: Option<MatrixTransferResult>,
+    pub error: Option<String>,
+}
+
+pub type MatrixTransferProgressCallback = Arc<dyn Fn(MatrixTransferProgress) + Send + Sync>;
+
+#[derive(Clone)]
+pub struct MatrixTransferObserver {
+    pub transfer_id: String,
+    pub progress: MatrixTransferProgressCallback,
+}
+
+pub struct MatrixAttachmentSendRequest {
+    pub file_path: String,
+    pub filename: String,
+    pub content_type: Option<String>,
+    pub body: String,
+    pub reply_to_id: Option<String>,
+}
 
 #[cfg(feature = "legacy-p2p")]
 mod legacy;
@@ -28,7 +279,7 @@ pub use legacy::LegacyP2pBackend;
 #[cfg(feature = "matrix-backend")]
 pub use matrix::MatrixBackend;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum BackendKind {
     Matrix,
@@ -44,7 +295,7 @@ impl BackendKind {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct BackendStatus {
     pub kind: BackendKind,
@@ -60,14 +311,14 @@ pub struct BackendStatus {
     pub warnings: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum VoiceProvider {
     MatrixRtc,
     LegacySimplePeer,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum VoiceServiceAvailability {
     Ready,
@@ -81,7 +332,7 @@ pub enum VoiceServiceAvailability {
 /// MatrixRTC endpoints are public service locations, not credentials. They are
 /// reported for operator diagnostics, but are never treated as proof that
 /// MatrixRTC authorization, LiveKit connectivity, or media E2EE works.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct VoiceServiceStatus {
     pub provider: VoiceProvider,
@@ -219,7 +470,7 @@ impl VoiceServiceStatus {
         Self {
             availability: VoiceServiceAvailability::ClientUnavailable,
             reason: Some(
-                "Discovery, MSC4195 /get_token, and CSP origins are configured, but the MatrixRTC client and media E2EE verification are not implemented"
+                "MatrixRTC membership and MSC4195 /get_token are implemented, but focus reachability, federated focus election, LiveKit media transport, delayed-leave delegation, and media E2EE are not verified"
                     .into(),
             ),
             ..base
@@ -271,7 +522,7 @@ impl VoiceServiceStatus {
 /// Authoritative product capabilities for the selected backend. The frontend
 /// renders unavailable features from this contract instead of probing legacy
 /// commands or duplicating backend-mode conditionals.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct BackendCapabilities {
     pub encrypted_text: bool,
@@ -496,16 +747,32 @@ pub struct CommunityAccessResult {
 /// Portable, non-secret preferences synchronized through Matrix account data.
 /// Device credentials, recovery material, and machine-local network settings
 /// are intentionally outside this contract.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct UserPreferences {
     pub schema_version: u32,
     pub notifications_enabled: bool,
     pub notification_sound: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notification_sound_id: Option<String>,
+    #[serde(default)]
+    pub do_not_disturb: bool,
+    #[serde(default)]
+    pub quiet_hours_enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quiet_hours_start: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quiet_hours_end: Option<String>,
     #[serde(default)]
     pub muted_channels: Vec<String>,
     #[serde(default)]
     pub muted_communities: Vec<String>,
+    #[serde(default)]
+    pub muted_channel_until: std::collections::HashMap<String, Option<String>>,
+    #[serde(default)]
+    pub muted_community_until: std::collections::HashMap<String, Option<String>>,
+    #[serde(default)]
+    pub channel_notification_levels: std::collections::HashMap<String, MatrixRoomNotificationMode>,
     pub updated_at: String,
 }
 
@@ -527,10 +794,38 @@ impl UserPreferences {
 pub enum BackendError {
     #[error("backend is not authenticated")]
     NotAuthenticated,
+    #[error("network request failed: {0}")]
+    Network(String),
+    #[error("request was rate limited: {0}")]
+    RateLimited(String),
+    #[error("permission denied: {0}")]
+    PermissionDenied(String),
+    #[error("resource was not found: {0}")]
+    NotFound(String),
+    #[error("secure operation failed: {0}")]
+    Crypto(String),
+    #[error("response could not be decoded: {0}")]
+    Serialization(String),
+    #[error("room is not encrypted: {0}")]
+    NotEncrypted(String),
+    #[error("content could not be decrypted: {0}")]
+    DecryptionFailed(String),
+    #[error("operation was cancelled: {0}")]
+    Cancelled(String),
     #[error("operation is unavailable on the {0} backend")]
     Unsupported(&'static str),
     #[error("invalid backend configuration: {0}")]
     InvalidConfiguration(String),
+    #[error("managed account service is not configured")]
+    ManagedHomeserverUnconfigured,
+    #[error("that username is not available")]
+    UsernameUnavailable,
+    #[error("the managed account service requires terms acceptance")]
+    RegistrationTermsRequired,
+    #[error("the managed account service requires an additional verification step")]
+    RegistrationAdditionalAuthRequired,
+    #[error("managed account creation timed out after {0} seconds")]
+    RegistrationTimedOut(u64),
     #[error("backend error: {0}")]
     Other(String),
     #[error("Matrix sign-in was cancelled")]
@@ -539,14 +834,120 @@ pub enum BackendError {
     LoginTimedOut(u64),
 }
 
+impl BackendError {
+    /// Classify errors from SDK boundaries before they cross IPC. The Matrix
+    /// SDK exposes several error families through different concrete types, so
+    /// the backend keeps this compatibility classifier in one place instead of
+    /// teaching the frontend to parse display strings.
+    pub fn from_sdk_error(error: impl std::fmt::Display) -> Self {
+        let detail = error.to_string();
+        let normalized = detail.to_ascii_lowercase();
+
+        if normalized.contains("m_limit_exceeded")
+            || normalized.contains("rate limit")
+            || normalized.contains("too many requests")
+            || normalized.contains("status 429")
+        {
+            return Self::RateLimited(detail);
+        }
+        if normalized.contains("m_forbidden")
+            || normalized.contains("permission denied")
+            || normalized.contains("forbidden")
+            || normalized.contains("status 403")
+        {
+            return Self::PermissionDenied(detail);
+        }
+        if normalized.contains("m_unauthorized")
+            || normalized.contains("not authenticated")
+            || normalized.contains("authentication required")
+            || normalized.contains("status 401")
+        {
+            return Self::NotAuthenticated;
+        }
+        if normalized.contains("m_not_found")
+            || normalized.contains("not found")
+            || normalized.contains("unknown room")
+            || normalized.contains("status 404")
+        {
+            return Self::NotFound(detail);
+        }
+        if normalized.contains("decrypt") {
+            return Self::DecryptionFailed(detail);
+        }
+        if normalized.contains("not encrypted") || normalized.contains("encryption unavailable") {
+            return Self::NotEncrypted(detail);
+        }
+        if normalized.contains("cancelled") || normalized.contains("canceled") {
+            return Self::Cancelled(detail);
+        }
+        if normalized.contains("json")
+            || normalized.contains("serialize")
+            || normalized.contains("deserialize")
+            || normalized.contains("decode")
+        {
+            return Self::Serialization(detail);
+        }
+        if normalized.contains("crypto")
+            || normalized.contains("cipher")
+            || normalized.contains("signature")
+        {
+            return Self::Crypto(detail);
+        }
+        if normalized.contains("network")
+            || normalized.contains("connection")
+            || normalized.contains("failed to connect")
+            || normalized.contains("could not connect")
+            || normalized.contains("dns")
+            || normalized.contains("http")
+            || normalized.contains("socket")
+            || normalized.contains("timed out")
+            || normalized.contains("timeout")
+        {
+            return Self::Network(detail);
+        }
+
+        Self::Other(detail)
+    }
+}
+
 pub type BackendResult<T> = Result<T, BackendError>;
 
 #[async_trait]
 pub trait MeshBackend: Send + Sync {
     fn kind(&self) -> BackendKind;
+    fn set_matrix_event_callback(&self, _callback: Option<MatrixBackendEventCallback>) {}
     async fn start(&self) -> BackendResult<()>;
     async fn status(&self) -> BackendStatus;
+    async fn matrix_room_notification_mode(
+        &self,
+        _room_id: String,
+    ) -> BackendResult<MatrixRoomNotificationMode> {
+        Err(BackendError::Unsupported(
+            "Matrix room notification settings",
+        ))
+    }
+    async fn matrix_set_room_notification_mode(
+        &self,
+        _room_id: String,
+        _mode: MatrixRoomNotificationMode,
+    ) -> BackendResult<()> {
+        Err(BackendError::Unsupported(
+            "Matrix room notification settings",
+        ))
+    }
     async fn login(&self, request: MatrixLogin) -> BackendResult<BackendStatus>;
+    async fn register_account(
+        &self,
+        _username: String,
+        _password: String,
+    ) -> BackendResult<BackendStatus> {
+        Err(BackendError::Unsupported("managed account registration"))
+    }
+    async fn check_username_available(&self, _username: String) -> BackendResult<bool> {
+        Err(BackendError::Unsupported(
+            "managed account username availability",
+        ))
+    }
     async fn oidc_status(&self, _homeserver: String) -> BackendResult<MatrixOidcStatus> {
         Err(BackendError::Unsupported("Matrix OIDC discovery"))
     }
@@ -639,6 +1040,52 @@ pub trait MeshBackend: Send + Sync {
     ) -> BackendResult<ChannelDto> {
         Err(BackendError::Unsupported("channel creation"))
     }
+    async fn matrix_rtc_join(&self, _room_id: String) -> BackendResult<MatrixRtcJoinResult> {
+        Err(BackendError::Unsupported("MatrixRTC calling"))
+    }
+    async fn matrix_rtc_refresh_membership(
+        &self,
+        _room_id: String,
+        _session_id: String,
+    ) -> BackendResult<Vec<MatrixRtcMember>> {
+        Err(BackendError::Unsupported("MatrixRTC calling"))
+    }
+    async fn matrix_rtc_ack_media_key_pause(
+        &self,
+        _room_id: String,
+        _session_id: String,
+        _member_id: String,
+        _activation_id: String,
+    ) -> BackendResult<MatrixRtcMediaKey> {
+        Err(BackendError::Unsupported("MatrixRTC media-key activation"))
+    }
+    async fn matrix_rtc_ack_media_key(
+        &self,
+        _room_id: String,
+        _session_id: String,
+        _member_id: String,
+        _activation_id: String,
+        _key_index: u8,
+        _sent_ts: u64,
+    ) -> BackendResult<()> {
+        Err(BackendError::Unsupported("MatrixRTC media-key activation"))
+    }
+    async fn matrix_rtc_renew_media_key_lease(
+        &self,
+        _room_id: String,
+        _session_id: String,
+        _member_id: String,
+    ) -> BackendResult<MatrixRtcMediaKeyLease> {
+        Err(BackendError::Unsupported(
+            "MatrixRTC media-key publication lease",
+        ))
+    }
+    async fn matrix_rtc_leave(&self, _room_id: String, _session_id: String) -> BackendResult<()> {
+        Err(BackendError::Unsupported("MatrixRTC calling"))
+    }
+    async fn matrix_rtc_members(&self, _room_id: String) -> BackendResult<Vec<MatrixRtcMember>> {
+        Err(BackendError::Unsupported("MatrixRTC calling"))
+    }
     async fn send_text(&self, room_id: String, body: String) -> BackendResult<SentMessage>;
     async fn send_message(
         &self,
@@ -651,15 +1098,21 @@ pub trait MeshBackend: Send + Sync {
     async fn send_attachment(
         &self,
         _room_id: String,
-        _file_path: String,
-        _filename: String,
-        _content_type: Option<String>,
-        _body: String,
-        _reply_to_id: Option<String>,
+        _request: MatrixAttachmentSendRequest,
+        _transfer: MatrixTransferObserver,
     ) -> BackendResult<MessageDto> {
         Err(BackendError::Unsupported("encrypted Matrix attachments"))
     }
-    async fn download_attachment(&self, _attachment: AttachmentDto) -> BackendResult<String> {
+    async fn cancel_attachment_upload(&self, _transfer_id: String) -> BackendResult<()> {
+        Err(BackendError::Unsupported(
+            "encrypted Matrix attachment upload cancellation",
+        ))
+    }
+    async fn download_attachment(
+        &self,
+        _attachment: AttachmentDto,
+        _transfer: MatrixTransferObserver,
+    ) -> BackendResult<String> {
         Err(BackendError::Unsupported("encrypted Matrix attachments"))
     }
     async fn cancel_attachment_download(&self, _file_hash: String) -> BackendResult<()> {
@@ -693,11 +1146,8 @@ pub trait MeshBackend: Send + Sync {
     async fn send_dm_attachment(
         &self,
         _recipient_user_id: String,
-        _file_path: String,
-        _filename: String,
-        _content_type: Option<String>,
-        _body: String,
-        _reply_to_id: Option<String>,
+        _request: MatrixAttachmentSendRequest,
+        _transfer: MatrixTransferObserver,
     ) -> BackendResult<DirectMessageDto> {
         Err(BackendError::Unsupported(
             "Matrix direct-message attachments",
@@ -999,19 +1449,56 @@ mod tests {
     }
 
     #[test]
+    fn matrix_room_notification_modes_use_renderer_wire_values() {
+        assert_eq!(
+            serde_json::to_string(&MatrixRoomNotificationMode::All).unwrap(),
+            "\"all\""
+        );
+        assert_eq!(
+            serde_json::to_string(&MatrixRoomNotificationMode::Mentions).unwrap(),
+            "\"mentions\""
+        );
+        assert_eq!(
+            serde_json::to_string(&MatrixRoomNotificationMode::Nothing).unwrap(),
+            "\"nothing\""
+        );
+    }
+
+    #[test]
     fn portable_preferences_are_versioned_and_deduplicated() {
         let preferences = UserPreferences {
             schema_version: 99,
             notifications_enabled: true,
             notification_sound: false,
+            notification_sound_id: Some("chime".into()),
+            do_not_disturb: true,
+            quiet_hours_enabled: true,
+            quiet_hours_start: Some("22:00".into()),
+            quiet_hours_end: Some("07:00".into()),
             muted_channels: vec!["!b:example.org".into(), "!b:example.org".into()],
             muted_communities: vec!["!space:example.org".into()],
+            muted_channel_until: std::collections::HashMap::from([(
+                "!b:example.org".into(),
+                Some("2026-07-26T00:00:00Z".into()),
+            )]),
+            muted_community_until: std::collections::HashMap::from([(
+                "!space:example.org".into(),
+                None,
+            )]),
+            channel_notification_levels: std::collections::HashMap::from([(
+                "!b:example.org".into(),
+                MatrixRoomNotificationMode::Mentions,
+            )]),
             updated_at: "stale".into(),
         }
         .normalized();
 
         assert_eq!(preferences.schema_version, UserPreferences::SCHEMA_VERSION);
         assert_eq!(preferences.muted_channels, vec!["!b:example.org"]);
+        assert_eq!(
+            preferences.channel_notification_levels["!b:example.org"],
+            MatrixRoomNotificationMode::Mentions
+        );
         assert_ne!(preferences.updated_at, "stale");
     }
 
@@ -1130,5 +1617,25 @@ mod tests {
         assert_eq!(status.provider, VoiceProvider::LegacySimplePeer);
         assert_eq!(status.availability, VoiceServiceAvailability::Ready);
         assert!(!status.media_e2ee_verified);
+    }
+
+    #[test]
+    fn sdk_errors_are_classified_before_crossing_ipc() {
+        assert!(matches!(
+            BackendError::from_sdk_error("M_LIMIT_EXCEEDED (status 429)"),
+            BackendError::RateLimited(_)
+        ));
+        assert!(matches!(
+            BackendError::from_sdk_error("M_FORBIDDEN"),
+            BackendError::PermissionDenied(_)
+        ));
+        assert!(matches!(
+            BackendError::from_sdk_error("failed to connect to homeserver"),
+            BackendError::Network(_)
+        ));
+        assert!(matches!(
+            BackendError::from_sdk_error("unrecognized response shape"),
+            BackendError::Other(_)
+        ));
     }
 }

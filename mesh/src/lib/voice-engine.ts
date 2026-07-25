@@ -7,6 +7,7 @@ import {
   leaveVoice,
   sendVoiceSignal,
 } from './bridge'
+import { describeError } from './errors'
 import {
   buildPeerFromMember,
   normalizeVoiceMember,
@@ -165,7 +166,9 @@ export class VoiceEngine {
     }
 
     const snapshot = await joinVoice(this.communityId, this.channelId).catch((error) => {
-      const message = error instanceof Error ? error.message : 'Failed to join voice channel'
+      console.error('Failed to join voice channel:', error)
+      const description = describeError(error, { operation: 'join this voice channel' })
+      const message = `${description.title}. ${description.body}`
       this.handlers.onError?.(message)
       this.handlers.onConnectionState?.('disconnected', message)
       return null

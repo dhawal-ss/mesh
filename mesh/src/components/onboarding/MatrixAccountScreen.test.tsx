@@ -18,6 +18,7 @@ describe('MatrixAccountScreen', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.useRealTimers()
     vi.mocked(bridge.isTauriRuntime).mockReturnValue(false)
     vi.mocked(bridge.matrixAccounts).mockResolvedValue([])
     container = document.createElement('div')
@@ -28,195 +29,206 @@ describe('MatrixAccountScreen', () => {
   afterEach(() => {
     act(() => root.unmount())
     container.remove()
+    vi.useRealTimers()
   })
 
-  it('opens directly on the managed browser sign-in path', async () => {
+  it('opens on a zero-jargon account creation form', async () => {
+    await renderScreen()
+
+    expect(container.textContent).toContain('Create your account')
+    expect(container.textContent).toContain('No email needed.')
+    expect(findButton('Create account').disabled).toBe(true)
+    expect(findButton('Sign in')).toBeTruthy()
+    expect(container.querySelector('input[name="username"]')?.getAttribute('placeholder')).toBe('ashvin')
+    expect(container.querySelectorAll('input[autocomplete="new-password"]')).toHaveLength(2)
+    expect(container.textContent).not.toContain('Matrix')
+    expect(container.textContent).not.toContain('Server address')
+    expect(container.textContent).not.toMatch(/@[a-z0-9._-]+:/i)
+  })
+
+  it('checks username availability only after a 300ms debounce', async () => {
+    vi.useFakeTimers()
+    const checkUsername = vi.fn(async () => true)
+    await renderScreen({ onMatrixCheckUsernameAvailable: checkUsername })
+
     await act(async () => {
-      root.render(
-        <MatrixAccountScreen
-          onMatrixLogin={vi.fn()}
-          onNext={() => {}}
-          recommendedService="https://managed.mesh.test"
-          recommendedServiceName="Mesh"
-        />,
-      )
+      setInputValue(findInput('username'), 'Ashvin_')
     })
+    expect(checkUsername).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Checking availability')
 
-    expect(container.textContent).toContain('Welcome back')
-    expect(container.textContent).toContain('Continue with Mesh')
-    expect(container.textContent).toContain('Private browser sign-in')
-    expect(container.textContent).toContain('authorization code')
-    expect(container.textContent).toContain('S256 PKCE')
-    expect(findButton('Continue with Mesh').disabled).toBe(true)
-    expect(container.textContent).toContain('installed desktop app')
-    expect(container.textContent).toContain('managed.mesh.test')
-    expect(container.textContent).toContain('No server setup or Matrix ID is needed')
-    expect(container.textContent).not.toContain('Get started')
-    expect(container.querySelector('input[name="homeserver"]')).toBeNull()
-    expect(container.textContent).toContain('Advanced: use an existing account password')
-    expect(container.querySelector('input[autocomplete="username"]')).toBeNull()
-    expect(container.querySelector('input[autocomplete="current-password"]')).toBeNull()
+    await act(async () => {
+      vi.advanceTimersByTime(299)
+      await Promise.resolve()
+    })
+    expect(checkUsername).not.toHaveBeenCalled()
+
+    await act(async () => {
+      vi.advanceTimersByTime(1)
+      await Promise.resolve()
+    })
+    expect(checkUsername).toHaveBeenCalledOnce()
+    expect(checkUsername).toHaveBeenCalledWith('ashvin_')
+    expect(container.textContent).toContain('ashvin_ is available')
   })
 
-  it('keeps password sign-in in Advanced and discovers the existing account provider', async () => {
-    const login = vi.fn().mockResolvedValue(undefined)
+  it('requires an available username, a strong password, and matching confirmation', async () => {
+    vi.useFakeTimers()
+    const register = vi.fn(async () => {})
     const onNext = vi.fn()
-    await act(async () => {
-      root.render(
-        <MatrixAccountScreen
-          onMatrixLogin={login}
-          onNext={onNext}
-          recommendedService="managed.mesh.test"
-          recommendedServiceName="Mesh"
-        />,
-      )
-    })
-    await act(async () => {
-      findButton('Advanced: use an existing account password').click()
+    await renderScreen({
+      onMatrixCheckUsernameAvailable: vi.fn(async () => true),
+      onMatrixRegisterAccount: register,
+      onNext,
     })
 
-    const username = container.querySelector<HTMLInputElement>('input[autocomplete="username"]')!
-    const password = container.querySelector<HTMLInputElement>('input[autocomplete="current-password"]')!
     await act(async () => {
-      setInputValue(username, '@alice:friends.example')
-      setInputValue(password, 'correct horse battery staple')
+      setInputValue(findInput('username'), 'NewFriend')
+      vi.advanceTimersByTime(300)
+      await Promise.resolve()
+      setInputValue(findInput('password'), 'correct horse battery staple')
+      setInputValue(findInput('password-confirmation'), 'not the same')
     })
+    expect(container.textContent).toContain('Strong password')
+    expect(container.textContent).toContain('Passwords do not match')
+    expect(findButton('Create account').disabled).toBe(true)
+
     await act(async () => {
-      container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      setInputValue(findInput('password-confirmation'), 'correct horse battery staple')
+    })
+    expect(findButton('Create account').disabled).toBe(false)
+
+    await act(async () => {
+      submitForm()
+      await Promise.resolve()
+    })
+    expect(register).toHaveBeenCalledWith('newfriend', 'correct horse battery staple')
+    expect(onNext).toHaveBeenCalledWith('registered')
+  })
+
+  it('keeps the managed sign-in path secondary and username-only', async () => {
+    const login = vi.fn(async () => {})
+    const onNext = vi.fn()
+    await renderScreen({ onMatrixLogin: login, onNext })
+
+    await act(async () => {
+      findButton('Sign in').click()
+    })
+    expect(container.textContent).toContain('Welcome back')
+    expect(container.textContent).toContain('I have an account somewhere else')
+    expect(container.textContent).not.toContain('Server address')
+
+    await act(async () => {
+      setInputValue(findInput('username'), 'Alice')
+      setInputValue(findInput('password'), 'correct horse battery staple')
+      submitForm()
       await Promise.resolve()
     })
 
     expect(login).toHaveBeenCalledWith({
-      homeserver: 'friends.example',
-      username: '@alice:friends.example',
+      homeserver: 'https://managed.mesh.test',
+      username: 'alice',
       password: 'correct horse battery staple',
       deviceName: 'Mesh Desktop',
     })
-    expect(onNext).toHaveBeenCalledOnce()
+    expect(onNext).toHaveBeenCalledWith('signed-in')
   })
 
-  it('enables Continue with Mesh only after readiness and completes browser sign-in', async () => {
-    vi.mocked(bridge.isTauriRuntime).mockReturnValue(true)
-    vi.mocked(bridge.matrixOidcStatus).mockResolvedValue({
-      homeserver: 'https://managed.mesh.test/',
-      availability: 'supported',
-      issuer: 'https://auth.mesh.test/',
-      authorizationEndpoint: 'https://auth.mesh.test/authorize',
-      registrationMode: 'static',
-      clientIdConfigured: true,
-      redirectUri: 'http://127.0.0.1:8418/oauth/callback',
-      authorizationCodePkce: true,
-      nativeCallbackReady: true,
-      ready: true,
-      reason: 'Continue with Mesh is ready for this provider',
-    })
-    vi.mocked(bridge.matrixStartOidcLogin).mockResolvedValue({} as bridge.BackendStatus)
-    const onNext = vi.fn()
+  it('reveals infrastructure only in the tertiary advanced form', async () => {
+    const login = vi.fn(async () => {})
+    await renderScreen({ onMatrixLogin: login })
 
     await act(async () => {
-      root.render(
-        <MatrixAccountScreen
-          onMatrixLogin={vi.fn()}
-          onNext={onNext}
-          recommendedService="https://managed.mesh.test"
-          recommendedServiceName="Mesh"
-        />,
-      )
-      await Promise.resolve()
-      await Promise.resolve()
+      findButton('Sign in').click()
+    })
+    await act(async () => {
+      findButton('I have an account somewhere else').click()
     })
 
-    expect(bridge.matrixOidcStatus).toHaveBeenCalledWith('https://managed.mesh.test')
-    expect(findButton('Continue with Mesh').disabled).toBe(false)
-    await act(async () => {
-      findButton('Continue with Mesh').click()
-      await Promise.resolve()
-    })
-    expect(bridge.matrixStartOidcLogin).toHaveBeenCalledWith('https://managed.mesh.test')
-    expect(onNext).toHaveBeenCalledOnce()
-  })
-
-  it('does not silently promise a public provider when no service is configured', async () => {
-    await act(async () => {
-      root.render(
-        <MatrixAccountScreen
-          onMatrixLogin={vi.fn()}
-          onNext={() => {}}
-          recommendedService=""
-          recommendedServiceName=""
-        />,
-      )
-    })
-
-    expect(container.textContent).toContain('Recommended sign-in is unavailable')
-    expect(container.textContent).toContain('No recommended service is configured')
-    expect(container.textContent).toContain('Sign in with Matrix')
-    expect(container.textContent).not.toContain('matrix.org')
-    expect(container.querySelector('input[name="homeserver"]')).not.toBeNull()
-    expect(() => findButton('Use recommended')).toThrow()
-  })
-
-  it('fails closed into Advanced when the configured service is insecure', async () => {
-    await act(async () => {
-      root.render(
-        <MatrixAccountScreen
-          onMatrixLogin={vi.fn()}
-          onNext={() => {}}
-          recommendedService="http://remote.mesh.test"
-          recommendedServiceName="Mesh"
-        />,
-      )
-    })
-
-    expect(container.textContent).toContain('Recommended sign-in is unavailable')
-    expect(container.textContent).toContain('must use HTTPS')
-    expect(container.querySelector('input[name="homeserver"]')).not.toBeNull()
-  })
-
-  it('discovers a different service only after Advanced is selected', async () => {
-    const login = vi.fn().mockResolvedValue(undefined)
-    await act(async () => {
-      root.render(
-        <MatrixAccountScreen
-          onMatrixLogin={login}
-          onNext={() => {}}
-          recommendedService="managed.mesh.test"
-          recommendedServiceName="Mesh"
-        />,
-      )
-    })
+    expect(container.textContent).toContain('Sign in somewhere else')
+    expect(container.textContent?.match(/server/gi)).toHaveLength(1)
+    expect(container.textContent).toContain('Server address')
+    expect(findInput('username').getAttribute('placeholder')).toBe('ashvin')
+    expect(container.textContent).not.toMatch(/@[a-z0-9._-]+:/i)
 
     await act(async () => {
-      findButton('Advanced: use an existing account password').click()
-    })
-
-    expect(container.querySelector('input[name="homeserver"]')).not.toBeNull()
-    expect(container.textContent).toContain('Advanced connection')
-
-    const username = container.querySelector<HTMLInputElement>('input[autocomplete="username"]')!
-    const password = container.querySelector<HTMLInputElement>('input[autocomplete="current-password"]')!
-    await act(async () => {
-      setInputValue(username, '@alice:friends.example')
-      setInputValue(password, 'correct horse battery staple')
-    })
-    expect(container.textContent).toContain('discover friends.example')
-
-    await act(async () => {
-      container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      setInputValue(findInput('username'), 'alice')
+      setInputValue(findInput('password'), 'correct horse battery staple')
+      setInputValue(findInput('homeserver'), 'friends.example')
+      submitForm()
       await Promise.resolve()
     })
 
     expect(login).toHaveBeenCalledWith(expect.objectContaining({
       homeserver: 'friends.example',
-      username: '@alice:friends.example',
+      username: 'alice',
     }))
   })
 
+  it('never reveals the qualified identifier for a saved account', async () => {
+    vi.mocked(bridge.isTauriRuntime).mockReturnValue(true)
+    vi.mocked(bridge.matrixAccounts).mockResolvedValue([
+      {
+        profileId: 'profile-1',
+        userId: '@alice:friends.example',
+        homeserver: 'https://friends.example',
+        deviceId: 'DEVICE',
+        lastUsedAt: '2026-07-25T00:00:00Z',
+        current: false,
+      },
+    ])
+    await renderScreen()
+    await act(async () => {
+      await Promise.resolve()
+      findButton('Sign in').click()
+    })
+
+    expect(container.textContent).toContain('alice')
+    expect(container.textContent).not.toContain('@alice:friends.example')
+    expect(container.textContent).not.toContain('friends.example')
+  })
+
+  async function renderScreen(overrides: {
+    onMatrixCheckUsernameAvailable?: (username: string) => Promise<boolean>
+    onMatrixRegisterAccount?: (username: string, password: string) => Promise<void>
+    onMatrixLogin?: (request: {
+      homeserver: string
+      username: string
+      password: string
+      deviceName?: string
+    }) => Promise<void>
+    onNext?: () => void
+  } = {}) {
+    await act(async () => {
+      root.render(
+        <MatrixAccountScreen
+          onMatrixCheckUsernameAvailable={overrides.onMatrixCheckUsernameAvailable ?? vi.fn(async () => true)}
+          onMatrixRegisterAccount={overrides.onMatrixRegisterAccount ?? vi.fn(async () => {})}
+          onMatrixLogin={overrides.onMatrixLogin ?? vi.fn(async () => {})}
+          onNext={overrides.onNext ?? (() => {})}
+          recommendedService="https://managed.mesh.test"
+        />,
+      )
+    })
+  }
+
   function findButton(label: string): HTMLButtonElement {
     const button = [...container.querySelectorAll<HTMLButtonElement>('button')]
-      .find((candidate) => candidate.textContent?.includes(label))
+      .find((candidate) => candidate.textContent?.trim() === label)
     if (!button) throw new Error(`Button not found: ${label}`)
     return button
+  }
+
+  function findInput(name: string): HTMLInputElement {
+    const input = container.querySelector<HTMLInputElement>(`input[name="${name}"]`)
+    if (!input) throw new Error(`Input not found: ${name}`)
+    return input
+  }
+
+  function submitForm() {
+    container.querySelector('form')?.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    )
   }
 })
 

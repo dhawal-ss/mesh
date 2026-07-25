@@ -18,9 +18,15 @@ function msg(overrides: Partial<Message> & Pick<Message, 'id'>): Message {
   }
 }
 
+function seedChannel(messages: Message[]) {
+  useMessageStore.getState().replaceMessages('ch-1', messages)
+}
+
 // Reset the store to its pristine state between tests
 beforeEach(() => {
   useMessageStore.setState({
+    messageEntities: {},
+    messageOrder: {},
     messages: {},
     loadingOlder: {},
     hasMoreOlder: {},
@@ -73,6 +79,62 @@ describe('mergeMessages via setMessages', () => {
 
 // ─── boundLatestWindow (tested indirectly through setMessages) ───
 
+describe('normalized message identity and order', () => {
+  it('indexes the sorted compatibility window without replacing unchanged entities', () => {
+    const first = msg({ id: 'first', timestamp: '2025-01-01T00:00:01Z' })
+    const second = msg({ id: 'second', timestamp: '2025-01-01T00:00:02Z' })
+    seedChannel([second, first])
+
+    const before = useMessageStore.getState()
+    const firstBefore = before.messageEntities['ch-1'].first
+    const secondBefore = before.messageEntities['ch-1'].second
+    const orderBefore = before.messageOrder['ch-1']
+
+    before.setMessages('ch-1', [{ ...first }, { ...second }])
+
+    const after = useMessageStore.getState()
+    expect(after.messageOrder['ch-1']).toEqual(['first', 'second'])
+    expect(after.messages['ch-1'].map((message) => message.id)).toEqual([
+      'first',
+      'second',
+    ])
+    expect(after.messageEntities['ch-1'].first).toBe(firstBefore)
+    expect(after.messageEntities['ch-1'].second).toBe(secondBefore)
+    expect(after.messageOrder['ch-1']).toBe(orderBefore)
+  })
+
+  it('patches one message without replacing order or unrelated message identity', () => {
+    const first = msg({ id: 'first', timestamp: '2025-01-01T00:00:01Z' })
+    const second = msg({ id: 'second', timestamp: '2025-01-01T00:00:02Z' })
+    seedChannel([first, second])
+    const before = useMessageStore.getState()
+    const orderBefore = before.messageOrder['ch-1']
+    const secondBefore = before.messageEntities['ch-1'].second
+
+    before.editMessage('ch-1', 'first', 'Edited', '2025-01-01T00:01:00Z')
+
+    const after = useMessageStore.getState()
+    expect(after.messageOrder['ch-1']).toBe(orderBefore)
+    expect(after.messageEntities['ch-1'].second).toBe(secondBefore)
+    expect(after.messageEntities['ch-1'].first.content).toBe('Edited')
+    expect(after.messages['ch-1'][0]).toBe(after.messageEntities['ch-1'].first)
+  })
+
+  it('does not publish state for a duplicate reaction', () => {
+    const message = msg({
+      id: 'reacted',
+      reactions: { thumbsup: ['user-1'] },
+      timestamp: '2025-01-01T00:00:01Z',
+    })
+    seedChannel([message])
+    const before = useMessageStore.getState()
+
+    before.updateReaction('ch-1', message.id, 'thumbsup', 'user-1', 'add')
+
+    expect(useMessageStore.getState()).toBe(before)
+  })
+})
+
 describe('boundLatestWindow via setMessages', () => {
   it('trims messages to the HOT_WINDOW_SIZE of 200, keeping the newest', () => {
     const store = useMessageStore.getState()
@@ -93,6 +155,8 @@ describe('boundLatestWindow via setMessages', () => {
     // Should keep the newest 200, i.e. msg-0050 through msg-0249
     expect(result[0].id).toBe('msg-0050')
     expect(result[result.length - 1].id).toBe('msg-0249')
+    expect(Object.keys(useMessageStore.getState().messageEntities['ch-1'])).toHaveLength(200)
+    expect(useMessageStore.getState().messageEntities['ch-1']['msg-0049']).toBeUndefined()
   })
 })
 
@@ -121,8 +185,8 @@ describe('addMessage', () => {
   })
 
   it('increments newerGapCount instead of appending when browsingOlder is true', () => {
+    seedChannel([msg({ id: 'a', timestamp: '2025-01-01T00:00:01Z' })])
     useMessageStore.setState({
-      messages: { 'ch-1': [msg({ id: 'a', timestamp: '2025-01-01T00:00:01Z' })] },
       browsingOlder: { 'ch-1': true },
       newerGapCount: { 'ch-1': 0 },
     })
@@ -144,10 +208,8 @@ describe('loadOlderMessages', () => {
     const getMessagesMock = vi.mocked(bridge.getMessages)
     getMessagesMock.mockResolvedValueOnce([])
 
-    useMessageStore.setState({
-      messages: { 'ch-1': [msg({ id: 'a', timestamp: '2025-01-01T00:00:01Z' })] },
-      hasMoreOlder: { 'ch-1': true },
-    })
+    seedChannel([msg({ id: 'a', timestamp: '2025-01-01T00:00:01Z' })])
+    useMessageStore.setState({ hasMoreOlder: { 'ch-1': true } })
 
     const promise = useMessageStore.getState().loadOlderMessages('ch-1')
 
@@ -194,7 +256,7 @@ describe('updateReaction', () => {
   it('adds a reaction to a message', () => {
     const m1 = msg({ id: 'a', timestamp: '2025-01-01T00:00:01Z', reactions: {} })
 
-    useMessageStore.setState({ messages: { 'ch-1': [m1] } })
+    seedChannel([m1])
     useMessageStore.getState().updateReaction('ch-1', 'a', 'thumbsup', 'user-1', 'add')
 
     const reactions = useMessageStore.getState().messages['ch-1'][0].reactions
@@ -208,7 +270,7 @@ describe('updateReaction', () => {
       reactions: { thumbsup: ['user-1'] },
     })
 
-    useMessageStore.setState({ messages: { 'ch-1': [m1] } })
+    seedChannel([m1])
     useMessageStore.getState().updateReaction('ch-1', 'a', 'thumbsup', 'user-1', 'add')
 
     const reactions = useMessageStore.getState().messages['ch-1'][0].reactions
@@ -222,7 +284,7 @@ describe('updateReaction', () => {
       reactions: { thumbsup: ['user-1', 'user-2'] },
     })
 
-    useMessageStore.setState({ messages: { 'ch-1': [m1] } })
+    seedChannel([m1])
     useMessageStore.getState().updateReaction('ch-1', 'a', 'thumbsup', 'user-1', 'remove')
 
     const reactions = useMessageStore.getState().messages['ch-1'][0].reactions
@@ -236,7 +298,7 @@ describe('updateReaction', () => {
       reactions: { thumbsup: ['user-1'] },
     })
 
-    useMessageStore.setState({ messages: { 'ch-1': [m1] } })
+    seedChannel([m1])
     useMessageStore.getState().updateReaction('ch-1', 'a', 'thumbsup', 'user-1', 'remove')
 
     const reactions = useMessageStore.getState().messages['ch-1'][0].reactions
@@ -250,7 +312,7 @@ describe('editMessage', () => {
   it('updates content and editedAt for the target message', () => {
     const m1 = msg({ id: 'a', content: 'original', timestamp: '2025-01-01T00:00:01Z' })
 
-    useMessageStore.setState({ messages: { 'ch-1': [m1] } })
+    seedChannel([m1])
     useMessageStore.getState().editMessage('ch-1', 'a', 'updated', '2025-01-01T00:01:00Z')
 
     const result = useMessageStore.getState().messages['ch-1'][0]
@@ -262,7 +324,7 @@ describe('editMessage', () => {
     const m1 = msg({ id: 'a', content: 'keep me', timestamp: '2025-01-01T00:00:01Z' })
     const m2 = msg({ id: 'b', content: 'edit me', timestamp: '2025-01-01T00:00:02Z' })
 
-    useMessageStore.setState({ messages: { 'ch-1': [m1, m2] } })
+    seedChannel([m1, m2])
     useMessageStore.getState().editMessage('ch-1', 'b', 'edited', '2025-01-01T00:01:00Z')
 
     const [r1, r2] = useMessageStore.getState().messages['ch-1']
@@ -277,7 +339,7 @@ describe('deleteMessage', () => {
   it('clears content and sets deletedAt', () => {
     const m1 = msg({ id: 'a', content: 'to be deleted', timestamp: '2025-01-01T00:00:01Z' })
 
-    useMessageStore.setState({ messages: { 'ch-1': [m1] } })
+    seedChannel([m1])
     useMessageStore.getState().deleteMessage('ch-1', 'a')
 
     const result = useMessageStore.getState().messages['ch-1'][0]
@@ -363,6 +425,8 @@ describe('critical flow: restart persistence', () => {
 
     // Simulate restart: clear the store
     useMessageStore.setState({
+      messageEntities: {},
+      messageOrder: {},
       messages: {},
       loadingOlder: {},
       hasMoreOlder: {},

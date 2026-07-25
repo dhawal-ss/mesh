@@ -13,7 +13,7 @@ export const MarkdownContent = memo(function MarkdownContent({
 
   return (
     <div
-      className={`markdown-content break-words whitespace-pre-wrap text-sm leading-[1.375rem] text-secondary ${className}`}
+      className={`markdown-content break-words whitespace-pre-wrap text-sm leading-prose text-secondary ${className}`}
     >
       {rendered}
     </div>
@@ -41,7 +41,7 @@ function parseMarkdown(text: string): React.ReactElement[] {
       elements.push(
         <pre
           key={`code-${i}`}
-          className="my-1 overflow-x-auto rounded bg-bg-secondary border border-border p-3 font-mono text-[13px] text-secondary"
+          className="my-1 overflow-x-auto rounded border border-border bg-bg-secondary p-3 font-mono text-code text-secondary"
         >
           <code data-lang={lang || undefined}>{codeLines.join('\n')}</code>
         </pre>,
@@ -91,7 +91,7 @@ function parseInline(text: string, lineKey: number): InlineNode[] {
     if (match[1]) {
       const code = match[1].slice(1, -1)
       nodes.push(
-        <code key={key} className="rounded-sm bg-bg-secondary px-1 py-0.5 font-mono text-[13px]">
+        <code key={key} className="rounded-sm bg-bg-secondary px-1 py-0.5 font-mono text-code">
           {code}
         </code>,
       )
