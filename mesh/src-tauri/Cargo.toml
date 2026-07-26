@@ -69,18 +69,14 @@ libp2p = { version = "0.54", optional = true, features = [
 ] }
 
 # Matrix Networking
-# 0.16 is the newest matrix-rust-sdk release compatible with the repository's
-# Rust 1.92 toolchain. It provides E2EE plus an encrypted persistent SQLite
-# state/crypto/event-cache store. Upgrade to 0.18 with Rust 1.93+.
-matrix-sdk = { version = "0.16", optional = true, default-features = false, features = [
+matrix-sdk = { version = "0.18", optional = true, default-features = false, features = [
   "e2e-encryption",
   "automatic-room-key-forwarding",
   "bundled-sqlite",
   "experimental-send-custom-to-device",
   "qrcode",
-  "rustls-tls",
 ] }
-matrix-sdk-crypto = { version = "0.16", optional = true }
+matrix-sdk-crypto = { version = "0.18", optional = true }
 qrcode = { version = "0.14", optional = true, default-features = false, features = ["svg"] }
 image = { version = "0.25", optional = true, default-features = false, features = ["jpeg", "png", "webp"] }
 reqwest = { version = "0.12", optional = true, default-features = false, features = ["json", "rustls-tls"] }

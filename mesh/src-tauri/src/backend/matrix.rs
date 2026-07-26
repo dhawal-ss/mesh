@@ -18,7 +18,7 @@ use base64::{
 use matrix_sdk::{
     authentication::{
         matrix::MatrixSession,
-        oauth::{ClientId, OAuthSession, UrlOrQuery, UserSession},
+        oauth::{ClientId, OAuthSession, UserSession},
         AuthApi, AuthSession,
     },
     config::SyncSettings,
@@ -39,24 +39,26 @@ use matrix_sdk::{
         MessagesOptions, RoomMemberRole,
     },
     ruma::{
-        api::client::{
-            account::{
-                get_username_availability, register::v3::Request as RegistrationRequest,
-                request_openid_token,
-            },
-            directory::get_public_rooms_filtered,
-            discovery::get_authorization_server_metadata::v1::{
-                AuthorizationServerMetadata, CodeChallengeMethod, GrantType, ResponseMode,
-                ResponseType,
+        api::{
+            client::{
+                account::{
+                    get_username_availability, register::v3::Request as RegistrationRequest,
+                    request_openid_token,
+                },
+                directory::get_public_rooms_filtered,
+                discovery::get_authorization_server_metadata::v1::{
+                    AuthorizationServerMetadata, CodeChallengeMethod, GrantType, ResponseMode,
+                    ResponseType,
+                },
+                receipt::create_receipt::v3::ReceiptType,
+                room::{
+                    create_room::v3::{CreationContent, Request as CreateRoomRequest, RoomPreset},
+                    Visibility,
+                },
+                state::{get_state_events, send_state_event},
+                uiaa::{self, AuthData, AuthType, Dummy, UiaaInfo},
             },
             error::ErrorKind,
-            receipt::create_receipt::v3::ReceiptType,
-            room::{
-                create_room::v3::{CreationContent, Request as CreateRoomRequest, RoomPreset},
-                Visibility,
-            },
-            state::{get_state_events, send_state_event},
-            uiaa::{self, AuthData, AuthType, Dummy, UiaaInfo},
         },
         directory::{Filter, RoomTypeFilter},
         events::{
@@ -71,11 +73,12 @@ use matrix_sdk::{
                 encryption::RoomEncryptionEventContent,
                 join_rules::JoinRule,
                 message::{
-                    FileInfo, FileMessageEventContent, MessageType, OriginalSyncRoomMessageEvent,
-                    ReplacementMetadata, RoomMessageEventContent,
+                    AddMentions, FileInfo, FileMessageEventContent, MessageType,
+                    OriginalSyncRoomMessageEvent, ReplacementMetadata, RoomMessageEventContent,
                     RoomMessageEventContentWithoutRelation,
                 },
-                EncryptedFile, MediaSource, ThumbnailInfo,
+                EncryptedFile, EncryptedFileHash, EncryptedFileHashAlgorithm, MediaSource,
+                ThumbnailInfo,
             },
             space::{child::SpaceChildEventContent, parent::SpaceParentEventContent},
             typing::SyncTypingEvent,
@@ -91,6 +94,7 @@ use matrix_sdk::{
         OwnedUserId, RoomAliasId, RoomOrAliasId, ServerName, UserId,
     },
     store::RoomLoadSettings,
+    utils::UrlOrQuery,
     Client, LoopCtrl, Room, RoomMemberships, RoomState, SessionChange,
 };
 use matrix_sdk_crypto::CollectStrategy;
@@ -3206,6 +3210,16 @@ impl MatrixBackend {
             .is_some()
     }
 
+    fn encrypted_file_sha256(encrypted_file: &EncryptedFile) -> Option<String> {
+        match encrypted_file
+            .hashes
+            .get(&EncryptedFileHashAlgorithm::Sha256)?
+        {
+            EncryptedFileHash::Sha256(hash) => Some(hash.to_string()),
+            _ => None,
+        }
+    }
+
     fn matrix_thumbnail_from_content(
         content: &serde_json::Value,
     ) -> Option<AttachmentThumbnailDto> {
@@ -3218,7 +3232,7 @@ impl MatrixBackend {
         if !encrypted_file.url.as_str().starts_with("mxc://") {
             return None;
         }
-        let sha256 = encrypted_file.hashes.get("sha256")?.to_string();
+        let sha256 = Self::encrypted_file_sha256(&encrypted_file)?;
         let thumbnail_info = info.get("thumbnail_info")?;
         let size = thumbnail_info.get("size")?.as_u64()?;
         let width = u32::try_from(thumbnail_info.get("w")?.as_u64()?).ok()?;
@@ -5815,7 +5829,7 @@ impl MeshBackend for MatrixBackend {
                     return Err(Self::map_error(error));
                 };
                 let mut password_auth = uiaa::Password::new(
-                    uiaa::UserIdentifier::UserIdOrLocalpart(user_id),
+                    uiaa::UserIdentifier::Matrix(uiaa::MatrixUserIdentifier::new(user_id)),
                     password.clone(),
                 );
                 password_auth.session = info.session.clone();
@@ -6889,7 +6903,7 @@ impl MeshBackend for MatrixBackend {
             .await
             .map_err(Self::map_error)?;
         Ok(SentMessage {
-            event_id: response.event_id.to_string(),
+            event_id: response.response.event_id.to_string(),
             room_id: room.room_id().to_string(),
         })
     }
@@ -6927,6 +6941,7 @@ impl MeshBackend for MatrixBackend {
                     Reply {
                         event_id,
                         enforce_thread: EnforceThread::Unthreaded,
+                        add_mentions: AddMentions::No,
                     },
                 )
                 .await
@@ -6945,7 +6960,7 @@ impl MeshBackend for MatrixBackend {
             .unwrap_or_else(|| own_user_id.localpart().to_owned());
 
         Ok(MessageDto {
-            id: response.event_id.to_string(),
+            id: response.response.event_id.to_string(),
             channel_id: room.room_id().to_string(),
             author_public_key: own_user_id.to_string(),
             author_display_name: display_name,
@@ -7129,13 +7144,9 @@ impl MeshBackend for MatrixBackend {
                     "Matrix attachment upload cancelled".into(),
                 ));
             }
-            let sha256 = encrypted_file
-                .hashes
-                .get("sha256")
-                .map(ToString::to_string)
-                .ok_or_else(|| {
-                    BackendError::Other("Matrix encrypted attachment omitted SHA-256".into())
-                })?;
+            let sha256 = Self::encrypted_file_sha256(&encrypted_file).ok_or_else(|| {
+                BackendError::Other("Matrix encrypted attachment omitted SHA-256".into())
+            })?;
             let media_source = serde_json::to_value(&encrypted_file).map_err(Self::map_error)?;
             let mut info = FileInfo::new();
             info.mimetype = Some(content_type.to_string());
@@ -7151,10 +7162,7 @@ impl MeshBackend for MatrixBackend {
                     (total_bytes, network_total_bytes),
                 )
                 .await?;
-                let thumbnail_sha256 = encrypted_thumbnail
-                    .hashes
-                    .get("sha256")
-                    .map(ToString::to_string)
+                let thumbnail_sha256 = Self::encrypted_file_sha256(&encrypted_thumbnail)
                     .ok_or_else(|| {
                         BackendError::Other("Matrix encrypted thumbnail omitted SHA-256".into())
                     })?;
@@ -7198,6 +7206,7 @@ impl MeshBackend for MatrixBackend {
                         Reply {
                             event_id,
                             enforce_thread: EnforceThread::Unthreaded,
+                            add_mentions: AddMentions::No,
                         },
                     )
                     .await
@@ -7229,7 +7238,7 @@ impl MeshBackend for MatrixBackend {
                 .unwrap_or_else(|| own_user_id.localpart().to_owned());
 
             Ok(MessageDto {
-                id: response.event_id.to_string(),
+                id: response.response.event_id.to_string(),
                 channel_id: room.room_id().to_string(),
                 author_public_key: own_user_id.to_string(),
                 author_display_name: display_name,
@@ -7364,7 +7373,7 @@ impl MeshBackend for MatrixBackend {
             };
             let client = self.client().await?;
             let media = client.media();
-            // matrix-rust-sdk 0.16 buffers and decrypts encrypted media before
+            // matrix-rust-sdk 0.18 buffers and decrypts encrypted media before
             // returning it, so no honest intermediate receive byte count exists.
             Self::emit_transfer_progress(
                 &progress,
@@ -8720,7 +8729,7 @@ impl MeshBackend for MatrixBackend {
             .send_raw(crate::backend::LEGACY_MATRIX_EVENT_TYPE, content)
             .await
             .map_err(Self::map_error)?;
-        Ok(response.event_id.to_string())
+        Ok(response.response.event_id.to_string())
     }
 }
 
