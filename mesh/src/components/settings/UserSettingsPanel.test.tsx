@@ -34,6 +34,14 @@ describe('UserSettingsPanel', () => {
     useSettingsStore.getState().setAppearanceTheme('dark')
     useSettingsStore.getState().setAppearanceDensity('default')
     useSettingsStore.getState().setAppearanceAccent('sand')
+    useSettingsStore.setState({
+      privacy: {
+        sendReadReceipts: false,
+        sendTypingIndicators: true,
+        sharePresence: true,
+        invisibleMode: false,
+      },
+    })
   })
 
   afterEach(() => {
@@ -99,6 +107,46 @@ describe('UserSettingsPanel', () => {
 
     expect(useSettingsStore.getState().notifications.enabled).toBe(false)
     expect(document.body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')[1]?.disabled).toBe(true)
+  })
+
+  it('explains service visibility and updates every privacy control', async () => {
+    await act(async () => {
+      root.render(
+        <UserSettingsPanel
+          open
+          onClose={() => {}}
+          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#5865f2' }}
+          matrixAccountId="@alice:example.org"
+          matrixMode
+          onOpenSecurity={() => {}}
+        />,
+      )
+    })
+
+    expect(document.body.textContent).toContain('Privacy Center')
+    expect(document.body.textContent).toContain('What your service can see')
+    expect(document.body.textContent).toContain('Message and file content')
+    expect(document.body.textContent).toContain('Network address')
+    expect(document.body.textContent).toContain('Unlike standard Discord messages')
+    expect(document.body.textContent).toContain('Each conversation header checks its current protection')
+
+    const toggle = (label: string) =>
+      Array.from(document.body.querySelectorAll('label')).find((candidate) =>
+        candidate.textContent?.includes(label),
+      )?.querySelector<HTMLInputElement>('input[type="checkbox"]')
+
+    await act(async () => toggle('Send read receipts')?.click())
+    await act(async () => toggle('Show when I am typing')?.click())
+    await act(async () => toggle('Share my online status')?.click())
+    await act(async () => toggle('Invisible mode')?.click())
+
+    expect(useSettingsStore.getState().privacy).toEqual({
+      sendReadReceipts: true,
+      sendTypingIndicators: false,
+      sharePresence: false,
+      invisibleMode: true,
+    })
+    expect(document.body.textContent).toContain('No, disabled now')
   })
 
   it('configures sound, DND, quiet hours, and sends a test notification', async () => {

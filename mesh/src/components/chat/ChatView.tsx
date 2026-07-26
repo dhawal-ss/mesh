@@ -21,6 +21,7 @@ import { getBackoffDelay, registerPoll, waitForDelay } from '../../lib/scheduler
 import { useMessageNavigationStore } from '../../store/message-navigation'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
 import { Icon } from '../ui/Icon'
+import { ConversationProtection } from './ConversationProtection'
 
 interface ChatViewProps {
   channel: Channel
@@ -640,9 +641,10 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
         className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border-subtle px-4 shadow-elevation-low"
         data-tauri-drag-region
       >
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <Icon name="hash" className="flex-shrink-0 text-muted" />
-          <span className="text-sm font-semibold text-primary">{channel.name}</span>
+          <span className="truncate text-sm font-semibold text-primary">{channel.name}</span>
+          {matrixMode && <ConversationProtection roomId={channel.id} />}
         </div>
 
         <div className="flex items-center gap-1">

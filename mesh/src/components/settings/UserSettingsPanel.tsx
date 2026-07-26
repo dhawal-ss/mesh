@@ -41,6 +41,7 @@ export function UserSettingsPanel({
 }: UserSettingsPanelProps) {
   const notifications = useSettingsStore((state) => state.notifications)
   const appearance = useSettingsStore((state) => state.appearance)
+  const privacy = useSettingsStore((state) => state.privacy)
   const setNotificationsEnabled = useSettingsStore((state) => state.setNotificationsEnabled)
   const setNotificationSound = useSettingsStore((state) => state.setNotificationSound)
   const setNotificationSoundId = useSettingsStore((state) => state.setNotificationSoundId)
@@ -50,6 +51,10 @@ export function UserSettingsPanel({
   const setAppearanceTheme = useSettingsStore((state) => state.setAppearanceTheme)
   const setAppearanceDensity = useSettingsStore((state) => state.setAppearanceDensity)
   const setAppearanceAccent = useSettingsStore((state) => state.setAppearanceAccent)
+  const setSendReadReceipts = useSettingsStore((state) => state.setSendReadReceipts)
+  const setSendTypingIndicators = useSettingsStore((state) => state.setSendTypingIndicators)
+  const setSharePresence = useSettingsStore((state) => state.setSharePresence)
+  const setInvisibleMode = useSettingsStore((state) => state.setInvisibleMode)
   const [displayName, setDisplayName] = useState(identity.displayName)
   const [profileValidation, setProfileValidation] = useState<string | null>(null)
   const [profileError, setProfileError] = useState<unknown | null>(null)
@@ -247,6 +252,109 @@ export function UserSettingsPanel({
             />
           </div>
         </section>
+
+        {matrixMode && (
+          <section
+            className="space-y-4 rounded-lg bg-bg-primary p-4"
+            aria-labelledby="privacy-center-heading"
+          >
+            <div>
+              <p id="privacy-center-heading" className="text-sm font-medium text-primary">
+                Privacy Center
+              </p>
+              <p className="mt-1 text-xs leading-5 text-muted">
+                Mesh protects message and file contents before they leave your device. Your
+                service still handles the information needed to connect you and deliver them.
+              </p>
+            </div>
+
+            <div className="overflow-x-auto rounded-md border border-border-subtle">
+              <table className="w-full min-w-privacy-table text-left text-xs">
+                <caption className="sr-only">What your service can see</caption>
+                <thead className="bg-bg-tertiary text-muted">
+                  <tr>
+                    <th scope="col" className="px-3 py-2 font-medium">Information</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Can the service see it?</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Why</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border-subtle text-secondary">
+                  <PrivacyVisibilityRow
+                    information="Message and file content"
+                    visible="No"
+                    explanation="Protected end to end before upload."
+                    private
+                  />
+                  <PrivacyVisibilityRow
+                    information="Communities and conversations"
+                    visible="Yes"
+                    explanation="Needed to route messages and manage access."
+                  />
+                  <PrivacyVisibilityRow
+                    information="Connection and online times"
+                    visible="Yes"
+                    explanation="The service sees connections even in Invisible mode."
+                  />
+                  <PrivacyVisibilityRow
+                    information="Typing activity"
+                    visible={privacy.sendTypingIndicators ? 'Yes, while enabled' : 'No, disabled now'}
+                    explanation="Shared only when the typing control below is on."
+                    private={!privacy.sendTypingIndicators}
+                  />
+                  <PrivacyVisibilityRow
+                    information="Network address"
+                    visible="Yes"
+                    explanation="Needed for your device to connect."
+                  />
+                  <PrivacyVisibilityRow
+                    information="Signed-in device list"
+                    visible="Yes"
+                    explanation="Needed to deliver and recover protected messages."
+                  />
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-3" aria-label="Privacy controls">
+              <ToggleRow
+                label="Send read receipts"
+                description="Helps your devices agree on what you read; other people never receive this private receipt."
+                checked={privacy.sendReadReceipts}
+                onChange={setSendReadReceipts}
+              />
+              <ToggleRow
+                label="Show when I am typing"
+                description="Lets people in the conversation see you composing; turning it off can make replies feel less immediate."
+                checked={privacy.sendTypingIndicators}
+                onChange={setSendTypingIndicators}
+              />
+              <ToggleRow
+                label="Share my online status"
+                description="Lets people see when you are online; the service can still see connection times when this is off."
+                checked={privacy.sharePresence}
+                onChange={setSharePresence}
+              />
+              <ToggleRow
+                label="Invisible mode"
+                description="Makes you appear offline without disconnecting and temporarily overrides online-status sharing."
+                checked={privacy.invisibleMode}
+                onChange={setInvisibleMode}
+              />
+            </div>
+
+            <div className="rounded-md bg-bg-tertiary px-3 py-3 text-xs leading-5 text-muted">
+              <p>
+                Each conversation header checks its current protection and shows
+                “Protected end to end” before you send.
+              </p>
+              <p className="mt-2">
+                Unlike standard Discord messages, Mesh keeps conversation content unreadable to
+                the service. Both services can still observe operational details such as network
+                addresses, devices, membership, and timing.
+              </p>
+            </div>
+          </section>
+        )}
 
         <section className="space-y-3 rounded-lg bg-bg-primary p-4" aria-labelledby="notification-settings-heading">
           <div>
@@ -451,6 +559,28 @@ export function UserSettingsPanel({
         </button>
       </div>
     </Modal>
+  )
+}
+
+function PrivacyVisibilityRow({
+  information,
+  visible,
+  explanation,
+  private: isPrivate = false,
+}: {
+  information: string
+  visible: string
+  explanation: string
+  private?: boolean
+}) {
+  return (
+    <tr>
+      <th scope="row" className="px-3 py-2 font-medium text-primary">{information}</th>
+      <td className={`px-3 py-2 font-medium ${isPrivate ? 'text-green' : 'text-status-warning'}`}>
+        {visible}
+      </td>
+      <td className="px-3 py-2">{explanation}</td>
+    </tr>
   )
 }
 

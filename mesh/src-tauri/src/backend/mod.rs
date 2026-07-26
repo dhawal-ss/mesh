@@ -930,6 +930,9 @@ pub trait MeshBackend: Send + Sync {
     fn set_matrix_event_callback(&self, _callback: Option<MatrixBackendEventCallback>) {}
     async fn start(&self) -> BackendResult<()>;
     async fn status(&self) -> BackendStatus;
+    async fn matrix_room_is_encrypted(&self, _room_id: String) -> BackendResult<bool> {
+        Err(BackendError::Unsupported("room protection status"))
+    }
     async fn matrix_room_notification_mode(
         &self,
         _room_id: String,

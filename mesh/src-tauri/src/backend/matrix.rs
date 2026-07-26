@@ -5230,6 +5230,23 @@ impl MeshBackend for MatrixBackend {
         }
     }
 
+    async fn matrix_room_is_encrypted(&self, room_id: String) -> BackendResult<bool> {
+        let client = self.client().await?;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let room = client.get_room(&room_id).ok_or_else(|| {
+            BackendError::NotFound("room is not present in the local Matrix store".into())
+        })?;
+        room.latest_encryption_state()
+            .await
+            .map(|state| state.is_encrypted())
+            .map_err(|error| {
+                BackendError::Other(format!(
+                    "could not verify encryption for Matrix room {}: {error}",
+                    room.room_id()
+                ))
+            })
+    }
+
     async fn matrix_room_notification_mode(
         &self,
         room_id: String,

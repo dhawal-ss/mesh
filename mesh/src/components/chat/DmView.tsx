@@ -13,6 +13,7 @@ import {
 } from '../../lib/federated-time'
 import { getBackoffDelay, waitForDelay } from '../../lib/scheduler'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
+import { ConversationProtection } from './ConversationProtection'
 
 const EMPTY_DIRECT_MESSAGES: DirectMessage[] = []
 
@@ -269,6 +270,11 @@ export function DmView() {
           {peerName[0]?.toUpperCase() ?? '?'}
         </div>
         <span className="text-sm font-medium text-primary">{peerName}</span>
+        {matrixMode && (
+          <span className="ml-2">
+            <ConversationProtection roomId={activeConversationId} />
+          </span>
+        )}
         {matrixMode && (
           <button
             onClick={() => void handleToggleBlocked()}
