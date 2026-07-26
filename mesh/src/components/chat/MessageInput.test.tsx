@@ -28,6 +28,7 @@ import * as bridge from '../../lib/bridge'
 import { MessageInput } from './MessageInput'
 import type { StagedFile } from './FileAttachment'
 import type { MemberRecord } from '../../store/membership'
+import { useDraftStore } from '../../store/drafts'
 
 function clipboardFile(name: string, type: string, bytes: number[]): File {
   return {
@@ -53,6 +54,7 @@ describe('MessageInput attachment UX', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    useDraftStore.setState({ drafts: {} })
     stageCounter = 0
     tauriEvents.handlers.clear()
     vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
@@ -435,6 +437,45 @@ describe('MessageInput attachment UX', () => {
     expect(container.textContent).not.toContain('room-a-secret.png')
     expect(bridge.acceptAttachmentDropGrants).not.toHaveBeenCalledWith(['grant-room-a'])
     expect(bridge.discardAttachmentGrant).toHaveBeenCalledWith('grant-room-a')
+  })
+
+  it('restores a session draft when returning to a channel and clears it after send', async () => {
+    const onSend = vi.fn().mockResolvedValue(undefined)
+    const textarea = await render(onSend)
+    await setComposerValue(textarea, 'draft for general')
+
+    await act(async () => {
+      root.render(
+        <MessageInput
+          channelId="!other:mesh.test"
+          channelName="other"
+          onSend={vi.fn()}
+        />,
+      )
+      await flushAsyncWork()
+    })
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe('')
+
+    await act(async () => {
+      root.render(
+        <MessageInput
+          channelId="!room:mesh.test"
+          channelName="general"
+          onSend={onSend}
+        />,
+      )
+      await flushAsyncWork()
+    })
+    const restored = container.querySelector('textarea') as HTMLTextAreaElement
+    expect(restored.value).toBe('draft for general')
+
+    await act(async () => {
+      restored.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await flushAsyncWork()
+    })
+    expect(onSend).toHaveBeenCalledWith('draft for general')
+    expect(useDraftStore.getState().drafts['!room:mesh.test']).toBeUndefined()
+    expect(restored.value).toBe('')
   })
 
   it('lets an in-flight send finish without deleting or mutating the next room draft', async () => {
