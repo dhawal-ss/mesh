@@ -52,6 +52,9 @@ describe('UserPanel Matrix profile editing', () => {
       'button[aria-label="Open settings for Alice"]',
     )
     await act(async () => settingsButton?.click())
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 100))
+    })
 
     const input = document.body.querySelector<HTMLInputElement>('input[autocomplete="nickname"]')
     await act(async () => {

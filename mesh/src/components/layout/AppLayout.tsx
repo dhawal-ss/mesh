@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { CommunitySidebar } from './CommunitySidebar'
 import { ChannelSidebar } from './ChannelSidebar'
 import { ContentArea } from './ContentArea'
@@ -18,7 +18,10 @@ import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
 import { useNotificationSync } from '../../hooks/useNotificationSync'
 import { getEffectiveChannelNotificationLevel } from '../../store/settings'
-import { CommandPalette } from '../navigation/CommandPalette'
+
+const CommandPalette = lazy(() =>
+  import('../navigation/CommandPalette').then((module) => ({ default: module.CommandPalette })),
+)
 
 export function AppLayout() {
   useCommunitySync()
@@ -108,7 +111,9 @@ export function AppLayout() {
 
   return (
     <div className="relative flex h-screen flex-col overflow-hidden">
-      <CommandPalette />
+      <Suspense fallback={null}>
+        <CommandPalette />
+      </Suspense>
       {backupReminderDue && (
         <div
           role="status"
