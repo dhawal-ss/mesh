@@ -104,7 +104,7 @@ export function CommunitySidebar() {
                     channel.communityId,
                   ) === 'nothing'
                 ) return total
-                return total + (channel.unreadCount ?? 0)
+                return total + Math.max(channel.unreadCount ?? 0, channel.unreadMentions ?? 0)
               }, 0)}
               onClick={() => handleCommunityClick(c.id)}
               onMarkRead={() => void markCommunityRead(c.id)}

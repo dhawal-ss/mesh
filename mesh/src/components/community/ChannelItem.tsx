@@ -33,7 +33,10 @@ export function ChannelItem({
   onOpenNotificationSettings,
   onCopyLink,
 }: ChannelItemProps) {
-  const hasStoredUnread = (channel.unreadCount ?? 0) > 0
+  const unreadCount = channel.unreadCount ?? 0
+  const unreadMentions = channel.unreadMentions ?? 0
+  const displayedUnreadCount = Math.max(unreadCount, unreadMentions)
+  const hasStoredUnread = displayedUnreadCount > 0
   const muteChannelFor = useSettingsStore((state) => state.muteChannelFor)
   const unmuteChannel = useSettingsStore((state) => state.unmuteChannel)
   const isMuted = useSettingsStore((state) => state.isChannelMuted(channel.id))
@@ -51,6 +54,9 @@ export function ChannelItem({
     (state) => state.setChannelNotificationLevel,
   )
   const hasUnread = hasStoredUnread && effectiveNotificationLevel !== 'nothing'
+  const unreadLabel = unreadMentions > unreadCount
+    ? `${unreadMentions} mentions`
+    : `${unreadCount} unread`
   const muteItems: MenuItem[] = isMuted
     ? [{
         id: 'unmute',
@@ -105,7 +111,7 @@ export function ChannelItem({
       <button
         type="button"
         onClick={onClick}
-        aria-label={`${channel.channelType === 'text' ? 'Text' : 'Voice'} channel: ${channel.name}${hasUnread ? `, ${channel.unreadCount} unread` : ''}${isMuted ? ', muted' : ''}`}
+        aria-label={`${channel.channelType === 'text' ? 'Text' : 'Voice'} channel: ${channel.name}${hasUnread ? `, ${unreadLabel}` : ''}${isMuted ? ', muted' : ''}`}
         aria-current={active ? 'page' : undefined}
         className={`group flex w-full items-center gap-1.5 rounded px-2 py-density-row text-left transition-colors duration-instant ${
           active
@@ -128,7 +134,7 @@ export function ChannelItem({
         {/* Unread badge */}
         {hasUnread && !active && (
           <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-status-danger px-1 text-meta font-semibold text-content-on-status">
-            {(channel.unreadCount ?? 0) > 99 ? '99+' : channel.unreadCount}
+            {displayedUnreadCount > 99 ? '99+' : displayedUnreadCount}
           </span>
         )}
       </button>
