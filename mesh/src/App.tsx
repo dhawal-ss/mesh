@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { OnboardingFlow } from './components/onboarding/OnboardingFlow'
-import { AppLayout } from './components/layout/AppLayout'
 import { ToastContainer } from './components/ui/Toast'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { useIdentityStore } from './store/identity'
@@ -15,6 +14,10 @@ import { variants } from './lib/motion'
 import { matrixIdentity, matrixProfileIdentity } from './lib/matrixIdentity'
 import type { Identity } from './types/ipc'
 import { registerPoll } from './lib/scheduler'
+
+const AppLayout = lazy(() =>
+  import('./components/layout/AppLayout').then((module) => ({ default: module.AppLayout })),
+)
 
 const BOOTSTRAP_STEPS = {
   connecting: { label: 'Connecting to the DHT', progress: 28 },
@@ -493,7 +496,9 @@ export default function App() {
             exit="exit"
             className="h-full"
           >
-            <AppLayout />
+            <Suspense fallback={<div className="flex h-full items-center justify-center" role="status" aria-label="Loading Mesh"><Spinner /></div>}>
+              <AppLayout />
+            </Suspense>
           </motion.div>
           </ErrorBoundary>
         )}
