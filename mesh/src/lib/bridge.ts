@@ -5,7 +5,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { isTauri } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { openPath } from '@tauri-apps/plugin-opener'
 import { showToast } from '../components/ui/Toast'
 import { describeError, normalizeError } from './errors'
 import { canStartLegacyVoice } from './voice-runtime'
@@ -1572,7 +1571,7 @@ export async function openDownloadedFile(localPath: string): Promise<void> {
     return
   }
 
-  await openPath(localPath)
+  await tauriInvoke('open_downloaded_file', { localPath })
 }
 
 // ─── Discovery Commands ────────────────────────────

@@ -12,6 +12,10 @@ use uuid::Uuid;
 
 use super::error::CommandError;
 use crate::backend::BackendKind;
+use crate::security::{
+    create_private_dir, has_blocked_attachment_extension, is_file_in_named_directory_under,
+    open_private_file,
+};
 use crate::state::AppState;
 
 /// Clipboard bytes cross the JSON IPC boundary, so keep this deliberately
@@ -23,11 +27,6 @@ const ATTACHMENT_GRANT_TTL: Duration = Duration::from_secs(60 * 60);
 const UNCLAIMED_DROP_GRANT_TTL: Duration = Duration::from_secs(30);
 const HEADER_INSPECTION_BYTES: usize = 8;
 const MAX_PENDING_ATTACHMENTS: usize = 10;
-const BLOCKED_EXTENSIONS: &[&str] = &[
-    "exe", "bat", "cmd", "com", "msi", "scr", "pif", "vbs", "vbe", "js", "jse", "wsf", "wsh",
-    "ps1", "ps1xml", "ps2", "ps2xml", "psc1", "psc2", "msh", "msh1", "msh2", "inf", "reg", "rgs",
-    "sct", "shb", "shs", "ws", "wsc", "cpl", "dll", "sys",
-];
 
 #[derive(Clone, Debug)]
 struct AttachmentGrant {
@@ -143,13 +142,7 @@ fn validate_filename(filename: &str) -> Result<&str, CommandError> {
             "Attachment filename uses a reserved device name".into(),
         ));
     }
-    if Path::new(safe_name)
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            BLOCKED_EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str())
-        })
-    {
+    if has_blocked_attachment_extension(Path::new(safe_name)) {
         return Err(CommandError::Validation(
             "This executable or script file type cannot be attached".into(),
         ));
@@ -493,23 +486,18 @@ pub async fn stage_attachment_bytes(
     )?;
 
     let root = staging_root(&app)?;
-    tokio::fs::create_dir_all(&root)
+    create_private_dir(&root, true)
         .await
         .map_err(|error| CommandError::Other(error.to_string()))?;
     purge_expired_staged_attachments(&root).await;
 
     let token = Uuid::new_v4().to_string();
     let token_root = root.join(&token);
-    tokio::fs::create_dir(&token_root)
+    create_private_dir(&token_root, false)
         .await
         .map_err(|error| CommandError::Other(error.to_string()))?;
     let path = token_root.join(filename.trim());
-    let mut file = match tokio::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&path)
-        .await
-    {
+    let mut file = match open_private_file(&path, true).await {
         Ok(file) => file,
         Err(error) => {
             let _ = tokio::fs::remove_dir_all(&token_root).await;
@@ -547,6 +535,59 @@ pub async fn stage_attachment_bytes(
         size: bytes.len() as u64,
         content_type,
     })
+}
+
+#[tauri::command]
+pub async fn open_downloaded_file(
+    local_path: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    let path = tokio::fs::canonicalize(local_path).await.map_err(|_| {
+        CommandError::NotFound("Downloaded attachment is no longer available".into())
+    })?;
+    if has_blocked_attachment_extension(&path) {
+        return Err(CommandError::Validation(
+            "Executable files cannot be opened from Mesh".into(),
+        ));
+    }
+
+    let allowed = match state.backend.kind() {
+        BackendKind::Matrix => {
+            let matrix_root = app
+                .path()
+                .app_data_dir()
+                .map_err(|error| CommandError::Other(error.to_string()))?
+                .join("matrix");
+            let matrix_root = tokio::fs::canonicalize(matrix_root)
+                .await
+                .map_err(|_| CommandError::NotFound("Local account cache is unavailable".into()))?;
+            is_file_in_named_directory_under(&path, &matrix_root, "media-cache")
+        }
+        BackendKind::LegacyP2p => {
+            #[cfg(feature = "legacy-p2p")]
+            {
+                let downloads = tokio::fs::canonicalize(super::files::downloads_root())
+                    .await
+                    .map_err(|_| {
+                        CommandError::NotFound("Legacy download folder is unavailable".into())
+                    })?;
+                path.parent().is_some_and(|parent| parent == downloads)
+            }
+            #[cfg(not(feature = "legacy-p2p"))]
+            {
+                false
+            }
+        }
+    };
+    if !allowed {
+        return Err(CommandError::PermissionDenied(
+            "Mesh can open only files created by its attachment downloader".into(),
+        ));
+    }
+
+    tauri_plugin_opener::open_path(&path, None::<&str>)
+        .map_err(|error| CommandError::Other(error.to_string()))
 }
 
 /// Revoke an unused native-picker or native-drop capability. This never deletes

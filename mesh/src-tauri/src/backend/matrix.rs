@@ -101,12 +101,14 @@ use qrcode::render::svg;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use zeroize::Zeroize;
 
 use crate::crypto::keychain;
+use crate::security::{create_private_dir, has_blocked_attachment_extension, open_private_file};
 use crate::types::{
     community::{ChannelDto, CommunityDto},
     dm::{DirectMessageDto, DmConversationDto},
@@ -173,10 +175,6 @@ const MATRIX_RTC_MAX_PENDING_KEYS: usize = 256;
 const MATRIX_RTC_MAX_PENDING_ACTIVATIONS: usize = 64;
 const MATRIX_RTC_MAX_TO_DEVICE_BYTES: usize = 16 * 1024;
 const MATRIX_RTC_KEY_ATTEMPTS_PER_MINUTE: usize = 32;
-const BLOCKED_MEDIA_EXTENSIONS: &[&str] = &[
-    "bat", "cpl", "cmd", "com", "dll", "exe", "hta", "js", "jse", "lnk", "msi", "pif", "ps1",
-    "reg", "scr", "sys", "url", "vbe", "vbs", "wasm", "wsf", "wsh",
-];
 const BLOCKED_MEDIA_CONTENT_TYPES: &[&str] = &[
     "application/x-msdownload",
     "application/x-msdos-program",
@@ -4878,14 +4876,7 @@ impl MatrixBackend {
             .filter(|name| !name.is_empty())
             .unwrap_or("attachment.bin")
             .to_owned();
-        let extension = Path::new(&safe)
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .map(|extension| extension.to_ascii_lowercase());
-        if extension
-            .as_deref()
-            .is_some_and(|extension| BLOCKED_MEDIA_EXTENSIONS.contains(&extension))
-        {
+        if has_blocked_attachment_extension(Path::new(&safe)) {
             return Err(BackendError::InvalidConfiguration(
                 "refusing to write an executable Matrix attachment".into(),
             ));
@@ -7493,7 +7484,7 @@ impl MeshBackend for MatrixBackend {
                 .storage_for_profile(&profile_id)
                 .store_root
                 .join("media-cache");
-            tokio::fs::create_dir_all(&cache_root)
+            create_private_dir(&cache_root, true)
                 .await
                 .map_err(Self::map_error)?;
             let safe_filename = Self::safe_media_filename(&attachment.filename)?;
@@ -7523,9 +7514,20 @@ impl MeshBackend for MatrixBackend {
                 MatrixTransferState::Writing,
                 None,
             );
-            tokio::fs::write(&destination, data)
+            let mut file = open_private_file(&destination, false)
                 .await
                 .map_err(Self::map_error)?;
+            if let Err(error) = file.write_all(&data).await {
+                drop(file);
+                let _ = tokio::fs::remove_file(&destination).await;
+                return Err(Self::map_error(error));
+            }
+            if let Err(error) = file.sync_all().await {
+                drop(file);
+                let _ = tokio::fs::remove_file(&destination).await;
+                return Err(Self::map_error(error));
+            }
+            drop(file);
             if cancellation.is_cancelled() {
                 let _ = tokio::fs::remove_file(&destination).await;
                 return Err(BackendError::Other(

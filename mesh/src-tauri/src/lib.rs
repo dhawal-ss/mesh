@@ -9,6 +9,7 @@ pub mod crypto;
 pub mod migration;
 #[cfg(feature = "legacy-p2p")]
 pub mod network;
+mod security;
 mod state;
 #[cfg(feature = "legacy-p2p")]
 mod storage;
@@ -246,6 +247,7 @@ pub fn run() {
         commands::attachments::stage_attachment_bytes,
         commands::attachments::discard_attachment_grant,
         commands::attachments::discard_staged_attachment,
+        commands::attachments::open_downloaded_file,
         commands::backend::get_backend_status,
         commands::notifications::set_notification_context,
         commands::notifications::send_test_notification,
@@ -334,6 +336,7 @@ pub fn run() {
         commands::attachments::stage_attachment_bytes,
         commands::attachments::discard_attachment_grant,
         commands::attachments::discard_staged_attachment,
+        commands::attachments::open_downloaded_file,
         // Backend / Matrix architecture spike
         commands::backend::get_backend_status,
         commands::notifications::set_notification_context,

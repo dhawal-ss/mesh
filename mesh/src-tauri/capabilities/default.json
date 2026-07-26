@@ -6,7 +6,14 @@
   "permissions": [
     "core:default",
     "core:event:default",
-    "opener:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://*" },
+        { "url": "http://*" },
+        { "url": "mailto:*" }
+      ]
+    },
     "dialog:allow-open",
     "notification:default"
   ]

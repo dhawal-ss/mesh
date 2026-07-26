@@ -11,6 +11,7 @@ use crate::crypto::identity::Identity;
 use crate::network::envelope::{EnvelopeBuilder, FileAnnouncedPayload};
 use crate::network::events::NetworkCommand;
 use crate::network::gossip::channel_messages_topic;
+use crate::security::has_blocked_attachment_extension;
 use crate::state::download_scheduler::DownloadScheduler;
 use crate::state::file_downloads::CHUNK_SIZE_BYTES;
 use crate::state::rate_limits::RateLimitBucket;
@@ -21,13 +22,6 @@ use super::error::CommandError;
 
 /// Maximum allowed file size for uploads (100 MB).
 const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024;
-
-/// File extensions that are blocked from upload.
-const BLOCKED_EXTENSIONS: &[&str] = &[
-    "exe", "bat", "cmd", "com", "msi", "scr", "pif", "vbs", "vbe", "js", "jse", "wsf", "wsh",
-    "ps1", "ps1xml", "ps2", "ps2xml", "psc1", "psc2", "msh", "msh1", "msh2", "inf", "reg", "rgs",
-    "sct", "shb", "shs", "ws", "wsc", "cpl", "dll", "sys",
-];
 
 #[tauri::command]
 pub async fn upload_file(
@@ -61,13 +55,10 @@ pub async fn upload_file(
     }
 
     // S6: Blocked file type validation
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        if BLOCKED_EXTENSIONS.contains(&ext.to_lowercase().as_str()) {
-            return Err(CommandError::Validation(format!(
-                "File type '.{}' is not allowed for security reasons.",
-                ext
-            )));
-        }
+    if has_blocked_attachment_extension(&path) {
+        return Err(CommandError::Validation(
+            "This executable or script file type cannot be attached".into(),
+        ));
     }
 
     // Compute SHA-256 content hash and per-chunk hashes in a single pass
@@ -271,13 +262,10 @@ pub async fn upload_dm_file(
         )));
     }
 
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        if BLOCKED_EXTENSIONS.contains(&ext.to_lowercase().as_str()) {
-            return Err(CommandError::Validation(format!(
-                "File type '.{}' is not allowed for security reasons.",
-                ext
-            )));
-        }
+    if has_blocked_attachment_extension(&path) {
+        return Err(CommandError::Validation(
+            "This executable or script file type cannot be attached".into(),
+        ));
     }
 
     // Compute SHA-256 content hash
@@ -569,7 +557,7 @@ fn local_peer_id(identity: &Identity) -> anyhow::Result<String> {
     Ok(PeerId::from_public_key(&keypair.public()).to_string())
 }
 
-fn downloads_root() -> PathBuf {
+pub(crate) fn downloads_root() -> PathBuf {
     let home = std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
         .map(PathBuf::from)
