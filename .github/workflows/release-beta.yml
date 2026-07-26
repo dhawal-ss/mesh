@@ -54,6 +54,7 @@ jobs:
           pwsh -NoProfile -File ./scripts/beta-release-preflight.ps1 -RequireManagedService
           npm test
           npm run build
+          npm run check:bundle-size
           pwsh -NoProfile -File ./scripts/beta-release-preflight.ps1 -VerifyFrontendBundle
           npm run e2e -- --workers=1
 
