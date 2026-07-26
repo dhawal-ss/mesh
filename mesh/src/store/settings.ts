@@ -58,7 +58,14 @@ export interface BackupPreferences {
   dismissedAt: string | null
 }
 
-const PREFERENCES_SCHEMA_VERSION = 1
+export interface PrivacyPreferences {
+  sendReadReceipts: boolean
+  sendTypingIndicators: boolean
+  sharePresence: boolean
+  invisibleMode: boolean
+}
+
+const PREFERENCES_SCHEMA_VERSION = 2
 const MATRIX_SAVE_DEBOUNCE_MS = 350
 const BACKUP_REMINDER_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000
 const DEFAULT_APPEARANCE: AppearancePreferences = {
@@ -81,6 +88,12 @@ const DEFAULT_NOTIFICATIONS: NotificationPreferences = {
   channelMuteUntil: {},
   communityMuteUntil: {},
   channelNotificationLevels: {},
+}
+const DEFAULT_PRIVACY: PrivacyPreferences = {
+  sendReadReceipts: false,
+  sendTypingIndicators: true,
+  sharePresence: true,
+  invisibleMode: false,
 }
 
 const APPEARANCE_THEMES = new Set<AppearanceTheme>(['dark', 'light', 'high-contrast'])
@@ -227,6 +240,18 @@ function normalizeAppearancePreferences(
   }
 }
 
+export function normalizePrivacyPreferences(
+  preferences: Partial<PrivacyPreferences> | undefined,
+): PrivacyPreferences {
+  return {
+    sendReadReceipts: preferences?.sendReadReceipts ?? DEFAULT_PRIVACY.sendReadReceipts,
+    sendTypingIndicators:
+      preferences?.sendTypingIndicators ?? DEFAULT_PRIVACY.sendTypingIndicators,
+    sharePresence: preferences?.sharePresence ?? DEFAULT_PRIVACY.sharePresence,
+    invisibleMode: preferences?.invisibleMode ?? DEFAULT_PRIVACY.invisibleMode,
+  }
+}
+
 export function applyAppearancePreferences(preferences: AppearancePreferences): void {
   if (typeof document === 'undefined') return
   const root = document.documentElement
@@ -257,7 +282,21 @@ export function matrixPreferencesToNotifications(
   })
 }
 
-function notificationsToMatrixPreferences(notifications: NotificationPreferences) {
+export function matrixPreferencesToPrivacy(
+  preferences: MatrixUserPreferences,
+): PrivacyPreferences {
+  return normalizePrivacyPreferences({
+    sendReadReceipts: preferences.sendReadReceipts,
+    sendTypingIndicators: preferences.sendTypingIndicators,
+    sharePresence: preferences.sharePresence,
+    invisibleMode: preferences.invisibleMode,
+  })
+}
+
+function settingsToMatrixPreferences(
+  notifications: NotificationPreferences,
+  privacy: PrivacyPreferences,
+) {
   return {
     schemaVersion: PREFERENCES_SCHEMA_VERSION,
     notificationsEnabled: notifications.enabled,
@@ -272,6 +311,10 @@ function notificationsToMatrixPreferences(notifications: NotificationPreferences
     mutedChannelUntil: notifications.channelMuteUntil,
     mutedCommunityUntil: notifications.communityMuteUntil,
     channelNotificationLevels: notifications.channelNotificationLevels,
+    sendReadReceipts: privacy.sendReadReceipts,
+    sendTypingIndicators: privacy.sendTypingIndicators,
+    sharePresence: privacy.sharePresence,
+    invisibleMode: privacy.invisibleMode,
   }
 }
 
@@ -279,6 +322,7 @@ export interface SettingsStore {
   notifications: NotificationPreferences
   appearance: AppearancePreferences
   backup: BackupPreferences
+  privacy: PrivacyPreferences
   setNotificationsEnabled: (enabled: boolean) => void
   setNotificationSound: (sound: boolean) => void
   setNotificationSoundId: (soundId: NotificationSoundId) => void
@@ -291,6 +335,10 @@ export interface SettingsStore {
   setBackupConfigured: (configured: boolean) => void
   scheduleBackupReminder: () => void
   dismissBackupReminder: () => void
+  setSendReadReceipts: (enabled: boolean) => void
+  setSendTypingIndicators: (enabled: boolean) => void
+  setSharePresence: (enabled: boolean) => void
+  setInvisibleMode: (enabled: boolean) => void
   muteChannelFor: (channelId: string, durationMs: number | null) => void
   muteChannel: (channelId: string) => void
   unmuteChannel: (channelId: string) => void
@@ -384,6 +432,7 @@ export const useSettingsStore = create<SettingsStore>()(
         reminderPending: false,
         dismissedAt: null,
       },
+      privacy: DEFAULT_PRIVACY,
 
       setNotificationsEnabled: (enabled) =>
         set((state) => ({
@@ -468,6 +517,18 @@ export const useSettingsStore = create<SettingsStore>()(
             dismissedAt: new Date().toISOString(),
           },
         })),
+
+      setSendReadReceipts: (sendReadReceipts) =>
+        set((state) => ({ privacy: { ...state.privacy, sendReadReceipts } })),
+
+      setSendTypingIndicators: (sendTypingIndicators) =>
+        set((state) => ({ privacy: { ...state.privacy, sendTypingIndicators } })),
+
+      setSharePresence: (sharePresence) =>
+        set((state) => ({ privacy: { ...state.privacy, sharePresence } })),
+
+      setInvisibleMode: (invisibleMode) =>
+        set((state) => ({ privacy: { ...state.privacy, invisibleMode } })),
 
       muteChannelFor: (channelId, durationMs) =>
         set((state) => {
@@ -596,10 +657,11 @@ export const useSettingsStore = create<SettingsStore>()(
       name: 'mesh-settings',
       partialize: (state) => ({
         notifications: state.notifications,
-        // Appearance stays device-local. MatrixUserPreferences intentionally
-        // contains notification fields only, so visual choices never sync.
+        // Appearance stays device-local; MatrixUserPreferences contains only
+        // portable notification and wire-privacy fields.
         appearance: state.appearance,
         backup: state.backup,
+        privacy: state.privacy,
       }),
       merge: (persistedState, currentState) => {
         const persisted = (persistedState ?? {}) as Partial<SettingsStore>
@@ -608,6 +670,7 @@ export const useSettingsStore = create<SettingsStore>()(
           ...persisted,
           notifications: normalizeNotificationPreferences(persisted.notifications),
           appearance: normalizeAppearancePreferences(persisted.appearance),
+          privacy: normalizePrivacyPreferences(persisted.privacy),
           backup: {
             configured: persisted.backup?.configured ?? false,
             reminderPending: persisted.backup?.reminderPending ?? false,
@@ -640,6 +703,7 @@ applyAppearancePreferences(useSettingsStore.getState().appearance)
 // so the Rust desktop notification filter can check them.
 let prevMutedChannels: string[] = useSettingsStore.getState().notifications.mutedChannels
 let prevNotifications = useSettingsStore.getState().notifications
+let prevPrivacy = useSettingsStore.getState().privacy
 let activeMatrixUserId: string | null = null
 let matrixRemoteReady = false
 let applyingRemotePreferences = false
@@ -700,7 +764,10 @@ function scheduleMuteExpiryCleanup(notifications: NotificationPreferences) {
 async function saveMatrixPreferences() {
   if (!matrixRemoteReady || !activeMatrixUserId || !isMatrixBackend()) return
   await updateMatrixUserPreferences(
-    notificationsToMatrixPreferences(useSettingsStore.getState().notifications),
+    settingsToMatrixPreferences(
+      useSettingsStore.getState().notifications,
+      useSettingsStore.getState().privacy,
+    ),
   )
 }
 
@@ -747,6 +814,7 @@ export async function refreshMatrixPreferences(userId: string): Promise<void> {
         // overwrite a newer rule changed by another Matrix client.
         channelNotificationLevels,
       },
+      privacy: matrixPreferencesToPrivacy(remote),
     })
     applyingRemotePreferences = false
   }
@@ -770,6 +838,20 @@ useSettingsStore.subscribe((state) => {
     if (!applyingRemotePreferences) {
       localPreferenceRevision += 1
       scheduleMatrixPreferenceSave()
+    }
+  }
+
+  if (state.privacy !== prevPrivacy) {
+    prevPrivacy = state.privacy
+    if (!applyingRemotePreferences) {
+      localPreferenceRevision += 1
+      if (matrixSaveTimer) {
+        clearTimeout(matrixSaveTimer)
+        matrixSaveTimer = null
+      }
+      void saveMatrixPreferences().catch((error) => {
+        console.error('Failed to sync Matrix privacy preferences:', error)
+      })
     }
   }
 })

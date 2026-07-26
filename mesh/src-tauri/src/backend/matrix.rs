@@ -36,7 +36,7 @@ use matrix_sdk::{
     notification_settings::RoomNotificationMode,
     room::{
         reply::{EnforceThread, Reply},
-        MessagesOptions, RoomMemberRole,
+        MessagesOptions, Receipts, RoomMemberRole,
     },
     ruma::{
         api::{
@@ -50,7 +50,6 @@ use matrix_sdk::{
                     AuthorizationServerMetadata, CodeChallengeMethod, GrantType, ResponseMode,
                     ResponseType,
                 },
-                receipt::create_receipt::v3::ReceiptType,
                 room::{
                     create_room::v3::{CreationContent, Request as CreateRoomRequest, RoomPreset},
                     Visibility,
@@ -67,7 +66,6 @@ use matrix_sdk::{
             ignored_user_list::{IgnoredUser, IgnoredUserListEventContent},
             presence::PresenceEvent,
             reaction::ReactionEventContent,
-            receipt::ReceiptThread,
             relation::Annotation,
             room::{
                 encryption::RoomEncryptionEventContent,
@@ -87,6 +85,7 @@ use matrix_sdk::{
             InitialStateEvent, StateEvent, StateEventType,
         },
         int,
+        presence::PresenceState,
         push::Action,
         room::RoomType,
         serde::Raw,
@@ -515,12 +514,53 @@ impl MatrixSyncCadence {
     }
 }
 
-#[derive(Default)]
 struct MatrixSyncControl {
     client: Option<Client>,
     task: Option<JoinHandle<()>>,
     cadence: MatrixSyncCadence,
+    presence: PresenceState,
     paused: bool,
+}
+
+impl Default for MatrixSyncControl {
+    fn default() -> Self {
+        Self {
+            client: None,
+            task: None,
+            cadence: MatrixSyncCadence::Normal,
+            presence: PresenceState::Offline,
+            paused: false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct WirePrivacyPreferences {
+    send_read_receipts: bool,
+    send_typing_indicators: bool,
+    share_presence: bool,
+    invisible_mode: bool,
+}
+
+impl From<&UserPreferences> for WirePrivacyPreferences {
+    fn from(preferences: &UserPreferences) -> Self {
+        Self {
+            send_read_receipts: preferences.send_read_receipts,
+            send_typing_indicators: preferences.send_typing_indicators,
+            share_presence: preferences.share_presence,
+            invisible_mode: preferences.invisible_mode,
+        }
+    }
+}
+
+impl WirePrivacyPreferences {
+    fn presence(self) -> PresenceState {
+        if self.share_presence && !self.invisible_mode {
+            PresenceState::Online
+        } else {
+            PresenceState::Offline
+        }
+    }
 }
 
 #[derive(Default)]
@@ -561,6 +601,7 @@ pub struct MatrixBackend {
     rtc_membership_writes: Arc<Mutex<()>>,
     matrix_sync_freshness: Arc<StdMutex<MatrixSyncFreshness>>,
     matrix_sync_control: Arc<Mutex<MatrixSyncControl>>,
+    wire_privacy: Arc<RwLock<WirePrivacyPreferences>>,
     typing_users: Arc<RwLock<HashMap<String, Vec<String>>>>,
     presence: Arc<RwLock<HashMap<String, String>>>,
     event_callback: Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
@@ -583,6 +624,7 @@ impl MatrixBackend {
             rtc_membership_writes: Arc::new(Mutex::new(())),
             matrix_sync_freshness: Arc::new(StdMutex::new(MatrixSyncFreshness::default())),
             matrix_sync_control: Arc::new(Mutex::new(MatrixSyncControl::default())),
+            wire_privacy: Arc::new(RwLock::new(WirePrivacyPreferences::default())),
             typing_users: Arc::new(RwLock::new(HashMap::new())),
             presence: Arc::new(RwLock::new(HashMap::new())),
             event_callback: Arc::new(StdRwLock::new(None)),
@@ -618,6 +660,7 @@ impl MatrixBackend {
             rtc_membership_writes: Arc::new(Mutex::new(())),
             matrix_sync_freshness: Arc::new(StdMutex::new(MatrixSyncFreshness::default())),
             matrix_sync_control: Arc::new(Mutex::new(MatrixSyncControl::default())),
+            wire_privacy: Arc::new(RwLock::new(WirePrivacyPreferences::default())),
             typing_users: Arc::new(RwLock::new(HashMap::new())),
             presence: Arc::new(RwLock::new(HashMap::new())),
             event_callback: Arc::new(StdRwLock::new(None)),
@@ -4031,6 +4074,7 @@ impl MatrixBackend {
     fn spawn_matrix_sync(
         client: Client,
         cadence: MatrixSyncCadence,
+        presence: PresenceState,
         task_epoch: u64,
         freshness: Arc<StdMutex<MatrixSyncFreshness>>,
     ) -> JoinHandle<()> {
@@ -4038,7 +4082,9 @@ impl MatrixBackend {
             let callback_freshness = Arc::clone(&freshness);
             let result = client
                 .sync_with_result_callback(
-                    SyncSettings::default().timeout(cadence.timeout()),
+                    SyncSettings::default()
+                        .timeout(cadence.timeout())
+                        .set_presence(presence),
                     move |result| {
                         let freshness = Arc::clone(&callback_freshness);
                         async move {
@@ -4102,6 +4148,7 @@ impl MatrixBackend {
                 control.task = Some(Self::spawn_matrix_sync(
                     client,
                     control.cadence,
+                    control.presence.clone(),
                     task_epoch,
                     Arc::clone(freshness),
                 ));
@@ -4126,6 +4173,19 @@ impl MatrixBackend {
         }
         control.cadence = cadence;
         Self::restart_matrix_sync_locked(&mut control, freshness).await;
+    }
+
+    async fn apply_wire_privacy(&self, preferences: &UserPreferences) {
+        let next = WirePrivacyPreferences::from(preferences);
+        *self.wire_privacy.write().await = next;
+
+        let mut control = self.matrix_sync_control.lock().await;
+        let presence = next.presence();
+        if control.presence == presence {
+            return;
+        }
+        control.presence = presence;
+        Self::restart_matrix_sync_locked(&mut control, &self.matrix_sync_freshness).await;
     }
 
     async fn reconcile_matrix_sync_cadence(
@@ -4411,8 +4471,10 @@ impl MatrixBackend {
             sync.paused = true;
             sync.client = None;
             sync.cadence = MatrixSyncCadence::Normal;
+            sync.presence = PresenceState::Offline;
             Self::restart_matrix_sync_locked(&mut sync, &self.matrix_sync_freshness).await;
         }
+        *self.wire_privacy.write().await = WirePrivacyPreferences::default();
         let (client, session_task, room_updates_task) = {
             let mut runtime = self.runtime.write().await;
             let client = runtime.client.take();
@@ -5268,7 +5330,7 @@ impl MeshBackend for MatrixBackend {
             // Complete one sync before exposing or persisting the account. A
             // cancelled/timed-out attempt therefore never becomes restorable.
             client
-                .sync_once(SyncSettings::default())
+                .sync_once(SyncSettings::default().set_presence(PresenceState::Offline))
                 .await
                 .map_err(Self::map_error)?;
             self.persist_session(&storage, &resolved_homeserver, &session)?;
@@ -5377,7 +5439,7 @@ impl MeshBackend for MatrixBackend {
                 })?;
                 let resolved_homeserver = client.homeserver().to_string();
                 client
-                    .sync_once(SyncSettings::default())
+                    .sync_once(SyncSettings::default().set_presence(PresenceState::Offline))
                     .await
                     .map_err(Self::map_error)?;
                 self.persist_session(&storage, &resolved_homeserver, &session)?;
@@ -5588,7 +5650,8 @@ impl MeshBackend for MatrixBackend {
                 _ = cancellation.cancelled() => Err(BackendError::LoginCancelled),
                 result = tokio::time::timeout(
                     Duration::from_secs(LOGIN_TIMEOUT_SECONDS),
-                    durable_client.sync_once(SyncSettings::default()),
+                    durable_client
+                        .sync_once(SyncSettings::default().set_presence(PresenceState::Offline)),
                 ) => result
                     .map_err(|_| BackendError::LoginTimedOut(LOGIN_TIMEOUT_SECONDS))?
                     .map(|_| ())
@@ -5665,7 +5728,7 @@ impl MeshBackend for MatrixBackend {
                 .await
                 .map_err(Self::map_error)?;
             client
-                .sync_once(SyncSettings::default())
+                .sync_once(SyncSettings::default().set_presence(PresenceState::Offline))
                 .await
                 .map_err(Self::map_error)?;
             Ok::<_, BackendError>(client)
@@ -5926,7 +5989,7 @@ impl MeshBackend for MatrixBackend {
                 .await
                 .map_err(Self::map_error)?;
             client
-                .sync_once(SyncSettings::default())
+                .sync_once(SyncSettings::default().set_presence(PresenceState::Offline))
                 .await
                 .map_err(Self::map_error)?;
             Ok::<_, BackendError>(client)
@@ -7890,6 +7953,7 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn mark_read(&self, room_id: String) -> BackendResult<()> {
+        let send_read_receipts = self.wire_privacy.read().await.send_read_receipts;
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let room = client.get_room(&room_id).ok_or_else(|| {
@@ -7903,12 +7967,19 @@ impl MeshBackend for MatrixBackend {
             return Ok(());
         };
         let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
-        room.send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, event_id)
+        let mut receipts = Receipts::new().fully_read_marker(event_id.clone());
+        if send_read_receipts {
+            receipts = receipts.private_read_receipt(event_id);
+        }
+        room.send_multiple_receipts(receipts)
             .await
             .map_err(Self::map_error)
     }
 
     async fn set_typing(&self, room_id: String, typing: bool) -> BackendResult<()> {
+        if typing && !self.wire_privacy.read().await.send_typing_indicators {
+            return Ok(());
+        }
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let room = client.get_room(&room_id).ok_or_else(|| {
@@ -8395,8 +8466,9 @@ impl MeshBackend for MatrixBackend {
             .join_room_by_id_or_alias(&identifier, &[])
             .await
             .map_err(Self::map_error)?;
+        let presence = self.matrix_sync_control.lock().await.presence.clone();
         client
-            .sync_once(SyncSettings::default())
+            .sync_once(SyncSettings::default().set_presence(presence.clone()))
             .await
             .map_err(Self::map_error)?;
         if !space.is_space() {
@@ -8424,7 +8496,7 @@ impl MeshBackend for MatrixBackend {
             }
         }
         client
-            .sync_once(SyncSettings::default())
+            .sync_once(SyncSettings::default().set_presence(presence))
             .await
             .map_err(Self::map_error)?;
 
@@ -8565,12 +8637,16 @@ impl MeshBackend for MatrixBackend {
             .await
             .map_err(Self::map_error)?;
 
-        content
+        let preferences = content
             .map(|raw| {
                 raw.deserialize_as_unchecked::<UserPreferences>()
                     .map_err(Self::map_error)
             })
-            .transpose()
+            .transpose()?;
+        if let Some(preferences) = preferences.as_ref() {
+            self.apply_wire_privacy(preferences).await;
+        }
+        Ok(preferences)
     }
 
     async fn update_user_preferences(
@@ -8579,6 +8655,7 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<UserPreferences> {
         let client = self.client().await?;
         let preferences = preferences.normalized();
+        self.apply_wire_privacy(&preferences).await;
         let content: Raw<AnyGlobalAccountDataEventContent> = Raw::new(&preferences)
             .map_err(Self::map_error)?
             .cast_unchecked();
@@ -8689,7 +8766,11 @@ impl MeshBackend for MatrixBackend {
             let _ = task.await;
         }
         let result = client
-            .sync_once(SyncSettings::default().timeout(sync.cadence.timeout()))
+            .sync_once(
+                SyncSettings::default()
+                    .timeout(sync.cadence.timeout())
+                    .set_presence(sync.presence.clone()),
+            )
             .await
             .map_err(Self::map_error);
         if result.is_ok() {
@@ -8704,6 +8785,7 @@ impl MeshBackend for MatrixBackend {
                 sync.task = Some(Self::spawn_matrix_sync(
                     client,
                     sync.cadence,
+                    sync.presence.clone(),
                     task_epoch,
                     Arc::clone(&self.matrix_sync_freshness),
                 ));
@@ -8738,6 +8820,27 @@ mod tests {
     use super::*;
     use matrix_sdk::{authentication::SessionTokens, SessionMeta};
     use serde_json::json;
+
+    #[test]
+    fn wire_privacy_presence_requires_sharing_without_invisible_mode() {
+        let visible = WirePrivacyPreferences {
+            share_presence: true,
+            invisible_mode: false,
+            ..WirePrivacyPreferences::default()
+        };
+        let private = WirePrivacyPreferences {
+            share_presence: false,
+            ..visible
+        };
+        let invisible = WirePrivacyPreferences {
+            invisible_mode: true,
+            ..visible
+        };
+
+        assert_eq!(visible.presence(), PresenceState::Online);
+        assert_eq!(private.presence(), PresenceState::Offline);
+        assert_eq!(invisible.presence(), PresenceState::Offline);
+    }
 
     fn password_session() -> MatrixSession {
         MatrixSession {

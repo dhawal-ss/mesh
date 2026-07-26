@@ -35,7 +35,7 @@ export type MatrixRtcJoinResult = { roomId: string, sessionId: string, memberId:
 
 export type NotificationPresentationContext = { activeRoomId: string | null, notificationsEnabled: boolean, doNotDisturb: boolean, quietHoursActive: boolean, mutedRoomIds: Array<string>, };
 
-export type UserPreferences = { schemaVersion: number, notificationsEnabled: boolean, notificationSound: boolean, notificationSoundId?: string | null, doNotDisturb: boolean, quietHoursEnabled: boolean, quietHoursStart?: string | null, quietHoursEnd?: string | null, mutedChannels: Array<string>, mutedCommunities: Array<string>, mutedChannelUntil: { [key in string]?: string | null }, mutedCommunityUntil: { [key in string]?: string | null }, channelNotificationLevels: { [key in string]?: MatrixRoomNotificationMode }, updatedAt: string, };
+export type UserPreferences = { schemaVersion: number, notificationsEnabled: boolean, notificationSound: boolean, notificationSoundId?: string | null, doNotDisturb: boolean, quietHoursEnabled: boolean, quietHoursStart?: string | null, quietHoursEnd?: string | null, mutedChannels: Array<string>, mutedCommunities: Array<string>, mutedChannelUntil: { [key in string]?: string | null }, mutedCommunityUntil: { [key in string]?: string | null }, channelNotificationLevels: { [key in string]?: MatrixRoomNotificationMode }, sendReadReceipts: boolean, sendTypingIndicators: boolean, sharePresence: boolean, invisibleMode: boolean, updatedAt: string, };
 
 export type IdentityDto = { publicKey: string, displayName: string, avatarColor: string, };
 

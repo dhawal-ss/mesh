@@ -2,9 +2,72 @@
 
 use std::time::Duration;
 
+use matrix_sdk::{
+    config::SyncSettings,
+    ruma::{
+        events::{
+            fully_read::FullyReadEventContent,
+            receipt::{ReceiptThread, ReceiptType},
+        },
+        presence::PresenceState,
+        RoomId, UserId,
+    },
+    Client,
+};
 use mesh_lib::backend::{
     MatrixBackend, MatrixLogin, MatrixRoomNotificationMode, MeshBackend, UserPreferences,
 };
+
+fn privacy_preferences(
+    send_read_receipts: bool,
+    send_typing_indicators: bool,
+    share_presence: bool,
+    invisible_mode: bool,
+) -> UserPreferences {
+    UserPreferences {
+        schema_version: UserPreferences::SCHEMA_VERSION,
+        notifications_enabled: true,
+        notification_sound: true,
+        notification_sound_id: Some("mesh".into()),
+        do_not_disturb: false,
+        quiet_hours_enabled: false,
+        quiet_hours_start: Some("22:00".into()),
+        quiet_hours_end: Some("08:00".into()),
+        muted_channels: Vec::new(),
+        muted_communities: Vec::new(),
+        muted_channel_until: std::collections::HashMap::new(),
+        muted_community_until: std::collections::HashMap::new(),
+        channel_notification_levels: std::collections::HashMap::new(),
+        send_read_receipts,
+        send_typing_indicators,
+        share_presence,
+        invisible_mode,
+        updated_at: String::new(),
+    }
+}
+
+async fn wait_for_member_presence(
+    observer: &MatrixBackend,
+    community_id: &str,
+    user_id: &str,
+    expected_online: bool,
+) -> bool {
+    for _ in 0..20 {
+        observer.sync_once().await.unwrap();
+        if observer
+            .list_members(community_id.to_owned())
+            .await
+            .unwrap()
+            .iter()
+            .find(|member| member.public_key == user_id)
+            .is_some_and(|member| member.online == expected_online)
+        {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    false
+}
 
 /// Two real Synapse homeservers, real federation, E2EE, offline catch-up, and
 /// same-device session restoration. Run through `npm run test:matrix-spike`.
@@ -166,6 +229,100 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         .await
         .unwrap();
     alice.mark_dm_read(alice_dm.id.clone()).await.unwrap();
+
+    let alice_observer = Client::builder()
+        .homeserver_url("http://localhost:8008")
+        .build()
+        .await
+        .unwrap();
+    alice_observer
+        .matrix_auth()
+        .login_username("alice", "mesh-alice")
+        .initial_device_display_name("Mesh privacy observer")
+        .send()
+        .await
+        .unwrap();
+    alice_observer
+        .sync_once(
+            SyncSettings::default()
+                .timeout(Duration::ZERO)
+                .set_presence(PresenceState::Offline),
+        )
+        .await
+        .unwrap();
+    let observer_dm = alice_observer
+        .get_room(&RoomId::parse(&alice_dm.id).unwrap())
+        .expect("privacy observer did not receive the DM room");
+    assert!(
+        observer_dm
+            .account_data_static::<FullyReadEventContent>()
+            .await
+            .unwrap()
+            .is_some(),
+        "read-receipt opt-out did not preserve the private fully-read marker"
+    );
+    let alice_user_id = UserId::parse(&alice_user).unwrap();
+    assert!(
+        observer_dm
+            .load_user_receipt(
+                ReceiptType::ReadPrivate,
+                ReceiptThread::Unthreaded,
+                &alice_user_id,
+            )
+            .await
+            .unwrap()
+            .is_none(),
+        "read-receipt opt-out emitted a private receipt"
+    );
+
+    alice.set_typing(alice_dm.id.clone(), true).await.unwrap();
+    let mut leaked_disabled_typing = false;
+    for _ in 0..10 {
+        let typing_users = bob.typing_users(alice_dm.id.clone()).await.unwrap();
+        if typing_users.iter().any(|user| user.user_id == alice_user) {
+            leaked_disabled_typing = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    assert!(
+        !leaked_disabled_typing,
+        "typing opt-out emitted a federated typing event"
+    );
+
+    alice
+        .update_user_preferences(privacy_preferences(true, true, true, false))
+        .await
+        .unwrap();
+    alice.mark_dm_read(alice_dm.id.clone()).await.unwrap();
+    let mut private_receipt = None;
+    for _ in 0..10 {
+        alice_observer
+            .sync_once(
+                SyncSettings::default()
+                    .timeout(Duration::ZERO)
+                    .set_presence(PresenceState::Offline),
+            )
+            .await
+            .unwrap();
+        private_receipt = observer_dm
+            .load_user_receipt(
+                ReceiptType::ReadPrivate,
+                ReceiptThread::Unthreaded,
+                &alice_user_id,
+            )
+            .await
+            .unwrap();
+        if private_receipt.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    assert!(
+        private_receipt.is_some(),
+        "enabled private read receipt did not reach the user's second device"
+    );
+
     alice.set_typing(alice_dm.id.clone(), true).await.unwrap();
     let mut saw_alice_dm_typing = false;
     for _ in 0..20 {
@@ -207,9 +364,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         .is_err());
     assert!(!alice.set_dm_blocked(bob_user.clone(), false).await.unwrap());
     assert!(!alice.dm_blocked(bob_user.clone()).await.unwrap());
-    checkpoint!(
-        "DM history, replies, edits, reactions, receipts, typing, and block controls verified"
-    );
+    checkpoint!("DM history, relations, privacy-controlled receipts/typing, and blocks verified");
 
     let community = alice
         .create_community(
@@ -331,6 +486,44 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
             && member.ban_status == "none"
     }));
     checkpoint!("federated community, channel, and roster projections verified");
+
+    assert!(
+        wait_for_member_presence(&bob, &community.space_id, &alice_user, true).await,
+        "presence sharing did not publish Alice as online"
+    );
+    alice
+        .update_user_preferences(privacy_preferences(true, true, true, true))
+        .await
+        .unwrap();
+    assert!(
+        wait_for_member_presence(&bob, &community.space_id, &alice_user, false).await,
+        "invisible mode did not publish Alice as offline"
+    );
+    alice
+        .update_user_preferences(privacy_preferences(true, true, true, false))
+        .await
+        .unwrap();
+    assert!(
+        wait_for_member_presence(&bob, &community.space_id, &alice_user, true).await,
+        "disabling invisible mode did not restore Alice's online presence"
+    );
+    alice
+        .update_user_preferences(privacy_preferences(true, true, false, false))
+        .await
+        .unwrap();
+    assert!(
+        wait_for_member_presence(&bob, &community.space_id, &alice_user, false).await,
+        "presence opt-out did not publish Alice as offline"
+    );
+    alice
+        .update_user_preferences(privacy_preferences(true, true, true, false))
+        .await
+        .unwrap();
+    assert!(
+        wait_for_member_presence(&bob, &community.space_id, &alice_user, true).await,
+        "restoring presence sharing did not publish Alice as online"
+    );
+    checkpoint!("presence sharing and invisible-mode wire behavior verified");
 
     alice
         .update_member_role(community.space_id.clone(), bob_user.clone(), "admin".into())
@@ -697,11 +890,15 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
                 community.channel_id.clone(),
                 MatrixRoomNotificationMode::Mentions,
             )]),
+            send_read_receipts: false,
+            send_typing_indicators: true,
+            share_presence: false,
+            invisible_mode: true,
             updated_at: String::new(),
         })
         .await
         .unwrap();
-    assert_eq!(saved_preferences.schema_version, 1);
+    assert_eq!(saved_preferences.schema_version, 2);
     assert_eq!(saved_preferences.muted_channels.len(), 1);
 
     let second_device_preferences = bob_second.user_preferences().await.unwrap().unwrap();

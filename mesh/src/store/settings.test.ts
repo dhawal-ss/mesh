@@ -4,15 +4,21 @@ import {
   getEffectiveChannelNotificationLevel,
   isQuietHoursActive,
   matrixPreferencesToNotifications,
+  matrixPreferencesToPrivacy,
+  normalizePrivacyPreferences,
   useSettingsStore,
 } from './settings'
 
 const matrixPreferences = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   notificationsEnabled: false,
   notificationSound: true,
   mutedChannels: ['!room:example.org', '!room:example.org'],
   mutedCommunities: ['!space:example.org', '!space:example.org'],
+  sendReadReceipts: false,
+  sendTypingIndicators: true,
+  sharePresence: true,
+  invisibleMode: false,
   updatedAt: '2026-07-22T00:00:00Z',
 } as unknown as MatrixUserPreferences
 
@@ -59,6 +65,21 @@ describe('Matrix preference projection', () => {
     })
     expect(projected.channelNotificationLevels).toEqual({
       '!room:example.org': 'mentions',
+    })
+  })
+
+  it('maps portable wire privacy settings and preserves privacy-safe defaults', () => {
+    expect(matrixPreferencesToPrivacy(matrixPreferences)).toEqual({
+      sendReadReceipts: false,
+      sendTypingIndicators: true,
+      sharePresence: true,
+      invisibleMode: false,
+    })
+    expect(normalizePrivacyPreferences(undefined)).toEqual({
+      sendReadReceipts: false,
+      sendTypingIndicators: true,
+      sharePresence: true,
+      invisibleMode: false,
     })
   })
 })
@@ -165,5 +186,28 @@ describe('notification settings actions', () => {
 
     useSettingsStore.getState().setChannelNotificationLevel('!room:example.org', 'all')
     expect(useSettingsStore.getState().notifications.channelNotificationLevels).toEqual({})
+  })
+})
+
+describe('privacy settings actions', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({
+      privacy: matrixPreferencesToPrivacy(matrixPreferences),
+    })
+  })
+
+  it('updates each wire-level privacy control independently', () => {
+    const store = useSettingsStore.getState()
+    store.setSendReadReceipts(true)
+    store.setSendTypingIndicators(false)
+    store.setSharePresence(false)
+    store.setInvisibleMode(true)
+
+    expect(useSettingsStore.getState().privacy).toEqual({
+      sendReadReceipts: true,
+      sendTypingIndicators: false,
+      sharePresence: false,
+      invisibleMode: true,
+    })
   })
 })

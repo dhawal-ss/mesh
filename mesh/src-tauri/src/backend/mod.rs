@@ -773,11 +773,19 @@ pub struct UserPreferences {
     pub muted_community_until: std::collections::HashMap<String, Option<String>>,
     #[serde(default)]
     pub channel_notification_levels: std::collections::HashMap<String, MatrixRoomNotificationMode>,
+    #[serde(default)]
+    pub send_read_receipts: bool,
+    #[serde(default = "default_true")]
+    pub send_typing_indicators: bool,
+    #[serde(default = "default_true")]
+    pub share_presence: bool,
+    #[serde(default)]
+    pub invisible_mode: bool,
     pub updated_at: String,
 }
 
 impl UserPreferences {
-    pub const SCHEMA_VERSION: u32 = 1;
+    pub const SCHEMA_VERSION: u32 = 2;
 
     pub fn normalized(mut self) -> Self {
         self.schema_version = Self::SCHEMA_VERSION;
@@ -788,6 +796,10 @@ impl UserPreferences {
         self.updated_at = chrono::Utc::now().to_rfc3339();
         self
     }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1489,6 +1501,10 @@ mod tests {
                 "!b:example.org".into(),
                 MatrixRoomNotificationMode::Mentions,
             )]),
+            send_read_receipts: false,
+            send_typing_indicators: true,
+            share_presence: false,
+            invisible_mode: true,
             updated_at: "stale".into(),
         }
         .normalized();
