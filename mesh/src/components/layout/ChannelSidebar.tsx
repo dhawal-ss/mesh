@@ -1,9 +1,8 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { useActiveCommunity, useCommunityStore } from '../../store/communities'
 import { useChannelStore } from '../../store/channels'
 import { useVoiceStore } from '../../store/voice'
 import { ChannelItem } from '../community/ChannelItem'
-import { CommunitySettings } from '../community/CommunitySettings'
 import { UserPanel } from './UserPanel'
 import { DialogErrorBoundary, ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
@@ -14,6 +13,11 @@ import { showToast } from '../ui/Toast'
 import type { Channel } from '../../types/ipc'
 import { useMatrixRtcMembershipSync } from '../../hooks/useMatrixRtcMembershipSync'
 import { canStartMatrixVoice, shouldActivateVoiceSession } from '../../lib/voice-runtime'
+import { Spinner } from '../ui/Spinner'
+
+const CommunitySettings = lazy(() =>
+  import('../community/CommunitySettings').then((module) => ({ default: module.CommunitySettings })),
+)
 
 export function ChannelSidebar() {
   const communityCount = useCommunityStore((state) => state.communityOrder.length)
@@ -277,7 +281,9 @@ export function ChannelSidebar() {
         onClose={() => setShowSettings(false)}
         title="Server Settings"
       >
-        <CommunitySettings isOpen={showSettings} onClose={() => setShowSettings(false)} />
+        <Suspense fallback={<div role="status" aria-label="Loading server settings" className="flex items-center justify-center p-6"><Spinner /></div>}>
+          <CommunitySettings isOpen={showSettings} onClose={() => setShowSettings(false)} />
+        </Suspense>
       </DialogErrorBoundary>
     </>
   )
