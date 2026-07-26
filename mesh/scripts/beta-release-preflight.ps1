@@ -83,6 +83,18 @@ function Assert-NoUpdaterConfiguration {
         "The beta workflow must not emit an updater manifest until signed updater infrastructure is configured."
 }
 
+function Assert-WindowsOnlyBundleTargets {
+    param([object]$TauriConfig)
+
+    Assert-Condition ($null -ne $TauriConfig.bundle) `
+        "Tauri bundle configuration is missing."
+    $targets = @($TauriConfig.bundle.targets | ForEach-Object { [string]$_ })
+    $expectedTargets = @("msi", "nsis")
+    Assert-Condition ($targets.Count -eq $expectedTargets.Count -and
+        (@($targets | Sort-Object) -join ",") -eq (@($expectedTargets | Sort-Object) -join ",")) `
+        "The beta release must target exactly the signed Windows MSI and NSIS bundles. Configure a separate notarized macOS workflow before adding macOS targets."
+}
+
 function Assert-PinnedActions {
     param(
         [string]$WorkflowName,
@@ -329,6 +341,7 @@ Assert-Condition ($cargoVersion -eq $tauriVersion) `
     "Version mismatch: Cargo.toml is $cargoVersion but tauri.conf.json is $tauriVersion."
 Assert-Condition ($tauriConfig.identifier -eq "com.mesh.desktop") `
     "The production application identifier must remain com.mesh.desktop."
+Assert-WindowsOnlyBundleTargets -TauriConfig $tauriConfig
 
 $defaultFeatures = [regex]::Match(
     $cargoText,
@@ -506,6 +519,12 @@ if ($VerifyArtifacts) {
             Where-Object { $_.Extension -in @(".msi", ".exe") } |
             Sort-Object FullName
     )
+    $macArtifacts = @(
+        Get-ChildItem -LiteralPath $resolvedBundleRoot -Recurse |
+            Where-Object { $_.Name -match '(?i)\.(app|dmg|pkg)$' }
+    )
+    Assert-Condition ($macArtifacts.Count -eq 0) `
+        "macOS artifacts were produced without a notarization gate. Add a dedicated signed/notarized macOS workflow before enabling macOS targets."
     Assert-Condition ($installers.Count -gt 0) "No Windows installers were found under $resolvedBundleRoot."
     Assert-Condition (@($installers | Where-Object Extension -eq ".msi").Count -eq 1) `
         "The release bundle must contain exactly one MSI installer."
