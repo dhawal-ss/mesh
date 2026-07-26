@@ -3,7 +3,7 @@ import { vi } from 'vitest'
 // Mock Tauri core APIs
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
-  isTauri: () => false,
+  isTauri: vi.fn(() => false),
 }))
 
 vi.mock('@tauri-apps/api/event', () => ({
