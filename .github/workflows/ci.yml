@@ -153,6 +153,10 @@ jobs:
         working-directory: mesh
         run: npm run build
 
+      - name: Enforce frontend entry bundle budget
+        working-directory: mesh
+        run: npm run check:bundle-size
+
       - name: Install Playwright browser
         working-directory: mesh
         run: npm run e2e:install -- --with-deps
