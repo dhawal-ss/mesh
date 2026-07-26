@@ -53,7 +53,7 @@ describe('UserPanel Matrix profile editing', () => {
     )
     await act(async () => settingsButton?.click())
     await act(async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 100))
+      await import('../settings/UserSettingsPanel')
     })
 
     const input = document.body.querySelector<HTMLInputElement>('input[autocomplete="nickname"]')
