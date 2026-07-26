@@ -16,6 +16,7 @@ import {
 } from '../../lib/attachments'
 import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
+import type { MemberRecord } from '../../store/membership'
 
 interface MessageInputProps {
   channelId: string
@@ -28,10 +29,36 @@ interface MessageInputProps {
   disableAttachments?: boolean
   disabled?: boolean
   communityId?: string
+  members?: readonly MemberRecord[]
   onEditLastMessage?: () => void
 }
 
 const TYPING_THROTTLE_MS = 5000
+const MAX_MENTION_SUGGESTIONS = 6
+
+interface MentionContext {
+  start: number
+  end: number
+  query: string
+}
+
+function getMentionContext(value: string, cursor: number): MentionContext | null {
+  const beforeCursor = value.slice(0, cursor)
+  const match = beforeCursor.match(/(?:^|\s)@([^\s@]*)$/)
+  if (!match) return null
+
+  const token = match[0]
+  const tokenOffset = token.startsWith('@') ? 0 : 1
+  return {
+    start: cursor - token.length + tokenOffset,
+    end: cursor,
+    query: match[1],
+  }
+}
+
+function isMatrixUserId(value: string) {
+  return /^@[^\s:@]+:[^\s]+$/.test(value)
+}
 
 export function MessageInput(props: MessageInputProps) {
   return (
@@ -53,9 +80,13 @@ function MessageInputContent({
   disableAttachments,
   disabled,
   communityId,
+  members = [],
   onEditLastMessage,
 }: MessageInputProps) {
   const [value, setValue] = useState('')
+  const [mentionCursor, setMentionCursor] = useState(0)
+  const [mentionIndex, setMentionIndex] = useState(0)
+  const [mentionsDismissed, setMentionsDismissed] = useState(false)
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [isStaging, setIsStaging] = useState(false)
@@ -109,7 +140,67 @@ function MessageInputContent({
     }
   }, [channelId])
 
+  const mentionContext = !mentionsDismissed && communityId && bridge.isMatrixBackend()
+    ? getMentionContext(value, mentionCursor)
+    : null
+  const mentionSuggestions = mentionContext
+    ? members
+      .filter((member) => (
+        member.joinStatus === 'joined'
+        && member.banStatus === 'none'
+        && isMatrixUserId(member.publicKey)
+      ))
+      .filter((member) => {
+        const query = mentionContext.query.toLocaleLowerCase()
+        return member.displayName.toLocaleLowerCase().includes(query)
+          || member.publicKey.toLocaleLowerCase().includes(query)
+      })
+      .slice(0, MAX_MENTION_SUGGESTIONS)
+    : []
+  const activeMentionIndex = Math.min(mentionIndex, Math.max(mentionSuggestions.length - 1, 0))
+
+  const selectMention = (member: MemberRecord) => {
+    if (!mentionContext) return
+    const nextValue = `${value.slice(0, mentionContext.start)}${member.publicKey} ${value.slice(mentionContext.end)}`
+    const nextCursor = mentionContext.start + member.publicKey.length + 1
+    setValue(nextValue)
+    setMentionCursor(nextCursor)
+    setMentionsDismissed(true)
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      inputRef.current?.setSelectionRange(nextCursor, nextCursor)
+    })
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (mentionSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setMentionIndex((current) => (
+          (Math.min(current, mentionSuggestions.length - 1) + 1) % mentionSuggestions.length
+        ))
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setMentionIndex((current) => (
+          (Math.min(current, mentionSuggestions.length - 1) - 1 + mentionSuggestions.length)
+            % mentionSuggestions.length
+        ))
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setMentionsDismissed(true)
+        return
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        selectMention(mentionSuggestions[activeMentionIndex])
+        return
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       void handleSubmit()
@@ -452,6 +543,8 @@ function MessageInputContent({
     setStagedFiles([])
     setAttachmentError(null)
     setValue('')
+    setMentionCursor(0)
+    setMentionsDismissed(false)
   }, [channelId])
 
   useEffect(() => {
@@ -505,7 +598,33 @@ function MessageInputContent({
         )}
 
         {/* Input row */}
-        <div className="flex items-end gap-0 px-1">
+        <div className="relative flex items-end gap-0 px-1">
+          {mentionSuggestions.length > 0 && (
+            <div
+              id={`mention-suggestions-${channelId}`}
+              role="listbox"
+              aria-label="Mention suggestions"
+              className="absolute bottom-full left-1 right-1 z-dropdown mb-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-raised shadow-lg"
+            >
+              {mentionSuggestions.map((member, index) => (
+                <button
+                  key={member.publicKey}
+                  id={`mention-suggestion-${channelId}-${index}`}
+                  type="button"
+                  role="option"
+                  aria-selected={index === activeMentionIndex}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => selectMention(member)}
+                  className={`flex min-h-control-md w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                    index === activeMentionIndex ? 'bg-bg-modifier-hover text-primary' : 'text-secondary hover:bg-bg-modifier-hover'
+                  }`}
+                >
+                  <span className="truncate font-medium">{member.displayName}</span>
+                  <span className="truncate font-mono text-xs text-muted">{member.publicKey}</span>
+                </button>
+              ))}
+            </div>
+          )}
           {/* Attachment button */}
           {!disableAttachments && !disabled && (
             <Tooltip content="Attach file" side="top">
@@ -526,6 +645,9 @@ function MessageInputContent({
             value={value}
             onChange={(e) => {
               setValue(e.target.value)
+              setMentionCursor(e.target.selectionStart)
+              setMentionIndex(0)
+              setMentionsDismissed(false)
               if (e.target.value.trim()) {
                 broadcastTypingThrottled()
               } else {
@@ -533,10 +655,21 @@ function MessageInputContent({
               }
             }}
             onKeyDown={handleKeyDown}
+            onSelect={(event) => {
+              setMentionCursor(event.currentTarget.selectionStart)
+              setMentionIndex(0)
+              setMentionsDismissed(false)
+            }}
             onPaste={handlePaste}
             placeholder={`Message #${channelName}`}
             aria-label={`Message ${channelName}`}
             aria-describedby={stagedFiles.length > 0 ? `pending-attachments-${channelId}` : undefined}
+            aria-autocomplete={communityId && bridge.isMatrixBackend() ? 'list' : undefined}
+            aria-controls={mentionSuggestions.length > 0 ? `mention-suggestions-${channelId}` : undefined}
+            aria-expanded={mentionSuggestions.length > 0}
+            aria-activedescendant={mentionSuggestions.length > 0
+              ? `mention-suggestion-${channelId}-${activeMentionIndex}`
+              : undefined}
             rows={1}
             disabled={disabled || isUploading || isStaging}
             className="min-h-control-lg max-h-composer w-full resize-none bg-transparent px-2 py-2.5 text-sm text-primary placeholder:text-muted focus:outline-none disabled:opacity-60"

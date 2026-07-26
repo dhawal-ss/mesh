@@ -22,6 +22,7 @@ import { useMessageNavigationStore } from '../../store/message-navigation'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
 import { Icon } from '../ui/Icon'
 import { ConversationProtection } from './ConversationProtection'
+import { useCommunityMembers } from '../../store/membership'
 
 interface ChatViewProps {
   channel: Channel
@@ -48,6 +49,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
   const isBrowsingOlder = useMessageStore((state) => state.browsingOlder[channel.id] ?? false)
   const hiddenNewerCount = useMessageStore((state) => state.newerGapCount[channel.id] ?? 0)
   const matrixMode = bridge.isMatrixBackend()
+  const communityMembers = useCommunityMembers(channel.communityId)
   const patchChannel = useChannelStore((state) => state.patchChannel)
   const setActiveChannel = useChannelStore((state) => state.setActiveChannel)
   const navigationRequest = useMessageNavigationStore((state) => (
@@ -788,6 +790,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
         channelName={channel.name}
         onSend={handleSend}
         communityId={channel.communityId}
+        members={communityMembers}
         disableAttachments={matrixMode && !bridge.getBackendCapabilities().encryptedAttachments}
         onEditLastMessage={() => {
           const ownMessage = [...channelMessages]
