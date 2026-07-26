@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
 import { isTauri } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { FileAttachmentPreview, type StagedFile } from './FileAttachment'
@@ -18,7 +18,7 @@ import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
 import type { MemberRecord } from '../../store/membership'
 import { MAX_DRAFT_LENGTH, useDraftStore } from '../../store/drafts'
-import { expandSlashCommand } from '../../lib/composer'
+import { expandSlashCommand, toggleMarkdownFormat, type MarkdownFormat } from '../../lib/composer'
 
 interface MessageInputProps {
   channelId: string
@@ -106,6 +106,7 @@ function MessageInputContent({
   const sendingFilesRef = useRef(new Set<StagedFile>())
   const mountedRef = useRef(true)
   const lastTypingBroadcast = useRef<number>(0)
+  const pendingSelectionRef = useRef<{ start: number; end: number } | null>(null)
 
   stagedFilesRef.current = stagedFiles
 
@@ -302,6 +303,25 @@ function MessageInputContent({
     } finally {
       for (const file of filesAtStart) sendingFilesRef.current.delete(file)
       if (intakeGenerationRef.current === sendGeneration) setIsUploading(false)
+    }
+  }
+
+  const applyFormatting = (format: MarkdownFormat) => {
+    const textarea = inputRef.current
+    if (!textarea || disabled || isUploading || isStaging) return
+    const result = toggleMarkdownFormat(
+      value,
+      textarea.selectionStart,
+      textarea.selectionEnd,
+      format,
+    )
+    setValue(result.value)
+    setDraft(channelId, result.value)
+    setMentionCursor(result.selectionEnd)
+    setMentionsDismissed(true)
+    pendingSelectionRef.current = {
+      start: result.selectionStart,
+      end: result.selectionEnd,
     }
   }
 
@@ -563,6 +583,14 @@ function MessageInputContent({
     }
   }, [value])
 
+  useLayoutEffect(() => {
+    const pending = pendingSelectionRef.current
+    if (!pending || !inputRef.current) return
+    pendingSelectionRef.current = null
+    inputRef.current.focus()
+    inputRef.current.setSelectionRange(pending.start, pending.end)
+  }, [value])
+
   return (
     <div
       ref={rootRef}
@@ -604,6 +632,28 @@ function MessageInputContent({
             compact
           />
         )}
+
+        <div className="flex items-center gap-1 border-b border-border-subtle px-2 py-1" aria-label="Message formatting">
+          {([
+            ['bold', 'Bold', 'B'],
+            ['italic', 'Italic', 'I'],
+            ['strike', 'Strikethrough', 'S'],
+            ['code', 'Inline code', '<>'],
+          ] as const).map(([format, label, glyph]) => (
+            <button
+              key={format}
+              type="button"
+              aria-label={label}
+              title={label}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => applyFormatting(format)}
+              disabled={disabled || isUploading || isStaging}
+              className="flex h-7 min-w-7 items-center justify-center rounded px-1.5 text-xs font-semibold text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {glyph}
+            </button>
+          ))}
+        </div>
 
         {/* Input row */}
         <div className="relative flex items-end gap-0 px-1">
