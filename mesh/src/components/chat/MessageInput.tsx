@@ -17,6 +17,7 @@ import {
 import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
 import type { MemberRecord } from '../../store/membership'
+import { MAX_DRAFT_LENGTH, useDraftStore } from '../../store/drafts'
 
 interface MessageInputProps {
   channelId: string
@@ -83,7 +84,9 @@ function MessageInputContent({
   members = [],
   onEditLastMessage,
 }: MessageInputProps) {
-  const [value, setValue] = useState('')
+  const [value, setValue] = useState(() => useDraftStore.getState().drafts[channelId] ?? '')
+  const setDraft = useDraftStore((state) => state.setDraft)
+  const clearDraft = useDraftStore((state) => state.clearDraft)
   const [mentionCursor, setMentionCursor] = useState(0)
   const [mentionIndex, setMentionIndex] = useState(0)
   const [mentionsDismissed, setMentionsDismissed] = useState(false)
@@ -164,6 +167,7 @@ function MessageInputContent({
     const nextValue = `${value.slice(0, mentionContext.start)}${member.publicKey} ${value.slice(mentionContext.end)}`
     const nextCursor = mentionContext.start + member.publicKey.length + 1
     setValue(nextValue)
+    setDraft(channelId, nextValue)
     setMentionCursor(nextCursor)
     setMentionsDismissed(true)
     requestAnimationFrame(() => {
@@ -242,6 +246,7 @@ function MessageInputContent({
             stagedFilesRef.current = next
             setStagedFiles(next)
             if (contentConsumed) setValue('')
+            if (contentConsumed) clearDraft(channelId)
           }
         })
         // Backward-compatible cleanup for callers that completed the whole send
@@ -255,6 +260,7 @@ function MessageInputContent({
           )
           setStagedFiles(stagedFilesRef.current)
           setValue('')
+          clearDraft(channelId)
           bridge.setTyping(channelId, false).catch(() => {})
         }
         return
@@ -282,6 +288,7 @@ function MessageInputContent({
       if (content) await onSend(content)
       if (intakeGenerationRef.current === sendGeneration) {
         setValue('')
+        clearDraft(channelId)
         bridge.setTyping(channelId, false).catch(() => {})
       }
     } catch (error) {
@@ -542,10 +549,10 @@ function MessageInputContent({
     stagedFilesRef.current = []
     setStagedFiles([])
     setAttachmentError(null)
-    setValue('')
+    setValue(useDraftStore.getState().drafts[channelId] ?? '')
     setMentionCursor(0)
     setMentionsDismissed(false)
-  }, [channelId])
+  }, [channelId, clearDraft])
 
   useEffect(() => {
     if (inputRef.current) {
@@ -644,7 +651,9 @@ function MessageInputContent({
             ref={inputRef}
             value={value}
             onChange={(e) => {
-              setValue(e.target.value)
+              const nextValue = e.target.value.slice(0, MAX_DRAFT_LENGTH)
+              setValue(nextValue)
+              setDraft(channelId, nextValue)
               setMentionCursor(e.target.selectionStart)
               setMentionIndex(0)
               setMentionsDismissed(false)
@@ -671,6 +680,7 @@ function MessageInputContent({
               ? `mention-suggestion-${channelId}-${activeMentionIndex}`
               : undefined}
             rows={1}
+            maxLength={MAX_DRAFT_LENGTH}
             disabled={disabled || isUploading || isStaging}
             className="min-h-control-lg max-h-composer w-full resize-none bg-transparent px-2 py-2.5 text-sm text-primary placeholder:text-muted focus:outline-none disabled:opacity-60"
           />
