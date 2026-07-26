@@ -153,4 +153,40 @@ describe('SearchBar', () => {
     })
     expect(container.textContent).toContain('second result')
   })
+
+  it('supports ArrowDown and Enter result selection', async () => {
+    const navigate = vi.fn()
+    const secondMessage = { ...targetMessage, id: 'second-result', content: 'second result' }
+    vi.spyOn(bridge, 'searchMessages').mockResolvedValue([targetMessage, secondMessage])
+
+    await act(async () => {
+      root.render(<SearchBar onNavigateToMessage={navigate} />)
+    })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[title="Search messages"]')?.click()
+    })
+    const input = container.querySelector<HTMLInputElement>('input[type="text"]')
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set
+    await act(async () => {
+      setValue?.call(input, 'searched')
+      input?.dispatchEvent(new Event('input', { bubbles: true }))
+      vi.advanceTimersByTime(300)
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(input?.getAttribute('aria-activedescendant')).toBe('search-result-second-result')
+
+    await act(async () => {
+      input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(navigate).toHaveBeenCalledWith(secondMessage)
+  })
 })
