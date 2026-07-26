@@ -281,9 +281,11 @@ export function ChannelSidebar() {
         onClose={() => setShowSettings(false)}
         title="Server Settings"
       >
-        <Suspense fallback={<div role="status" aria-label="Loading server settings" className="flex items-center justify-center p-6"><Spinner /></div>}>
-          <CommunitySettings isOpen={showSettings} onClose={() => setShowSettings(false)} />
-        </Suspense>
+        {showSettings && (
+          <Suspense fallback={<div role="status" aria-label="Loading server settings" className="flex items-center justify-center p-6"><Spinner /></div>}>
+            <CommunitySettings isOpen onClose={() => setShowSettings(false)} />
+          </Suspense>
+        )}
       </DialogErrorBoundary>
     </>
   )
