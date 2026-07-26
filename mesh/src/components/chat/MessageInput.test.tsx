@@ -478,6 +478,19 @@ describe('MessageInput attachment UX', () => {
     expect(restored.value).toBe('')
   })
 
+  it('expands local slash commands before invoking the send callback', async () => {
+    const onSend = vi.fn().mockResolvedValue(undefined)
+    const textarea = await render(onSend)
+    await setComposerValue(textarea, '/me waves')
+
+    await act(async () => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await flushAsyncWork()
+    })
+
+    expect(onSend).toHaveBeenCalledWith('*waves*')
+  })
+
   it('lets an in-flight send finish without deleting or mutating the next room draft', async () => {
     let finishSend: (() => Promise<void>) | undefined
     const onSend = vi.fn((
