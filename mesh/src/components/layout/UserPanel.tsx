@@ -147,38 +147,38 @@ export function UserPanel() {
         onClose={() => setShowDiagnostics(false)}
         title="System diagnostics"
       >
-        <Suspense fallback={<div role="status" aria-label="Loading diagnostics"><Spinner /></div>}>
-          <DiagnosticsPanel
-            open={showDiagnostics}
-            onClose={() => setShowDiagnostics(false)}
-            backendKind={matrixMode ? 'matrix' : 'legacy-p2p'}
-          />
-        </Suspense>
+        {showDiagnostics && (
+          <Suspense fallback={<div role="status" aria-label="Loading diagnostics"><Spinner /></div>}>
+            <DiagnosticsPanel
+              open
+              onClose={() => setShowDiagnostics(false)}
+              backendKind={matrixMode ? 'matrix' : 'legacy-p2p'}
+            />
+          </Suspense>
+        )}
       </DialogErrorBoundary>
       <DialogErrorBoundary
         open={showImport}
         onClose={() => setShowImport(false)}
         title="Import older Mesh data"
       >
-        <Modal
-          open={showImport}
-          onClose={() => setShowImport(false)}
-          title="Import older Mesh data"
-        >
-          <Suspense fallback={<div role="status" aria-label="Loading import tools"><Spinner /></div>}>
-            {activeCommunity ? (
-              <LegacyMigrationPanel
-                communityId={activeCommunity.id}
-                channels={channels}
-                canManage={activeCommunity.role === 'owner' || activeCommunity.role === 'admin'}
-              />
-            ) : (
-              <p className="text-sm text-content-secondary">
-                Choose a server before importing older Mesh data.
-              </p>
-            )}
-          </Suspense>
-        </Modal>
+        {showImport && (
+          <Modal open onClose={() => setShowImport(false)} title="Import older Mesh data">
+            <Suspense fallback={<div role="status" aria-label="Loading import tools"><Spinner /></div>}>
+              {activeCommunity ? (
+                <LegacyMigrationPanel
+                  communityId={activeCommunity.id}
+                  channels={channels}
+                  canManage={activeCommunity.role === 'owner' || activeCommunity.role === 'admin'}
+                />
+              ) : (
+                <p className="text-sm text-content-secondary">
+                  Choose a server before importing older Mesh data.
+                </p>
+              )}
+            </Suspense>
+          </Modal>
+        )}
       </DialogErrorBoundary>
     </>
   )
