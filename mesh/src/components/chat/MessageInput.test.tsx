@@ -264,10 +264,12 @@ describe('MessageInput attachment UX', () => {
 
     await act(async () => {
       textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-      await Promise.resolve()
+      await flushAsyncWork()
     })
     await act(async () => {
-      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      const secondSuggestion = container.querySelectorAll<HTMLElement>('[role="option"]')[1]
+      secondSuggestion?.click()
+      await flushAsyncWork()
     })
 
     expect(textarea.value).toBe('hello @alicia:mesh.test ')
