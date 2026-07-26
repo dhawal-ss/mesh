@@ -19,23 +19,29 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
   const [isSearching, setIsSearching] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const searchGenerationRef = useRef(0)
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
   const channels = useChannelStore((s) => s.channels)
 
   const performSearch = useCallback(
     async (searchQuery: string) => {
-      if (!searchQuery.trim() || !activeCommunityId) {
+      const generation = ++searchGenerationRef.current
+      const normalizedQuery = searchQuery.trim()
+      if (!normalizedQuery || !activeCommunityId) {
         setResults([])
+        setIsSearching(false)
         return
       }
       setIsSearching(true)
       try {
-        const found = await bridge.searchMessages(searchQuery.trim(), activeCommunityId, 20)
+        const found = await bridge.searchMessages(normalizedQuery, activeCommunityId, 20)
+        if (generation !== searchGenerationRef.current) return
         setResults(found)
       } catch {
+        if (generation !== searchGenerationRef.current) return
         setResults([])
       } finally {
-        setIsSearching(false)
+        if (generation === searchGenerationRef.current) setIsSearching(false)
       }
     },
     [activeCommunityId],
@@ -53,6 +59,13 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
   useEffect(() => {
     if (isOpen && inputRef.current) inputRef.current.focus()
   }, [isOpen])
+
+  useEffect(() => {
+    clearTimeout(debounceRef.current)
+    searchGenerationRef.current += 1
+    setResults([])
+    setIsSearching(false)
+  }, [activeCommunityId])
 
   useEffect(() => {
     return () => clearTimeout(debounceRef.current)
@@ -98,6 +111,7 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
                 value={query}
                 onChange={(e) => handleInputChange(e.target.value)}
                 placeholder="Search messages…"
+                aria-label="Search messages"
                 className="flex-1 bg-transparent text-sm text-primary outline-none placeholder:text-muted"
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') {
@@ -113,7 +127,7 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
             </div>
 
             {/* Results */}
-            <div className="max-h-80 overflow-y-auto">
+            <div className="max-h-80 overflow-y-auto" role="listbox" aria-label="Search results">
               {query.trim() && results.length === 0 && !isSearching && (
                 <div className="px-4 py-6 text-center text-sm text-muted">
                   No messages found
@@ -123,6 +137,7 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
               {results.map((message) => (
                 <button
                   key={message.id}
+                  role="option"
                   onClick={() => handleResultClick(message)}
                   className="flex w-full flex-col gap-0.5 px-4 py-2.5 text-left transition-colors hover:bg-bg-modifier-hover"
                 >
