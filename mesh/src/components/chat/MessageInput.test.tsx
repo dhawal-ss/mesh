@@ -27,6 +27,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 import * as bridge from '../../lib/bridge'
 import { MessageInput } from './MessageInput'
 import type { StagedFile } from './FileAttachment'
+import type { MemberRecord } from '../../store/membership'
 
 function clipboardFile(name: string, type: string, bytes: number[]): File {
   return {
@@ -78,17 +79,33 @@ describe('MessageInput attachment UX', () => {
     vi.restoreAllMocks()
   })
 
-  async function render(onSend = vi.fn()) {
+  async function render(
+    onSend = vi.fn(),
+    mentionProps: Pick<React.ComponentProps<typeof MessageInput>, 'communityId' | 'members'> = {},
+  ) {
     await act(async () => {
       root.render(
         <MessageInput
           channelId="!room:mesh.test"
           channelName="general"
           onSend={onSend}
+          {...mentionProps}
         />,
       )
     })
     return container.querySelector('textarea') as HTMLTextAreaElement
+  }
+
+  async function setComposerValue(textarea: HTMLTextAreaElement, value: string) {
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        'value',
+      )?.set
+      valueSetter?.call(textarea, value)
+      textarea.setSelectionRange(value.length, value.length)
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    })
   }
 
   async function paste(textarea: HTMLTextAreaElement, files: File[]) {
@@ -204,6 +221,117 @@ describe('MessageInput attachment UX', () => {
     })
 
     expect(onEditLastMessage).toHaveBeenCalledOnce()
+  })
+
+  it('filters and inserts a selected community member mention from the keyboard', async () => {
+    const members: MemberRecord[] = [
+      {
+        publicKey: '@alice:mesh.test',
+        displayName: 'Alice',
+        avatarColor: '#111111',
+        role: 'member',
+        joinStatus: 'joined',
+        banStatus: 'none',
+        lastSeen: null,
+      },
+      {
+        publicKey: '@alicia:mesh.test',
+        displayName: 'Alicia',
+        avatarColor: '#222222',
+        role: 'member',
+        joinStatus: 'joined',
+        banStatus: 'none',
+        lastSeen: null,
+      },
+      {
+        publicKey: '@bob:mesh.test',
+        displayName: 'Bob',
+        avatarColor: '#333333',
+        role: 'member',
+        joinStatus: 'joined',
+        banStatus: 'none',
+        lastSeen: null,
+      },
+    ]
+    const textarea = await render(vi.fn(), { communityId: '!community:mesh.test', members })
+
+    await setComposerValue(textarea, 'hello @ali')
+
+    const suggestions = container.querySelector('[role="listbox"]')
+    expect(suggestions?.textContent).toContain('Alice')
+    expect(suggestions?.textContent).toContain('Alicia')
+    expect(suggestions?.textContent).not.toContain('Bob')
+
+    await act(async () => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    })
+    await act(async () => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+
+    expect(textarea.value).toBe('hello @alicia:mesh.test ')
+    expect(container.querySelector('[role="listbox"]')).toBeNull()
+  })
+
+  it('does not open mention autocomplete outside a valid populated community context', async () => {
+    const member: MemberRecord = {
+      publicKey: '@alice:mesh.test',
+      displayName: 'Alice',
+      avatarColor: '#111111',
+      role: 'member',
+      joinStatus: 'joined',
+      banStatus: 'none',
+      lastSeen: null,
+    }
+    const textarea = await render(vi.fn(), { members: [member] })
+
+    await setComposerValue(textarea, '@')
+    expect(container.querySelector('[role="listbox"]')).toBeNull()
+
+    await act(async () => {
+      root.render(
+        <MessageInput
+          channelId="!room:mesh.test"
+          channelName="general"
+          onSend={vi.fn()}
+          communityId="!community:mesh.test"
+          members={[]}
+        />,
+      )
+    })
+    const emptyRosterInput = container.querySelector('textarea') as HTMLTextAreaElement
+    await setComposerValue(emptyRosterInput, '@')
+    expect(container.querySelector('[role="listbox"]')).toBeNull()
+
+    await act(async () => {
+      root.render(
+        <MessageInput
+          channelId="!room:mesh.test"
+          channelName="general"
+          onSend={vi.fn()}
+          communityId="!community:mesh.test"
+          members={[{ ...member, publicKey: 'not-a-user-id' }]}
+        />,
+      )
+    })
+    const invalidRosterInput = container.querySelector('textarea') as HTMLTextAreaElement
+    await setComposerValue(invalidRosterInput, '@')
+    expect(container.querySelector('[role="listbox"]')).toBeNull()
+
+    await act(async () => {
+      root.render(
+        <MessageInput
+          channelId="!room:mesh.test"
+          channelName="general"
+          onSend={vi.fn()}
+          communityId="!community:mesh.test"
+          members={[member]}
+        />,
+      )
+    })
+    const validRosterInput = container.querySelector('textarea') as HTMLTextAreaElement
+    await setComposerValue(validRosterInput, 'email@alice')
+    expect(container.querySelector('[role="listbox"]')).toBeNull()
   })
 
   it('discards a slow clipboard copy instead of moving it into the next room', async () => {
