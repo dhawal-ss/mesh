@@ -18,6 +18,7 @@ import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
 import type { MemberRecord } from '../../store/membership'
 import { MAX_DRAFT_LENGTH, useDraftStore } from '../../store/drafts'
+import { expandSlashCommand } from '../../lib/composer'
 
 interface MessageInputProps {
   channelId: string
@@ -219,7 +220,7 @@ function MessageInputContent({
 
   const handleSubmit = async () => {
     if (disabled || isUploading || isStaging) return
-    const content = value.trim()
+    const content = expandSlashCommand(value.trim())
     if (!content && stagedFiles.length === 0) return
 
     const sendGeneration = intakeGenerationRef.current
