@@ -8,6 +8,7 @@ import { useCommunityStore } from '../../store/communities'
 import { useIdentityStore } from '../../store/identity'
 import { useChannelStore } from '../../store/channels'
 import { useMessageStore } from '../../store/messages'
+import { useCommunityMembers } from '../../store/membership'
 import * as bridge from '../../lib/bridge'
 import { useFileDownloadStore } from '../../store/file-downloads'
 import { formatFederatedTimestamp } from '../../lib/federated-time'
@@ -43,6 +44,7 @@ export const MessageComponent = memo(function MessageComponent({
   const [confirmBan, setConfirmBan] = useState(false)
   const matrixMode = bridge.isMatrixBackend()
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
+  const communityMembers = useCommunityMembers(activeCommunityId)
   const myRole = useCommunityStore((s) =>
     s.activeCommunityId ? s.communityEntities[s.activeCommunityId]?.role : undefined,
   )
@@ -274,7 +276,11 @@ export const MessageComponent = memo(function MessageComponent({
             </div>
           ) : (
             <>
-              <MarkdownContent content={message.content} />
+              <MarkdownContent
+                content={message.content}
+                members={communityMembers}
+                ownUserId={myPublicKey ?? null}
+              />
               {message.editedAt && (
                 <span className="ml-1 text-caption text-muted">(edited)</span>
               )}

@@ -1,15 +1,27 @@
 import React, { memo, useMemo } from 'react'
+import type { MemberRecord } from '../../store/membership'
 
 interface MarkdownContentProps {
   content: string
   className?: string
+  /** Member data is resolved at render time so profile renames propagate. */
+  members?: readonly Pick<MemberRecord, 'publicKey' | 'displayName'>[]
+  ownUserId?: string | null
+  /** Room-wide mentions remain opt-in until power-level policy is available. */
+  roomWideMentionsAllowed?: boolean
 }
 
 export const MarkdownContent = memo(function MarkdownContent({
   content,
   className = '',
+  members = [],
+  ownUserId = null,
+  roomWideMentionsAllowed = false,
 }: MarkdownContentProps) {
-  const rendered = useMemo(() => parseMarkdown(content), [content])
+  const rendered = useMemo(
+    () => parseMarkdown(content, { members, ownUserId, roomWideMentionsAllowed }),
+    [content, members, ownUserId, roomWideMentionsAllowed],
+  )
 
   return (
     <div
@@ -22,7 +34,13 @@ export const MarkdownContent = memo(function MarkdownContent({
 
 type InlineNode = string | React.ReactElement
 
-function parseMarkdown(text: string): React.ReactElement[] {
+interface MentionRenderOptions {
+  members: readonly Pick<MemberRecord, 'publicKey' | 'displayName'>[]
+  ownUserId: string | null
+  roomWideMentionsAllowed: boolean
+}
+
+function parseMarkdown(text: string, mentionOptions: MentionRenderOptions): React.ReactElement[] {
   const lines = text.split('\n')
   const elements: React.ReactElement[] = []
   let i = 0
@@ -52,7 +70,7 @@ function parseMarkdown(text: string): React.ReactElement[] {
     elements.push(
       <span key={`line-${i}`}>
         {i > 0 && '\n'}
-        {parseInline(lines[i], i)}
+        {parseInline(lines[i], i, mentionOptions)}
       </span>,
     )
     i++
@@ -73,10 +91,14 @@ function isSafeUrl(url: string): boolean {
   }
 }
 
-function parseInline(text: string, lineKey: number): InlineNode[] {
+function parseInline(
+  text: string,
+  lineKey: number,
+  mentionOptions: MentionRenderOptions,
+): InlineNode[] {
   const nodes: InlineNode[] = []
   const regex =
-    /(`[^`]+`)|(\*\*[^*]+\*\*)|(~~[^~]+~~)|(\*[^*]+\*|_[^_]+_)|(\[([^\]]+)\]\(([^)]+)\))|(@\w[\w\s]*\w|@\w)/g
+    /(`[^`]+`)|(\*\*[^*]+\*\*)|(~~[^~]+~~)|(\*[^*]+\*|_[^_]+_)|(\[([^\]]+)\]\(([^)]+)\))|(@[A-Za-z0-9._=-]+:[^\s]+|@(everyone|here|room)\b|@\w[\w-]*)/g
 
   let lastIndex = 0
   let match
@@ -136,15 +158,34 @@ function parseInline(text: string, lineKey: number): InlineNode[] {
           </span>,
         )
       }
-    } else if (match[0].startsWith('@')) {
-      nodes.push(
-        <span
-          key={key}
-          className="rounded-sm bg-blue/15 px-1 py-0.5 font-medium text-blue hover:bg-blue/25 cursor-pointer"
-        >
-          {match[0]}
-        </span>,
-      )
+    } else if (match[8]) {
+      const rawMention = match[8]
+      const mention = trimMentionPunctuation(rawMention)
+      const trailingPunctuation = rawMention.slice(mention.length)
+      const isRoomWide = mention === '@everyone' || mention === '@here' || mention === '@room'
+      if (isRoomWide && !mentionOptions.roomWideMentionsAllowed) {
+        nodes.push(mention)
+      } else {
+        const member = mentionOptions.members.find((candidate) => candidate.publicKey === mention)
+        const displayName = member?.displayName.trim()
+        const label = displayName ? `@${displayName}` : mention
+        const isSelf = !isRoomWide && mentionOptions.ownUserId === mention
+        nodes.push(
+          <span
+            key={key}
+            data-mention-id={!isRoomWide ? mention : undefined}
+            data-mention-kind={isRoomWide ? 'room-wide' : 'user'}
+            title={displayName ? mention : undefined}
+            aria-label={`Mention ${mention}`}
+            className={isSelf
+              ? 'inline-flex rounded-full bg-accent/25 px-1.5 py-0.5 font-medium text-accent ring-1 ring-accent/40'
+              : 'inline-flex rounded-full bg-blue/15 px-1.5 py-0.5 font-medium text-blue hover:bg-blue/25'}
+          >
+            {label}
+          </span>,
+        )
+      }
+      if (trailingPunctuation) nodes.push(trailingPunctuation)
     }
 
     lastIndex = regex.lastIndex
@@ -155,4 +196,11 @@ function parseInline(text: string, lineKey: number): InlineNode[] {
   }
 
   return nodes
+}
+
+function trimMentionPunctuation(token: string): string {
+  let mention = token.replace(/[.,!?;]+$/, '')
+  if (mention.endsWith(')') && !mention.includes('(')) mention = mention.slice(0, -1)
+  if (mention.endsWith(']') && !mention.includes('[')) mention = mention.slice(0, -1)
+  return mention
 }
