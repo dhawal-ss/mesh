@@ -264,6 +264,7 @@ describe('MessageInput attachment UX', () => {
 
     await act(async () => {
       textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+      await Promise.resolve()
     })
     await act(async () => {
       textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
