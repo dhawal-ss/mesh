@@ -83,7 +83,7 @@ use matrix_sdk::{
             typing::SyncTypingEvent,
             AnyGlobalAccountDataEventContent, AnyStateEvent, AnyStateEventContent,
             AnyToDeviceEvent, AnyToDeviceEventContent, GlobalAccountDataEventType,
-            InitialStateEvent, StateEvent, StateEventType,
+            InitialStateEvent, Mentions, StateEvent, StateEventType,
         },
         int,
         presence::PresenceState,
@@ -720,6 +720,55 @@ impl MatrixBackend {
             preview.push('…');
         }
         preview
+    }
+
+    /// Extract explicit Matrix user IDs from a message body for intentional mentions.
+    ///
+    /// Display names and local `@everyone`-style conventions are deliberately ignored until
+    /// the composer has a member-backed representation and a server-side policy for them.
+    fn mentions_for_body(body: &str, own_user_id: Option<&UserId>) -> Mentions {
+        const MAX_MENTIONS: usize = 64;
+        const MAX_SCAN_BYTES: usize = 16 * 1024;
+
+        let mut mentions = Mentions::new();
+        for (at_index, character) in body.char_indices() {
+            if at_index >= MAX_SCAN_BYTES {
+                break;
+            }
+            if character != '@' || mentions.user_ids.len() >= MAX_MENTIONS {
+                continue;
+            }
+
+            let boundary = body[..at_index].chars().next_back().is_none_or(|previous| {
+                previous.is_whitespace()
+                    || matches!(previous, '<' | '(' | '[' | '{' | '"' | '\'' | '`')
+            });
+            if !boundary {
+                continue;
+            }
+
+            let candidate = body[at_index..]
+                .split(|character: char| {
+                    character.is_whitespace()
+                        || matches!(
+                            character,
+                            '<' | '>' | '(' | ')' | '[' | ']' | '{' | '}' | '"' | '\'' | '`'
+                        )
+                })
+                .next()
+                .unwrap_or_default()
+                .trim_end_matches(|character: char| {
+                    matches!(character, '.' | ',' | '!' | '?' | ';' | ':')
+                });
+            let Ok(user_id) = UserId::parse(candidate) else {
+                continue;
+            };
+            if own_user_id.is_some_and(|own_user_id| own_user_id == user_id) {
+                continue;
+            }
+            mentions.user_ids.insert(user_id);
+        }
+        mentions
     }
 
     async fn emit_room_unread(
@@ -7143,10 +7192,10 @@ impl MeshBackend for MatrixBackend {
             BackendError::Other("room is not present in the local Matrix store".into())
         })?;
         Self::require_encrypted_room(&room, "sending a message").await?;
-        let response = room
-            .send(RoomMessageEventContent::text_plain(body))
-            .await
-            .map_err(Self::map_error)?;
+        let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
+        let mentions = Self::mentions_for_body(body.as_str(), Some(own_user_id));
+        let content = RoomMessageEventContent::text_plain(body).add_mentions(mentions);
+        let response = room.send(content).await.map_err(Self::map_error)?;
         Ok(SentMessage {
             event_id: response.response.event_id.to_string(),
             room_id: room.room_id().to_string(),
@@ -7176,27 +7225,29 @@ impl MeshBackend for MatrixBackend {
             "sending a message"
         };
         Self::require_encrypted_room(&room, action).await?;
+        let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
+        let base_content = RoomMessageEventContentWithoutRelation::text_plain(body.clone())
+            .add_mentions(Self::mentions_for_body(body.as_str(), Some(own_user_id)));
 
         let content = match reply_to_id.as_deref() {
             Some(event_id) => {
                 let event_id =
                     matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
                 room.make_reply_event(
-                    RoomMessageEventContentWithoutRelation::text_plain(body.clone()),
+                    base_content,
                     Reply {
                         event_id,
                         enforce_thread: EnforceThread::Unthreaded,
-                        add_mentions: AddMentions::No,
+                        add_mentions: AddMentions::Yes,
                     },
                 )
                 .await
                 .map_err(Self::map_error)?
             }
-            None => RoomMessageEventContent::text_plain(body.clone()),
+            None => base_content.into(),
         };
         let response = room.send(content).await.map_err(Self::map_error)?;
 
-        let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
         let display_name = room
             .get_member(own_user_id)
             .await
@@ -7364,6 +7415,7 @@ impl MeshBackend for MatrixBackend {
                 BackendError::Other("room is not present in the local Matrix store".into())
             })?;
             Self::require_encrypted_room(&room, "sending an attachment").await?;
+            let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
 
             Self::emit_transfer_progress(
                 &progress,
@@ -7441,7 +7493,8 @@ impl MeshBackend for MatrixBackend {
             file_content.filename = Some(filename.clone());
             file_content.info = Some(Box::new(info));
             let base_content =
-                RoomMessageEventContentWithoutRelation::new(MessageType::File(file_content));
+                RoomMessageEventContentWithoutRelation::new(MessageType::File(file_content))
+                    .add_mentions(Self::mentions_for_body(body.as_str(), Some(own_user_id)));
             let content = match reply_to_id.as_deref() {
                 Some(event_id) => {
                     let event_id =
@@ -7451,7 +7504,7 @@ impl MeshBackend for MatrixBackend {
                         Reply {
                             event_id,
                             enforce_thread: EnforceThread::Unthreaded,
-                            add_mentions: AddMentions::No,
+                            add_mentions: AddMentions::Yes,
                         },
                     )
                     .await
@@ -7474,7 +7527,6 @@ impl MeshBackend for MatrixBackend {
                 ));
             }
             let response = room.send(content).await.map_err(Self::map_error)?;
-            let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
             let display_name = room
                 .get_member(own_user_id)
                 .await
@@ -9851,6 +9903,70 @@ mod tests {
         let preview = MatrixBackend::notification_preview(&"a".repeat(300));
         assert_eq!(preview.chars().count(), 241);
         assert!(preview.ends_with('…'));
+    }
+
+    #[test]
+    fn explicit_matrix_mentions_parse_safely_and_filter_self() {
+        let own_user_id = UserId::parse("@self:example.org").unwrap();
+        let mentions = MatrixBackend::mentions_for_body(
+            "hello @alice:example.org, <@bob:example.net> @everyone foo@ignored.example @self:example.org.",
+            Some(&own_user_id),
+        );
+        let user_ids = mentions
+            .user_ids
+            .iter()
+            .map(|user_id| user_id.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(user_ids, vec!["@alice:example.org", "@bob:example.net"]);
+        assert!(!mentions.room);
+
+        let mut body = String::new();
+        for index in 0..80 {
+            body.push_str(&format!(" @user{index}:example.org"));
+        }
+        assert_eq!(
+            MatrixBackend::mentions_for_body(&body, None).user_ids.len(),
+            64
+        );
+    }
+
+    #[test]
+    fn mention_metadata_serializes_on_plain_messages_and_replies() {
+        let body = "hello @alice:example.org";
+        let content = RoomMessageEventContent::text_plain(body)
+            .add_mentions(MatrixBackend::mentions_for_body(body, None));
+        let serialized = serde_json::to_value(content).unwrap();
+        assert_eq!(
+            serialized["m.mentions"]["user_ids"],
+            json!(["@alice:example.org"])
+        );
+        assert!(serialized["m.mentions"].get("room").is_none());
+
+        let event_id = matrix_sdk::ruma::EventId::parse("$event:example.org").unwrap();
+        let sender = UserId::parse("@sender:example.org").unwrap();
+        let reply = RoomMessageEventContentWithoutRelation::text_plain("reply")
+            .add_mentions(Mentions::new())
+            .make_reply_to(
+                matrix_sdk::ruma::events::room::message::ReplyMetadata::new(
+                    &event_id, &sender, None,
+                ),
+                matrix_sdk::ruma::events::room::message::ForwardThread::No,
+                AddMentions::Yes,
+            );
+        let reply_json = serde_json::to_value(reply).unwrap();
+        assert_eq!(
+            reply_json["m.mentions"]["user_ids"],
+            json!(["@sender:example.org"])
+        );
+
+        let empty = RoomMessageEventContent::text_plain("no explicit mention").add_mentions(
+            MatrixBackend::mentions_for_body("no explicit mention", None),
+        );
+        assert_eq!(
+            serde_json::to_value(empty).unwrap()["m.mentions"],
+            json!({})
+        );
     }
 
     #[test]
