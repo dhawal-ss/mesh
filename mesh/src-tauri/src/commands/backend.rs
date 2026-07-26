@@ -78,6 +78,20 @@ pub async fn get_backend_status(state: State<'_, AppState>) -> Result<BackendSta
 }
 
 #[tauri::command]
+pub async fn matrix_room_is_encrypted(
+    room_id: String,
+    state: State<'_, AppState>,
+) -> Result<bool, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .matrix_room_is_encrypted(room_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
 pub async fn matrix_get_room_notification_mode(
     room_id: String,
     state: State<'_, AppState>,

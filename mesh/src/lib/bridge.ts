@@ -380,6 +380,10 @@ export async function sendTestNotification(): Promise<void> {
   return tauriInvoke('send_test_notification')
 }
 
+export async function matrixRoomIsEncrypted(roomId: string): Promise<boolean> {
+  return tauriInvoke('matrix_room_is_encrypted', { roomId })
+}
+
 export async function getMatrixRoomNotificationMode(
   roomId: string,
 ): Promise<MatrixRoomNotificationMode> {
