@@ -1,5 +1,51 @@
 const SHRUG = '¯\\_(ツ)_/¯'
 
+export type MarkdownFormat = 'bold' | 'italic' | 'strike' | 'code'
+
+const FORMAT_MARKERS: Record<MarkdownFormat, readonly [string, string]> = {
+  bold: ['**', '**'],
+  italic: ['*', '*'],
+  strike: ['~~', '~~'],
+  code: ['`', '`'],
+}
+
+export interface MarkdownFormatResult {
+  value: string
+  selectionStart: number
+  selectionEnd: number
+}
+
+export function toggleMarkdownFormat(
+  value: string,
+  selectionStart: number,
+  selectionEnd: number,
+  format: MarkdownFormat,
+): MarkdownFormatResult {
+  const [open, close] = FORMAT_MARKERS[format]
+  const selected = value.slice(selectionStart, selectionEnd)
+  const alreadyWrapped = selected.length >= open.length + close.length
+    && selected.startsWith(open)
+    && selected.endsWith(close)
+
+  if (alreadyWrapped) {
+    const unwrapped = selected.slice(open.length, -close.length)
+    const nextValue = `${value.slice(0, selectionStart)}${unwrapped}${value.slice(selectionEnd)}`
+    return {
+      value: nextValue,
+      selectionStart,
+      selectionEnd: selectionStart + unwrapped.length,
+    }
+  }
+
+  const nextValue = `${value.slice(0, selectionStart)}${open}${selected}${close}${value.slice(selectionEnd)}`
+  const nextSelectionStart = selectionStart + open.length
+  return {
+    value: nextValue,
+    selectionStart: nextSelectionStart,
+    selectionEnd: nextSelectionStart + selected.length,
+  }
+}
+
 /**
  * Expand commands that are purely local formatting conveniences.
  * Server-backed commands must stay explicit until their permission model exists.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { expandSlashCommand } from './composer'
+import { expandSlashCommand, toggleMarkdownFormat } from './composer'
 
 describe('expandSlashCommand', () => {
   it('expands shrug with and without a message', () => {
@@ -17,5 +17,26 @@ describe('expandSlashCommand', () => {
     expect(expandSlashCommand('hello /shrug')).toBe('hello /shrug')
     expect(expandSlashCommand('/nick Mesh')).toBe('/nick Mesh')
     expect(expandSlashCommand('  hello  ')).toBe('  hello  ')
+  })
+
+  it('wraps a selection and keeps the inner text selected', () => {
+    expect(toggleMarkdownFormat('hello world', 6, 11, 'bold')).toEqual({
+      value: 'hello **world**',
+      selectionStart: 8,
+      selectionEnd: 13,
+    })
+  })
+
+  it('toggles an existing wrapper off and places an empty cursor between markers', () => {
+    expect(toggleMarkdownFormat('**hello**', 0, 9, 'bold')).toEqual({
+      value: 'hello',
+      selectionStart: 0,
+      selectionEnd: 5,
+    })
+    expect(toggleMarkdownFormat('hello', 5, 5, 'code')).toEqual({
+      value: 'hello``',
+      selectionStart: 6,
+      selectionEnd: 6,
+    })
   })
 })

@@ -55,6 +55,10 @@ describe('MessageInput attachment UX', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     useDraftStore.setState({ drafts: {} })
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    })
     stageCounter = 0
     tauriEvents.handlers.clear()
     vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
@@ -79,6 +83,7 @@ describe('MessageInput attachment UX', () => {
     await act(async () => root.unmount())
     container.remove()
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   async function render(
@@ -489,6 +494,23 @@ describe('MessageInput attachment UX', () => {
     })
 
     expect(onSend).toHaveBeenCalledWith('*waves*')
+  })
+
+  it('formats the selected draft text from the keyboard-reachable toolbar', async () => {
+    const textarea = await render()
+    await setComposerValue(textarea, 'hello world')
+    textarea.setSelectionRange(0, 5)
+
+    const bold = container.querySelector<HTMLButtonElement>('button[aria-label="Bold"]')
+    expect(bold).not.toBeNull()
+    await act(async () => {
+      bold?.click()
+      await flushAsyncWork()
+    })
+
+    expect(textarea.value).toBe('**hello** world')
+    expect(textarea.selectionStart).toBe(2)
+    expect(textarea.selectionEnd).toBe(7)
   })
 
   it('lets an in-flight send finish without deleting or mutating the next room draft', async () => {
