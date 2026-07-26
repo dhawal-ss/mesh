@@ -54,6 +54,7 @@ use matrix_sdk::{
                     create_room::v3::{CreationContent, Request as CreateRoomRequest, RoomPreset},
                     Visibility,
                 },
+                rtc::{transports::v1::Request as MatrixRtcTransportsRequest, RtcTransport},
                 state::{get_state_events, send_state_event},
                 uiaa::{self, AuthData, AuthType, Dummy, UiaaInfo},
             },
@@ -151,6 +152,9 @@ const MAX_THUMBNAIL_DIMENSION: u32 = 512;
 const MAX_THUMBNAIL_BYTES: usize = 2 * 1024 * 1024;
 const DIRECT_ACCOUNT_DATA_MERGE_ATTEMPTS: usize = 3;
 const MATRIX_RTC_SLOT_ID: &str = "m.call#ROOM";
+const MATRIX_RTC_TRANSPORTS_PATH: &str =
+    "/_matrix/client/unstable/org.matrix.msc4143/rtc/transports";
+const MATRIX_RTC_DISCOVERY_KEY: &str = "org.matrix.msc4143.rtc_foci";
 const MATRIX_RTC_MEMBERSHIP_TTL: Duration = Duration::from_secs(120);
 const MATRIX_RTC_MEMBERSHIP_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 const MATRIX_RTC_TOKEN_TIMEOUT: Duration = Duration::from_secs(15);
@@ -182,6 +186,37 @@ const BLOCKED_MEDIA_CONTENT_TYPES: &[&str] = &[
     "application/x-shellscript",
     "text/x-shellscript",
 ];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MatrixRtcDiscoverySource {
+    AuthenticatedEndpoint,
+    WellKnownFallback,
+}
+
+impl MatrixRtcDiscoverySource {
+    fn label(self) -> &'static str {
+        match self {
+            Self::AuthenticatedEndpoint => "authenticated MSC4143 transport endpoint",
+            Self::WellKnownFallback => ".well-known MatrixRTC fallback",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct MatrixRtcDiscovery {
+    service_url: String,
+    source: MatrixRtcDiscoverySource,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MatrixRtcEndpointFailure {
+    /// The endpoint is not implemented. MSC4143 permits falling back to the
+    /// unauthenticated client well-known in this case.
+    FallbackToWellKnown,
+    Unauthorized,
+    RateLimited,
+    Other,
+}
 
 struct GeneratedThumbnail {
     bytes: Vec<u8>,
@@ -1009,6 +1044,126 @@ impl MatrixBackend {
             ));
         }
         Ok(returned.to_string())
+    }
+
+    fn classify_matrix_rtc_endpoint_failure(
+        status_code: Option<u16>,
+        error_kind: Option<&ErrorKind>,
+    ) -> MatrixRtcEndpointFailure {
+        // Some homeservers return a bare 404 while others return the Matrix
+        // M_UNRECOGNIZED body. Both mean that this unstable endpoint is not
+        // implemented and are the only conditions that permit fallback.
+        if status_code == Some(404)
+            || error_kind.is_some_and(|kind| matches!(kind, ErrorKind::Unrecognized))
+        {
+            return MatrixRtcEndpointFailure::FallbackToWellKnown;
+        }
+        if error_kind.is_some_and(|kind| {
+            matches!(kind, ErrorKind::Unauthorized | ErrorKind::UnknownToken(_))
+        }) || status_code == Some(401)
+        {
+            return MatrixRtcEndpointFailure::Unauthorized;
+        }
+        if error_kind.is_some_and(|kind| matches!(kind, ErrorKind::LimitExceeded(_)))
+            || status_code == Some(429)
+        {
+            return MatrixRtcEndpointFailure::RateLimited;
+        }
+        MatrixRtcEndpointFailure::Other
+    }
+
+    fn parse_matrix_rtc_transports(
+        transports: Vec<RtcTransport>,
+        source: MatrixRtcDiscoverySource,
+    ) -> BackendResult<MatrixRtcDiscovery> {
+        for transport in transports {
+            if transport.transport_type() != "livekit" {
+                continue;
+            }
+            let raw_url = {
+                let data = transport.data();
+                data.get("livekit_service_url")
+                    .and_then(serde_json::Value::as_str)
+                    .map(ToOwned::to_owned)
+            }
+            .ok_or_else(|| {
+                BackendError::Serialization(format!(
+                    "{} advertised a LiveKit transport without livekit_service_url",
+                    source.label()
+                ))
+            })?;
+            let service_url = VoiceServiceStatus::secure_url(
+                &format!("{} LiveKit service URL", source.label()),
+                &raw_url,
+                "https",
+            )
+            .map_err(BackendError::InvalidConfiguration)?;
+            return Ok(MatrixRtcDiscovery {
+                service_url: service_url.to_string(),
+                source,
+            });
+        }
+        Err(BackendError::NotFound(format!(
+            "{} did not advertise a LiveKit transport under {MATRIX_RTC_DISCOVERY_KEY}",
+            source.label()
+        )))
+    }
+
+    fn matrix_rtc_endpoint_error(error: &matrix_sdk::HttpError) -> BackendError {
+        let api_error = error.as_client_api_error();
+        let status_code = api_error.map(|api_error| api_error.status_code.as_u16());
+        match Self::classify_matrix_rtc_endpoint_failure(
+            status_code,
+            api_error.and_then(|api_error| api_error.error_kind()),
+        ) {
+            MatrixRtcEndpointFailure::Unauthorized => BackendError::NotAuthenticated,
+            MatrixRtcEndpointFailure::RateLimited => BackendError::RateLimited(format!(
+                "MatrixRTC discovery endpoint {MATRIX_RTC_TRANSPORTS_PATH} rate limited the request"
+            )),
+            MatrixRtcEndpointFailure::FallbackToWellKnown | MatrixRtcEndpointFailure::Other => {
+                BackendError::Network(format!(
+                    "MatrixRTC discovery endpoint {MATRIX_RTC_TRANSPORTS_PATH} failed: {error}"
+                ))
+            }
+        }
+    }
+
+    async fn discover_matrix_rtc_service_url(client: &Client) -> BackendResult<MatrixRtcDiscovery> {
+        // Client::send supplies the SDK's current access token for this
+        // authenticated endpoint. Do not hand-roll this request with a bare
+        // reqwest client: omitting Authorization is a common MSC4143 failure.
+        match client.send(MatrixRtcTransportsRequest::new()).await {
+            Ok(response) => Self::parse_matrix_rtc_transports(
+                response.rtc_transports,
+                MatrixRtcDiscoverySource::AuthenticatedEndpoint,
+            ),
+            Err(error) => {
+                let api_error = error.as_client_api_error();
+                let status_code = api_error.map(|api_error| api_error.status_code.as_u16());
+                let failure = Self::classify_matrix_rtc_endpoint_failure(
+                    status_code,
+                    api_error.and_then(|api_error| api_error.error_kind()),
+                );
+                if failure != MatrixRtcEndpointFailure::FallbackToWellKnown {
+                    return Err(Self::matrix_rtc_endpoint_error(&error));
+                }
+
+                let fallback = client.rtc_foci().await.map_err(|fallback_error| {
+                    BackendError::Network(format!(
+                        "MatrixRTC authenticated discovery was unavailable (HTTP 404 or M_UNRECOGNIZED), and {MATRIX_RTC_DISCOVERY_KEY} fallback failed: {fallback_error}"
+                    ))
+                })?;
+                Self::parse_matrix_rtc_transports(
+                    fallback,
+                    MatrixRtcDiscoverySource::WellKnownFallback,
+                )
+                .map_err(|fallback_error| {
+                    BackendError::InvalidConfiguration(format!(
+                        "MatrixRTC authenticated discovery was unavailable (HTTP 404 or M_UNRECOGNIZED); {MATRIX_RTC_DISCOVERY_KEY} fallback is unusable: {fallback_error}"
+                    ))
+                })
+            }
+        }
     }
 
     fn matrix_rtc_config() -> BackendResult<VoiceServiceStatus> {
@@ -6588,6 +6743,25 @@ impl MeshBackend for MatrixBackend {
             ));
         }
         Self::require_encrypted_room(&room, "joining a MatrixRTC call").await?;
+        let discovered = Self::discover_matrix_rtc_service_url(&client).await?;
+        let configured_service = VoiceServiceStatus::secure_url(
+            "MESH_MATRIXRTC_LIVEKIT_SERVICE_URL",
+            configured_service_url,
+            "https",
+        )
+        .map_err(BackendError::InvalidConfiguration)?;
+        let discovered_service = VoiceServiceStatus::secure_url(
+            "discovered MatrixRTC LiveKit service URL",
+            &discovered.service_url,
+            "https",
+        )
+        .map_err(BackendError::InvalidConfiguration)?;
+        if discovered_service != configured_service {
+            return Err(BackendError::InvalidConfiguration(format!(
+                "MESH_MATRIXRTC_LIVEKIT_SERVICE_URL does not match the {} LiveKit service URL discovered from the homeserver",
+                discovered.source.label()
+            )));
+        }
         let livekit_service_url =
             Self::select_matrix_rtc_service_url(&room, configured_service_url).await?;
         let user_id = client
@@ -9508,6 +9682,113 @@ mod tests {
         assert_eq!(
             room_name,
             MatrixBackend::matrix_rtc_room_name("!room:example.org").unwrap()
+        );
+    }
+
+    #[test]
+    fn matrix_rtc_authenticated_discovery_parses_livekit_transport() {
+        let transport = serde_json::from_value::<RtcTransport>(json!({
+            "type": "livekit",
+            "livekit_service_url": "https://rtc.example.org/livekit/jwt"
+        }))
+        .unwrap();
+
+        let discovery = MatrixBackend::parse_matrix_rtc_transports(
+            vec![transport],
+            MatrixRtcDiscoverySource::AuthenticatedEndpoint,
+        )
+        .unwrap();
+
+        assert_eq!(discovery.service_url, "https://rtc.example.org/livekit/jwt");
+        assert_eq!(
+            discovery.source,
+            MatrixRtcDiscoverySource::AuthenticatedEndpoint
+        );
+    }
+
+    #[test]
+    fn matrix_rtc_well_known_fallback_ignores_unknown_transports() {
+        let custom = serde_json::from_value::<RtcTransport>(json!({
+            "type": "org.example.custom",
+            "service_url": "https://custom.example.org"
+        }))
+        .unwrap();
+        let livekit = serde_json::from_value::<RtcTransport>(json!({
+            "type": "livekit",
+            "livekit_service_url": "https://rtc.example.org/livekit/jwt"
+        }))
+        .unwrap();
+
+        let discovery = MatrixBackend::parse_matrix_rtc_transports(
+            vec![custom, livekit],
+            MatrixRtcDiscoverySource::WellKnownFallback,
+        )
+        .unwrap();
+
+        assert_eq!(
+            discovery.source,
+            MatrixRtcDiscoverySource::WellKnownFallback
+        );
+        assert_eq!(discovery.service_url, "https://rtc.example.org/livekit/jwt");
+    }
+
+    #[test]
+    fn matrix_rtc_discovery_rejects_missing_or_insecure_livekit_urls() {
+        let missing_url = serde_json::from_value::<RtcTransport>(json!({
+            "type": "livekit"
+        }));
+        assert!(missing_url.is_err());
+
+        let insecure_url = serde_json::from_value::<RtcTransport>(json!({
+            "type": "livekit",
+            "livekit_service_url": "http://rtc.example.org/livekit/jwt"
+        }))
+        .unwrap();
+        assert!(matches!(
+            MatrixBackend::parse_matrix_rtc_transports(
+                vec![insecure_url],
+                MatrixRtcDiscoverySource::WellKnownFallback,
+            ),
+            Err(BackendError::InvalidConfiguration(_))
+        ));
+
+        let unsupported = serde_json::from_value::<RtcTransport>(json!({
+            "type": "org.example.custom"
+        }))
+        .unwrap();
+        assert!(matches!(
+            MatrixBackend::parse_matrix_rtc_transports(
+                vec![unsupported],
+                MatrixRtcDiscoverySource::WellKnownFallback,
+            ),
+            Err(BackendError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn matrix_rtc_endpoint_fallback_only_covers_404_or_unrecognized() {
+        assert_eq!(
+            MatrixBackend::classify_matrix_rtc_endpoint_failure(Some(404), None),
+            MatrixRtcEndpointFailure::FallbackToWellKnown
+        );
+        assert_eq!(
+            MatrixBackend::classify_matrix_rtc_endpoint_failure(
+                Some(400),
+                Some(&ErrorKind::Unrecognized),
+            ),
+            MatrixRtcEndpointFailure::FallbackToWellKnown
+        );
+        assert_eq!(
+            MatrixBackend::classify_matrix_rtc_endpoint_failure(Some(401), None),
+            MatrixRtcEndpointFailure::Unauthorized
+        );
+        assert_eq!(
+            MatrixBackend::classify_matrix_rtc_endpoint_failure(Some(429), None),
+            MatrixRtcEndpointFailure::RateLimited
+        );
+        assert_eq!(
+            MatrixBackend::classify_matrix_rtc_endpoint_failure(Some(500), None),
+            MatrixRtcEndpointFailure::Other
         );
     }
 
