@@ -535,6 +535,15 @@ describe('MessageInput attachment UX', () => {
     expect(restored.value).toBe('')
   })
 
+  it('keeps multibyte composer state inside the UTF-8 draft limit', async () => {
+    const textarea = await render()
+    await setComposerValue(textarea, '😀'.repeat(4097))
+
+    expect(new TextEncoder().encode(textarea.value)).toHaveLength(16 * 1024)
+    expect(textarea.value.endsWith('😀')).toBe(true)
+    expect(useDraftStore.getState().drafts['!room:mesh.test']).toBe(textarea.value)
+  })
+
   it('expands local slash commands before invoking the send callback', async () => {
     const onSend = vi.fn().mockResolvedValue(undefined)
     const textarea = await render(onSend)
