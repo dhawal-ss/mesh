@@ -11,6 +11,8 @@ interface ReactionPickerProps {
 export function ReactionPicker({ onSelect, onClose }: ReactionPickerProps) {
   return (
     <motion.div
+      role="menu"
+      aria-label="Add reaction"
       variants={variants.popover}
       initial="initial"
       animate="animate"
