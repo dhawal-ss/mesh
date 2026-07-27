@@ -80,7 +80,7 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
         </h1>
         <p className="max-w-sm text-sm leading-6 text-secondary">
           {backendKind === 'matrix'
-            ? 'We are creating a local migration key. Your Matrix account and revocable devices remain authoritative.'
+            ? 'We are also creating a private key just for this device. It stays here and never leaves.'
             : 'We are creating your peer identity locally. Nothing leaves this device.'}
         </p>
       </div>
@@ -143,7 +143,7 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
             <p className="text-2xs uppercase tracking-status text-muted">Device key created</p>
             <p className="mt-2 text-sm text-primary">
               {backendKind === 'matrix'
-                ? 'This key stays on this device as legacy migration metadata; Matrix device keys protect room activity.'
+                ? 'This key stays on this device only. It does not affect your account or your messages.'
                 : 'This identity now lives on this device and will sign your peer activity locally.'}
             </p>
             <div className="mt-3 flex items-center justify-between gap-3 rounded-md bg-bg-tertiary px-3 py-2">
