@@ -5618,13 +5618,20 @@ impl MatrixBackend {
     /// Buffers a media transfer while the cap is checked against bytes actually
     /// received. `info.size` is sender-controlled, so the only honest bound is
     /// the running count of the live stream: the loop stops pulling the moment
-    /// it is crossed, before the payload is materialised.
+    /// it is crossed, before the payload is materialised. `size_hint` (e.g. a
+    /// transport `Content-Length`) only sizes the initial allocation and is
+    /// clamped to `limit`; the cap is still enforced against real bytes as
+    /// they arrive regardless of what the hint claims.
     async fn collect_bounded_media(
         source: &mut dyn MediaChunkSource,
         limit: u64,
+        size_hint: Option<u64>,
         on_progress: &mut (dyn FnMut(u64) + Send),
     ) -> BackendResult<Vec<u8>> {
-        let mut buffer = Vec::new();
+        let mut buffer = match size_hint {
+            Some(hint) => Vec::with_capacity(hint.min(limit) as usize),
+            None => Vec::new(),
+        };
         let mut received = 0_u64;
         let mut reported = 0_u64;
         while let Some(chunk) = source.next_chunk().await? {
@@ -5713,24 +5720,30 @@ impl MatrixBackend {
                 _ => BackendError::Network(format!("attachment download returned HTTP {status}")),
             });
         }
-        if response
-            .content_length()
-            .is_some_and(|length| length > MAX_ATTACHMENT_BYTES)
-        {
+        let content_length = response.content_length();
+        if content_length.is_some_and(|length| length > MAX_ATTACHMENT_BYTES) {
             return Err(Self::attachment_size_limit_error());
         }
         let ciphertext = Self::collect_bounded_media(
             &mut HttpMediaChunkSource(response),
             MAX_ATTACHMENT_BYTES,
+            content_length,
             on_progress,
         )
         .await?;
 
+        // Matrix attachment encryption is AES-CTR, a stream cipher, so the
+        // decrypted plaintext is exactly as long as the ciphertext feeding it
+        // (see matrix-sdk 0.18.0's media.rs:473 for the same reasoning). Size
+        // the output buffer from that known length instead of growing it from
+        // empty, so the final reallocation doesn't briefly hold both the old
+        // and new backing storage on top of the settled ciphertext buffer.
+        let ciphertext_len = ciphertext.len();
         let mut ciphertext = Cursor::new(ciphertext);
         let mut decryptor =
             AttachmentDecryptor::new(&mut ciphertext, encrypted_file.clone().into())
                 .map_err(Self::map_error)?;
-        let mut data = Vec::new();
+        let mut data = Vec::with_capacity(ciphertext_len);
         decryptor
             .read_to_end(&mut data)
             .map_err(|error| BackendError::Crypto(error.to_string()))?;
@@ -11426,7 +11439,7 @@ mod tests {
             cap: CAP,
             served: 0,
         };
-        let error = MatrixBackend::collect_bounded_media(&mut stream, CAP, &mut |_| {})
+        let error = MatrixBackend::collect_bounded_media(&mut stream, CAP, None, &mut |_| {})
             .await
             .unwrap_err();
 
@@ -11442,7 +11455,7 @@ mod tests {
         let mut stream =
             ScriptedMediaStream(VecDeque::from(vec![b"mesh".to_vec(), b"-media".to_vec()]));
         let mut reported = Vec::new();
-        let data = MatrixBackend::collect_bounded_media(&mut stream, 10, &mut |received| {
+        let data = MatrixBackend::collect_bounded_media(&mut stream, 10, None, &mut |received| {
             reported.push(received);
         })
         .await
@@ -11453,7 +11466,7 @@ mod tests {
 
         let mut stream = ScriptedMediaStream(VecDeque::from(vec![b"mesh-media!".to_vec()]));
         assert!(
-            MatrixBackend::collect_bounded_media(&mut stream, 10, &mut |_| {})
+            MatrixBackend::collect_bounded_media(&mut stream, 10, None, &mut |_| {})
                 .await
                 .is_err()
         );
