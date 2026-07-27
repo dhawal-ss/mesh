@@ -174,7 +174,7 @@ export function UserSettingsPanel({
                   {savingProfile ? 'Saving…' : 'Save display name'}
                 </Button>
                 {profileSaved && (
-                  <span role="status" className="text-xs text-green">
+                  <span role="status" aria-label="Display name save status" className="text-xs text-green">
                     Profile updated
                   </span>
                 )}
@@ -271,12 +271,20 @@ export function UserSettingsPanel({
 
             <div aria-live="polite" aria-busy={matrixPreferenceSync.status === 'saving'}>
               {matrixPreferenceSync.status === 'saving' && (
-                <p role="status" className="rounded-md bg-bg-tertiary px-3 py-2 text-xs text-muted">
+                <p
+                  role="status"
+                  aria-label="Privacy settings save status"
+                  className="rounded-md bg-bg-tertiary px-3 py-2 text-xs text-muted"
+                >
                   Applying privacy settings…
                 </p>
               )}
               {matrixPreferenceSync.status === 'saved' && (
-                <p role="status" className="rounded-md bg-bg-tertiary px-3 py-2 text-xs text-green">
+                <p
+                  role="status"
+                  aria-label="Privacy settings save status"
+                  className="rounded-md bg-bg-tertiary px-3 py-2 text-xs text-green"
+                >
                   Privacy settings saved to your account.
                 </p>
               )}
@@ -487,7 +495,7 @@ export function UserSettingsPanel({
               {testingNotification ? 'Sending…' : 'Test notification'}
             </Button>
             {testNotificationStatus === 'sent' && (
-              <span role="status" className="text-xs text-green">
+              <span role="status" aria-label="Test notification status" className="text-xs text-green">
                 Test notification sent
               </span>
             )}
