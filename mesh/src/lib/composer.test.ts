@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { expandSlashCommand, toggleMarkdownFormat } from './composer'
+import {
+  expandSlashCommand,
+  getSlashCommandContext,
+  getSlashCommandSuggestions,
+  toggleMarkdownFormat,
+} from './composer'
+
+describe('slash command suggestions', () => {
+  it('offers local commands only while the initial command token is being typed', () => {
+    expect(getSlashCommandContext('/', 1)).toEqual({ start: 0, end: 1, query: '' })
+    expect(getSlashCommandSuggestions('s').map(({ command }) => command)).toEqual(['/shrug'])
+    expect(getSlashCommandSuggestions('M').map(({ command }) => command)).toEqual(['/me'])
+    expect(getSlashCommandContext('hello /', 7)).toBeNull()
+    expect(getSlashCommandContext('/shrug hello', 12)).toBeNull()
+  })
+})
 
 describe('expandSlashCommand', () => {
   it('expands shrug with and without a message', () => {

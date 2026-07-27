@@ -18,7 +18,13 @@ import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
 import type { MemberRecord } from '../../store/membership'
 import { MAX_DRAFT_LENGTH, useDraftStore } from '../../store/drafts'
-import { expandSlashCommand, toggleMarkdownFormat, type MarkdownFormat } from '../../lib/composer'
+import {
+  expandSlashCommand,
+  getSlashCommandContext,
+  getSlashCommandSuggestions,
+  toggleMarkdownFormat,
+  type MarkdownFormat,
+} from '../../lib/composer'
 
 interface MessageInputProps {
   channelId: string
@@ -91,6 +97,8 @@ function MessageInputContent({
   const [mentionCursor, setMentionCursor] = useState(0)
   const [mentionIndex, setMentionIndex] = useState(0)
   const [mentionsDismissed, setMentionsDismissed] = useState(false)
+  const [slashIndex, setSlashIndex] = useState(0)
+  const [slashDismissed, setSlashDismissed] = useState(false)
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [isStaging, setIsStaging] = useState(false)
@@ -163,6 +171,9 @@ function MessageInputContent({
       .slice(0, MAX_MENTION_SUGGESTIONS)
     : []
   const activeMentionIndex = Math.min(mentionIndex, Math.max(mentionSuggestions.length - 1, 0))
+  const slashContext = !slashDismissed ? getSlashCommandContext(value, mentionCursor) : null
+  const slashSuggestions = slashContext ? getSlashCommandSuggestions(slashContext.query) : []
+  const activeSlashIndex = Math.min(slashIndex, Math.max(slashSuggestions.length - 1, 0))
 
   const selectMention = (member: MemberRecord) => {
     if (!mentionContext) return
@@ -172,6 +183,7 @@ function MessageInputContent({
     setDraft(channelId, nextValue)
     setMentionCursor(nextCursor)
     setMentionsDismissed(true)
+    setSlashDismissed(true)
     requestAnimationFrame(() => {
       inputRef.current?.focus()
       inputRef.current?.setSelectionRange(nextCursor, nextCursor)
@@ -203,6 +215,43 @@ function MessageInputContent({
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
         selectMention(mentionSuggestions[activeMentionIndex])
+        return
+      }
+    }
+
+    if (slashSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSlashIndex((current) => (
+          (Math.min(current, slashSuggestions.length - 1) + 1) % slashSuggestions.length
+        ))
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSlashIndex((current) => (
+          (Math.min(current, slashSuggestions.length - 1) - 1 + slashSuggestions.length)
+            % slashSuggestions.length
+        ))
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setSlashDismissed(true)
+        return
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        const command = slashSuggestions[activeSlashIndex]
+        if (slashContext && command) {
+          const nextValue = `${value.slice(0, slashContext.start)}${command.command} ${value.slice(slashContext.end)}`
+          const nextCursor = slashContext.start + command.command.length + 1
+          setValue(nextValue)
+          setDraft(channelId, nextValue)
+          setMentionCursor(nextCursor)
+          setSlashDismissed(true)
+          pendingSelectionRef.current = { start: nextCursor, end: nextCursor }
+        }
         return
       }
     }
@@ -322,6 +371,7 @@ function MessageInputContent({
     setDraft(channelId, result.value)
     setMentionCursor(result.selectionEnd)
     setMentionsDismissed(true)
+    setSlashDismissed(true)
     pendingSelectionRef.current = {
       start: result.selectionStart,
       end: result.selectionEnd,
@@ -576,6 +626,8 @@ function MessageInputContent({
     setValue(useDraftStore.getState().drafts[channelId] ?? '')
     setMentionCursor(0)
     setMentionsDismissed(false)
+    setSlashIndex(0)
+    setSlashDismissed(false)
   }, [channelId, clearDraft])
 
   useEffect(() => {
@@ -660,6 +712,41 @@ function MessageInputContent({
 
         {/* Input row */}
         <div className="relative flex items-end gap-0 px-1">
+          {slashSuggestions.length > 0 && (
+            <div
+              id={`slash-suggestions-${channelId}`}
+              role="listbox"
+              aria-label="Slash commands"
+              className="absolute bottom-full left-1 right-1 z-dropdown mb-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-raised shadow-lg"
+            >
+              {slashSuggestions.map((command, index) => (
+                <button
+                  key={command.command}
+                  id={`slash-suggestion-${channelId}-${index}`}
+                  type="button"
+                  role="option"
+                  aria-selected={index === activeSlashIndex}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    if (!slashContext) return
+                    const nextValue = `${value.slice(0, slashContext.start)}${command.command} ${value.slice(slashContext.end)}`
+                    const nextCursor = slashContext.start + command.command.length + 1
+                    setValue(nextValue)
+                    setDraft(channelId, nextValue)
+                    setMentionCursor(nextCursor)
+                    setSlashDismissed(true)
+                    pendingSelectionRef.current = { start: nextCursor, end: nextCursor }
+                  }}
+                  className={`flex min-h-control-md w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                    index === activeSlashIndex ? 'bg-bg-modifier-hover text-primary' : 'text-secondary hover:bg-bg-modifier-hover'
+                  }`}
+                >
+                  <span className="font-mono font-medium">{command.command}</span>
+                  <span className="truncate text-muted">{command.description}</span>
+                </button>
+              ))}
+            </div>
+          )}
           {mentionSuggestions.length > 0 && (
             <div
               id={`mention-suggestions-${channelId}`}
@@ -711,6 +798,8 @@ function MessageInputContent({
               setMentionCursor(e.target.selectionStart)
               setMentionIndex(0)
               setMentionsDismissed(false)
+              setSlashIndex(0)
+              setSlashDismissed(false)
               if (e.target.value.trim()) {
                 broadcastTypingThrottled()
               } else {
@@ -722,17 +811,24 @@ function MessageInputContent({
               setMentionCursor(event.currentTarget.selectionStart)
               setMentionIndex(0)
               setMentionsDismissed(false)
+              setSlashDismissed(false)
             }}
             onPaste={handlePaste}
             placeholder={`Message #${channelName}`}
             aria-label={`Message ${channelName}`}
             aria-describedby={stagedFiles.length > 0 ? `pending-attachments-${channelId}` : undefined}
-            aria-autocomplete={communityId && bridge.isMatrixBackend() ? 'list' : undefined}
-            aria-controls={mentionSuggestions.length > 0 ? `mention-suggestions-${channelId}` : undefined}
-            aria-expanded={mentionSuggestions.length > 0}
+            aria-autocomplete={mentionSuggestions.length > 0 || slashSuggestions.length > 0 ? 'list' : undefined}
+            aria-controls={mentionSuggestions.length > 0
+              ? `mention-suggestions-${channelId}`
+              : slashSuggestions.length > 0
+                ? `slash-suggestions-${channelId}`
+                : undefined}
+            aria-expanded={mentionSuggestions.length > 0 || slashSuggestions.length > 0}
             aria-activedescendant={mentionSuggestions.length > 0
               ? `mention-suggestion-${channelId}-${activeMentionIndex}`
-              : undefined}
+              : slashSuggestions.length > 0
+                ? `slash-suggestion-${channelId}-${activeSlashIndex}`
+                : undefined}
             rows={1}
             maxLength={MAX_DRAFT_LENGTH}
             disabled={disabled || isUploading || isStaging}
