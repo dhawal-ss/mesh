@@ -1110,6 +1110,15 @@ pub trait MeshBackend: Send + Sync {
     ) -> BackendResult<MessageDto> {
         Err(BackendError::Unsupported("message delivery"))
     }
+    async fn save_composer_draft(&self, _room_id: String, _body: String) -> BackendResult<()> {
+        Err(BackendError::Unsupported("durable message drafts"))
+    }
+    async fn load_composer_draft(&self, _room_id: String) -> BackendResult<Option<String>> {
+        Err(BackendError::Unsupported("durable message drafts"))
+    }
+    async fn clear_composer_draft(&self, _room_id: String) -> BackendResult<()> {
+        Err(BackendError::Unsupported("durable message drafts"))
+    }
     async fn send_attachment(
         &self,
         _room_id: String,

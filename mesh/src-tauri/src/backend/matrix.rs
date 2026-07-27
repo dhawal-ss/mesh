@@ -98,7 +98,8 @@ use matrix_sdk::{
     },
     store::RoomLoadSettings,
     utils::UrlOrQuery,
-    Client, LoopCtrl, Room, RoomMemberships, RoomState, SessionChange,
+    Client, ComposerDraft, ComposerDraftType, LoopCtrl, Room, RoomMemberships, RoomState,
+    SessionChange,
 };
 use matrix_sdk_crypto::{AttachmentDecryptor, CollectStrategy};
 use qrcode::render::svg;
@@ -147,6 +148,7 @@ const LOGIN_TIMEOUT_SECONDS: u64 = 45;
 const REGISTRATION_TIMEOUT_SECONDS: u64 = 45;
 const OIDC_REDIRECT_URI: &str = "http://127.0.0.1:8418/oauth/callback";
 const OIDC_CLIENT_ID_ENV: &str = "MESH_OAUTH_CLIENT_ID";
+const MAX_COMPOSER_DRAFT_BYTES: usize = 16 * 1024;
 const MAX_MEDIA_CACHE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES: u64 = 100 * 1024 * 1024;
 const MAX_THUMBNAIL_SOURCE_PIXELS: u64 = 25_000_000;
@@ -5409,6 +5411,40 @@ impl MatrixBackend {
         Ok(transaction_id.to_owned().into())
     }
 
+    fn new_message_composer_draft(body: String) -> BackendResult<Option<ComposerDraft>> {
+        if body.len() > MAX_COMPOSER_DRAFT_BYTES {
+            return Err(BackendError::InvalidConfiguration(
+                "message draft cannot exceed 16 KiB".into(),
+            ));
+        }
+        if body.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(ComposerDraft {
+            plain_text: body,
+            html_text: None,
+            draft_type: ComposerDraftType::NewMessage,
+            attachments: Vec::new(),
+        }))
+    }
+
+    fn new_message_composer_draft_body(draft: ComposerDraft) -> BackendResult<Option<String>> {
+        let ComposerDraft {
+            plain_text,
+            draft_type,
+            ..
+        } = draft;
+        if !matches!(draft_type, ComposerDraftType::NewMessage) {
+            return Ok(None);
+        }
+        if plain_text.len() > MAX_COMPOSER_DRAFT_BYTES {
+            return Err(BackendError::InvalidConfiguration(
+                "saved message draft exceeds 16 KiB".into(),
+            ));
+        }
+        Ok((!plain_text.is_empty()).then_some(plain_text))
+    }
+
     fn emit_transfer_progress(
         progress: &MatrixTransferProgressCallback,
         transfer_id: &str,
@@ -7755,6 +7791,47 @@ impl MeshBackend for MatrixBackend {
         })
     }
 
+    async fn save_composer_draft(&self, room_id: String, body: String) -> BackendResult<()> {
+        let client = self.client().await?;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let room = Self::protected_joined_room(&client, &room_id, "saving a message draft").await?;
+        match Self::new_message_composer_draft(body)? {
+            Some(draft) => room
+                .save_composer_draft(draft, None)
+                .await
+                .map_err(Self::map_error),
+            None => room
+                .clear_composer_draft(None)
+                .await
+                .map_err(Self::map_error),
+        }
+    }
+
+    async fn load_composer_draft(&self, room_id: String) -> BackendResult<Option<String>> {
+        let client = self.client().await?;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "loading a message draft").await?;
+        let draft = room
+            .load_composer_draft(None)
+            .await
+            .map_err(Self::map_error)?;
+        draft
+            .map(Self::new_message_composer_draft_body)
+            .transpose()
+            .map(Option::flatten)
+    }
+
+    async fn clear_composer_draft(&self, room_id: String) -> BackendResult<()> {
+        let client = self.client().await?;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "clearing a message draft").await?;
+        room.clear_composer_draft(None)
+            .await
+            .map_err(Self::map_error)
+    }
+
     async fn send_attachment(
         &self,
         room_id: String,
@@ -9549,6 +9626,43 @@ mod tests {
     use super::*;
     use matrix_sdk::{authentication::SessionTokens, SessionMeta};
     use serde_json::json;
+
+    #[test]
+    fn composer_drafts_are_plain_bounded_and_new_message_only() {
+        let at_limit = "😀".repeat(MAX_COMPOSER_DRAFT_BYTES / 4);
+        let draft = MatrixBackend::new_message_composer_draft(at_limit.clone())
+            .unwrap()
+            .unwrap();
+        assert_eq!(draft.plain_text, at_limit);
+        assert_eq!(draft.html_text, None);
+        assert!(draft.attachments.is_empty());
+        assert!(matches!(&draft.draft_type, ComposerDraftType::NewMessage));
+        assert_eq!(
+            MatrixBackend::new_message_composer_draft_body(draft).unwrap(),
+            Some(at_limit)
+        );
+
+        assert!(MatrixBackend::new_message_composer_draft(String::new())
+            .unwrap()
+            .is_none());
+        assert!(MatrixBackend::new_message_composer_draft(
+            "😀".repeat((MAX_COMPOSER_DRAFT_BYTES / 4) + 1)
+        )
+        .is_err());
+
+        let edit = ComposerDraft {
+            plain_text: "must not appear in the new-message composer".into(),
+            html_text: Some("<strong>must not render</strong>".into()),
+            draft_type: ComposerDraftType::Edit {
+                event_id: "$event:example.org".try_into().unwrap(),
+            },
+            attachments: Vec::new(),
+        };
+        assert_eq!(
+            MatrixBackend::new_message_composer_draft_body(edit).unwrap(),
+            None
+        );
+    }
 
     #[test]
     fn wire_privacy_presence_requires_sharing_without_invisible_mode() {

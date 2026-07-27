@@ -177,6 +177,8 @@ async function installDmKeyboardActionsMock(page: Page): Promise<void> {
           return [conversation]
         case 'matrix_dm_messages':
           return args.conversationId === conversation.id ? dmTimeline : []
+        case 'matrix_load_composer_draft':
+          return null
         case 'matrix_dm_blocked':
           return false
         case 'matrix_toggle_reaction':
@@ -189,6 +191,8 @@ async function installDmKeyboardActionsMock(page: Page): Promise<void> {
         case 'matrix_mark_dm_read':
         case 'matrix_mark_read':
         case 'matrix_set_typing':
+        case 'matrix_save_composer_draft':
+        case 'matrix_clear_composer_draft':
         case 'plugin:event|unlisten':
           return null
         case 'matrix_user_preferences':

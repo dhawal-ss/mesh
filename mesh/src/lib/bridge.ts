@@ -585,6 +585,21 @@ export async function matrixSendMessage(
   return tauriInvoke('matrix_send_message', { roomId, body, replyToId, transactionId })
 }
 
+export async function loadComposerDraft(roomId: string): Promise<string | null> {
+  if (!isMatrixBackend()) return null
+  return tauriInvoke('matrix_load_composer_draft', { roomId }, READ_IPC_OPTIONS)
+}
+
+export async function saveComposerDraft(roomId: string, body: string): Promise<void> {
+  if (!isMatrixBackend()) return
+  return tauriInvoke('matrix_save_composer_draft', { roomId, body })
+}
+
+export async function clearComposerDraft(roomId: string): Promise<void> {
+  if (!isMatrixBackend()) return
+  return tauriInvoke('matrix_clear_composer_draft', { roomId })
+}
+
 export async function matrixSendAttachment(
   roomId: string,
   attachmentGrant: string,
