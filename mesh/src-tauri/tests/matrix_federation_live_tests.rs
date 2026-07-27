@@ -334,8 +334,27 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     assert!(saw_alice_dm_typing);
-    alice.set_typing(alice_dm.id.clone(), false).await.unwrap();
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    alice
+        .update_user_preferences(privacy_preferences(true, false, true, false))
+        .await
+        .unwrap();
+    let mut typing_cleared_after_opt_out = false;
+    for _ in 0..20 {
+        let typing_users = bob.typing_users(alice_dm.id.clone()).await.unwrap();
+        if typing_users.iter().all(|user| user.user_id != alice_user) {
+            typing_cleared_after_opt_out = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    assert!(
+        typing_cleared_after_opt_out,
+        "typing opt-out did not clear a previously sent typing notice"
+    );
+    alice
+        .update_user_preferences(privacy_preferences(true, true, true, false))
+        .await
+        .unwrap();
     bob.sync_once().await.unwrap();
     let bob_dm_messages = bob
         .dm_messages(alice_dm.id.clone(), 20, None, None)
@@ -898,7 +917,10 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         })
         .await
         .unwrap();
-    assert_eq!(saved_preferences.schema_version, 2);
+    assert_eq!(
+        saved_preferences.schema_version,
+        UserPreferences::SCHEMA_VERSION
+    );
     assert_eq!(saved_preferences.muted_channels.len(), 1);
 
     let second_device_preferences = bob_second.user_preferences().await.unwrap().unwrap();

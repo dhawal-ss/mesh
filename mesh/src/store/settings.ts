@@ -65,7 +65,7 @@ export interface PrivacyPreferences {
   invisibleMode: boolean
 }
 
-const PREFERENCES_SCHEMA_VERSION = 2
+const PREFERENCES_SCHEMA_VERSION = 3
 const MATRIX_SAVE_DEBOUNCE_MS = 350
 const BACKUP_REMINDER_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000
 const DEFAULT_APPEARANCE: AppearancePreferences = {
@@ -91,8 +91,8 @@ const DEFAULT_NOTIFICATIONS: NotificationPreferences = {
 }
 const DEFAULT_PRIVACY: PrivacyPreferences = {
   sendReadReceipts: false,
-  sendTypingIndicators: true,
-  sharePresence: true,
+  sendTypingIndicators: false,
+  sharePresence: false,
   invisibleMode: false,
 }
 
