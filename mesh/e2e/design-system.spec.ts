@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { expectNoWcagViolations } from './helpers/accessibility'
 
 const runtimeErrors = new WeakMap<Page, string[]>()
 
@@ -40,6 +41,10 @@ test('renders every supported theme and exposes keyboard-operable primitives', a
 
   await page.getByRole('tab', { name: 'Details' }).click()
   await expect(page.getByRole('tabpanel').getByText('Detail content')).toBeVisible()
+})
+
+test('@a11y has no automated WCAG A/AA violations across the component gallery', async ({ page }) => {
+  await expectNoWcagViolations(page, 'Design-system component gallery')
 })
 
 test('traps dialog focus, closes with Escape, and restores the trigger', async ({ page }) => {

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { expectNoWcagViolations } from './helpers/accessibility'
 
 type IpcCall = {
   command: string
@@ -317,6 +318,17 @@ test.describe('authenticated desktop shell', () => {
     await expect(page.getByText('Anonymous', { exact: true })).toHaveCount(0)
   })
 
+  test('@a11y has no automated WCAG A/AA violations in the shell and settings', async ({ page }) => {
+    await openAuthenticatedShell(page)
+    await expectNoWcagViolations(page, 'Authenticated desktop shell')
+
+    await page.getByRole('button', { name: 'User settings' }).click()
+    const dialog = page.getByRole('dialog', { name: 'User Settings' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.locator(':scope > div').first()).toHaveCSS('opacity', '1')
+    await expectNoWcagViolations(page, 'User Settings dialog')
+  })
+
   test('sends a message through the Matrix boundary and renders it in the chat log', async ({ page }) => {
     await openAuthenticatedShell(page)
 
@@ -431,6 +443,14 @@ test.describe('authenticated desktop shell', () => {
 
 test.describe('authenticated narrow shell', () => {
   test.use({ viewport: { width: 390, height: 844 } })
+
+  test('@a11y has no automated WCAG A/AA violations with navigation open', async ({ page }) => {
+    await openAuthenticatedShell(page)
+    await page.getByRole('button', { name: 'Channels', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Close channel navigation' })).toBeVisible()
+
+    await expectNoWcagViolations(page, 'Authenticated narrow shell with channel navigation')
+  })
 
   test('opens the channel drawer, changes channels, and sends a message without overflow', async ({ page }) => {
     await openAuthenticatedShell(page)

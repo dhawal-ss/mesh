@@ -35,10 +35,10 @@ export default {
           content: withAlpha('--content-on-accent-rgb'),
         },
         status: {
-          success: withAlpha('--success-rgb'),
-          danger: withAlpha('--danger-rgb'),
-          warning: withAlpha('--warning-rgb'),
-          info: withAlpha('--info-rgb'),
+          success: withAlpha('--status-success-rgb'),
+          danger: withAlpha('--status-danger-rgb'),
+          warning: withAlpha('--status-warning-rgb'),
+          info: withAlpha('--status-info-rgb'),
           offline: withAlpha('--presence-offline-rgb'),
         },
         scrim: 'var(--surface-scrim)',
@@ -75,11 +75,11 @@ export default {
         'accent-dim': withAlpha('--accent-muted-rgb'),
 
         // Status.
-        green: withAlpha('--success-rgb'),
-        red: withAlpha('--danger-rgb'),
-        yellow: withAlpha('--warning-rgb'),
-        blue: withAlpha('--info-rgb'),
-        danger: withAlpha('--danger-rgb'),
+        green: withAlpha('--status-success-rgb'),
+        red: withAlpha('--status-danger-rgb'),
+        yellow: withAlpha('--status-warning-rgb'),
+        blue: withAlpha('--status-info-rgb'),
+        danger: withAlpha('--status-danger-rgb'),
       },
       fontFamily: {
         sans: ['var(--font-sans)'],

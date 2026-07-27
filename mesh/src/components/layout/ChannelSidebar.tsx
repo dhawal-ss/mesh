@@ -121,7 +121,9 @@ export function ChannelSidebar() {
             <div className="mb-1">
               <button
                 onClick={() => setTextCollapsed(!textCollapsed)}
-                className="group flex w-full items-center gap-0.5 px-0.5 pb-1 text-left"
+                className="group flex min-h-8 w-full items-center gap-0.5 px-0.5 text-left"
+                aria-expanded={!textCollapsed}
+                aria-controls="text-channel-list"
               >
                 <Icon
                   name="chevronDown"
@@ -133,7 +135,7 @@ export function ChannelSidebar() {
                 </span>
               </button>
               {!textCollapsed && (
-                <div className="space-y-0.5">
+                <div id="text-channel-list" className="space-y-0.5">
                   {textChannels.map((channel) => (
                     <ChannelItem
                       key={channel.id}
@@ -155,7 +157,9 @@ export function ChannelSidebar() {
             <div className="mb-1 mt-3">
               <button
                 onClick={() => setVoiceCollapsed(!voiceCollapsed)}
-                className="group flex w-full items-center gap-0.5 px-0.5 pb-1 text-left"
+                className="group flex min-h-8 w-full items-center gap-0.5 px-0.5 text-left"
+                aria-expanded={!voiceCollapsed}
+                aria-controls="voice-channel-list"
               >
                 <Icon
                   name="chevronDown"
@@ -167,7 +171,7 @@ export function ChannelSidebar() {
                 </span>
               </button>
               {!voiceCollapsed && (
-                <div className="space-y-0.5">
+                <div id="voice-channel-list" className="space-y-0.5">
                   {voiceChannels.map((channel) => {
                     const members = matrixRtcMembersByRoom[channel.id] ?? []
                     const joinChannel = () => {
