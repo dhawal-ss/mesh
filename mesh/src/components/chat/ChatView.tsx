@@ -99,15 +99,25 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
     return items
   }, [channel.id, channelMessages, hiddenNewerCount])
 
-  const vs = useVirtualScroll(virtualItems)
-  const visibleItems = virtualItems.length === 0
-    ? []
-    : virtualItems.slice(vs.visibleRange.start, vs.visibleRange.end + 1)
-
-  // Keep a stable ref to the latest vs so effects/callbacks don't depend on the
-  // vs object (whose identity changes on every render due to computed values).
-  const vsRef = useRef(vs)
-  vsRef.current = vs
+  const {
+    scrollContainerRef,
+    topSpacerHeight,
+    bottomSpacerHeight,
+    visibleRange,
+    handleMeasuredHeight,
+    handleScroll: updateVirtualScroll,
+    getIsAtBottom,
+    scrollToBottom,
+    scrollToItem,
+    resetLayout,
+    setScrollAnchor,
+  } = useVirtualScroll(virtualItems)
+  const visibleItems = useMemo(
+    () => virtualItems.length === 0
+      ? []
+      : virtualItems.slice(visibleRange.start, visibleRange.end + 1),
+    [virtualItems, visibleRange.end, visibleRange.start],
+  )
 
   const markChannelSeen = useCallback(async () => {
     await bridge.markChannelRead(channel.id)
@@ -141,7 +151,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
 
       requestAnimationFrame(() => {
         if (generation !== loadGenerationRef.current) return
-        vsRef.current.scrollToBottom()
+        scrollToBottom()
       })
     } finally {
       if (generation === loadGenerationRef.current) {
@@ -153,7 +163,14 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
     if (generation === loadGenerationRef.current) {
       await markChannelSeen()
     }
-  }, [channel.id, flushBufferedMessages, markChannelSeen, matrixMode, replaceMessages])
+  }, [
+    channel.id,
+    flushBufferedMessages,
+    markChannelSeen,
+    matrixMode,
+    replaceMessages,
+    scrollToBottom,
+  ])
 
   // Load messages on channel switch
   useEffect(() => {
@@ -242,7 +259,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
     }
 
     const target = navigationRequest.message
-    if (!vsRef.current.scrollToItem(target.id, 'center')) return
+    if (!scrollToItem(target.id, 'center')) return
 
     clearTimeout(highlightTimerRef.current)
     setHighlightedMessageId(target.id)
@@ -252,7 +269,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
       setJumpAnnouncement('')
     }, 2_000)
     useMessageNavigationStore.getState().completeNavigation(navigationRequest.requestId)
-  }, [navigationRequest, preparedNavigationId, virtualItems])
+  }, [navigationRequest, preparedNavigationId, scrollToItem, virtualItems])
 
   useEffect(
     () => () => {
@@ -278,8 +295,8 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
         const hasNewMessage = latest.some((message) => !existingIds.has(message.id))
         replaceMessages(channel.id, latest)
         if (hasNewMessage) {
-          if (vsRef.current.isAtBottom) {
-            requestAnimationFrame(() => vsRef.current.scrollToBottom())
+          if (getIsAtBottom()) {
+            requestAnimationFrame(scrollToBottom)
           } else {
             setShowNewMessages(true)
           }
@@ -315,14 +332,20 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
       active = false
       retryController.abort()
     }
-  }, [channel.id, isViewingLatest, matrixMode, replaceMessages])
+  }, [
+    channel.id,
+    getIsAtBottom,
+    isViewingLatest,
+    matrixMode,
+    replaceMessages,
+    scrollToBottom,
+  ])
 
   // Reset scroll state on channel switch
   useEffect(() => {
     setShowNewMessages(false)
-    vsRef.current.resetLayout()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channel.id])
+    resetLayout()
+  }, [channel.id, resetLayout])
 
   // Request history from new peers
   useEffect(() => {
@@ -346,7 +369,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
         }
         addMessage(channel.id, msg)
 
-        if (isViewingLatest && vs.isAtBottom) {
+        if (isViewingLatest && getIsAtBottom()) {
           markChannelSeen().catch((err) => {
             console.error('Failed to mark channel as read:', err)
           })
@@ -357,7 +380,14 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
       }
     })
     return () => { unsub.then((fn) => fn()) }
-  }, [addMessage, channel.id, isViewingLatest, markChannelSeen, matrixMode, vs.isAtBottom])
+  }, [
+    addMessage,
+    channel.id,
+    getIsAtBottom,
+    isViewingLatest,
+    markChannelSeen,
+    matrixMode,
+  ])
 
   // Listen for reactions
   useEffect(() => {
@@ -483,12 +513,18 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
       return
     }
 
-    vsRef.current.scrollToBottom()
+    scrollToBottom()
     setShowNewMessages(false)
     markChannelSeen().catch((err) => {
       console.error('Failed to mark channel as read:', err)
     })
-  }, [hiddenNewerCount, isBrowsingOlder, markChannelSeen, resetToLatestWindow])
+  }, [
+    hiddenNewerCount,
+    isBrowsingOlder,
+    markChannelSeen,
+    resetToLatestWindow,
+    scrollToBottom,
+  ])
 
   const handleNavigateToMessage = useCallback((message: MessageType) => {
     useMessageNavigationStore.getState().requestNavigation(message)
@@ -496,25 +532,26 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
   }, [setActiveChannel])
 
   const handleScroll = useCallback(async () => {
-    vsRef.current.handleScroll()
+    const position = updateVirtualScroll()
+    if (!position) return
 
-    const el = vsRef.current.scrollRef.current
-    if (!el) return
-
-    if (vsRef.current.isAtBottom && showNewMessages && isViewingLatest) {
+    if (position.isAtBottom && showNewMessages && isViewingLatest) {
       setShowNewMessages(false)
       markChannelSeen().catch((err) => {
         console.error('Failed to mark channel as read:', err)
       })
     }
 
-    if (el.scrollTop < 100 && !isLoadingOlder) {
+    if (position.scrollTop < 100 && !isLoadingOlder) {
       const anchorItem = visibleItems.find((item) => item.type === 'message')
       if (anchorItem) {
         const anchorIndex = virtualItems.findIndex((item) => item.key === anchorItem.key)
-        vsRef.current.setScrollAnchor({
+        setScrollAnchor({
           messageId: anchorItem.key,
-          offset: Math.max(0, el.scrollTop - (anchorIndex >= 0 ? vsRef.current.topSpacerHeight : 0)),
+          offset: Math.max(
+            0,
+            position.scrollTop - (anchorIndex >= 0 ? topSpacerHeight : 0),
+          ),
         })
       }
 
@@ -526,7 +563,10 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
     isViewingLatest,
     loadOlderMessages,
     markChannelSeen,
+    setScrollAnchor,
     showNewMessages,
+    topSpacerHeight,
+    updateVirtualScroll,
     virtualItems,
     visibleItems,
   ])
@@ -686,7 +726,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
           {jumpAnnouncement}
         </p>
         <div
-          ref={vs.scrollRef}
+          ref={scrollContainerRef}
           onScroll={() => void handleScroll()}
           className="flex-1 overflow-y-auto"
           role="log"
@@ -719,8 +759,8 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
               <div
                 data-design-token-exception="data-driven-virtual-spacer-geometry"
                 style={{
-                  paddingTop: `${vs.topSpacerHeight}px`,
-                  paddingBottom: `${vs.bottomSpacerHeight}px`,
+                  paddingTop: `${topSpacerHeight}px`,
+                  paddingBottom: `${bottomSpacerHeight}px`,
                 }}
               >
                 {visibleItems.map((item, index) => {
@@ -732,7 +772,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
                         key={item.key}
                         rowKey={item.key}
                         hiddenCount={hiddenNewerCount}
-                        onHeightChange={vs.handleMeasuredHeight}
+                        onHeightChange={handleMeasuredHeight}
                         onJumpToLatest={() => void jumpToLatest()}
                       />
                     )
@@ -749,7 +789,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
                       message={message}
                       isGrouped={isGrouped(message, channelMessages[messageIndex - 1])}
                       hasGap={nextItem?.type !== 'gap'}
-                      onHeightChange={vs.handleMeasuredHeight}
+                      onHeightChange={handleMeasuredHeight}
                       onReply={setReplyingTo}
                       onRetry={handleRetry}
                       limitedActions={false}
