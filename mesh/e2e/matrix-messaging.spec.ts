@@ -26,6 +26,12 @@ async function installAuthenticatedMatrixMessagingMock(page: Page): Promise<void
     const callbacks = new Map<number, (...args: unknown[]) => void>()
     let nextCallbackId = 1
     let nextListenerId = 1
+    const thumbnailBytes = Array.from(
+      Uint8Array.from(
+        atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='),
+        (character) => character.charCodeAt(0),
+      ),
+    )
 
     const community = {
       id: '!mesh-e2e:mesh.test',
@@ -57,16 +63,14 @@ async function installAuthenticatedMatrixMessagingMock(page: Page): Promise<void
       size: 2_097_152,
       chunks: 1,
       sourcePeerId: 'matrix',
-      mediaSource: {
-        file: {
-          url: 'mxc://mesh.test/encrypted-plan',
-          key: { alg: 'A256CTR', kty: 'oct', k: 'test-key' },
-          iv: 'test-iv',
-          hashes: { sha256: 'test-hash' },
-          v: 'v2',
-        },
-      },
       contentType: 'application/pdf',
+      thumbnail: {
+        fileHash: 'matrix-sha256:encrypted-plan-thumbnail',
+        size: thumbnailBytes.length,
+        width: 1,
+        height: 1,
+        contentType: 'image/png',
+      },
     }
     const dmTimeline = [
       {
@@ -92,7 +96,7 @@ async function installAuthenticatedMatrixMessagingMock(page: Page): Promise<void
         authorDisplayName: 'Bob',
         authorAvatarColor: '#3ba55c',
         content: 'Welcome to the encrypted Mesh test room.',
-        attachments: [],
+        attachments: [encryptedAttachment],
         reactions: {},
         timestamp: '2026-07-24T00:00:00.000Z',
         signature: '',
@@ -215,15 +219,6 @@ async function installAuthenticatedMatrixMessagingMock(page: Page): Promise<void
             size: 1_024,
             chunks: 1,
             sourcePeerId: 'matrix',
-            mediaSource: {
-              file: {
-                url: 'mxc://mesh.test/sent-attachment',
-                key: { alg: 'A256CTR', kty: 'oct', k: 'sent-key' },
-                iv: 'sent-iv',
-                hashes: { sha256: 'sent-hash' },
-                v: 'v2',
-              },
-            },
             contentType: filename.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream',
           }
           const message = directMessage(String(args.body), [attachment])
@@ -232,6 +227,8 @@ async function installAuthenticatedMatrixMessagingMock(page: Page): Promise<void
         }
         case 'matrix_download_attachment':
           return 'C:\\Users\\alice\\Downloads\\encrypted-plan.pdf'
+        case 'matrix_load_attachment_thumbnail':
+          return thumbnailBytes
         case 'pick_attachment_grants':
           return {
             files: [{
@@ -346,11 +343,28 @@ function ipcCalls(page: Page): Promise<IpcCall[]> {
 test.describe('Matrix direct messaging and encrypted attachments', () => {
   test.use({ viewport: { width: 1440, height: 900 } })
 
+  test('renders a protected channel thumbnail without exposing its descriptor', async ({ page }) => {
+    await installAuthenticatedMatrixMessagingMock(page)
+    await page.goto('/')
+
+    await expect(page.getByAltText('Preview of encrypted-plan.pdf')).toBeVisible()
+    const calls = await ipcCalls(page)
+    expect(calls).toContainEqual({
+      command: 'matrix_load_attachment_thumbnail',
+      args: {
+        roomId: '!general:mesh.test',
+        eventId: '$welcome',
+        attachmentIndex: 0,
+      },
+    })
+  })
+
   test('opens an existing encrypted DM and loads its history through Matrix IPC', async ({ page }) => {
     await openDirectMessage(page)
 
     await expect(page.getByText('Existing encrypted DM history.', { exact: true })).toBeVisible()
     await expect(page.getByText('encrypted-plan.pdf', { exact: true })).toBeVisible()
+    await expect(page.getByAltText('Preview of encrypted-plan.pdf')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Download encrypted-plan.pdf' })).toBeVisible()
 
     const calls = await ipcCalls(page)
@@ -368,6 +382,14 @@ test.describe('Matrix direct messaging and encrypted attachments', () => {
     expect(calls).toContainEqual({
       command: 'matrix_mark_dm_read',
       args: { conversationId: '!alice-bob-dm:mesh.test' },
+    })
+    expect(calls).toContainEqual({
+      command: 'matrix_load_attachment_thumbnail',
+      args: {
+        roomId: '!alice-bob-dm:mesh.test',
+        eventId: '$dm-history',
+        attachmentIndex: 0,
+      },
     })
   })
 

@@ -1141,6 +1141,16 @@ pub trait MeshBackend: Send + Sync {
     ) -> BackendResult<String> {
         Err(BackendError::Unsupported("encrypted Matrix attachments"))
     }
+    async fn load_attachment_thumbnail(
+        &self,
+        _room_id: String,
+        _event_id: String,
+        _attachment_index: u32,
+    ) -> BackendResult<Vec<u8>> {
+        Err(BackendError::Unsupported(
+            "encrypted Matrix attachment previews",
+        ))
+    }
     async fn cancel_attachment_download(&self, _file_hash: String) -> BackendResult<()> {
         Err(BackendError::Unsupported(
             "encrypted Matrix attachment cancellation",

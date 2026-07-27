@@ -75,6 +75,13 @@ const READ_RETRY_BASE_DELAY_MS = 150
 const READ_RETRY_MAX_DELAY_MS = 2_000
 const inflightReadRequests = new Map<string, Promise<unknown>>()
 const READ_IPC_OPTIONS: TauriInvokeOptions = { idempotent: true }
+const THUMBNAIL_IPC_OPTIONS: TauriInvokeOptions = {
+  idempotent: true,
+  timeoutMs: 45_000,
+  maxAttempts: 1,
+}
+const MAX_INLINE_THUMBNAIL_BYTES = 2 * 1024 * 1024
+const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10] as const
 
 function stableRequestKey(command: string, args?: Record<string, unknown>): string {
   if (!args) return command
@@ -653,6 +660,28 @@ export async function matrixDownloadAttachment(
     attachmentIndex,
     transferId,
   })
+}
+
+export async function matrixLoadAttachmentThumbnail(
+  roomId: string,
+  eventId: string,
+  attachmentIndex: number,
+): Promise<Uint8Array | null> {
+  if (!isMatrixBackend()) return null
+  const bytes = await tauriInvoke<ArrayBuffer | Uint8Array | number[]>(
+    'matrix_load_attachment_thumbnail',
+    { roomId, eventId, attachmentIndex },
+    THUMBNAIL_IPC_OPTIONS,
+  )
+  const normalized = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
+  if (
+    normalized.byteLength === 0
+    || normalized.byteLength > MAX_INLINE_THUMBNAIL_BYTES
+    || PNG_SIGNATURE.some((byte, index) => normalized[index] !== byte)
+  ) {
+    throw normalizeError('Protected preview failed local validation')
+  }
+  return normalized
 }
 
 export async function matrixCancelAttachmentDownload(fileHash: string): Promise<void> {

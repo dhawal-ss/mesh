@@ -48,21 +48,12 @@ export type CommunityDto = { id: string, name: string, description: string, memb
 
 export type ChannelDto = { id: string, communityId: string, name: string, channelType: "text" | "voice", unreadCount: number, };
 
-export type AttachmentThumbnailDto = { fileHash: string, size: number, width: number, height: number, contentType: string,
-/**
- * Opaque Matrix encrypted-file metadata used only by the Rust backend.
- */
-mediaSource: Record<string, unknown>, };
+export type AttachmentThumbnailDto = { fileHash: string, size: number, width: number, height: number, contentType: string, };
 
-export type AttachmentDto = { fileHash: string, filename: string, size: number, chunks: number, sourcePeerId: string,
+export type AttachmentDto = { fileHash: string, filename: string, size: number, chunks: number, sourcePeerId: string, contentType?: string | null,
 /**
- * Matrix encrypted-file metadata. Kept opaque at the product boundary so
- * the SDK remains the authority for key, IV, and ciphertext validation.
- */
-mediaSource?: Record<string, unknown> | null, contentType?: string | null,
-/**
- * Encrypted Matrix thumbnail metadata. Mesh does not decrypt this across
- * renderer IPC until the sandboxed preview boundary is implemented.
+ * Bounded display metadata for a protected inline preview. Encryption
+ * keys, IVs, and media locations remain Rust-only.
  */
 thumbnail?: AttachmentThumbnailDto | null, };
 
