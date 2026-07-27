@@ -122,32 +122,42 @@ pub(super) async fn bind_callback_listener() -> Result<TcpListener, CallbackErro
 pub(super) async fn receive_callback(
     listener: TcpListener,
     cancellation: CancellationToken,
+    expected_state: &str,
 ) -> Result<Url, CallbackError> {
-    receive_callback_with_timeout(listener, cancellation, CALLBACK_TIMEOUT).await
+    receive_callback_with_timeout(listener, cancellation, CALLBACK_TIMEOUT, expected_state).await
 }
 
 async fn receive_callback_with_timeout(
     listener: TcpListener,
     cancellation: CancellationToken,
     timeout: Duration,
+    expected_state: &str,
 ) -> Result<Url, CallbackError> {
     tokio::select! {
         _ = cancellation.cancelled() => Err(CallbackError::Cancelled),
-        result = tokio::time::timeout(timeout, listener.accept()) => {
-            match result {
-                Err(_) => Err(CallbackError::TimedOut),
-                Ok(Err(_)) => Err(CallbackError::Io),
-                Ok(Ok((stream, peer))) if peer.ip().is_loopback() => handle_connection(stream).await,
-                Ok(Ok((mut stream, _))) => {
+        result = tokio::time::timeout(timeout, async {
+            loop {
+                let (stream, peer) = listener.accept().await.map_err(|_| CallbackError::Io)?;
+                if !peer.ip().is_loopback() {
+                    let mut stream = stream;
                     let _ = stream.write_all(INVALID_RESPONSE).await;
-                    Err(CallbackError::InvalidRequest)
+                    continue;
+                }
+
+                match handle_connection(stream, expected_state).await {
+                    Ok(callback) => return Ok(callback),
+                    Err(CallbackError::Io) => continue,
+                    Err(_) => continue,
                 }
             }
-        }
+        }) => result.unwrap_or(Err(CallbackError::TimedOut)),
     }
 }
 
-async fn handle_connection(mut stream: TcpStream) -> Result<Url, CallbackError> {
+async fn handle_connection(
+    mut stream: TcpStream,
+    expected_state: &str,
+) -> Result<Url, CallbackError> {
     let mut request = Vec::with_capacity(1024);
     let mut chunk = [0_u8; 1024];
     loop {
@@ -184,6 +194,14 @@ async fn handle_connection(mut stream: TcpStream) -> Result<Url, CallbackError> 
             return Err(error);
         }
     };
+    if callback
+        .query_pairs()
+        .find(|(key, _)| key == "state")
+        .is_none_or(|(_, state)| state != expected_state)
+    {
+        let _ = stream.write_all(INVALID_RESPONSE).await;
+        return Err(CallbackError::InvalidRequest);
+    }
     stream
         .write_all(SUCCESS_RESPONSE)
         .await
@@ -260,17 +278,68 @@ mod tests {
     async fn oversized_callback_is_rejected_without_echoing_sensitive_input() {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
         let address = listener.local_addr().unwrap();
-        let receive = tokio::spawn(receive_callback(listener, CancellationToken::new()));
+        let receive = tokio::spawn(receive_callback(
+            listener,
+            CancellationToken::new(),
+            "opaque",
+        ));
         let mut stream = TcpStream::connect(address).await.unwrap();
         let oversized = vec![b'x'; MAX_CALLBACK_REQUEST_BYTES + 1];
         stream.write_all(&oversized).await.unwrap();
         let mut response = Vec::new();
         stream.read_to_end(&mut response).await.unwrap();
         assert!(String::from_utf8_lossy(&response).starts_with("HTTP/1.1 413"));
-        assert!(matches!(
-            receive.await.unwrap(),
-            Err(CallbackError::RequestTooLarge)
+
+        let mut valid = TcpStream::connect(address).await.unwrap();
+        valid
+            .write_all(
+                b"GET /oauth/callback?code=real&state=opaque HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+            )
+            .await
+            .unwrap();
+        let mut valid_response = Vec::new();
+        valid.read_to_end(&mut valid_response).await.unwrap();
+        assert!(String::from_utf8_lossy(&valid_response).starts_with("HTTP/1.1 200"));
+        assert_eq!(
+            receive.await.unwrap().unwrap().query(),
+            Some("code=real&state=opaque")
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_first_callback_does_not_preempt_the_valid_redirect() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let receive = tokio::spawn(receive_callback(
+            listener,
+            CancellationToken::new(),
+            "expected-state",
         ));
+
+        let mut invalid = TcpStream::connect(address).await.unwrap();
+        invalid
+            .write_all(
+                b"GET /oauth/callback?code=attacker&state=wrong-state HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+            )
+            .await
+            .unwrap();
+        let mut invalid_response = Vec::new();
+        invalid.read_to_end(&mut invalid_response).await.unwrap();
+        assert!(String::from_utf8_lossy(&invalid_response).starts_with("HTTP/1.1 400"));
+
+        let mut valid = TcpStream::connect(address).await.unwrap();
+        valid
+            .write_all(
+                b"GET /oauth/callback?code=real&state=expected-state HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+            )
+            .await
+            .unwrap();
+        let mut valid_response = Vec::new();
+        valid.read_to_end(&mut valid_response).await.unwrap();
+        assert!(String::from_utf8_lossy(&valid_response).starts_with("HTTP/1.1 200"));
+
+        let callback = receive.await.unwrap().unwrap();
+        assert_eq!(callback.query(), Some("code=real&state=expected-state"));
     }
 
     #[tokio::test]
@@ -280,7 +349,7 @@ mod tests {
         let cancellation = CancellationToken::new();
         cancellation.cancel();
         assert!(matches!(
-            receive_callback(listener, cancellation).await,
+            receive_callback(listener, cancellation, "opaque").await,
             Err(CallbackError::Cancelled)
         ));
         TcpListener::bind(address)
@@ -297,6 +366,7 @@ mod tests {
                 listener,
                 CancellationToken::new(),
                 Duration::from_millis(10),
+                "opaque",
             )
             .await,
             Err(CallbackError::TimedOut)
