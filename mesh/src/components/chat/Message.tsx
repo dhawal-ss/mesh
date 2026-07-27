@@ -301,8 +301,14 @@ export const MessageComponent = memo(function MessageComponent({
           {/* File attachments */}
           {message.attachments && message.attachments.length > 0 && (
             <div className="mt-2 flex flex-col gap-2">
-              {message.attachments.map((att) => (
-                <FileAttachmentCard key={att.fileHash} attachment={att} />
+              {message.attachments.map((att, attachmentIndex) => (
+                <FileAttachmentCard
+                  key={att.fileHash}
+                  attachment={att}
+                  roomId={message.channelId}
+                  eventId={message.id}
+                  attachmentIndex={attachmentIndex}
+                />
               ))}
             </div>
           )}
@@ -448,8 +454,14 @@ export const MessageComponent = memo(function MessageComponent({
 
 export function FileAttachmentCard({
   attachment,
+  roomId,
+  eventId,
+  attachmentIndex,
 }: {
   attachment: MessageType['attachments'][number]
+  roomId: string
+  eventId: string
+  attachmentIndex: number
 }) {
   const download = useFileDownloadStore((s) => s.downloads[attachment.fileHash])
   const sourcePeerId = attachment.sourcePeerId
@@ -496,7 +508,12 @@ export function FileAttachmentCard({
         transferId,
       })
       try {
-        const localPath = await bridge.matrixDownloadAttachment(attachment, transferId)
+        const localPath = await bridge.matrixDownloadAttachment(
+          roomId,
+          eventId,
+          attachmentIndex,
+          transferId,
+        )
         useFileDownloadStore.getState().markDownloadAvailable({
           fileHash: attachment.fileHash,
           localPath,

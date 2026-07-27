@@ -622,10 +622,17 @@ export async function matrixCancelAttachmentUpload(transferId: string): Promise<
 }
 
 export async function matrixDownloadAttachment(
-  attachment: Attachment,
+  roomId: string,
+  eventId: string,
+  attachmentIndex: number,
   transferId: string,
 ): Promise<string> {
-  return tauriInvoke('matrix_download_attachment', { attachment, transferId })
+  return tauriInvoke('matrix_download_attachment', {
+    roomId,
+    eventId,
+    attachmentIndex,
+    transferId,
+  })
 }
 
 export async function matrixCancelAttachmentDownload(fileHash: string): Promise<void> {

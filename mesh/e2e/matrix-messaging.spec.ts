@@ -241,6 +241,7 @@ async function installAuthenticatedMatrixMessagingMock(page: Page): Promise<void
             errors: [],
           }
         case 'plugin:opener|open_path':
+        case 'open_downloaded_file':
         case 'discard_attachment_grant':
         case 'matrix_mark_dm_read':
         case 'matrix_mark_read':
@@ -436,19 +437,15 @@ test.describe('Matrix direct messaging and encrypted attachments', () => {
     const calls = await ipcCalls(page)
     const download = calls.find((call) => call.command === 'matrix_download_attachment')
     expect(download?.args).toEqual({
-      attachment: expect.objectContaining({
-        fileHash: 'matrix-sha256:encrypted-plan',
-        filename: 'encrypted-plan.pdf',
-        sourcePeerId: 'matrix',
-        mediaSource: expect.any(Object),
-      }),
+      roomId: '!alice-bob-dm:mesh.test',
+      eventId: '$dm-history',
+      attachmentIndex: 0,
       transferId: expect.any(String),
     })
     expect(calls).toContainEqual({
-      command: 'plugin:opener|open_path',
+      command: 'open_downloaded_file',
       args: {
-        path: 'C:\\Users\\alice\\Downloads\\encrypted-plan.pdf',
-        with: undefined,
+        localPath: 'C:\\Users\\alice\\Downloads\\encrypted-plan.pdf',
       },
     })
   })

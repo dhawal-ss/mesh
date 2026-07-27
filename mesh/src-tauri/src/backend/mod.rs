@@ -14,7 +14,7 @@ use ts_rs::TS;
 use crate::types::{
     community::{ChannelDto, CommunityDto},
     dm::{DirectMessageDto, DmConversationDto},
-    message::{AttachmentDto, MessageDto},
+    message::MessageDto,
 };
 
 pub const LEGACY_MATRIX_EVENT_TYPE: &str = "org.mesh.legacy_archive.v1";
@@ -1125,7 +1125,9 @@ pub trait MeshBackend: Send + Sync {
     }
     async fn download_attachment(
         &self,
-        _attachment: AttachmentDto,
+        _room_id: String,
+        _event_id: String,
+        _attachment_index: u32,
         _transfer: MatrixTransferObserver,
     ) -> BackendResult<String> {
         Err(BackendError::Unsupported("encrypted Matrix attachments"))

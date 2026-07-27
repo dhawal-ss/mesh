@@ -379,8 +379,14 @@ export function DmView() {
                         {msg.editedAt && <span className="ml-1 text-caption text-muted">(edited)</span>}
                       </p>
                     )}
-                    {(msg.attachments ?? []).map((attachment) => (
-                      <FileAttachmentCard key={attachment.fileHash} attachment={attachment} />
+                    {(msg.attachments ?? []).map((attachment, attachmentIndex) => (
+                      <FileAttachmentCard
+                        key={attachment.fileHash}
+                        attachment={attachment}
+                        roomId={msg.conversationId}
+                        eventId={msg.id}
+                        attachmentIndex={attachmentIndex}
+                      />
                     ))}
                     {Object.keys(msg.reactions ?? {}).length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
