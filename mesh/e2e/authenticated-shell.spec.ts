@@ -352,7 +352,13 @@ test.describe('authenticated desktop shell', () => {
 
     await dialog.getByRole('textbox', { name: 'Display name' }).fill('Alice Updated')
     await dialog.getByRole('button', { name: 'Save display name' }).click()
-    await expect(dialog.getByRole('status')).toHaveText('Profile updated')
+    // The Privacy Center's own save-sync status can legitimately be visible
+    // at the same time (e.g. an initial preference sync completing), so this
+    // must target the display-name status by its distinguishing name rather
+    // than assuming it's the only `role="status"` region in the dialog.
+    await expect(
+      dialog.getByRole('status', { name: 'Display name save status' }),
+    ).toHaveText('Profile updated')
 
     await page.keyboard.press('Escape')
     await expect(dialog).toHaveCount(0)
