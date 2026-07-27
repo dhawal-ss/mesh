@@ -107,7 +107,7 @@ function MessageInputContent({
   const [matrixTransfers, setMatrixTransfers] = useState<Record<string, MatrixTransferProgress>>({})
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const stagedFilesRef = useRef<StagedFile[]>([])
+  const stagedFilesRef = useRef(stagedFiles)
   const stagingCountRef = useRef(0)
   const intakeGenerationRef = useRef(0)
   const pendingNativeDropsRef = useRef(new Map<string, number>())
@@ -115,8 +115,6 @@ function MessageInputContent({
   const mountedRef = useRef(true)
   const lastTypingBroadcast = useRef<number>(0)
   const pendingSelectionRef = useRef<{ start: number; end: number } | null>(null)
-
-  stagedFilesRef.current = stagedFiles
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -530,6 +528,7 @@ function MessageInputContent({
     let active = true
     let unlistenStart: (() => void) | undefined
     let unlistenComplete: (() => void) | undefined
+    const pendingNativeDrops = pendingNativeDropsRef.current
     const containsPosition = (position: { x: number; y: number }) => {
       const rect = rootRef.current?.getBoundingClientRect()
       if (!rect) return false
@@ -550,7 +549,7 @@ function MessageInputContent({
         && !disableAttachments
         && containsPosition(start.position)
       ) {
-        pendingNativeDropsRef.current.set(
+        pendingNativeDrops.set(
           start.dropId,
           intakeGenerationRef.current,
         )
@@ -570,8 +569,8 @@ function MessageInputContent({
     }>('mesh-native-attachment-drop', (event) => {
       const intake = event.payload
       const grants = intake.files.map((file) => file.grant)
-      const dropGeneration = pendingNativeDropsRef.current.get(intake.dropId)
-      pendingNativeDropsRef.current.delete(intake.dropId)
+      const dropGeneration = pendingNativeDrops.get(intake.dropId)
+      pendingNativeDrops.delete(intake.dropId)
       const boundToCurrentInput = active
         && dropGeneration !== undefined
         && dropGeneration === intakeGenerationRef.current
@@ -602,7 +601,7 @@ function MessageInputContent({
 
     return () => {
       active = false
-      pendingNativeDropsRef.current.clear()
+      pendingNativeDrops.clear()
       unlistenStart?.()
       unlistenComplete?.()
     }
@@ -610,13 +609,15 @@ function MessageInputContent({
 
   useEffect(() => {
     // StrictMode intentionally runs setup -> cleanup -> setup in development.
+    const pendingNativeDrops = pendingNativeDropsRef.current
+    const sendingFiles = sendingFilesRef.current
     mountedRef.current = true
     return () => {
       mountedRef.current = false
       intakeGenerationRef.current += 1
-      pendingNativeDropsRef.current.clear()
+      pendingNativeDrops.clear()
       for (const file of stagedFilesRef.current) {
-        if (!sendingFilesRef.current.has(file)) void discardStagedFile(file)
+        if (!sendingFiles.has(file)) void discardStagedFile(file)
       }
     }
   }, [])
