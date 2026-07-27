@@ -91,7 +91,7 @@ use matrix_sdk::{
         room::RoomType,
         serde::Raw,
         EventEncryptionAlgorithm, OwnedDeviceId, OwnedRoomAliasId, OwnedRoomId, OwnedServerName,
-        OwnedUserId, RoomAliasId, RoomOrAliasId, ServerName, UserId,
+        OwnedTransactionId, OwnedUserId, RoomAliasId, RoomOrAliasId, ServerName, UserId,
     },
     store::RoomLoadSettings,
     utils::UrlOrQuery,
@@ -5367,6 +5367,20 @@ impl MatrixBackend {
         Ok(())
     }
 
+    fn validate_transaction_id(transaction_id: &str) -> BackendResult<OwnedTransactionId> {
+        if transaction_id.is_empty()
+            || transaction_id.len() > 255
+            || !transaction_id
+                .chars()
+                .all(|character| !character.is_control() && !character.is_whitespace())
+        {
+            return Err(BackendError::InvalidConfiguration(
+                "message delivery identifier is invalid".into(),
+            ));
+        }
+        Ok(transaction_id.to_owned().into())
+    }
+
     fn emit_transfer_progress(
         progress: &MatrixTransferProgressCallback,
         transfer_id: &str,
@@ -7472,7 +7486,12 @@ impl MeshBackend for MatrixBackend {
         let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
         let mentions = Self::mentions_for_body(body.as_str(), Some(own_user_id));
         let content = RoomMessageEventContent::text_plain(body).add_mentions(mentions);
-        let response = room.send(content).await.map_err(Self::map_error)?;
+        let transaction_id = Self::validate_transaction_id(&uuid::Uuid::new_v4().to_string())?;
+        let response = room
+            .send(content)
+            .with_transaction_id(transaction_id)
+            .await
+            .map_err(Self::map_error)?;
         Ok(SentMessage {
             event_id: response.response.event_id.to_string(),
             room_id: room.room_id().to_string(),
@@ -7484,6 +7503,7 @@ impl MeshBackend for MatrixBackend {
         room_id: String,
         body: String,
         reply_to_id: Option<String>,
+        transaction_id: String,
     ) -> BackendResult<MessageDto> {
         if body.trim().is_empty() {
             return Err(BackendError::InvalidConfiguration(
@@ -7520,7 +7540,12 @@ impl MeshBackend for MatrixBackend {
             }
             None => base_content.into(),
         };
-        let response = room.send(content).await.map_err(Self::map_error)?;
+        let transaction_id = Self::validate_transaction_id(&transaction_id)?;
+        let response = room
+            .send(content)
+            .with_transaction_id(transaction_id)
+            .await
+            .map_err(Self::map_error)?;
 
         let display_name = room
             .get_member(own_user_id)
@@ -7555,6 +7580,7 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<MessageDto> {
         const MAX_ATTACHMENT_BYTES: u64 = 100 * 1024 * 1024;
         let MatrixAttachmentSendRequest {
+            transaction_id,
             file_path,
             filename,
             content_type,
@@ -7567,6 +7593,7 @@ impl MeshBackend for MatrixBackend {
         } = transfer;
 
         Self::validate_transfer_id(&transfer_id)?;
+        let transaction_id = Self::validate_transaction_id(&transaction_id)?;
         Self::emit_transfer_progress(
             &progress,
             &transfer_id,
@@ -7798,7 +7825,11 @@ impl MeshBackend for MatrixBackend {
                     "Matrix attachment upload cancelled".into(),
                 ));
             }
-            let response = room.send(content).await.map_err(Self::map_error)?;
+            let response = room
+                .send(content)
+                .with_transaction_id(transaction_id)
+                .await
+                .map_err(Self::map_error)?;
             let display_name = room
                 .get_member(own_user_id)
                 .await
@@ -8214,6 +8245,7 @@ impl MeshBackend for MatrixBackend {
         recipient_user_id: String,
         body: String,
         reply_to_id: Option<String>,
+        transaction_id: String,
     ) -> BackendResult<DirectMessageDto> {
         if body.trim().is_empty() {
             return Err(BackendError::InvalidConfiguration(
@@ -8239,6 +8271,7 @@ impl MeshBackend for MatrixBackend {
             room.room_id().to_string(),
             body,
             reply_to_id,
+            transaction_id,
         )
         .await?;
         Ok(Self::direct_message_from_message(message))
@@ -11136,6 +11169,18 @@ mod tests {
             MatrixBackend::safe_media_filename(" ").unwrap(),
             "attachment.bin"
         );
+    }
+
+    #[test]
+    fn matrix_message_transaction_ids_are_bounded_and_retry_safe() {
+        let first_attempt = "pending-123-abc";
+        let retry_id = MatrixBackend::validate_transaction_id(first_attempt).unwrap();
+        let same_retry_id: OwnedTransactionId = first_attempt.to_owned().into();
+        assert_eq!(retry_id, same_retry_id);
+        assert!(MatrixBackend::validate_transaction_id("").is_err());
+        assert!(MatrixBackend::validate_transaction_id("contains whitespace").is_err());
+        assert!(MatrixBackend::validate_transaction_id("contains\nnewline").is_err());
+        assert!(MatrixBackend::validate_transaction_id(&"x".repeat(256)).is_err());
     }
 
     #[test]

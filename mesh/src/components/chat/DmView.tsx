@@ -183,7 +183,12 @@ export function DmView() {
         }
         return
       }
-      const msg = await bridge.sendDm(conversation.peerPublicKey, content, replyToId)
+      const msg = await bridge.sendDm(
+        conversation.peerPublicKey,
+        content,
+        replyToId,
+        bridge.createMatrixTransactionId(),
+      )
       addMessage(msg)
       setReplyingTo(null)
       requestAnimationFrame(() => {
