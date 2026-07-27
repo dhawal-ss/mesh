@@ -1,11 +1,12 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { MotionConfig, useReducedMotion } from 'framer-motion'
+import { MotionConfig } from 'framer-motion'
 import type { ReactNode } from 'react'
 import App from './App'
 import '@fontsource-variable/inter/wght.css'
 import './styles/globals.css'
 import { transitions } from './lib/motion'
+import { useReducedMotionPreference } from './hooks/useReducedMotionPreference'
 
 const DevKitchenSink = import.meta.env.DEV
   ? React.lazy(() => import('./components/dev/KitchenSink').then(({ KitchenSink }) => ({
@@ -14,7 +15,7 @@ const DevKitchenSink = import.meta.env.DEV
   : null
 
 function AppMotionConfig({ children }: { children: ReactNode }) {
-  const reduceMotion = useReducedMotion()
+  const reduceMotion = useReducedMotionPreference()
   return (
     <MotionConfig
       reducedMotion={reduceMotion ? 'always' : 'never'}
