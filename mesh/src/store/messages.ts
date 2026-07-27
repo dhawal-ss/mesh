@@ -6,6 +6,7 @@ import { patchChanges } from '../lib/state'
 
 const HOT_WINDOW_SIZE = 200
 const MAX_HISTORY_WINDOW_SIZE = 500
+const MAX_CACHED_CHANNELS = 16
 
 interface MessagesStore {
   /** Normalized source of truth, scoped by channel ID. */
@@ -17,6 +18,7 @@ interface MessagesStore {
   hasMoreOlder: Record<string, boolean>
   browsingOlder: Record<string, boolean>
   newerGapCount: Record<string, number>
+  channelRecency: string[]
   setMessages: (channelId: string, messages: Message[]) => void
   replaceMessages: (channelId: string, messages: Message[]) => void
   addMessage: (channelId: string, message: Message) => void
@@ -123,6 +125,74 @@ function normalizedChannel(
   }
 }
 
+type ChannelCacheState = Pick<
+  MessagesStore,
+  | 'messageEntities'
+  | 'messageOrder'
+  | 'messages'
+  | 'loadingOlder'
+  | 'hasMoreOlder'
+  | 'browsingOlder'
+  | 'newerGapCount'
+  | 'channelRecency'
+>
+
+function withoutChannels<T>(
+  values: Record<string, T>,
+  channelIds: string[],
+): Record<string, T> {
+  let next = values
+  for (const channelId of channelIds) {
+    if (!(channelId in next)) continue
+    next = { ...next }
+    delete next[channelId]
+  }
+  return next
+}
+
+function retainChannel(
+  state: ChannelCacheState,
+  channelId: string,
+  patch: Partial<ChannelCacheState>,
+): ChannelCacheState {
+  const channelRecency = [
+    ...state.channelRecency.filter((cachedId) => cachedId !== channelId),
+    channelId,
+  ]
+  const evictedChannelIds = channelRecency.slice(0, -MAX_CACHED_CHANNELS)
+  return {
+    messageEntities: withoutChannels(
+      patch.messageEntities ?? state.messageEntities,
+      evictedChannelIds,
+    ),
+    messageOrder: withoutChannels(
+      patch.messageOrder ?? state.messageOrder,
+      evictedChannelIds,
+    ),
+    messages: withoutChannels(
+      patch.messages ?? state.messages,
+      evictedChannelIds,
+    ),
+    loadingOlder: withoutChannels(
+      patch.loadingOlder ?? state.loadingOlder,
+      evictedChannelIds,
+    ),
+    hasMoreOlder: withoutChannels(
+      patch.hasMoreOlder ?? state.hasMoreOlder,
+      evictedChannelIds,
+    ),
+    browsingOlder: withoutChannels(
+      patch.browsingOlder ?? state.browsingOlder,
+      evictedChannelIds,
+    ),
+    newerGapCount: withoutChannels(
+      patch.newerGapCount ?? state.newerGapCount,
+      evictedChannelIds,
+    ),
+    channelRecency: channelRecency.slice(-MAX_CACHED_CHANNELS),
+  }
+}
+
 function patchChannelMessage(
   state: MessagesStore,
   channelId: string,
@@ -153,48 +223,57 @@ export const useMessageStore = create<MessagesStore>((set, get) => ({
   hasMoreOlder: {},
   browsingOlder: {},
   newerGapCount: {},
+  channelRecency: [],
 
   setMessages: (channelId, incoming) =>
-    set((state) => ({
-      ...normalizedChannel(
-        state,
-        channelId,
-        boundLatestWindow(mergeMessages(state.messages[channelId] ?? [], incoming)),
-      ),
-      hasMoreOlder: { ...state.hasMoreOlder, [channelId]: incoming.length >= 50 },
-      browsingOlder: { ...state.browsingOlder, [channelId]: false },
-      newerGapCount: { ...state.newerGapCount, [channelId]: 0 },
-    })),
+    set((state) =>
+      retainChannel(state, channelId, {
+        ...normalizedChannel(
+          state,
+          channelId,
+          boundLatestWindow(mergeMessages(state.messages[channelId] ?? [], incoming)),
+        ),
+        hasMoreOlder: { ...state.hasMoreOlder, [channelId]: incoming.length >= 50 },
+        browsingOlder: { ...state.browsingOlder, [channelId]: false },
+        newerGapCount: { ...state.newerGapCount, [channelId]: 0 },
+      }),
+    ),
 
   replaceMessages: (channelId, incoming) =>
-    set((state) => ({
-      ...normalizedChannel(
-        state,
-        channelId,
-        boundLatestWindow(mergeMessages([], incoming)),
-      ),
-      hasMoreOlder: { ...state.hasMoreOlder, [channelId]: incoming.length >= 50 },
-      browsingOlder: { ...state.browsingOlder, [channelId]: false },
-      newerGapCount: { ...state.newerGapCount, [channelId]: 0 },
-    })),
+    set((state) =>
+      retainChannel(state, channelId, {
+        ...normalizedChannel(
+          state,
+          channelId,
+          boundLatestWindow(mergeMessages([], incoming)),
+        ),
+        hasMoreOlder: { ...state.hasMoreOlder, [channelId]: incoming.length >= 50 },
+        browsingOlder: { ...state.browsingOlder, [channelId]: false },
+        newerGapCount: { ...state.newerGapCount, [channelId]: 0 },
+      }),
+    ),
 
   addMessage: (channelId, message) =>
     set((state) => {
       if (state.messageEntities[channelId]?.[message.id]) return state
 
       if (state.browsingOlder[channelId] || (state.newerGapCount[channelId] ?? 0) > 0) {
-        return {
+        return retainChannel(state, channelId, {
           newerGapCount: {
             ...state.newerGapCount,
             [channelId]: (state.newerGapCount[channelId] ?? 0) + 1,
           },
-        }
+        })
       }
 
-      return normalizedChannel(
+      return retainChannel(
         state,
         channelId,
-        boundLatestWindow(mergeMessages(state.messages[channelId] ?? [], [message])),
+        normalizedChannel(
+          state,
+          channelId,
+          boundLatestWindow(mergeMessages(state.messages[channelId] ?? [], [message])),
+        ),
       )
     }),
 
@@ -203,14 +282,14 @@ export const useMessageStore = create<MessagesStore>((set, get) => ({
       const bounded = boundOlderWindow(
         mergeMessages(state.messages[channelId] ?? [], incoming),
       )
-      return {
+      return retainChannel(state, channelId, {
         ...normalizedChannel(state, channelId, bounded.messages),
         browsingOlder: { ...state.browsingOlder, [channelId]: true },
         newerGapCount: {
           ...state.newerGapCount,
           [channelId]: (state.newerGapCount[channelId] ?? 0) + bounded.trimmedNewerCount,
         },
-      }
+      })
     }),
 
   loadOlderMessages: async (channelId) => {
@@ -237,13 +316,17 @@ export const useMessageStore = create<MessagesStore>((set, get) => ({
       if (anchorId && !currentState.messageEntities[channelId]?.[anchorId]) return
 
       if (older.length > 0) get().prependMessages(channelId, older)
-      set((current) => ({
-        hasMoreOlder: { ...current.hasMoreOlder, [channelId]: older.length >= 50 },
-      }))
+      set((current) => (
+        current.channelRecency.includes(channelId)
+          ? { hasMoreOlder: { ...current.hasMoreOlder, [channelId]: older.length >= 50 } }
+          : current
+      ))
     } finally {
-      set((current) => ({
-        loadingOlder: { ...current.loadingOlder, [channelId]: false },
-      }))
+      set((current) => (
+        current.channelRecency.includes(channelId)
+          ? { loadingOlder: { ...current.loadingOlder, [channelId]: false } }
+          : current
+      ))
     }
   },
 
