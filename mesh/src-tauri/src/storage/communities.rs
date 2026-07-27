@@ -278,13 +278,14 @@ impl Database {
     /// Get the community private key.
     /// Checks OS keychain first, falls back to SQLite column for legacy migration.
     pub fn get_community_private_key(&self, community_id: &str) -> anyhow::Result<Option<String>> {
-        // 1. Try keychain first (preferred location)
         let keychain_key = format!("community_key_{}", community_id);
-        if let Ok(secret_bytes) = crate::crypto::keychain::load_secret(&keychain_key) {
-            return Ok(Some(BASE64.encode(&secret_bytes)));
+        match crate::crypto::keychain::lookup_secret(&keychain_key)? {
+            crate::crypto::keychain::SecretLookup::Found(secret_bytes) => {
+                return Ok(Some(BASE64.encode(&secret_bytes)));
+            }
+            crate::crypto::keychain::SecretLookup::Missing => {}
         }
 
-        // 2. Fall back to SQLite column (legacy, pre-migration)
         let conn = self
             .conn
             .lock()
@@ -299,13 +300,20 @@ impl Database {
             Ok(Some(private_key)) => {
                 // Auto-migrate: move key from DB to keychain
                 if let Ok(key_bytes) = BASE64.decode(&private_key) {
-                    if crate::crypto::keychain::store_secret(&keychain_key, &key_bytes).is_ok() {
-                        // Clear from DB after successful keychain store
-                        let _ = conn.execute(
-                            "UPDATE communities SET community_private_key = NULL WHERE id = ?1",
-                            params![community_id],
-                        );
-                        tracing::info!(community_id = %community_id, "Auto-migrated community key to OS keychain");
+                    match crate::crypto::keychain::store_secret(&keychain_key, &key_bytes) {
+                        Ok(()) => {
+                            conn.execute(
+                                "UPDATE communities SET community_private_key = NULL WHERE id = ?1",
+                                params![community_id],
+                            )?;
+                            tracing::info!(community_id = %community_id, "Auto-migrated community key to OS keychain");
+                        }
+                        Err(error) => {
+                            tracing::warn!(
+                                community_id = %community_id,
+                                "Could not migrate the community key to OS secure storage: {error}"
+                            );
+                        }
                     }
                 }
                 Ok(Some(private_key))
@@ -354,6 +362,8 @@ impl Database {
 
     /// Delete a community.
     pub fn delete_community(&self, id: &str) -> anyhow::Result<()> {
+        let keychain_key = format!("community_key_{}", id);
+        let key_exists = crate::crypto::keychain::try_secret_exists(&keychain_key)?;
         let mut conn = self
             .conn
             .lock()
@@ -380,9 +390,9 @@ impl Database {
         tx.execute("DELETE FROM communities WHERE id = ?1", params![id])?;
         tx.commit()?;
 
-        // Clean up keychain entry
-        let keychain_key = format!("community_key_{}", id);
-        let _ = crate::crypto::keychain::delete_secret(&keychain_key);
+        if key_exists {
+            crate::crypto::keychain::delete_secret(&keychain_key)?;
+        }
 
         Ok(())
     }
