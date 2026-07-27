@@ -18,7 +18,7 @@ use crate::state::AppState;
 use crate::types::{
     community::{ChannelDto, CommunityDto},
     dm::{DirectMessageDto, DmConversationDto},
-    message::{AttachmentDto, MessageDto},
+    message::MessageDto,
 };
 
 use super::{attachments::AttachmentGrantStore, error::CommandError};
@@ -701,7 +701,9 @@ pub async fn matrix_cancel_attachment_upload(
 
 #[tauri::command]
 pub async fn matrix_download_attachment(
-    attachment: AttachmentDto,
+    room_id: String,
+    event_id: String,
+    attachment_index: u32,
     transfer_id: String,
     app: AppHandle,
     state: State<'_, AppState>,
@@ -711,7 +713,9 @@ pub async fn matrix_download_attachment(
         .backend
         .backend()
         .download_attachment(
-            attachment,
+            room_id,
+            event_id,
+            attachment_index,
             MatrixTransferObserver {
                 transfer_id,
                 progress: matrix_transfer_progress_emitter(app),

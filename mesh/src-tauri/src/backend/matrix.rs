@@ -81,9 +81,9 @@ use matrix_sdk::{
             },
             space::{child::SpaceChildEventContent, parent::SpaceParentEventContent},
             typing::SyncTypingEvent,
-            AnyGlobalAccountDataEventContent, AnyStateEvent, AnyStateEventContent,
-            AnyToDeviceEvent, AnyToDeviceEventContent, GlobalAccountDataEventType,
-            InitialStateEvent, Mentions, StateEvent, StateEventType,
+            AnyGlobalAccountDataEventContent, AnyInitialStateEvent, AnyStateEvent,
+            AnyStateEventContent, AnyToDeviceEvent, AnyToDeviceEventContent,
+            GlobalAccountDataEventType, InitialStateEvent, Mentions, StateEvent, StateEventType,
         },
         int,
         presence::PresenceState,
@@ -776,9 +776,20 @@ impl MatrixBackend {
         callback: &Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
         room_id: &matrix_sdk::ruma::RoomId,
     ) {
-        let Some(room) = client.get_room(room_id) else {
-            return;
-        };
+        let room =
+            match Self::protected_joined_room(client, room_id, "reading unread message counts")
+                .await
+            {
+                Ok(room) => room,
+                Err(error) => {
+                    tracing::warn!(
+                        target: "mesh::security",
+                        room_id = %room_id,
+                        "Suppressed unread state for an unprotected room: {error}"
+                    );
+                    return;
+                }
+            };
         Self::dispatch_backend_event(
             callback,
             MatrixBackendEvent::UnreadUpdate(MatrixUnreadUpdate {
@@ -1742,7 +1753,7 @@ impl MatrixBackend {
                 "MatrixRTC media keys require a joined room".into(),
             ));
         }
-        Self::require_encrypted_room(room, "processing MatrixRTC media keys").await?;
+        Self::require_protected_room(room, "processing MatrixRTC media keys").await?;
         let memberships = Self::active_matrix_rtc_memberships(room).await?;
         let current_publishers = memberships
             .iter()
@@ -1811,7 +1822,7 @@ impl MatrixBackend {
                 "MatrixRTC local session room is no longer joined".into(),
             ));
         }
-        Self::require_encrypted_room(&session.room, "activating a MatrixRTC media key").await?;
+        Self::require_protected_room(&session.room, "activating a MatrixRTC media key").await?;
         let own_user_id = client
             .user_id()
             .ok_or(BackendError::NotAuthenticated)?
@@ -2308,15 +2319,9 @@ impl MatrixBackend {
         }
         let room_id =
             matrix_sdk::ruma::RoomId::parse(&envelope.content.room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::NotFound("MatrixRTC media key room is not in the local store".into())
-        })?;
-        if room.state() != RoomState::Joined {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC media key room is not joined".into(),
-            ));
-        }
-        Self::require_encrypted_room(&room, "accepting a MatrixRTC media key").await?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "accepting a MatrixRTC media key")
+                .await?;
         let local_ready = sessions
             .lock()
             .await
@@ -2392,6 +2397,15 @@ impl MatrixBackend {
         room: &Room,
         callback: &Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
     ) {
+        if let Err(error) = Self::require_protected_room(room, "reading MatrixRTC membership").await
+        {
+            tracing::warn!(
+                target: "mesh::security",
+                room_id = %room.room_id(),
+                "Suppressed MatrixRTC membership for an unprotected room: {error}"
+            );
+            return;
+        }
         match Self::matrix_rtc_members_for_room(room).await {
             Ok(members) => Self::dispatch_backend_event(
                 callback,
@@ -2446,6 +2460,7 @@ impl MatrixBackend {
         session: &MatrixRtcLocalSession,
         active: bool,
     ) -> BackendResult<()> {
+        Self::require_protected_room(&session.room, "updating MatrixRTC membership").await?;
         CallMemberStateKey::from_str(&session.state_key).map_err(Self::map_error)?;
         let content = if active {
             let created_ts = u64::from(session.created_ts.get());
@@ -3249,7 +3264,29 @@ impl MatrixBackend {
         )))
     }
 
-    async fn require_encrypted_room(room: &Room, action: &str) -> BackendResult<()> {
+    fn encrypted_room_initial_state() -> Raw<AnyInitialStateEvent> {
+        InitialStateEvent::with_empty_state_key(RoomEncryptionEventContent::new(
+            EventEncryptionAlgorithm::MegolmV1AesSha2,
+        ))
+        .to_raw_any()
+    }
+
+    fn ensure_room_is_joined(room_id: &str, action: &str, is_joined: bool) -> BackendResult<()> {
+        if is_joined {
+            return Ok(());
+        }
+
+        Err(BackendError::PermissionDenied(format!(
+            "Mesh blocked {action} because Matrix room {room_id} is not joined"
+        )))
+    }
+
+    async fn require_protected_room(room: &Room, action: &str) -> BackendResult<()> {
+        Self::ensure_room_is_joined(
+            room.room_id().as_str(),
+            action,
+            room.state() == RoomState::Joined,
+        )?;
         let is_encrypted = room
             .latest_encryption_state()
             .await
@@ -3262,6 +3299,45 @@ impl MatrixBackend {
             })?
             .is_encrypted();
         Self::ensure_room_is_encrypted(room.room_id().as_str(), action, is_encrypted)
+    }
+
+    async fn protected_joined_room(
+        client: &Client,
+        room_id: &matrix_sdk::ruma::RoomId,
+        action: &str,
+    ) -> BackendResult<Room> {
+        let room = client.get_room(room_id).ok_or_else(|| {
+            BackendError::NotFound("room is not present in the local Matrix store".into())
+        })?;
+        Self::require_protected_room(&room, action).await?;
+        Ok(room)
+    }
+
+    async fn room_for_cleanup_redaction(
+        client: &Client,
+        room_id: &matrix_sdk::ruma::RoomId,
+    ) -> BackendResult<Room> {
+        let room = client.get_room(room_id).ok_or_else(|| {
+            BackendError::NotFound("room is not present in the local Matrix store".into())
+        })?;
+        Self::ensure_room_is_joined(
+            room.room_id().as_str(),
+            "removing previously exposed content",
+            room.state() == RoomState::Joined,
+        )?;
+        let is_encrypted = room
+            .latest_encryption_state()
+            .await
+            .map_err(Self::map_error)?
+            .is_encrypted();
+        if !is_encrypted {
+            tracing::warn!(
+                target: "mesh::security",
+                room_id = %room.room_id(),
+                "Using the cleanup-only redaction exception for an unencrypted room"
+            );
+        }
+        Ok(room)
     }
 
     fn verification_snapshot(
@@ -3545,6 +3621,57 @@ impl MatrixBackend {
             content_type,
             thumbnail,
         })
+    }
+
+    fn matrix_attachment_from_event(
+        event: &serde_json::Value,
+        attachment_index: u32,
+    ) -> BackendResult<AttachmentDto> {
+        if attachment_index != 0 {
+            return Err(BackendError::NotFound(
+                "attachment index is not present in this message".into(),
+            ));
+        }
+        if event.get("type").and_then(serde_json::Value::as_str) != Some("m.room.message")
+            || event
+                .get("unsigned")
+                .and_then(|unsigned| unsigned.get("redacted_because"))
+                .is_some()
+        {
+            return Err(BackendError::NotFound(
+                "attachment message is unavailable".into(),
+            ));
+        }
+        let content = event
+            .get("content")
+            .ok_or_else(|| BackendError::NotFound("attachment message has no content".into()))?;
+        Self::matrix_attachment_from_content(content).ok_or_else(|| {
+            BackendError::NotFound(
+                "message does not contain a supported encrypted attachment".into(),
+            )
+        })
+    }
+
+    async fn resolve_protected_attachment(
+        client: &Client,
+        room_id: &matrix_sdk::ruma::RoomId,
+        event_id: &matrix_sdk::ruma::EventId,
+        attachment_index: u32,
+    ) -> BackendResult<AttachmentDto> {
+        let room =
+            Self::protected_joined_room(client, room_id, "downloading an attachment").await?;
+        let event = room
+            .load_or_fetch_event(event_id, None)
+            .await
+            .map_err(Self::map_error)?;
+        let value: serde_json::Value =
+            serde_json::from_str(event.raw().json().get()).map_err(Self::map_error)?;
+        if value.get("event_id").and_then(serde_json::Value::as_str) != Some(event_id.as_str()) {
+            return Err(BackendError::PermissionDenied(
+                "attachment event did not match the requested event".into(),
+            ));
+        }
+        Self::matrix_attachment_from_event(&value, attachment_index)
     }
 
     async fn timeline_values(
@@ -4428,6 +4555,16 @@ impl MatrixBackend {
                     {
                         return;
                     }
+                    if let Err(error) =
+                        MatrixBackend::require_protected_room(&room, "showing a notification").await
+                    {
+                        tracing::warn!(
+                            target: "mesh::security",
+                            room_id = %room.room_id(),
+                            "Suppressed a notification from an unprotected room: {error}"
+                        );
+                        return;
+                    }
 
                     let member = room.get_member(&event.sender).await.ok().flatten();
                     let display_name = member
@@ -4546,6 +4683,17 @@ impl MatrixBackend {
             move |event: SyncTypingEvent, room: Room| {
                 let typing_users = Arc::clone(&typing_users);
                 async move {
+                    if let Err(error) =
+                        MatrixBackend::require_protected_room(&room, "reading typing status").await
+                    {
+                        typing_users.write().await.remove(room.room_id().as_str());
+                        tracing::warn!(
+                            target: "mesh::security",
+                            room_id = %room.room_id(),
+                            "Suppressed typing status from an unprotected room: {error}"
+                        );
+                        return;
+                    }
                     let own_user_id = room.own_user_id();
                     let users = event
                         .content
@@ -4791,9 +4939,8 @@ impl MatrixBackend {
     async fn community_rooms(&self, community_id: &str) -> BackendResult<Vec<Room>> {
         let client = self.client().await?;
         let space_id = matrix_sdk::ruma::RoomId::parse(community_id).map_err(Self::map_error)?;
-        let space = client.get_room(&space_id).ok_or_else(|| {
-            BackendError::Other("community Space is not present in the local Matrix store".into())
-        })?;
+        let space =
+            Self::protected_joined_room(&client, &space_id, "opening this community").await?;
         if !space.is_space() {
             return Err(BackendError::InvalidConfiguration(
                 "community ID does not identify a Matrix Space".into(),
@@ -4802,10 +4949,19 @@ impl MatrixBackend {
 
         let mut rooms = vec![space];
         for child_id in self.space_child_ids(&rooms[0]).await? {
-            if let Some(room) = client.get_room(&child_id) {
-                if !room.is_space() {
-                    rooms.push(room);
-                }
+            let room = match Self::protected_joined_room(
+                &client,
+                &child_id,
+                "opening this community channel",
+            )
+            .await
+            {
+                Ok(room) => room,
+                Err(BackendError::NotFound(_)) => continue,
+                Err(error) => return Err(error),
+            };
+            if !room.is_space() {
+                rooms.push(room);
             }
         }
         Ok(rooms)
@@ -4849,7 +5005,7 @@ impl MatrixBackend {
             {
                 continue;
             }
-            Self::require_encrypted_room(&room, "opening this direct message").await?;
+            Self::require_protected_room(&room, "opening this direct message").await?;
             rooms.push(room);
         }
         rooms.sort_by(|left, right| left.room_id().cmp(right.room_id()));
@@ -5069,7 +5225,7 @@ impl MatrixBackend {
             .await?;
             room
         };
-        Self::require_encrypted_room(&room, "opening this direct message").await?;
+        Self::require_protected_room(&room, "opening this direct message").await?;
         Ok(room)
     }
 
@@ -5437,6 +5593,8 @@ impl MeshBackend for MatrixBackend {
     async fn matrix_room_is_encrypted(&self, room_id: String) -> BackendResult<bool> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        // This is the status probe used before opening a room, so it cannot use
+        // `protected_joined_room` without making an unencrypted result unobservable.
         let room = client.get_room(&room_id).ok_or_else(|| {
             BackendError::NotFound("room is not present in the local Matrix store".into())
         })?;
@@ -5457,9 +5615,8 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<MatrixRoomNotificationMode> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::NotFound("room is not present in the local Matrix store".into())
-        })?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "reading notification settings").await?;
         let mode = room.notification_mode().await.ok_or_else(|| {
             BackendError::Other("Matrix notification mode is not available for this room".into())
         })?;
@@ -5477,14 +5634,9 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<()> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::NotFound("room is not present in the local Matrix store".into())
-        })?;
-        if !matches!(room.state(), RoomState::Joined) {
-            return Err(BackendError::InvalidConfiguration(
-                "notification mode can only be changed for joined Matrix rooms".into(),
-            ));
-        }
+        let _room =
+            Self::protected_joined_room(&client, &room_id, "updating notification settings")
+                .await?;
         let mode = match mode {
             MatrixRoomNotificationMode::All => RoomNotificationMode::AllMessages,
             MatrixRoomNotificationMode::Mentions => RoomNotificationMode::MentionsAndKeywordsOnly,
@@ -6571,12 +6723,12 @@ impl MeshBackend for MatrixBackend {
             (!description.trim().is_empty()).then(|| description.trim().to_owned());
         space_request.preset = Some(RoomPreset::PrivateChat);
         space_request.creation_content = Some(Raw::new(&space_creation).map_err(Self::map_error)?);
+        space_request.initial_state = vec![Self::encrypted_room_initial_state()];
         let space = client
             .create_room(space_request)
             .await
             .map_err(Self::map_error)?;
 
-        let encryption = RoomEncryptionEventContent::new(EventEncryptionAlgorithm::MegolmV1AesSha2);
         let mut parent = SpaceParentEventContent::new(via.clone());
         parent.canonical = true;
 
@@ -6585,7 +6737,7 @@ impl MeshBackend for MatrixBackend {
         channel_request.topic = Some(format!("General discussion for {}", name.trim()));
         channel_request.preset = Some(RoomPreset::PrivateChat);
         channel_request.initial_state = vec![
-            InitialStateEvent::with_empty_state_key(encryption).to_raw_any(),
+            Self::encrypted_room_initial_state(),
             InitialStateEvent::new(space.room_id().to_owned(), parent).to_raw_any(),
         ];
         let channel = client
@@ -6617,6 +6769,7 @@ impl MeshBackend for MatrixBackend {
             .into_iter()
             .filter(|room| room.is_space())
         {
+            Self::require_protected_room(&room, "listing communities").await?;
             let role = if room
                 .creators()
                 .is_some_and(|creators| creators.iter().any(|creator| creator == own_user_id))
@@ -6657,9 +6810,8 @@ impl MeshBackend for MatrixBackend {
     async fn list_channels(&self, community_id: String) -> BackendResult<Vec<ChannelDto>> {
         let client = self.client().await?;
         let space_id = matrix_sdk::ruma::RoomId::parse(&community_id).map_err(Self::map_error)?;
-        let space = client.get_room(&space_id).ok_or_else(|| {
-            BackendError::Other("community Space is not present in the local Matrix store".into())
-        })?;
+        let space =
+            Self::protected_joined_room(&client, &space_id, "opening this community").await?;
         if !space.is_space() {
             return Err(BackendError::InvalidConfiguration(
                 "community ID does not identify a Matrix Space".into(),
@@ -6668,13 +6820,20 @@ impl MeshBackend for MatrixBackend {
 
         let mut channels = Vec::new();
         for child_id in self.space_child_ids(&space).await? {
-            let Some(room) = client.get_room(&child_id) else {
-                continue;
+            let room = match Self::protected_joined_room(
+                &client,
+                &child_id,
+                "opening this community channel",
+            )
+            .await
+            {
+                Ok(room) => room,
+                Err(BackendError::NotFound(_)) => continue,
+                Err(error) => return Err(error),
             };
-            if room.state() != RoomState::Joined || room.is_space() {
+            if room.is_space() {
                 continue;
             }
-            Self::require_encrypted_room(&room, "opening this community channel").await?;
 
             channels.push(ChannelDto {
                 id: room.room_id().to_string(),
@@ -6722,9 +6881,8 @@ impl MeshBackend for MatrixBackend {
 
         let client = self.client().await?;
         let space_id = matrix_sdk::ruma::RoomId::parse(&community_id).map_err(Self::map_error)?;
-        let space = client.get_room(&space_id).ok_or_else(|| {
-            BackendError::Other("community Space is not present in the local Matrix store".into())
-        })?;
+        let space =
+            Self::protected_joined_room(&client, &space_id, "adding a community channel").await?;
         if !space.is_space() {
             return Err(BackendError::InvalidConfiguration(
                 "community ID does not identify a Matrix Space".into(),
@@ -6733,7 +6891,6 @@ impl MeshBackend for MatrixBackend {
 
         let user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
         let via = vec![user_id.server_name().to_owned()];
-        let encryption = RoomEncryptionEventContent::new(EventEncryptionAlgorithm::MegolmV1AesSha2);
         let mut parent = SpaceParentEventContent::new(via.clone());
         parent.canonical = true;
 
@@ -6746,7 +6903,7 @@ impl MeshBackend for MatrixBackend {
             request.creation_content = Some(Raw::new(&creation).map_err(Self::map_error)?);
         }
         request.initial_state = vec![
-            InitialStateEvent::with_empty_state_key(encryption).to_raw_any(),
+            Self::encrypted_room_initial_state(),
             InitialStateEvent::new(space.room_id().to_owned(), parent).to_raw_any(),
         ];
         let channel = client.create_room(request).await.map_err(Self::map_error)?;
@@ -6783,15 +6940,9 @@ impl MeshBackend for MatrixBackend {
         })?;
         let client = self.client().await?;
         let parsed_room_id = matrix_sdk::ruma::RoomId::parse(&room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&parsed_room_id).ok_or_else(|| {
-            BackendError::NotFound("room is not present in the local Matrix store".into())
-        })?;
-        if room.state() != RoomState::Joined {
-            return Err(BackendError::PermissionDenied(
-                "join the Matrix room before joining its call".into(),
-            ));
-        }
-        Self::require_encrypted_room(&room, "joining a MatrixRTC call").await?;
+        let room =
+            Self::protected_joined_room(&client, &parsed_room_id, "joining a MatrixRTC call")
+                .await?;
         let discovered = Self::discover_matrix_rtc_service_url(&client).await?;
         let configured_service = VoiceServiceStatus::secure_url(
             "MESH_MATRIXRTC_LIVEKIT_SERVICE_URL",
@@ -7174,9 +7325,8 @@ impl MeshBackend for MatrixBackend {
     async fn matrix_rtc_members(&self, room_id: String) -> BackendResult<Vec<MatrixRtcMember>> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::NotFound("room is not present in the local Matrix store".into())
-        })?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "reading MatrixRTC membership").await?;
         Self::matrix_rtc_members_for_room(&room).await
     }
 
@@ -7188,10 +7338,7 @@ impl MeshBackend for MatrixBackend {
         }
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
-        Self::require_encrypted_room(&room, "sending a message").await?;
+        let room = Self::protected_joined_room(&client, &room_id, "sending a message").await?;
         let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
         let mentions = Self::mentions_for_body(body.as_str(), Some(own_user_id));
         let content = RoomMessageEventContent::text_plain(body).add_mentions(mentions);
@@ -7216,15 +7363,12 @@ impl MeshBackend for MatrixBackend {
 
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
         let action = if reply_to_id.is_some() {
             "sending a reply"
         } else {
             "sending a message"
         };
-        Self::require_encrypted_room(&room, action).await?;
+        let room = Self::protected_joined_room(&client, &room_id, action).await?;
         let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
         let base_content = RoomMessageEventContentWithoutRelation::text_plain(body.clone())
             .add_mentions(Self::mentions_for_body(body.as_str(), Some(own_user_id)));
@@ -7411,10 +7555,8 @@ impl MeshBackend for MatrixBackend {
 
             let client = self.client().await?;
             let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-            let room = client.get_room(&room_id).ok_or_else(|| {
-                BackendError::Other("room is not present in the local Matrix store".into())
-            })?;
-            Self::require_encrypted_room(&room, "sending an attachment").await?;
+            let room =
+                Self::protected_joined_room(&client, &room_id, "sending an attachment").await?;
             let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
 
             Self::emit_transfer_progress(
@@ -7616,7 +7758,9 @@ impl MeshBackend for MatrixBackend {
 
     async fn download_attachment(
         &self,
-        attachment: AttachmentDto,
+        room_id: String,
+        event_id: String,
+        attachment_index: u32,
         transfer: MatrixTransferObserver,
     ) -> BackendResult<String> {
         let MatrixTransferObserver {
@@ -7624,6 +7768,12 @@ impl MeshBackend for MatrixBackend {
             progress,
         } = transfer;
         Self::validate_transfer_id(&transfer_id)?;
+        let client = self.client().await?;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
+        let attachment =
+            Self::resolve_protected_attachment(&client, &room_id, &event_id, attachment_index)
+                .await?;
         let total_bytes = (attachment.size > 0).then_some(attachment.size);
         Self::emit_transfer_progress(
             &progress,
@@ -7828,6 +7978,7 @@ impl MeshBackend for MatrixBackend {
             if targets.len() != 1 {
                 continue;
             }
+            Self::require_protected_room(&room, "listing direct messages").await?;
             let Some(target) = targets.into_iter().next() else {
                 continue;
             };
@@ -7913,11 +8064,8 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<Vec<DirectMessageDto>> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(&conversation_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other(
-                "direct-message room is not present in the local Matrix store".into(),
-            )
-        })?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "reading direct messages").await?;
         if room.direct_targets().len() != 1 {
             return Err(BackendError::InvalidConfiguration(
                 "conversation is not a one-to-one Matrix direct room".into(),
@@ -7994,11 +8142,9 @@ impl MeshBackend for MatrixBackend {
     async fn mark_dm_read(&self, conversation_id: String) -> BackendResult<()> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(&conversation_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other(
-                "direct-message room is not present in the local Matrix store".into(),
-            )
-        })?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "updating direct-message receipts")
+                .await?;
         if room.direct_targets().len() != 1 {
             return Err(BackendError::InvalidConfiguration(
                 "conversation is not a one-to-one Matrix direct room".into(),
@@ -8057,9 +8203,7 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<Vec<MessageDto>> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
+        let room = Self::protected_joined_room(&client, &room_id, "reading messages").await?;
 
         let members: HashMap<String, String> = room
             .members(RoomMemberships::JOIN)
@@ -8101,10 +8245,7 @@ impl MeshBackend for MatrixBackend {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
-        Self::require_encrypted_room(&room, "editing a message").await?;
+        let room = Self::protected_joined_room(&client, &room_id, "editing a message").await?;
         let replacement = RoomMessageEventContent::text_plain(body)
             .make_replacement(ReplacementMetadata::new(event_id, None));
         room.send(replacement).await.map_err(Self::map_error)?;
@@ -8115,11 +8256,9 @@ impl MeshBackend for MatrixBackend {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
+        let room = Self::room_for_cleanup_redaction(&client, &room_id).await?;
         // Keep explicit redaction available for legacy plaintext rooms so users can remove
-        // previously exposed content. Reaction removal is guarded in `toggle_reaction`.
+        // previously exposed content. Every other content path uses `protected_joined_room`.
         room.redact(&event_id, None, None)
             .await
             .map_err(Self::map_error)?;
@@ -8141,10 +8280,7 @@ impl MeshBackend for MatrixBackend {
         let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let target_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
-        Self::require_encrypted_room(&room, "changing a reaction").await?;
+        let room = Self::protected_joined_room(&client, &room_id, "changing a reaction").await?;
 
         let values = Self::timeline_values(&room, 500, None).await?;
         let redacted: HashSet<&str> = values
@@ -8201,9 +8337,8 @@ impl MeshBackend for MatrixBackend {
         let send_read_receipts = self.wire_privacy.read().await.send_read_receipts;
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "updating message receipts").await?;
         let values = Self::timeline_values(&room, 1, None).await?;
         let Some(event_id) = values
             .iter()
@@ -8227,18 +8362,14 @@ impl MeshBackend for MatrixBackend {
         }
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
+        let room = Self::protected_joined_room(&client, &room_id, "updating typing status").await?;
         room.typing_notice(typing).await.map_err(Self::map_error)
     }
 
     async fn typing_users(&self, room_id: String) -> BackendResult<Vec<TypingUser>> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
+        let room = Self::protected_joined_room(&client, &room_id, "reading typing status").await?;
         let user_ids = self
             .typing_users
             .read()
@@ -8298,9 +8429,8 @@ impl MeshBackend for MatrixBackend {
     async fn wait_for_room_update(&self, room_id: String, timeout_ms: u64) -> BackendResult<bool> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "waiting for message updates").await?;
         let mut updates = room.subscribe_to_updates();
         Ok(matches!(
             tokio::time::timeout(
@@ -8406,10 +8536,10 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<CommunityAccessSettings> {
         let client = self.client().await?;
         let space_id = matrix_sdk::ruma::RoomId::parse(community_id).map_err(Self::map_error)?;
-        let space = client.get_room(&space_id).ok_or_else(|| {
-            BackendError::Other("community Space is not present in the local Matrix store".into())
-        })?;
-        if !space.is_space() || space.state() != RoomState::Joined {
+        let space =
+            Self::protected_joined_room(&client, &space_id, "reading community access settings")
+                .await?;
+        if !space.is_space() {
             return Err(BackendError::InvalidConfiguration(
                 "community access settings require a joined Matrix Space".into(),
             ));
@@ -8438,10 +8568,10 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<CommunityAccessSettings> {
         let client = self.client().await?;
         let space_id = matrix_sdk::ruma::RoomId::parse(community_id).map_err(Self::map_error)?;
-        let space = client.get_room(&space_id).ok_or_else(|| {
-            BackendError::Other("community Space is not present in the local Matrix store".into())
-        })?;
-        if !space.is_space() || space.state() != RoomState::Joined {
+        let space =
+            Self::protected_joined_room(&client, &space_id, "updating community access settings")
+                .await?;
+        if !space.is_space() {
             return Err(BackendError::InvalidConfiguration(
                 "community access settings require a joined Matrix Space".into(),
             ));
@@ -8640,9 +8770,9 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<Vec<CommunityApplication>> {
         let client = self.client().await?;
         let space_id = matrix_sdk::ruma::RoomId::parse(community_id).map_err(Self::map_error)?;
-        let space = client.get_room(&space_id).ok_or_else(|| {
-            BackendError::Other("community Space is not present in the local Matrix store".into())
-        })?;
+        let space =
+            Self::protected_joined_room(&client, &space_id, "reading community applications")
+                .await?;
         let mut applications = Vec::new();
         for member in space
             .members(RoomMemberships::KNOCK)
@@ -8678,9 +8808,12 @@ impl MeshBackend for MatrixBackend {
         let client = self.client().await?;
         let space_id = matrix_sdk::ruma::RoomId::parse(&community_id).map_err(Self::map_error)?;
         let user_id = matrix_sdk::ruma::UserId::parse(user_id).map_err(Self::map_error)?;
-        let space = client.get_room(&space_id).ok_or_else(|| {
-            BackendError::Other("community Space is not present in the local Matrix store".into())
-        })?;
+        let space = Self::protected_joined_room(
+            &client,
+            &space_id,
+            "responding to a community application",
+        )
+        .await?;
         let is_pending = space
             .members(RoomMemberships::KNOCK)
             .await
@@ -8722,11 +8855,8 @@ impl MeshBackend for MatrixBackend {
             ));
         }
 
-        let space = client.get_room(space.room_id()).ok_or_else(|| {
-            BackendError::Other(
-                "joined community Space is absent from the local Matrix store".into(),
-            )
-        })?;
+        let space =
+            Self::protected_joined_room(&client, space.room_id(), "joining this community").await?;
         let mut opened_child_ids = Vec::new();
         for child_id in self.space_child_ids(&space).await? {
             if client
@@ -8746,15 +8876,7 @@ impl MeshBackend for MatrixBackend {
             .map_err(Self::map_error)?;
 
         for child_id in opened_child_ids {
-            let room = client.get_room(&child_id).ok_or_else(|| {
-                BackendError::InvalidConfiguration(format!(
-                    "Mesh could not validate end-to-end encryption for Space child room \
-                     {child_id} after joining. The community was not opened"
-                ))
-            })?;
-            if !room.is_space() {
-                Self::require_encrypted_room(&room, "joining this community").await?;
-            }
+            Self::protected_joined_room(&client, &child_id, "joining this community").await?;
         }
 
         let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
@@ -8919,9 +9041,7 @@ impl MeshBackend for MatrixBackend {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let user_id = matrix_sdk::ruma::UserId::parse(user_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
+        let room = Self::protected_joined_room(&client, &room_id, "inviting a room member").await?;
         room.invite_user_by_id(&user_id)
             .await
             .map_err(Self::map_error)
@@ -8940,9 +9060,8 @@ impl MeshBackend for MatrixBackend {
     async fn recent_texts(&self, room_id: String, limit: u32) -> BackendResult<Vec<String>> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "reading recent messages").await?;
         let mut options = MessagesOptions::backward();
         options.limit = limit.into();
         let messages = room.messages(options).await.map_err(Self::map_error)?;
@@ -9046,12 +9165,8 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<String> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other(
-                "legacy import target is not present in the local Matrix store".into(),
-            )
-        })?;
-        Self::require_encrypted_room(&room, "importing legacy provenance").await?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "importing legacy provenance").await?;
         let response = room
             .send_raw(crate::backend::LEGACY_MATRIX_EVENT_TYPE, content)
             .await
@@ -10056,17 +10171,71 @@ mod tests {
     }
 
     #[test]
+    fn every_room_creation_uses_the_canonical_encryption_initial_state() {
+        let encryption = MatrixBackend::encrypted_room_initial_state();
+        assert_eq!(
+            encryption.get_field::<String>("type").unwrap().as_deref(),
+            Some("m.room.encryption")
+        );
+        let content = encryption
+            .get_field::<serde_json::Value>("content")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            content.get("algorithm").and_then(serde_json::Value::as_str),
+            Some("m.megolm.v1.aes-sha2")
+        );
+
+        let source = include_str!("matrix.rs")
+            .split("\n#[cfg(test)]")
+            .next()
+            .expect("production source precedes the test module");
+        assert_eq!(
+            source.matches("create_room(").count(),
+            source.matches("encrypted_room_initial_state()").count() - 1,
+            "each direct room creation must include the canonical encryption initial state"
+        );
+    }
+
+    #[test]
     fn encrypted_room_guard_fails_closed_with_actionable_room_context() {
         let protected_actions = [
+            "reading unread message counts",
+            "processing MatrixRTC media keys",
+            "activating a MatrixRTC media key",
+            "accepting a MatrixRTC media key",
+            "reading MatrixRTC membership",
+            "updating MatrixRTC membership",
+            "showing a notification",
+            "reading typing status",
             "sending a message",
             "sending a reply",
             "sending an attachment",
+            "downloading an attachment",
             "editing a message",
             "changing a reaction",
+            "updating message receipts",
+            "updating typing status",
+            "reading messages",
+            "reading recent messages",
+            "waiting for message updates",
             "importing legacy provenance",
+            "opening this community",
             "opening this community channel",
+            "adding a community channel",
+            "listing communities",
             "joining this community",
             "opening this direct message",
+            "listing direct messages",
+            "reading direct messages",
+            "updating direct-message receipts",
+            "reading community access settings",
+            "updating community access settings",
+            "reading community applications",
+            "responding to a community application",
+            "reading notification settings",
+            "updating notification settings",
+            "inviting a room member",
         ];
 
         for action in protected_actions {
@@ -10080,6 +10249,48 @@ mod tests {
             assert!(message.contains("!plaintext:example.org"));
             assert!(message.contains("enable end-to-end encryption"));
             assert!(message.contains("leave and rejoin"));
+        }
+    }
+
+    #[test]
+    fn protected_room_guard_requires_joined_membership() {
+        let error =
+            MatrixBackend::ensure_room_is_joined("!invited:example.org", "reading messages", false)
+                .expect_err("non-joined rooms must be rejected");
+        let BackendError::PermissionDenied(message) = error else {
+            panic!("membership guard must return a typed permission error");
+        };
+        assert!(message.contains("reading messages"));
+        assert!(message.contains("!invited:example.org"));
+        assert!(message.contains("not joined"));
+    }
+
+    #[test]
+    fn direct_room_lookups_are_limited_to_guard_or_prejoin_paths() {
+        let allowed = [
+            "protected_joined_room",
+            "room_for_cleanup_redaction",
+            "matrix_room_is_encrypted",
+            "knock_community",
+            "join_community",
+            "direct_room_lookups_are_limited_to_guard_or_prejoin_paths",
+        ];
+        let mut current_function = "";
+        for (line_number, line) in include_str!("matrix.rs").lines().enumerate() {
+            let trimmed = line.trim_start();
+            if let Some(signature) = trimmed
+                .strip_prefix("async fn ")
+                .or_else(|| trimmed.strip_prefix("fn "))
+            {
+                current_function = signature.split('(').next().unwrap_or_default();
+            }
+            if line.contains(".get_room(") {
+                assert!(
+                    allowed.contains(&current_function),
+                    "direct room lookup in {current_function} at line {}; use protected_joined_room",
+                    line_number + 1
+                );
+            }
         }
     }
 
@@ -10574,6 +10785,44 @@ mod tests {
             "url": "mxc://example.org/media"
         });
         assert!(MatrixBackend::matrix_attachment_from_content(&plain).is_none());
+    }
+
+    #[test]
+    fn attachment_download_metadata_is_resolved_from_the_requested_event() {
+        let event = json!({
+            "type": "m.room.message",
+            "event_id": "$file",
+            "sender": "@alice:example.org",
+            "origin_server_ts": 10,
+            "content": {
+                "msgtype": "m.file",
+                "body": "Quarterly report",
+                "filename": "report.pdf",
+                "file": {
+                    "url": "mxc://example.org/media",
+                    "key": { "kty": "oct", "alg": "A256CTR", "ext": true, "k": "key", "key_ops": ["encrypt", "decrypt"] },
+                    "iv": "iv",
+                    "hashes": { "sha256": "ciphertext-hash" },
+                    "v": "v2"
+                },
+                "info": { "size": 42, "mimetype": "application/pdf" }
+            }
+        });
+
+        let attachment = MatrixBackend::matrix_attachment_from_event(&event, 0).unwrap();
+        assert_eq!(attachment.file_hash, "matrix-sha256:ciphertext-hash");
+        assert_eq!(attachment.filename, "report.pdf");
+        assert!(attachment.media_source.is_some());
+        assert!(MatrixBackend::matrix_attachment_from_event(&event, 1).is_err());
+
+        let mut redacted = event.clone();
+        redacted["unsigned"] = json!({ "redacted_because": {} });
+        assert!(MatrixBackend::matrix_attachment_from_event(&redacted, 0).is_err());
+
+        let mut plaintext = event;
+        plaintext["content"].as_object_mut().unwrap().remove("file");
+        plaintext["content"]["url"] = json!("mxc://example.org/plain");
+        assert!(MatrixBackend::matrix_attachment_from_event(&plaintext, 0).is_err());
     }
 
     #[test]
