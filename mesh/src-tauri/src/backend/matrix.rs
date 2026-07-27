@@ -6,7 +6,7 @@ use std::{
     str::FromStr,
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc, Mutex as StdMutex, OnceLock, RwLock as StdRwLock,
+        Arc, Mutex as StdMutex, MutexGuard as StdMutexGuard, OnceLock, RwLock as StdRwLock,
     },
     time::{Duration, Instant, SystemTime},
 };
@@ -2228,11 +2228,8 @@ impl MatrixBackend {
         .await?;
         let state_key = (room_id.to_owned(), session_id.to_owned());
         let monotonic_now = Self::matrix_rtc_monotonic_now_ms();
-        let last_sync_success = self
-            .matrix_sync_freshness
-            .lock()
-            .expect("Matrix sync freshness lock poisoned")
-            .last_success_ms;
+        let last_sync_success =
+            Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness).last_success_ms;
         if !Self::matrix_rtc_sync_is_fresh(last_sync_success, monotonic_now) {
             return Err(BackendError::PermissionDenied(
                 "MatrixRTC publisher lease requires a recent successful Matrix sync".into(),
@@ -4437,14 +4434,23 @@ impl MatrixBackend {
         })
     }
 
+    // `MatrixSyncFreshness` is advisory (staleness telemetry for the status
+    // banner and the MatrixRTC lease gate), not a correctness invariant, so a
+    // poisoned lock is recovered rather than left to panic every caller forever.
+    fn lock_matrix_sync_freshness(
+        freshness: &StdMutex<MatrixSyncFreshness>,
+    ) -> StdMutexGuard<'_, MatrixSyncFreshness> {
+        freshness
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     fn record_matrix_sync_success(
         freshness: &StdMutex<MatrixSyncFreshness>,
         task_epoch: u64,
         now_ms: u64,
     ) -> bool {
-        let mut freshness = freshness
-            .lock()
-            .expect("Matrix sync freshness lock poisoned");
+        let mut freshness = Self::lock_matrix_sync_freshness(freshness);
         if freshness.epoch != task_epoch {
             return false;
         }
@@ -4482,11 +4488,7 @@ impl MatrixBackend {
                         move |result| {
                             let freshness = Arc::clone(&callback_freshness);
                             async move {
-                                if freshness
-                                    .lock()
-                                    .expect("Matrix sync freshness lock poisoned")
-                                    .epoch
-                                    != task_epoch
+                                if Self::lock_matrix_sync_freshness(&freshness).epoch != task_epoch
                                 {
                                     return Ok(LoopCtrl::Break);
                                 }
@@ -4509,10 +4511,7 @@ impl MatrixBackend {
                     )
                     .await;
 
-                let current_epoch = freshness
-                    .lock()
-                    .expect("Matrix sync freshness lock poisoned")
-                    .epoch;
+                let current_epoch = Self::lock_matrix_sync_freshness(&freshness).epoch;
                 if current_epoch != task_epoch {
                     break;
                 }
@@ -4544,9 +4543,7 @@ impl MatrixBackend {
         freshness: &Arc<StdMutex<MatrixSyncFreshness>>,
     ) {
         let task_epoch = {
-            let mut freshness = freshness
-                .lock()
-                .expect("Matrix sync freshness lock poisoned");
+            let mut freshness = Self::lock_matrix_sync_freshness(freshness);
             freshness.epoch = freshness.epoch.saturating_add(1);
             freshness.last_success_ms = 0;
             freshness.epoch
@@ -5004,10 +5001,7 @@ impl MatrixBackend {
         self.typing_users.write().await.clear();
         self.presence.write().await.clear();
         self.verification_sessions.write().await.clear();
-        self.matrix_sync_freshness
-            .lock()
-            .expect("Matrix sync freshness lock poisoned")
-            .last_success_ms = 0;
+        Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness).last_success_ms = 0;
         client
     }
 
@@ -5022,10 +5016,7 @@ impl MatrixBackend {
 
     pub async fn pause_sync(&self) {
         let mut sync = self.matrix_sync_control.lock().await;
-        self.matrix_sync_freshness
-            .lock()
-            .expect("Matrix sync freshness lock poisoned")
-            .last_success_ms = 0;
+        Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness).last_success_ms = 0;
         if sync.paused && sync.task.is_none() {
             return;
         }
@@ -5861,11 +5852,8 @@ impl MeshBackend for MatrixBackend {
             .task
             .as_ref()
             .is_some_and(|task| !task.is_finished());
-        let last_success_ms = self
-            .matrix_sync_freshness
-            .lock()
-            .expect("Matrix sync freshness lock poisoned")
-            .last_success_ms;
+        let last_success_ms =
+            Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness).last_success_ms;
         let sync_running = sync_running_task
             && Self::matrix_sync_is_fresh(last_success_ms, Self::matrix_rtc_monotonic_now_ms());
         let runtime = self.runtime.read().await;
@@ -9484,10 +9472,7 @@ impl MeshBackend for MatrixBackend {
         let client = self.client().await?;
         let mut sync = self.matrix_sync_control.lock().await;
         let task_epoch = {
-            let mut freshness = self
-                .matrix_sync_freshness
-                .lock()
-                .expect("Matrix sync freshness lock poisoned");
+            let mut freshness = Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness);
             freshness.epoch = freshness.epoch.saturating_add(1);
             freshness.last_success_ms = 0;
             freshness.epoch
@@ -10164,6 +10149,33 @@ mod tests {
             backend.matrix_sync_freshness.lock().unwrap().epoch,
             paused_epoch
         );
+    }
+
+    #[tokio::test]
+    async fn matrix_sync_freshness_lock_recovers_after_panic_while_held() {
+        let backend = MatrixBackend::new(tempfile::tempdir().unwrap().path().to_owned());
+        let freshness = Arc::clone(&backend.matrix_sync_freshness);
+
+        let panicked = std::thread::spawn(move || {
+            let _guard = freshness.lock().unwrap();
+            panic!("simulated panic while holding the sync freshness lock");
+        })
+        .join();
+        assert!(
+            panicked.is_err(),
+            "expected the spawned thread to panic while holding the lock"
+        );
+        assert!(
+            backend.matrix_sync_freshness.is_poisoned(),
+            "lock should be poisoned by the panic above"
+        );
+
+        // A poisoned lock must not permanently break every future reader; two
+        // calls prove recovery isn't a one-shot side effect of the first read.
+        let first = backend.status().await;
+        assert!(!first.sync_running);
+        let second = backend.status().await;
+        assert!(!second.sync_running);
     }
 
     #[test]
