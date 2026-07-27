@@ -415,7 +415,7 @@ export const MessageComponent = memo(function MessageComponent({
               onClick={() => setShowReactions(!showReactions)}
               className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               aria-label={`React to message from ${message.authorDisplayName}`}
-              aria-haspopup="menu"
+              aria-haspopup="true"
               aria-expanded={showReactions}
             >
               <Icon name="smile" size="sm" />
