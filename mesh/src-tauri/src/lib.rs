@@ -1,5 +1,10 @@
 #![recursion_limit = "512"]
 
+#[cfg(all(feature = "matrix-backend", feature = "legacy-p2p"))]
+compile_error!(
+    "matrix-backend and legacy-p2p are mutually exclusive; build separate Mesh artifacts"
+);
+
 #[cfg(feature = "legacy-p2p")]
 mod app_runtime;
 pub mod backend;
