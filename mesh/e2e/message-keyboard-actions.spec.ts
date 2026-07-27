@@ -301,13 +301,53 @@ test.describe('message action bar keyboard access (V-25)', () => {
     // --- Context menu equivalent (ContextMenu key / Shift+F10) ---
     // Focus is still on the Reply button — a descendant of the message row —
     // proving the keyboard trigger works without first landing on the row
-    // itself.
+    // itself. Items carry role="menuitem" (V-25 review follow-up), not the
+    // "button" role, so they're located accordingly.
     await page.keyboard.press('Shift+F10')
-    await expect(page.getByRole('button', { name: 'Remove message' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Kick Bob' })).toBeVisible()
+    await expect(page.getByRole('menuitem', { name: 'Remove message' })).toBeVisible()
+    await expect(page.getByRole('menuitem', { name: 'Kick Bob' })).toBeVisible()
 
     await page.keyboard.press('Escape')
-    await expect(page.getByRole('button', { name: 'Remove message' })).toHaveCount(0)
+    await expect(page.getByRole('menuitem', { name: 'Remove message' })).toHaveCount(0)
+  })
+
+  // Review follow-up on V-25: Escape didn't close the reaction picker (its
+  // only close paths were onMouseLeave and picking an emoji), and Shift+F10
+  // left focus on <body> instead of moving it into the opened menu.
+  test('Escape dismisses the reaction picker without picking an emoji, and Shift+F10 moves focus into the context menu', async ({ page }) => {
+    await installKeyboardActionsMock(page)
+    await page.goto('/')
+    await expect(page.getByText("A message alice didn't send.")).toBeVisible()
+
+    const reactButton = page.getByRole('button', { name: 'React to message from Bob' })
+    const row = reactButton.locator('xpath=ancestor::div[@role="group"]')
+    await tabUntilFocused(page, reactButton, 'backward')
+
+    // --- Reaction picker: Escape closes it and returns focus to the trigger ---
+    await expect(reactButton).toHaveAttribute('aria-expanded', 'false')
+    await page.keyboard.press('Enter')
+    const thumbsUp = page.getByRole('button', { name: '👍', exact: true })
+    await expect(thumbsUp).toBeVisible()
+    await expect(reactButton).toHaveAttribute('aria-expanded', 'true')
+
+    await page.keyboard.press('Escape')
+    await expect(thumbsUp).toHaveCount(0)
+    await expect(reactButton).toBeFocused()
+    await expect(reactButton).toHaveAttribute('aria-expanded', 'false')
+    // No emoji was picked — the picker was dismissed, not activated.
+    await expect(page.getByRole('button', { name: '👍 1' })).toHaveCount(0)
+
+    // --- Context menu: Shift+F10 moves focus into the first menu item ---
+    await page.keyboard.press('Shift+F10')
+    const removeButton = page.getByRole('menuitem', { name: 'Remove message' })
+    await expect(removeButton).toBeVisible()
+    await expect(removeButton).toBeFocused()
+
+    // Escape still restores focus to the row (pre-existing behavior for
+    // item-selection closes verified separately by the moderation flow).
+    await page.keyboard.press('Escape')
+    await expect(removeButton).toHaveCount(0)
+    await expect(row).toBeFocused()
   })
 
   test('mouse hover still reveals the action bar (no regression)', async ({ page }) => {

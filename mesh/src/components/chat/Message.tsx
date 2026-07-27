@@ -43,6 +43,8 @@ export const MessageComponent = memo(function MessageComponent({
   const [editContent, setEditContent] = useState('')
   const [confirmBan, setConfirmBan] = useState(false)
   const rowRef = useRef<HTMLDivElement>(null)
+  const reactButtonRef = useRef<HTMLButtonElement>(null)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
   const matrixMode = bridge.isMatrixBackend()
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
   const communityMembers = useCommunityMembers(activeCommunityId)
@@ -62,6 +64,11 @@ export const MessageComponent = memo(function MessageComponent({
 
   useEffect(() => {
     if (!contextMenu) return
+    // Real menu semantics move focus into the menu on open — this runs for
+    // both the mouse contextmenu path and the ContextMenu-key/Shift+F10 path
+    // below, since both set the same `contextMenu` state. Without this,
+    // focus was left on `document.activeElement === body`.
+    contextMenuRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
     const closeMenu = () => {
       setContextMenu(null)
       setConfirmBan(false)
@@ -93,12 +100,31 @@ export const MessageComponent = memo(function MessageComponent({
   // ContextMenu key / Shift+F10 (the standard keyboard equivalent) needs its
   // own handler. It reuses the row's own position rather than a click point.
   const handleRowKeyDown = (e: React.KeyboardEvent) => {
+    // The reaction picker is rendered inside this same row, so its keydowns
+    // bubble here — unlike the context menu (rendered outside the row),
+    // which needs the window-level Escape listener above instead.
+    if (e.key === 'Escape' && showReactions) {
+      setShowReactions(false)
+      reactButtonRef.current?.focus()
+      return
+    }
     if (limitedActions && !isOwnMessage) return
     if (e.key !== 'ContextMenu' && !(e.key === 'F10' && e.shiftKey)) return
     e.preventDefault()
     const rect = e.currentTarget.getBoundingClientRect()
     setContextMenu({ x: rect.right - 208, y: rect.top - 8 })
     setConfirmBan(false)
+  }
+
+  // Tabbing focus away from the row entirely — e.g. past the last emoji
+  // button to the next message — should close the picker too, not just
+  // Escape/mouseleave. Only skip closing when we can prove focus landed on
+  // another descendant of this row; an absent relatedTarget (e.g. focus
+  // leaving the document) is treated as "left" rather than assumed safe.
+  const handleRowBlur = (e: React.FocusEvent) => {
+    if (!showReactions) return
+    if (e.relatedTarget && e.currentTarget.contains(e.relatedTarget as Node)) return
+    setShowReactions(false)
   }
 
   const handleBan = async () => {
@@ -114,6 +140,10 @@ export const MessageComponent = memo(function MessageComponent({
     }
     setContextMenu(null)
     setConfirmBan(false)
+    // Ban/kick/timeout leave this row mounted (unlike Delete, which removes
+    // it), so returning focus here is safe and avoids it falling back to
+    // <body>. Edit doesn't need this — its textarea autofocuses itself.
+    rowRef.current?.focus()
   }
 
   const handleKick = useCallback(async () => {
@@ -124,6 +154,7 @@ export const MessageComponent = memo(function MessageComponent({
       console.error('Kick failed:', e)
     }
     setContextMenu(null)
+    rowRef.current?.focus()
   }, [activeCommunityId, message.authorPublicKey])
 
   const handleTimeout = useCallback(async () => {
@@ -134,6 +165,7 @@ export const MessageComponent = memo(function MessageComponent({
       console.error('Timeout failed:', e)
     }
     setContextMenu(null)
+    rowRef.current?.focus()
   }, [activeCommunityId, message.authorPublicKey])
 
   const handleStartEdit = useCallback(() => {
@@ -180,6 +212,8 @@ export const MessageComponent = memo(function MessageComponent({
       console.error('Failed to delete message:', e)
     }
     setContextMenu(null)
+    // No rowRef.current?.focus() here, unlike ban/kick/timeout: deleting
+    // removes this row from the DOM, so there's nothing sensible to focus.
   }, [message.id, message.channelId, activeChannelId, deleteMessage])
 
   const handleEditKeyDown = useCallback(
@@ -237,6 +271,7 @@ export const MessageComponent = memo(function MessageComponent({
         }}
         onContextMenu={handleContextMenu}
         onKeyDown={handleRowKeyDown}
+        onBlur={handleRowBlur}
       >
         {/* Avatar — absolute positioned in left gutter */}
         <div className="absolute left-4 top-0.5 w-10">
@@ -376,9 +411,12 @@ export const MessageComponent = memo(function MessageComponent({
             className="pointer-events-none absolute -top-4 right-4 z-sticky flex items-center rounded-md border border-border bg-bg-secondary opacity-0 shadow-elevation-high transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
           >
             <button
+              ref={reactButtonRef}
               onClick={() => setShowReactions(!showReactions)}
               className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               aria-label={`React to message from ${message.authorDisplayName}`}
+              aria-haspopup="menu"
+              aria-expanded={showReactions}
             >
               <Icon name="smile" size="sm" />
             </button>
@@ -417,6 +455,9 @@ export const MessageComponent = memo(function MessageComponent({
       <AnimatePresence>
         {contextMenu && (
           <motion.div
+            ref={contextMenuRef}
+            role="menu"
+            aria-label="Message actions"
             variants={variants.popover}
             initial="initial"
             animate="animate"
@@ -429,6 +470,7 @@ export const MessageComponent = memo(function MessageComponent({
             {isOwnMessage && !isDeleted && (
               <>
                 <button
+                  role="menuitem"
                   onClick={handleStartEdit}
                   className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-secondary transition-colors hover:bg-status-info hover:text-content-on-status"
                   aria-label="Edit message"
@@ -436,6 +478,7 @@ export const MessageComponent = memo(function MessageComponent({
                   Edit Message
                 </button>
                 <button
+                  role="menuitem"
                   onClick={() => void handleDelete()}
                   className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-red transition-colors hover:bg-status-danger hover:text-content-on-status"
                   aria-label="Delete message"
@@ -447,6 +490,7 @@ export const MessageComponent = memo(function MessageComponent({
             {!limitedActions && canModerate && !isOwnMessage && !isDeleted && (
               <>
                 <button
+                  role="menuitem"
                   onClick={() => void handleDelete()}
                   className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-secondary transition-colors hover:bg-status-info hover:text-content-on-status"
                   aria-label="Remove message"
@@ -454,6 +498,7 @@ export const MessageComponent = memo(function MessageComponent({
                   Remove Message
                 </button>
                 <button
+                  role="menuitem"
                   onClick={() => void handleKick()}
                   className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-secondary transition-colors hover:bg-status-info hover:text-content-on-status"
                   aria-label={`Kick ${message.authorDisplayName}`}
@@ -462,6 +507,7 @@ export const MessageComponent = memo(function MessageComponent({
                 </button>
                 {!matrixMode && (
                   <button
+                    role="menuitem"
                     onClick={() => void handleTimeout()}
                     className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-secondary transition-colors hover:bg-status-info hover:text-content-on-status"
                     aria-label={`Timeout ${message.authorDisplayName}`}
@@ -470,6 +516,7 @@ export const MessageComponent = memo(function MessageComponent({
                   </button>
                 )}
                 <button
+                  role="menuitem"
                   onClick={handleBan}
                   className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-red transition-colors hover:bg-status-danger hover:text-content-on-status"
                   aria-label={`Ban ${message.authorDisplayName}`}
