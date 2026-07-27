@@ -15,6 +15,7 @@ import { formatFederatedTimestamp } from '../../lib/federated-time'
 import { describeError } from '../../lib/errors'
 import { variants } from '../../lib/motion'
 import { Icon } from '../ui/Icon'
+import { EncryptedAttachmentPreview } from './EncryptedAttachmentPreview'
 
 interface MessageProps {
   message: MessageType
@@ -547,9 +548,10 @@ export function FileAttachmentCard({
 }) {
   const download = useFileDownloadStore((s) => s.downloads[attachment.fileHash])
   const sourcePeerId = attachment.sourcePeerId
+  const matrixMode = bridge.isMatrixBackend()
 
   useEffect(() => {
-    if (!bridge.isMatrixBackend() || !attachment.mediaSource) return
+    if (!matrixMode) return
     let active = true
     let unlisten: (() => void) | undefined
     void bridge.onMatrixTransferProgress((payload) => {
@@ -565,7 +567,7 @@ export function FileAttachmentCard({
       active = false
       unlisten?.()
     }
-  }, [attachment.fileHash, attachment.mediaSource])
+  }, [attachment.fileHash, matrixMode])
 
   const progressPercent = (() => {
     const totalBytes = download?.totalBytes ?? attachment.size
@@ -578,7 +580,7 @@ export function FileAttachmentCard({
   })()
 
   const startDownload = async () => {
-    if (bridge.isMatrixBackend() && attachment.mediaSource) {
+    if (matrixMode) {
       const matrixSourcePeerId = sourcePeerId || 'matrix'
       const transferId = bridge.createMatrixTransferId()
       useFileDownloadStore.getState().startDownload({
@@ -647,7 +649,7 @@ export function FileAttachmentCard({
   }
 
   const cancelDownload = async () => {
-    if (!bridge.isMatrixBackend() || download?.status !== 'downloading') return
+    if (!matrixMode || download?.status !== 'downloading') return
     try {
       await bridge.matrixCancelAttachmentDownload(attachment.fileHash)
     } catch (error) {
@@ -665,58 +667,71 @@ export function FileAttachmentCard({
   const isErrored = status === 'error'
 
   return (
-    <div className="flex max-w-sm items-center gap-3 rounded-lg border border-border bg-bg-secondary p-3">
-      <div className="flex h-10 w-10 items-center justify-center rounded bg-bg-modifier-hover text-muted">
-        <Icon name="fileText" />
-      </div>
+    <div className="max-w-sm overflow-hidden rounded-lg border border-border bg-bg-secondary">
+      {matrixMode && attachment.thumbnail && (
+        <EncryptedAttachmentPreview
+          key={`${eventId}:${attachmentIndex}:${attachment.thumbnail.fileHash}`}
+          filename={attachment.filename}
+          roomId={roomId}
+          eventId={eventId}
+          attachmentIndex={attachmentIndex}
+          thumbnail={attachment.thumbnail}
+        />
+      )}
 
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-text-link">{attachment.filename}</div>
-        <div className="text-xs text-muted">{(attachment.size / 1024 / 1024).toFixed(2)} MB</div>
+      <div className="flex items-center gap-3 p-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded bg-bg-modifier-hover text-muted">
+          <Icon name="fileText" />
+        </div>
 
-        {isDownloading && (
-          <div className="mt-1.5">
-            <div className="h-1 overflow-hidden rounded-full bg-bg-modifier-hover">
-              <div
-                className="h-full rounded-full bg-blue transition-[width] duration-normal"
-                data-design-token-exception="data-driven-transfer-progress-width"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-            {download?.matrixState && (
-              <div className="mt-1 text-caption capitalize text-muted">
-                {download.matrixState}
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium text-text-link">{attachment.filename}</div>
+          <div className="text-xs text-muted">{(attachment.size / 1024 / 1024).toFixed(2)} MB</div>
+
+          {isDownloading && (
+            <div className="mt-1.5">
+              <div className="h-1 overflow-hidden rounded-full bg-bg-modifier-hover">
+                <div
+                  className="h-full rounded-full bg-blue transition-[width] duration-normal"
+                  data-design-token-exception="data-driven-transfer-progress-width"
+                  style={{ width: `${progressPercent}%` }}
+                />
               </div>
-            )}
-          </div>
-        )}
-        {isErrored && <div className="mt-1 text-xs text-red">{download?.error ?? 'Download failed'}</div>}
-      </div>
+              {download?.matrixState && (
+                <div className="mt-1 text-caption capitalize text-muted">
+                  {download.matrixState}
+                </div>
+              )}
+            </div>
+          )}
+          {isErrored && <div className="mt-1 text-xs text-red">{download?.error ?? 'Download failed'}</div>}
+        </div>
 
-      <button
-        onClick={isCompleted ? handleOpen : isDownloading && bridge.isMatrixBackend() ? cancelDownload : startDownload}
-        disabled={isDownloading && !bridge.isMatrixBackend()}
-        className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-          isCompleted
-            ? 'bg-green/20 text-green hover:bg-green/30'
-            : isErrored
-              ? 'bg-red/10 text-red hover:bg-red/15'
-              : 'bg-bg-modifier-hover text-secondary hover:bg-bg-modifier-active'
-        } disabled:opacity-60`}
-        aria-label={isCompleted ? `Open ${attachment.filename}` : isDownloading && bridge.isMatrixBackend() ? `Cancel download of ${attachment.filename}` : `Download ${attachment.filename}`}
-      >
-        {isCompleted
-          ? 'Open'
-          : isDownloading && bridge.isMatrixBackend()
-            ? 'Cancel'
-            : isDownloading
-              ? `${progressPercent}%`
-              : isErrored && download?.retryMode === 'restart-from-zero'
-                ? 'Restart'
-                : isErrored
-                  ? 'Retry'
-                  : 'Download'}
-      </button>
+        <button
+          onClick={isCompleted ? handleOpen : isDownloading && matrixMode ? cancelDownload : startDownload}
+          disabled={isDownloading && !matrixMode}
+          className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+            isCompleted
+              ? 'bg-green/20 text-green hover:bg-green/30'
+              : isErrored
+                ? 'bg-red/10 text-red hover:bg-red/15'
+                : 'bg-bg-modifier-hover text-secondary hover:bg-bg-modifier-active'
+          } disabled:opacity-60`}
+          aria-label={isCompleted ? `Open ${attachment.filename}` : isDownloading && matrixMode ? `Cancel download of ${attachment.filename}` : `Download ${attachment.filename}`}
+        >
+          {isCompleted
+            ? 'Open'
+            : isDownloading && matrixMode
+              ? 'Cancel'
+              : isDownloading
+                ? `${progressPercent}%`
+                : isErrored && download?.retryMode === 'restart-from-zero'
+                  ? 'Restart'
+                  : isErrored
+                    ? 'Retry'
+                    : 'Download'}
+        </button>
+      </div>
     </div>
   )
 }

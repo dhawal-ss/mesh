@@ -107,7 +107,7 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, Semaphore};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use zeroize::Zeroize;
@@ -156,6 +156,8 @@ const MAX_THUMBNAIL_SOURCE_DIMENSION: u32 = 16_384;
 const MAX_THUMBNAIL_DECODE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_THUMBNAIL_DIMENSION: u32 = 512;
 const MAX_THUMBNAIL_BYTES: usize = 2 * 1024 * 1024;
+const MAX_INLINE_THUMBNAIL_DECODE_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_CONCURRENT_THUMBNAIL_LOADS: usize = 4;
 const MEDIA_DOWNLOAD_PROGRESS_INTERVAL_BYTES: u64 = 1024 * 1024;
 // A Content-Length hint is remote-claimed and unverified, so the initial
 // allocation it sizes must stay modest regardless of what the header claims
@@ -242,6 +244,17 @@ struct GeneratedThumbnail {
     bytes: Vec<u8>,
     width: u32,
     height: u32,
+}
+
+struct ResolvedMatrixThumbnail {
+    metadata: AttachmentThumbnailDto,
+    encrypted_file: EncryptedFile,
+}
+
+struct ResolvedMatrixAttachment {
+    metadata: AttachmentDto,
+    encrypted_file: EncryptedFile,
+    thumbnail: Option<ResolvedMatrixThumbnail>,
 }
 
 /// Incremental view of a media transfer so the download cap can be enforced on
@@ -674,6 +687,7 @@ pub struct MatrixBackend {
     verification_sessions: RwLock<HashMap<String, DeviceVerificationFlow>>,
     media_uploads: Mutex<HashMap<String, CancellationToken>>,
     media_downloads: Mutex<HashMap<String, CancellationToken>>,
+    thumbnail_loads: Semaphore,
     rtc_sessions: Arc<Mutex<HashMap<(String, String), MatrixRtcLocalSession>>>,
     rtc_media_keys: Arc<Mutex<MatrixRtcMediaKeyRuntime>>,
     rtc_membership_writes: Arc<Mutex<()>>,
@@ -698,6 +712,7 @@ impl MatrixBackend {
             verification_sessions: RwLock::new(HashMap::new()),
             media_uploads: Mutex::new(HashMap::new()),
             media_downloads: Mutex::new(HashMap::new()),
+            thumbnail_loads: Semaphore::new(MAX_CONCURRENT_THUMBNAIL_LOADS),
             rtc_sessions: Arc::new(Mutex::new(HashMap::new())),
             rtc_media_keys: Arc::new(Mutex::new(MatrixRtcMediaKeyRuntime::default())),
             rtc_membership_writes: Arc::new(Mutex::new(())),
@@ -735,6 +750,7 @@ impl MatrixBackend {
             verification_sessions: RwLock::new(HashMap::new()),
             media_uploads: Mutex::new(HashMap::new()),
             media_downloads: Mutex::new(HashMap::new()),
+            thumbnail_loads: Semaphore::new(MAX_CONCURRENT_THUMBNAIL_LOADS),
             rtc_sessions: Arc::new(Mutex::new(HashMap::new())),
             rtc_media_keys: Arc::new(Mutex::new(MatrixRtcMediaKeyRuntime::default())),
             rtc_membership_writes: Arc::new(Mutex::new(())),
@@ -3601,15 +3617,15 @@ impl MatrixBackend {
         }
     }
 
-    fn matrix_thumbnail_from_content(
+    fn resolved_matrix_thumbnail_from_content(
         content: &serde_json::Value,
-    ) -> Option<AttachmentThumbnailDto> {
+    ) -> Option<ResolvedMatrixThumbnail> {
         let info = content.get("info")?;
         // Plain `thumbnail_url` metadata is never accepted for encrypted-room
-        // attachments. The SDK needs the complete encrypted-file descriptor to
-        // authenticate ciphertext before any future sandbox can consume bytes.
-        let source = info.get("thumbnail_file")?.clone();
-        let encrypted_file: EncryptedFile = serde_json::from_value(source.clone()).ok()?;
+        // attachments. Key material remains Rust-only and is recovered again
+        // from the authoritative event when a preview is requested.
+        let encrypted_file: EncryptedFile =
+            serde_json::from_value(info.get("thumbnail_file")?.clone()).ok()?;
         if !encrypted_file.url.as_str().starts_with("mxc://") {
             return None;
         }
@@ -3631,17 +3647,21 @@ impl MatrixBackend {
         {
             return None;
         }
-        Some(AttachmentThumbnailDto {
-            file_hash: format!("matrix-sha256:{sha256}"),
-            size,
-            width,
-            height,
-            content_type: content_type.to_owned(),
-            media_source: source,
+        Some(ResolvedMatrixThumbnail {
+            metadata: AttachmentThumbnailDto {
+                file_hash: format!("matrix-sha256:{sha256}"),
+                size,
+                width,
+                height,
+                content_type: content_type.to_owned(),
+            },
+            encrypted_file,
         })
     }
 
-    fn matrix_attachment_from_content(content: &serde_json::Value) -> Option<AttachmentDto> {
+    fn resolved_matrix_attachment_from_content(
+        content: &serde_json::Value,
+    ) -> Option<ResolvedMatrixAttachment> {
         let msgtype = content.get("msgtype").and_then(serde_json::Value::as_str)?;
         if !matches!(msgtype, "m.file" | "m.image" | "m.audio" | "m.video") {
             return None;
@@ -3654,12 +3674,12 @@ impl MatrixBackend {
         if filename.is_empty() {
             return None;
         }
-        let source = content.get("file")?.clone();
-        let url = source.get("url")?.as_str()?;
-        let sha256 = source
-            .get("hashes")
-            .and_then(|hashes| hashes.get("sha256"))
-            .and_then(serde_json::Value::as_str)?;
+        let encrypted_file: EncryptedFile =
+            serde_json::from_value(content.get("file")?.clone()).ok()?;
+        if !encrypted_file.url.as_str().starts_with("mxc://") {
+            return None;
+        }
+        let sha256 = Self::encrypted_file_sha256(&encrypted_file)?;
         let size = content
             .get("info")
             .and_then(|info| info.get("size"))
@@ -3670,23 +3690,32 @@ impl MatrixBackend {
             .and_then(|info| info.get("mimetype"))
             .and_then(serde_json::Value::as_str)
             .map(str::to_owned);
-        let thumbnail = Self::matrix_thumbnail_from_content(content);
-        Some(AttachmentDto {
-            file_hash: format!("matrix-sha256:{sha256}"),
-            filename: filename.to_owned(),
-            size,
-            chunks: 1,
-            source_peer_id: format!("matrix:{url}"),
-            media_source: Some(source),
-            content_type,
+        let thumbnail = Self::resolved_matrix_thumbnail_from_content(content);
+        Some(ResolvedMatrixAttachment {
+            metadata: AttachmentDto {
+                file_hash: format!("matrix-sha256:{sha256}"),
+                filename: filename.to_owned(),
+                size,
+                chunks: 1,
+                source_peer_id: "matrix".into(),
+                content_type,
+                thumbnail: thumbnail
+                    .as_ref()
+                    .map(|thumbnail| thumbnail.metadata.clone()),
+            },
+            encrypted_file,
             thumbnail,
         })
     }
 
-    fn matrix_attachment_from_event(
+    fn matrix_attachment_from_content(content: &serde_json::Value) -> Option<AttachmentDto> {
+        Self::resolved_matrix_attachment_from_content(content).map(|attachment| attachment.metadata)
+    }
+
+    fn resolved_matrix_attachment_from_event(
         event: &serde_json::Value,
         attachment_index: u32,
-    ) -> BackendResult<AttachmentDto> {
+    ) -> BackendResult<ResolvedMatrixAttachment> {
         if attachment_index != 0 {
             return Err(BackendError::NotFound(
                 "attachment index is not present in this message".into(),
@@ -3705,11 +3734,20 @@ impl MatrixBackend {
         let content = event
             .get("content")
             .ok_or_else(|| BackendError::NotFound("attachment message has no content".into()))?;
-        Self::matrix_attachment_from_content(content).ok_or_else(|| {
+        Self::resolved_matrix_attachment_from_content(content).ok_or_else(|| {
             BackendError::NotFound(
                 "message does not contain a supported encrypted attachment".into(),
             )
         })
+    }
+
+    #[cfg(test)]
+    fn matrix_attachment_from_event(
+        event: &serde_json::Value,
+        attachment_index: u32,
+    ) -> BackendResult<AttachmentDto> {
+        Self::resolved_matrix_attachment_from_event(event, attachment_index)
+            .map(|attachment| attachment.metadata)
     }
 
     async fn resolve_protected_attachment(
@@ -3717,7 +3755,7 @@ impl MatrixBackend {
         room_id: &matrix_sdk::ruma::RoomId,
         event_id: &matrix_sdk::ruma::EventId,
         attachment_index: u32,
-    ) -> BackendResult<AttachmentDto> {
+    ) -> BackendResult<ResolvedMatrixAttachment> {
         let room =
             Self::protected_joined_room(client, room_id, "downloading an attachment").await?;
         let event = room
@@ -3731,7 +3769,23 @@ impl MatrixBackend {
                 "attachment event did not match the requested event".into(),
             ));
         }
-        Self::matrix_attachment_from_event(&value, attachment_index)
+        Self::resolved_matrix_attachment_from_event(&value, attachment_index)
+    }
+
+    async fn resolve_protected_thumbnail(
+        client: &Client,
+        room_id: &matrix_sdk::ruma::RoomId,
+        event_id: &matrix_sdk::ruma::EventId,
+        attachment_index: u32,
+    ) -> BackendResult<ResolvedMatrixThumbnail> {
+        Self::resolve_protected_attachment(client, room_id, event_id, attachment_index)
+            .await?
+            .thumbnail
+            .ok_or_else(|| {
+                BackendError::NotFound(
+                    "attachment does not contain a protected inline preview".into(),
+                )
+            })
     }
 
     async fn timeline_values(
@@ -5609,6 +5663,89 @@ impl MatrixBackend {
         }))
     }
 
+    fn sanitize_inline_thumbnail(
+        data: &[u8],
+        thumbnail: &AttachmentThumbnailDto,
+    ) -> BackendResult<Vec<u8>> {
+        if thumbnail.content_type != "image/png"
+            || data.is_empty()
+            || data.len() > MAX_THUMBNAIL_BYTES
+            || data.len() as u64 != thumbnail.size
+        {
+            return Err(BackendError::InvalidConfiguration(
+                "inline preview bytes do not match protected PNG metadata".into(),
+            ));
+        }
+        let dimensions =
+            image::ImageReader::with_format(Cursor::new(data), image::ImageFormat::Png)
+                .into_dimensions()
+                .map_err(|_| {
+                    BackendError::InvalidConfiguration("inline preview is not a valid PNG".into())
+                })?;
+        let pixels = u64::from(dimensions.0)
+            .checked_mul(u64::from(dimensions.1))
+            .ok_or_else(|| {
+                BackendError::InvalidConfiguration("inline preview dimensions overflowed".into())
+            })?;
+        if dimensions != (thumbnail.width, thumbnail.height)
+            || dimensions.0 == 0
+            || dimensions.1 == 0
+            || dimensions.0 > MAX_THUMBNAIL_DIMENSION
+            || dimensions.1 > MAX_THUMBNAIL_DIMENSION
+            || pixels > u64::from(MAX_THUMBNAIL_DIMENSION).pow(2)
+        {
+            return Err(BackendError::InvalidConfiguration(
+                "inline preview dimensions do not match its protected metadata".into(),
+            ));
+        }
+
+        let mut decode_limits = image::Limits::default();
+        decode_limits.max_image_width = Some(MAX_THUMBNAIL_DIMENSION);
+        decode_limits.max_image_height = Some(MAX_THUMBNAIL_DIMENSION);
+        decode_limits.max_alloc = Some(MAX_INLINE_THUMBNAIL_DECODE_BYTES);
+        let mut reader =
+            image::ImageReader::with_format(Cursor::new(data), image::ImageFormat::Png);
+        reader.limits(decode_limits);
+        let decoded = reader.decode().map_err(|_| {
+            BackendError::InvalidConfiguration(
+                "inline preview could not be decoded within safe limits".into(),
+            )
+        })?;
+        if (decoded.width(), decoded.height()) != dimensions {
+            return Err(BackendError::InvalidConfiguration(
+                "decoded inline preview dimensions changed unexpectedly".into(),
+            ));
+        }
+
+        let mut output = Cursor::new(Vec::new());
+        decoded
+            .write_to(&mut output, image::ImageFormat::Png)
+            .map_err(|_| BackendError::Other("failed to sanitize inline preview".into()))?;
+        let bytes = output.into_inner();
+        if bytes.is_empty()
+            || bytes.len() > MAX_THUMBNAIL_BYTES
+            || !bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+        {
+            return Err(BackendError::InvalidConfiguration(
+                "sanitized inline preview failed PNG validation".into(),
+            ));
+        }
+        let verified_dimensions =
+            image::ImageReader::with_format(Cursor::new(&bytes), image::ImageFormat::Png)
+                .into_dimensions()
+                .map_err(|_| {
+                    BackendError::InvalidConfiguration(
+                        "sanitized inline preview could not be verified".into(),
+                    )
+                })?;
+        if verified_dimensions != dimensions {
+            return Err(BackendError::InvalidConfiguration(
+                "sanitized inline preview dimensions changed unexpectedly".into(),
+            ));
+        }
+        Ok(bytes)
+    }
+
     async fn upload_encrypted_media_bytes(
         client: &Client,
         data: &[u8],
@@ -5731,6 +5868,7 @@ impl MatrixBackend {
     async fn download_bounded_encrypted_media(
         client: &Client,
         encrypted_file: &EncryptedFile,
+        limit: u64,
         on_progress: &mut (dyn FnMut(u64) + Send),
     ) -> BackendResult<Vec<u8>> {
         let supported_versions = client.supported_versions().await.map_err(Self::map_error)?;
@@ -5765,12 +5903,14 @@ impl MatrixBackend {
             });
         }
         let content_length = response.content_length();
-        if content_length.is_some_and(|length| length > MAX_ATTACHMENT_BYTES) {
-            return Err(Self::attachment_size_limit_error());
+        if content_length.is_some_and(|length| length > limit) {
+            return Err(BackendError::InvalidConfiguration(
+                "encrypted media exceeds its transfer limit".into(),
+            ));
         }
         let ciphertext = Self::collect_bounded_media(
             &mut HttpMediaChunkSource(response),
-            MAX_ATTACHMENT_BYTES,
+            limit,
             content_length,
             on_progress,
         )
@@ -8001,7 +8141,6 @@ impl MeshBackend for MatrixBackend {
             let sha256 = Self::encrypted_file_sha256(&encrypted_file).ok_or_else(|| {
                 BackendError::Other("Matrix encrypted attachment omitted SHA-256".into())
             })?;
-            let media_source = serde_json::to_value(&encrypted_file).map_err(Self::map_error)?;
             let mut info = FileInfo::new();
             info.mimetype = Some(content_type.to_string());
             info.size = total_bytes.try_into().ok();
@@ -8020,8 +8159,6 @@ impl MeshBackend for MatrixBackend {
                     .ok_or_else(|| {
                         BackendError::Other("Matrix encrypted thumbnail omitted SHA-256".into())
                     })?;
-                let thumbnail_source =
-                    serde_json::to_value(&encrypted_thumbnail).map_err(Self::map_error)?;
                 let mut thumbnail_info = ThumbnailInfo::new();
                 thumbnail_info.width = Some(thumbnail.width.into());
                 thumbnail_info.height = Some(thumbnail.height.into());
@@ -8035,7 +8172,6 @@ impl MeshBackend for MatrixBackend {
                     width: thumbnail.width,
                     height: thumbnail.height,
                     content_type: "image/png".into(),
-                    media_source: thumbnail_source,
                 })
             } else {
                 None
@@ -8111,14 +8247,7 @@ impl MeshBackend for MatrixBackend {
                     filename,
                     size: total_bytes,
                     chunks: 1,
-                    source_peer_id: format!(
-                        "matrix:{}",
-                        media_source
-                            .get("url")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or_default()
-                    ),
-                    media_source: Some(media_source),
+                    source_peer_id: "matrix".into(),
                     content_type: Some(content_type.to_string()),
                     thumbnail: thumbnail_dto,
                 }],
@@ -8190,9 +8319,14 @@ impl MeshBackend for MatrixBackend {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
-        let attachment =
+        let resolved_attachment =
             Self::resolve_protected_attachment(&client, &room_id, &event_id, attachment_index)
                 .await?;
+        let ResolvedMatrixAttachment {
+            metadata: attachment,
+            encrypted_file,
+            ..
+        } = resolved_attachment;
         let total_bytes = (attachment.size > 0).then_some(attachment.size);
         if let Err(error) = Self::validate_attachment_size(attachment.size) {
             Self::emit_transfer_progress(
@@ -8238,13 +8372,6 @@ impl MeshBackend for MatrixBackend {
         let transferred_bytes = Arc::new(AtomicU64::new(0));
 
         let result: BackendResult<String> = async {
-            let source = attachment.media_source.clone().ok_or_else(|| {
-                BackendError::InvalidConfiguration(
-                    "attachment has no Matrix encrypted-file metadata".into(),
-                )
-            })?;
-            let encrypted_file: EncryptedFile =
-                serde_json::from_value(source).map_err(Self::map_error)?;
             let client = self.client().await?;
             Self::emit_transfer_progress(
                 &progress,
@@ -8271,6 +8398,7 @@ impl MeshBackend for MatrixBackend {
                 result = Self::download_bounded_encrypted_media(
                     &client,
                     &encrypted_file,
+                    MAX_ATTACHMENT_BYTES,
                     &mut on_progress,
                 ) => result?,
                 _ = cancellation.cancelled() => {
@@ -8400,6 +8528,35 @@ impl MeshBackend for MatrixBackend {
             ),
         }
         result
+    }
+
+    async fn load_attachment_thumbnail(
+        &self,
+        room_id: String,
+        event_id: String,
+        attachment_index: u32,
+    ) -> BackendResult<Vec<u8>> {
+        let client = self.client().await?;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
+        let thumbnail =
+            Self::resolve_protected_thumbnail(&client, &room_id, &event_id, attachment_index)
+                .await?;
+        let _permit =
+            self.thumbnail_loads.acquire().await.map_err(|_| {
+                BackendError::Other("inline preview scheduler is unavailable".into())
+            })?;
+        let data = Self::download_bounded_encrypted_media(
+            &client,
+            &thumbnail.encrypted_file,
+            MAX_THUMBNAIL_BYTES as u64,
+            &mut |_| {},
+        )
+        .await?;
+        let metadata = thumbnail.metadata;
+        tokio::task::spawn_blocking(move || Self::sanitize_inline_thumbnail(&data, &metadata))
+            .await
+            .map_err(Self::map_error)?
     }
 
     async fn cancel_attachment_download(&self, file_hash: String) -> BackendResult<()> {
@@ -11308,9 +11465,9 @@ mod tests {
             "filename": "report.pdf",
             "file": {
                 "url": "mxc://example.org/media",
-                "key": { "kty": "oct", "alg": "A256CTR", "ext": true, "k": "key", "key_ops": ["encrypt", "decrypt"] },
-                "iv": "iv",
-                "hashes": { "sha256": "ciphertext-hash" },
+                "key": { "kty": "oct", "alg": "A256CTR", "ext": true, "k": "TLlG_OpX807zzQuuwv4QZGJ21_u7weemFGYJFszMn9A", "key_ops": ["encrypt", "decrypt"] },
+                "iv": "S22dq3NAX8wAAAAAAAAAAA",
+                "hashes": { "sha256": "aWOHudBnDkJ9IwaR1Nd8XKoI7DOrqDTwt6xDPfVGN6Q" },
                 "v": "v2"
             },
             "info": {
@@ -11331,12 +11488,20 @@ mod tests {
                 }
             }
         });
-        let attachment = MatrixBackend::matrix_attachment_from_content(&encrypted).unwrap();
+        let resolved = MatrixBackend::resolved_matrix_attachment_from_content(&encrypted).unwrap();
+        assert_eq!(
+            resolved.encrypted_file.url.as_str(),
+            "mxc://example.org/media"
+        );
+        assert!(resolved.thumbnail.is_some());
+        let attachment = resolved.metadata;
         assert_eq!(attachment.filename, "report.pdf");
         assert_eq!(attachment.size, 42);
-        assert_eq!(attachment.file_hash, "matrix-sha256:ciphertext-hash");
+        assert_eq!(
+            attachment.file_hash,
+            "matrix-sha256:aWOHudBnDkJ9IwaR1Nd8XKoI7DOrqDTwt6xDPfVGN6Q"
+        );
         assert_eq!(attachment.content_type.as_deref(), Some("application/pdf"));
-        assert!(attachment.media_source.is_some());
         let thumbnail = attachment.thumbnail.unwrap();
         assert_eq!(thumbnail.width, 320);
         assert_eq!(thumbnail.height, 180);
@@ -11366,9 +11531,9 @@ mod tests {
                 "filename": "report.pdf",
                 "file": {
                     "url": "mxc://example.org/media",
-                    "key": { "kty": "oct", "alg": "A256CTR", "ext": true, "k": "key", "key_ops": ["encrypt", "decrypt"] },
-                    "iv": "iv",
-                    "hashes": { "sha256": "ciphertext-hash" },
+                    "key": { "kty": "oct", "alg": "A256CTR", "ext": true, "k": "TLlG_OpX807zzQuuwv4QZGJ21_u7weemFGYJFszMn9A", "key_ops": ["encrypt", "decrypt"] },
+                    "iv": "S22dq3NAX8wAAAAAAAAAAA",
+                    "hashes": { "sha256": "aWOHudBnDkJ9IwaR1Nd8XKoI7DOrqDTwt6xDPfVGN6Q" },
                     "v": "v2"
                 },
                 "info": { "size": 42, "mimetype": "application/pdf" }
@@ -11376,9 +11541,11 @@ mod tests {
         });
 
         let attachment = MatrixBackend::matrix_attachment_from_event(&event, 0).unwrap();
-        assert_eq!(attachment.file_hash, "matrix-sha256:ciphertext-hash");
+        assert_eq!(
+            attachment.file_hash,
+            "matrix-sha256:aWOHudBnDkJ9IwaR1Nd8XKoI7DOrqDTwt6xDPfVGN6Q"
+        );
         assert_eq!(attachment.filename, "report.pdf");
-        assert!(attachment.media_source.is_some());
         assert!(MatrixBackend::matrix_attachment_from_event(&event, 1).is_err());
 
         let mut redacted = event.clone();
@@ -11398,9 +11565,9 @@ mod tests {
             "body": "report.pdf",
             "file": {
                 "url": "mxc://example.org/media",
-                "key": { "kty": "oct", "alg": "A256CTR", "ext": true, "k": "key", "key_ops": ["encrypt", "decrypt"] },
-                "iv": "iv",
-                "hashes": { "sha256": "ciphertext-hash" },
+                "key": { "kty": "oct", "alg": "A256CTR", "ext": true, "k": "TLlG_OpX807zzQuuwv4QZGJ21_u7weemFGYJFszMn9A", "key_ops": ["encrypt", "decrypt"] },
+                "iv": "S22dq3NAX8wAAAAAAAAAAA",
+                "hashes": { "sha256": "aWOHudBnDkJ9IwaR1Nd8XKoI7DOrqDTwt6xDPfVGN6Q" },
                 "v": "v2"
             },
             "info": {
@@ -11446,9 +11613,9 @@ mod tests {
                 "filename": "report.pdf",
                 "file": {
                     "url": "mxc://example.org/media",
-                    "key": { "kty": "oct", "alg": "A256CTR", "ext": true, "k": "key", "key_ops": ["encrypt", "decrypt"] },
-                    "iv": "iv",
-                    "hashes": { "sha256": "ciphertext-hash" },
+                    "key": { "kty": "oct", "alg": "A256CTR", "ext": true, "k": "TLlG_OpX807zzQuuwv4QZGJ21_u7weemFGYJFszMn9A", "key_ops": ["encrypt", "decrypt"] },
+                    "iv": "S22dq3NAX8wAAAAAAAAAAA",
+                    "hashes": { "sha256": "aWOHudBnDkJ9IwaR1Nd8XKoI7DOrqDTwt6xDPfVGN6Q" },
                     "v": "v2"
                 },
                 "info": { "size": 42, "mimetype": "application/pdf" }
@@ -11477,7 +11644,6 @@ mod tests {
                 size: 5,
                 chunks: 1,
                 source_peer_id: "matrix:mxc://example.org/note".into(),
-                media_source: Some(json!({ "url": "mxc://example.org/note" })),
                 content_type: Some("text/plain".into()),
                 thumbnail: None,
             }],
@@ -11683,6 +11849,76 @@ mod tests {
                 .unwrap()
                 .is_none(),
             "active vector content must never enter thumbnail decoding"
+        );
+    }
+
+    #[test]
+    fn inline_thumbnail_sanitization_requires_exact_protected_metadata() {
+        let source = image::DynamicImage::new_rgb8(64, 32);
+        let mut encoded = Cursor::new(Vec::new());
+        source
+            .write_to(&mut encoded, image::ImageFormat::Png)
+            .unwrap();
+        let encoded = encoded.into_inner();
+        let metadata = AttachmentThumbnailDto {
+            file_hash: "matrix-sha256:protected-thumbnail".into(),
+            size: encoded.len() as u64,
+            width: 64,
+            height: 32,
+            content_type: "image/png".into(),
+        };
+
+        let sanitized = MatrixBackend::sanitize_inline_thumbnail(&encoded, &metadata).unwrap();
+        assert!(sanitized.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(sanitized.len() <= MAX_THUMBNAIL_BYTES);
+
+        let mut wrong_size = metadata.clone();
+        wrong_size.size += 1;
+        assert!(MatrixBackend::sanitize_inline_thumbnail(&encoded, &wrong_size).is_err());
+
+        let mut wrong_dimensions = metadata;
+        wrong_dimensions.width += 1;
+        assert!(MatrixBackend::sanitize_inline_thumbnail(&encoded, &wrong_dimensions).is_err());
+
+        let oversized_source = image::DynamicImage::new_rgb8(1024, 512);
+        let mut oversized = Cursor::new(Vec::new());
+        oversized_source
+            .write_to(&mut oversized, image::ImageFormat::Png)
+            .unwrap();
+        let oversized = oversized.into_inner();
+        let forged_metadata = AttachmentThumbnailDto {
+            file_hash: "matrix-sha256:forged-thumbnail".into(),
+            size: oversized.len() as u64,
+            width: 512,
+            height: 256,
+            content_type: "image/png".into(),
+        };
+        assert!(
+            MatrixBackend::sanitize_inline_thumbnail(&oversized, &forged_metadata).is_err(),
+            "received previews must never be resized into matching forged metadata"
+        );
+    }
+
+    #[tokio::test]
+    async fn inline_thumbnail_scheduler_caps_concurrent_work() {
+        let backend = MatrixBackend::with_profile(
+            std::env::temp_dir().join("mesh-thumbnail-scheduler-test"),
+            "thumbnail-scheduler",
+        );
+        assert_eq!(
+            backend.thumbnail_loads.available_permits(),
+            MAX_CONCURRENT_THUMBNAIL_LOADS
+        );
+        let permits = backend
+            .thumbnail_loads
+            .acquire_many(MAX_CONCURRENT_THUMBNAIL_LOADS as u32)
+            .await
+            .unwrap();
+        assert!(backend.thumbnail_loads.try_acquire().is_err());
+        drop(permits);
+        assert_eq!(
+            backend.thumbnail_loads.available_permits(),
+            MAX_CONCURRENT_THUMBNAIL_LOADS
         );
     }
 

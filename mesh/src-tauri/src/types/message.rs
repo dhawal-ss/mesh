@@ -43,16 +43,11 @@ pub struct AttachmentDto {
     pub chunks: u32,
     #[serde(default)]
     pub source_peer_id: String,
-    /// Matrix encrypted-file metadata. Kept opaque at the product boundary so
-    /// the SDK remains the authority for key, IV, and ciphertext validation.
-    #[serde(default)]
-    #[ts(optional, type = "Record<string, unknown> | null")]
-    pub media_source: Option<serde_json::Value>,
     #[serde(default)]
     #[ts(optional, type = "string | null")]
     pub content_type: Option<String>,
-    /// Encrypted Matrix thumbnail metadata. Mesh does not decrypt this across
-    /// renderer IPC until the sandboxed preview boundary is implemented.
+    /// Bounded display metadata for a protected inline preview. Encryption
+    /// keys, IVs, and media locations remain Rust-only.
     #[serde(default)]
     #[ts(optional, type = "AttachmentThumbnailDto | null")]
     pub thumbnail: Option<AttachmentThumbnailDto>,
@@ -67,7 +62,4 @@ pub struct AttachmentThumbnailDto {
     pub width: u32,
     pub height: u32,
     pub content_type: String,
-    /// Opaque Matrix encrypted-file metadata used only by the Rust backend.
-    #[ts(type = "Record<string, unknown>")]
-    pub media_source: serde_json::Value,
 }
