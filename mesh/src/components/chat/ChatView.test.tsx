@@ -111,6 +111,7 @@ describe('ChatView channel switching', () => {
       hasMoreOlder: {},
       browsingOlder: {},
       newerGapCount: {},
+      channelRecency: [],
     })
     useChannelStore.setState({
       channels: [],

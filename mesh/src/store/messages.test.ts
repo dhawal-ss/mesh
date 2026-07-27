@@ -32,6 +32,7 @@ beforeEach(() => {
     hasMoreOlder: {},
     browsingOlder: {},
     newerGapCount: {},
+    channelRecency: [],
   })
 })
 
@@ -157,6 +158,100 @@ describe('boundLatestWindow via setMessages', () => {
     expect(result[result.length - 1].id).toBe('msg-0249')
     expect(Object.keys(useMessageStore.getState().messageEntities['ch-1'])).toHaveLength(200)
     expect(useMessageStore.getState().messageEntities['ch-1']['msg-0049']).toBeUndefined()
+  })
+})
+
+describe('bounded channel retention', () => {
+  it('evicts the least-recently-used channel from every channel-scoped map', () => {
+    const store = useMessageStore.getState()
+    const initialChannelIds = Array.from({ length: 16 }, (_, index) => `ch-${index}`)
+
+    for (const channelId of initialChannelIds) {
+      store.replaceMessages(channelId, [
+        msg({ id: `message-${channelId}`, channelId }),
+      ])
+    }
+    useMessageStore.setState({
+      loadingOlder: Object.fromEntries(initialChannelIds.map((channelId) => [channelId, true])),
+    })
+
+    store.replaceMessages('ch-16', [
+      msg({ id: 'message-ch-16', channelId: 'ch-16' }),
+    ])
+
+    const state = useMessageStore.getState()
+    expect(state.channelRecency).toEqual([
+      ...initialChannelIds.slice(1),
+      'ch-16',
+    ])
+    for (const key of [
+      'messageEntities',
+      'messageOrder',
+      'messages',
+      'hasMoreOlder',
+      'browsingOlder',
+      'newerGapCount',
+    ] as const) {
+      expect(state[key]['ch-0']).toBeUndefined()
+      expect(Object.keys(state[key])).toHaveLength(16)
+    }
+    expect(state.loadingOlder['ch-0']).toBeUndefined()
+    expect(Object.keys(state.loadingOlder)).toHaveLength(15)
+  })
+
+  it('keeps a revisited channel and evicts the next least-recently-used entry', () => {
+    const store = useMessageStore.getState()
+    const initialChannelIds = Array.from({ length: 16 }, (_, index) => `ch-${index}`)
+
+    for (const channelId of initialChannelIds) {
+      store.replaceMessages(channelId, [
+        msg({ id: `message-${channelId}`, channelId }),
+      ])
+    }
+    store.replaceMessages('ch-0', [
+      msg({ id: 'message-ch-0', channelId: 'ch-0' }),
+    ])
+    store.replaceMessages('ch-16', [
+      msg({ id: 'message-ch-16', channelId: 'ch-16' }),
+    ])
+
+    const state = useMessageStore.getState()
+    expect(state.messages['ch-0']).toHaveLength(1)
+    expect(state.messages['ch-1']).toBeUndefined()
+    expect(state.channelRecency[state.channelRecency.length - 2]).toBe('ch-0')
+    expect(state.channelRecency[state.channelRecency.length - 1]).toBe('ch-16')
+  })
+
+  it('does not resurrect an evicted channel when an older-history request finishes', async () => {
+    const bridge = await import('../lib/bridge')
+    const getMessagesMock = vi.mocked(bridge.getMessages)
+    let resolveHistory: ((messages: Message[]) => void) | undefined
+    getMessagesMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveHistory = resolve
+    }))
+
+    const store = useMessageStore.getState()
+    store.replaceMessages('ch-0', [
+      msg({ id: 'message-ch-0', channelId: 'ch-0' }),
+    ])
+    useMessageStore.setState({ hasMoreOlder: { 'ch-0': true } })
+    const historyRequest = store.loadOlderMessages('ch-0')
+
+    for (let index = 1; index <= 16; index += 1) {
+      const channelId = `ch-${index}`
+      store.replaceMessages(channelId, [
+        msg({ id: `message-${channelId}`, channelId }),
+      ])
+    }
+    expect(useMessageStore.getState().channelRecency).not.toContain('ch-0')
+
+    resolveHistory?.([])
+    await historyRequest
+
+    const state = useMessageStore.getState()
+    expect(state.messages['ch-0']).toBeUndefined()
+    expect(state.loadingOlder['ch-0']).toBeUndefined()
+    expect(state.hasMoreOlder['ch-0']).toBeUndefined()
   })
 })
 
@@ -432,6 +527,7 @@ describe('critical flow: restart persistence', () => {
       hasMoreOlder: {},
       browsingOlder: {},
       newerGapCount: {},
+      channelRecency: [],
     })
     expect(useMessageStore.getState().messages['ch-1']).toBeUndefined()
 
