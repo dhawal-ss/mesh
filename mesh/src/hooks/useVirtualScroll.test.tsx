@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  findVisibleRange,
   useVirtualScroll,
   type VirtualItem,
   type VirtualScrollState,
@@ -33,6 +34,47 @@ class ResizeObserverMock {
     )
   }
 }
+
+describe('findVisibleRange', () => {
+  it('preserves inclusive viewport-boundary semantics', () => {
+    const offsets = [0, 100, 200, 300]
+    const heights = [100, 100, 100, 100]
+
+    expect(findVisibleRange(offsets, heights, 100, 300)).toEqual({
+      start: 0,
+      end: 3,
+    })
+    expect(findVisibleRange(offsets, heights, 101, 299)).toEqual({
+      start: 1,
+      end: 3,
+    })
+    expect(findVisibleRange([], [], 0, 100)).toEqual({ start: 0, end: 0 })
+  })
+
+  it('finds a bounded range in 50,000 rows with logarithmic indexed reads', () => {
+    const rowCount = 50_000
+    const offsets = Array.from({ length: rowCount }, (_, index) => index * 100)
+    const heights = Array.from({ length: rowCount }, () => 100)
+    let indexedReads = 0
+    const countReads = (values: number[]) => new Proxy(values, {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) indexedReads += 1
+        return Reflect.get(target, property, receiver)
+      },
+    })
+
+    const range = findVisibleRange(
+      countReads(offsets),
+      countReads(heights),
+      2_500_000,
+      2_500_500,
+    )
+
+    expect(range).toEqual({ start: 24_999, end: 25_005 })
+    expect(range.end - range.start + 1).toBe(7)
+    expect(indexedReads).toBeLessThan(80)
+  })
+})
 
 interface HarnessProps {
   items: VirtualItem[]

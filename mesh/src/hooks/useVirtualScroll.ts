@@ -59,6 +59,42 @@ function hasSameLayoutItems(previous: VirtualItem[], next: VirtualItem[]): boole
   )
 }
 
+function lowerBound(
+  length: number,
+  target: number,
+  valueAt: (index: number) => number,
+): number {
+  let low = 0
+  let high = length
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2)
+    if (valueAt(middle) < target) low = middle + 1
+    else high = middle
+  }
+  return Math.min(low, length - 1)
+}
+
+export function findVisibleRange(
+  itemOffsets: number[],
+  itemHeights: number[],
+  viewportStart: number,
+  viewportEnd: number,
+): { start: number; end: number } {
+  const itemCount = Math.min(itemOffsets.length, itemHeights.length)
+  if (itemCount === 0) return { start: 0, end: 0 }
+
+  const start = lowerBound(
+    itemCount,
+    viewportStart,
+    (index) => itemOffsets[index] + itemHeights[index],
+  )
+  const end = Math.max(
+    start,
+    lowerBound(itemCount, viewportEnd, (index) => itemOffsets[index]),
+  )
+  return { start, end }
+}
+
 export function useVirtualScroll(
   items: VirtualItem[],
   options: UseVirtualScrollOptions = {},
@@ -124,22 +160,10 @@ export function useVirtualScroll(
   } = useMemo(() => {
     const viewportStart = Math.max(0, scrollTop - overscanPx)
     const viewportEnd = scrollTop + viewportHeight + overscanPx
-
-    let nextVisibleStart = 0
-    while (
-      nextVisibleStart < layoutItems.length - 1 &&
-      itemOffsets[nextVisibleStart] + itemHeights[nextVisibleStart] < viewportStart
-    ) {
-      nextVisibleStart += 1
-    }
-
-    let nextVisibleEnd = nextVisibleStart
-    while (
-      nextVisibleEnd < layoutItems.length - 1 &&
-      itemOffsets[nextVisibleEnd] < viewportEnd
-    ) {
-      nextVisibleEnd += 1
-    }
+    const {
+      start: nextVisibleStart,
+      end: nextVisibleEnd,
+    } = findVisibleRange(itemOffsets, itemHeights, viewportStart, viewportEnd)
 
     const nextTopSpacerHeight =
       layoutItems.length === 0 ? 0 : itemOffsets[nextVisibleStart] ?? 0
