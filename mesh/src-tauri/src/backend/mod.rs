@@ -775,9 +775,9 @@ pub struct UserPreferences {
     pub channel_notification_levels: std::collections::HashMap<String, MatrixRoomNotificationMode>,
     #[serde(default)]
     pub send_read_receipts: bool,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub send_typing_indicators: bool,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub share_presence: bool,
     #[serde(default)]
     pub invisible_mode: bool,
@@ -785,7 +785,7 @@ pub struct UserPreferences {
 }
 
 impl UserPreferences {
-    pub const SCHEMA_VERSION: u32 = 2;
+    pub const SCHEMA_VERSION: u32 = 3;
 
     pub fn normalized(mut self) -> Self {
         self.schema_version = Self::SCHEMA_VERSION;
@@ -796,10 +796,6 @@ impl UserPreferences {
         self.updated_at = chrono::Utc::now().to_rfc3339();
         self
     }
-}
-
-fn default_true() -> bool {
-    true
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1479,6 +1475,22 @@ mod tests {
             serde_json::to_string(&MatrixRoomNotificationMode::Nothing).unwrap(),
             "\"nothing\""
         );
+    }
+
+    #[test]
+    fn missing_wire_privacy_fields_deserialize_to_private_defaults() {
+        let preferences: UserPreferences = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 1,
+            "notificationsEnabled": true,
+            "notificationSound": true,
+            "updatedAt": "2026-07-26T00:00:00Z"
+        }))
+        .expect("legacy preferences should migrate");
+
+        assert!(!preferences.send_read_receipts);
+        assert!(!preferences.send_typing_indicators);
+        assert!(!preferences.share_presence);
+        assert!(!preferences.invisible_mode);
     }
 
     #[test]

@@ -68,7 +68,7 @@ describe('Matrix preference projection', () => {
     })
   })
 
-  it('maps portable wire privacy settings and preserves privacy-safe defaults', () => {
+  it('preserves explicit wire opt-ins while defaulting absent settings to private', () => {
     expect(matrixPreferencesToPrivacy(matrixPreferences)).toEqual({
       sendReadReceipts: false,
       sendTypingIndicators: true,
@@ -77,8 +77,8 @@ describe('Matrix preference projection', () => {
     })
     expect(normalizePrivacyPreferences(undefined)).toEqual({
       sendReadReceipts: false,
-      sendTypingIndicators: true,
-      sharePresence: true,
+      sendTypingIndicators: false,
+      sharePresence: false,
       invisibleMode: false,
     })
   })

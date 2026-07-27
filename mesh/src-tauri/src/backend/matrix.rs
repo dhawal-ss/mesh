@@ -594,6 +594,10 @@ impl WirePrivacyPreferences {
             PresenceState::Offline
         }
     }
+
+    fn should_send_typing_notice(self, already_sent: bool, typing: bool) -> bool {
+        (typing && self.send_typing_indicators) || (!typing && already_sent)
+    }
 }
 
 #[derive(Default)]
@@ -635,6 +639,7 @@ pub struct MatrixBackend {
     matrix_sync_freshness: Arc<StdMutex<MatrixSyncFreshness>>,
     matrix_sync_control: Arc<Mutex<MatrixSyncControl>>,
     wire_privacy: Arc<RwLock<WirePrivacyPreferences>>,
+    sent_typing_notices: Mutex<HashSet<String>>,
     typing_users: Arc<RwLock<HashMap<String, Vec<String>>>>,
     presence: Arc<RwLock<HashMap<String, String>>>,
     event_callback: Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
@@ -658,6 +663,7 @@ impl MatrixBackend {
             matrix_sync_freshness: Arc::new(StdMutex::new(MatrixSyncFreshness::default())),
             matrix_sync_control: Arc::new(Mutex::new(MatrixSyncControl::default())),
             wire_privacy: Arc::new(RwLock::new(WirePrivacyPreferences::default())),
+            sent_typing_notices: Mutex::new(HashSet::new()),
             typing_users: Arc::new(RwLock::new(HashMap::new())),
             presence: Arc::new(RwLock::new(HashMap::new())),
             event_callback: Arc::new(StdRwLock::new(None)),
@@ -694,6 +700,7 @@ impl MatrixBackend {
             matrix_sync_freshness: Arc::new(StdMutex::new(MatrixSyncFreshness::default())),
             matrix_sync_control: Arc::new(Mutex::new(MatrixSyncControl::default())),
             wire_privacy: Arc::new(RwLock::new(WirePrivacyPreferences::default())),
+            sent_typing_notices: Mutex::new(HashSet::new()),
             typing_users: Arc::new(RwLock::new(HashMap::new())),
             presence: Arc::new(RwLock::new(HashMap::new())),
             event_callback: Arc::new(StdRwLock::new(None)),
@@ -4521,9 +4528,65 @@ impl MatrixBackend {
         Self::restart_matrix_sync_locked(&mut control, freshness).await;
     }
 
+    async fn clear_sent_typing_notices(&self) {
+        let mut sent_rooms = self.sent_typing_notices.lock().await;
+        if sent_rooms.is_empty() {
+            return;
+        }
+        let client = self.runtime.read().await.client.clone();
+        let Some(client) = client else {
+            sent_rooms.clear();
+            return;
+        };
+
+        for room_id in sent_rooms.clone() {
+            let Ok(room_id) = matrix_sdk::ruma::RoomId::parse(&room_id) else {
+                sent_rooms.remove(&room_id);
+                continue;
+            };
+            let room = match Self::protected_joined_room(
+                &client,
+                &room_id,
+                "clearing typing status",
+            )
+            .await
+            {
+                Ok(room) => room,
+                Err(error) => {
+                    tracing::warn!(
+                        target: "mesh::privacy",
+                        room_id = %room_id,
+                        "Could not clear a previously sent typing notice: {error}"
+                    );
+                    continue;
+                }
+            };
+            match room.typing_notice(false).await {
+                Ok(()) => {
+                    sent_rooms.remove(room_id.as_str());
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        target: "mesh::privacy",
+                        room_id = %room_id,
+                        "Could not clear a previously sent typing notice: {error}"
+                    );
+                }
+            }
+        }
+    }
+
     async fn apply_wire_privacy(&self, preferences: &UserPreferences) {
         let next = WirePrivacyPreferences::from(preferences);
-        *self.wire_privacy.write().await = next;
+        let previous = {
+            let mut current = self.wire_privacy.write().await;
+            let previous = *current;
+            *current = next;
+            previous
+        };
+        if previous.send_typing_indicators && !next.send_typing_indicators {
+            self.clear_sent_typing_notices().await;
+        }
 
         let mut control = self.matrix_sync_control.lock().await;
         let presence = next.presence();
@@ -4842,6 +4905,7 @@ impl MatrixBackend {
             Self::restart_matrix_sync_locked(&mut sync, &self.matrix_sync_freshness).await;
         }
         *self.wire_privacy.write().await = WirePrivacyPreferences::default();
+        self.sent_typing_notices.lock().await.clear();
         let (client, session_task, room_updates_task) = {
             let mut runtime = self.runtime.write().await;
             let client = runtime.client.take();
@@ -8379,13 +8443,21 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn set_typing(&self, room_id: String, typing: bool) -> BackendResult<()> {
-        if typing && !self.wire_privacy.read().await.send_typing_indicators {
+        let privacy = *self.wire_privacy.read().await;
+        let mut sent_rooms = self.sent_typing_notices.lock().await;
+        if !privacy.should_send_typing_notice(sent_rooms.contains(&room_id), typing) {
             return Ok(());
         }
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let room = Self::protected_joined_room(&client, &room_id, "updating typing status").await?;
-        room.typing_notice(typing).await.map_err(Self::map_error)
+        room.typing_notice(typing).await.map_err(Self::map_error)?;
+        if typing {
+            sent_rooms.insert(room_id.to_string());
+        } else {
+            sent_rooms.remove(room_id.as_str());
+        }
+        Ok(())
     }
 
     async fn typing_users(&self, room_id: String) -> BackendResult<Vec<TypingUser>> {
@@ -9222,6 +9294,20 @@ mod tests {
         assert_eq!(visible.presence(), PresenceState::Online);
         assert_eq!(private.presence(), PresenceState::Offline);
         assert_eq!(invisible.presence(), PresenceState::Offline);
+    }
+
+    #[test]
+    fn typing_privacy_only_sends_opt_in_or_required_cleanup() {
+        let private = WirePrivacyPreferences::default();
+        let opted_in = WirePrivacyPreferences {
+            send_typing_indicators: true,
+            ..private
+        };
+
+        assert!(!private.should_send_typing_notice(false, true));
+        assert!(!private.should_send_typing_notice(false, false));
+        assert!(private.should_send_typing_notice(true, false));
+        assert!(opted_in.should_send_typing_notice(false, true));
     }
 
     fn password_session() -> MatrixSession {
