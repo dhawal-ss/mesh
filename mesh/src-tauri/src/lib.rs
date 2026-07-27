@@ -212,25 +212,39 @@ pub fn run() {
                 let network_state = state.network.clone();
 
                 // Try to load existing identity for the network keypair
-                let identity_loaded = crate::crypto::identity::Identity::exists();
-                if identity_loaded {
-                    if let Ok(identity) = crate::crypto::identity::Identity::load() {
-                        *identity_state.write().await = Some(identity);
+                match crate::crypto::identity::Identity::exists() {
+                    Ok(true) => {
+                        match crate::crypto::identity::Identity::load() {
+                            Ok(identity) => {
+                                *identity_state.write().await = Some(identity);
 
-                        if let Err(e) = app_runtime::ensure_network_started(
-                            app_handle.clone(),
-                            identity_state,
-                            network_state,
-                        )
-                        .await
-                        {
-                            tracing::error!("Failed to start network: {}", e);
-                        } else {
-                            tracing::info!("Network started successfully");
+                                if let Err(e) = app_runtime::ensure_network_started(
+                                    app_handle.clone(),
+                                    identity_state,
+                                    network_state,
+                                )
+                                .await
+                                {
+                                    tracing::error!("Failed to start network: {}", e);
+                                } else {
+                                    tracing::info!("Network started successfully");
+                                }
+                            }
+                            Err(error) => {
+                                tracing::error!(
+                                    "Could not load the local identity from the OS credential store: {error}"
+                                );
+                            }
                         }
                     }
-                } else {
-                    tracing::info!("No identity found, waiting for onboarding...");
+                    Ok(false) => {
+                        tracing::info!("No identity found, waiting for onboarding...");
+                    }
+                    Err(error) => {
+                        tracing::error!(
+                            "Could not inspect the OS credential store for the local identity: {error}"
+                        );
+                    }
                 }
             }
         });

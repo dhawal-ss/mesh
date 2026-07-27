@@ -2719,11 +2719,12 @@ impl MatrixBackend {
 
     fn load_trusted_devices(storage: &AccountStorage) -> BackendResult<TrustedDeviceRegistry> {
         let key = Self::trusted_devices_key(storage);
-        if !keychain::secret_exists(&key) {
-            return Ok(TrustedDeviceRegistry::default());
+        match keychain::lookup_secret(&key).map_err(Self::map_secure_storage_error)? {
+            keychain::SecretLookup::Found(serialized) => {
+                serde_json::from_slice(&serialized).map_err(Self::map_error)
+            }
+            keychain::SecretLookup::Missing => Ok(TrustedDeviceRegistry::default()),
         }
-        let serialized = keychain::load_secret(&key).map_err(Self::map_error)?;
-        serde_json::from_slice(&serialized).map_err(Self::map_error)
     }
 
     fn persist_trusted_devices(
@@ -2732,7 +2733,7 @@ impl MatrixBackend {
     ) -> BackendResult<()> {
         let serialized = serde_json::to_vec(devices).map_err(Self::map_error)?;
         keychain::store_secret(&Self::trusted_devices_key(storage), &serialized)
-            .map_err(Self::map_error)
+            .map_err(Self::map_secure_storage_error)
     }
 
     fn device_fingerprint(
@@ -2748,17 +2749,19 @@ impl MatrixBackend {
         Ok(format!("{:x}", digest.finalize()))
     }
 
-    fn load_last_recovery_test(storage: &AccountStorage) -> Option<String> {
+    fn load_last_recovery_test(storage: &AccountStorage) -> BackendResult<Option<String>> {
         let key = Self::recovery_test_key(storage);
-        keychain::secret_exists(&key)
-            .then(|| keychain::load_secret(&key).ok())
-            .flatten()
-            .and_then(|bytes| String::from_utf8(bytes).ok())
+        match keychain::lookup_secret(&key).map_err(Self::map_secure_storage_error)? {
+            keychain::SecretLookup::Found(bytes) => {
+                String::from_utf8(bytes).map(Some).map_err(Self::map_error)
+            }
+            keychain::SecretLookup::Missing => Ok(None),
+        }
     }
 
     fn persist_last_recovery_test(storage: &AccountStorage, tested_at: &str) -> BackendResult<()> {
         keychain::store_secret(&Self::recovery_test_key(storage), tested_at.as_bytes())
-            .map_err(Self::map_error)
+            .map_err(Self::map_secure_storage_error)
     }
 
     fn account_registry_key(&self) -> String {
@@ -2769,18 +2772,24 @@ impl MatrixBackend {
         }
     }
 
-    fn load_registry(&self) -> BackendResult<AccountRegistry> {
+    fn load_registry_if_present(&self) -> BackendResult<Option<AccountRegistry>> {
         let key = self.account_registry_key();
-        if !keychain::secret_exists(&key) {
-            return Ok(AccountRegistry::default());
+        match keychain::lookup_secret(&key).map_err(Self::map_secure_storage_error)? {
+            keychain::SecretLookup::Found(serialized) => serde_json::from_slice(&serialized)
+                .map(Some)
+                .map_err(Self::map_error),
+            keychain::SecretLookup::Missing => Ok(None),
         }
-        let serialized = keychain::load_secret(&key).map_err(Self::map_error)?;
-        serde_json::from_slice(&serialized).map_err(Self::map_error)
+    }
+
+    fn load_registry(&self) -> BackendResult<AccountRegistry> {
+        Ok(self.load_registry_if_present()?.unwrap_or_default())
     }
 
     fn persist_registry(&self, registry: &AccountRegistry) -> BackendResult<()> {
         let serialized = serde_json::to_vec(registry).map_err(Self::map_error)?;
-        keychain::store_secret(&self.account_registry_key(), &serialized).map_err(Self::map_error)
+        keychain::store_secret(&self.account_registry_key(), &serialized)
+            .map_err(Self::map_secure_storage_error)
     }
 
     fn remember_account(
@@ -2821,11 +2830,11 @@ impl MatrixBackend {
     }
 
     fn active_storage_from_registry(&self) -> BackendResult<AccountStorage> {
-        let registry_exists = keychain::secret_exists(&self.account_registry_key());
-        let registry = self.load_registry()?;
-        match registry.active_profile_id.as_deref() {
-            Some(profile_id) => Ok(self.storage_for_profile(profile_id)),
-            None if registry_exists => Err(BackendError::NotAuthenticated),
+        match self.load_registry_if_present()? {
+            Some(registry) => match registry.active_profile_id.as_deref() {
+                Some(profile_id) => Ok(self.storage_for_profile(profile_id)),
+                None => Err(BackendError::NotAuthenticated),
+            },
             None => Ok(self.storage_for_profile("default")),
         }
     }
@@ -3227,6 +3236,12 @@ impl MatrixBackend {
 
     fn map_error(error: impl std::fmt::Display) -> BackendError {
         BackendError::from_sdk_error(error)
+    }
+
+    fn map_secure_storage_error(error: impl std::fmt::Display) -> BackendError {
+        BackendError::Crypto(format!(
+            "the operating-system secure store is unavailable or corrupt: {error}"
+        ))
     }
 
     fn normalize_display_name(display_name: &str) -> BackendResult<String> {
@@ -4084,14 +4099,14 @@ impl MatrixBackend {
 
     fn load_or_create_store_passphrase(storage: &AccountStorage) -> BackendResult<String> {
         let key = Self::store_passphrase_key(storage);
-        if keychain::secret_exists(&key) {
-            let bytes = keychain::load_secret(&key).map_err(Self::map_error)?;
-            return Ok(BASE64.encode(bytes));
+        match keychain::lookup_secret(&key).map_err(Self::map_secure_storage_error)? {
+            keychain::SecretLookup::Found(bytes) => return Ok(BASE64.encode(bytes)),
+            keychain::SecretLookup::Missing => {}
         }
 
         let mut bytes = [0_u8; 32];
         rand::thread_rng().fill_bytes(&mut bytes);
-        keychain::store_secret(&key, &bytes).map_err(Self::map_error)?;
+        keychain::store_secret(&key, &bytes).map_err(Self::map_secure_storage_error)?;
         Ok(BASE64.encode(bytes))
     }
 
@@ -4159,7 +4174,8 @@ impl MatrixBackend {
             },
         };
         let serialized = serde_json::to_vec(&value).map_err(Self::map_error)?;
-        keychain::store_secret(&Self::session_key(storage), &serialized).map_err(Self::map_error)
+        keychain::store_secret(&Self::session_key(storage), &serialized)
+            .map_err(Self::map_secure_storage_error)
     }
 
     fn persist_oauth_session(
@@ -4175,7 +4191,8 @@ impl MatrixBackend {
             },
         };
         let serialized = serde_json::to_vec(&value).map_err(Self::map_error)?;
-        keychain::store_secret(&Self::session_key(storage), &serialized).map_err(Self::map_error)
+        keychain::store_secret(&Self::session_key(storage), &serialized)
+            .map_err(Self::map_secure_storage_error)
     }
 
     fn rollback_unregistered_oauth_storage(&self, storage: &AccountStorage) -> BackendResult<()> {
@@ -4188,8 +4205,8 @@ impl MatrixBackend {
     }
 
     fn load_session(&self, storage: &AccountStorage) -> BackendResult<PersistedSession> {
-        let serialized =
-            keychain::load_secret(&Self::session_key(storage)).map_err(Self::map_error)?;
+        let serialized = keychain::load_secret(&Self::session_key(storage))
+            .map_err(Self::map_secure_storage_error)?;
         Self::decode_persisted_session(&serialized)
     }
 
@@ -5542,8 +5559,13 @@ impl MeshBackend for MatrixBackend {
             Err(BackendError::NotAuthenticated) => return Ok(()),
             Err(error) => return Err(error),
         };
-        if keychain::secret_exists(&Self::session_key(&storage)) {
-            self.restore_session().await?;
+        match keychain::lookup_secret(&Self::session_key(&storage))
+            .map_err(Self::map_secure_storage_error)?
+        {
+            keychain::SecretLookup::Found(_) => {
+                self.restore_session().await?;
+            }
+            keychain::SecretLookup::Missing => {}
         }
         Ok(())
     }
@@ -6126,8 +6148,8 @@ impl MeshBackend for MatrixBackend {
         }
         self.stop_runtime().await;
         let session_key = Self::session_key(&storage);
-        if keychain::secret_exists(&session_key) {
-            keychain::delete_secret(&session_key).map_err(Self::map_error)?;
+        if keychain::try_secret_exists(&session_key).map_err(Self::map_secure_storage_error)? {
+            keychain::delete_secret(&session_key).map_err(Self::map_secure_storage_error)?;
         }
         let mut registry = self.load_registry()?;
         registry
@@ -6272,14 +6294,14 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn remove_local_account(&self) -> BackendResult<()> {
-        let profile_id = self
-            .runtime
-            .read()
-            .await
-            .profile_id
-            .clone()
-            .or_else(|| self.load_registry().ok()?.active_profile_id)
-            .unwrap_or_else(|| "default".into());
+        let runtime_profile_id = self.runtime.read().await.profile_id.clone();
+        let profile_id = match runtime_profile_id {
+            Some(profile_id) => profile_id,
+            None => self
+                .load_registry()?
+                .active_profile_id
+                .unwrap_or_else(|| "default".into()),
+        };
         let storage = self.storage_for_profile(&profile_id);
         let plan = self.local_account_removal_plan(&storage)?;
         let client = self.stop_runtime().await;
@@ -6423,7 +6445,7 @@ impl MeshBackend for MatrixBackend {
             .clone()
             .ok_or(BackendError::NotAuthenticated)?;
         let storage = self.storage_for_profile(&profile_id);
-        let last_successful_test_at = Self::load_last_recovery_test(&storage);
+        let last_successful_test_at = Self::load_last_recovery_test(&storage)?;
         let recovery_test_is_fresh = last_successful_test_at
             .as_deref()
             .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
@@ -10168,6 +10190,14 @@ mod tests {
             true,
         )
         .is_ok());
+    }
+
+    #[test]
+    fn secure_store_failures_use_the_typed_crypto_boundary() {
+        let error = MatrixBackend::map_secure_storage_error("credential store is locked");
+
+        assert!(matches!(error, BackendError::Crypto(_)));
+        assert!(error.to_string().contains("secure store is unavailable"));
     }
 
     #[test]

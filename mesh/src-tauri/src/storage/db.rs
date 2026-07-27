@@ -786,13 +786,14 @@ impl Database {
 fn derive_database_key_hex() -> anyhow::Result<String> {
     const DB_MASTER_SECRET_NAME: &str = "mesh_db_master_secret";
 
-    let master_secret = if keychain::secret_exists(DB_MASTER_SECRET_NAME) {
-        keychain::load_secret(DB_MASTER_SECRET_NAME)?
-    } else {
-        let mut secret = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut secret);
-        keychain::store_secret(DB_MASTER_SECRET_NAME, &secret)?;
-        secret.to_vec()
+    let master_secret = match keychain::lookup_secret(DB_MASTER_SECRET_NAME)? {
+        keychain::SecretLookup::Found(secret) => secret,
+        keychain::SecretLookup::Missing => {
+            let mut secret = [0u8; 32];
+            rand::thread_rng().fill_bytes(&mut secret);
+            keychain::store_secret(DB_MASTER_SECRET_NAME, &secret)?;
+            secret.to_vec()
+        }
     };
 
     let hk = Hkdf::<Sha256>::new(Some(b"mesh-db-salt"), &master_secret);

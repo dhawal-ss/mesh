@@ -57,8 +57,8 @@ impl Identity {
     }
 
     /// Check if a keypair already exists in the keychain.
-    pub fn exists() -> bool {
-        crate::crypto::keychain::secret_exists("identity_private_key")
+    pub fn exists() -> anyhow::Result<bool> {
+        crate::crypto::keychain::try_secret_exists("identity_private_key")
     }
 
     /// Get the raw private key bytes (for seeding the libp2p keypair).
