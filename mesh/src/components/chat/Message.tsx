@@ -1,4 +1,4 @@
-import { memo, useState, useEffect, useCallback } from 'react'
+import { memo, useState, useEffect, useCallback, useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { Message as MessageType } from '../../types/ipc'
 import { Avatar } from '../ui/Avatar'
@@ -42,6 +42,7 @@ export const MessageComponent = memo(function MessageComponent({
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState('')
   const [confirmBan, setConfirmBan] = useState(false)
+  const rowRef = useRef<HTMLDivElement>(null)
   const matrixMode = bridge.isMatrixBackend()
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
   const communityMembers = useCommunityMembers(activeCommunityId)
@@ -61,18 +62,42 @@ export const MessageComponent = memo(function MessageComponent({
 
   useEffect(() => {
     if (!contextMenu) return
-    const handleClick = () => {
+    const closeMenu = () => {
       setContextMenu(null)
       setConfirmBan(false)
     }
+    const handleClick = () => closeMenu()
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      closeMenu()
+      // A keyboard user opened this from the row (or one of its buttons);
+      // send focus back there instead of dropping it to the document body.
+      rowRef.current?.focus()
+    }
     window.addEventListener('click', handleClick)
-    return () => window.removeEventListener('click', handleClick)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('click', handleClick)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
   }, [contextMenu])
 
   const handleContextMenu = (e: React.MouseEvent) => {
     if (limitedActions && !isOwnMessage) return
     e.preventDefault()
     setContextMenu({ x: e.clientX, y: e.clientY })
+    setConfirmBan(false)
+  }
+
+  // The `contextmenu` DOM event only fires from a mouse right-click, so the
+  // ContextMenu key / Shift+F10 (the standard keyboard equivalent) needs its
+  // own handler. It reuses the row's own position rather than a click point.
+  const handleRowKeyDown = (e: React.KeyboardEvent) => {
+    if (limitedActions && !isOwnMessage) return
+    if (e.key !== 'ContextMenu' && !(e.key === 'F10' && e.shiftKey)) return
+    e.preventDefault()
+    const rect = e.currentTarget.getBoundingClientRect()
+    setContextMenu({ x: rect.right - 208, y: rect.top - 8 })
     setConfirmBan(false)
   }
 
@@ -193,10 +218,16 @@ export const MessageComponent = memo(function MessageComponent({
     }
   }
 
+  const messageAriaLabel = `Message from ${message.authorDisplayName}, ${formatFederatedTimestamp(message.timestamp, 'MM/dd/yyyy h:mm a')}`
+
   return (
     <>
       <div
-        className={`group relative flex gap-4 py-0.5 pl-message-gutter pr-12 hover:bg-bg-modifier-hover ${
+        ref={rowRef}
+        role="group"
+        aria-label={messageAriaLabel}
+        tabIndex={-1}
+        className={`group relative flex gap-4 py-0.5 pl-message-gutter pr-12 outline-none hover:bg-bg-modifier-hover ${
           !isGrouped ? 'mt-message-group' : ''
         }`}
         onMouseEnter={() => setHovered(true)}
@@ -205,6 +236,7 @@ export const MessageComponent = memo(function MessageComponent({
           setShowReactions(false)
         }}
         onContextMenu={handleContextMenu}
+        onKeyDown={handleRowKeyDown}
       >
         {/* Avatar — absolute positioned in left gutter */}
         <div className="absolute left-4 top-0.5 w-10">
@@ -334,22 +366,26 @@ export const MessageComponent = memo(function MessageComponent({
           )}
         </div>
 
-        {/* Hover action bar */}
-        {hovered && !contextMenu && !isEditing && !isDeleted && (
+        {/* Action bar — always mounted (not just on hover) so Tab can reach it;
+            group-hover/group-focus-within reveal it visually, matching the
+            volume-slider pattern in VoicePeerGrid.tsx. pointer-events-none at
+            rest keeps the invisible bar from intercepting clicks meant for
+            the grouped message rendered underneath it (-top-4 overlap). */}
+        {!contextMenu && !isEditing && !isDeleted && (
           <div
-            className="absolute -top-4 right-4 z-sticky flex items-center rounded-md border border-border bg-bg-secondary shadow-elevation-high"
+            className="pointer-events-none absolute -top-4 right-4 z-sticky flex items-center rounded-md border border-border bg-bg-secondary opacity-0 shadow-elevation-high transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
           >
             <button
               onClick={() => setShowReactions(!showReactions)}
-              className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary"
-              aria-label="Add reaction"
+              className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              aria-label={`React to message from ${message.authorDisplayName}`}
             >
               <Icon name="smile" size="sm" />
             </button>
             {isOwnMessage && (
               <button
                 onClick={handleStartEdit}
-                className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary"
+                className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                 aria-label="Edit message"
               >
                 <Icon name="squarePen" size="sm" />
@@ -358,8 +394,8 @@ export const MessageComponent = memo(function MessageComponent({
             {onReply && (
               <button
                 onClick={() => onReply(message)}
-                className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary"
-                aria-label="Reply"
+                className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                aria-label={`Reply to ${message.authorDisplayName}`}
               >
                 <Icon name="reply" size="sm" />
               </button>
