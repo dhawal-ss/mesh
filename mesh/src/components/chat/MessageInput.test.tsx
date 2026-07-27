@@ -196,6 +196,58 @@ describe('MessageInput attachment UX', () => {
     expect(bridge.discardStagedAttachment).toHaveBeenCalledWith('token-2')
   })
 
+  it('reuses the original transfer id on retry but mints a fresh one for a new attachment', async () => {
+    let transferIdCounter = 0
+    vi.spyOn(bridge, 'createMatrixTransferId').mockImplementation(() => `transfer-${++transferIdCounter}`)
+
+    let attempt = 0
+    const transferIdsByAttempt: Array<Array<string | undefined>> = []
+    const onSend = vi.fn(async (
+      _content: string,
+      files: StagedFile[],
+      onAttachmentSent?: (file: StagedFile, contentConsumed: boolean) => void | Promise<void>,
+    ) => {
+      attempt += 1
+      transferIdsByAttempt.push(files.map((file) => file.transferId))
+      if (attempt === 1) {
+        // The upload finished server-side, but the client never received the
+        // success response (dropped connection, app killed mid-flight, etc).
+        throw new Error('response lost after upload completed')
+      }
+      for (const file of files) await onAttachmentSent?.(file, true)
+    })
+
+    const textarea = await render(onSend)
+    await paste(textarea, [clipboardFile('proof.png', 'image/png', [1, 2, 3])])
+
+    await act(async () => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await flushAsyncWork()
+    })
+    expect(onSend).toHaveBeenCalledOnce()
+    expect(container.textContent).toContain('proof.png')
+
+    // A second, unrelated attachment staged before the retry must still mint
+    // its own id rather than inheriting the retried one.
+    await paste(textarea, [clipboardFile('unrelated.png', 'image/png', [4, 5])])
+
+    await act(async () => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await flushAsyncWork()
+    })
+    expect(onSend).toHaveBeenCalledTimes(2)
+
+    const [firstAttemptIds, retryIds] = transferIdsByAttempt
+    expect(firstAttemptIds).toHaveLength(1)
+    expect(firstAttemptIds[0]).toBeDefined()
+    expect(retryIds).toHaveLength(2)
+    expect(retryIds[0]).toBe(firstAttemptIds[0])
+    expect(retryIds[1]).not.toBe(firstAttemptIds[0])
+    // One id minted per distinct attachment (at staging time), not one per
+    // handleSubmit call -- proves the retry reused rather than regenerated.
+    expect(bridge.createMatrixTransferId).toHaveBeenCalledTimes(2)
+  })
+
   it('removes the last pending attachment with Escape when the message is empty', async () => {
     const textarea = await render()
     await paste(textarea, [clipboardFile('screen.png', 'image/png', [1, 2])])
