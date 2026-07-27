@@ -11,7 +11,12 @@ export type VoiceServiceStatus = { provider: VoiceProvider, availability: VoiceS
 
 export type BackendCapabilities = { encryptedText: boolean, encryptedAttachments: boolean, directMessages: boolean, voice: boolean, durableTimeouts: boolean, deviceManagement: boolean, recovery: boolean, legacyMigration: boolean, };
 
-export type BackendStatus = { kind: BackendKind, capabilities: BackendCapabilities, voiceService: VoiceServiceStatus, authenticated: boolean, userId: string | null, deviceId: string | null, homeserver: string | null, syncRunning: boolean, durableHistory: boolean, endToEndEncryption: boolean, warnings: Array<string>, };
+export type BackendStatus = { kind: BackendKind, capabilities: BackendCapabilities, voiceService: VoiceServiceStatus, authenticated: boolean, userId: string | null, deviceId: string | null, homeserver: string | null,
+/**
+ * True only when the sync worker is alive and has received a successful
+ * response within the backend's freshness window.
+ */
+syncRunning: boolean, durableHistory: boolean, endToEndEncryption: boolean, warnings: Array<string>, };
 
 export type MatrixNotification = { roomId: string, eventId: string, sender: string, displayName: string, preview: string, isMention: boolean, isDm: boolean, avatarUrl: string | null, };
 
