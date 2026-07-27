@@ -155,6 +155,17 @@ const MAX_THUMBNAIL_DECODE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_THUMBNAIL_DIMENSION: u32 = 512;
 const MAX_THUMBNAIL_BYTES: usize = 2 * 1024 * 1024;
 const MEDIA_DOWNLOAD_PROGRESS_INTERVAL_BYTES: u64 = 1024 * 1024;
+// A Content-Length hint is remote-claimed and unverified, so the initial
+// allocation it sizes must stay modest regardless of what the header claims
+// (a lying server can otherwise force a large up-front allocation per
+// concurrent download). Real growth still happens via normal Vec
+// reallocation as bytes actually arrive.
+const MEDIA_DOWNLOAD_INITIAL_CAPACITY_BYTES: u64 = 1024 * 1024;
+const MEDIA_DOWNLOAD_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+// A read/idle timeout, not a total-transfer timeout: it fires only when no
+// bytes arrive for this long, so a large-but-healthy download near the byte
+// cap isn't penalized for taking a while overall.
+const MEDIA_DOWNLOAD_READ_TIMEOUT: Duration = Duration::from_secs(30);
 const DIRECT_ACCOUNT_DATA_MERGE_ATTEMPTS: usize = 3;
 const MATRIX_RTC_SLOT_ID: &str = "m.call#ROOM";
 const MATRIX_RTC_TRANSPORTS_PATH: &str =
@@ -5611,8 +5622,10 @@ impl MatrixBackend {
     /// the running count of the live stream: the loop stops pulling the moment
     /// it is crossed, before the payload is materialised. `size_hint` (e.g. a
     /// transport `Content-Length`) only sizes the initial allocation and is
-    /// clamped to `limit`; the cap is still enforced against real bytes as
-    /// they arrive regardless of what the hint claims.
+    /// clamped to `limit` and, since the hint itself is an unverified remote
+    /// claim, to `MEDIA_DOWNLOAD_INITIAL_CAPACITY_BYTES`; the cap is still
+    /// enforced against real bytes as they arrive regardless of what the hint
+    /// claims.
     async fn collect_bounded_media(
         source: &mut dyn MediaChunkSource,
         limit: u64,
@@ -5620,7 +5633,9 @@ impl MatrixBackend {
         on_progress: &mut (dyn FnMut(u64) + Send),
     ) -> BackendResult<Vec<u8>> {
         let mut buffer = match size_hint {
-            Some(hint) => Vec::with_capacity(hint.min(limit) as usize),
+            Some(hint) => Vec::with_capacity(
+                hint.min(limit).min(MEDIA_DOWNLOAD_INITIAL_CAPACITY_BYTES) as usize,
+            ),
             None => Vec::new(),
         };
         let mut received = 0_u64;
@@ -5691,6 +5706,8 @@ impl MatrixBackend {
         )?;
         let http = reqwest::Client::builder()
             .min_tls_version(reqwest::tls::Version::TLS_1_2)
+            .connect_timeout(MEDIA_DOWNLOAD_CONNECT_TIMEOUT)
+            .read_timeout(MEDIA_DOWNLOAD_READ_TIMEOUT)
             .build()
             .map_err(|error| BackendError::Network(error.to_string()))?;
         let response = http
