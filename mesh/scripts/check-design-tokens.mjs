@@ -222,10 +222,10 @@ const requiredSemanticColorChannels = [
   '--content-secondary-rgb',
   '--content-muted-rgb',
   '--content-on-accent-rgb',
-  '--success-rgb',
-  '--danger-rgb',
-  '--warning-rgb',
-  '--info-rgb',
+  '--status-success-rgb',
+  '--status-danger-rgb',
+  '--status-warning-rgb',
+  '--status-info-rgb',
 ]
 
 for (const variable of requiredSemanticColorChannels) {

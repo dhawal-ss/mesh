@@ -823,7 +823,6 @@ function MessageInputContent({
               : slashSuggestions.length > 0
                 ? `slash-suggestions-${channelId}`
                 : undefined}
-            aria-expanded={mentionSuggestions.length > 0 || slashSuggestions.length > 0}
             aria-activedescendant={mentionSuggestions.length > 0
               ? `mention-suggestion-${channelId}-${activeMentionIndex}`
               : slashSuggestions.length > 0

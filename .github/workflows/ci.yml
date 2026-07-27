@@ -161,6 +161,6 @@ jobs:
         working-directory: mesh
         run: npm run e2e:install -- --with-deps
 
-      - name: Run browser E2E tests
+      - name: Run browser E2E tests and WCAG scans
         working-directory: mesh
         run: npm run e2e

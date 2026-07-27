@@ -35,10 +35,14 @@
   --danger-rgb: 218 55 60;
   --warning-rgb: 240 178 50;
   --info-rgb: 88 101 242;
+  --status-success-rgb: 110 231 183;
+  --status-danger-rgb: 254 195 207;
+  --status-warning-rgb: var(--warning-rgb);
+  --status-info-rgb: var(--link-rgb);
   --scrollbar-rgb: 26 27 30;
   --scrollbar-hover-rgb: 39 41 45;
   --accent-content-rgb: var(--gray-0-rgb);
-  --content-on-status-rgb: var(--gray-11-rgb);
+  --content-on-status-rgb: var(--gray-0-rgb);
   --offline-rgb: var(--gray-8-rgb);
   --avatar-sand-rgb: 200 184 154;
   --avatar-blue-rgb: 96 165 250;
@@ -143,10 +147,10 @@
   --accent: rgb(var(--accent-rgb));
   --accent-hover: rgb(var(--accent-hover-rgb));
   --accent-muted: rgb(var(--accent-muted-rgb));
-  --status-success: rgb(var(--success-rgb));
-  --status-danger: rgb(var(--danger-rgb));
-  --status-warning: rgb(var(--warning-rgb));
-  --status-info: rgb(var(--info-rgb));
+  --status-success: rgb(var(--status-success-rgb));
+  --status-danger: rgb(var(--status-danger-rgb));
+  --status-warning: rgb(var(--status-warning-rgb));
+  --status-info: rgb(var(--status-info-rgb));
   --scrollbar: rgb(var(--scrollbar-rgb));
   --scrollbar-hover: rgb(var(--scrollbar-hover-rgb));
 
@@ -304,6 +308,9 @@
   --content-muted-rgb: var(--light-content-muted-rgb);
   --border-default-rgb: var(--light-border-default-rgb);
   --border-emphasis-rgb: var(--light-border-emphasis-rgb);
+  --status-success-rgb: 4 120 87;
+  --status-danger-rgb: 190 24 60;
+  --status-info-rgb: 37 99 235;
   --white-rgb: var(--contrast-black-rgb);
   --black-rgb: var(--contrast-black-rgb);
   --content-on-status-rgb: var(--contrast-white-rgb);
