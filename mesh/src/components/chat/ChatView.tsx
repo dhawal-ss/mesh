@@ -577,7 +577,13 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
     setReplyingTo(null)
 
     try {
-      const msg = await bridge.sendMessage(channel.id, content, [], replyingTo?.id ?? undefined)
+      const msg = await bridge.sendMessage(
+        channel.id,
+        content,
+        [],
+        replyingTo?.id ?? undefined,
+        optimisticId,
+      )
       removeMessage(channel.id, optimisticId)
       if (hydratingLatestRef.current) {
         bufferedMessagesRef.current.push({ ...msg, deliveryStatus: 'sent' })
@@ -598,7 +604,10 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
       useIdentityStore.getState().identity,
       matrixMode ? bridge.getMatrixUserId() : null,
     )
-    const retryId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    // Reuse the failed optimistic ID as the Matrix transaction ID. If the
+    // first request was accepted but its response was lost, Matrix returns
+    // the original event instead of publishing a duplicate on retry.
+    const retryId = failedMessage.id
 
     const optimistic: MessageType = {
       id: retryId,
@@ -623,6 +632,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
         failedMessage.content,
         [],
         failedMessage.replyToId ?? undefined,
+        retryId,
       )
       removeMessage(channel.id, retryId)
       if (hydratingLatestRef.current) {

@@ -3,6 +3,9 @@ import { invoke, isTauri } from '@tauri-apps/api/core'
 import {
   getMatrixRoomNotificationMode,
   matrixGetProfile,
+  matrixLogout,
+  matrixSendMessage,
+  sendDm,
   matrixUpdateProfileDisplayName,
 } from './bridge'
 
@@ -69,5 +72,27 @@ describe('bridge IPC resilience', () => {
       code: 'network_unavailable',
     })
     expect(invokeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('carries stable delivery identifiers through message mutations', async () => {
+    const message = { id: '$event:example.org' }
+    invokeMock.mockResolvedValue(message as never)
+
+    await matrixSendMessage('!room:example.org', 'hello', undefined, 'pending-123')
+    expect(invokeMock).toHaveBeenLastCalledWith('matrix_send_message', {
+      roomId: '!room:example.org',
+      body: 'hello',
+      replyToId: undefined,
+      transactionId: 'pending-123',
+    })
+
+    await matrixLogout()
+    await sendDm('@bob:example.org', 'hello', undefined, 'dm-123')
+    expect(invokeMock).toHaveBeenLastCalledWith('matrix_send_dm', {
+      recipientUserId: '@bob:example.org',
+      body: 'hello',
+      replyToId: undefined,
+      transactionId: 'dm-123',
+    })
   })
 })

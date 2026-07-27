@@ -187,7 +187,12 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
 
     let dm_body = format!("dm-online-{nonce}");
     let dm_message = alice
-        .send_dm(bob_user.clone(), dm_body.clone(), None)
+        .send_dm(
+            bob_user.clone(),
+            dm_body.clone(),
+            None,
+            uuid::Uuid::new_v4().to_string(),
+        )
         .await
         .unwrap();
     tokio::time::sleep(Duration::from_secs(2)).await;
@@ -206,6 +211,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
             alice_user.clone(),
             dm_reply_body.clone(),
             Some(dm_message.id.clone()),
+            uuid::Uuid::new_v4().to_string(),
         )
         .await
         .unwrap();
@@ -378,7 +384,12 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
     assert!(alice.set_dm_blocked(bob_user.clone(), true).await.unwrap());
     assert!(alice.dm_blocked(bob_user.clone()).await.unwrap());
     assert!(alice
-        .send_dm(bob_user.clone(), "blocked-dm".into(), None)
+        .send_dm(
+            bob_user.clone(),
+            "blocked-dm".into(),
+            None,
+            uuid::Uuid::new_v4().to_string(),
+        )
         .await
         .is_err());
     assert!(!alice.set_dm_blocked(bob_user.clone(), false).await.unwrap());
@@ -584,7 +595,12 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
 
     let online_body = format!("online-{nonce}");
     let online_message = alice
-        .send_message(community.channel_id.clone(), online_body.clone(), None)
+        .send_message(
+            community.channel_id.clone(),
+            online_body.clone(),
+            None,
+            uuid::Uuid::new_v4().to_string(),
+        )
         .await
         .unwrap();
     tokio::time::sleep(Duration::from_secs(2)).await;
@@ -660,6 +676,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
             community.channel_id.clone(),
             reply_body.clone(),
             Some(online_message.id.clone()),
+            uuid::Uuid::new_v4().to_string(),
         )
         .await
         .unwrap();
@@ -755,8 +772,13 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         alice.wait_for_room_update(community.channel_id.clone(), 10_000),
         async {
             tokio::time::sleep(Duration::from_millis(250)).await;
-            bob.send_message(community.channel_id.clone(), update_body, None)
-                .await
+            bob.send_message(
+                community.channel_id.clone(),
+                update_body,
+                None,
+                uuid::Uuid::new_v4().to_string(),
+            )
+            .await
         }
     );
     assert!(updated.unwrap());

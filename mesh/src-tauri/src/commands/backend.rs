@@ -633,13 +633,14 @@ pub async fn matrix_send_message(
     room_id: String,
     body: String,
     reply_to_id: Option<String>,
+    transaction_id: String,
     state: State<'_, AppState>,
 ) -> Result<MessageDto, CommandError> {
     require_matrix(&state)?;
     state
         .backend
         .backend()
-        .send_message(room_id, body, reply_to_id)
+        .send_message(room_id, body, reply_to_id, transaction_id)
         .await
         .map_err(map_error)
 }
@@ -664,6 +665,7 @@ pub async fn matrix_send_attachment(
         .send_attachment(
             room_id,
             MatrixAttachmentSendRequest {
+                transaction_id: transfer_id.clone(),
                 file_path: claimed.path(),
                 filename: claimed.filename(),
                 content_type: Some(claimed.content_type()),
@@ -788,13 +790,14 @@ pub async fn matrix_send_dm(
     recipient_user_id: String,
     body: String,
     reply_to_id: Option<String>,
+    transaction_id: String,
     state: State<'_, AppState>,
 ) -> Result<DirectMessageDto, CommandError> {
     require_matrix(&state)?;
     state
         .backend
         .backend()
-        .send_dm(recipient_user_id, body, reply_to_id)
+        .send_dm(recipient_user_id, body, reply_to_id, transaction_id)
         .await
         .map_err(map_error)
 }
@@ -819,6 +822,7 @@ pub async fn matrix_send_dm_attachment(
         .send_dm_attachment(
             recipient_user_id,
             MatrixAttachmentSendRequest {
+                transaction_id: transfer_id.clone(),
                 file_path: claimed.path(),
                 filename: claimed.filename(),
                 content_type: Some(claimed.content_type()),

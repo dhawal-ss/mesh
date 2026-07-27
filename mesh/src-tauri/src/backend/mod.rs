@@ -262,6 +262,7 @@ pub struct MatrixTransferObserver {
 }
 
 pub struct MatrixAttachmentSendRequest {
+    pub transaction_id: String,
     pub file_path: String,
     pub filename: String,
     pub content_type: Option<String>,
@@ -1105,6 +1106,7 @@ pub trait MeshBackend: Send + Sync {
         _room_id: String,
         _body: String,
         _reply_to_id: Option<String>,
+        _transaction_id: String,
     ) -> BackendResult<MessageDto> {
         Err(BackendError::Unsupported("message delivery"))
     }
@@ -1155,6 +1157,7 @@ pub trait MeshBackend: Send + Sync {
         _recipient_user_id: String,
         _body: String,
         _reply_to_id: Option<String>,
+        _transaction_id: String,
     ) -> BackendResult<DirectMessageDto> {
         Err(BackendError::Unsupported("Matrix direct messages"))
     }

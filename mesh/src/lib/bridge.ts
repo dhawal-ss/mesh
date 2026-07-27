@@ -580,8 +580,9 @@ export async function matrixSendMessage(
   roomId: string,
   body: string,
   replyToId?: string,
+  transactionId = createMatrixTransactionId(),
 ): Promise<Message> {
-  return tauriInvoke('matrix_send_message', { roomId, body, replyToId })
+  return tauriInvoke('matrix_send_message', { roomId, body, replyToId, transactionId })
 }
 
 export async function matrixSendAttachment(
@@ -609,6 +610,10 @@ export function createMatrixTransferId(): string {
   bytes[8] = (bytes[8] & 0x3f) | 0x80
   const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+export function createMatrixTransactionId(): string {
+  return createMatrixTransferId()
 }
 
 export function onMatrixTransferProgress(
@@ -928,12 +933,18 @@ export async function syncLocalChannel(
 
 // ─── Message Commands ───────────────────────────────
 
-export async function sendMessage(channelId: string, content: string, attachments: Attachment[] = [], replyToId?: string): Promise<Message> {
+export async function sendMessage(
+  channelId: string,
+  content: string,
+  attachments: Attachment[] = [],
+  replyToId?: string,
+  transactionId = createMatrixTransactionId(),
+): Promise<Message> {
   if (isMatrixBackend()) {
     if (attachments.length > 0) {
       throw new Error('Use matrixSendAttachment for encrypted Matrix media')
     }
-    return matrixSendMessage(channelId, content, replyToId)
+    return matrixSendMessage(channelId, content, replyToId, transactionId)
   }
   return tauriInvoke('send_message', { channelId, content, attachments, replyToId })
 }
@@ -1536,12 +1547,18 @@ export function onBanReceived(handler: (data: BanEvent) => void): Promise<Unlist
 
 // ─── DM Commands ────────────────────────────────────
 
-export async function sendDm(recipientPublicKey: string, content: string, replyToId?: string): Promise<DirectMessage> {
+export async function sendDm(
+  recipientPublicKey: string,
+  content: string,
+  replyToId?: string,
+  transactionId = createMatrixTransactionId(),
+): Promise<DirectMessage> {
   if (isMatrixBackend()) {
     return tauriInvoke('matrix_send_dm', {
       recipientUserId: recipientPublicKey,
       body: content,
       replyToId,
+      transactionId,
     })
   }
   return tauriInvoke('send_dm', { recipientPublicKey, content })
