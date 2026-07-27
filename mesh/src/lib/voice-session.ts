@@ -209,7 +209,14 @@ export function shortVoiceLabel(publicKey: string): string {
 }
 
 export function voiceColorForKey(publicKey: string): string {
-  const palette = ['#8d6e63', '#78909c', '#7c9d7d', '#a1887f', '#5c6bc0', '#546e7a']
+  const palette = [
+    'var(--avatar-orange)',
+    'var(--avatar-blue)',
+    'var(--avatar-green)',
+    'var(--avatar-sand)',
+    'var(--avatar-violet)',
+    'var(--avatar-cyan)',
+  ]
   let hash = 0
   for (let index = 0; index < publicKey.length; index += 1) {
     hash = (hash * 31 + publicKey.charCodeAt(index)) >>> 0

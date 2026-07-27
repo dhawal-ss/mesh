@@ -328,6 +328,17 @@
   --border-default-rgb: var(--contrast-white-rgb);
   --border-emphasis-rgb: var(--contrast-white-rgb);
   --accent-content-rgb: var(--contrast-black-rgb);
+  /* Keep initials readable when high contrast switches avatar text to black. */
+  --avatar-sand-rgb: 255 255 255;
+  --avatar-blue-rgb: 184 224 255;
+  --avatar-green-rgb: 167 243 208;
+  --avatar-red-rgb: 255 183 183;
+  --avatar-violet-rgb: 221 214 254;
+  --avatar-orange-rgb: 255 201 145;
+  --avatar-pink-rgb: 255 194 222;
+  --avatar-emerald-rgb: 167 243 208;
+  --avatar-yellow-rgb: 254 240 138;
+  --avatar-cyan-rgb: 165 243 252;
 }
 
 :root[data-accent='sand'],
