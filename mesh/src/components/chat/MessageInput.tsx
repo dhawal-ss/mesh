@@ -227,7 +227,10 @@ function MessageInputContent({
     const sendGeneration = intakeGenerationRef.current
     const filesAtStart = [...stagedFiles]
     if (bridge.isMatrixBackend()) {
-      for (const file of filesAtStart) file.transferId = bridge.createMatrixTransferId()
+      // A file keeps the transfer id it was staged with across retries, so a
+      // resend of an unresolved attachment reuses the same Matrix transaction
+      // id rather than risking a duplicate message on the server.
+      for (const file of filesAtStart) file.transferId ??= bridge.createMatrixTransferId()
       setStagedFiles([...filesAtStart])
     }
     for (const file of filesAtStart) sendingFilesRef.current.add(file)
