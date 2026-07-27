@@ -145,6 +145,7 @@ const REGISTRATION_TIMEOUT_SECONDS: u64 = 45;
 const OIDC_REDIRECT_URI: &str = "http://127.0.0.1:8418/oauth/callback";
 const OIDC_CLIENT_ID_ENV: &str = "MESH_OAUTH_CLIENT_ID";
 const MAX_MEDIA_CACHE_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES: u64 = 100 * 1024 * 1024;
 const MAX_THUMBNAIL_SOURCE_PIXELS: u64 = 25_000_000;
 const MAX_THUMBNAIL_SOURCE_DIMENSION: u32 = 16_384;
 const MAX_THUMBNAIL_DECODE_BYTES: u64 = 128 * 1024 * 1024;
@@ -5440,6 +5441,15 @@ impl MatrixBackend {
         Ok(())
     }
 
+    fn validate_attachment_size(size: u64) -> BackendResult<()> {
+        if size > MAX_ATTACHMENT_BYTES {
+            return Err(BackendError::InvalidConfiguration(
+                "attachment exceeds the 100 MB limit".into(),
+            ));
+        }
+        Ok(())
+    }
+
     fn thumbnail_image_format(content_type: &str) -> Option<image::ImageFormat> {
         match content_type.trim().to_ascii_lowercase().as_str() {
             "image/jpeg" => Some(image::ImageFormat::Jpeg),
@@ -7584,7 +7594,6 @@ impl MeshBackend for MatrixBackend {
         request: MatrixAttachmentSendRequest,
         transfer: MatrixTransferObserver,
     ) -> BackendResult<MessageDto> {
-        const MAX_ATTACHMENT_BYTES: u64 = 100 * 1024 * 1024;
         let MatrixAttachmentSendRequest {
             transaction_id,
             file_path,
@@ -7639,7 +7648,7 @@ impl MeshBackend for MatrixBackend {
                 "attachment path is not a regular file".into(),
             ));
         }
-        if metadata.len() > MAX_ATTACHMENT_BYTES {
+        if let Err(error) = Self::validate_attachment_size(metadata.len()) {
             Self::emit_transfer_progress(
                 &progress,
                 &transfer_id,
@@ -7649,9 +7658,7 @@ impl MeshBackend for MatrixBackend {
                 MatrixTransferState::Failed,
                 None,
             );
-            return Err(BackendError::InvalidConfiguration(
-                "attachment exceeds the 100 MB limit".into(),
-            ));
+            return Err(error);
         }
         let total_bytes = metadata.len();
         let cancellation = CancellationToken::new();
@@ -7699,6 +7706,7 @@ impl MeshBackend for MatrixBackend {
                     return Err(BackendError::Other("Matrix attachment upload cancelled".into()))
                 }
             };
+            Self::validate_attachment_size(data.len() as u64)?;
             let content_type_string = content_type.to_string();
             Self::validate_media_payload(&data, Some(&content_type_string), &filename)?;
             let thumbnail_content_type = content_type_string.clone();
@@ -7942,6 +7950,18 @@ impl MeshBackend for MatrixBackend {
             Self::resolve_protected_attachment(&client, &room_id, &event_id, attachment_index)
                 .await?;
         let total_bytes = (attachment.size > 0).then_some(attachment.size);
+        if let Err(error) = Self::validate_attachment_size(attachment.size) {
+            Self::emit_transfer_progress(
+                &progress,
+                &transfer_id,
+                MatrixTransferDirection::Download,
+                0,
+                total_bytes,
+                MatrixTransferState::Failed,
+                None,
+            );
+            return Err(error);
+        }
         Self::emit_transfer_progress(
             &progress,
             &transfer_id,
@@ -8013,6 +8033,7 @@ impl MeshBackend for MatrixBackend {
             }
             let received_bytes = data.len() as u64;
             transferred_bytes.store(received_bytes, Ordering::Relaxed);
+            Self::validate_attachment_size(received_bytes)?;
             Self::emit_transfer_progress(
                 &progress,
                 &transfer_id,
@@ -11204,6 +11225,17 @@ mod tests {
             "report.pdf"
         )
         .is_ok());
+    }
+
+    #[test]
+    fn matrix_attachment_size_limit_is_fail_closed() {
+        assert!(MatrixBackend::validate_attachment_size(0).is_ok());
+        assert!(MatrixBackend::validate_attachment_size(MAX_ATTACHMENT_BYTES).is_ok());
+        let error = MatrixBackend::validate_attachment_size(MAX_ATTACHMENT_BYTES + 1).unwrap_err();
+        assert!(matches!(
+            error,
+            BackendError::InvalidConfiguration(message) if message.contains("100 MB")
+        ));
     }
 
     #[test]
