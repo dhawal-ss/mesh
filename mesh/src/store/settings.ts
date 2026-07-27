@@ -65,6 +65,13 @@ export interface PrivacyPreferences {
   invisibleMode: boolean
 }
 
+export type MatrixPreferenceSyncStatus = 'idle' | 'saving' | 'saved' | 'failed'
+
+export interface MatrixPreferenceSyncState {
+  status: MatrixPreferenceSyncStatus
+  error: unknown | null
+}
+
 const PREFERENCES_SCHEMA_VERSION = 3
 const MATRIX_SAVE_DEBOUNCE_MS = 350
 const BACKUP_REMINDER_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000
@@ -94,6 +101,10 @@ const DEFAULT_PRIVACY: PrivacyPreferences = {
   sendTypingIndicators: false,
   sharePresence: false,
   invisibleMode: false,
+}
+const DEFAULT_MATRIX_PREFERENCE_SYNC: MatrixPreferenceSyncState = {
+  status: 'idle',
+  error: null,
 }
 
 const APPEARANCE_THEMES = new Set<AppearanceTheme>(['dark', 'light', 'high-contrast'])
@@ -323,6 +334,7 @@ export interface SettingsStore {
   appearance: AppearancePreferences
   backup: BackupPreferences
   privacy: PrivacyPreferences
+  matrixPreferenceSync: MatrixPreferenceSyncState
   setNotificationsEnabled: (enabled: boolean) => void
   setNotificationSound: (sound: boolean) => void
   setNotificationSoundId: (soundId: NotificationSoundId) => void
@@ -433,6 +445,7 @@ export const useSettingsStore = create<SettingsStore>()(
         dismissedAt: null,
       },
       privacy: DEFAULT_PRIVACY,
+      matrixPreferenceSync: DEFAULT_MATRIX_PREFERENCE_SYNC,
 
       setNotificationsEnabled: (enabled) =>
         set((state) => ({
@@ -676,6 +689,7 @@ export const useSettingsStore = create<SettingsStore>()(
             reminderPending: persisted.backup?.reminderPending ?? false,
             dismissedAt: persisted.backup?.dismissedAt ?? null,
           },
+          matrixPreferenceSync: DEFAULT_MATRIX_PREFERENCE_SYNC,
         }
       },
       onRehydrateStorage: () => (state) => {
@@ -708,6 +722,7 @@ let activeMatrixUserId: string | null = null
 let matrixRemoteReady = false
 let applyingRemotePreferences = false
 let localPreferenceRevision = 0
+let matrixSaveRequestId = 0
 let matrixSaveTimer: ReturnType<typeof setTimeout> | null = null
 let channelMuteTimers = new Map<string, ReturnType<typeof setTimeout>>()
 let communityMuteTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -761,14 +776,39 @@ function scheduleMuteExpiryCleanup(notifications: NotificationPreferences) {
   )
 }
 
-async function saveMatrixPreferences() {
+function currentMatrixPreferenceSnapshot() {
+  const state = useSettingsStore.getState()
+  return {
+    notifications: state.notifications,
+    privacy: state.privacy,
+  }
+}
+
+function setMatrixPreferenceSync(next: MatrixPreferenceSyncState) {
+  useSettingsStore.setState({ matrixPreferenceSync: next })
+}
+
+async function persistMatrixPreferences(
+  revision: number,
+  snapshot: ReturnType<typeof currentMatrixPreferenceSnapshot>,
+) {
   if (!matrixRemoteReady || !activeMatrixUserId || !isMatrixBackend()) return
-  await updateMatrixUserPreferences(
-    settingsToMatrixPreferences(
-      useSettingsStore.getState().notifications,
-      useSettingsStore.getState().privacy,
-    ),
-  )
+
+  const requestId = ++matrixSaveRequestId
+  setMatrixPreferenceSync({ status: 'saving', error: null })
+  try {
+    await updateMatrixUserPreferences(
+      settingsToMatrixPreferences(snapshot.notifications, snapshot.privacy),
+    )
+    if (revision === localPreferenceRevision && requestId === matrixSaveRequestId) {
+      setMatrixPreferenceSync({ status: 'saved', error: null })
+    }
+  } catch (error) {
+    if (revision === localPreferenceRevision && requestId === matrixSaveRequestId) {
+      setMatrixPreferenceSync({ status: 'failed', error })
+    }
+    throw error
+  }
 }
 
 function scheduleMatrixPreferenceSave() {
@@ -776,10 +816,22 @@ function scheduleMatrixPreferenceSave() {
   if (matrixSaveTimer) clearTimeout(matrixSaveTimer)
   matrixSaveTimer = setTimeout(() => {
     matrixSaveTimer = null
-    void saveMatrixPreferences().catch((error) => {
+    void persistMatrixPreferences(
+      localPreferenceRevision,
+      currentMatrixPreferenceSnapshot(),
+    ).catch((error) => {
       console.error('Failed to sync Matrix preferences:', error)
     })
   }, MATRIX_SAVE_DEBOUNCE_MS)
+}
+
+export async function retryMatrixPreferenceSync(): Promise<void> {
+  if (!isMatrixBackend() || !activeMatrixUserId) return
+  if (!matrixRemoteReady) {
+    await refreshMatrixPreferences(activeMatrixUserId)
+    return
+  }
+  await persistMatrixPreferences(localPreferenceRevision, currentMatrixPreferenceSnapshot())
 }
 
 /**
@@ -792,6 +844,8 @@ export async function refreshMatrixPreferences(userId: string): Promise<void> {
   if (activeMatrixUserId !== userId) {
     activeMatrixUserId = userId
     matrixRemoteReady = false
+    matrixSaveRequestId += 1
+    setMatrixPreferenceSync(DEFAULT_MATRIX_PREFERENCE_SYNC)
     if (matrixSaveTimer) {
       clearTimeout(matrixSaveTimer)
       matrixSaveTimer = null
@@ -799,7 +853,17 @@ export async function refreshMatrixPreferences(userId: string): Promise<void> {
   }
 
   const revisionAtStart = localPreferenceRevision
-  const remote = await getMatrixUserPreferences()
+  let remote: MatrixUserPreferences | null
+  try {
+    remote = await getMatrixUserPreferences()
+  } catch (error) {
+    if (activeMatrixUserId === userId) {
+      matrixSaveRequestId += 1
+      setMatrixPreferenceSync({ status: 'failed', error })
+    }
+    throw error
+  }
+  if (activeMatrixUserId !== userId) return
   const changedWhileFetching = revisionAtStart !== localPreferenceRevision
 
   if (remote && !changedWhileFetching) {
@@ -821,7 +885,9 @@ export async function refreshMatrixPreferences(userId: string): Promise<void> {
 
   matrixRemoteReady = true
   if (!remote || changedWhileFetching) {
-    await saveMatrixPreferences()
+    await persistMatrixPreferences(localPreferenceRevision, currentMatrixPreferenceSnapshot())
+  } else {
+    setMatrixPreferenceSync({ status: 'saved', error: null })
   }
 }
 
@@ -849,7 +915,10 @@ useSettingsStore.subscribe((state) => {
         clearTimeout(matrixSaveTimer)
         matrixSaveTimer = null
       }
-      void saveMatrixPreferences().catch((error) => {
+      void persistMatrixPreferences(
+        localPreferenceRevision,
+        currentMatrixPreferenceSnapshot(),
+      ).catch((error) => {
         console.error('Failed to sync Matrix privacy preferences:', error)
       })
     }

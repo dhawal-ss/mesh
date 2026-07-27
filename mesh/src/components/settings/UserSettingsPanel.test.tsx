@@ -41,6 +41,7 @@ describe('UserSettingsPanel', () => {
         sharePresence: true,
         invisibleMode: false,
       },
+      matrixPreferenceSync: { status: 'idle', error: null },
     })
   })
 
@@ -147,6 +148,36 @@ describe('UserSettingsPanel', () => {
       invisibleMode: true,
     })
     expect(document.body.textContent).toContain('No, disabled now')
+  })
+
+  it('shows when privacy settings are not confirmed and offers a retry', async () => {
+    useSettingsStore.setState({
+      matrixPreferenceSync: {
+        status: 'failed',
+        error: new Error('offline'),
+      },
+    })
+    await act(async () => {
+      root.render(
+        <UserSettingsPanel
+          open
+          onClose={() => {}}
+          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#5865f2' }}
+          matrixAccountId="@alice:example.org"
+          matrixMode
+          onOpenSecurity={() => {}}
+        />,
+      )
+    })
+
+    expect(document.body.textContent).toContain(
+      'could not confirm them on your account',
+    )
+    expect(
+      Array.from(document.body.querySelectorAll('button')).some((button) =>
+        button.textContent?.includes('Retry saving privacy settings'),
+      ),
+    ).toBe(true)
   })
 
   it('configures sound, DND, quiet hours, and sends a test notification', async () => {
