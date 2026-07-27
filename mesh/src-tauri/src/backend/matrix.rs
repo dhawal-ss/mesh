@@ -6068,7 +6068,13 @@ impl MeshBackend for MatrixBackend {
                 ));
             }
 
-            let callback = match oidc::receive_callback(listener, cancellation.clone()).await {
+            let callback = match oidc::receive_callback(
+                listener,
+                cancellation.clone(),
+                authorization.state.secret(),
+            )
+            .await
+            {
                 Ok(callback) => callback,
                 Err(oidc::CallbackError::Cancelled) => {
                     oauth.abort_login(&authorization.state).await;
