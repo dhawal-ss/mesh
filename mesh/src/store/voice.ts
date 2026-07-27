@@ -65,7 +65,7 @@ function mergePeerRecord(
     publicKey: next.publicKey,
     peerId: next.peerId ?? peer.peerId ?? next.publicKey,
     displayName: next.displayName || peer.displayName || shortVoiceLabel(next.publicKey),
-    avatarColor: next.avatarColor || peer.avatarColor || '#c8b89a',
+    avatarColor: next.avatarColor || peer.avatarColor || 'var(--avatar-sand)',
     latency: Number.isFinite(next.latency) ? next.latency : peer.latency ?? 0,
     stream: next.stream ?? (peer.stream && isStreamActive(peer.stream) ? peer.stream : undefined),
     cameraStream: mediaSnapshotIsAuthoritative ? next.cameraStream : next.cameraStream ?? peer.cameraStream,
