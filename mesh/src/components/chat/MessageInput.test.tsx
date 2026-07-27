@@ -548,6 +548,38 @@ describe('MessageInput attachment UX', () => {
     expect(onSend).toHaveBeenCalledWith('*waves*')
   })
 
+  it('makes local slash commands discoverable and keyboard-selectable', async () => {
+    const textarea = await render()
+    await setComposerValue(textarea, '/')
+
+    const listbox = container.querySelector('[role="listbox"]')
+    expect(listbox).not.toBeNull()
+    expect(listbox?.getAttribute('aria-label')).toBe('Slash commands')
+    expect(listbox?.textContent).toContain('/shrug')
+    expect(listbox?.textContent).toContain('Add a shrug to your message')
+    expect(listbox?.textContent).toContain('/me')
+
+    await act(async () => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+      await flushAsyncWork()
+    })
+    expect(container.querySelectorAll('[role="option"]')[1]?.getAttribute('aria-selected')).toBe('true')
+
+    await act(async () => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await flushAsyncWork()
+    })
+    expect(textarea.value).toBe('/me ')
+    expect(container.querySelector('[role="listbox"]')).toBeNull()
+
+    await setComposerValue(textarea, '/')
+    await act(async () => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await flushAsyncWork()
+    })
+    expect(container.querySelector('[role="listbox"]')).toBeNull()
+  })
+
   it('formats the selected draft text from the keyboard-reachable toolbar', async () => {
     const textarea = await render()
     await setComposerValue(textarea, 'hello world')

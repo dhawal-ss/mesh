@@ -1,5 +1,38 @@
 const SHRUG = '¯\\_(ツ)_/¯'
 
+export interface SlashCommand {
+  command: '/shrug' | '/me'
+  description: string
+}
+
+export const SLASH_COMMANDS: readonly SlashCommand[] = [
+  { command: '/shrug', description: 'Add a shrug to your message' },
+  { command: '/me', description: 'Send an action in italics' },
+]
+
+export interface SlashCommandContext {
+  start: number
+  end: number
+  query: string
+}
+
+export function getSlashCommandContext(value: string, cursor: number): SlashCommandContext | null {
+  const beforeCursor = value.slice(0, cursor)
+  const match = beforeCursor.match(/^\/([^\s/]*)$/)
+  if (!match) return null
+
+  return {
+    start: 0,
+    end: cursor,
+    query: match[1],
+  }
+}
+
+export function getSlashCommandSuggestions(query: string): readonly SlashCommand[] {
+  const normalizedQuery = query.toLocaleLowerCase()
+  return SLASH_COMMANDS.filter(({ command }) => command.slice(1).startsWith(normalizedQuery))
+}
+
 export type MarkdownFormat = 'bold' | 'italic' | 'strike' | 'code'
 
 const FORMAT_MARKERS: Record<MarkdownFormat, readonly [string, string]> = {
