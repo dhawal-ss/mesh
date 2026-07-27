@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 
-export const MAX_DRAFT_LENGTH = 16 * 1024
+export const MAX_DRAFT_BYTES = 16 * 1024
 const MAX_DRAFTS = 128
+const utf8Encoder = new TextEncoder()
 
 interface DraftStore {
   drafts: Record<string, string>
@@ -9,8 +10,18 @@ interface DraftStore {
   clearDraft: (channelId: string) => void
 }
 
-function normalizeDraft(value: string): string {
-  return value.slice(0, MAX_DRAFT_LENGTH)
+export function truncateDraft(value: string): string {
+  if (utf8Encoder.encode(value).byteLength <= MAX_DRAFT_BYTES) return value
+
+  const characters: string[] = []
+  let bytes = 0
+  for (const character of value) {
+    const characterBytes = utf8Encoder.encode(character).byteLength
+    if (bytes + characterBytes > MAX_DRAFT_BYTES) break
+    characters.push(character)
+    bytes += characterBytes
+  }
+  return characters.join('')
 }
 
 export const useDraftStore = create<DraftStore>((set) => ({
@@ -18,7 +29,7 @@ export const useDraftStore = create<DraftStore>((set) => ({
 
   setDraft: (channelId, value) => {
     if (!channelId) return
-    const normalized = normalizeDraft(value)
+    const normalized = truncateDraft(value)
     set((state) => {
       if (!normalized) {
         if (!(channelId in state.drafts)) return state

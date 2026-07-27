@@ -17,7 +17,7 @@ import {
 import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
 import type { MemberRecord } from '../../store/membership'
-import { MAX_DRAFT_LENGTH, useDraftStore } from '../../store/drafts'
+import { truncateDraft, useDraftStore } from '../../store/drafts'
 import {
   expandSlashCommand,
   getSlashCommandContext,
@@ -177,8 +177,13 @@ function MessageInputContent({
 
   const selectMention = (member: MemberRecord) => {
     if (!mentionContext) return
-    const nextValue = `${value.slice(0, mentionContext.start)}${member.publicKey} ${value.slice(mentionContext.end)}`
-    const nextCursor = mentionContext.start + member.publicKey.length + 1
+    const nextValue = truncateDraft(
+      `${value.slice(0, mentionContext.start)}${member.publicKey} ${value.slice(mentionContext.end)}`,
+    )
+    const nextCursor = Math.min(
+      mentionContext.start + member.publicKey.length + 1,
+      nextValue.length,
+    )
     setValue(nextValue)
     setDraft(channelId, nextValue)
     setMentionCursor(nextCursor)
@@ -244,8 +249,13 @@ function MessageInputContent({
         e.preventDefault()
         const command = slashSuggestions[activeSlashIndex]
         if (slashContext && command) {
-          const nextValue = `${value.slice(0, slashContext.start)}${command.command} ${value.slice(slashContext.end)}`
-          const nextCursor = slashContext.start + command.command.length + 1
+          const nextValue = truncateDraft(
+            `${value.slice(0, slashContext.start)}${command.command} ${value.slice(slashContext.end)}`,
+          )
+          const nextCursor = Math.min(
+            slashContext.start + command.command.length + 1,
+            nextValue.length,
+          )
           setValue(nextValue)
           setDraft(channelId, nextValue)
           setMentionCursor(nextCursor)
@@ -367,14 +377,17 @@ function MessageInputContent({
       textarea.selectionEnd,
       format,
     )
-    setValue(result.value)
-    setDraft(channelId, result.value)
-    setMentionCursor(result.selectionEnd)
+    const nextValue = truncateDraft(result.value)
+    const selectionStart = Math.min(result.selectionStart, nextValue.length)
+    const selectionEnd = Math.min(result.selectionEnd, nextValue.length)
+    setValue(nextValue)
+    setDraft(channelId, nextValue)
+    setMentionCursor(selectionEnd)
     setMentionsDismissed(true)
     setSlashDismissed(true)
     pendingSelectionRef.current = {
-      start: result.selectionStart,
-      end: result.selectionEnd,
+      start: selectionStart,
+      end: selectionEnd,
     }
   }
 
@@ -729,8 +742,13 @@ function MessageInputContent({
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => {
                     if (!slashContext) return
-                    const nextValue = `${value.slice(0, slashContext.start)}${command.command} ${value.slice(slashContext.end)}`
-                    const nextCursor = slashContext.start + command.command.length + 1
+                    const nextValue = truncateDraft(
+                      `${value.slice(0, slashContext.start)}${command.command} ${value.slice(slashContext.end)}`,
+                    )
+                    const nextCursor = Math.min(
+                      slashContext.start + command.command.length + 1,
+                      nextValue.length,
+                    )
                     setValue(nextValue)
                     setDraft(channelId, nextValue)
                     setMentionCursor(nextCursor)
@@ -792,15 +810,15 @@ function MessageInputContent({
             ref={inputRef}
             value={value}
             onChange={(e) => {
-              const nextValue = e.target.value.slice(0, MAX_DRAFT_LENGTH)
+              const nextValue = truncateDraft(e.target.value)
               setValue(nextValue)
               setDraft(channelId, nextValue)
-              setMentionCursor(e.target.selectionStart)
+              setMentionCursor(Math.min(e.target.selectionStart, nextValue.length))
               setMentionIndex(0)
               setMentionsDismissed(false)
               setSlashIndex(0)
               setSlashDismissed(false)
-              if (e.target.value.trim()) {
+              if (nextValue.trim()) {
                 broadcastTypingThrottled()
               } else {
                 bridge.setTyping(channelId, false).catch(() => {})
@@ -829,7 +847,6 @@ function MessageInputContent({
                 ? `slash-suggestion-${channelId}-${activeSlashIndex}`
                 : undefined}
             rows={1}
-            maxLength={MAX_DRAFT_LENGTH}
             disabled={disabled || isUploading || isStaging}
             className="min-h-control-lg max-h-composer w-full resize-none bg-transparent px-2 py-2.5 text-sm text-primary placeholder:text-muted focus:outline-none disabled:opacity-60"
           />
