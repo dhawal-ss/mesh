@@ -33,6 +33,8 @@ const MATRIX_BOOTSTRAP_STEPS = {
   ready: { label: 'Your conversations are ready', progress: 100 },
 } as const
 
+const MATRIX_STATUS_POLL_INTERVAL_MS = 5_000
+
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms))
 
 async function loadMatrixIdentity(
@@ -65,6 +67,14 @@ function mapNetworkState(status: { connected: boolean; peerCount: number; averag
         : 'connecting',
     peerCount: status.peerCount,
     averageLatency: status.averageLatency,
+  } as const
+}
+
+function mapMatrixNetworkState(authenticated: boolean, syncRunning: boolean) {
+  return {
+    state: !authenticated ? 'connecting' : syncRunning ? 'connected' : 'disconnected',
+    peerCount: 0,
+    averageLatency: 0,
   } as const
 }
 
@@ -146,16 +156,53 @@ export default function App() {
   }, [isTauriRuntime, setActiveCommunity, setCommunities, setIdentity, setLoading])
 
   useEffect(() => {
-    if (!isTauriRuntime) {
+    if (!isTauriRuntime || backendStatus?.kind !== 'matrix') {
       return
     }
 
-    if (backendStatus?.kind === 'matrix') {
-      setNetworkStatus({
-        state: backendStatus.authenticated && backendStatus.syncRunning ? 'connected' : 'connecting',
-        peerCount: 0,
-        averageLatency: 0,
-      })
+    setNetworkStatus(mapMatrixNetworkState(backendStatus.authenticated, backendStatus.syncRunning))
+  }, [backendStatus?.authenticated, backendStatus?.kind, backendStatus?.syncRunning, isTauriRuntime, setNetworkStatus])
+
+  useEffect(() => {
+    if (!isTauriRuntime || backendStatus?.kind !== 'matrix') {
+      return
+    }
+
+    let alive = true
+    const unregisterPoll = registerPoll({
+      key: 'matrix-backend-status',
+      intervalMs: MATRIX_STATUS_POLL_INTERVAL_MS,
+      pauseWhenHidden: true,
+      backoffOnError: true,
+      run: async () => {
+        try {
+          const nextStatus = await bridge.getBackendStatus()
+          if (alive) {
+            setBackendStatus(nextStatus)
+          }
+        } catch (error) {
+          if (alive) {
+            setNetworkStatus({
+              state: 'disconnected',
+              peerCount: 0,
+              averageLatency: 0,
+            })
+            console.warn('Could not refresh connection status; Mesh will retry.', error)
+          }
+          throw error
+        }
+      },
+    })
+
+    return () => {
+      alive = false
+      unregisterPoll()
+    }
+  }, [backendStatus?.kind, isTauriRuntime, setNetworkStatus])
+
+  useEffect(() => {
+    if (!isTauriRuntime) {
+      return
     }
 
     const communityIds = communityIdsKey ? communityIdsKey.split('\u0000') : []
@@ -195,12 +242,10 @@ export default function App() {
     }
   }, [
     activeCommunityId,
-    backendStatus,
     communityIdsKey,
     isTauriRuntime,
     setActiveChannel,
     setChannels,
-    setNetworkStatus,
   ])
 
   useEffect(() => {
@@ -228,7 +273,7 @@ export default function App() {
       alive = false
       unregisterPoll()
     }
-  }, [backendStatus, isTauriRuntime])
+  }, [backendStatus?.authenticated, backendStatus?.kind, backendStatus?.userId, isTauriRuntime])
 
   useEffect(() => {
     if (!isTauriRuntime) {

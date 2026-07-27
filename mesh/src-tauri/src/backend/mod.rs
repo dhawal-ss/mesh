@@ -305,6 +305,8 @@ pub struct BackendStatus {
     pub user_id: Option<String>,
     pub device_id: Option<String>,
     pub homeserver: Option<String>,
+    /// True only when the sync worker is alive and has received a successful
+    /// response within the backend's freshness window.
     pub sync_running: bool,
     pub durable_history: bool,
     pub end_to_end_encryption: bool,

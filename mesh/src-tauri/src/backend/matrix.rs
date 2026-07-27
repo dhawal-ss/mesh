@@ -169,6 +169,8 @@ const MATRIX_RTC_KEY_LEASE_TTL: Duration = Duration::from_secs(3);
 const MATRIX_RTC_COMPLETED_ACTIVATION_TTL: Duration = Duration::from_secs(60);
 const MATRIX_SYNC_NORMAL_TIMEOUT: Duration = Duration::from_secs(30);
 const MATRIX_RTC_SYNC_TIMEOUT: Duration = Duration::from_secs(1);
+const MATRIX_SYNC_STATUS_FRESHNESS: Duration = Duration::from_secs(90);
+const MATRIX_SYNC_RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
 // With a three-second renderer lease, accepting only a sync completion from
 // the last two seconds bounds publication after the last successful `/sync`
 // response to five seconds.
@@ -4424,6 +4426,17 @@ impl MatrixBackend {
         true
     }
 
+    fn matrix_sync_is_fresh(last_success_ms: u64, now_ms: u64) -> bool {
+        last_success_ms != 0
+            && now_ms.saturating_sub(last_success_ms)
+                <= MATRIX_SYNC_STATUS_FRESHNESS.as_millis() as u64
+    }
+
+    fn matrix_sync_retry_delay(failure_count: u32) -> Duration {
+        let exponent = failure_count.saturating_sub(1).min(5);
+        Duration::from_secs(1_u64 << exponent).min(MATRIX_SYNC_RETRY_MAX_DELAY)
+    }
+
     fn spawn_matrix_sync(
         client: Client,
         cadence: MatrixSyncCadence,
@@ -4432,50 +4445,70 @@ impl MatrixBackend {
         freshness: Arc<StdMutex<MatrixSyncFreshness>>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            let callback_freshness = Arc::clone(&freshness);
-            let result = client
-                .sync_with_result_callback(
-                    SyncSettings::default()
-                        .timeout(cadence.timeout())
-                        .set_presence(presence),
-                    move |result| {
-                        let freshness = Arc::clone(&callback_freshness);
-                        async move {
-                            if freshness
-                                .lock()
-                                .expect("Matrix sync freshness lock poisoned")
-                                .epoch
-                                != task_epoch
-                            {
-                                return Ok(LoopCtrl::Break);
-                            }
-                            match result {
-                                Ok(_) => {
-                                    if Self::record_matrix_sync_success(
-                                        &freshness,
-                                        task_epoch,
-                                        Self::matrix_rtc_monotonic_now_ms(),
-                                    ) {
-                                        Ok(LoopCtrl::Continue)
-                                    } else {
-                                        Ok(LoopCtrl::Break)
-                                    }
+            let mut failure_count: u32 = 0;
+            loop {
+                let callback_freshness = Arc::clone(&freshness);
+                let result = client
+                    .sync_with_result_callback(
+                        SyncSettings::default()
+                            .timeout(cadence.timeout())
+                            .set_presence(presence.clone()),
+                        move |result| {
+                            let freshness = Arc::clone(&callback_freshness);
+                            async move {
+                                if freshness
+                                    .lock()
+                                    .expect("Matrix sync freshness lock poisoned")
+                                    .epoch
+                                    != task_epoch
+                                {
+                                    return Ok(LoopCtrl::Break);
                                 }
-                                Err(error) => Err(error),
+                                match result {
+                                    Ok(_) => {
+                                        if Self::record_matrix_sync_success(
+                                            &freshness,
+                                            task_epoch,
+                                            Self::matrix_rtc_monotonic_now_ms(),
+                                        ) {
+                                            Ok(LoopCtrl::Continue)
+                                        } else {
+                                            Ok(LoopCtrl::Break)
+                                        }
+                                    }
+                                    Err(error) => Err(error),
+                                }
                             }
-                        }
-                    },
-                )
-                .await;
-            if let Err(error) = result {
-                if freshness
+                        },
+                    )
+                    .await;
+
+                let current_epoch = freshness
                     .lock()
                     .expect("Matrix sync freshness lock poisoned")
-                    .epoch
-                    == task_epoch
-                {
-                    tracing::error!(target: "mesh::matrix", "Matrix sync stopped: {error}");
+                    .epoch;
+                if current_epoch != task_epoch {
+                    break;
                 }
+
+                match result {
+                    Ok(()) => {
+                        // A clean SDK exit is unusual for a live client. Re-enter
+                        // the loop so a transient transport shutdown cannot leave
+                        // the account silently stale.
+                        failure_count = 0;
+                    }
+                    Err(error) => {
+                        failure_count = failure_count.saturating_add(1);
+                        tracing::warn!(
+                            target: "mesh::matrix",
+                            failure_count,
+                            "Matrix sync paused; retrying automatically: {error}"
+                        );
+                    }
+                }
+
+                tokio::time::sleep(Self::matrix_sync_retry_delay(failure_count)).await;
             }
         })
     }
@@ -5635,13 +5668,20 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn status(&self) -> BackendStatus {
-        let sync_running = self
+        let sync_running_task = self
             .matrix_sync_control
             .lock()
             .await
             .task
             .as_ref()
             .is_some_and(|task| !task.is_finished());
+        let last_success_ms = self
+            .matrix_sync_freshness
+            .lock()
+            .expect("Matrix sync freshness lock poisoned")
+            .last_success_ms;
+        let sync_running = sync_running_task
+            && Self::matrix_sync_is_fresh(last_success_ms, Self::matrix_rtc_monotonic_now_ms());
         let runtime = self.runtime.read().await;
         let user_id = runtime
             .client
@@ -5655,10 +5695,14 @@ impl MeshBackend for MatrixBackend {
             .map(ToString::to_string);
         let authenticated = user_id.is_some();
 
-        let warnings = if authenticated {
-            Vec::new()
+        let warnings = if !authenticated {
+            vec!["Sign in to synchronize communities and messages".into()]
+        } else if !sync_running {
+            vec![
+                "Your connection is temporarily unavailable. Mesh will retry automatically.".into(),
+            ]
         } else {
-            vec!["Sign in to a Matrix homeserver to synchronize communities and messages".into()]
+            Vec::new()
         };
 
         BackendStatus {
@@ -9806,6 +9850,40 @@ mod tests {
             &freshness, 7, 1_002,
         ));
         assert_eq!(freshness.lock().unwrap().last_success_ms, 1_001);
+    }
+
+    #[test]
+    fn matrix_sync_status_requires_recent_success() {
+        let freshness = MATRIX_SYNC_STATUS_FRESHNESS.as_millis() as u64;
+        assert!(!MatrixBackend::matrix_sync_is_fresh(0, 1_000));
+        assert!(MatrixBackend::matrix_sync_is_fresh(
+            1_000,
+            1_000 + freshness
+        ));
+        assert!(!MatrixBackend::matrix_sync_is_fresh(
+            1_000,
+            1_001 + freshness
+        ));
+    }
+
+    #[test]
+    fn matrix_sync_retry_delay_is_bounded_and_exponential() {
+        assert_eq!(
+            MatrixBackend::matrix_sync_retry_delay(0),
+            Duration::from_secs(1)
+        );
+        assert_eq!(
+            MatrixBackend::matrix_sync_retry_delay(2),
+            Duration::from_secs(2)
+        );
+        assert_eq!(
+            MatrixBackend::matrix_sync_retry_delay(6),
+            Duration::from_secs(32).min(MATRIX_SYNC_RETRY_MAX_DELAY)
+        );
+        assert_eq!(
+            MatrixBackend::matrix_sync_retry_delay(u32::MAX),
+            MATRIX_SYNC_RETRY_MAX_DELAY
+        );
     }
 
     #[tokio::test]
