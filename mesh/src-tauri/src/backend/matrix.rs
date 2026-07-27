@@ -1,6 +1,7 @@
 use std::{
+    borrow::Cow,
     collections::{HashMap, HashSet, VecDeque},
-    io::Cursor,
+    io::{Cursor, Read},
     path::{Component, Path, PathBuf},
     str::FromStr,
     sync::{
@@ -32,7 +33,6 @@ use matrix_sdk::{
         },
         BackupDownloadStrategy, EncryptionSettings,
     },
-    media::{MediaFormat, MediaRequestParameters},
     notification_settings::RoomNotificationMode,
     room::{
         reply::{EnforceThread, Reply},
@@ -40,6 +40,7 @@ use matrix_sdk::{
     },
     ruma::{
         api::{
+            auth_scheme::SendAccessToken,
             client::{
                 account::{
                     get_username_availability, register::v3::Request as RegistrationRequest,
@@ -59,6 +60,7 @@ use matrix_sdk::{
                 uiaa::{self, AuthData, AuthType, Dummy, UiaaInfo},
             },
             error::ErrorKind,
+            Metadata, OutgoingRequest, SupportedVersions,
         },
         directory::{Filter, RoomTypeFilter},
         events::{
@@ -90,14 +92,15 @@ use matrix_sdk::{
         push::Action,
         room::RoomType,
         serde::Raw,
-        EventEncryptionAlgorithm, OwnedDeviceId, OwnedRoomAliasId, OwnedRoomId, OwnedServerName,
-        OwnedTransactionId, OwnedUserId, RoomAliasId, RoomOrAliasId, ServerName, UserId,
+        EventEncryptionAlgorithm, MxcUri, OwnedDeviceId, OwnedRoomAliasId, OwnedRoomId,
+        OwnedServerName, OwnedTransactionId, OwnedUserId, RoomAliasId, RoomOrAliasId, ServerName,
+        UserId,
     },
     store::RoomLoadSettings,
     utils::UrlOrQuery,
     Client, LoopCtrl, Room, RoomMemberships, RoomState, SessionChange,
 };
-use matrix_sdk_crypto::CollectStrategy;
+use matrix_sdk_crypto::{AttachmentDecryptor, CollectStrategy};
 use qrcode::render::svg;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
@@ -151,6 +154,7 @@ const MAX_THUMBNAIL_SOURCE_DIMENSION: u32 = 16_384;
 const MAX_THUMBNAIL_DECODE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_THUMBNAIL_DIMENSION: u32 = 512;
 const MAX_THUMBNAIL_BYTES: usize = 2 * 1024 * 1024;
+const MEDIA_DOWNLOAD_PROGRESS_INTERVAL_BYTES: u64 = 1024 * 1024;
 const DIRECT_ACCOUNT_DATA_MERGE_ATTEMPTS: usize = 3;
 const MATRIX_RTC_SLOT_ID: &str = "m.call#ROOM";
 const MATRIX_RTC_TRANSPORTS_PATH: &str =
@@ -225,6 +229,27 @@ struct GeneratedThumbnail {
     bytes: Vec<u8>,
     width: u32,
     height: u32,
+}
+
+/// Incremental view of a media transfer so the download cap can be enforced on
+/// bytes as they arrive instead of on a finished buffer.
+#[async_trait]
+trait MediaChunkSource: Send {
+    async fn next_chunk(&mut self) -> BackendResult<Option<Vec<u8>>>;
+}
+
+struct HttpMediaChunkSource(reqwest::Response);
+
+#[async_trait]
+impl MediaChunkSource for HttpMediaChunkSource {
+    async fn next_chunk(&mut self) -> BackendResult<Option<Vec<u8>>> {
+        Ok(self
+            .0
+            .chunk()
+            .await
+            .map_err(|error| BackendError::Network(error.to_string()))?
+            .map(|chunk| chunk.to_vec()))
+    }
 }
 
 #[derive(Clone)]
@@ -5441,11 +5466,13 @@ impl MatrixBackend {
         Ok(())
     }
 
+    fn attachment_size_limit_error() -> BackendError {
+        BackendError::InvalidConfiguration("attachment exceeds the 100 MB limit".into())
+    }
+
     fn validate_attachment_size(size: u64) -> BackendResult<()> {
         if size > MAX_ATTACHMENT_BYTES {
-            return Err(BackendError::InvalidConfiguration(
-                "attachment exceeds the 100 MB limit".into(),
-            ));
+            return Err(Self::attachment_size_limit_error());
         }
         Ok(())
     }
@@ -5586,6 +5613,128 @@ impl MatrixBackend {
             transferred_bytes.store(offset.saturating_add(data.len() as u64), Ordering::Relaxed);
         }
         result
+    }
+
+    /// Buffers a media transfer while the cap is checked against bytes actually
+    /// received. `info.size` is sender-controlled, so the only honest bound is
+    /// the running count of the live stream: the loop stops pulling the moment
+    /// it is crossed, before the payload is materialised.
+    async fn collect_bounded_media(
+        source: &mut dyn MediaChunkSource,
+        limit: u64,
+        on_progress: &mut (dyn FnMut(u64) + Send),
+    ) -> BackendResult<Vec<u8>> {
+        let mut buffer = Vec::new();
+        let mut received = 0_u64;
+        let mut reported = 0_u64;
+        while let Some(chunk) = source.next_chunk().await? {
+            received = received.saturating_add(chunk.len() as u64);
+            if received > limit {
+                return Err(Self::attachment_size_limit_error());
+            }
+            buffer.extend_from_slice(&chunk);
+            if received.saturating_sub(reported) >= MEDIA_DOWNLOAD_PROGRESS_INTERVAL_BYTES {
+                reported = received;
+                on_progress(received);
+            }
+        }
+        on_progress(received);
+        Ok(buffer)
+    }
+
+    /// matrix-sdk 0.18's `Media::get_media_content` reads the whole response
+    /// body into memory before any size check can run, so the download is
+    /// issued directly against the same endpoint ruma would have used.
+    #[allow(deprecated)]
+    fn media_download_endpoint(
+        homeserver: &str,
+        access_token: Option<&str>,
+        supported_versions: &SupportedVersions,
+        url: &MxcUri,
+    ) -> BackendResult<(String, reqwest::header::HeaderMap)> {
+        use matrix_sdk::ruma::api::client::{authenticated_media, media};
+
+        let access_token = access_token.map_or(SendAccessToken::None, SendAccessToken::IfRequired);
+        let request = if authenticated_media::get_content::v1::Request::PATH_BUILDER
+            .is_supported(supported_versions)
+        {
+            authenticated_media::get_content::v1::Request::from_uri(url)
+                .map_err(Self::map_error)?
+                .try_into_http_request::<Vec<u8>>(
+                    homeserver,
+                    access_token,
+                    Cow::Borrowed(supported_versions),
+                )
+        } else {
+            media::get_content::v3::Request::from_url(url)
+                .map_err(Self::map_error)?
+                .try_into_http_request::<Vec<u8>>(
+                    homeserver,
+                    access_token,
+                    Cow::Borrowed(supported_versions),
+                )
+        }
+        .map_err(Self::map_error)?;
+        let (parts, _) = request.into_parts();
+        Ok((parts.uri.to_string(), parts.headers))
+    }
+
+    async fn download_bounded_encrypted_media(
+        client: &Client,
+        encrypted_file: &EncryptedFile,
+        on_progress: &mut (dyn FnMut(u64) + Send),
+    ) -> BackendResult<Vec<u8>> {
+        let supported_versions = client.supported_versions().await.map_err(Self::map_error)?;
+        let (url, headers) = Self::media_download_endpoint(
+            client.homeserver().as_str(),
+            client.access_token().as_deref(),
+            &supported_versions,
+            &encrypted_file.url,
+        )?;
+        let http = reqwest::Client::builder()
+            .min_tls_version(reqwest::tls::Version::TLS_1_2)
+            .build()
+            .map_err(|error| BackendError::Network(error.to_string()))?;
+        let response = http
+            .get(url)
+            .headers(headers)
+            .send()
+            .await
+            .map_err(|error| BackendError::Network(error.to_string()))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(match status.as_u16() {
+                401 | 403 => BackendError::PermissionDenied(
+                    "the homeserver refused this attachment download".into(),
+                ),
+                429 => BackendError::RateLimited(
+                    "the homeserver rate limited this attachment download".into(),
+                ),
+                _ => BackendError::Network(format!("attachment download returned HTTP {status}")),
+            });
+        }
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_ATTACHMENT_BYTES)
+        {
+            return Err(Self::attachment_size_limit_error());
+        }
+        let ciphertext = Self::collect_bounded_media(
+            &mut HttpMediaChunkSource(response),
+            MAX_ATTACHMENT_BYTES,
+            on_progress,
+        )
+        .await?;
+
+        let mut ciphertext = Cursor::new(ciphertext);
+        let mut decryptor =
+            AttachmentDecryptor::new(&mut ciphertext, encrypted_file.clone().into())
+                .map_err(Self::map_error)?;
+        let mut data = Vec::new();
+        decryptor
+            .read_to_end(&mut data)
+            .map_err(|error| BackendError::Crypto(error.to_string()))?;
+        Ok(data)
     }
 
     async fn enforce_media_cache_quota(cache_root: &Path, protected: &Path) -> BackendResult<()> {
@@ -8001,14 +8150,7 @@ impl MeshBackend for MatrixBackend {
             })?;
             let encrypted_file: EncryptedFile =
                 serde_json::from_value(source).map_err(Self::map_error)?;
-            let request = MediaRequestParameters {
-                source: MediaSource::Encrypted(Box::new(encrypted_file)),
-                format: MediaFormat::File,
-            };
             let client = self.client().await?;
-            let media = client.media();
-            // matrix-rust-sdk 0.18 buffers and decrypts encrypted media before
-            // returning it, so no honest intermediate receive byte count exists.
             Self::emit_transfer_progress(
                 &progress,
                 &transfer_id,
@@ -8018,10 +8160,24 @@ impl MeshBackend for MatrixBackend {
                 MatrixTransferState::Downloading,
                 None,
             );
+            let mut on_progress = |received| {
+                transferred_bytes.store(received, Ordering::Relaxed);
+                Self::emit_transfer_progress(
+                    &progress,
+                    &transfer_id,
+                    MatrixTransferDirection::Download,
+                    received,
+                    total_bytes,
+                    MatrixTransferState::Downloading,
+                    None,
+                );
+            };
             let data = tokio::select! {
-                result = media.get_media_content(&request, false) => {
-                    result.map_err(Self::map_error)?
-                }
+                result = Self::download_bounded_encrypted_media(
+                    &client,
+                    &encrypted_file,
+                    &mut on_progress,
+                ) => result?,
                 _ = cancellation.cancelled() => {
                     return Err(BackendError::Other("Matrix attachment download cancelled".into()))
                 }
@@ -11225,6 +11381,115 @@ mod tests {
             "report.pdf"
         )
         .is_ok());
+    }
+
+    /// Never stops yielding bytes, and fails the test if the download asks for
+    /// more once the cap has already been crossed.
+    struct EndlessMediaStream {
+        chunk_size: usize,
+        cap: u64,
+        served: u64,
+    }
+
+    #[async_trait]
+    impl MediaChunkSource for EndlessMediaStream {
+        async fn next_chunk(&mut self) -> BackendResult<Option<Vec<u8>>> {
+            assert!(
+                self.served <= self.cap,
+                "download kept pulling bytes after the cap was already exceeded"
+            );
+            self.served = self.served.saturating_add(self.chunk_size as u64);
+            Ok(Some(vec![0_u8; self.chunk_size]))
+        }
+    }
+
+    struct ScriptedMediaStream(VecDeque<Vec<u8>>);
+
+    #[async_trait]
+    impl MediaChunkSource for ScriptedMediaStream {
+        async fn next_chunk(&mut self) -> BackendResult<Option<Vec<u8>>> {
+            Ok(self.0.pop_front())
+        }
+    }
+
+    #[tokio::test]
+    async fn matrix_attachment_download_aborts_mid_transfer_when_real_bytes_exceed_the_cap() {
+        const CAP: u64 = 64 * 1024;
+        const CHUNK: usize = 4096;
+
+        // The crafted event claims a tiny payload, so the pre-flight metadata
+        // check passes while the real stream never ends.
+        assert!(MatrixBackend::validate_attachment_size(16).is_ok());
+
+        let mut stream = EndlessMediaStream {
+            chunk_size: CHUNK,
+            cap: CAP,
+            served: 0,
+        };
+        let error = MatrixBackend::collect_bounded_media(&mut stream, CAP, &mut |_| {})
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            BackendError::InvalidConfiguration(message) if message.contains("100 MB")
+        ));
+        assert_eq!(stream.served, CAP + CHUNK as u64);
+    }
+
+    #[tokio::test]
+    async fn matrix_attachment_download_accepts_streams_up_to_the_cap() {
+        let mut stream =
+            ScriptedMediaStream(VecDeque::from(vec![b"mesh".to_vec(), b"-media".to_vec()]));
+        let mut reported = Vec::new();
+        let data = MatrixBackend::collect_bounded_media(&mut stream, 10, &mut |received| {
+            reported.push(received);
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(data, b"mesh-media");
+        assert_eq!(reported, vec![10]);
+
+        let mut stream = ScriptedMediaStream(VecDeque::from(vec![b"mesh-media!".to_vec()]));
+        assert!(
+            MatrixBackend::collect_bounded_media(&mut stream, 10, &mut |_| {})
+                .await
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn matrix_media_download_endpoint_prefers_authenticated_media() {
+        let url = matrix_sdk::ruma::OwnedMxcUri::from("mxc://example.org/abc123");
+
+        let authenticated = SupportedVersions::from_parts(
+            &["v1.11".to_owned()],
+            &std::collections::BTreeMap::new(),
+        );
+        let (endpoint, headers) = MatrixBackend::media_download_endpoint(
+            "https://matrix.example.org/",
+            Some("secret-token"),
+            &authenticated,
+            &url,
+        )
+        .unwrap();
+        assert!(endpoint.starts_with(
+            "https://matrix.example.org/_matrix/client/v1/media/download/example.org/abc123"
+        ));
+        assert_eq!(headers["authorization"], "Bearer secret-token");
+
+        let legacy =
+            SupportedVersions::from_parts(&["v1.1".to_owned()], &std::collections::BTreeMap::new());
+        let (endpoint, headers) = MatrixBackend::media_download_endpoint(
+            "https://matrix.example.org/",
+            Some("secret-token"),
+            &legacy,
+            &url,
+        )
+        .unwrap();
+        assert!(endpoint.contains("/_matrix/media/v3/download/example.org/abc123"));
+        assert!(!headers.contains_key("authorization"));
     }
 
     #[test]
