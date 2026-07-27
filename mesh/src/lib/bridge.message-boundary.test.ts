@@ -100,6 +100,29 @@ describe('bridge message mutation boundary', () => {
     })
   })
 
+  it('keeps durable drafts on the protected Matrix room boundary', async () => {
+    const bridge = await loadBridge('matrix')
+    invokeMock
+      .mockResolvedValueOnce('restart-safe draft' as never)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+
+    await expect(
+      bridge.loadComposerDraft('!room:example.org'),
+    ).resolves.toBe('restart-safe draft')
+    await bridge.saveComposerDraft('!room:example.org', 'updated draft')
+    await bridge.clearComposerDraft('!room:example.org')
+
+    expect(invokeMock.mock.calls).toEqual([
+      ['matrix_load_composer_draft', { roomId: '!room:example.org' }],
+      [
+        'matrix_save_composer_draft',
+        { roomId: '!room:example.org', body: 'updated draft' },
+      ],
+      ['matrix_clear_composer_draft', { roomId: '!room:example.org' }],
+    ])
+  })
+
   it('requires room context for every generic Matrix mutation', async () => {
     const bridge = await loadBridge('matrix')
 
@@ -168,6 +191,9 @@ describe('bridge message mutation boundary', () => {
     await bridge.editMessage('message-1', 'edited', 'ignored-room')
     await bridge.deleteMessage('message-1', 'ignored-room')
     await bridge.addReaction('message-1', '👍', 'ignored-room')
+    await expect(bridge.loadComposerDraft('channel-1')).resolves.toBeNull()
+    await bridge.saveComposerDraft('channel-1', 'legacy session draft')
+    await bridge.clearComposerDraft('channel-1')
 
     expect(invokeMock.mock.calls).toEqual([
       [

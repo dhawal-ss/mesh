@@ -18,6 +18,7 @@ import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
 import type { MemberRecord } from '../../store/membership'
 import { truncateDraft, useDraftStore } from '../../store/drafts'
+import { useDurableDraft } from '../../hooks/useDurableDraft'
 import {
   expandSlashCommand,
   getSlashCommandContext,
@@ -94,6 +95,26 @@ function MessageInputContent({
   const [value, setValue] = useState(() => useDraftStore.getState().drafts[channelId] ?? '')
   const setDraft = useDraftStore((state) => state.setDraft)
   const clearDraft = useDraftStore((state) => state.clearDraft)
+  const applyLoadedDraft = useCallback((loadedDraft: string) => {
+    const normalized = truncateDraft(loadedDraft)
+    setValue(normalized)
+    setDraft(channelId, normalized)
+  }, [channelId, setDraft])
+  const {
+    status: draftSyncStatus,
+    markChanged: markDraftChanged,
+    clear: clearDurableDraft,
+    retry: retryDraftSync,
+  } = useDurableDraft(channelId, value, applyLoadedDraft)
+  const updateDraftValue = useCallback((nextValue: string) => {
+    setValue(nextValue)
+    setDraft(channelId, nextValue)
+    markDraftChanged()
+  }, [channelId, markDraftChanged, setDraft])
+  const clearCurrentDraft = useCallback(() => {
+    clearDraft(channelId)
+    clearDurableDraft()
+  }, [channelId, clearDraft, clearDurableDraft])
   const [mentionCursor, setMentionCursor] = useState(0)
   const [mentionIndex, setMentionIndex] = useState(0)
   const [mentionsDismissed, setMentionsDismissed] = useState(false)
@@ -182,8 +203,7 @@ function MessageInputContent({
       mentionContext.start + member.publicKey.length + 1,
       nextValue.length,
     )
-    setValue(nextValue)
-    setDraft(channelId, nextValue)
+    updateDraftValue(nextValue)
     setMentionCursor(nextCursor)
     setMentionsDismissed(true)
     setSlashDismissed(true)
@@ -254,8 +274,7 @@ function MessageInputContent({
             slashContext.start + command.command.length + 1,
             nextValue.length,
           )
-          setValue(nextValue)
-          setDraft(channelId, nextValue)
+          updateDraftValue(nextValue)
           setMentionCursor(nextCursor)
           setSlashDismissed(true)
           pendingSelectionRef.current = { start: nextCursor, end: nextCursor }
@@ -307,8 +326,10 @@ function MessageInputContent({
             const next = stagedFilesRef.current.filter((candidate) => candidate !== file)
             stagedFilesRef.current = next
             setStagedFiles(next)
-            if (contentConsumed) setValue('')
-            if (contentConsumed) clearDraft(channelId)
+            if (contentConsumed) {
+              setValue('')
+              clearCurrentDraft()
+            }
           }
         })
         // Backward-compatible cleanup for callers that completed the whole send
@@ -322,7 +343,7 @@ function MessageInputContent({
           )
           setStagedFiles(stagedFilesRef.current)
           setValue('')
-          clearDraft(channelId)
+          clearCurrentDraft()
           bridge.setTyping(channelId, false).catch(() => {})
         }
         return
@@ -350,7 +371,7 @@ function MessageInputContent({
       if (content) await onSend(content)
       if (intakeGenerationRef.current === sendGeneration) {
         setValue('')
-        clearDraft(channelId)
+        clearCurrentDraft()
         bridge.setTyping(channelId, false).catch(() => {})
       }
     } catch (error) {
@@ -378,8 +399,7 @@ function MessageInputContent({
     const nextValue = truncateDraft(result.value)
     const selectionStart = Math.min(result.selectionStart, nextValue.length)
     const selectionEnd = Math.min(result.selectionEnd, nextValue.length)
-    setValue(nextValue)
-    setDraft(channelId, nextValue)
+    updateDraftValue(nextValue)
     setMentionCursor(selectionEnd)
     setMentionsDismissed(true)
     setSlashDismissed(true)
@@ -750,8 +770,7 @@ function MessageInputContent({
                       slashContext.start + command.command.length + 1,
                       nextValue.length,
                     )
-                    setValue(nextValue)
-                    setDraft(channelId, nextValue)
+                    updateDraftValue(nextValue)
                     setMentionCursor(nextCursor)
                     setSlashDismissed(true)
                     pendingSelectionRef.current = { start: nextCursor, end: nextCursor }
@@ -812,8 +831,7 @@ function MessageInputContent({
             value={value}
             onChange={(e) => {
               const nextValue = truncateDraft(e.target.value)
-              setValue(nextValue)
-              setDraft(channelId, nextValue)
+              updateDraftValue(nextValue)
               setMentionCursor(Math.min(e.target.selectionStart, nextValue.length))
               setMentionIndex(0)
               setMentionsDismissed(false)
@@ -852,6 +870,22 @@ function MessageInputContent({
             className="min-h-control-lg max-h-composer w-full resize-none bg-transparent px-2 py-2.5 text-sm text-primary placeholder:text-muted focus:outline-none disabled:opacity-60"
           />
         </div>
+        {draftSyncStatus === 'failed' && (
+          <div
+            className="flex min-h-control-sm items-center justify-between gap-3 border-t border-border-subtle px-3 py-1.5 text-xs text-secondary"
+          >
+            <span role="status">
+              Your draft is still here, but it is not saved for restart.
+            </span>
+            <button
+              type="button"
+              onClick={retryDraftSync}
+              className="min-h-control-sm rounded px-2 font-medium text-accent transition-colors hover:bg-bg-modifier-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              Retry
+            </button>
+          </div>
+        )}
         <p id={`pending-attachments-${channelId}`} className="sr-only" aria-live="polite">
           {isStaging
             ? 'Securing attachment locally.'

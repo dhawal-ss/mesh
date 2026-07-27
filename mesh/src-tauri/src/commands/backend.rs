@@ -646,6 +646,49 @@ pub async fn matrix_send_message(
 }
 
 #[tauri::command]
+pub async fn matrix_save_composer_draft(
+    room_id: String,
+    body: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .save_composer_draft(room_id, body)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_load_composer_draft(
+    room_id: String,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .load_composer_draft(room_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_clear_composer_draft(
+    room_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .clear_composer_draft(room_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn matrix_send_attachment(
     room_id: String,

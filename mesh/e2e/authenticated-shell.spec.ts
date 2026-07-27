@@ -191,6 +191,8 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
           ]
         case 'matrix_get_messages':
           return timeline.filter((message) => message.channelId === args.roomId)
+        case 'matrix_load_composer_draft':
+          return null
         case 'matrix_send_message': {
           const message = {
             id: `$sent-${timeline.length}`,
@@ -220,6 +222,8 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
           return []
         case 'matrix_mark_read':
         case 'matrix_set_typing':
+        case 'matrix_save_composer_draft':
+        case 'matrix_clear_composer_draft':
         case 'plugin:event|unlisten':
           return null
         case 'matrix_wait_for_room_update':

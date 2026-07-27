@@ -67,6 +67,9 @@ describe('MessageInput attachment UX', () => {
     vi.spyOn(bridge, 'discardStagedAttachment').mockResolvedValue(undefined)
     vi.spyOn(bridge, 'discardAttachmentGrant').mockResolvedValue(undefined)
     vi.spyOn(bridge, 'acceptAttachmentDropGrants').mockResolvedValue(undefined)
+    vi.spyOn(bridge, 'loadComposerDraft').mockResolvedValue(null)
+    vi.spyOn(bridge, 'saveComposerDraft').mockResolvedValue(undefined)
+    vi.spyOn(bridge, 'clearComposerDraft').mockResolvedValue(undefined)
     vi.spyOn(bridge, 'stageAttachmentBytes').mockImplementation(async (_name, bytes) => {
       stageCounter += 1
       return {
@@ -84,6 +87,7 @@ describe('MessageInput attachment UX', () => {
     container.remove()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+    vi.useRealTimers()
   })
 
   async function render(
@@ -533,6 +537,89 @@ describe('MessageInput attachment UX', () => {
     expect(onSend).toHaveBeenCalledWith('draft for general')
     expect(useDraftStore.getState().drafts['!room:mesh.test']).toBeUndefined()
     expect(restored.value).toBe('')
+    expect(bridge.clearComposerDraft).toHaveBeenCalledWith('!room:mesh.test')
+  })
+
+  it('restores an encrypted local draft after process memory is empty', async () => {
+    vi.mocked(bridge.loadComposerDraft).mockResolvedValueOnce('restart-safe draft')
+
+    const textarea = await render()
+    await act(async () => {
+      await flushAsyncWork()
+    })
+
+    expect(textarea.value).toBe('restart-safe draft')
+    expect(useDraftStore.getState().drafts['!room:mesh.test']).toBe(
+      'restart-safe draft',
+    )
+  })
+
+  it('retains the durable draft when message delivery is not acknowledged', async () => {
+    const onSend = vi.fn().mockRejectedValue(new Error('network unavailable'))
+    const textarea = await render(onSend)
+    await setComposerValue(textarea, 'do not lose this')
+
+    await act(async () => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await flushAsyncWork()
+    })
+
+    expect(textarea.value).toBe('do not lose this')
+    expect(useDraftStore.getState().drafts['!room:mesh.test']).toBe(
+      'do not lose this',
+    )
+    expect(bridge.clearComposerDraft).not.toHaveBeenCalled()
+  })
+
+  it('does not let a stale durable load overwrite newer typing', async () => {
+    let finishLoad: ((value: string | null) => void) | undefined
+    vi.mocked(bridge.loadComposerDraft).mockImplementationOnce(() => (
+      new Promise((resolve) => {
+        finishLoad = resolve
+      })
+    ))
+    const textarea = await render()
+    await setComposerValue(textarea, 'newer local draft')
+
+    await act(async () => {
+      finishLoad?.('stale saved draft')
+      await flushAsyncWork()
+    })
+
+    expect(textarea.value).toBe('newer local draft')
+    expect(useDraftStore.getState().drafts['!room:mesh.test']).toBe(
+      'newer local draft',
+    )
+  })
+
+  it('debounces durable saves and offers a retry without losing the draft', async () => {
+    vi.useFakeTimers()
+    vi.mocked(bridge.saveComposerDraft)
+      .mockRejectedValueOnce(new Error('secure store unavailable'))
+      .mockResolvedValueOnce(undefined)
+    const textarea = await render()
+    await setComposerValue(textarea, 'keep this private draft')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500)
+    })
+
+    expect(bridge.saveComposerDraft).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain(
+      'Your draft is still here, but it is not saved for restart.',
+    )
+
+    const retryButton = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Retry')
+    expect(retryButton).not.toBeNull()
+    await act(async () => {
+      retryButton?.click()
+      await vi.advanceTimersByTimeAsync(500)
+    })
+
+    expect(bridge.saveComposerDraft).toHaveBeenCalledTimes(2)
+    expect(container.textContent).not.toContain('not saved for restart')
+    expect(textarea.value).toBe('keep this private draft')
   })
 
   it('keeps multibyte composer state inside the UTF-8 draft limit', async () => {
