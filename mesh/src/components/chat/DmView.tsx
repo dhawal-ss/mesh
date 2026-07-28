@@ -278,10 +278,10 @@ export function DmView() {
   const peerName = conversation.peerDisplayName || conversation.peerPublicKey.slice(0, 8)
 
   return (
-    <div className="flex h-full flex-1 flex-col bg-pane-tint">
+    <div className="flex h-full flex-1 flex-col">
       {/* Header */}
       <div
-        className="flex h-12 flex-shrink-0 items-center border-b border-border-subtle px-4 backdrop-blur-xl"
+        className="flex min-h-14 flex-shrink-0 items-center border-b border-border-subtle px-4 py-2"
         data-tauri-drag-region
       >
         <div
@@ -291,7 +291,14 @@ export function DmView() {
         >
           {peerName[0]?.toUpperCase() ?? '?'}
         </div>
-        <span className="text-sm font-medium text-primary">{peerName}</span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-medium text-primary">{peerName}</span>
+          {conversation.peerPublicKey.startsWith('@') && (
+            <span className="identifier block truncate font-mono text-caption text-muted">
+              {conversation.peerPublicKey}
+            </span>
+          )}
+        </span>
         {matrixMode && (
           <span className="ml-2">
             <ConversationProtection roomId={activeConversationId} />
@@ -352,7 +359,7 @@ export function DmView() {
                   onBlur={(event) => handleMessageRowBlur(event, msg.id)}
                 >
                   {!isGrouped && (
-                    <div className="mb-0.5 flex items-center gap-2">
+                    <div className="mb-0.5 flex flex-wrap items-center gap-x-2 gap-y-0">
                       <div
                         className="flex h-6 w-6 items-center justify-center rounded-full text-micro font-semibold text-content-on-status/90"
                         data-design-token-exception="data-driven-federated-avatar-color"
@@ -363,6 +370,11 @@ export function DmView() {
                       <span className={`text-base font-semibold ${isOwnMessage ? 'text-accent' : 'text-primary'}`}>
                         {isOwnMessage ? 'You' : msg.authorDisplayName}
                       </span>
+                      {matrixMode && msg.authorPublicKey.startsWith('@') && (
+                        <span className="identifier max-w-full truncate font-mono text-caption text-muted">
+                          {msg.authorPublicKey}
+                        </span>
+                      )}
                       <span className="tnum text-2xs text-muted">
                         {formatFederatedTimestamp(msg.timestamp, 'HH:mm')}
                       </span>

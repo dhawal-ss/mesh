@@ -4,12 +4,16 @@ import { useCommunityStore } from '../../store/communities'
 import { usePresence } from '../../hooks/usePresence'
 import { ChatView } from '../chat/ChatView'
 import { VoiceView } from '../voice/VoiceView'
-import { MemberList } from '../community/MemberList'
+import {
+  RoomContextPanel,
+  type RoomContextTab,
+} from '../community/RoomContextPanel'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
 import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
 import { useShellStore } from '../../store/shell'
 import { useDmStore } from '../../store/dms'
+import { useRoomTrust } from '../../hooks/useRoomTrust'
 
 export function ContentArea() {
   const activeChannel = useActiveChannel()
@@ -18,9 +22,11 @@ export function ContentArea() {
   const openServerModal = useShellStore((state) => state.openServerModal)
   const setDmMode = useDmStore((state) => state.setDmMode)
 
-  const [showMembers, setShowMembers] = useState(true)
+  const [showContext, setShowContext] = useState(true)
+  const [contextTab, setContextTab] = useState<RoomContextTab>('people')
   const [inviteDraft, setInviteDraft] = useState('')
   const { members } = usePresence()
+  const trust = useRoomTrust(activeChannel?.id, members)
 
   if (!activeChannel) {
     const hasCommunity = Boolean(activeCommunityId)
@@ -96,26 +102,34 @@ export function ContentArea() {
           ) : (
             <ChatView
               channel={activeChannel}
-              showMembersToggle
-              isMembersOpen={showMembers}
-              onToggleMembers={() => setShowMembers(!showMembers)}
+              trust={trust}
+              showContextToggle
+              isContextOpen={showContext}
+              activeContextTab={contextTab}
+              onToggleContext={() => setShowContext(!showContext)}
+              onOpenContext={(tab) => {
+                setContextTab(tab)
+                setShowContext(true)
+              }}
             />
           )}
         </ErrorBoundary>
       </div>
 
-      {/* Member list — always-visible right sidebar */}
-      {activeChannel.channelType === 'text' && (
+      {activeChannel.channelType === 'text' && showContext && (
         <ScopedErrorBoundary
-          name="Member list"
-          description="Members could not be displayed. Messaging is unaffected."
+          name="Room context"
+          description="Room context could not be displayed. Messaging is unaffected."
           className="m-2 w-content-error"
           resetKey={activeCommunityId}
         >
-          <MemberList
-            isOpen={showMembers}
-            onClose={() => setShowMembers(false)}
+          <RoomContextPanel
+            channel={activeChannel}
             members={members}
+            trust={trust}
+            activeTab={contextTab}
+            onTabChange={setContextTab}
+            onClose={() => setShowContext(false)}
           />
         </ScopedErrorBoundary>
       )}

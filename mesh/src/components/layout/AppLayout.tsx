@@ -144,9 +144,8 @@ export function AppLayout() {
         </div>
       )}
       <div className="flex flex-1 overflow-hidden">
-        {/* Server icon bar — Discord: 72px, dark */}
         <nav
-          className="mesh-community-rail flex flex-shrink-0 flex-col items-center overflow-y-auto bg-bg-tertiary pt-3"
+          className="mesh-community-rail flex flex-shrink-0 flex-col items-center overflow-y-auto border-r border-border-subtle bg-bg-tertiary pt-3"
           aria-label="Servers and DMs"
         >
           <ScopedErrorBoundary
@@ -212,7 +211,6 @@ export function AppLayout() {
           </div>
         </nav>
 
-        {/* Channel/DM sidebar — Discord: 240px */}
         {contextNavigationOpen && (
           <button
             type="button"
@@ -225,7 +223,7 @@ export function AppLayout() {
         <aside
           id="mesh-context-sidebar"
           data-open={contextNavigationOpen ? 'true' : 'false'}
-          className="mesh-context-sidebar flex flex-shrink-0 flex-col bg-bg-secondary"
+          className="mesh-context-sidebar flex flex-shrink-0 flex-col border-r border-border-subtle bg-bg-secondary"
           aria-label={isDmMode && directMessagesAvailable ? 'Direct message conversations' : 'Channel list'}
         >
           <ScopedErrorBoundary
@@ -238,7 +236,6 @@ export function AppLayout() {
           </ScopedErrorBoundary>
         </aside>
 
-        {/* Main content area */}
         <main className="flex min-w-0 flex-1 flex-col bg-bg-primary" aria-label="Content area">
           <div className="mesh-compact-header">
             <button

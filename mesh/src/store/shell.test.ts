@@ -8,6 +8,7 @@ describe('shell navigation state', () => {
       serverModalTab: 'create',
       inviteDraft: '',
       profileOpen: false,
+      securityOpen: false,
     })
   })
 
@@ -31,5 +32,12 @@ describe('shell navigation state', () => {
     useShellStore.getState().setProfileOpen(true)
     expect(useShellStore.getState().profileOpen).toBe(true)
     expect(useShellStore.getState().serverModalOpen).toBe(false)
+  })
+
+  it('opens device security directly from room context', () => {
+    useShellStore.getState().setSecurityOpen(true)
+
+    expect(useShellStore.getState().securityOpen).toBe(true)
+    expect(useShellStore.getState().profileOpen).toBe(false)
   })
 })

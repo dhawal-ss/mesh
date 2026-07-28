@@ -13,6 +13,8 @@
    */
   --ref-neutral-1: #101013;
   --ref-neutral-1-rgb: 16 16 19;
+  --ref-neutral-sidebar: #121317;
+  --ref-neutral-sidebar-rgb: 18 19 23;
   --ref-neutral-2: #17181c;
   --ref-neutral-2-rgb: 23 24 28;
   --ref-neutral-3: #202127;
@@ -134,8 +136,8 @@
   --surface-rail: var(--ref-neutral-1);
   --surface-sunken-rgb: var(--surface-rail-rgb);
   --surface-sunken: var(--surface-rail);
-  --surface-sidebar-rgb: var(--surface-rail-rgb);
-  --surface-sidebar: var(--surface-rail);
+  --surface-sidebar-rgb: var(--ref-neutral-sidebar-rgb);
+  --surface-sidebar: var(--ref-neutral-sidebar);
   --surface-base-rgb: var(--surface-canvas-rgb);
   --surface-base: var(--surface-canvas);
   --surface-raised-rgb: var(--ref-neutral-3-rgb);
@@ -146,8 +148,8 @@
   --surface-hover: var(--ref-neutral-4);
   --surface-active-rgb: var(--ref-neutral-5-rgb);
   --surface-active: var(--ref-neutral-5);
-  --surface-selected-rgb: var(--ref-accent-5-rgb);
-  --surface-selected: var(--ref-accent-5);
+  --surface-selected-rgb: var(--ref-neutral-4-rgb);
+  --surface-selected: var(--ref-neutral-4);
   --surface-scrim: rgb(var(--ref-black-rgb) / 0.7);
   --surface-nav-scrim: rgb(var(--ref-black-rgb) / 0.58);
   --surface-pane-tint: rgb(var(--ref-white-rgb) / 0.015);
@@ -342,7 +344,7 @@
   --message-group-gap: 17px;
   --empty-state-icon: 68px;
   --community-marker: 4px;
-  --member-list-width: 240px;
+  --member-list-width: 280px;
   --settings-drawer-width: 420px;
   --attachment-name-width: 140px;
   --modal-content-height: 90vh;
@@ -719,7 +721,7 @@ textarea {
 }
 
 .mesh-community-rail {
-  width: 72px;
+  width: 64px;
 }
 
 .mesh-context-sidebar {
@@ -731,15 +733,24 @@ textarea {
   display: none;
 }
 
+.mesh-conversation-header {
+  min-height: 60px;
+}
+
+.mesh-channel-active {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
 @media (max-width: 1100px) {
-  .mesh-member-list {
+  .mesh-member-list,
+  .mesh-room-context-panel {
     display: none;
   }
 }
 
 @media (max-width: 999px) {
   .mesh-community-rail {
-    width: 64px;
+    width: 60px;
   }
 
   .mesh-context-sidebar {
@@ -751,9 +762,9 @@ textarea {
   .mesh-context-sidebar {
     position: fixed;
     inset-block: 0;
-    left: 64px;
+    left: 60px;
     z-index: 45;
-    width: min(280px, calc(100vw - 64px));
+    width: min(280px, calc(100vw - 60px));
     box-shadow: var(--elev-overlay);
     transform: translateX(-110%);
     transition: transform var(--transition-normal);
@@ -765,7 +776,7 @@ textarea {
 
   .mesh-nav-backdrop {
     position: fixed;
-    inset: 0 0 0 64px;
+    inset: 0 0 0 60px;
     z-index: 40;
     display: block;
     border: 0;

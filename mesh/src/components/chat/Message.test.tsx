@@ -20,6 +20,9 @@ vi.mock('framer-motion', () => ({
     div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
       <div {...props}>{children}</div>
     ),
+    span: ({ children, ...props }: React.HTMLAttributes<HTMLSpanElement>) => (
+      <span {...props}>{children}</span>
+    ),
   },
 }))
 
@@ -151,6 +154,39 @@ describe('MessageComponent federated timestamps', () => {
     expect(onRetry).toHaveBeenCalledOnce()
     expect(onCancel).toHaveBeenCalledOnce()
     expect(container.querySelector('[aria-label="Edit message"]')).toBeNull()
+  })
+
+  it('pins a message through the shared encrypted reaction path', async () => {
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@me:example.org')
+    vi.spyOn(bridge, 'addReaction').mockResolvedValue(true)
+
+    const message = {
+      ...malformedMessage(),
+      timestamp: '2026-07-28T09:41:00.000Z',
+    }
+    await act(async () => {
+      root.render(<MessageComponent message={message} isGrouped={false} />)
+    })
+
+    const pin = container.querySelector<HTMLButtonElement>('[aria-label="Pin message"]')
+    expect(pin).not.toBeNull()
+    await act(async () => {
+      pin?.click()
+      await Promise.resolve()
+    })
+
+    expect(bridge.addReaction).toHaveBeenCalledWith(message.id, '📌', message.channelId)
+
+    await act(async () => {
+      root.render(
+        <MessageComponent
+          message={{ ...message, reactions: { '📌': ['@me:example.org'] } }}
+          isGrouped={false}
+        />,
+      )
+    })
+    expect(container.querySelector('[aria-label="Remove your pin from message"]')).not.toBeNull()
   })
 
   it('loads an encrypted thumbnail only near the viewport and revokes its Blob URL', async () => {
