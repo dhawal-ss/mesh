@@ -309,10 +309,11 @@
 
   /* Density and component geometry. */
   --density-row-block: 6px;
-  --density-control-sm: 28px;
+  --density-control-sm: 32px;
   --density-control-md: 36px;
   --density-control-lg: 44px;
   --density-panel-gap: 16px;
+  --density-line-height: 1.375;
   --message-gutter: 72px;
   --message-group-gap: 17px;
   --empty-state-icon: 68px;
@@ -527,28 +528,31 @@
 
 :root[data-density='compact'] {
   --density-row-block: 4px;
-  --density-control-sm: 24px;
+  --density-control-sm: 32px;
   --density-control-md: 32px;
   --density-control-lg: 40px;
   --density-panel-gap: 12px;
+  --density-line-height: 1.25;
   --message-group-gap: 12px;
 }
 
 :root[data-density='default'] {
   --density-row-block: 6px;
-  --density-control-sm: 28px;
+  --density-control-sm: 32px;
   --density-control-md: 36px;
   --density-control-lg: 44px;
   --density-panel-gap: 16px;
+  --density-line-height: 1.375;
   --message-group-gap: 17px;
 }
 
 :root[data-density='comfortable'] {
   --density-row-block: 8px;
-  --density-control-sm: 32px;
+  --density-control-sm: 36px;
   --density-control-md: 40px;
   --density-control-lg: 48px;
   --density-panel-gap: 20px;
+  --density-line-height: 1.5;
   --message-group-gap: 20px;
 }
 
@@ -577,7 +581,7 @@ body {
   color: var(--text-normal);
   font-family: var(--font-sans);
   font-size: 14px;
-  line-height: 1.375;
+  line-height: var(--density-line-height);
   letter-spacing: 0;
 }
 
