@@ -105,7 +105,8 @@ export function Icon({
     <Glyph
       {...props}
       size={ICON_SIZES[size]}
-      strokeWidth={1.75}
+      strokeWidth={size === 'lg' ? 1.75 : 1.5}
+      absoluteStrokeWidth
       focusable="false"
       aria-hidden={isDecorative || undefined}
       aria-label={ariaLabel}

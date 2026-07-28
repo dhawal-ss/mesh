@@ -61,7 +61,7 @@ export function FileAttachmentPreview({
                 <p className="max-w-attachment-name truncate text-xs font-medium text-primary">
                   {file.name}
                 </p>
-                <p className="text-caption text-muted">
+                <p className="file-size text-caption text-muted">
                   {transfer
                     ? transfer.state === 'failed' || transfer.state === 'cancelled'
                       ? `${transfer.error ?? 'Transfer stopped'} Retry restarts from zero.`

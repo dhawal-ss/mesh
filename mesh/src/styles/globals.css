@@ -4,6 +4,7 @@
 
 :root {
   color-scheme: dark;
+  font-feature-settings: 'liga' 1, 'calt' 1;
 
   /*
    * Tier 1 — reference colors. Hex values are the compatibility fallback;
@@ -251,61 +252,84 @@
   --yellow: var(--status-warning);
   --blue: var(--status-info);
 
-  /* Typography */
-  --font-sans: 'Inter Variable', sans-serif;
-  --font-mono: 'Consolas', 'Andale Mono WT', 'Andale Mono', 'Menlo', monospace;
-  --font-size-2xs: 11px;
-  --font-size-micro: 11px;
-  --font-size-meta: 11px;
-  --font-size-code: 13px;
-  --font-size-xs: 12px;
-  --font-size-sm: 15px;
-  --font-size-base: 17px;
-  --font-size-md: 22px;
-  --font-size-lg: 28px;
+  /* Typography reference scale */
+  --ref-size-11: 11px;
+  --ref-size-12: 12px;
+  --ref-size-13: 13px;
+  --ref-size-14: 14px;
+  --ref-size-15: 15px;
+  --ref-size-18: 18px;
+  --ref-size-22: 22px;
+  --ref-size-28: 28px;
+  --font-sans: 'Inter Variable', 'InterVariable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+  --font-size-2xs: var(--ref-size-11);
+  --font-size-xs: var(--ref-size-12);
+  --font-size-code: var(--ref-size-13);
+  --font-size-dense: var(--ref-size-13);
+  --font-size-sm: var(--ref-size-14);
+  --font-size-base: var(--ref-size-15);
+  --font-size-md: var(--ref-size-18);
+  --font-size-title: var(--ref-size-22);
+  --font-size-lg: var(--ref-size-28);
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
-  --line-height-2xs: 1.4;
-  --line-height-micro: 1.35;
-  --line-height-meta: 1.35;
-  --line-height-code: 1.45;
-  --line-height-prose: 1.375rem;
-  --line-height-xs: 1.35;
-  --line-height-sm: 1.375;
-  --line-height-base: 1.375;
-  --line-height-md: 1.3;
-  --line-height-lg: 1.25;
-  --letter-spacing-2xs: 0.02em;
-  --letter-spacing-signal: 0.25em;
-  --letter-spacing-eyebrow: 0.35em;
-  --letter-spacing-section: 0.3em;
-  --letter-spacing-control: 0.24em;
-  --letter-spacing-status: 0.32em;
+  --line-height-11: 1.45;
+  --line-height-12: 1.33;
+  --line-height-13: 1.54;
+  --line-height-14: 1.57;
+  --line-height-15: 1.47;
+  --line-height-18: 1.33;
+  --line-height-22: 1.27;
+  --line-height-28: 1.14;
+  --line-height-prose: 22px;
+  --letter-spacing-11: 0.01em;
+  --letter-spacing-12: 0.005em;
+  --letter-spacing-13: 0;
+  --letter-spacing-14: 0;
+  --letter-spacing-15: -0.005em;
+  --letter-spacing-18: -0.01em;
+  --letter-spacing-22: -0.015em;
+  --letter-spacing-28: -0.02em;
 
   /* Radii */
-  --radius-default: 4px;
-  --radius-sm: 3px;
-  --radius-md: 4px;
-  --radius-lg: 8px;
+  --radius-sm: 4px;
+  --radius-default: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
   --radius-xl: 16px;
-  --radius-control: 14px;
-  --radius-panel: 28px;
+  --radius-control: var(--radius-md);
+  --radius-panel: var(--radius-lg);
   --radius-community-rest: 24px;
   --radius-community-active: 16px;
   --border-width-status: 3px;
 
-  /* Motion */
-  --duration-instant: 80ms;
-  --duration-fast: 100ms;
-  --duration-normal: 200ms;
-  --duration-slow: 320ms;
-  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-decelerate: cubic-bezier(0, 0, 0.2, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --transition-fast: var(--duration-fast) var(--ease-standard);
-  --transition-normal: var(--duration-normal) var(--ease-standard);
-  --animation-pulse-soft: pulseSoft 2s var(--ease-standard) infinite;
+  /* Motion reference values */
+  --ref-dur-50: 50ms;
+  --ref-dur-100: 100ms;
+  --ref-dur-150: 150ms;
+  --ref-dur-200: 200ms;
+  --ref-dur-250: 250ms;
+  --ref-dur-300: 300ms;
+  --ref-ease-out-quart: cubic-bezier(0.165, 0.84, 0.44, 1);
+  --ref-ease-out-quint: cubic-bezier(0.23, 1, 0.32, 1);
+  --ref-ease-in-out-cubic: cubic-bezier(0.645, 0.045, 0.355, 1);
+  --ref-ease-hover: ease;
+
+  /* Motion semantic roles */
+  --motion-dur-micro: var(--ref-dur-100);
+  --motion-dur-fast: var(--ref-dur-150);
+  --motion-dur-base: var(--ref-dur-200);
+  --motion-dur-slow: var(--ref-dur-250);
+  --motion-dur-exit: var(--ref-dur-150);
+  --motion-ease-enter: var(--ref-ease-out-quart);
+  --motion-ease-exit: var(--ref-ease-out-quart);
+  --motion-ease-move: var(--ref-ease-in-out-cubic);
+  --motion-ease-hover: var(--ref-ease-hover);
+  --transition-fast: var(--motion-dur-micro) var(--motion-ease-hover);
+  --transition-normal: var(--motion-dur-base) var(--motion-ease-move);
+  --animation-pulse-soft: pulseSoft 2s var(--motion-ease-move) infinite;
 
   /* Density and component geometry. */
   --density-row-block: 6px;
@@ -313,7 +337,7 @@
   --density-control-md: 36px;
   --density-control-lg: 44px;
   --density-panel-gap: 16px;
-  --density-line-height: 1.375;
+  --density-line-height: var(--line-height-14);
   --message-gutter: 72px;
   --message-group-gap: 17px;
   --empty-state-icon: 68px;
@@ -532,7 +556,7 @@
   --density-control-md: 32px;
   --density-control-lg: 40px;
   --density-panel-gap: 12px;
-  --density-line-height: 1.25;
+  --density-line-height: 1.43;
   --message-group-gap: 12px;
 }
 
@@ -542,7 +566,7 @@
   --density-control-md: 36px;
   --density-control-lg: 44px;
   --density-panel-gap: 16px;
-  --density-line-height: 1.375;
+  --density-line-height: var(--line-height-14);
   --message-group-gap: 17px;
 }
 
@@ -552,7 +576,7 @@
   --density-control-md: 40px;
   --density-control-lg: 48px;
   --density-panel-gap: 20px;
-  --density-line-height: 1.5;
+  --density-line-height: 1.71;
   --message-group-gap: 20px;
 }
 
@@ -580,12 +604,34 @@ body {
   background: var(--bg-primary);
   color: var(--text-normal);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: var(--font-size-sm);
   line-height: var(--density-line-height);
   letter-spacing: 0;
+  font-variation-settings: 'opsz' 14;
 }
 
-/* ── Scrollbar — thin Discord-style ── */
+.display,
+h1,
+h2 {
+  font-variation-settings: 'opsz' 28;
+}
+
+.tnum,
+time,
+.badge-count,
+.member-count,
+.file-size {
+  font-feature-settings: 'tnum' 1, 'calt' 1;
+}
+
+.identifier,
+.device-id,
+.recovery-key,
+code {
+  font-feature-settings: 'ss02' 1, 'zero' 1, 'tnum' 1, 'calt' 0, 'liga' 0;
+}
+
+/* ── Scrollbar — compact app chrome ── */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -632,19 +678,20 @@ textarea {
 }
 
 :focus-visible {
-  outline: 2px solid var(--blue);
+  outline: 2px solid var(--border-focus);
   outline-offset: 2px;
-  border-radius: var(--radius-md);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  html:focus-within {
+    scroll-behavior: auto;
+  }
+
+  [class*='animate-'],
+  [class*='transition-'],
+  [class*='duration-'] {
+    animation: none;
+    transition: none;
   }
 }
 

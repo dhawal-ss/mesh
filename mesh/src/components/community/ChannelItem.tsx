@@ -133,7 +133,7 @@ export function ChannelItem({
 
         {/* Unread badge */}
         {hasUnread && !active && (
-          <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-status-danger px-1 text-meta font-semibold text-content-on-status">
+          <span className="badge-count ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-status-danger px-1 text-meta font-semibold text-content-on-status">
             {displayedUnreadCount > 99 ? '99+' : displayedUnreadCount}
           </span>
         )}

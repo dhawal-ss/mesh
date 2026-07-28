@@ -163,7 +163,7 @@ export function VoiceView({ channelId, channelName }: { channelId: string; chann
             </span>
           )}
           <span className="rounded-md bg-bg-modifier-hover px-2 py-1">{connectionState}</span>
-          <span className="rounded-md bg-bg-modifier-hover px-2 py-1">{memberCount} people</span>
+          <span className="member-count rounded-md bg-bg-modifier-hover px-2 py-1">{memberCount} people</span>
           <span className="rounded-md bg-bg-modifier-hover px-2 py-1">{relayLabel}</span>
           <span className="rounded-md bg-bg-modifier-hover px-2 py-1">{channelId.slice(0, 8)}</span>
         </div>

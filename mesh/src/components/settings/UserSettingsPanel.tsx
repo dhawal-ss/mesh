@@ -425,7 +425,7 @@ export function UserSettingsPanel({
             Sound
             <select
               id="notification-sound"
-              className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/20"
+              className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent"
               value={notifications.soundId}
               disabled={!notifications.enabled || !notifications.sound}
               onChange={(event) =>
@@ -463,7 +463,7 @@ export function UserSettingsPanel({
                 <input
                   id="quiet-hours-start"
                   type="time"
-                  className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/20"
+                  className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent"
                   value={notifications.quietHours.start}
                   onChange={(event) =>
                     setQuietHours(event.target.value, notifications.quietHours.end)
@@ -475,7 +475,7 @@ export function UserSettingsPanel({
                 <input
                   id="quiet-hours-end"
                   type="time"
-                  className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/20"
+                  className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent"
                   value={notifications.quietHours.end}
                   onChange={(event) =>
                     setQuietHours(notifications.quietHours.start, event.target.value)
@@ -639,7 +639,7 @@ function AppearanceSelect({
       {label}
       <select
         id={id}
-        className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/20"
+        className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >

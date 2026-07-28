@@ -255,7 +255,7 @@ export function ChannelSidebar() {
                               </button>
                             ))}
                             {members.length > 8 && (
-                              <div className="px-1 text-meta text-muted">
+                              <div className="member-count px-1 text-meta text-muted">
                                 +{members.length - 8} more
                               </div>
                             )}

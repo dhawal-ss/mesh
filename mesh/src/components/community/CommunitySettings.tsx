@@ -219,7 +219,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                     </div>
                     <div className="min-w-0 flex-1">
                       <h3 className="truncate text-sm font-semibold text-primary">{community.name}</h3>
-                      <p className="text-xs text-muted">
+                      <p className="member-count text-xs text-muted">
                         {community.role} · {community.memberCount} member{community.memberCount !== 1 ? 's' : ''}
                       </p>
                     </div>

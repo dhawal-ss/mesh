@@ -43,6 +43,14 @@ if (
 }
 
 const errors = []
+const rendererSource = await readFile(centralRenderer, 'utf8')
+if (!/\babsoluteStrokeWidth\b/.test(rendererSource)) {
+  errors.push('src/components/ui/Icon.tsx must opt into Lucide absoluteStrokeWidth')
+}
+if (!/size === ['"]lg['"] \? 1\.75 : 1\.5/.test(rendererSource)) {
+  errors.push('src/components/ui/Icon.tsx must render 14–20px icons at 1.5px and 24px icons at 1.75px')
+}
+
 for (const filePath of await componentFiles(componentsRoot)) {
   if (filePath === centralRenderer || isTestFixture(filePath)) continue
   const source = await readFile(filePath, 'utf8')
@@ -57,5 +65,5 @@ if (errors.length > 0) {
 }
 
 console.log(
-  'Icon contract check passed: production components use the central Icon renderer without inline SVG.',
+  'Icon contract check passed: production components use the central absolute-stroke Icon renderer without inline SVG.',
 )
