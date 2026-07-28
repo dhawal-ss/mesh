@@ -11,13 +11,20 @@ use tauri_plugin_notification::NotificationExt;
 
 use crate::backend::{
     MatrixBackendEvent, MatrixNotification, MatrixUnreadUpdate, NotificationPresentationContext,
-    MATRIX_NOTIFICATION_EVENT, MATRIX_RTC_MEDIA_KEY_EVENT, MATRIX_RTC_MEDIA_KEY_FAILURE_EVENT,
-    MATRIX_RTC_MEDIA_KEY_PAUSE_EVENT, MATRIX_RTC_MEMBERSHIP_EVENT, MATRIX_UNREAD_UPDATE_EVENT,
+    MATRIX_NOTIFICATION_EVENT, MATRIX_QUEUED_MESSAGE_EVENT, MATRIX_RTC_MEDIA_KEY_EVENT,
+    MATRIX_RTC_MEDIA_KEY_FAILURE_EVENT, MATRIX_RTC_MEDIA_KEY_PAUSE_EVENT,
+    MATRIX_RTC_MEMBERSHIP_EVENT, MATRIX_UNREAD_UPDATE_EVENT,
 };
 
 use super::error::CommandError;
 
 const TRAY_ID: &str = "mesh-main";
+
+#[derive(Debug, Clone, Copy, Default)]
+struct UnreadSnapshot {
+    messages: u64,
+    mentions: u64,
+}
 
 impl NotificationPresentationContext {
     fn normalized(mut self) -> Self {
@@ -43,7 +50,7 @@ pub struct NotificationRuntimeState {
     // intentional: presentation stays fail-closed until persisted settings
     // are restored through `set_notification_context`.
     context: RwLock<NotificationPresentationContext>,
-    unread_by_room: RwLock<HashMap<String, u64>>,
+    unread_by_room: RwLock<HashMap<String, UnreadSnapshot>>,
 }
 
 impl NotificationRuntimeState {
@@ -64,10 +71,14 @@ impl NotificationRuntimeState {
 
     fn record_unread(&self, update: &MatrixUnreadUpdate) {
         if let Ok(mut unread_by_room) = self.unread_by_room.write() {
-            if update.unread_messages == 0 {
+            let snapshot = UnreadSnapshot {
+                messages: update.unread_messages.max(0) as u64,
+                mentions: update.unread_mentions.max(0) as u64,
+            };
+            if snapshot.messages == 0 && snapshot.mentions == 0 {
                 unread_by_room.remove(&update.room_id);
             } else {
-                unread_by_room.insert(update.room_id.clone(), update.unread_messages.max(0) as u64);
+                unread_by_room.insert(update.room_id.clone(), snapshot);
             }
         }
     }
@@ -90,8 +101,11 @@ impl NotificationRuntimeState {
                 rooms
                     .iter()
                     .filter(|(room_id, _)| !muted.contains(room_id.as_str()))
-                    .map(|(_, count)| *count)
-                    .sum()
+                    // A mention count can briefly outlive the message count
+                    // while the SDK reconciles read markers. Keep the badge
+                    // visible until both are clear.
+                    .map(|(_, snapshot)| snapshot.messages.max(snapshot.mentions))
+                    .fold(0_u64, u64::saturating_add)
             })
             .unwrap_or_default()
     }
@@ -198,6 +212,14 @@ pub fn handle_matrix_backend_event(app: &AppHandle, event: MatrixBackendEvent) {
                 );
             }
             update_unread_indicators(app, &state);
+        }
+        MatrixBackendEvent::QueuedMessage(update) => {
+            if let Err(error) = app.emit(MATRIX_QUEUED_MESSAGE_EVENT, &update) {
+                tracing::warn!(
+                    target: "mesh::matrix",
+                    "Could not emit queued-message update: {error}"
+                );
+            }
         }
         MatrixBackendEvent::RtcMembership(update) => {
             if let Err(error) = app.emit(MATRIX_RTC_MEMBERSHIP_EVENT, &update) {
@@ -351,5 +373,28 @@ mod tests {
         });
 
         assert_eq!(state.visible_unread_total(), 3);
+    }
+
+    #[test]
+    fn mention_only_unread_updates_keep_the_badge_until_both_counts_clear() {
+        let state = NotificationRuntimeState::default();
+        state.set_context(NotificationPresentationContext {
+            notifications_enabled: true,
+            ..NotificationPresentationContext::default()
+        });
+
+        state.record_unread(&MatrixUnreadUpdate {
+            room_id: "!room:example.org".into(),
+            unread_messages: 0,
+            unread_mentions: 2,
+        });
+        assert_eq!(state.visible_unread_total(), 2);
+
+        state.record_unread(&MatrixUnreadUpdate {
+            room_id: "!room:example.org".into(),
+            unread_messages: 0,
+            unread_mentions: 0,
+        });
+        assert_eq!(state.visible_unread_total(), 0);
     }
 }

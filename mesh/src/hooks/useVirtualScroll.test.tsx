@@ -1,8 +1,9 @@
-import { act } from 'react'
+import { StrictMode, act, useLayoutEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  findVisibleRange,
   useVirtualScroll,
   type VirtualItem,
   type VirtualScrollState,
@@ -34,20 +35,66 @@ class ResizeObserverMock {
   }
 }
 
+describe('findVisibleRange', () => {
+  it('preserves inclusive viewport-boundary semantics', () => {
+    const offsets = [0, 100, 200, 300]
+    const heights = [100, 100, 100, 100]
+
+    expect(findVisibleRange(offsets, heights, 100, 300)).toEqual({
+      start: 0,
+      end: 3,
+    })
+    expect(findVisibleRange(offsets, heights, 101, 299)).toEqual({
+      start: 1,
+      end: 3,
+    })
+    expect(findVisibleRange([], [], 0, 100)).toEqual({ start: 0, end: 0 })
+  })
+
+  it('finds a bounded range in 50,000 rows with logarithmic indexed reads', () => {
+    const rowCount = 50_000
+    const offsets = Array.from({ length: rowCount }, (_, index) => index * 100)
+    const heights = Array.from({ length: rowCount }, () => 100)
+    let indexedReads = 0
+    const countReads = (values: number[]) => new Proxy(values, {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) indexedReads += 1
+        return Reflect.get(target, property, receiver)
+      },
+    })
+
+    const range = findVisibleRange(
+      countReads(offsets),
+      countReads(heights),
+      2_500_000,
+      2_500_500,
+    )
+
+    expect(range).toEqual({ start: 24_999, end: 25_005 })
+    expect(range.end - range.start + 1).toBe(7)
+    expect(indexedReads).toBeLessThan(80)
+  })
+})
+
 interface HarnessProps {
   items: VirtualItem[]
   onRender: (state: VirtualScrollState) => void
 }
 
 function Harness({ items, onRender }: HarnessProps) {
-  const state = useVirtualScroll(items, {
+  const {
+    scrollContainerRef,
+    ...state
+  } = useVirtualScroll(items, {
     estimatedMessageHeight: 100,
     estimatedGapHeight: 50,
     overscanPx: 0,
     bottomThreshold: 10,
   })
-  onRender(state)
-  return <div ref={state.scrollRef} />
+  useLayoutEffect(() => {
+    onRender({ ...state, scrollContainerRef })
+  }, [onRender, scrollContainerRef, state])
+  return <div ref={scrollContainerRef} />
 }
 
 describe('useVirtualScroll', () => {
@@ -63,13 +110,15 @@ describe('useVirtualScroll', () => {
       root.render(
         <Harness
           items={items}
-          onRender={(state) => {
-            latest = state
-            renderCount += 1
-          }}
+          onRender={captureRender}
         />,
       )
     })
+  }
+
+  const captureRender = (state: VirtualScrollState) => {
+    latest = state
+    renderCount += 1
   }
 
   const scrollElement = () => {
@@ -141,18 +190,20 @@ describe('useVirtualScroll', () => {
 
     const rendersBeforeScroll = renderCount
     element.scrollTop = 10
-    latest.handleScroll()
+    expect(latest.handleScroll()).toEqual({ scrollTop: 10, isAtBottom: false })
     element.scrollTop = 20
     latest.handleScroll()
     element.scrollTop = 30
-    latest.handleScroll()
+    expect(latest.handleScroll()).toEqual({ scrollTop: 30, isAtBottom: false })
 
     expect(latest.scrollTop).toBe(0)
+    expect(latest.getIsAtBottom()).toBe(false)
     expect(animationFrames).toHaveLength(1)
 
     await flushAnimationFrame()
 
     expect(latest.scrollTop).toBe(30)
+    expect(latest.isAtBottom).toBe(false)
     expect(renderCount - rendersBeforeScroll).toBe(1)
   })
 
@@ -214,5 +265,105 @@ describe('useVirtualScroll', () => {
     expect(latest.scrollTop).toBe(650)
     expect(latest.visibleRange).toEqual({ start: 6, end: 9 })
     expect(latest.scrollToItem('missing')).toBe(false)
+  })
+
+  it('restores the same viewport position after older rows are prepended', async () => {
+    const rows = Array.from({ length: 6 }, (_, index) => ({
+      key: `message-${index}`,
+      type: 'message' as const,
+    }))
+    await render(rows)
+
+    const element = scrollElement()
+    Object.defineProperty(element, 'clientHeight', { configurable: true, value: 200 })
+    Object.defineProperty(element, 'scrollHeight', {
+      configurable: true,
+      get: () => latest.totalContentHeight,
+    })
+    await act(async () => {
+      ResizeObserverMock.instances[ResizeObserverMock.instances.length - 1]?.trigger(200)
+    })
+
+    element.scrollTop = 250
+    latest.handleScroll()
+    await flushAnimationFrame()
+    latest.setScrollAnchor({ messageId: 'message-2', offset: 50 })
+
+    await render([
+      { key: 'message-older-0', type: 'message' },
+      { key: 'message-older-1', type: 'message' },
+      ...rows,
+    ])
+    await flushAnimationFrame()
+
+    expect(element.scrollTop).toBe(450)
+    expect(latest.scrollTop).toBe(450)
+    expect(latest.topSpacerHeight).toBe(400)
+  })
+
+  it('keeps imperative callbacks stable across scroll-only renders', async () => {
+    await render([
+      { key: 'message-a', type: 'message' },
+      { key: 'message-b', type: 'message' },
+    ])
+    const element = scrollElement()
+    Object.defineProperty(element, 'clientHeight', { configurable: true, value: 100 })
+    await act(async () => {
+      ResizeObserverMock.instances[ResizeObserverMock.instances.length - 1]?.trigger(100)
+    })
+    const callbacks = {
+      scrollContainerRef: latest.scrollContainerRef,
+      handleMeasuredHeight: latest.handleMeasuredHeight,
+      handleScroll: latest.handleScroll,
+      getIsAtBottom: latest.getIsAtBottom,
+      scrollToBottom: latest.scrollToBottom,
+      scrollToItem: latest.scrollToItem,
+      resetLayout: latest.resetLayout,
+      setScrollAnchor: latest.setScrollAnchor,
+    }
+
+    element.scrollTop = 25
+    await act(async () => {
+      latest.handleScroll()
+    })
+    await flushAnimationFrame()
+
+    expect({
+      scrollContainerRef: latest.scrollContainerRef,
+      handleMeasuredHeight: latest.handleMeasuredHeight,
+      handleScroll: latest.handleScroll,
+      getIsAtBottom: latest.getIsAtBottom,
+      scrollToBottom: latest.scrollToBottom,
+      scrollToItem: latest.scrollToItem,
+      resetLayout: latest.resetLayout,
+      setScrollAnchor: latest.setScrollAnchor,
+    }).toEqual(callbacks)
+  })
+
+  it('mounts, measures, and unmounts cleanly in Strict Mode', async () => {
+    await act(async () => {
+      root.render(
+        <StrictMode>
+          <Harness
+            items={[{ key: 'message-a', type: 'message' }]}
+            onRender={captureRender}
+          />
+        </StrictMode>,
+      )
+    })
+
+    const element = scrollElement()
+    Object.defineProperty(element, 'clientHeight', { configurable: true, value: 120 })
+    await act(async () => {
+      ResizeObserverMock.instances[ResizeObserverMock.instances.length - 1]?.trigger(120)
+      latest.handleMeasuredHeight('message-a', 140)
+    })
+
+    expect(latest.viewportHeight).toBe(120)
+    expect(latest.totalContentHeight).toBe(140)
+    await act(async () => root.unmount())
+    expect(animationFrames).toHaveLength(0)
+
+    root = createRoot(container)
   })
 })

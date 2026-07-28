@@ -22,6 +22,7 @@ import { useMessageNavigationStore } from '../../store/message-navigation'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
 import { Icon } from '../ui/Icon'
 import { ConversationProtection } from './ConversationProtection'
+import { useCommunityMembers } from '../../store/membership'
 
 interface ChatViewProps {
   channel: Channel
@@ -43,11 +44,13 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
   const removeMessage = useMessageStore((state) => state.removeMessage)
   const removeMessagesByAuthorAllChannels = useMessageStore((state) => state.removeMessagesByAuthorAllChannels)
   const setDeliveryStatus = useMessageStore((state) => state.setDeliveryStatus)
+  const acceptQueuedMessage = useMessageStore((state) => state.acceptQueuedMessage)
   const loadOlderMessages = useMessageStore((state) => state.loadOlderMessages)
   const isLoadingOlder = useMessageStore((state) => state.loadingOlder[channel.id] ?? false)
   const isBrowsingOlder = useMessageStore((state) => state.browsingOlder[channel.id] ?? false)
   const hiddenNewerCount = useMessageStore((state) => state.newerGapCount[channel.id] ?? 0)
   const matrixMode = bridge.isMatrixBackend()
+  const communityMembers = useCommunityMembers(channel.communityId)
   const patchChannel = useChannelStore((state) => state.patchChannel)
   const setActiveChannel = useChannelStore((state) => state.setActiveChannel)
   const navigationRequest = useMessageNavigationStore((state) => (
@@ -97,15 +100,25 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
     return items
   }, [channel.id, channelMessages, hiddenNewerCount])
 
-  const vs = useVirtualScroll(virtualItems)
-  const visibleItems = virtualItems.length === 0
-    ? []
-    : virtualItems.slice(vs.visibleRange.start, vs.visibleRange.end + 1)
-
-  // Keep a stable ref to the latest vs so effects/callbacks don't depend on the
-  // vs object (whose identity changes on every render due to computed values).
-  const vsRef = useRef(vs)
-  vsRef.current = vs
+  const {
+    scrollContainerRef,
+    topSpacerHeight,
+    bottomSpacerHeight,
+    visibleRange,
+    handleMeasuredHeight,
+    handleScroll: updateVirtualScroll,
+    getIsAtBottom,
+    scrollToBottom,
+    scrollToItem,
+    resetLayout,
+    setScrollAnchor,
+  } = useVirtualScroll(virtualItems)
+  const visibleItems = useMemo(
+    () => virtualItems.length === 0
+      ? []
+      : virtualItems.slice(visibleRange.start, visibleRange.end + 1),
+    [virtualItems, visibleRange.end, visibleRange.start],
+  )
 
   const markChannelSeen = useCallback(async () => {
     await bridge.markChannelRead(channel.id)
@@ -139,7 +152,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
 
       requestAnimationFrame(() => {
         if (generation !== loadGenerationRef.current) return
-        vsRef.current.scrollToBottom()
+        scrollToBottom()
       })
     } finally {
       if (generation === loadGenerationRef.current) {
@@ -151,7 +164,14 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
     if (generation === loadGenerationRef.current) {
       await markChannelSeen()
     }
-  }, [channel.id, flushBufferedMessages, markChannelSeen, matrixMode, replaceMessages])
+  }, [
+    channel.id,
+    flushBufferedMessages,
+    markChannelSeen,
+    matrixMode,
+    replaceMessages,
+    scrollToBottom,
+  ])
 
   // Load messages on channel switch
   useEffect(() => {
@@ -240,7 +260,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
     }
 
     const target = navigationRequest.message
-    if (!vsRef.current.scrollToItem(target.id, 'center')) return
+    if (!scrollToItem(target.id, 'center')) return
 
     clearTimeout(highlightTimerRef.current)
     setHighlightedMessageId(target.id)
@@ -250,7 +270,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
       setJumpAnnouncement('')
     }, 2_000)
     useMessageNavigationStore.getState().completeNavigation(navigationRequest.requestId)
-  }, [navigationRequest, preparedNavigationId, virtualItems])
+  }, [navigationRequest, preparedNavigationId, scrollToItem, virtualItems])
 
   useEffect(
     () => () => {
@@ -276,8 +296,8 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
         const hasNewMessage = latest.some((message) => !existingIds.has(message.id))
         replaceMessages(channel.id, latest)
         if (hasNewMessage) {
-          if (vsRef.current.isAtBottom) {
-            requestAnimationFrame(() => vsRef.current.scrollToBottom())
+          if (getIsAtBottom()) {
+            requestAnimationFrame(scrollToBottom)
           } else {
             setShowNewMessages(true)
           }
@@ -313,14 +333,20 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
       active = false
       retryController.abort()
     }
-  }, [channel.id, isViewingLatest, matrixMode, replaceMessages])
+  }, [
+    channel.id,
+    getIsAtBottom,
+    isViewingLatest,
+    matrixMode,
+    replaceMessages,
+    scrollToBottom,
+  ])
 
   // Reset scroll state on channel switch
   useEffect(() => {
     setShowNewMessages(false)
-    vsRef.current.resetLayout()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channel.id])
+    resetLayout()
+  }, [channel.id, resetLayout])
 
   // Request history from new peers
   useEffect(() => {
@@ -344,7 +370,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
         }
         addMessage(channel.id, msg)
 
-        if (isViewingLatest && vs.isAtBottom) {
+        if (isViewingLatest && getIsAtBottom()) {
           markChannelSeen().catch((err) => {
             console.error('Failed to mark channel as read:', err)
           })
@@ -355,7 +381,14 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
       }
     })
     return () => { unsub.then((fn) => fn()) }
-  }, [addMessage, channel.id, isViewingLatest, markChannelSeen, matrixMode, vs.isAtBottom])
+  }, [
+    addMessage,
+    channel.id,
+    getIsAtBottom,
+    isViewingLatest,
+    markChannelSeen,
+    matrixMode,
+  ])
 
   // Listen for reactions
   useEffect(() => {
@@ -481,12 +514,18 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
       return
     }
 
-    vsRef.current.scrollToBottom()
+    scrollToBottom()
     setShowNewMessages(false)
     markChannelSeen().catch((err) => {
       console.error('Failed to mark channel as read:', err)
     })
-  }, [hiddenNewerCount, isBrowsingOlder, markChannelSeen, resetToLatestWindow])
+  }, [
+    hiddenNewerCount,
+    isBrowsingOlder,
+    markChannelSeen,
+    resetToLatestWindow,
+    scrollToBottom,
+  ])
 
   const handleNavigateToMessage = useCallback((message: MessageType) => {
     useMessageNavigationStore.getState().requestNavigation(message)
@@ -494,25 +533,26 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
   }, [setActiveChannel])
 
   const handleScroll = useCallback(async () => {
-    vsRef.current.handleScroll()
+    const position = updateVirtualScroll()
+    if (!position) return
 
-    const el = vsRef.current.scrollRef.current
-    if (!el) return
-
-    if (vsRef.current.isAtBottom && showNewMessages && isViewingLatest) {
+    if (position.isAtBottom && showNewMessages && isViewingLatest) {
       setShowNewMessages(false)
       markChannelSeen().catch((err) => {
         console.error('Failed to mark channel as read:', err)
       })
     }
 
-    if (el.scrollTop < 100 && !isLoadingOlder) {
+    if (position.scrollTop < 100 && !isLoadingOlder) {
       const anchorItem = visibleItems.find((item) => item.type === 'message')
       if (anchorItem) {
         const anchorIndex = virtualItems.findIndex((item) => item.key === anchorItem.key)
-        vsRef.current.setScrollAnchor({
+        setScrollAnchor({
           messageId: anchorItem.key,
-          offset: Math.max(0, el.scrollTop - (anchorIndex >= 0 ? vsRef.current.topSpacerHeight : 0)),
+          offset: Math.max(
+            0,
+            position.scrollTop - (anchorIndex >= 0 ? topSpacerHeight : 0),
+          ),
         })
       }
 
@@ -524,7 +564,10 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
     isViewingLatest,
     loadOlderMessages,
     markChannelSeen,
+    setScrollAnchor,
     showNewMessages,
+    topSpacerHeight,
+    updateVirtualScroll,
     virtualItems,
     visibleItems,
   ])
@@ -548,6 +591,19 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
         if (index === 0) setReplyingTo(null)
         await onAttachmentSent?.(file, index === 0 && content.length > 0)
       }
+      return
+    }
+    if (matrixMode) {
+      const clientRequestId = bridge.createMatrixTransactionId()
+      const message = await bridge.sendMessage(
+        channel.id,
+        content,
+        [],
+        replyingTo?.id ?? undefined,
+        clientRequestId,
+      )
+      acceptQueuedMessage(message)
+      setReplyingTo(null)
       return
     }
     const identity = resolveSenderIdentity(
@@ -575,7 +631,13 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
     setReplyingTo(null)
 
     try {
-      const msg = await bridge.sendMessage(channel.id, content, [], replyingTo?.id ?? undefined)
+      const msg = await bridge.sendMessage(
+        channel.id,
+        content,
+        [],
+        replyingTo?.id ?? undefined,
+        optimisticId,
+      )
       removeMessage(channel.id, optimisticId)
       if (hydratingLatestRef.current) {
         bufferedMessagesRef.current.push({ ...msg, deliveryStatus: 'sent' })
@@ -590,13 +652,29 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
   }
 
   const handleRetry = useCallback(async (failedMessage: MessageType) => {
+    if (matrixMode && failedMessage.transactionId) {
+      setDeliveryStatus(channel.id, failedMessage.id, 'pending')
+      try {
+        await bridge.matrixRetryQueuedMessage(
+          channel.id,
+          failedMessage.transactionId,
+        )
+      } catch (error) {
+        console.error('Failed to retry saved message:', error)
+        setDeliveryStatus(channel.id, failedMessage.id, 'failed')
+      }
+      return
+    }
     removeMessage(channel.id, failedMessage.id)
 
     const identity = resolveSenderIdentity(
       useIdentityStore.getState().identity,
       matrixMode ? bridge.getMatrixUserId() : null,
     )
-    const retryId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    // Reuse the failed optimistic ID as the Matrix transaction ID. If the
+    // first request was accepted but its response was lost, Matrix returns
+    // the original event instead of publishing a duplicate on retry.
+    const retryId = failedMessage.id
 
     const optimistic: MessageType = {
       id: retryId,
@@ -621,6 +699,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
         failedMessage.content,
         [],
         failedMessage.replyToId ?? undefined,
+        retryId,
       )
       removeMessage(channel.id, retryId)
       if (hydratingLatestRef.current) {
@@ -632,13 +711,23 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
       console.error('Failed to retry message:', err)
       setDeliveryStatus(channel.id, retryId, 'failed')
     }
-  }, [addMessage, channel.id, removeMessage, setDeliveryStatus])
+  }, [addMessage, channel.id, matrixMode, removeMessage, setDeliveryStatus])
+
+  const handleCancelQueued = useCallback(async (message: MessageType) => {
+    if (!matrixMode || !message.transactionId) return
+    try {
+      await bridge.matrixCancelQueuedMessage(channel.id, message.transactionId)
+      removeMessage(channel.id, message.id)
+    } catch (error) {
+      console.error('Failed to cancel saved message:', error)
+    }
+  }, [channel.id, matrixMode, removeMessage])
 
   return (
     <div className="flex h-full flex-1 flex-col">
       {/* Channel header */}
       <div
-        className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border-subtle px-4 shadow-elevation-low"
+        className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border-subtle px-4"
         data-tauri-drag-region
       >
         <div className="flex min-w-0 items-center gap-2">
@@ -674,7 +763,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
           {jumpAnnouncement}
         </p>
         <div
-          ref={vs.scrollRef}
+          ref={scrollContainerRef}
           onScroll={() => void handleScroll()}
           className="flex-1 overflow-y-auto"
           role="log"
@@ -707,8 +796,8 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
               <div
                 data-design-token-exception="data-driven-virtual-spacer-geometry"
                 style={{
-                  paddingTop: `${vs.topSpacerHeight}px`,
-                  paddingBottom: `${vs.bottomSpacerHeight}px`,
+                  paddingTop: `${topSpacerHeight}px`,
+                  paddingBottom: `${bottomSpacerHeight}px`,
                 }}
               >
                 {visibleItems.map((item, index) => {
@@ -720,7 +809,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
                         key={item.key}
                         rowKey={item.key}
                         hiddenCount={hiddenNewerCount}
-                        onHeightChange={vs.handleMeasuredHeight}
+                        onHeightChange={handleMeasuredHeight}
                         onJumpToLatest={() => void jumpToLatest()}
                       />
                     )
@@ -737,9 +826,10 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
                       message={message}
                       isGrouped={isGrouped(message, channelMessages[messageIndex - 1])}
                       hasGap={nextItem?.type !== 'gap'}
-                      onHeightChange={vs.handleMeasuredHeight}
+                      onHeightChange={handleMeasuredHeight}
                       onReply={setReplyingTo}
                       onRetry={handleRetry}
+                      onCancel={handleCancelQueued}
                       limitedActions={false}
                       isHighlighted={highlightedMessageId === message.id}
                       editRequestToken={
@@ -788,11 +878,17 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
         channelName={channel.name}
         onSend={handleSend}
         communityId={channel.communityId}
+        members={communityMembers}
         disableAttachments={matrixMode && !bridge.getBackendCapabilities().encryptedAttachments}
         onEditLastMessage={() => {
           const ownMessage = [...channelMessages]
             .reverse()
-            .find((message) => message.authorPublicKey === ownAuthorId && !message.deletedAt)
+            .find((message) =>
+              message.authorPublicKey === ownAuthorId
+              && !message.deletedAt
+              && message.deliveryStatus !== 'pending'
+              && message.deliveryStatus !== 'failed',
+            )
           if (!ownMessage) return
           setEditRequest((current) => ({
             messageId: ownMessage.id,
@@ -812,6 +908,7 @@ interface VirtualMessageRowProps {
   onHeightChange: (rowKey: string, height: number) => void
   onReply: (message: MessageType) => void
   onRetry?: (message: MessageType) => void
+  onCancel?: (message: MessageType) => void
   limitedActions?: boolean
   isHighlighted: boolean
   editRequestToken: number
@@ -825,6 +922,7 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
   onHeightChange,
   onReply,
   onRetry,
+  onCancel,
   limitedActions,
   isHighlighted,
   editRequestToken,
@@ -892,6 +990,7 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
           disableMotion
           onReply={onReply}
           onRetry={onRetry}
+          onCancel={onCancel}
           limitedActions={limitedActions}
           editRequestToken={editRequestToken}
         />

@@ -27,7 +27,7 @@ describe('UserPanel Matrix profile editing', () => {
       identity: {
         publicKey: '@alice:example.org',
         displayName: 'Alice',
-        avatarColor: '#5865f2',
+        avatarColor: '#52b5f4',
       },
       isLoading: false,
     })
@@ -52,6 +52,9 @@ describe('UserPanel Matrix profile editing', () => {
       'button[aria-label="Open settings for Alice"]',
     )
     await act(async () => settingsButton?.click())
+    await act(async () => {
+      await import('../settings/UserSettingsPanel')
+    })
 
     const input = document.body.querySelector<HTMLInputElement>('input[autocomplete="nickname"]')
     await act(async () => {

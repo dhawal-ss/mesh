@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use super::error::CommandError;
-use crate::backend::BackendKind;
+use crate::backend::{BackendError, BackendKind};
 use crate::security::{
     create_private_dir, has_blocked_attachment_extension, is_file_in_named_directory_under,
     open_private_file,
@@ -540,7 +540,7 @@ pub async fn stage_attachment_bytes(
 #[tauri::command]
 pub async fn open_downloaded_file(
     local_path: String,
-    app: AppHandle,
+    _app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     let path = tokio::fs::canonicalize(local_path).await.map_err(|_| {
@@ -554,15 +554,19 @@ pub async fn open_downloaded_file(
 
     let allowed = match state.backend.kind() {
         BackendKind::Matrix => {
-            let matrix_root = app
-                .path()
-                .app_data_dir()
-                .map_err(|error| CommandError::Other(error.to_string()))?
-                .join("matrix");
-            let matrix_root = tokio::fs::canonicalize(matrix_root)
+            let active_account_root = state
+                .backend
+                .backend()
+                .active_account_storage_root()
+                .await
+                .map_err(|error| match error {
+                    BackendError::NotAuthenticated => CommandError::NotAuthenticated,
+                    _ => CommandError::NotFound("Local account cache is unavailable".into()),
+                })?;
+            let active_account_root = tokio::fs::canonicalize(active_account_root)
                 .await
                 .map_err(|_| CommandError::NotFound("Local account cache is unavailable".into()))?;
-            is_file_in_named_directory_under(&path, &matrix_root, "media-cache")
+            is_file_in_named_directory_under(&path, &active_account_root, "media-cache")
         }
         BackendKind::LegacyP2p => {
             #[cfg(feature = "legacy-p2p")]

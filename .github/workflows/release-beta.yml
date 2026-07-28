@@ -27,7 +27,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: mesh/package-lock.json
 
@@ -54,6 +54,7 @@ jobs:
           pwsh -NoProfile -File ./scripts/beta-release-preflight.ps1 -RequireManagedService
           npm test
           npm run build
+          npm run check:bundle-size
           pwsh -NoProfile -File ./scripts/beta-release-preflight.ps1 -VerifyFrontendBundle
           npm run e2e -- --workers=1
 
@@ -128,7 +129,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: mesh/package-lock.json
 

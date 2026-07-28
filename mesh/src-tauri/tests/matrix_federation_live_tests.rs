@@ -1,6 +1,12 @@
 #![cfg(feature = "matrix-backend")]
 
-use std::time::Duration;
+use std::{
+    io::{Cursor, Read, Write},
+    net::{SocketAddr, TcpStream},
+    path::PathBuf,
+    process::Command,
+    time::Duration,
+};
 
 use matrix_sdk::{
     config::SyncSettings,
@@ -17,6 +23,88 @@ use matrix_sdk::{
 use mesh_lib::backend::{
     MatrixBackend, MatrixLogin, MatrixRoomNotificationMode, MeshBackend, UserPreferences,
 };
+
+struct PausedSynapse {
+    compose_root: PathBuf,
+    active: bool,
+}
+
+impl PausedSynapse {
+    fn stop_first_homeserver() -> Self {
+        let compose_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../infra/matrix-spike");
+        let status = Command::new("docker")
+            .args(["compose", "stop", "synapse1"])
+            .current_dir(&compose_root)
+            .status()
+            .expect("docker compose must be available for the Matrix spike");
+        assert!(status.success(), "failed to stop the first test homeserver");
+        Self {
+            compose_root,
+            active: true,
+        }
+    }
+
+    fn resume(&mut self) {
+        let status = Command::new("docker")
+            .args(["compose", "start", "synapse1"])
+            .current_dir(&self.compose_root)
+            .status()
+            .expect("docker compose must be available for the Matrix spike");
+        assert!(
+            status.success(),
+            "failed to restart the first test homeserver"
+        );
+        self.active = false;
+    }
+}
+
+impl Drop for PausedSynapse {
+    fn drop(&mut self) {
+        if !self.active {
+            return;
+        }
+        let _ = Command::new("docker")
+            .args(["compose", "start", "synapse1"])
+            .current_dir(&self.compose_root)
+            .status();
+    }
+}
+
+fn homeserver_ready(port: u16) -> bool {
+    let address = SocketAddr::from(([127, 0, 0, 1], port));
+    let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_millis(300)) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(500)));
+    if stream
+        .write_all(
+            b"GET /_matrix/client/versions HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
+        .is_err()
+    {
+        return false;
+    }
+    let mut response = String::new();
+    stream.read_to_string(&mut response).is_ok() && response.starts_with("HTTP/1.1 200")
+}
+
+async fn wait_for_homeserver(port: u16, expected_ready: bool) {
+    for _ in 0..120 {
+        if homeserver_ready(port) == expected_ready {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    panic!(
+        "homeserver on port {port} did not become {}",
+        if expected_ready {
+            "ready"
+        } else {
+            "unavailable"
+        }
+    );
+}
 
 fn privacy_preferences(
     send_read_receipts: bool,
@@ -187,7 +275,12 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
 
     let dm_body = format!("dm-online-{nonce}");
     let dm_message = alice
-        .send_dm(bob_user.clone(), dm_body.clone(), None)
+        .send_dm(
+            bob_user.clone(),
+            dm_body.clone(),
+            None,
+            uuid::Uuid::new_v4().to_string(),
+        )
         .await
         .unwrap();
     tokio::time::sleep(Duration::from_secs(2)).await;
@@ -206,6 +299,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
             alice_user.clone(),
             dm_reply_body.clone(),
             Some(dm_message.id.clone()),
+            uuid::Uuid::new_v4().to_string(),
         )
         .await
         .unwrap();
@@ -334,8 +428,27 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     assert!(saw_alice_dm_typing);
-    alice.set_typing(alice_dm.id.clone(), false).await.unwrap();
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    alice
+        .update_user_preferences(privacy_preferences(true, false, true, false))
+        .await
+        .unwrap();
+    let mut typing_cleared_after_opt_out = false;
+    for _ in 0..20 {
+        let typing_users = bob.typing_users(alice_dm.id.clone()).await.unwrap();
+        if typing_users.iter().all(|user| user.user_id != alice_user) {
+            typing_cleared_after_opt_out = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    assert!(
+        typing_cleared_after_opt_out,
+        "typing opt-out did not clear a previously sent typing notice"
+    );
+    alice
+        .update_user_preferences(privacy_preferences(true, true, true, false))
+        .await
+        .unwrap();
     bob.sync_once().await.unwrap();
     let bob_dm_messages = bob
         .dm_messages(alice_dm.id.clone(), 20, None, None)
@@ -359,7 +472,12 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
     assert!(alice.set_dm_blocked(bob_user.clone(), true).await.unwrap());
     assert!(alice.dm_blocked(bob_user.clone()).await.unwrap());
     assert!(alice
-        .send_dm(bob_user.clone(), "blocked-dm".into(), None)
+        .send_dm(
+            bob_user.clone(),
+            "blocked-dm".into(),
+            None,
+            uuid::Uuid::new_v4().to_string(),
+        )
         .await
         .is_err());
     assert!(!alice.set_dm_blocked(bob_user.clone(), false).await.unwrap());
@@ -553,6 +671,104 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
     }));
     checkpoint!("power levels and Space metadata propagated");
 
+    let emoji_shortcode = format!("party_{}", &nonce[..8]);
+    let mut emoji_source = Cursor::new(Vec::new());
+    image::DynamicImage::new_rgba8(64, 32)
+        .write_to(&mut emoji_source, image::ImageFormat::Png)
+        .unwrap();
+    let uploaded_emoji = alice
+        .upload_custom_emoji(
+            community.space_id.clone(),
+            emoji_shortcode.clone(),
+            "party.png".into(),
+            "image/png".into(),
+            emoji_source.into_inner(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(uploaded_emoji.shortcode, emoji_shortcode);
+    alice.sync_once().await.unwrap();
+
+    let mut bob_emoji = Vec::new();
+    for _ in 0..20 {
+        bob.sync_once().await.unwrap();
+        bob_emoji = bob
+            .list_custom_emoji(community.space_id.clone())
+            .await
+            .unwrap();
+        if bob_emoji
+            .iter()
+            .any(|emoji| emoji.shortcode == emoji_shortcode)
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert!(bob_emoji
+        .iter()
+        .any(|emoji| emoji.shortcode == emoji_shortcode));
+    let federated_emoji = bob
+        .load_custom_emoji_image(community.space_id.clone(), emoji_shortcode.clone())
+        .await
+        .unwrap();
+    assert!(federated_emoji.starts_with(b"\x89PNG\r\n\x1a\n"));
+
+    let emoji_body = format!("federated :{emoji_shortcode}:");
+    bob.send_message(
+        community.channel_id.clone(),
+        emoji_body.clone(),
+        None,
+        uuid::Uuid::new_v4().to_string(),
+    )
+    .await
+    .unwrap();
+    let mut emoji_message = None;
+    for _ in 0..30 {
+        alice.sync_once().await.unwrap();
+        emoji_message = alice
+            .messages(community.channel_id.clone(), 20, None, None)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|message| message.content == emoji_body);
+        if emoji_message.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    let emoji_message = emoji_message.expect("custom emoji message did not federate");
+    let reaction_key = format!(":{emoji_shortcode}:");
+    alice
+        .toggle_reaction(
+            community.channel_id.clone(),
+            emoji_message.id.clone(),
+            reaction_key.clone(),
+        )
+        .await
+        .unwrap();
+    let mut reaction_federated = false;
+    for _ in 0..20 {
+        bob.sync_once().await.unwrap();
+        reaction_federated = bob
+            .messages(community.channel_id.clone(), 20, None, None)
+            .await
+            .unwrap()
+            .iter()
+            .any(|message| {
+                message.id == emoji_message.id
+                    && message
+                        .reactions
+                        .get(&reaction_key)
+                        .is_some_and(|users| users.iter().any(|user| user == &alice_user))
+            });
+        if reaction_federated {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert!(reaction_federated);
+    checkpoint!("custom emoji state, media, message, and reaction federated");
+
     let extra_channel = alice
         .create_channel(
             community.space_id.clone(),
@@ -562,26 +778,52 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         .await
         .unwrap();
     assert_eq!(extra_channel.community_id, community.space_id);
+    alice
+        .invite_user(extra_channel.id.clone(), bob_user.clone())
+        .await
+        .unwrap();
+    bob.join_room(extra_channel.id.clone()).await.unwrap();
 
     let online_body = format!("online-{nonce}");
-    let online_message = alice
-        .send_message(community.channel_id.clone(), online_body.clone(), None)
+    let online_request_id = uuid::Uuid::new_v4().to_string();
+    let queued_online_message = alice
+        .send_message(
+            community.channel_id.clone(),
+            online_body.clone(),
+            None,
+            online_request_id.clone(),
+        )
         .await
         .unwrap();
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    bob.sync_once().await.unwrap();
-    assert!(bob
-        .recent_texts(community.channel_id.clone(), 20)
-        .await
-        .unwrap()
-        .contains(&online_body));
-    let bob_messages = bob
-        .messages(community.channel_id.clone(), 20, None, None)
-        .await
-        .unwrap();
-    assert!(bob_messages
-        .iter()
-        .any(|message| { message.id == online_message.id && message.content == online_body }));
+    assert_eq!(
+        queued_online_message.delivery_status.as_deref(),
+        Some("pending")
+    );
+    assert_eq!(
+        queued_online_message.client_request_id.as_deref(),
+        Some(online_request_id.as_str())
+    );
+    assert!(queued_online_message.transaction_id.is_some());
+
+    let mut online_message = None;
+    for _ in 0..30 {
+        bob.sync_once().await.unwrap();
+        online_message = bob
+            .messages(community.channel_id.clone(), 20, None, None)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|message| message.content == online_body);
+        if online_message.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    let online_message = online_message.expect("durable online message did not federate");
+    assert_eq!(
+        online_message.client_request_id.as_deref(),
+        Some(online_request_id.as_str())
+    );
     checkpoint!("encrypted federated message delivered");
 
     let legacy_body = format!("legacy-import-{nonce}");
@@ -636,29 +878,46 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
     checkpoint!("encrypted legacy provenance event federated and projected");
 
     let reply_body = format!("reply-{nonce}");
-    let reply = bob
+    let reply_request_id = uuid::Uuid::new_v4().to_string();
+    let queued_reply = bob
         .send_message(
             community.channel_id.clone(),
             reply_body.clone(),
             Some(online_message.id.clone()),
+            reply_request_id.clone(),
         )
         .await
         .unwrap();
     assert_eq!(
-        reply.reply_to_id.as_deref(),
+        queued_reply.reply_to_id.as_deref(),
         Some(online_message.id.as_str())
     );
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    alice.sync_once().await.unwrap();
-    let alice_messages = alice
-        .messages(community.channel_id.clone(), 20, None, None)
-        .await
-        .unwrap();
-    assert!(alice_messages.iter().any(|message| {
-        message.id == reply.id
-            && message.content == reply_body
-            && message.reply_to_id.as_deref() == Some(online_message.id.as_str())
-    }));
+    assert_eq!(
+        queued_reply.client_request_id.as_deref(),
+        Some(reply_request_id.as_str())
+    );
+    let mut reply = None;
+    for _ in 0..30 {
+        alice.sync_once().await.unwrap();
+        reply = alice
+            .messages(community.channel_id.clone(), 20, None, None)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|message| {
+                message.content == reply_body
+                    && message.reply_to_id.as_deref() == Some(online_message.id.as_str())
+            });
+        if reply.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    let reply = reply.expect("durable reply did not federate");
+    assert_eq!(
+        reply.client_request_id.as_deref(),
+        Some(reply_request_id.as_str())
+    );
 
     let edited_body = format!("edited-{nonce}");
     alice
@@ -736,8 +995,13 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         alice.wait_for_room_update(community.channel_id.clone(), 10_000),
         async {
             tokio::time::sleep(Duration::from_millis(250)).await;
-            bob.send_message(community.channel_id.clone(), update_body, None)
-                .await
+            bob.send_message(
+                community.channel_id.clone(),
+                update_body,
+                None,
+                uuid::Uuid::new_v4().to_string(),
+            )
+            .await
         }
     );
     assert!(updated.unwrap());
@@ -757,6 +1021,136 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         .iter()
         .any(|message| { message.id == online_message.id && !message.content.is_empty() }));
     checkpoint!("subscription and redaction verified");
+
+    let mut paused_synapse = PausedSynapse::stop_first_homeserver();
+    wait_for_homeserver(8008, false).await;
+    let offline_body = format!("durable-offline-{nonce}");
+    let offline_request_id = uuid::Uuid::new_v4().to_string();
+    let offline_message = tokio::time::timeout(
+        Duration::from_secs(5),
+        alice.send_message(
+            community.channel_id.clone(),
+            offline_body.clone(),
+            None,
+            offline_request_id.clone(),
+        ),
+    )
+    .await
+    .expect("saving an offline message must not wait for the network")
+    .unwrap();
+    assert_eq!(offline_message.delivery_status.as_deref(), Some("pending"));
+    assert_eq!(
+        offline_message.client_request_id.as_deref(),
+        Some(offline_request_id.as_str())
+    );
+    let offline_transaction_id = offline_message
+        .transaction_id
+        .clone()
+        .expect("durable local echo must expose its SDK transaction");
+
+    let duplicate = alice
+        .send_message(
+            community.channel_id.clone(),
+            offline_body.clone(),
+            None,
+            offline_request_id.clone(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        duplicate.transaction_id.as_deref(),
+        Some(offline_transaction_id.as_str()),
+        "retrying a lost IPC response created a second local echo"
+    );
+    let queued_before_restart = alice.queued_messages().await.unwrap();
+    assert_eq!(
+        queued_before_restart
+            .iter()
+            .filter(|message| {
+                message.channel_id == community.channel_id
+                    && message.client_request_id.as_deref() == Some(offline_request_id.as_str())
+            })
+            .count(),
+        1
+    );
+    bob.sync_once().await.unwrap();
+    assert!(!bob
+        .messages(community.channel_id.clone(), 100, None, None)
+        .await
+        .unwrap()
+        .iter()
+        .any(|message| message.content == offline_body));
+
+    alice.shutdown_for_test().await;
+    drop(alice);
+    let alice = MatrixBackend::with_profile(alice_store.path().to_owned(), &alice_profile);
+    tokio::time::timeout(Duration::from_secs(20), alice.restore_session())
+        .await
+        .expect("offline encrypted session restoration exceeded its bounded window")
+        .unwrap();
+    let queued_after_restart = alice.queued_messages().await.unwrap();
+    let restored_echo = queued_after_restart
+        .iter()
+        .find(|message| {
+            message.channel_id == community.channel_id
+                && message.client_request_id.as_deref() == Some(offline_request_id.as_str())
+        })
+        .expect("restart lost the encrypted durable local echo");
+    assert_eq!(
+        restored_echo.transaction_id.as_deref(),
+        Some(offline_transaction_id.as_str())
+    );
+
+    paused_synapse.resume();
+    wait_for_homeserver(8008, true).await;
+    alice.sync_once().await.unwrap();
+    let mut delivered_offline = Vec::new();
+    for _ in 0..40 {
+        bob.sync_once().await.unwrap();
+        delivered_offline = bob
+            .messages(community.channel_id.clone(), 100, None, None)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|message| message.content == offline_body)
+            .collect();
+        if !delivered_offline.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert_eq!(
+        delivered_offline.len(),
+        1,
+        "the restart-safe local echo did not deliver exactly once"
+    );
+    assert_eq!(
+        delivered_offline[0].client_request_id.as_deref(),
+        Some(offline_request_id.as_str())
+    );
+    for _ in 0..20 {
+        if alice
+            .queued_messages()
+            .await
+            .unwrap()
+            .iter()
+            .all(|message| {
+                message.client_request_id.as_deref() != Some(offline_request_id.as_str())
+            })
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    assert!(alice
+        .queued_messages()
+        .await
+        .unwrap()
+        .iter()
+        .all(|message| {
+            message.client_request_id.as_deref() != Some(offline_request_id.as_str())
+        }));
+    checkpoint!("offline send survived restart and delivered exactly once after recovery");
 
     bob.pause_sync().await;
     let missed_body = format!("missed-{nonce}");
@@ -898,7 +1292,10 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         })
         .await
         .unwrap();
-    assert_eq!(saved_preferences.schema_version, 2);
+    assert_eq!(
+        saved_preferences.schema_version,
+        UserPreferences::SCHEMA_VERSION
+    );
     assert_eq!(saved_preferences.muted_channels.len(), 1);
 
     let second_device_preferences = bob_second.user_preferences().await.unwrap().unwrap();
@@ -927,7 +1324,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         .await
         .unwrap();
     tokio::time::sleep(Duration::from_secs(2)).await;
-    alice
+    let moderation = alice
         .ban_member(
             community.space_id.clone(),
             bob_user.clone(),
@@ -935,6 +1332,32 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         )
         .await
         .unwrap();
+    assert!(moderation.audit_recorded);
+    assert_eq!(moderation.audit.actor_user_id, alice_user);
+    assert_eq!(moderation.audit.target_user_id, bob_user);
+    assert_eq!(moderation.audit.action, "Banned member");
+    assert_eq!(
+        moderation.audit.reason.as_deref(),
+        Some("Matrix moderation acceptance test")
+    );
+    for room_id in [
+        &community.space_id,
+        &community.channel_id,
+        &extra_channel.id,
+    ] {
+        assert!(moderation
+            .audit
+            .room_outcomes
+            .iter()
+            .any(|outcome| outcome.room_id == *room_id && outcome.succeeded));
+    }
+    let moderation_audit = alice
+        .list_moderation_audit(community.space_id.clone(), 20)
+        .await
+        .unwrap();
+    assert!(moderation_audit
+        .iter()
+        .any(|entry| entry == &moderation.audit));
     tokio::time::sleep(Duration::from_secs(2)).await;
     alice.sync_once().await.unwrap();
     let final_members = alice
@@ -946,7 +1369,14 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
             && member.join_status == "left"
             && member.ban_status == "banned"
     }));
-    checkpoint!("leave and coordinated ban verified");
+    restored.sync_once().await.unwrap();
+    for room_id in [&community.channel_id, &extra_channel.id] {
+        assert!(
+            restored.join_room(room_id.clone()).await.is_err(),
+            "banned member rejoined a server channel"
+        );
+    }
+    checkpoint!("server-wide ban and protected moderation audit verified");
 
     alice.logout().await.unwrap();
     restored.logout().await.unwrap();

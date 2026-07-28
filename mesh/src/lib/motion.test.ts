@@ -19,25 +19,40 @@ function sourceFiles(directory: string): string[] {
 describe('motion tokens', () => {
   it('reads CSS time and easing variables into Framer Motion values', () => {
     const values: Record<string, string> = {
-      '--duration-fast': '90ms',
-      '--duration-normal': '0.18s',
-      '--ease-standard': 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+      '--motion-dur-fast': '150ms',
+      '--motion-dur-base': '0.2s',
+      '--motion-dur-slow': '250ms',
+      '--motion-dur-exit': '0.15s',
+      '--motion-ease-enter': 'cubic-bezier(0.165, 0.84, 0.44, 1)',
+      '--motion-ease-exit': 'cubic-bezier(0.165, 0.84, 0.44, 1)',
+      '--motion-ease-move': 'cubic-bezier(0.645, 0.045, 0.355, 1)',
+      '--motion-ease-hover': 'ease',
     }
 
     expect(readMotionTokens({
       getPropertyValue: (name) => values[name] ?? '',
     })).toEqual({
-      fast: 0.09,
-      normal: 0.18,
-      easing: [0.2, 0.8, 0.2, 1],
+      fast: 0.15,
+      normal: 0.2,
+      slow: 0.25,
+      exit: 0.15,
+      easing: [0.165, 0.84, 0.44, 1],
+      exitEasing: [0.165, 0.84, 0.44, 1],
+      moveEasing: [0.645, 0.045, 0.355, 1],
+      hoverEasing: [0.25, 0.1, 0.25, 1],
     })
   })
 
   it('falls back safely when CSS motion tokens are unavailable', () => {
     expect(readMotionTokens(undefined)).toEqual({
-      fast: 0.1,
+      fast: 0.15,
       normal: 0.2,
-      easing: [0.25, 0.1, 0.25, 1],
+      slow: 0.25,
+      exit: 0.15,
+      easing: [0.165, 0.84, 0.44, 1],
+      exitEasing: [0.165, 0.84, 0.44, 1],
+      moveEasing: [0.645, 0.045, 0.355, 1],
+      hoverEasing: [0.25, 0.1, 0.25, 1],
     })
   })
 
@@ -56,18 +71,27 @@ describe('motion tokens', () => {
     const custom = createMotionVariants({
       fast: 0.08,
       normal: 0.16,
+      slow: 0.24,
+      exit: 0.12,
       easing: [0, 0, 0.58, 1],
+      exitEasing: [0, 0, 0.58, 1],
+      moveEasing: [0.645, 0.045, 0.355, 1],
+      hoverEasing: [0.25, 0.1, 0.25, 1],
     })
     expect(custom.screen.animate).toMatchObject({
       transition: { duration: 0.16 },
     })
     expect(custom.screen.exit).toMatchObject({
-      transition: { duration: 0.08 },
+      transition: { duration: 0.12 },
     })
     expect(transitions.enter.duration).toBeGreaterThanOrEqual(0.14)
     expect(transitions.enter.duration).toBeLessThanOrEqual(0.22)
-    expect(transitions.exit.duration).toBeGreaterThanOrEqual(0.08)
-    expect(transitions.exit.duration).toBeLessThanOrEqual(0.14)
+    expect(transitions.exit.duration).toBe(0.15)
+    expect(transitions.reaction).toMatchObject({
+      type: 'spring',
+      duration: 0.3,
+      bounce: 0.2,
+    })
   })
 })
 

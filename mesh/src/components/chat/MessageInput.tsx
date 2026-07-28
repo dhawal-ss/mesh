@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
 import { isTauri } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { FileAttachmentPreview, type StagedFile } from './FileAttachment'
@@ -16,6 +16,17 @@ import {
 } from '../../lib/attachments'
 import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
+import type { MemberRecord } from '../../store/membership'
+import { truncateDraft, useDraftStore } from '../../store/drafts'
+import { useServerEmoji } from '../../store/custom-emoji'
+import { useDurableDraft } from '../../hooks/useDurableDraft'
+import {
+  expandSlashCommand,
+  getSlashCommandContext,
+  getSlashCommandSuggestions,
+  toggleMarkdownFormat,
+  type MarkdownFormat,
+} from '../../lib/composer'
 
 interface MessageInputProps {
   channelId: string
@@ -28,10 +39,52 @@ interface MessageInputProps {
   disableAttachments?: boolean
   disabled?: boolean
   communityId?: string
+  members?: readonly MemberRecord[]
   onEditLastMessage?: () => void
 }
 
 const TYPING_THROTTLE_MS = 5000
+const MAX_MENTION_SUGGESTIONS = 6
+const MAX_EMOJI_SUGGESTIONS = 6
+
+interface MentionContext {
+  start: number
+  end: number
+  query: string
+}
+
+function getMentionContext(value: string, cursor: number): MentionContext | null {
+  const beforeCursor = value.slice(0, cursor)
+  const match = beforeCursor.match(/(?:^|\s)@([^\s@]*)$/)
+  if (!match) return null
+
+  const token = match[0]
+  const tokenOffset = token.startsWith('@') ? 0 : 1
+  return {
+    start: cursor - token.length + tokenOffset,
+    end: cursor,
+    query: match[1],
+  }
+}
+
+function getEmojiContext(value: string, cursor: number): MentionContext | null {
+  if (/^[a-z0-9_:]/i.test(value.slice(cursor))) return null
+  const beforeCursor = value.slice(0, cursor)
+  const match = beforeCursor.match(/(?:^|\s):([a-z0-9_]*)$/i)
+  if (!match) return null
+
+  const token = match[0]
+  const tokenOffset = token.startsWith(':') ? 0 : 1
+  return {
+    start: cursor - token.length + tokenOffset,
+    end: cursor,
+    query: match[1],
+  }
+}
+
+function isMatrixUserId(value: string) {
+  return /^@[^\s:@]+:[^\s]+$/.test(value)
+}
 
 export function MessageInput(props: MessageInputProps) {
   return (
@@ -53,9 +106,39 @@ function MessageInputContent({
   disableAttachments,
   disabled,
   communityId,
+  members = [],
   onEditLastMessage,
 }: MessageInputProps) {
-  const [value, setValue] = useState('')
+  const [value, setValue] = useState(() => useDraftStore.getState().drafts[channelId] ?? '')
+  const setDraft = useDraftStore((state) => state.setDraft)
+  const clearDraft = useDraftStore((state) => state.clearDraft)
+  const applyLoadedDraft = useCallback((loadedDraft: string) => {
+    const normalized = truncateDraft(loadedDraft)
+    setValue(normalized)
+    setDraft(channelId, normalized)
+  }, [channelId, setDraft])
+  const {
+    status: draftSyncStatus,
+    markChanged: markDraftChanged,
+    clear: clearDurableDraft,
+    retry: retryDraftSync,
+  } = useDurableDraft(channelId, value, applyLoadedDraft)
+  const updateDraftValue = useCallback((nextValue: string) => {
+    setValue(nextValue)
+    setDraft(channelId, nextValue)
+    markDraftChanged()
+  }, [channelId, markDraftChanged, setDraft])
+  const clearCurrentDraft = useCallback(() => {
+    clearDraft(channelId)
+    clearDurableDraft()
+  }, [channelId, clearDraft, clearDurableDraft])
+  const [mentionCursor, setMentionCursor] = useState(0)
+  const [mentionIndex, setMentionIndex] = useState(0)
+  const [mentionsDismissed, setMentionsDismissed] = useState(false)
+  const [slashIndex, setSlashIndex] = useState(0)
+  const [slashDismissed, setSlashDismissed] = useState(false)
+  const [emojiIndex, setEmojiIndex] = useState(0)
+  const [emojiDismissed, setEmojiDismissed] = useState(false)
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [isStaging, setIsStaging] = useState(false)
@@ -64,15 +147,15 @@ function MessageInputContent({
   const [matrixTransfers, setMatrixTransfers] = useState<Record<string, MatrixTransferProgress>>({})
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const stagedFilesRef = useRef<StagedFile[]>([])
+  const stagedFilesRef = useRef(stagedFiles)
   const stagingCountRef = useRef(0)
   const intakeGenerationRef = useRef(0)
   const pendingNativeDropsRef = useRef(new Map<string, number>())
   const sendingFilesRef = useRef(new Set<StagedFile>())
   const mountedRef = useRef(true)
   const lastTypingBroadcast = useRef<number>(0)
-
-  stagedFilesRef.current = stagedFiles
+  const pendingSelectionRef = useRef<{ start: number; end: number } | null>(null)
+  const customEmoji = useServerEmoji(communityId)
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -109,7 +192,179 @@ function MessageInputContent({
     }
   }, [channelId])
 
+  const mentionContext = !mentionsDismissed && communityId && bridge.isMatrixBackend()
+    ? getMentionContext(value, mentionCursor)
+    : null
+  const mentionSuggestions = mentionContext
+    ? members
+      .filter((member) => (
+        member.joinStatus === 'joined'
+        && member.banStatus === 'none'
+        && isMatrixUserId(member.publicKey)
+      ))
+      .filter((member) => {
+        const query = mentionContext.query.toLocaleLowerCase()
+        return member.displayName.toLocaleLowerCase().includes(query)
+          || member.publicKey.toLocaleLowerCase().includes(query)
+      })
+      .slice(0, MAX_MENTION_SUGGESTIONS)
+    : []
+  const activeMentionIndex = Math.min(mentionIndex, Math.max(mentionSuggestions.length - 1, 0))
+  const emojiContext = !emojiDismissed && communityId && bridge.isMatrixBackend()
+    ? getEmojiContext(value, mentionCursor)
+    : null
+  const emojiSuggestions = emojiContext
+    ? customEmoji
+      .filter((emoji) => {
+        const query = emojiContext.query.toLocaleLowerCase()
+        return emoji.shortcode.toLocaleLowerCase().includes(query)
+          || emoji.body.toLocaleLowerCase().includes(query)
+      })
+      .slice(0, MAX_EMOJI_SUGGESTIONS)
+    : []
+  const activeEmojiIndex = Math.min(emojiIndex, Math.max(emojiSuggestions.length - 1, 0))
+  const slashContext = !slashDismissed ? getSlashCommandContext(value, mentionCursor) : null
+  const slashSuggestions = slashContext ? getSlashCommandSuggestions(slashContext.query) : []
+  const activeSlashIndex = Math.min(slashIndex, Math.max(slashSuggestions.length - 1, 0))
+
+  const selectMention = (member: MemberRecord) => {
+    if (!mentionContext) return
+    const nextValue = truncateDraft(
+      `${value.slice(0, mentionContext.start)}${member.publicKey} ${value.slice(mentionContext.end)}`,
+    )
+    const nextCursor = Math.min(
+      mentionContext.start + member.publicKey.length + 1,
+      nextValue.length,
+    )
+    updateDraftValue(nextValue)
+    setMentionCursor(nextCursor)
+    setMentionsDismissed(true)
+    setEmojiDismissed(true)
+    setSlashDismissed(true)
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      inputRef.current?.setSelectionRange(nextCursor, nextCursor)
+    })
+  }
+
+  const selectEmoji = (emoji: (typeof emojiSuggestions)[number]) => {
+    if (!emojiContext) return
+    const replacement = `:${emoji.shortcode}: `
+    const nextValue = truncateDraft(
+      `${value.slice(0, emojiContext.start)}${replacement}${value.slice(emojiContext.end)}`,
+    )
+    const nextCursor = Math.min(emojiContext.start + replacement.length, nextValue.length)
+    updateDraftValue(nextValue)
+    setMentionCursor(nextCursor)
+    setMentionsDismissed(true)
+    setEmojiDismissed(true)
+    setSlashDismissed(true)
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      inputRef.current?.setSelectionRange(nextCursor, nextCursor)
+      setMentionCursor(nextCursor)
+      setEmojiDismissed(true)
+    })
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (mentionSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setMentionIndex((current) => (
+          (Math.min(current, mentionSuggestions.length - 1) + 1) % mentionSuggestions.length
+        ))
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setMentionIndex((current) => (
+          (Math.min(current, mentionSuggestions.length - 1) - 1 + mentionSuggestions.length)
+            % mentionSuggestions.length
+        ))
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setMentionsDismissed(true)
+        return
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        selectMention(mentionSuggestions[activeMentionIndex])
+        return
+      }
+    }
+
+    if (emojiSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setEmojiIndex((current) => (
+          (Math.min(current, emojiSuggestions.length - 1) + 1) % emojiSuggestions.length
+        ))
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setEmojiIndex((current) => (
+          (Math.min(current, emojiSuggestions.length - 1) - 1 + emojiSuggestions.length)
+            % emojiSuggestions.length
+        ))
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setEmojiDismissed(true)
+        return
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        selectEmoji(emojiSuggestions[activeEmojiIndex])
+        return
+      }
+    }
+
+    if (slashSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSlashIndex((current) => (
+          (Math.min(current, slashSuggestions.length - 1) + 1) % slashSuggestions.length
+        ))
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSlashIndex((current) => (
+          (Math.min(current, slashSuggestions.length - 1) - 1 + slashSuggestions.length)
+            % slashSuggestions.length
+        ))
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setSlashDismissed(true)
+        return
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        const command = slashSuggestions[activeSlashIndex]
+        if (slashContext && command) {
+          const nextValue = truncateDraft(
+            `${value.slice(0, slashContext.start)}${command.command} ${value.slice(slashContext.end)}`,
+          )
+          const nextCursor = Math.min(
+            slashContext.start + command.command.length + 1,
+            nextValue.length,
+          )
+          updateDraftValue(nextValue)
+          setMentionCursor(nextCursor)
+          setSlashDismissed(true)
+          pendingSelectionRef.current = { start: nextCursor, end: nextCursor }
+        }
+        return
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       void handleSubmit()
@@ -124,13 +379,16 @@ function MessageInputContent({
 
   const handleSubmit = async () => {
     if (disabled || isUploading || isStaging) return
-    const content = value.trim()
+    const content = expandSlashCommand(value.trim())
     if (!content && stagedFiles.length === 0) return
 
     const sendGeneration = intakeGenerationRef.current
     const filesAtStart = [...stagedFiles]
     if (bridge.isMatrixBackend()) {
-      for (const file of filesAtStart) file.transferId = bridge.createMatrixTransferId()
+      // A file keeps the transfer id it was staged with across retries, so a
+      // resend of an unresolved attachment reuses the same Matrix transaction
+      // id rather than risking a duplicate message on the server.
+      for (const file of filesAtStart) file.transferId ??= bridge.createMatrixTransferId()
       setStagedFiles([...filesAtStart])
     }
     for (const file of filesAtStart) sendingFilesRef.current.add(file)
@@ -150,7 +408,10 @@ function MessageInputContent({
             const next = stagedFilesRef.current.filter((candidate) => candidate !== file)
             stagedFilesRef.current = next
             setStagedFiles(next)
-            if (contentConsumed) setValue('')
+            if (contentConsumed) {
+              setValue('')
+              clearCurrentDraft()
+            }
           }
         })
         // Backward-compatible cleanup for callers that completed the whole send
@@ -164,6 +425,7 @@ function MessageInputContent({
           )
           setStagedFiles(stagedFilesRef.current)
           setValue('')
+          clearCurrentDraft()
           bridge.setTyping(channelId, false).catch(() => {})
         }
         return
@@ -191,6 +453,7 @@ function MessageInputContent({
       if (content) await onSend(content)
       if (intakeGenerationRef.current === sendGeneration) {
         setValue('')
+        clearCurrentDraft()
         bridge.setTyping(channelId, false).catch(() => {})
       }
     } catch (error) {
@@ -203,6 +466,29 @@ function MessageInputContent({
     } finally {
       for (const file of filesAtStart) sendingFilesRef.current.delete(file)
       if (intakeGenerationRef.current === sendGeneration) setIsUploading(false)
+    }
+  }
+
+  const applyFormatting = (format: MarkdownFormat) => {
+    const textarea = inputRef.current
+    if (!textarea || disabled || isUploading || isStaging) return
+    const result = toggleMarkdownFormat(
+      value,
+      textarea.selectionStart,
+      textarea.selectionEnd,
+      format,
+    )
+    const nextValue = truncateDraft(result.value)
+    const selectionStart = Math.min(result.selectionStart, nextValue.length)
+    const selectionEnd = Math.min(result.selectionEnd, nextValue.length)
+    updateDraftValue(nextValue)
+    setMentionCursor(selectionEnd)
+    setMentionsDismissed(true)
+    setEmojiDismissed(true)
+    setSlashDismissed(true)
+    pendingSelectionRef.current = {
+      start: selectionStart,
+      end: selectionEnd,
     }
   }
 
@@ -345,6 +631,7 @@ function MessageInputContent({
     let active = true
     let unlistenStart: (() => void) | undefined
     let unlistenComplete: (() => void) | undefined
+    const pendingNativeDrops = pendingNativeDropsRef.current
     const containsPosition = (position: { x: number; y: number }) => {
       const rect = rootRef.current?.getBoundingClientRect()
       if (!rect) return false
@@ -365,7 +652,7 @@ function MessageInputContent({
         && !disableAttachments
         && containsPosition(start.position)
       ) {
-        pendingNativeDropsRef.current.set(
+        pendingNativeDrops.set(
           start.dropId,
           intakeGenerationRef.current,
         )
@@ -385,8 +672,8 @@ function MessageInputContent({
     }>('mesh-native-attachment-drop', (event) => {
       const intake = event.payload
       const grants = intake.files.map((file) => file.grant)
-      const dropGeneration = pendingNativeDropsRef.current.get(intake.dropId)
-      pendingNativeDropsRef.current.delete(intake.dropId)
+      const dropGeneration = pendingNativeDrops.get(intake.dropId)
+      pendingNativeDrops.delete(intake.dropId)
       const boundToCurrentInput = active
         && dropGeneration !== undefined
         && dropGeneration === intakeGenerationRef.current
@@ -417,7 +704,7 @@ function MessageInputContent({
 
     return () => {
       active = false
-      pendingNativeDropsRef.current.clear()
+      pendingNativeDrops.clear()
       unlistenStart?.()
       unlistenComplete?.()
     }
@@ -425,13 +712,15 @@ function MessageInputContent({
 
   useEffect(() => {
     // StrictMode intentionally runs setup -> cleanup -> setup in development.
+    const pendingNativeDrops = pendingNativeDropsRef.current
+    const sendingFiles = sendingFilesRef.current
     mountedRef.current = true
     return () => {
       mountedRef.current = false
       intakeGenerationRef.current += 1
-      pendingNativeDropsRef.current.clear()
+      pendingNativeDrops.clear()
       for (const file of stagedFilesRef.current) {
-        if (!sendingFilesRef.current.has(file)) void discardStagedFile(file)
+        if (!sendingFiles.has(file)) void discardStagedFile(file)
       }
     }
   }, [])
@@ -451,8 +740,14 @@ function MessageInputContent({
     stagedFilesRef.current = []
     setStagedFiles([])
     setAttachmentError(null)
-    setValue('')
-  }, [channelId])
+    setValue(useDraftStore.getState().drafts[channelId] ?? '')
+    setMentionCursor(0)
+    setMentionsDismissed(false)
+    setSlashIndex(0)
+    setSlashDismissed(false)
+    setEmojiIndex(0)
+    setEmojiDismissed(false)
+  }, [channelId, clearDraft])
 
   useEffect(() => {
     if (inputRef.current) {
@@ -460,6 +755,14 @@ function MessageInputContent({
       // design-token-exception: height follows measured content; CSS owns the max-height token.
       inputRef.current.style.height = `${inputRef.current.scrollHeight}px`
     }
+  }, [value])
+
+  useLayoutEffect(() => {
+    const pending = pendingSelectionRef.current
+    if (!pending || !inputRef.current) return
+    pendingSelectionRef.current = null
+    inputRef.current.focus()
+    inputRef.current.setSelectionRange(pending.start, pending.end)
   }, [value])
 
   return (
@@ -498,14 +801,138 @@ function MessageInputContent({
         {attachmentError != null && (
           <ErrorState
             error={attachmentError}
-            context={{ operation: 'send this attachment' }}
+            context={{
+              operation: stagedFiles.length > 0
+                ? 'send this attachment'
+                : 'save this message for delivery',
+            }}
             className="mx-2 mb-2"
             compact
           />
         )}
 
+        <div className="flex items-center gap-1 border-b border-border-subtle px-2 py-1" aria-label="Message formatting">
+          {([
+            ['bold', 'Bold', 'B'],
+            ['italic', 'Italic', 'I'],
+            ['strike', 'Strikethrough', 'S'],
+            ['code', 'Inline code', '<>'],
+          ] as const).map(([format, label, glyph]) => (
+            <button
+              key={format}
+              type="button"
+              aria-label={label}
+              title={label}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => applyFormatting(format)}
+              disabled={disabled || isUploading || isStaging}
+              className="flex h-7 min-w-7 items-center justify-center rounded px-1.5 text-xs font-semibold text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {glyph}
+            </button>
+          ))}
+        </div>
+
         {/* Input row */}
-        <div className="flex items-end gap-0 px-1">
+        <div className="relative flex items-end gap-0 px-1">
+          {slashSuggestions.length > 0 && (
+            <div
+              id={`slash-suggestions-${channelId}`}
+              role="listbox"
+              aria-label="Slash commands"
+              className="absolute bottom-full left-1 right-1 z-dropdown mb-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-raised shadow-lg"
+            >
+              {slashSuggestions.map((command, index) => (
+                <button
+                  key={command.command}
+                  id={`slash-suggestion-${channelId}-${index}`}
+                  type="button"
+                  role="option"
+                  aria-selected={index === activeSlashIndex}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    if (!slashContext) return
+                    const nextValue = truncateDraft(
+                      `${value.slice(0, slashContext.start)}${command.command} ${value.slice(slashContext.end)}`,
+                    )
+                    const nextCursor = Math.min(
+                      slashContext.start + command.command.length + 1,
+                      nextValue.length,
+                    )
+                    updateDraftValue(nextValue)
+                    setMentionCursor(nextCursor)
+                    setSlashDismissed(true)
+                    pendingSelectionRef.current = { start: nextCursor, end: nextCursor }
+                  }}
+                  className={`flex min-h-control-md w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                    index === activeSlashIndex ? 'bg-bg-modifier-hover text-primary' : 'text-secondary hover:bg-bg-modifier-hover'
+                  }`}
+                >
+                  <span className="font-mono font-medium">{command.command}</span>
+                  <span className="truncate text-muted">{command.description}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {mentionSuggestions.length > 0 && (
+            <div
+              id={`mention-suggestions-${channelId}`}
+              role="listbox"
+              aria-label="Mention suggestions"
+              className="absolute bottom-full left-1 right-1 z-dropdown mb-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-raised shadow-lg"
+            >
+              {mentionSuggestions.map((member, index) => (
+                <button
+                  key={member.publicKey}
+                  id={`mention-suggestion-${channelId}-${index}`}
+                  type="button"
+                  role="option"
+                  aria-selected={index === activeMentionIndex}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => selectMention(member)}
+                  className={`flex min-h-control-md w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                    index === activeMentionIndex ? 'bg-bg-modifier-hover text-primary' : 'text-secondary hover:bg-bg-modifier-hover'
+                  }`}
+                >
+                  <span className="truncate font-medium">{member.displayName}</span>
+                  <span className="truncate font-mono text-xs text-muted">{member.publicKey}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {emojiSuggestions.length > 0 && (
+            <div
+              id={`emoji-suggestions-${channelId}`}
+              role="listbox"
+              aria-label="Server emoji"
+              className="absolute bottom-full left-1 right-1 z-dropdown mb-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-raised shadow-lg"
+            >
+              {emojiSuggestions.map((emoji, index) => (
+                <button
+                  key={emoji.shortcode}
+                  id={`emoji-suggestion-${channelId}-${index}`}
+                  type="button"
+                  role="option"
+                  aria-selected={index === activeEmojiIndex}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => selectEmoji(emoji)}
+                  className={`flex min-h-control-md w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                    index === activeEmojiIndex
+                      ? 'bg-bg-modifier-hover text-primary'
+                      : 'text-secondary hover:bg-bg-modifier-hover'
+                  }`}
+                >
+                  <img
+                    src={emoji.imageUrl}
+                    alt=""
+                    className="h-7 w-7 flex-none object-contain"
+                  />
+                  <span className="truncate font-mono font-medium">:{emoji.shortcode}:</span>
+                  <span className="truncate text-muted">{emoji.body}</span>
+                </button>
+              ))}
+            </div>
+          )}
           {/* Attachment button */}
           {!disableAttachments && !disabled && (
             <Tooltip content="Attach file" side="top">
@@ -525,23 +952,75 @@ function MessageInputContent({
             ref={inputRef}
             value={value}
             onChange={(e) => {
-              setValue(e.target.value)
-              if (e.target.value.trim()) {
+              const nextValue = truncateDraft(e.target.value)
+              updateDraftValue(nextValue)
+              setMentionCursor(Math.min(e.target.selectionStart, nextValue.length))
+              setMentionIndex(0)
+              setMentionsDismissed(false)
+              setSlashIndex(0)
+              setSlashDismissed(false)
+              setEmojiIndex(0)
+              setEmojiDismissed(false)
+              if (nextValue.trim()) {
                 broadcastTypingThrottled()
               } else {
                 bridge.setTyping(channelId, false).catch(() => {})
               }
             }}
             onKeyDown={handleKeyDown}
+            onSelect={(event) => {
+              setMentionCursor(event.currentTarget.selectionStart)
+              setMentionIndex(0)
+              setMentionsDismissed(false)
+              setEmojiDismissed(false)
+              setSlashDismissed(false)
+            }}
             onPaste={handlePaste}
             placeholder={`Message #${channelName}`}
             aria-label={`Message ${channelName}`}
             aria-describedby={stagedFiles.length > 0 ? `pending-attachments-${channelId}` : undefined}
+            aria-autocomplete={
+              mentionSuggestions.length > 0
+              || emojiSuggestions.length > 0
+              || slashSuggestions.length > 0
+                ? 'list'
+                : undefined
+            }
+            aria-controls={mentionSuggestions.length > 0
+              ? `mention-suggestions-${channelId}`
+              : emojiSuggestions.length > 0
+                ? `emoji-suggestions-${channelId}`
+              : slashSuggestions.length > 0
+                ? `slash-suggestions-${channelId}`
+                : undefined}
+            aria-activedescendant={mentionSuggestions.length > 0
+              ? `mention-suggestion-${channelId}-${activeMentionIndex}`
+              : emojiSuggestions.length > 0
+                ? `emoji-suggestion-${channelId}-${activeEmojiIndex}`
+              : slashSuggestions.length > 0
+                ? `slash-suggestion-${channelId}-${activeSlashIndex}`
+                : undefined}
             rows={1}
             disabled={disabled || isUploading || isStaging}
             className="min-h-control-lg max-h-composer w-full resize-none bg-transparent px-2 py-2.5 text-sm text-primary placeholder:text-muted focus:outline-none disabled:opacity-60"
           />
         </div>
+        {draftSyncStatus === 'failed' && (
+          <div
+            className="flex min-h-control-sm items-center justify-between gap-3 border-t border-border-subtle px-3 py-1.5 text-xs text-secondary"
+          >
+            <span role="status">
+              Your draft is still here, but it is not saved for restart.
+            </span>
+            <button
+              type="button"
+              onClick={retryDraftSync}
+              className="min-h-control-sm rounded px-2 font-medium text-accent transition-colors hover:bg-bg-modifier-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              Retry
+            </button>
+          </div>
+        )}
         <p id={`pending-attachments-${channelId}`} className="sr-only" aria-live="polite">
           {isStaging
             ? 'Securing attachment locally.'

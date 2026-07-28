@@ -4,16 +4,17 @@ import { Icon } from './Icon'
 
 describe('Icon', () => {
   it.each([
-    ['xs', '14'],
-    ['sm', '16'],
-    ['md', '20'],
-    ['lg', '24'],
-  ] as const)('locks the %s size to %spx', (size, pixels) => {
+    ['xs', 14, 1.5],
+    ['sm', 16, 1.5],
+    ['md', 20, 1.5],
+    ['lg', 24, 1.75],
+  ] as const)('locks the %s size to %spx with a %spx optical stroke', (size, pixels, opticalStroke) => {
     const markup = renderToStaticMarkup(<Icon name="settings" size={size} />)
+    const coordinateStroke = Number(markup.match(/stroke-width="([^"]+)"/)?.[1])
 
     expect(markup).toContain(`width="${pixels}"`)
     expect(markup).toContain(`height="${pixels}"`)
-    expect(markup).toContain('stroke-width="1.75"')
+    expect(coordinateStroke * pixels / 24).toBeCloseTo(opticalStroke)
   })
 
   it('hides decorative icons from assistive technology', () => {

@@ -55,7 +55,7 @@ export function FileBrowser({ communityId, isOpen, onClose }: FileBrowserProps) 
                 <div key={file.fileHash} className="flex items-center justify-between p-3 rounded-lg bg-bg-primary hover:bg-bg-tertiary">
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-text-primary truncate">{file.filename}</div>
-                    <div className="text-xs text-text-muted">
+                    <div className="file-size text-xs text-text-muted">
                       {formatSize(file.size)} · {file.seederCount} seeder{file.seederCount !== 1 ? 's' : ''}
                     </div>
                   </div>

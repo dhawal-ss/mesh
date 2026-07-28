@@ -99,7 +99,7 @@ export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: 
           }}
         >
           <motion.div
-            className="flex max-h-modal w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-bg-secondary shadow-floating"
+            className="flex max-h-modal w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-bg-secondary shadow-overlay"
             initial={{ opacity: 0, scale: 0.95, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -492,7 +492,7 @@ function StatCell({ label, value, ok }: { label: string; value: string; ok?: boo
     <div className="rounded bg-bg-primary px-3 py-2">
       <div className="text-caption uppercase tracking-wide text-muted">{label}</div>
       <div
-        className={`mt-0.5 font-mono text-sm ${
+        className={`tnum mt-0.5 font-mono text-sm ${
           ok === false ? 'text-red' : ok === true ? 'text-green' : 'text-primary'
         }`}
       >

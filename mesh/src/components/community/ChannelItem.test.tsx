@@ -176,4 +176,11 @@ describe('ChannelItem notification context menu', () => {
     await act(async () => findMenuItem('Turn notifications back on')?.click())
     expect(settingsMocks.unmuteChannel).toHaveBeenCalledWith(channel.id)
   })
+
+  it('keeps mention-only SDK unread state visible', () => {
+    const button = renderItem({ unreadCount: 0, unreadMentions: 2 })
+
+    expect(button.getAttribute('aria-label')).toContain('2 mentions')
+    expect(button.textContent).toContain('2')
+  })
 })

@@ -245,6 +245,8 @@ pub(super) fn reconstruct_messages_from_events(
                         edited_at: None,
                         deleted_at: None,
                         reply_to_id,
+                        transaction_id: None,
+                        client_request_id: None,
                         delivery_status: None,
                     };
                     message_map.insert(event_id.to_string(), msg);
@@ -520,6 +522,8 @@ mod tests {
                             edited_at: None,
                             deleted_at: None,
                             reply_to_id,
+                            transaction_id: None,
+                            client_request_id: None,
                             delivery_status: None,
                         };
                         message_map.insert(event_id.to_string(), msg);

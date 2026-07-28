@@ -5,6 +5,7 @@ import { motionDurations, transitions } from '../../lib/motion'
 import { describeError } from '../../lib/errors'
 import { Button } from '../ui/Button'
 import { useIdentityStore } from '../../store/identity'
+import { useReducedMotionPreference } from '../../hooks/useReducedMotionPreference'
 import type { OnboardingFlowProps } from './types'
 
 type IdentityScreenProps = Pick<OnboardingFlowProps, 'onGenerateIdentity'> & {
@@ -25,6 +26,7 @@ function formatFingerprint(publicKey?: string) {
 }
 
 export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onNext }: IdentityScreenProps) {
+  const reduceMotion = useReducedMotionPreference()
   const identity = useIdentityStore((s) => s.identity)
   const [attempt, setAttempt] = useState(0)
   const [phase, setPhase] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
@@ -80,7 +82,7 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
         </h1>
         <p className="max-w-sm text-sm leading-6 text-secondary">
           {backendKind === 'matrix'
-            ? 'We are creating a local migration key. Your Matrix account and revocable devices remain authoritative.'
+            ? 'We are also creating a private key just for this device. It stays here and never leaves.'
             : 'We are creating your peer identity locally. Nothing leaves this device.'}
         </p>
       </div>
@@ -102,14 +104,18 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
           <motion.div
             className="h-full w-1/3 rounded-full bg-blue"
             animate={
-              phase === 'done'
-                ? { x: ['-20%', '120%'], opacity: [0.45, 0.95] }
-                : { x: ['-35%', '115%'] }
+              reduceMotion
+                ? { x: 0, opacity: phase === 'done' ? 0.95 : 1 }
+                : phase === 'done'
+                  ? { x: ['-20%', '120%'], opacity: [0.45, 0.95] }
+                  : { x: ['-35%', '115%'] }
             }
             transition={
-              phase === 'done'
-                ? transitions.celebration
-                : transitions.ambientLoop
+              reduceMotion
+                ? transitions.reduced
+                : phase === 'done'
+                  ? transitions.celebration
+                  : transitions.ambientLoop
             }
           />
         </div>
@@ -143,7 +149,7 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
             <p className="text-2xs uppercase tracking-status text-muted">Device key created</p>
             <p className="mt-2 text-sm text-primary">
               {backendKind === 'matrix'
-                ? 'This key stays on this device as legacy migration metadata; Matrix device keys protect room activity.'
+                ? 'This key stays on this device only. It does not affect your account or your messages.'
                 : 'This identity now lives on this device and will sign your peer activity locally.'}
             </p>
             <div className="mt-3 flex items-center justify-between gap-3 rounded-md bg-bg-tertiary px-3 py-2">

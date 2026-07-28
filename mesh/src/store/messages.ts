@@ -1,11 +1,12 @@
 import { create } from 'zustand'
-import type { Message } from '../types/ipc'
+import type { MatrixQueuedMessageState, MatrixQueuedMessageUpdate, Message } from '../types/ipc'
 import * as bridge from '../lib/bridge'
 import { federatedTimestampMilliseconds } from '../lib/federated-time'
 import { patchChanges } from '../lib/state'
 
 const HOT_WINDOW_SIZE = 200
 const MAX_HISTORY_WINDOW_SIZE = 500
+const MAX_CACHED_CHANNELS = 16
 
 interface MessagesStore {
   /** Normalized source of truth, scoped by channel ID. */
@@ -17,6 +18,11 @@ interface MessagesStore {
   hasMoreOlder: Record<string, boolean>
   browsingOlder: Record<string, boolean>
   newerGapCount: Record<string, number>
+  channelRecency: string[]
+  matrixQueueStates: Record<
+    string,
+    Record<string, { state: MatrixQueuedMessageState; eventId?: string }>
+  >
   setMessages: (channelId: string, messages: Message[]) => void
   replaceMessages: (channelId: string, messages: Message[]) => void
   addMessage: (channelId: string, message: Message) => void
@@ -33,6 +39,9 @@ interface MessagesStore {
   deleteMessage: (channelId: string, messageId: string) => void
   removeMessage: (channelId: string, messageId: string) => void
   setDeliveryStatus: (channelId: string, messageId: string, status: 'pending' | 'sent' | 'failed') => void
+  acceptQueuedMessage: (message: Message) => void
+  hydrateQueuedMessages: (messages: Message[]) => void
+  applyQueuedMessageUpdate: (update: MatrixQueuedMessageUpdate) => void
   removeMessagesByAuthor: (channelId: string, authorPublicKey: string) => void
   removeMessagesByAuthorAllChannels: (authorPublicKey: string) => void
 }
@@ -47,22 +56,57 @@ function compareMessages(a: Message, b: Message) {
 }
 
 function mergeMessage(existing: Message | undefined, incoming: Message) {
-  if (!existing || patchChanges(existing, incoming)) return incoming
+  if (!existing) return incoming
+  if (
+    existing.deliveryStatus === 'sent'
+    && incoming.deliveryStatus !== 'sent'
+  ) {
+    return existing
+  }
+  if (
+    existing.deliveryStatus === 'failed'
+    && incoming.deliveryStatus === 'pending'
+  ) {
+    return existing
+  }
+  if (
+    incoming.deliveryStatus === 'sent'
+    && existing.deliveryStatus !== 'sent'
+  ) {
+    const reconciled = { ...incoming, timestamp: existing.timestamp }
+    return patchChanges(existing, reconciled) ? reconciled : existing
+  }
+  if (patchChanges(existing, incoming)) return incoming
   return existing
 }
 
-function mergeMessages(existing: Message[], incoming: Message[]) {
-  const byId = new Map<string, Message>()
+function messageAliases(message: Message): string[] {
+  return [
+    `event:${message.id}`,
+    message.transactionId ? `transaction:${message.transactionId}` : '',
+    message.clientRequestId ? `request:${message.clientRequestId}` : '',
+  ].filter(Boolean)
+}
 
-  for (const message of existing) byId.set(message.id, message)
+function messagesShareIdentity(left: Message, right: Message): boolean {
+  const leftAliases = new Set(messageAliases(left))
+  return messageAliases(right).some((alias) => leftAliases.has(alias))
+}
+
+function mergeMessages(existing: Message[], incoming: Message[]) {
+  const merged = [...existing]
   for (const incomingMessage of incoming) {
-    byId.set(
-      incomingMessage.id,
-      mergeMessage(byId.get(incomingMessage.id), incomingMessage),
+    const index = merged.findIndex((message) =>
+      messagesShareIdentity(message, incomingMessage),
     )
+    if (index < 0) {
+      merged.push(incomingMessage)
+    } else {
+      merged[index] = mergeMessage(merged[index], incomingMessage)
+    }
   }
 
-  return [...byId.values()].sort(compareMessages)
+  return merged.sort(compareMessages)
 }
 
 function boundLatestWindow(messages: Message[]): Message[] {
@@ -89,6 +133,7 @@ function normalizedChannel(
   state: Pick<MessagesStore, 'messageEntities' | 'messageOrder' | 'messages'>,
   channelId: string,
   orderedMessages: Message[],
+  allowFailedToPending = false,
 ) {
   const currentEntities = state.messageEntities[channelId] ?? {}
   const entities: Record<string, Message> = {}
@@ -96,7 +141,14 @@ function normalizedChannel(
 
   for (const incoming of orderedMessages) {
     if (entities[incoming.id]) continue
-    entities[incoming.id] = mergeMessage(currentEntities[incoming.id], incoming)
+    const current = currentEntities[incoming.id]
+    entities[incoming.id] = (
+      allowFailedToPending
+      && current?.deliveryStatus === 'failed'
+      && incoming.deliveryStatus === 'pending'
+    )
+      ? incoming
+      : mergeMessage(current, incoming)
     order.push(incoming.id)
   }
 
@@ -120,6 +172,74 @@ function normalizedChannel(
     messages: nextMessages === state.messages[channelId]
       ? state.messages
       : { ...state.messages, [channelId]: nextMessages },
+  }
+}
+
+type ChannelCacheState = Pick<
+  MessagesStore,
+  | 'messageEntities'
+  | 'messageOrder'
+  | 'messages'
+  | 'loadingOlder'
+  | 'hasMoreOlder'
+  | 'browsingOlder'
+  | 'newerGapCount'
+  | 'channelRecency'
+>
+
+function withoutChannels<T>(
+  values: Record<string, T>,
+  channelIds: string[],
+): Record<string, T> {
+  let next = values
+  for (const channelId of channelIds) {
+    if (!(channelId in next)) continue
+    next = { ...next }
+    delete next[channelId]
+  }
+  return next
+}
+
+function retainChannel(
+  state: ChannelCacheState,
+  channelId: string,
+  patch: Partial<ChannelCacheState>,
+): ChannelCacheState {
+  const channelRecency = [
+    ...state.channelRecency.filter((cachedId) => cachedId !== channelId),
+    channelId,
+  ]
+  const evictedChannelIds = channelRecency.slice(0, -MAX_CACHED_CHANNELS)
+  return {
+    messageEntities: withoutChannels(
+      patch.messageEntities ?? state.messageEntities,
+      evictedChannelIds,
+    ),
+    messageOrder: withoutChannels(
+      patch.messageOrder ?? state.messageOrder,
+      evictedChannelIds,
+    ),
+    messages: withoutChannels(
+      patch.messages ?? state.messages,
+      evictedChannelIds,
+    ),
+    loadingOlder: withoutChannels(
+      patch.loadingOlder ?? state.loadingOlder,
+      evictedChannelIds,
+    ),
+    hasMoreOlder: withoutChannels(
+      patch.hasMoreOlder ?? state.hasMoreOlder,
+      evictedChannelIds,
+    ),
+    browsingOlder: withoutChannels(
+      patch.browsingOlder ?? state.browsingOlder,
+      evictedChannelIds,
+    ),
+    newerGapCount: withoutChannels(
+      patch.newerGapCount ?? state.newerGapCount,
+      evictedChannelIds,
+    ),
+    channelRecency: channelRecency.slice(-MAX_CACHED_CHANNELS),
   }
 }
 
@@ -153,48 +273,71 @@ export const useMessageStore = create<MessagesStore>((set, get) => ({
   hasMoreOlder: {},
   browsingOlder: {},
   newerGapCount: {},
+  channelRecency: [],
+  matrixQueueStates: {},
 
   setMessages: (channelId, incoming) =>
-    set((state) => ({
-      ...normalizedChannel(
-        state,
-        channelId,
-        boundLatestWindow(mergeMessages(state.messages[channelId] ?? [], incoming)),
-      ),
-      hasMoreOlder: { ...state.hasMoreOlder, [channelId]: incoming.length >= 50 },
-      browsingOlder: { ...state.browsingOlder, [channelId]: false },
-      newerGapCount: { ...state.newerGapCount, [channelId]: 0 },
-    })),
+    set((state) =>
+      retainChannel(state, channelId, {
+        ...normalizedChannel(
+          state,
+          channelId,
+          boundLatestWindow(mergeMessages(state.messages[channelId] ?? [], incoming)),
+        ),
+        hasMoreOlder: { ...state.hasMoreOlder, [channelId]: incoming.length >= 50 },
+        browsingOlder: { ...state.browsingOlder, [channelId]: false },
+        newerGapCount: { ...state.newerGapCount, [channelId]: 0 },
+      }),
+    ),
 
   replaceMessages: (channelId, incoming) =>
-    set((state) => ({
-      ...normalizedChannel(
-        state,
-        channelId,
-        boundLatestWindow(mergeMessages([], incoming)),
-      ),
-      hasMoreOlder: { ...state.hasMoreOlder, [channelId]: incoming.length >= 50 },
-      browsingOlder: { ...state.browsingOlder, [channelId]: false },
-      newerGapCount: { ...state.newerGapCount, [channelId]: 0 },
-    })),
+    set((state) =>
+      retainChannel(state, channelId, {
+        ...normalizedChannel(
+          state,
+          channelId,
+          boundLatestWindow(mergeMessages(
+            (state.messages[channelId] ?? []).filter(
+              (message) =>
+                message.deliveryStatus === 'pending'
+                || message.deliveryStatus === 'failed'
+                || (
+                  !!message.transactionId
+                  && !incoming.some((candidate) =>
+                    messagesShareIdentity(message, candidate),
+                  )
+                ),
+            ),
+            incoming,
+          )),
+        ),
+        hasMoreOlder: { ...state.hasMoreOlder, [channelId]: incoming.length >= 50 },
+        browsingOlder: { ...state.browsingOlder, [channelId]: false },
+        newerGapCount: { ...state.newerGapCount, [channelId]: 0 },
+      }),
+    ),
 
   addMessage: (channelId, message) =>
     set((state) => {
       if (state.messageEntities[channelId]?.[message.id]) return state
 
       if (state.browsingOlder[channelId] || (state.newerGapCount[channelId] ?? 0) > 0) {
-        return {
+        return retainChannel(state, channelId, {
           newerGapCount: {
             ...state.newerGapCount,
             [channelId]: (state.newerGapCount[channelId] ?? 0) + 1,
           },
-        }
+        })
       }
 
-      return normalizedChannel(
+      return retainChannel(
         state,
         channelId,
-        boundLatestWindow(mergeMessages(state.messages[channelId] ?? [], [message])),
+        normalizedChannel(
+          state,
+          channelId,
+          boundLatestWindow(mergeMessages(state.messages[channelId] ?? [], [message])),
+        ),
       )
     }),
 
@@ -203,14 +346,14 @@ export const useMessageStore = create<MessagesStore>((set, get) => ({
       const bounded = boundOlderWindow(
         mergeMessages(state.messages[channelId] ?? [], incoming),
       )
-      return {
+      return retainChannel(state, channelId, {
         ...normalizedChannel(state, channelId, bounded.messages),
         browsingOlder: { ...state.browsingOlder, [channelId]: true },
         newerGapCount: {
           ...state.newerGapCount,
           [channelId]: (state.newerGapCount[channelId] ?? 0) + bounded.trimmedNewerCount,
         },
-      }
+      })
     }),
 
   loadOlderMessages: async (channelId) => {
@@ -237,13 +380,17 @@ export const useMessageStore = create<MessagesStore>((set, get) => ({
       if (anchorId && !currentState.messageEntities[channelId]?.[anchorId]) return
 
       if (older.length > 0) get().prependMessages(channelId, older)
-      set((current) => ({
-        hasMoreOlder: { ...current.hasMoreOlder, [channelId]: older.length >= 50 },
-      }))
+      set((current) => (
+        current.channelRecency.includes(channelId)
+          ? { hasMoreOlder: { ...current.hasMoreOlder, [channelId]: older.length >= 50 } }
+          : current
+      ))
     } finally {
-      set((current) => ({
-        loadingOlder: { ...current.loadingOlder, [channelId]: false },
-      }))
+      set((current) => (
+        current.channelRecency.includes(channelId)
+          ? { loadingOlder: { ...current.loadingOlder, [channelId]: false } }
+          : current
+      ))
     }
   },
 
@@ -319,6 +466,118 @@ export const useMessageStore = create<MessagesStore>((set, get) => ({
         messageId,
         { ...current, deliveryStatus: status },
       )
+    }),
+
+  acceptQueuedMessage: (message) =>
+    set((state) => {
+      const transactionId = message.transactionId ?? message.id
+      const recorded = state.matrixQueueStates[message.channelId]?.[transactionId]
+      if (recorded?.state === 'cancelled') return state
+      const accepted = recorded?.state === 'sent' && recorded.eventId
+        ? {
+            ...message,
+            id: recorded.eventId,
+            deliveryStatus: 'sent' as const,
+          }
+        : recorded?.state === 'failed'
+          ? { ...message, deliveryStatus: 'failed' as const }
+          : message
+      const normalized = normalizedChannel(
+        state,
+        message.channelId,
+        boundLatestWindow(mergeMessages(
+          state.messages[message.channelId] ?? [],
+          [accepted],
+        )),
+      )
+      const queueState = recorded ?? {
+        state: accepted.deliveryStatus === 'failed' ? 'failed' : 'pending',
+      }
+      return {
+        ...retainChannel(state, message.channelId, normalized),
+        matrixQueueStates: {
+          ...state.matrixQueueStates,
+          [message.channelId]: {
+            ...state.matrixQueueStates[message.channelId],
+            [transactionId]: queueState,
+          },
+        },
+      }
+    }),
+
+  hydrateQueuedMessages: (messages) => {
+    for (const message of messages) get().acceptQueuedMessage(message)
+  },
+
+  applyQueuedMessageUpdate: (update) =>
+    set((state) => {
+      const roomStates = state.matrixQueueStates[update.roomId] ?? {}
+      const previous = roomStates[update.transactionId]
+      if (
+        previous?.state === 'sent'
+        && update.state !== 'sent'
+      ) {
+        return state
+      }
+      if (
+        previous?.state === 'cancelled'
+        && update.state !== 'sent'
+      ) {
+        return state
+      }
+
+      let roomMessages = state.messages[update.roomId] ?? []
+      if (update.message) {
+        roomMessages = mergeMessages(roomMessages, [update.message])
+      }
+      const index = roomMessages.findIndex(
+        (message) =>
+          message.transactionId === update.transactionId
+          || message.id === update.transactionId,
+      )
+      if (update.state === 'cancelled') {
+        roomMessages = roomMessages.filter(
+          (message) =>
+            message.transactionId !== update.transactionId
+            && message.id !== update.transactionId,
+        )
+      } else if (index >= 0) {
+        const current = roomMessages[index]
+        const next = update.state === 'sent' && update.eventId
+          ? {
+              ...current,
+              id: update.eventId,
+              transactionId: update.transactionId,
+              deliveryStatus: 'sent' as const,
+            }
+          : {
+              ...current,
+              deliveryStatus: update.state === 'failed'
+                ? 'failed' as const
+                : 'pending' as const,
+            }
+        roomMessages = [...roomMessages]
+        roomMessages[index] = next
+      }
+      const normalized = normalizedChannel(
+        state,
+        update.roomId,
+        boundLatestWindow(roomMessages.sort(compareMessages)),
+        update.state === 'pending',
+      )
+      return {
+        ...retainChannel(state, update.roomId, normalized),
+        matrixQueueStates: {
+          ...state.matrixQueueStates,
+          [update.roomId]: {
+            ...roomStates,
+            [update.transactionId]: {
+              state: update.state,
+              ...(update.eventId ? { eventId: update.eventId } : {}),
+            },
+          },
+        },
+      }
     }),
 
   removeMessagesByAuthor: (channelId, authorPublicKey) =>

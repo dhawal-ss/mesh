@@ -19,6 +19,9 @@ function literalColorViolations(source) {
   if (/#[\da-f]{3,8}\b/i.test(source)) {
     violations.push('hex color literal')
   }
+  if (/\boklch\(/i.test(source)) {
+    violations.push('OKLCH color literal')
+  }
   if (/rgba?\(\s*(?:\d|\.\d)/i.test(source)) {
     violations.push('numeric rgb/rgba color literal')
   }
@@ -33,6 +36,14 @@ const visualPatterns = [
   {
     kind: 'numeric rgb/rgba color literal',
     expression: /\brgba?\(\s*(?:\d|\.\d)[^)]*\)/gi,
+  },
+  {
+    kind: 'OKLCH color literal',
+    expression: /\boklch\([^)]*\)/gi,
+  },
+  {
+    kind: 'reference-tier token',
+    expression: /var\(\s*--ref-[\w-]+\s*\)/gi,
   },
   {
     kind: 'arbitrary visual Tailwind class',
@@ -54,6 +65,10 @@ const visualPatterns = [
     kind: 'unsupported font-size class',
     expression: /\btext-(?:xl|[2-9]xl)\b/gi,
   },
+  {
+    kind: 'box-shadow focus ring',
+    expression: /\bfocus(?:-visible)?:ring(?:-[^\s'"]+)?/gi,
+  },
 ]
 
 function visualViolations(source) {
@@ -67,12 +82,25 @@ function visualViolations(source) {
   return violations
 }
 
+function undersizedControlTokens(source) {
+  const violations = []
+  for (const match of source.matchAll(/(--density-control-[\w-]+)\s*:\s*([\d.]+)px\s*;/g)) {
+    const value = Number(match[2])
+    if (value < 32) {
+      violations.push({ token: match[1], value })
+    }
+  }
+  return violations
+}
+
 // Keep self-tests here so weakening either detector cannot silently pass.
-const detectorFixture = "colors: { bad: '#fff', worse: 'rgb(1 2 3)' }"
-const componentFixture = 'bg-[#fff] text-[11px] border-white/10 bg-yellow-500/10 font-bold text-xl'
+const detectorFixture = "colors: { bad: '#fff', worse: 'rgb(1 2 3)', alsoBad: 'oklch(50% 0.1 240)' }"
+const componentFixture = 'bg-[#fff] text-[11px] border-white/10 bg-yellow-500/10 font-bold text-xl var(--ref-neutral-1) oklch(50% 0.1 240) focus-visible:ring-2'
+const densityFixture = '--density-control-sm: 28px; --density-control-md: 32px;'
 if (
-  literalColorViolations(detectorFixture).length !== 2
-  || visualViolations(componentFixture).length !== 7
+  literalColorViolations(detectorFixture).length !== 3
+  || visualViolations(componentFixture).length !== 10
+  || undersizedControlTokens(densityFixture).length !== 1
 ) {
   throw new Error('Design-token checker self-test failed')
 }
@@ -91,46 +119,66 @@ for (const match of rootBlock.matchAll(/^\s*(--[\w-]+)\s*:\s*([^;]+);/gm)) {
   declarations.set(match[1], match[2].trim())
 }
 
-const expectedPrimitiveChannels = new Map([
-  ['--gray-1-rgb', '17 18 20'],
-  ['--gray-3-rgb', '30 31 34'],
-  ['--gray-4-rgb', '43 45 49'],
-  ['--gray-5-rgb', '49 51 56'],
-  ['--gray-6-rgb', '63 65 71'],
-  ['--gray-7-rgb', '78 80 88'],
-  ['--gray-8-rgb', '148 155 164'],
-  ['--gray-9-rgb', '181 186 193'],
-  ['--gray-10-rgb', '219 222 225'],
-  ['--gray-11-rgb', '242 243 245'],
-  ['--gray-hover-rgb', '46 48 53'],
-  ['--gray-active-rgb', '64 66 73'],
-  ['--gray-raised-rgb', '53 55 60'],
-  ['--link-rgb', '0 168 252'],
-  ['--accent-rgb', '212 192 161'],
-  ['--accent-hover-rgb', '239 224 195'],
-  ['--accent-muted-rgb', '141 125 103'],
-  ['--success-rgb', '35 165 89'],
-  ['--danger-rgb', '218 55 60'],
-  ['--warning-rgb', '240 178 50'],
-  ['--info-rgb', '88 101 242'],
+const expectedReferenceColors = new Map([
+  ['--ref-neutral-1', '#101013'],
+  ['--ref-neutral-2', '#17181c'],
+  ['--ref-neutral-3', '#202127'],
+  ['--ref-neutral-4', '#27292f'],
+  ['--ref-neutral-5', '#2e3037'],
+  ['--ref-neutral-6', '#373941'],
+  ['--ref-neutral-7', '#454751'],
+  ['--ref-neutral-8', '#5d606b'],
+  ['--ref-neutral-9', '#6b6e79'],
+  ['--ref-neutral-10', '#797b86'],
+  ['--ref-neutral-11', '#b2b4bb'],
+  ['--ref-neutral-12', '#edeef2'],
+  ['--ref-accent-9', '#c19f66'],
+  ['--ref-accent-10', '#cfaf79'],
+  ['--ref-accent-11', '#e3c697'],
+  ['--ref-green-11', '#57bd72'],
+  ['--ref-red-11', '#ed756e'],
+  ['--ref-amber-11', '#edb345'],
+  ['--ref-blue-11', '#52b5f4'],
 ])
 
-for (const [name, expected] of expectedPrimitiveChannels) {
+for (const [name, expected] of expectedReferenceColors) {
   if (declarations.get(name) !== expected) {
-    errors.push(`${name} must preserve its current value (${expected})`)
+    errors.push(`${name} must use the researched fallback value (${expected})`)
   }
 }
 
+for (const [index, line] of globals.split(/\r?\n/).entries()) {
+  if (
+    (/#(?:[\da-f]{3,8})\b/i.test(line) || /\boklch\(/i.test(line))
+    && !/^\s*--ref-[\w-]+\s*:/.test(line)
+    && !/^\s*@supports\s+\(color:\s*oklch\(/.test(line)
+  ) {
+    errors.push(`globals.css:${index + 1} contains a color literal outside the reference tier`)
+  }
+}
+
+for (const violation of undersizedControlTokens(globals)) {
+  errors.push(`${violation.token} must be at least 32px, found ${violation.value}px`)
+}
+
 const expectedTypography = new Map([
-  ['--font-size-2xs', '11px'],
-  ['--font-size-micro', '11px'],
-  ['--font-size-meta', '11px'],
-  ['--font-size-xs', '12px'],
-  ['--font-size-code', '13px'],
-  ['--font-size-sm', '15px'],
-  ['--font-size-base', '17px'],
-  ['--font-size-md', '22px'],
-  ['--font-size-lg', '28px'],
+  ['--ref-size-11', '11px'],
+  ['--ref-size-12', '12px'],
+  ['--ref-size-13', '13px'],
+  ['--ref-size-14', '14px'],
+  ['--ref-size-15', '15px'],
+  ['--ref-size-18', '18px'],
+  ['--ref-size-22', '22px'],
+  ['--ref-size-28', '28px'],
+  ['--font-size-2xs', 'var(--ref-size-11)'],
+  ['--font-size-xs', 'var(--ref-size-12)'],
+  ['--font-size-code', 'var(--ref-size-13)'],
+  ['--font-size-dense', 'var(--ref-size-13)'],
+  ['--font-size-sm', 'var(--ref-size-14)'],
+  ['--font-size-base', 'var(--ref-size-15)'],
+  ['--font-size-md', 'var(--ref-size-18)'],
+  ['--font-size-title', 'var(--ref-size-22)'],
+  ['--font-size-lg', 'var(--ref-size-28)'],
   ['--font-weight-regular', '400'],
   ['--font-weight-medium', '500'],
   ['--font-weight-semibold', '600'],
@@ -140,8 +188,69 @@ for (const [name, expected] of expectedTypography) {
   if (declarations.get(name) !== expected) {
     errors.push(`${name} must use the production typography value (${expected})`)
   }
+}
+
+for (const name of [
+  '--font-size-2xs',
+  '--font-size-xs',
+  '--font-size-code',
+  '--font-size-dense',
+  '--font-size-sm',
+  '--font-size-base',
+  '--font-size-md',
+  '--font-size-title',
+  '--font-size-lg',
+  '--font-weight-regular',
+  '--font-weight-medium',
+  '--font-weight-semibold',
+]) {
   if (!tailwind.includes(`var(${name})`)) {
     errors.push(`Tailwind must consume typography token ${name}`)
+  }
+}
+
+const expectedMotion = new Map([
+  ['--ref-dur-50', '50ms'],
+  ['--ref-dur-100', '100ms'],
+  ['--ref-dur-150', '150ms'],
+  ['--ref-dur-200', '200ms'],
+  ['--ref-dur-250', '250ms'],
+  ['--ref-dur-300', '300ms'],
+  ['--ref-ease-out-quart', 'cubic-bezier(0.165, 0.84, 0.44, 1)'],
+  ['--ref-ease-out-quint', 'cubic-bezier(0.23, 1, 0.32, 1)'],
+  ['--ref-ease-in-out-cubic', 'cubic-bezier(0.645, 0.045, 0.355, 1)'],
+  ['--ref-ease-hover', 'ease'],
+  ['--motion-dur-micro', 'var(--ref-dur-100)'],
+  ['--motion-dur-fast', 'var(--ref-dur-150)'],
+  ['--motion-dur-base', 'var(--ref-dur-200)'],
+  ['--motion-dur-slow', 'var(--ref-dur-250)'],
+  ['--motion-dur-exit', 'var(--ref-dur-150)'],
+  ['--motion-ease-enter', 'var(--ref-ease-out-quart)'],
+  ['--motion-ease-exit', 'var(--ref-ease-out-quart)'],
+  ['--motion-ease-move', 'var(--ref-ease-in-out-cubic)'],
+  ['--motion-ease-hover', 'var(--ref-ease-hover)'],
+])
+
+for (const [name, expected] of expectedMotion) {
+  if (declarations.get(name) !== expected) {
+    errors.push(`${name} must use the researched motion value (${expected})`)
+  }
+}
+
+if (globals.includes('--ease-spring')) {
+  errors.push('globals.css must not restore the overshooting --ease-spring token')
+}
+
+for (const requiredRule of [
+  "font-feature-settings: 'liga' 1, 'calt' 1",
+  "font-variation-settings: 'opsz' 14",
+  "font-variation-settings: 'opsz' 28",
+  "font-feature-settings: 'tnum' 1, 'calt' 1",
+  'outline: 2px solid var(--border-focus)',
+  'outline-offset: 2px',
+]) {
+  if (!globals.includes(requiredRule)) {
+    errors.push(`globals.css must include ${requiredRule}`)
   }
 }
 
@@ -189,15 +298,16 @@ const requiredVariableBackedValues = [
   '--font-size-lg',
   '--radius-default',
   '--radius-xl',
-  '--shadow-elevation-low',
-  '--shadow-elevation-high',
-  '--shadow-floating',
-  '--shadow-pane',
+  '--elev-overlay',
   '--animation-pulse-soft',
   '--z-dropdown',
   '--z-modal',
-  '--duration-instant',
-  '--duration-slow',
+  '--motion-dur-micro',
+  '--motion-dur-slow',
+  '--motion-ease-enter',
+  '--motion-ease-exit',
+  '--motion-ease-move',
+  '--motion-ease-hover',
   '--density-row-block',
   '--density-control-lg',
 ]
@@ -222,10 +332,10 @@ const requiredSemanticColorChannels = [
   '--content-secondary-rgb',
   '--content-muted-rgb',
   '--content-on-accent-rgb',
-  '--success-rgb',
-  '--danger-rgb',
-  '--warning-rgb',
-  '--info-rgb',
+  '--status-success-rgb',
+  '--status-danger-rgb',
+  '--status-warning-rgb',
+  '--status-info-rgb',
 ]
 
 for (const variable of requiredSemanticColorChannels) {

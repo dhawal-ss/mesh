@@ -2,12 +2,12 @@ import type { Identity } from '../types/ipc'
 import type { MatrixProfile } from './bridge'
 
 const MATRIX_AVATAR_COLORS = [
-  '#5865f2',
-  '#3ba55c',
-  '#e67e22',
-  '#9b59b6',
-  '#e91e63',
-  '#00a8fc',
+  'var(--avatar-blue)',
+  'var(--avatar-green)',
+  'var(--avatar-orange)',
+  'var(--avatar-violet)',
+  'var(--avatar-pink)',
+  'var(--avatar-cyan)',
 ] as const
 
 function colorIndex(value: string): number {

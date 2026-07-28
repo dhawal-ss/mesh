@@ -3,7 +3,6 @@ import { useDmStore } from '../../store/dms'
 import { useShellStore } from '../../store/shell'
 import { Tooltip } from '../ui/Tooltip'
 import { CommunityIcon } from '../community/CommunityIcon'
-import { CreateCommunityModal } from '../community/CreateCommunityModal'
 import * as bridge from '../../lib/bridge'
 import { Icon } from '../ui/Icon'
 import {
@@ -14,6 +13,12 @@ import {
 import { useChannelStore } from '../../store/channels'
 import { copyText, matrixRoomPermalink } from '../../lib/notifications'
 import { showToast } from '../ui/Toast'
+import { lazy, Suspense } from 'react'
+import { Spinner } from '../ui/Spinner'
+
+const CreateCommunityModal = lazy(() =>
+  import('../community/CreateCommunityModal').then((module) => ({ default: module.CreateCommunityModal })),
+)
 
 export function CommunitySidebar() {
   const directMessagesAvailable = bridge.getBackendCapabilities().directMessages
@@ -99,7 +104,7 @@ export function CommunitySidebar() {
                     channel.communityId,
                   ) === 'nothing'
                 ) return total
-                return total + (channel.unreadCount ?? 0)
+                return total + Math.max(channel.unreadCount ?? 0, channel.unreadMentions ?? 0)
               }, 0)}
               onClick={() => handleCommunityClick(c.id)}
               onMarkRead={() => void markCommunityRead(c.id)}
@@ -171,12 +176,16 @@ export function CommunitySidebar() {
         </Tooltip>
       </div>
 
-      <CreateCommunityModal
-        isOpen={serverModalOpen}
-        onClose={closeServerModal}
-        initialTab={serverModalTab}
-        initialInvite={inviteDraft}
-      />
+      {serverModalOpen && (
+        <Suspense fallback={<div role="status" aria-label="Loading server tools" className="flex items-center justify-center p-6"><Spinner /></div>}>
+          <CreateCommunityModal
+            isOpen={serverModalOpen}
+            onClose={closeServerModal}
+            initialTab={serverModalTab}
+            initialInvite={inviteDraft}
+          />
+        </Suspense>
+      )}
     </>
   )
 }

@@ -82,7 +82,7 @@ export function Modal({
           }}
         >
           <motion.div
-            className="relative rounded-lg bg-surface-raised p-4 text-content shadow-floating"
+            className="relative rounded-lg bg-surface-raised p-4 text-content shadow-overlay"
             variants={variants.modal}
             initial="initial"
             animate="animate"

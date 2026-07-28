@@ -17,11 +17,11 @@ async fn load_identity_public_key(
         return Ok(Some(identity.public_key_b64.clone()));
     }
 
-    if !Identity::exists() {
+    if !Identity::exists().map_err(|e| CommandError::Crypto(e.to_string()))? {
         return Ok(None);
     }
 
-    let identity = Identity::load().map_err(|e| CommandError::Other(e.to_string()))?;
+    let identity = Identity::load().map_err(|e| CommandError::Crypto(e.to_string()))?;
     let public_key = identity.public_key_b64.clone();
     *state.identity.write().await = Some(identity);
 

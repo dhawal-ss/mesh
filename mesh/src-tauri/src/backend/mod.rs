@@ -14,13 +14,14 @@ use ts_rs::TS;
 use crate::types::{
     community::{ChannelDto, CommunityDto},
     dm::{DirectMessageDto, DmConversationDto},
-    message::{AttachmentDto, MessageDto},
+    message::MessageDto,
 };
 
 pub const LEGACY_MATRIX_EVENT_TYPE: &str = "org.mesh.legacy_archive.v1";
 pub const MATRIX_TRANSFER_PROGRESS_EVENT: &str = "matrix:transfer-progress";
 pub const MATRIX_NOTIFICATION_EVENT: &str = "matrix:notification";
 pub const MATRIX_UNREAD_UPDATE_EVENT: &str = "matrix:unread-update";
+pub const MATRIX_QUEUED_MESSAGE_EVENT: &str = "matrix:queued-message";
 pub const MATRIX_RTC_MEMBERSHIP_EVENT: &str = "matrix:rtc-membership";
 pub const MATRIX_RTC_MEDIA_KEY_EVENT: &str = "matrix:rtc-media-key";
 pub const MATRIX_RTC_MEDIA_KEY_FAILURE_EVENT: &str = "matrix:rtc-media-key-failure";
@@ -170,10 +171,34 @@ pub struct MatrixUnreadUpdate {
     pub unread_mentions: i64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum MatrixQueuedMessageState {
+    Pending,
+    Failed,
+    Sent,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixQueuedMessageUpdate {
+    pub room_id: String,
+    pub transaction_id: String,
+    pub state: MatrixQueuedMessageState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "string | null")]
+    pub event_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "MessageDto | null")]
+    pub message: Option<MessageDto>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MatrixBackendEvent {
     Notification(MatrixNotification),
     UnreadUpdate(MatrixUnreadUpdate),
+    QueuedMessage(Box<MatrixQueuedMessageUpdate>),
     RtcMembership(MatrixRtcMembershipUpdate),
     RtcMediaKey(MatrixRtcMediaKey),
     RtcMediaKeyFailure(MatrixRtcMediaKeyFailure),
@@ -262,6 +287,7 @@ pub struct MatrixTransferObserver {
 }
 
 pub struct MatrixAttachmentSendRequest {
+    pub transaction_id: String,
     pub file_path: String,
     pub filename: String,
     pub content_type: Option<String>,
@@ -305,6 +331,8 @@ pub struct BackendStatus {
     pub user_id: Option<String>,
     pub device_id: Option<String>,
     pub homeserver: Option<String>,
+    /// True only when the sync worker is alive and has received a successful
+    /// response within the backend's freshness window.
     pub sync_running: bool,
     pub durable_history: bool,
     pub end_to_end_encryption: bool,
@@ -407,7 +435,9 @@ impl VoiceServiceStatus {
             };
         }
 
-        if livekit_service_url.is_none() || livekit_sfu_url.is_none() {
+        let (Some(livekit_service_url), Some(livekit_sfu_url)) =
+            (livekit_service_url.as_deref(), livekit_sfu_url.as_deref())
+        else {
             return Self {
                 availability: VoiceServiceAvailability::InvalidConfiguration,
                 reason: Some(format!(
@@ -417,27 +447,20 @@ impl VoiceServiceStatus {
                 )),
                 ..base
             };
-        }
-
-        let service = match Self::secure_url(
-            Self::MATRIXRTC_SERVICE_ENV,
-            livekit_service_url.as_deref().unwrap(),
-            "https",
-        ) {
-            Ok(url) => url,
-            Err(reason) => {
-                return Self {
-                    availability: VoiceServiceAvailability::InvalidConfiguration,
-                    reason: Some(reason),
-                    ..base
-                };
-            }
         };
-        let sfu = match Self::secure_url(
-            Self::MATRIXRTC_SFU_ENV,
-            livekit_sfu_url.as_deref().unwrap(),
-            "wss",
-        ) {
+
+        let service =
+            match Self::secure_url(Self::MATRIXRTC_SERVICE_ENV, livekit_service_url, "https") {
+                Ok(url) => url,
+                Err(reason) => {
+                    return Self {
+                        availability: VoiceServiceAvailability::InvalidConfiguration,
+                        reason: Some(reason),
+                        ..base
+                    };
+                }
+            };
+        let sfu = match Self::secure_url(Self::MATRIXRTC_SFU_ENV, livekit_sfu_url, "wss") {
             Ok(url) => url,
             Err(reason) => {
                 return Self {
@@ -709,6 +732,36 @@ pub struct CommunityMember {
     pub online: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ModerationRoomOutcome {
+    pub room_id: String,
+    pub room_name: String,
+    pub succeeded: bool,
+    pub failure_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ModerationAuditEntry {
+    pub id: String,
+    pub actor_user_id: String,
+    pub actor_display_name: String,
+    pub target_user_id: String,
+    pub target_display_name: String,
+    pub action: String,
+    pub reason: Option<String>,
+    pub occurred_at: String,
+    pub room_outcomes: Vec<ModerationRoomOutcome>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunityModerationResult {
+    pub audit: ModerationAuditEntry,
+    pub audit_recorded: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommunityAccessSettings {
@@ -744,6 +797,22 @@ pub struct CommunityAccessResult {
     pub community: Option<CommunityDto>,
 }
 
+/// A server-scoped custom emoji published through a room image pack.
+///
+/// Unlike encrypted message content, image-pack state and its media URI are
+/// visible to the homeservers participating in the server.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomEmoji {
+    pub shortcode: String,
+    pub body: String,
+    pub mxc_uri: String,
+    pub content_type: String,
+    pub width: u32,
+    pub height: u32,
+    pub size_bytes: u32,
+}
+
 /// Portable, non-secret preferences synchronized through Matrix account data.
 /// Device credentials, recovery material, and machine-local network settings
 /// are intentionally outside this contract.
@@ -775,9 +844,9 @@ pub struct UserPreferences {
     pub channel_notification_levels: std::collections::HashMap<String, MatrixRoomNotificationMode>,
     #[serde(default)]
     pub send_read_receipts: bool,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub send_typing_indicators: bool,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub share_presence: bool,
     #[serde(default)]
     pub invisible_mode: bool,
@@ -785,7 +854,7 @@ pub struct UserPreferences {
 }
 
 impl UserPreferences {
-    pub const SCHEMA_VERSION: u32 = 2;
+    pub const SCHEMA_VERSION: u32 = 3;
 
     pub fn normalized(mut self) -> Self {
         self.schema_version = Self::SCHEMA_VERSION;
@@ -796,10 +865,6 @@ impl UserPreferences {
         self.updated_at = chrono::Utc::now().to_rfc3339();
         self
     }
-}
-
-fn default_true() -> bool {
-    true
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -927,6 +992,9 @@ pub type BackendResult<T> = Result<T, BackendError>;
 #[async_trait]
 pub trait MeshBackend: Send + Sync {
     fn kind(&self) -> BackendKind;
+    async fn active_account_storage_root(&self) -> BackendResult<PathBuf> {
+        Err(BackendError::Unsupported("active account storage"))
+    }
     fn set_matrix_event_callback(&self, _callback: Option<MatrixBackendEventCallback>) {}
     async fn start(&self) -> BackendResult<()>;
     async fn status(&self) -> BackendStatus;
@@ -1055,6 +1123,33 @@ pub trait MeshBackend: Send + Sync {
     ) -> BackendResult<ChannelDto> {
         Err(BackendError::Unsupported("channel creation"))
     }
+    async fn list_custom_emoji(&self, _community_id: String) -> BackendResult<Vec<CustomEmoji>> {
+        Err(BackendError::Unsupported("server custom emoji"))
+    }
+    async fn upload_custom_emoji(
+        &self,
+        _community_id: String,
+        _shortcode: String,
+        _filename: String,
+        _content_type: String,
+        _bytes: Vec<u8>,
+    ) -> BackendResult<CustomEmoji> {
+        Err(BackendError::Unsupported("server custom emoji"))
+    }
+    async fn remove_custom_emoji(
+        &self,
+        _community_id: String,
+        _shortcode: String,
+    ) -> BackendResult<()> {
+        Err(BackendError::Unsupported("server custom emoji"))
+    }
+    async fn load_custom_emoji_image(
+        &self,
+        _community_id: String,
+        _shortcode: String,
+    ) -> BackendResult<Vec<u8>> {
+        Err(BackendError::Unsupported("server custom emoji"))
+    }
     async fn matrix_rtc_join(&self, _room_id: String) -> BackendResult<MatrixRtcJoinResult> {
         Err(BackendError::Unsupported("MatrixRTC calling"))
     }
@@ -1107,8 +1202,35 @@ pub trait MeshBackend: Send + Sync {
         _room_id: String,
         _body: String,
         _reply_to_id: Option<String>,
+        _transaction_id: String,
     ) -> BackendResult<MessageDto> {
         Err(BackendError::Unsupported("message delivery"))
+    }
+    async fn queued_messages(&self) -> BackendResult<Vec<MessageDto>> {
+        Err(BackendError::Unsupported("durable queued messages"))
+    }
+    async fn retry_queued_message(
+        &self,
+        _room_id: String,
+        _transaction_id: String,
+    ) -> BackendResult<()> {
+        Err(BackendError::Unsupported("durable queued messages"))
+    }
+    async fn cancel_queued_message(
+        &self,
+        _room_id: String,
+        _transaction_id: String,
+    ) -> BackendResult<()> {
+        Err(BackendError::Unsupported("durable queued messages"))
+    }
+    async fn save_composer_draft(&self, _room_id: String, _body: String) -> BackendResult<()> {
+        Err(BackendError::Unsupported("durable message drafts"))
+    }
+    async fn load_composer_draft(&self, _room_id: String) -> BackendResult<Option<String>> {
+        Err(BackendError::Unsupported("durable message drafts"))
+    }
+    async fn clear_composer_draft(&self, _room_id: String) -> BackendResult<()> {
+        Err(BackendError::Unsupported("durable message drafts"))
     }
     async fn send_attachment(
         &self,
@@ -1125,10 +1247,32 @@ pub trait MeshBackend: Send + Sync {
     }
     async fn download_attachment(
         &self,
-        _attachment: AttachmentDto,
+        _room_id: String,
+        _event_id: String,
+        _attachment_index: u32,
         _transfer: MatrixTransferObserver,
     ) -> BackendResult<String> {
         Err(BackendError::Unsupported("encrypted Matrix attachments"))
+    }
+    async fn load_attachment_thumbnail(
+        &self,
+        _room_id: String,
+        _event_id: String,
+        _attachment_index: u32,
+    ) -> BackendResult<Vec<u8>> {
+        Err(BackendError::Unsupported(
+            "encrypted Matrix attachment previews",
+        ))
+    }
+    async fn load_attachment_image(
+        &self,
+        _room_id: String,
+        _event_id: String,
+        _attachment_index: u32,
+    ) -> BackendResult<Vec<u8>> {
+        Err(BackendError::Unsupported(
+            "encrypted Matrix attachment image previews",
+        ))
     }
     async fn cancel_attachment_download(&self, _file_hash: String) -> BackendResult<()> {
         Err(BackendError::Unsupported(
@@ -1155,6 +1299,7 @@ pub trait MeshBackend: Send + Sync {
         _recipient_user_id: String,
         _body: String,
         _reply_to_id: Option<String>,
+        _transaction_id: String,
     ) -> BackendResult<DirectMessageDto> {
         Err(BackendError::Unsupported("Matrix direct messages"))
     }
@@ -1306,7 +1451,7 @@ pub trait MeshBackend: Send + Sync {
         _community_id: String,
         _user_id: String,
         _role: String,
-    ) -> BackendResult<()> {
+    ) -> BackendResult<CommunityModerationResult> {
         Err(BackendError::Unsupported("community roles"))
     }
     async fn kick_member(
@@ -1314,7 +1459,7 @@ pub trait MeshBackend: Send + Sync {
         _community_id: String,
         _user_id: String,
         _reason: Option<String>,
-    ) -> BackendResult<()> {
+    ) -> BackendResult<CommunityModerationResult> {
         Err(BackendError::Unsupported("community kicks"))
     }
     async fn ban_member(
@@ -1322,8 +1467,15 @@ pub trait MeshBackend: Send + Sync {
         _community_id: String,
         _user_id: String,
         _reason: Option<String>,
-    ) -> BackendResult<()> {
+    ) -> BackendResult<CommunityModerationResult> {
         Err(BackendError::Unsupported("community bans"))
+    }
+    async fn list_moderation_audit(
+        &self,
+        _community_id: String,
+        _limit: u32,
+    ) -> BackendResult<Vec<ModerationAuditEntry>> {
+        Err(BackendError::Unsupported("community moderation audit"))
     }
     async fn user_preferences(&self) -> BackendResult<Option<UserPreferences>> {
         Err(BackendError::Unsupported("Matrix account-data preferences"))
@@ -1477,6 +1629,22 @@ mod tests {
             serde_json::to_string(&MatrixRoomNotificationMode::Nothing).unwrap(),
             "\"nothing\""
         );
+    }
+
+    #[test]
+    fn missing_wire_privacy_fields_deserialize_to_private_defaults() {
+        let preferences: UserPreferences = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 1,
+            "notificationsEnabled": true,
+            "notificationSound": true,
+            "updatedAt": "2026-07-26T00:00:00Z"
+        }))
+        .expect("legacy preferences should migrate");
+
+        assert!(!preferences.send_read_receipts);
+        assert!(!preferences.send_typing_indicators);
+        assert!(!preferences.share_presence);
+        assert!(!preferences.invisible_mode);
     }
 
     #[test]

@@ -5,13 +5,23 @@ type CubicBezier = [number, number, number, number]
 export interface MotionTokens {
   fast: number
   normal: number
+  slow: number
+  exit: number
   easing: CubicBezier
+  exitEasing: CubicBezier
+  moveEasing: CubicBezier
+  hoverEasing: CubicBezier
 }
 
 const FALLBACK_TOKENS: MotionTokens = {
-  fast: 0.1,
+  fast: 0.15,
   normal: 0.2,
-  easing: [0.25, 0.1, 0.25, 1],
+  slow: 0.25,
+  exit: 0.15,
+  easing: [0.165, 0.84, 0.44, 1],
+  exitEasing: [0.165, 0.84, 0.44, 1],
+  moveEasing: [0.645, 0.045, 0.355, 1],
+  hoverEasing: [0.25, 0.1, 0.25, 1],
 }
 
 const CSS_EASINGS: Record<string, CubicBezier> = {
@@ -51,16 +61,36 @@ export function readMotionTokens(
   if (!style) return FALLBACK_TOKENS
   return {
     fast: durationSeconds(
-      style.getPropertyValue('--duration-fast'),
+      style.getPropertyValue('--motion-dur-fast'),
       FALLBACK_TOKENS.fast,
     ),
     normal: durationSeconds(
-      style.getPropertyValue('--duration-normal'),
+      style.getPropertyValue('--motion-dur-base'),
       FALLBACK_TOKENS.normal,
     ),
+    slow: durationSeconds(
+      style.getPropertyValue('--motion-dur-slow'),
+      FALLBACK_TOKENS.slow,
+    ),
+    exit: durationSeconds(
+      style.getPropertyValue('--motion-dur-exit'),
+      FALLBACK_TOKENS.exit,
+    ),
     easing: easingCurve(
-      style.getPropertyValue('--ease-standard'),
+      style.getPropertyValue('--motion-ease-enter'),
       FALLBACK_TOKENS.easing,
+    ),
+    exitEasing: easingCurve(
+      style.getPropertyValue('--motion-ease-exit'),
+      FALLBACK_TOKENS.exitEasing,
+    ),
+    moveEasing: easingCurve(
+      style.getPropertyValue('--motion-ease-move'),
+      FALLBACK_TOKENS.moveEasing,
+    ),
+    hoverEasing: easingCurve(
+      style.getPropertyValue('--motion-ease-hover'),
+      FALLBACK_TOKENS.hoverEasing,
     ),
   }
 }
@@ -85,18 +115,25 @@ export const transitions = {
     ease: motionTokens.easing,
   } satisfies Transition,
   exit: {
-    duration: motionTokens.fast,
-    ease: motionTokens.easing,
+    duration: motionTokens.exit,
+    ease: motionTokens.exitEasing,
   } satisfies Transition,
   fast: {
     duration: motionTokens.fast,
     ease: motionTokens.easing,
   } satisfies Transition,
-  directSpring: {
+  failure: {
+    duration: motionTokens.normal,
+    ease: motionTokens.moveEasing,
+  } satisfies Transition,
+  move: {
+    duration: motionTokens.normal,
+    ease: motionTokens.moveEasing,
+  } satisfies Transition,
+  reaction: {
     type: 'spring',
-    stiffness: 300,
-    damping: 30,
-    mass: 0.8,
+    duration: 0.3,
+    bounce: 0.2,
   } satisfies Transition,
   celebration: {
     duration: motionDurations.celebration,
@@ -116,7 +153,9 @@ export const transitions = {
 
 export function createMotionVariants(tokens: MotionTokens) {
   const enter = { duration: tokens.normal, ease: tokens.easing } satisfies Transition
-  const exit = { duration: tokens.fast, ease: tokens.easing } satisfies Transition
+  const slowEnter = { duration: tokens.slow, ease: tokens.easing } satisfies Transition
+  const exit = { duration: tokens.exit, ease: tokens.exitEasing } satisfies Transition
+  const move = { duration: tokens.normal, ease: tokens.moveEasing } satisfies Transition
 
   const messageEnter = {
     initial: { opacity: 0, y: 4 },
@@ -132,7 +171,7 @@ export function createMotionVariants(tokens: MotionTokens) {
     } satisfies Variants,
     panel: {
       initial: { opacity: 0, x: -8 },
-      animate: { opacity: 1, x: 0, transition: enter },
+      animate: { opacity: 1, x: 0, transition: slowEnter },
       exit: { opacity: 0, x: -8, transition: exit },
     } satisfies Variants,
     messageEnter,
@@ -144,14 +183,14 @@ export function createMotionVariants(tokens: MotionTokens) {
       exit: { opacity: 0, transition: exit },
     } satisfies Variants,
     modal: {
-      initial: { opacity: 0, y: 8, scale: 0.98 },
-      animate: { opacity: 1, y: 0, scale: 1, transition: enter },
-      exit: { opacity: 0, y: 8, scale: 0.98, transition: exit },
+      initial: { opacity: 0, scale: 0.97 },
+      animate: { opacity: 1, scale: 1, transition: slowEnter },
+      exit: { opacity: 0, scale: 0.97, transition: exit },
     } satisfies Variants,
     popover: {
-      initial: { opacity: 0, y: -4, scale: 0.98 },
-      animate: { opacity: 1, y: 0, scale: 1, transition: enter },
-      exit: { opacity: 0, y: -2, scale: 0.98, transition: exit },
+      initial: { opacity: 1 },
+      animate: { opacity: 1 },
+      exit: { opacity: 0, transition: { duration: 0.1, ease: tokens.hoverEasing } },
     } satisfies Variants,
     toast: {
       initial: { opacity: 0, y: 8 },
@@ -160,7 +199,7 @@ export function createMotionVariants(tokens: MotionTokens) {
     } satisfies Variants,
     listItem: {
       initial: { opacity: 0, y: 4 },
-      animate: { opacity: 1, y: 0, transition: enter },
+      animate: { opacity: 1, y: 0, transition: move },
       exit: { opacity: 0, transition: exit },
     } satisfies Variants,
   }

@@ -6,11 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "check:bundle-size": "node scripts/check-bundle-size.mjs",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "check:design-tokens": "node scripts/check-design-tokens.mjs",
     "check:icons": "node scripts/check-icon-contract.mjs",
     "check:ipc-contract": "node --test scripts/check-tauri-ipc-contract.test.mjs && node scripts/check-tauri-ipc-contract.mjs",
     "check:ipc-types": "node scripts/check-generated-ipc-types.mjs",
+    "check:security-invariants": "node scripts/check-security-invariants.mjs",
     "generate:ipc-types": "cargo run --manifest-path src-tauri/Cargo.toml --bin export_ipc_types --no-default-features --features matrix-backend --locked",
     "preview": "vite preview",
     "tauri": "tauri",
@@ -48,6 +50,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@playwright/test": "^1.61.1",
     "@tauri-apps/cli": "^2",
     "@testing-library/jest-dom": "^6.9.1",

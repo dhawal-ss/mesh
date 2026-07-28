@@ -11,11 +11,20 @@ export type VoiceServiceStatus = { provider: VoiceProvider, availability: VoiceS
 
 export type BackendCapabilities = { encryptedText: boolean, encryptedAttachments: boolean, directMessages: boolean, voice: boolean, durableTimeouts: boolean, deviceManagement: boolean, recovery: boolean, legacyMigration: boolean, };
 
-export type BackendStatus = { kind: BackendKind, capabilities: BackendCapabilities, voiceService: VoiceServiceStatus, authenticated: boolean, userId: string | null, deviceId: string | null, homeserver: string | null, syncRunning: boolean, durableHistory: boolean, endToEndEncryption: boolean, warnings: Array<string>, };
+export type BackendStatus = { kind: BackendKind, capabilities: BackendCapabilities, voiceService: VoiceServiceStatus, authenticated: boolean, userId: string | null, deviceId: string | null, homeserver: string | null,
+/**
+ * True only when the sync worker is alive and has received a successful
+ * response within the backend's freshness window.
+ */
+syncRunning: boolean, durableHistory: boolean, endToEndEncryption: boolean, warnings: Array<string>, };
 
 export type MatrixNotification = { roomId: string, eventId: string, sender: string, displayName: string, preview: string, isMention: boolean, isDm: boolean, avatarUrl: string | null, };
 
 export type MatrixUnreadUpdate = { roomId: string, unreadMessages: number, unreadMentions: number, };
+
+export type MatrixQueuedMessageState = "pending" | "failed" | "sent" | "cancelled";
+
+export type MatrixQueuedMessageUpdate = { roomId: string, transactionId: string, state: MatrixQueuedMessageState, eventId?: string | null, message?: MessageDto | null, };
 
 export type MatrixRoomNotificationMode = "all" | "mentions" | "nothing";
 
@@ -37,31 +46,40 @@ export type NotificationPresentationContext = { activeRoomId: string | null, not
 
 export type UserPreferences = { schemaVersion: number, notificationsEnabled: boolean, notificationSound: boolean, notificationSoundId?: string | null, doNotDisturb: boolean, quietHoursEnabled: boolean, quietHoursStart?: string | null, quietHoursEnd?: string | null, mutedChannels: Array<string>, mutedCommunities: Array<string>, mutedChannelUntil: { [key in string]?: string | null }, mutedCommunityUntil: { [key in string]?: string | null }, channelNotificationLevels: { [key in string]?: MatrixRoomNotificationMode }, sendReadReceipts: boolean, sendTypingIndicators: boolean, sharePresence: boolean, invisibleMode: boolean, updatedAt: string, };
 
+export type CustomEmoji = { shortcode: string, body: string, mxcUri: string, contentType: string, width: number, height: number, sizeBytes: number, };
+
+export type ModerationRoomOutcome = { roomId: string, roomName: string, succeeded: boolean, failureReason: string | null, };
+
+export type ModerationAuditEntry = { id: string, actorUserId: string, actorDisplayName: string, targetUserId: string, targetDisplayName: string, action: string, reason: string | null, occurredAt: string, roomOutcomes: Array<ModerationRoomOutcome>, };
+
+export type CommunityModerationResult = { audit: ModerationAuditEntry, auditRecorded: boolean, };
+
 export type IdentityDto = { publicKey: string, displayName: string, avatarColor: string, };
 
 export type CommunityDto = { id: string, name: string, description: string, memberCount: number, role: "owner" | "admin" | "member", joinedAt: string | null, };
 
 export type ChannelDto = { id: string, communityId: string, name: string, channelType: "text" | "voice", unreadCount: number, };
 
-export type AttachmentThumbnailDto = { fileHash: string, size: number, width: number, height: number, contentType: string,
-/**
- * Opaque Matrix encrypted-file metadata used only by the Rust backend.
- */
-mediaSource: Record<string, unknown>, };
+export type AttachmentThumbnailDto = { fileHash: string, size: number, width: number, height: number, contentType: string, };
 
-export type AttachmentDto = { fileHash: string, filename: string, size: number, chunks: number, sourcePeerId: string,
+export type AttachmentDto = { fileHash: string, filename: string, size: number, chunks: number, sourcePeerId: string, contentType?: string | null,
 /**
- * Matrix encrypted-file metadata. Kept opaque at the product boundary so
- * the SDK remains the authority for key, IV, and ciphertext validation.
- */
-mediaSource?: Record<string, unknown> | null, contentType?: string | null,
-/**
- * Encrypted Matrix thumbnail metadata. Mesh does not decrypt this across
- * renderer IPC until the sandboxed preview boundary is implemented.
+ * Bounded display metadata for a protected inline preview. Encryption
+ * keys, IVs, and media locations remain Rust-only.
  */
 thumbnail?: AttachmentThumbnailDto | null, };
 
 export type MessageDto = { id: string, channelId: string, authorPublicKey: string, authorDisplayName: string, authorAvatarColor: string, content: string, attachments: Array<AttachmentDto>, reactions: Record<string, string[]>, timestamp: string, signature: string, editedAt?: string | null, deletedAt?: string | null, replyToId?: string | null,
+/**
+ * SDK transaction ID used to reconcile a durable local echo with the
+ * eventual server event. This is internal delivery metadata.
+ */
+transactionId?: string | null,
+/**
+ * Renderer request ID retained inside the encrypted event so a lost IPC
+ * response can be retried without publishing a duplicate.
+ */
+clientRequestId?: string | null,
 /**
  * Delivery status: "sent", "pending", or "failed". None = sent.
  */

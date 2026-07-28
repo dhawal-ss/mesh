@@ -68,7 +68,7 @@ export function DmSidebar() {
     <div className="flex flex-col h-full">
       {/* Header */}
       <div
-        className="flex h-12 flex-shrink-0 items-center border-b border-border-subtle px-4 shadow-elevation-low"
+        className="flex h-12 flex-shrink-0 items-center border-b border-border-subtle px-4"
         data-tauri-drag-region
       >
         <h2 className="text-sm font-semibold text-primary">Direct Messages</h2>
@@ -83,7 +83,7 @@ export function DmSidebar() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Find a conversation"
-          className="w-full rounded bg-bg-tertiary px-2 py-1.5 text-xs text-primary outline-none placeholder:text-muted focus:ring-2 focus:ring-accent"
+          className="w-full rounded bg-bg-tertiary px-2 py-1.5 text-xs text-primary outline-none placeholder:text-muted"
         />
       </div>
 
@@ -125,13 +125,13 @@ export function DmSidebar() {
                     <div className="flex items-center justify-between">
                       <span className="truncate text-sm font-medium">{shortName}</span>
                       {showUnreadBadges && conv.unreadCount > 0 && (
-                        <span className="ml-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red px-1 text-meta font-semibold text-content-on-status">
+                        <span className="badge-count ml-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red px-1 text-meta font-semibold text-content-on-status">
                           {conv.unreadCount > 99 ? '99+' : conv.unreadCount}
                         </span>
                       )}
                     </div>
                     {conv.lastMessageAt && (
-                      <span className="text-meta text-muted">
+                      <span className="tnum text-meta text-muted">
                         {format(new Date(conv.lastMessageAt), 'MMM d')}
                       </span>
                     )}

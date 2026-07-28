@@ -7,18 +7,18 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::backend::{
     BackendError, BackendKind, BackendStatus, CommunityAccessResult, CommunityAccessSettings,
-    CommunityApplication, CommunityDirectoryEntry, CommunityMember, MatrixAccount,
-    MatrixAttachmentSendRequest, MatrixDevice, MatrixLogin, MatrixOidcStatus, MatrixProfile,
-    MatrixRecoveryHealth, MatrixRoomNotificationMode, MatrixRtcJoinResult, MatrixRtcMediaKey,
-    MatrixRtcMediaKeyLease, MatrixRtcMember, MatrixTransferObserver,
-    MatrixTransferProgressCallback, MatrixVerificationSession, TypingUser, UserPreferences,
-    MATRIX_TRANSFER_PROGRESS_EVENT,
+    CommunityApplication, CommunityDirectoryEntry, CommunityMember, CommunityModerationResult,
+    CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest, MatrixDevice, MatrixLogin,
+    MatrixOidcStatus, MatrixProfile, MatrixRecoveryHealth, MatrixRoomNotificationMode,
+    MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyLease, MatrixRtcMember,
+    MatrixTransferObserver, MatrixTransferProgressCallback, MatrixVerificationSession,
+    ModerationAuditEntry, TypingUser, UserPreferences, MATRIX_TRANSFER_PROGRESS_EVENT,
 };
 use crate::state::AppState;
 use crate::types::{
     community::{ChannelDto, CommunityDto},
     dm::{DirectMessageDto, DmConversationDto},
-    message::{AttachmentDto, MessageDto},
+    message::MessageDto,
 };
 
 use super::{attachments::AttachmentGrantStore, error::CommandError};
@@ -512,6 +512,69 @@ pub async fn matrix_create_channel(
 }
 
 #[tauri::command]
+pub async fn matrix_list_custom_emoji(
+    community_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<CustomEmoji>, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .list_custom_emoji(community_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_upload_custom_emoji(
+    community_id: String,
+    shortcode: String,
+    filename: String,
+    content_type: String,
+    bytes: Vec<u8>,
+    state: State<'_, AppState>,
+) -> Result<CustomEmoji, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .upload_custom_emoji(community_id, shortcode, filename, content_type, bytes)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_remove_custom_emoji(
+    community_id: String,
+    shortcode: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .remove_custom_emoji(community_id, shortcode)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_load_custom_emoji_image(
+    community_id: String,
+    shortcode: String,
+    state: State<'_, AppState>,
+) -> Result<tauri::ipc::Response, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .load_custom_emoji_image(community_id, shortcode)
+        .await
+        .map(tauri::ipc::Response::new)
+        .map_err(map_error)
+}
+
+#[tauri::command]
 pub async fn matrix_rtc_join(
     room_id: String,
     state: State<'_, AppState>,
@@ -633,13 +696,100 @@ pub async fn matrix_send_message(
     room_id: String,
     body: String,
     reply_to_id: Option<String>,
+    transaction_id: String,
     state: State<'_, AppState>,
 ) -> Result<MessageDto, CommandError> {
     require_matrix(&state)?;
     state
         .backend
         .backend()
-        .send_message(room_id, body, reply_to_id)
+        .send_message(room_id, body, reply_to_id, transaction_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_queued_messages(
+    state: State<'_, AppState>,
+) -> Result<Vec<MessageDto>, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .queued_messages()
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_retry_queued_message(
+    room_id: String,
+    transaction_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .retry_queued_message(room_id, transaction_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_cancel_queued_message(
+    room_id: String,
+    transaction_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .cancel_queued_message(room_id, transaction_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_save_composer_draft(
+    room_id: String,
+    body: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .save_composer_draft(room_id, body)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_load_composer_draft(
+    room_id: String,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .load_composer_draft(room_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_clear_composer_draft(
+    room_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .clear_composer_draft(room_id)
         .await
         .map_err(map_error)
 }
@@ -664,6 +814,7 @@ pub async fn matrix_send_attachment(
         .send_attachment(
             room_id,
             MatrixAttachmentSendRequest {
+                transaction_id: transfer_id.clone(),
                 file_path: claimed.path(),
                 filename: claimed.filename(),
                 content_type: Some(claimed.content_type()),
@@ -701,7 +852,9 @@ pub async fn matrix_cancel_attachment_upload(
 
 #[tauri::command]
 pub async fn matrix_download_attachment(
-    attachment: AttachmentDto,
+    room_id: String,
+    event_id: String,
+    attachment_index: u32,
     transfer_id: String,
     app: AppHandle,
     state: State<'_, AppState>,
@@ -711,13 +864,49 @@ pub async fn matrix_download_attachment(
         .backend
         .backend()
         .download_attachment(
-            attachment,
+            room_id,
+            event_id,
+            attachment_index,
             MatrixTransferObserver {
                 transfer_id,
                 progress: matrix_transfer_progress_emitter(app),
             },
         )
         .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_load_attachment_thumbnail(
+    room_id: String,
+    event_id: String,
+    attachment_index: u32,
+    state: State<'_, AppState>,
+) -> Result<tauri::ipc::Response, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .load_attachment_thumbnail(room_id, event_id, attachment_index)
+        .await
+        .map(tauri::ipc::Response::new)
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_load_attachment_image(
+    room_id: String,
+    event_id: String,
+    attachment_index: u32,
+    state: State<'_, AppState>,
+) -> Result<tauri::ipc::Response, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .load_attachment_image(room_id, event_id, attachment_index)
+        .await
+        .map(tauri::ipc::Response::new)
         .map_err(map_error)
 }
 
@@ -784,13 +973,14 @@ pub async fn matrix_send_dm(
     recipient_user_id: String,
     body: String,
     reply_to_id: Option<String>,
+    transaction_id: String,
     state: State<'_, AppState>,
 ) -> Result<DirectMessageDto, CommandError> {
     require_matrix(&state)?;
     state
         .backend
         .backend()
-        .send_dm(recipient_user_id, body, reply_to_id)
+        .send_dm(recipient_user_id, body, reply_to_id, transaction_id)
         .await
         .map_err(map_error)
 }
@@ -815,6 +1005,7 @@ pub async fn matrix_send_dm_attachment(
         .send_dm_attachment(
             recipient_user_id,
             MatrixAttachmentSendRequest {
+                transaction_id: transfer_id.clone(),
                 file_path: claimed.path(),
                 filename: claimed.filename(),
                 content_type: Some(claimed.content_type()),
@@ -1188,7 +1379,7 @@ pub async fn matrix_update_member_role(
     user_id: String,
     role: String,
     state: State<'_, AppState>,
-) -> Result<(), CommandError> {
+) -> Result<CommunityModerationResult, CommandError> {
     require_matrix(&state)?;
     state
         .backend
@@ -1204,7 +1395,7 @@ pub async fn matrix_kick_member(
     user_id: String,
     reason: Option<String>,
     state: State<'_, AppState>,
-) -> Result<(), CommandError> {
+) -> Result<CommunityModerationResult, CommandError> {
     require_matrix(&state)?;
     state
         .backend
@@ -1220,12 +1411,27 @@ pub async fn matrix_ban_member(
     user_id: String,
     reason: Option<String>,
     state: State<'_, AppState>,
-) -> Result<(), CommandError> {
+) -> Result<CommunityModerationResult, CommandError> {
     require_matrix(&state)?;
     state
         .backend
         .backend()
         .ban_member(community_id, user_id, reason)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_list_moderation_audit(
+    community_id: String,
+    limit: u32,
+    state: State<'_, AppState>,
+) -> Result<Vec<ModerationAuditEntry>, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .list_moderation_audit(community_id, limit)
         .await
         .map_err(map_error)
 }

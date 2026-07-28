@@ -279,7 +279,7 @@ function handleControlEvent(
       handlers.upsertMember(event.communityId, {
         publicKey: (payload.publicKey as string) ?? '',
         displayName: (payload.displayName as string) ?? 'Unknown',
-        avatarColor: (payload.avatarColor as string) ?? '#c8b89a',
+        avatarColor: (payload.avatarColor as string) ?? 'var(--avatar-sand)',
         role: ((payload.role as string) ?? 'member') as MemberRecord['role'],
         joinStatus: 'joined',
         banStatus: 'none',

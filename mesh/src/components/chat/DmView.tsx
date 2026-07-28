@@ -71,7 +71,6 @@ export function DmView() {
   const [isLoading, setIsLoading] = useState(false)
   const [isBlocked, setIsBlocked] = useState(false)
   const [isBlockBusy, setIsBlockBusy] = useState(false)
-  const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null)
   const [reactionTargetId, setReactionTargetId] = useState<string | null>(null)
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
@@ -183,7 +182,12 @@ export function DmView() {
         }
         return
       }
-      const msg = await bridge.sendDm(conversation.peerPublicKey, content, replyToId)
+      const msg = await bridge.sendDm(
+        conversation.peerPublicKey,
+        content,
+        replyToId,
+        bridge.createMatrixTransactionId(),
+      )
       addMessage(msg)
       setReplyingTo(null)
       requestAnimationFrame(() => {
@@ -207,6 +211,24 @@ export function DmView() {
       updateReaction(activeConversationId, message.id, emoji, ownAuthorId, verb === 'add' ? 'remove' : 'add')
       console.error('Failed to update DM reaction:', error)
     }
+  }
+
+  // Mirrors Message.tsx's handleRowKeyDown: the picker is rendered inside
+  // this same row, so its keydowns bubble here. DmView has no context menu,
+  // so (unlike Message.tsx) there's no ContextMenu/Shift+F10 branch to port.
+  const handleMessageRowKeyDown = (event: React.KeyboardEvent<HTMLDivElement>, messageId: string) => {
+    if (event.key !== 'Escape' || reactionTargetId !== messageId) return
+    setReactionTargetId(null)
+    event.currentTarget.querySelector<HTMLButtonElement>('[aria-label="Add reaction"]')?.focus()
+  }
+
+  // Mirrors Message.tsx's handleRowBlur: Tabbing focus off the row entirely
+  // (e.g. past the last action-bar button) should close the picker too, not
+  // just Escape/mouseleave.
+  const handleMessageRowBlur = (event: React.FocusEvent<HTMLDivElement>, messageId: string) => {
+    if (reactionTargetId !== messageId) return
+    if (event.relatedTarget && event.currentTarget.contains(event.relatedTarget as Node)) return
+    setReactionTargetId(null)
   }
 
   const handleSaveEdit = async () => {
@@ -245,7 +267,7 @@ export function DmView() {
   if (!activeConversationId || !conversation) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <div className="rounded-panel border border-border-subtle bg-surface-raised/50 px-8 py-7 text-center shadow-pane backdrop-blur-xl">
+        <div className="rounded-panel border border-border-subtle bg-surface-raised/50 px-8 py-7 text-center shadow-overlay backdrop-blur-xl">
           <p className="mb-1 text-sm text-secondary">Select a conversation</p>
           <p className="text-2xs text-muted">Choose a DM from the sidebar</p>
         </div>
@@ -295,7 +317,7 @@ export function DmView() {
           </div>
         ) : channelMessages.length === 0 ? (
           <div className="flex h-full items-center justify-center">
-            <div className="rounded-panel border border-border-subtle bg-surface-raised/50 px-8 py-7 text-center shadow-pane backdrop-blur-xl">
+            <div className="rounded-panel border border-border-subtle bg-surface-raised/50 px-8 py-7 text-center shadow-overlay backdrop-blur-xl">
               <p className="mb-1 text-sm text-secondary">Start of conversation</p>
               <p className="text-2xs text-muted">Send a message to {peerName}</p>
             </div>
@@ -321,12 +343,13 @@ export function DmView() {
 
                   return (
                 <div
-                  className={`group relative px-4 ${!isGrouped ? 'pt-2' : 'pt-0.5'}`}
-                  onMouseEnter={() => setHoveredMessageId(msg.id)}
-                  onMouseLeave={() => {
-                    setHoveredMessageId(null)
-                    setReactionTargetId(null)
-                  }}
+                  role="group"
+                  aria-label={`Message from ${msg.authorDisplayName}, ${formatFederatedTimestamp(msg.timestamp, 'MM/dd/yyyy h:mm a')}`}
+                  tabIndex={-1}
+                  className={`group relative px-4 outline-none ${!isGrouped ? 'pt-2' : 'pt-0.5'}`}
+                  onMouseLeave={() => setReactionTargetId(null)}
+                  onKeyDown={(event) => handleMessageRowKeyDown(event, msg.id)}
+                  onBlur={(event) => handleMessageRowBlur(event, msg.id)}
                 >
                   {!isGrouped && (
                     <div className="mb-0.5 flex items-center gap-2">
@@ -337,10 +360,10 @@ export function DmView() {
                       >
                         {msg.authorDisplayName[0]?.toUpperCase() ?? '?'}
                       </div>
-                      <span className={`text-xs font-medium ${isOwnMessage ? 'text-accent' : 'text-primary'}`}>
+                      <span className={`text-base font-semibold ${isOwnMessage ? 'text-accent' : 'text-primary'}`}>
                         {isOwnMessage ? 'You' : msg.authorDisplayName}
                       </span>
-                      <span className="font-mono text-2xs text-muted">
+                      <span className="tnum text-2xs text-muted">
                         {formatFederatedTimestamp(msg.timestamp, 'HH:mm')}
                       </span>
                     </div>
@@ -379,8 +402,14 @@ export function DmView() {
                         {msg.editedAt && <span className="ml-1 text-caption text-muted">(edited)</span>}
                       </p>
                     )}
-                    {(msg.attachments ?? []).map((attachment) => (
-                      <FileAttachmentCard key={attachment.fileHash} attachment={attachment} />
+                    {(msg.attachments ?? []).map((attachment, attachmentIndex) => (
+                      <FileAttachmentCard
+                        key={attachment.fileHash}
+                        attachment={attachment}
+                        roomId={msg.conversationId}
+                        eventId={msg.id}
+                        attachmentIndex={attachmentIndex}
+                      />
                     ))}
                     {Object.keys(msg.reactions ?? {}).length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
@@ -396,17 +425,21 @@ export function DmView() {
                       </div>
                     )}
                   </div>
-                  {matrixMode && hoveredMessageId === msg.id && editingMessageId !== msg.id && (
-                    <div className="absolute right-4 top-0 z-sticky flex items-center gap-1 rounded border border-border bg-bg-secondary px-1 py-1 shadow-elevation-high">
+                  {/* Action bar — always mounted (not just on hover) so Tab can
+                      reach it; group-hover/group-focus-within reveal it
+                      visually, matching Message.tsx's pattern. */}
+                  {matrixMode && editingMessageId !== msg.id && (
+                    <div className="pointer-events-none absolute right-4 top-0 z-sticky flex items-center gap-1 rounded border border-border bg-bg-secondary px-1 py-1 opacity-0 shadow-overlay transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
                       <button
                         onClick={() => setReplyingTo(msg)}
-                        className="rounded px-1.5 py-1 text-meta text-muted hover:bg-bg-modifier-hover hover:text-secondary"
+                        className="rounded px-1.5 py-1 text-meta text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                         aria-label="Reply to message"
                       >Reply</button>
                       <button
                         onClick={() => setReactionTargetId(reactionTargetId === msg.id ? null : msg.id)}
-                        className="rounded px-1.5 py-1 text-meta text-muted hover:bg-bg-modifier-hover hover:text-secondary"
+                        className="rounded px-1.5 py-1 text-meta text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                         aria-label="Add reaction"
+                        aria-expanded={reactionTargetId === msg.id}
                       >React</button>
                       {isOwnMessage && (
                         <button
@@ -414,7 +447,7 @@ export function DmView() {
                             setEditingMessageId(msg.id)
                             setEditValue(msg.content)
                           }}
-                          className="rounded px-1.5 py-1 text-meta text-muted hover:bg-bg-modifier-hover hover:text-secondary"
+                          className="rounded px-1.5 py-1 text-meta text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                           aria-label="Edit message"
                         >Edit</button>
                       )}

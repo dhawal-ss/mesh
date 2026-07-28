@@ -1,4 +1,4 @@
-import { memo, useState, useEffect, useCallback } from 'react'
+import { memo, useState, useEffect, useCallback, useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { Message as MessageType } from '../../types/ipc'
 import { Avatar } from '../ui/Avatar'
@@ -8,12 +8,18 @@ import { useCommunityStore } from '../../store/communities'
 import { useIdentityStore } from '../../store/identity'
 import { useChannelStore } from '../../store/channels'
 import { useMessageStore } from '../../store/messages'
+import { useCommunityMembers } from '../../store/membership'
+import { useServerEmoji } from '../../store/custom-emoji'
 import * as bridge from '../../lib/bridge'
 import { useFileDownloadStore } from '../../store/file-downloads'
 import { formatFederatedTimestamp } from '../../lib/federated-time'
 import { describeError } from '../../lib/errors'
-import { variants } from '../../lib/motion'
+import { summarizeModerationResult } from '../../lib/moderation'
+import { transitions, variants } from '../../lib/motion'
 import { Icon } from '../ui/Icon'
+import { showToast } from '../ui/Toast'
+import { EncryptedAttachmentPreview } from './EncryptedAttachmentPreview'
+import { ProtectedImageLightbox } from './ProtectedImageLightbox'
 
 interface MessageProps {
   message: MessageType
@@ -21,6 +27,7 @@ interface MessageProps {
   disableMotion?: boolean
   onReply?: (message: MessageType) => void
   onRetry?: (message: MessageType) => void
+  onCancel?: (message: MessageType) => void
   replyPreview?: MessageType | null
   limitedActions?: boolean
   editRequestToken?: number
@@ -31,6 +38,7 @@ export const MessageComponent = memo(function MessageComponent({
   isGrouped,
   onReply,
   onRetry,
+  onCancel,
   replyPreview,
   limitedActions = false,
   editRequestToken = 0,
@@ -41,8 +49,14 @@ export const MessageComponent = memo(function MessageComponent({
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState('')
   const [confirmBan, setConfirmBan] = useState(false)
+  const [activeImageAttachmentIndex, setActiveImageAttachmentIndex] = useState<number | null>(null)
+  const rowRef = useRef<HTMLDivElement>(null)
+  const reactButtonRef = useRef<HTMLButtonElement>(null)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
   const matrixMode = bridge.isMatrixBackend()
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
+  const communityMembers = useCommunityMembers(activeCommunityId)
+  const customEmoji = useServerEmoji(activeCommunityId)
   const myRole = useCommunityStore((s) =>
     s.activeCommunityId ? s.communityEntities[s.activeCommunityId]?.role : undefined,
   )
@@ -56,22 +70,81 @@ export const MessageComponent = memo(function MessageComponent({
   const isOwnMessage = myPublicKey === message.authorPublicKey
   const canModerate = myRole === 'owner' || myRole === 'admin'
   const isDeleted = !!message.deletedAt
+  const isQueued = !!message.transactionId && message.deliveryStatus !== 'sent'
+  const imageAttachmentIndexes = (message.attachments ?? []).flatMap((attachment, index) => (
+    attachment.thumbnail ? [index] : []
+  ))
+  const activeImagePosition = activeImageAttachmentIndex === null
+    ? -1
+    : imageAttachmentIndexes.indexOf(activeImageAttachmentIndex)
+  const activeImageAttachment = activeImagePosition < 0
+    ? undefined
+    : message.attachments[imageAttachmentIndexes[activeImagePosition]]
 
   useEffect(() => {
     if (!contextMenu) return
-    const handleClick = () => {
+    // Real menu semantics move focus into the menu on open — this runs for
+    // both the mouse contextmenu path and the ContextMenu-key/Shift+F10 path
+    // below, since both set the same `contextMenu` state. Without this,
+    // focus was left on `document.activeElement === body`.
+    contextMenuRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
+    const closeMenu = () => {
       setContextMenu(null)
       setConfirmBan(false)
     }
+    const handleClick = () => closeMenu()
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      closeMenu()
+      // A keyboard user opened this from the row (or one of its buttons);
+      // send focus back there instead of dropping it to the document body.
+      rowRef.current?.focus()
+    }
     window.addEventListener('click', handleClick)
-    return () => window.removeEventListener('click', handleClick)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('click', handleClick)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
   }, [contextMenu])
 
   const handleContextMenu = (e: React.MouseEvent) => {
+    if (isQueued) return
     if (limitedActions && !isOwnMessage) return
     e.preventDefault()
     setContextMenu({ x: e.clientX, y: e.clientY })
     setConfirmBan(false)
+  }
+
+  // The `contextmenu` DOM event only fires from a mouse right-click, so the
+  // ContextMenu key / Shift+F10 (the standard keyboard equivalent) needs its
+  // own handler. It reuses the row's own position rather than a click point.
+  const handleRowKeyDown = (e: React.KeyboardEvent) => {
+    // The reaction picker is rendered inside this same row, so its keydowns
+    // bubble here — unlike the context menu (rendered outside the row),
+    // which needs the window-level Escape listener above instead.
+    if (e.key === 'Escape' && showReactions) {
+      setShowReactions(false)
+      reactButtonRef.current?.focus()
+      return
+    }
+    if (isQueued || (limitedActions && !isOwnMessage)) return
+    if (e.key !== 'ContextMenu' && !(e.key === 'F10' && e.shiftKey)) return
+    e.preventDefault()
+    const rect = e.currentTarget.getBoundingClientRect()
+    setContextMenu({ x: rect.right - 208, y: rect.top - 8 })
+    setConfirmBan(false)
+  }
+
+  // Tabbing focus away from the row entirely — e.g. past the last emoji
+  // button to the next message — should close the picker too, not just
+  // Escape/mouseleave. Only skip closing when we can prove focus landed on
+  // another descendant of this row; an absent relatedTarget (e.g. focus
+  // leaving the document) is treated as "left" rather than assumed safe.
+  const handleRowBlur = (e: React.FocusEvent) => {
+    if (!showReactions) return
+    if (e.relatedTarget && e.currentTarget.contains(e.relatedTarget as Node)) return
+    setShowReactions(false)
   }
 
   const handleBan = async () => {
@@ -81,23 +154,32 @@ export const MessageComponent = memo(function MessageComponent({
       return
     }
     try {
-      await bridge.banUser(activeCommunityId, message.authorPublicKey)
+      const result = await bridge.banUser(activeCommunityId, message.authorPublicKey)
+      const summary = summarizeModerationResult(result, `${message.authorDisplayName} was banned`)
+      showToast(summary.message, summary.tone)
     } catch (e) {
       console.error('Failed to ban:', e)
     }
     setContextMenu(null)
     setConfirmBan(false)
+    // Ban/kick/timeout leave this row mounted (unlike Delete, which removes
+    // it), so returning focus here is safe and avoids it falling back to
+    // <body>. Edit doesn't need this — its textarea autofocuses itself.
+    rowRef.current?.focus()
   }
 
   const handleKick = useCallback(async () => {
     if (!activeCommunityId) return
     try {
-      await bridge.kickUser(activeCommunityId, message.authorPublicKey)
+      const result = await bridge.kickUser(activeCommunityId, message.authorPublicKey)
+      const summary = summarizeModerationResult(result, `${message.authorDisplayName} was removed`)
+      showToast(summary.message, summary.tone)
     } catch (e) {
       console.error('Kick failed:', e)
     }
     setContextMenu(null)
-  }, [activeCommunityId, message.authorPublicKey])
+    rowRef.current?.focus()
+  }, [activeCommunityId, message.authorDisplayName, message.authorPublicKey])
 
   const handleTimeout = useCallback(async () => {
     if (!activeCommunityId) return
@@ -107,6 +189,7 @@ export const MessageComponent = memo(function MessageComponent({
       console.error('Timeout failed:', e)
     }
     setContextMenu(null)
+    rowRef.current?.focus()
   }, [activeCommunityId, message.authorPublicKey])
 
   const handleStartEdit = useCallback(() => {
@@ -116,8 +199,10 @@ export const MessageComponent = memo(function MessageComponent({
   }, [message.content])
 
   useEffect(() => {
-    if (editRequestToken > 0 && isOwnMessage && !isDeleted) handleStartEdit()
-  }, [editRequestToken, handleStartEdit, isDeleted, isOwnMessage])
+    if (editRequestToken > 0 && isOwnMessage && !isDeleted && !isQueued) {
+      handleStartEdit()
+    }
+  }, [editRequestToken, handleStartEdit, isDeleted, isOwnMessage, isQueued])
 
   const handleSaveEdit = useCallback(async () => {
     const trimmed = editContent.trim()
@@ -153,6 +238,8 @@ export const MessageComponent = memo(function MessageComponent({
       console.error('Failed to delete message:', e)
     }
     setContextMenu(null)
+    // No rowRef.current?.focus() here, unlike ban/kick/timeout: deleting
+    // removes this row from the DOM, so there's nothing sensible to focus.
   }, [message.id, message.channelId, activeChannelId, deleteMessage])
 
   const handleEditKeyDown = useCallback(
@@ -191,10 +278,23 @@ export const MessageComponent = memo(function MessageComponent({
     }
   }
 
+  const deliveryLabel = message.deliveryStatus === 'pending'
+    ? ', saved on this device and waiting to send'
+    : message.deliveryStatus === 'failed'
+      ? ', delivery needs attention'
+      : ''
+  const messageAriaLabel = `Message from ${message.authorDisplayName}, ${formatFederatedTimestamp(message.timestamp, 'MM/dd/yyyy h:mm a')}${deliveryLabel}`
+
   return (
     <>
       <div
-        className={`group relative flex gap-4 py-0.5 pl-message-gutter pr-12 hover:bg-bg-modifier-hover ${
+        ref={rowRef}
+        role="group"
+        aria-label={messageAriaLabel}
+        tabIndex={-1}
+        className={`group relative flex gap-4 py-0.5 pl-message-gutter pr-12 outline-none transition-opacity duration-fast hover:bg-bg-modifier-hover ${
+          message.deliveryStatus === 'pending' ? 'opacity-60' : 'opacity-100'
+        } ${
           !isGrouped ? 'mt-message-group' : ''
         }`}
         onMouseEnter={() => setHovered(true)}
@@ -203,6 +303,8 @@ export const MessageComponent = memo(function MessageComponent({
           setShowReactions(false)
         }}
         onContextMenu={handleContextMenu}
+        onKeyDown={handleRowKeyDown}
+        onBlur={handleRowBlur}
       >
         {/* Avatar — absolute positioned in left gutter */}
         <div className="absolute left-4 top-0.5 w-10">
@@ -210,7 +312,7 @@ export const MessageComponent = memo(function MessageComponent({
             <Avatar color={message.authorAvatarColor} size={40} name={message.authorDisplayName} />
           ) : (
             <span
-              className={`flex h-full items-center justify-end pr-1 text-meta text-muted transition-opacity ${
+              className={`tnum flex h-full items-center justify-end pr-1 text-meta text-muted transition-opacity ${
                 hovered ? 'opacity-100' : 'opacity-0'
               }`}
             >
@@ -223,28 +325,48 @@ export const MessageComponent = memo(function MessageComponent({
         <div className="min-w-0 flex-1">
           {!isGrouped && (
             <div className="flex items-baseline gap-2">
-              <span className="text-sm font-medium text-primary">
+              <span className="text-base font-semibold text-primary">
                 {message.authorDisplayName}
               </span>
-              <span className="text-meta text-muted">
+              <span className="tnum text-meta text-muted">
                 {formatFederatedTimestamp(message.timestamp, 'MM/dd/yyyy h:mm a')}
               </span>
-              {message.deliveryStatus && message.deliveryStatus !== 'sent' && (
-                <span
-                  className={`ml-1 inline-flex items-center gap-1 text-meta ${
-                    message.deliveryStatus === 'pending'
-                      ? 'text-yellow'
-                      : 'text-red'
-                  }`}
-                >
-                  {message.deliveryStatus === 'pending' ? (
-                    <Icon name="loader" size="xs" className="animate-spin" />
-                  ) : (
-                    'Failed'
-                  )}
-                </span>
-              )}
             </div>
+          )}
+
+          {message.deliveryStatus === 'pending' && (
+            <div role="status" className="mt-1 inline-flex items-center gap-1 text-meta text-yellow">
+              <Icon name="loader" size="xs" className="animate-spin" />
+              Saved on this device · Waiting to send
+            </div>
+          )}
+
+          {message.deliveryStatus === 'failed' && (
+            <motion.div
+              role="alert"
+              className="mt-1 flex flex-wrap items-center gap-2 text-meta text-red"
+              initial={{ x: 0 }}
+              animate={{ x: [0, -2, 2, 0] }}
+              transition={transitions.failure}
+            >
+              <span>Delivery needs attention.</span>
+              <button
+                type="button"
+                onClick={() => onRetry?.(message)}
+                className="min-h-control-sm rounded bg-red/10 px-2 font-medium transition-colors hover:bg-red/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                Retry
+              </button>
+              {onCancel && (
+                <button
+                  type="button"
+                  onClick={() => onCancel(message)}
+                  className="min-h-control-sm rounded px-2 font-medium text-secondary transition-colors hover:bg-bg-modifier-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  Cancel
+                </button>
+              )}
+            </motion.div>
           )}
 
           {/* Reply preview */}
@@ -274,29 +396,30 @@ export const MessageComponent = memo(function MessageComponent({
             </div>
           ) : (
             <>
-              <MarkdownContent content={message.content} />
+              <MarkdownContent
+                content={message.content}
+                members={communityMembers}
+                customEmoji={customEmoji}
+                ownUserId={myPublicKey ?? null}
+              />
               {message.editedAt && (
                 <span className="ml-1 text-caption text-muted">(edited)</span>
               )}
             </>
           )}
 
-          {/* Retry button for failed messages */}
-          {message.deliveryStatus === 'failed' && (
-            <button
-              onClick={() => { if (onRetry) onRetry(message) }}
-              className="mt-1 inline-flex items-center gap-1 rounded bg-red/10 px-2 py-1 text-meta font-medium text-red transition-colors hover:bg-red/20"
-            >
-              <Icon name="refresh" size="xs" />
-              Retry
-            </button>
-          )}
-
           {/* File attachments */}
           {message.attachments && message.attachments.length > 0 && (
             <div className="mt-2 flex flex-col gap-2">
-              {message.attachments.map((att) => (
-                <FileAttachmentCard key={att.fileHash} attachment={att} />
+              {message.attachments.map((att, attachmentIndex) => (
+                <FileAttachmentCard
+                  key={att.fileHash}
+                  attachment={att}
+                  roomId={message.channelId}
+                  eventId={message.id}
+                  attachmentIndex={attachmentIndex}
+                  onOpenImage={att.thumbnail ? () => setActiveImageAttachmentIndex(attachmentIndex) : undefined}
+                />
               ))}
             </div>
           )}
@@ -304,40 +427,64 @@ export const MessageComponent = memo(function MessageComponent({
           {/* Reactions */}
           {Object.keys(message.reactions).length > 0 && (
             <div className="mt-1 flex flex-wrap gap-1">
-              {Object.entries(message.reactions).map(([emoji, users]) => (
-                <button
-                  key={emoji}
-                  onClick={() => handleReaction(emoji)}
-                  className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs transition-colors ${
-                    myPublicKey && users.includes(myPublicKey)
-                      ? 'border-blue/40 bg-blue/10 text-blue'
-                      : 'border-border bg-bg-modifier-hover text-secondary hover:border-border-light'
-                  }`}
-                >
-                  <span>{emoji}</span>
-                  <span className="text-meta">{users.length}</span>
-                </button>
-              ))}
+              {Object.entries(message.reactions).map(([emoji, users]) => {
+                const custom = customEmoji.find(
+                  (candidate) => `:${candidate.shortcode}:` === emoji,
+                )
+                return (
+                  <button
+                    key={emoji}
+                    onClick={() => handleReaction(emoji)}
+                    className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs transition-colors ${
+                      myPublicKey && users.includes(myPublicKey)
+                        ? 'border-blue/40 bg-blue/10 text-blue'
+                        : 'border-border bg-bg-modifier-hover text-secondary hover:border-border-light'
+                    }`}
+                  >
+                    <motion.span
+                      initial={{ scale: 0.8 }}
+                      animate={{ scale: 1 }}
+                      transition={transitions.reaction}
+                    >
+                      {custom ? (
+                        <img
+                          src={custom.imageUrl}
+                          alt={emoji}
+                          title={custom.body}
+                          className="h-4 w-4 object-contain"
+                        />
+                      ) : emoji}
+                    </motion.span>
+                    <span className="badge-count text-meta">{users.length}</span>
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
 
-        {/* Hover action bar */}
-        {hovered && !contextMenu && !isEditing && !isDeleted && (
+        {/* Action bar — always mounted (not just on hover) so Tab can reach it;
+            group-hover/group-focus-within reveal it visually, matching the
+            volume-slider pattern in VoicePeerGrid.tsx. pointer-events-none at
+            rest keeps the invisible bar from intercepting clicks meant for
+            the grouped message rendered underneath it (-top-4 overlap). */}
+        {!contextMenu && !isEditing && !isDeleted && !isQueued && (
           <div
-            className="absolute -top-4 right-4 z-sticky flex items-center rounded-md border border-border bg-bg-secondary shadow-elevation-high"
+            className="pointer-events-none absolute -top-4 right-4 z-sticky flex items-center rounded-md border border-border bg-bg-secondary opacity-0 shadow-overlay transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
           >
             <button
+              ref={reactButtonRef}
               onClick={() => setShowReactions(!showReactions)}
-              className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary"
-              aria-label="Add reaction"
+              className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              aria-label={`React to message from ${message.authorDisplayName}`}
+              aria-expanded={showReactions}
             >
               <Icon name="smile" size="sm" />
             </button>
             {isOwnMessage && (
               <button
                 onClick={handleStartEdit}
-                className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary"
+                className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                 aria-label="Edit message"
               >
                 <Icon name="squarePen" size="sm" />
@@ -346,8 +493,8 @@ export const MessageComponent = memo(function MessageComponent({
             {onReply && (
               <button
                 onClick={() => onReply(message)}
-                className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary"
-                aria-label="Reply"
+                className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                aria-label={`Reply to ${message.authorDisplayName}`}
               >
                 <Icon name="reply" size="sm" />
               </button>
@@ -359,21 +506,51 @@ export const MessageComponent = memo(function MessageComponent({
         <AnimatePresence>
           {showReactions && (
             <div className="absolute -top-10 right-4 z-dropdown">
-              <ReactionPicker onSelect={handleReaction} onClose={() => setShowReactions(false)} />
+              <ReactionPicker
+                onSelect={handleReaction}
+                onClose={() => setShowReactions(false)}
+                customEmoji={customEmoji}
+              />
             </div>
           )}
         </AnimatePresence>
       </div>
 
+      {activeImageAttachment && activeImageAttachmentIndex !== null && activeImageAttachment.thumbnail && (
+        <ProtectedImageLightbox
+          key={`${message.id}:${activeImageAttachmentIndex}`}
+          filename={activeImageAttachment.filename}
+          roomId={message.channelId}
+          eventId={message.id}
+          attachmentIndex={activeImageAttachmentIndex}
+          thumbnail={activeImageAttachment.thumbnail}
+          imagePosition={activeImagePosition}
+          imageCount={imageAttachmentIndexes.length}
+          onPrevious={() => {
+            const previousPosition = (activeImagePosition - 1 + imageAttachmentIndexes.length)
+              % imageAttachmentIndexes.length
+            setActiveImageAttachmentIndex(imageAttachmentIndexes[previousPosition])
+          }}
+          onNext={() => {
+            const nextPosition = (activeImagePosition + 1) % imageAttachmentIndexes.length
+            setActiveImageAttachmentIndex(imageAttachmentIndexes[nextPosition])
+          }}
+          onClose={() => setActiveImageAttachmentIndex(null)}
+        />
+      )}
+
       {/* Context menu */}
       <AnimatePresence>
         {contextMenu && (
           <motion.div
+            ref={contextMenuRef}
+            role="menu"
+            aria-label="Message actions"
             variants={variants.popover}
             initial="initial"
             animate="animate"
             exit="exit"
-            className="fixed z-popover w-48 rounded-lg border border-border-subtle bg-bg-floating py-1.5 text-sm shadow-floating"
+            className="fixed z-popover w-48 rounded-lg border border-border-subtle bg-bg-floating py-1.5 text-sm shadow-overlay"
             data-design-token-exception="data-driven-pointer-position"
             style={{ left: contextMenu.x, top: contextMenu.y }}
             onClick={(e) => e.stopPropagation()}
@@ -381,6 +558,7 @@ export const MessageComponent = memo(function MessageComponent({
             {isOwnMessage && !isDeleted && (
               <>
                 <button
+                  role="menuitem"
                   onClick={handleStartEdit}
                   className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-secondary transition-colors hover:bg-status-info hover:text-content-on-status"
                   aria-label="Edit message"
@@ -388,6 +566,7 @@ export const MessageComponent = memo(function MessageComponent({
                   Edit Message
                 </button>
                 <button
+                  role="menuitem"
                   onClick={() => void handleDelete()}
                   className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-red transition-colors hover:bg-status-danger hover:text-content-on-status"
                   aria-label="Delete message"
@@ -399,6 +578,7 @@ export const MessageComponent = memo(function MessageComponent({
             {!limitedActions && canModerate && !isOwnMessage && !isDeleted && (
               <>
                 <button
+                  role="menuitem"
                   onClick={() => void handleDelete()}
                   className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-secondary transition-colors hover:bg-status-info hover:text-content-on-status"
                   aria-label="Remove message"
@@ -406,6 +586,7 @@ export const MessageComponent = memo(function MessageComponent({
                   Remove Message
                 </button>
                 <button
+                  role="menuitem"
                   onClick={() => void handleKick()}
                   className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-secondary transition-colors hover:bg-status-info hover:text-content-on-status"
                   aria-label={`Kick ${message.authorDisplayName}`}
@@ -414,6 +595,7 @@ export const MessageComponent = memo(function MessageComponent({
                 </button>
                 {!matrixMode && (
                   <button
+                    role="menuitem"
                     onClick={() => void handleTimeout()}
                     className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-secondary transition-colors hover:bg-status-info hover:text-content-on-status"
                     aria-label={`Timeout ${message.authorDisplayName}`}
@@ -422,6 +604,7 @@ export const MessageComponent = memo(function MessageComponent({
                   </button>
                 )}
                 <button
+                  role="menuitem"
                   onClick={handleBan}
                   className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-red transition-colors hover:bg-status-danger hover:text-content-on-status"
                   aria-label={`Ban ${message.authorDisplayName}`}
@@ -442,14 +625,23 @@ export const MessageComponent = memo(function MessageComponent({
 
 export function FileAttachmentCard({
   attachment,
+  roomId,
+  eventId,
+  attachmentIndex,
+  onOpenImage,
 }: {
   attachment: MessageType['attachments'][number]
+  roomId: string
+  eventId: string
+  attachmentIndex: number
+  onOpenImage?: () => void
 }) {
   const download = useFileDownloadStore((s) => s.downloads[attachment.fileHash])
   const sourcePeerId = attachment.sourcePeerId
+  const matrixMode = bridge.isMatrixBackend()
 
   useEffect(() => {
-    if (!bridge.isMatrixBackend() || !attachment.mediaSource) return
+    if (!matrixMode) return
     let active = true
     let unlisten: (() => void) | undefined
     void bridge.onMatrixTransferProgress((payload) => {
@@ -465,7 +657,7 @@ export function FileAttachmentCard({
       active = false
       unlisten?.()
     }
-  }, [attachment.fileHash, attachment.mediaSource])
+  }, [attachment.fileHash, matrixMode])
 
   const progressPercent = (() => {
     const totalBytes = download?.totalBytes ?? attachment.size
@@ -478,7 +670,7 @@ export function FileAttachmentCard({
   })()
 
   const startDownload = async () => {
-    if (bridge.isMatrixBackend() && attachment.mediaSource) {
+    if (matrixMode) {
       const matrixSourcePeerId = sourcePeerId || 'matrix'
       const transferId = bridge.createMatrixTransferId()
       useFileDownloadStore.getState().startDownload({
@@ -490,7 +682,12 @@ export function FileAttachmentCard({
         transferId,
       })
       try {
-        const localPath = await bridge.matrixDownloadAttachment(attachment, transferId)
+        const localPath = await bridge.matrixDownloadAttachment(
+          roomId,
+          eventId,
+          attachmentIndex,
+          transferId,
+        )
         useFileDownloadStore.getState().markDownloadAvailable({
           fileHash: attachment.fileHash,
           localPath,
@@ -542,7 +739,7 @@ export function FileAttachmentCard({
   }
 
   const cancelDownload = async () => {
-    if (!bridge.isMatrixBackend() || download?.status !== 'downloading') return
+    if (!matrixMode || download?.status !== 'downloading') return
     try {
       await bridge.matrixCancelAttachmentDownload(attachment.fileHash)
     } catch (error) {
@@ -560,58 +757,72 @@ export function FileAttachmentCard({
   const isErrored = status === 'error'
 
   return (
-    <div className="flex max-w-sm items-center gap-3 rounded-lg border border-border bg-bg-secondary p-3">
-      <div className="flex h-10 w-10 items-center justify-center rounded bg-bg-modifier-hover text-muted">
-        <Icon name="fileText" />
-      </div>
+    <div className="max-w-sm overflow-hidden rounded-lg border border-border bg-bg-secondary">
+      {matrixMode && attachment.thumbnail && (
+        <EncryptedAttachmentPreview
+          key={`${eventId}:${attachmentIndex}:${attachment.thumbnail.fileHash}`}
+          filename={attachment.filename}
+          roomId={roomId}
+          eventId={eventId}
+          attachmentIndex={attachmentIndex}
+          thumbnail={attachment.thumbnail}
+          onOpen={onOpenImage}
+        />
+      )}
 
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-text-link">{attachment.filename}</div>
-        <div className="text-xs text-muted">{(attachment.size / 1024 / 1024).toFixed(2)} MB</div>
+      <div className="flex items-center gap-3 p-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded bg-bg-modifier-hover text-muted">
+          <Icon name="fileText" />
+        </div>
 
-        {isDownloading && (
-          <div className="mt-1.5">
-            <div className="h-1 overflow-hidden rounded-full bg-bg-modifier-hover">
-              <div
-                className="h-full rounded-full bg-blue transition-[width] duration-normal"
-                data-design-token-exception="data-driven-transfer-progress-width"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-            {download?.matrixState && (
-              <div className="mt-1 text-caption capitalize text-muted">
-                {download.matrixState}
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium text-text-link">{attachment.filename}</div>
+          <div className="text-xs text-muted">{(attachment.size / 1024 / 1024).toFixed(2)} MB</div>
+
+          {isDownloading && (
+            <div className="mt-1.5">
+              <div className="h-1 overflow-hidden rounded-full bg-bg-modifier-hover">
+                <div
+                  className="h-full rounded-full bg-blue transition-[width] duration-normal"
+                  data-design-token-exception="data-driven-transfer-progress-width"
+                  style={{ width: `${progressPercent}%` }}
+                />
               </div>
-            )}
-          </div>
-        )}
-        {isErrored && <div className="mt-1 text-xs text-red">{download?.error ?? 'Download failed'}</div>}
-      </div>
+              {download?.matrixState && (
+                <div className="mt-1 text-caption capitalize text-muted">
+                  {download.matrixState}
+                </div>
+              )}
+            </div>
+          )}
+          {isErrored && <div className="mt-1 text-xs text-red">{download?.error ?? 'Download failed'}</div>}
+        </div>
 
-      <button
-        onClick={isCompleted ? handleOpen : isDownloading && bridge.isMatrixBackend() ? cancelDownload : startDownload}
-        disabled={isDownloading && !bridge.isMatrixBackend()}
-        className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-          isCompleted
-            ? 'bg-green/20 text-green hover:bg-green/30'
-            : isErrored
-              ? 'bg-red/10 text-red hover:bg-red/15'
-              : 'bg-bg-modifier-hover text-secondary hover:bg-bg-modifier-active'
-        } disabled:opacity-60`}
-        aria-label={isCompleted ? `Open ${attachment.filename}` : isDownloading && bridge.isMatrixBackend() ? `Cancel download of ${attachment.filename}` : `Download ${attachment.filename}`}
-      >
-        {isCompleted
-          ? 'Open'
-          : isDownloading && bridge.isMatrixBackend()
-            ? 'Cancel'
-            : isDownloading
-              ? `${progressPercent}%`
-              : isErrored && download?.retryMode === 'restart-from-zero'
-                ? 'Restart'
-                : isErrored
-                  ? 'Retry'
-                  : 'Download'}
-      </button>
+        <button
+          onClick={isCompleted ? handleOpen : isDownloading && matrixMode ? cancelDownload : startDownload}
+          disabled={isDownloading && !matrixMode}
+          className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+            isCompleted
+              ? 'bg-green/20 text-green hover:bg-green/30'
+              : isErrored
+                ? 'bg-red/10 text-red hover:bg-red/15'
+                : 'bg-bg-modifier-hover text-secondary hover:bg-bg-modifier-active'
+          } disabled:opacity-60`}
+          aria-label={isCompleted ? `Open ${attachment.filename}` : isDownloading && matrixMode ? `Cancel download of ${attachment.filename}` : `Download ${attachment.filename}`}
+        >
+          {isCompleted
+            ? 'Open'
+            : isDownloading && matrixMode
+              ? 'Cancel'
+              : isDownloading
+                ? `${progressPercent}%`
+                : isErrored && download?.retryMode === 'restart-from-zero'
+                  ? 'Restart'
+                  : isErrored
+                    ? 'Retry'
+                    : 'Download'}
+        </button>
+      </div>
     </div>
   )
 }

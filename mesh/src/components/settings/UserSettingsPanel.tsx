@@ -3,7 +3,7 @@ import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { ErrorState } from '../ui/ErrorState'
-import { useSettingsStore } from '../../store/settings'
+import { retryMatrixPreferenceSync, useSettingsStore } from '../../store/settings'
 import type {
   AppearanceAccent,
   AppearanceDensity,
@@ -42,6 +42,7 @@ export function UserSettingsPanel({
   const notifications = useSettingsStore((state) => state.notifications)
   const appearance = useSettingsStore((state) => state.appearance)
   const privacy = useSettingsStore((state) => state.privacy)
+  const matrixPreferenceSync = useSettingsStore((state) => state.matrixPreferenceSync)
   const setNotificationsEnabled = useSettingsStore((state) => state.setNotificationsEnabled)
   const setNotificationSound = useSettingsStore((state) => state.setNotificationSound)
   const setNotificationSoundId = useSettingsStore((state) => state.setNotificationSoundId)
@@ -173,7 +174,7 @@ export function UserSettingsPanel({
                   {savingProfile ? 'Saving…' : 'Save display name'}
                 </Button>
                 {profileSaved && (
-                  <span role="status" className="text-xs text-green">
+                  <span role="status" aria-label="Display name save status" className="text-xs text-green">
                     Profile updated
                   </span>
                 )}
@@ -266,6 +267,42 @@ export function UserSettingsPanel({
                 Mesh protects message and file contents before they leave your device. Your
                 service still handles the information needed to connect you and deliver them.
               </p>
+            </div>
+
+            <div aria-live="polite" aria-busy={matrixPreferenceSync.status === 'saving'}>
+              {matrixPreferenceSync.status === 'saving' && (
+                <p
+                  role="status"
+                  aria-label="Privacy settings save status"
+                  className="rounded-md bg-bg-tertiary px-3 py-2 text-xs text-muted"
+                >
+                  Applying privacy settings…
+                </p>
+              )}
+              {matrixPreferenceSync.status === 'saved' && (
+                <p
+                  role="status"
+                  aria-label="Privacy settings save status"
+                  className="rounded-md bg-bg-tertiary px-3 py-2 text-xs text-green"
+                >
+                  Privacy settings saved to your account.
+                </p>
+              )}
+              {matrixPreferenceSync.status === 'failed' && (
+                <>
+                  <p className="mb-2 rounded-md bg-bg-tertiary px-3 py-2 text-xs leading-5 text-muted">
+                    Mesh is using these choices on this device, but could not confirm them on your
+                    account. Other devices may still use the previous settings.
+                  </p>
+                  <ErrorState
+                    error={matrixPreferenceSync.error}
+                    context={{ operation: 'save your privacy settings' }}
+                    actionLabel="Retry saving privacy settings"
+                    onAction={() => void retryMatrixPreferenceSync()}
+                    compact
+                  />
+                </>
+              )}
             </div>
 
             <div className="overflow-x-auto rounded-md border border-border-subtle">
@@ -388,7 +425,7 @@ export function UserSettingsPanel({
             Sound
             <select
               id="notification-sound"
-              className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/20"
+              className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent"
               value={notifications.soundId}
               disabled={!notifications.enabled || !notifications.sound}
               onChange={(event) =>
@@ -426,7 +463,7 @@ export function UserSettingsPanel({
                 <input
                   id="quiet-hours-start"
                   type="time"
-                  className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/20"
+                  className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent"
                   value={notifications.quietHours.start}
                   onChange={(event) =>
                     setQuietHours(event.target.value, notifications.quietHours.end)
@@ -438,7 +475,7 @@ export function UserSettingsPanel({
                 <input
                   id="quiet-hours-end"
                   type="time"
-                  className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/20"
+                  className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent"
                   value={notifications.quietHours.end}
                   onChange={(event) =>
                     setQuietHours(notifications.quietHours.start, event.target.value)
@@ -458,7 +495,7 @@ export function UserSettingsPanel({
               {testingNotification ? 'Sending…' : 'Test notification'}
             </Button>
             {testNotificationStatus === 'sent' && (
-              <span role="status" className="text-xs text-green">
+              <span role="status" aria-label="Test notification status" className="text-xs text-green">
                 Test notification sent
               </span>
             )}
@@ -602,7 +639,7 @@ function AppearanceSelect({
       {label}
       <select
         id={id}
-        className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/20"
+        className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >

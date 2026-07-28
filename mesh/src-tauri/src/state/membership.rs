@@ -231,6 +231,7 @@ fn role_rank(role: &str) -> u8 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
