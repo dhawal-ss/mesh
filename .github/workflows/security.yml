@@ -78,7 +78,7 @@ jobs:
             --ignore RUSTSEC-2026-0195
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: mesh/package-lock.json
       - name: Audit JavaScript dependencies
@@ -96,7 +96,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc # 1.92.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: mesh/package-lock.json
       - name: Install JavaScript dependencies
