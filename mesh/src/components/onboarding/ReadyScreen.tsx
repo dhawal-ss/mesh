@@ -123,7 +123,7 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
 
         <div className="h-1 overflow-hidden rounded-full bg-bg-modifier-hover">
           <motion.div
-            className="h-full w-full origin-left rounded-full bg-blue"
+            className="h-full w-full origin-left rounded-full bg-accent"
             animate={{ scaleX: Math.max(12, state.progress) / 100 }}
             transition={transitions.enter}
           />

@@ -188,7 +188,7 @@ function parseInline(
             aria-label={`Mention ${mention}`}
             className={isSelf
               ? 'inline-flex rounded-full bg-accent/25 px-1.5 py-0.5 font-medium text-accent ring-1 ring-accent/40'
-              : 'inline-flex rounded-full bg-blue/15 px-1.5 py-0.5 font-medium text-blue hover:bg-blue/25'}
+              : 'inline-flex rounded-full bg-accent/15 px-1.5 py-0.5 font-medium text-accent hover:bg-accent/25'}
           >
             {label}
           </span>,

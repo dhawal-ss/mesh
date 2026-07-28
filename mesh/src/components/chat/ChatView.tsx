@@ -1009,7 +1009,7 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
       tabIndex={isHighlighted ? -1 : undefined}
       className={
         isHighlighted
-          ? 'animate-[pulse_2s_ease-in-out_1] rounded-md bg-blue/10 ring-2 ring-inset ring-blue'
+          ? 'animate-[pulse_2s_ease-in-out_1] rounded-md bg-accent/10 ring-2 ring-inset ring-accent'
           : undefined
       }
     >
@@ -1024,7 +1024,7 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
             <button
               type="button"
               onClick={resetError}
-              className="shrink-0 text-xs font-medium text-text-link transition-colors hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue"
+              className="min-h-8 shrink-0 rounded-md px-2 text-xs font-medium text-text-link transition-colors hover:bg-bg-modifier-hover hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             >
               Try again
             </button>

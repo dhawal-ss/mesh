@@ -130,4 +130,30 @@ describe('VoiceControls', () => {
 
     expect(controls.onScreenShareChange).toHaveBeenCalledWith(true)
   })
+
+  it('uses attention for muted states, accent for active media, and danger only for disconnect', async () => {
+    useVoiceStore.setState({
+      isMuted: true,
+      isDeafened: true,
+      isCameraEnabled: true,
+      isScreenSharing: true,
+    })
+    await act(async () => root.render(<VoiceControls {...props()} />))
+
+    expect(
+      container.querySelector<HTMLButtonElement>('button[aria-label="Unmute microphone"]')?.className,
+    ).toContain('bg-status-warning')
+    expect(
+      container.querySelector<HTMLButtonElement>('button[aria-label="Undeafen audio"]')?.className,
+    ).toContain('bg-status-warning')
+    expect(
+      container.querySelector<HTMLButtonElement>('button[aria-label="Turn camera off"]')?.className,
+    ).toContain('bg-accent')
+    expect(
+      container.querySelector<HTMLButtonElement>('button[aria-label="Stop sharing screen"]')?.className,
+    ).toContain('bg-accent')
+    expect(
+      container.querySelector<HTMLButtonElement>('button[aria-label="Disconnect from voice room"]')?.className,
+    ).toContain('bg-status-danger')
+  })
 })

@@ -38,7 +38,7 @@ function DmMessageBoundary({
           <button
             type="button"
             onClick={resetError}
-            className="text-xs font-medium text-text-link hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue"
+            className="min-h-8 rounded-md px-2 text-xs font-medium text-text-link hover:bg-bg-modifier-hover hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             aria-label={`Retry message ${messageId}`}
           >
             Retry

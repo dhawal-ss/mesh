@@ -122,7 +122,7 @@ export function CommunitySidebar() {
         <Tooltip content="Add a community" side="right">
           <button
             onClick={() => openServerModal('create')}
-            className="group flex h-12 w-12 items-center justify-center rounded-community bg-bg-primary text-green transition-all duration-normal hover:rounded-community-active hover:bg-green hover:text-content-on-status"
+            className="group flex h-12 w-12 items-center justify-center rounded-community bg-bg-primary text-accent transition-all duration-normal hover:rounded-community-active hover:bg-accent hover:text-content-on-accent"
             aria-label="Add a community"
           >
             <Icon name="plus" />

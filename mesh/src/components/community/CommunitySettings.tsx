@@ -609,7 +609,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                                     onClick={() => setChannelType(t)}
                                     className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
                                       channelType === t
-                                        ? 'border-blue bg-blue/10 text-primary'
+                                        ? 'border-accent bg-accent/10 text-primary'
                                         : 'border-border text-muted hover:border-border-light hover:text-secondary'
                                     }`}
                                   >

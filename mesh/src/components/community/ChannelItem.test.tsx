@@ -109,6 +109,7 @@ describe('ChannelItem notification context menu', () => {
 
     expect(button.getAttribute('aria-label')).toBe('Text room: general, 4 unread')
     expect(button.textContent).toContain('4')
+    expect(container.querySelector('.bg-accent')).toBeTruthy()
     act(() => button.click())
     expect(onClick).toHaveBeenCalledOnce()
   })

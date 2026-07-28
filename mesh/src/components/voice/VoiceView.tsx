@@ -58,7 +58,7 @@ export function VoiceView({ channelId, channelName }: { channelId: string; chann
         <div className="flex h-12 items-center gap-2 border-b border-border-subtle px-4">
           <Icon name="volume" className="text-muted" />
           <span className="text-sm font-semibold text-primary">{channelName}</span>
-          <span className="ml-auto rounded-full bg-status-warning/10 px-2 py-1 text-meta text-yellow">
+          <span className="ml-auto rounded-full bg-status-warning/10 px-2 py-1 text-meta text-status-warning">
             {statusLabel}
           </span>
         </div>
@@ -103,12 +103,12 @@ export function VoiceView({ channelId, channelName }: { channelId: string; chann
             initial={{ y: -4, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -4, opacity: 0 }}
-            className="flex items-center gap-2 border-b border-status-warning/30 bg-status-warning/10 px-4 py-2 text-xs text-yellow"
+            className="flex items-center gap-2 border-b border-status-warning/30 bg-status-warning/10 px-4 py-2 text-xs text-status-warning"
           >
             <Icon name="triangleAlert" size="xs" className="flex-shrink-0" />
             <span>Call quality needs attention.</span>
             <details className="ml-auto">
-              <summary className="cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue">
+              <summary className="flex min-h-8 cursor-pointer items-center rounded-md px-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
                 Details
               </summary>
               <span className="mt-1 block max-w-md break-words text-meta">
@@ -126,7 +126,7 @@ export function VoiceView({ channelId, channelName }: { channelId: string; chann
             initial="initial"
             animate="animate"
             exit="exit"
-            className="absolute left-1/2 top-14 z-dropdown -translate-x-1/2 rounded-md border border-status-info/30 bg-status-info/20 px-3 py-1.5 text-xs text-blue"
+            className="absolute left-1/2 top-14 z-dropdown -translate-x-1/2 rounded-md border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs text-accent"
           >
             Relay peer changed — rebuilding connections
           </motion.div>
@@ -146,9 +146,9 @@ export function VoiceView({ channelId, channelName }: { channelId: string; chann
           <span
             className={`rounded-full px-2 py-1 text-meta font-medium ${
               connectionState === 'connected'
-                ? 'bg-green/10 text-green'
+                ? 'bg-status-success/10 text-status-success'
                 : connectionState === 'disconnected' || connectionState === 'degraded'
-                  ? 'bg-status-warning/10 text-yellow'
+                  ? 'bg-status-warning/10 text-status-warning'
                   : 'bg-bg-modifier-hover text-secondary'
             }`}
           >
@@ -203,7 +203,7 @@ function VoiceReadinessItem({
   return (
     <div className="rounded-md bg-bg-primary px-3 py-2">
       <div className="text-caption uppercase tracking-wide text-muted">{label}</div>
-      <div className={`mt-1 font-medium ${warning ? 'text-yellow' : 'text-primary'}`}>{value}</div>
+      <div className={`mt-1 font-medium ${warning ? 'text-status-warning' : 'text-primary'}`}>{value}</div>
     </div>
   )
 }

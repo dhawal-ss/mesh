@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import { Avatar } from '../ui/Avatar'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
+import { Icon } from '../ui/Icon'
 import { transitions } from '../../lib/motion'
 import { describeError } from '../../lib/errors'
 import { DEFAULT_AVATAR_COLORS } from './types'
@@ -101,7 +102,7 @@ export function JoinScreen({
                   className={clsx(
                     'h-10 rounded-full border-2 transition-transform duration-150',
                     selected
-                      ? 'border-blue ring-2 ring-blue/30'
+                      ? 'border-accent ring-2 ring-accent/30'
                       : 'border-transparent hover:scale-[1.03] hover:border-border'
                   )}
                   style={{ backgroundColor: color }}
@@ -113,7 +114,12 @@ export function JoinScreen({
         </div>
       </motion.div>
 
-      {error && <p className="text-sm text-red">⚠ {error}</p>}
+      {error && (
+        <p className="flex items-start gap-2 text-sm text-status-danger" role="alert">
+          <Icon name="triangleAlert" size="sm" className="mt-0.5 flex-shrink-0" />
+          <span>{error}</span>
+        </p>
+      )}
 
       <div className="flex items-center justify-between gap-3">
         <Button type="button" variant="ghost" onClick={onBack}>

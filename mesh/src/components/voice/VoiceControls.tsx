@@ -165,7 +165,7 @@ export function VoiceControls({
             }
             className={`flex h-11 w-11 items-center justify-center rounded-full transition-colors ${
               isMuted && !isPushToTalking
-                ? 'bg-red text-content-on-status'
+                ? 'bg-status-warning text-content-on-status'
                 : 'bg-bg-modifier-hover text-primary hover:bg-bg-modifier-active'
             }`}
           >
@@ -181,7 +181,7 @@ export function VoiceControls({
             aria-label={isDeafened ? 'Undeafen audio' : 'Deafen audio'}
             className={`flex h-11 w-11 items-center justify-center rounded-full transition-colors ${
               isDeafened
-                ? 'bg-red text-content-on-status'
+                ? 'bg-status-warning text-content-on-status'
                 : 'bg-bg-modifier-hover text-primary hover:bg-bg-modifier-active'
             }`}
           >
@@ -197,7 +197,7 @@ export function VoiceControls({
             aria-label={isCameraEnabled ? 'Turn camera off' : 'Turn camera on'}
             className={`flex h-11 w-11 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
               isCameraEnabled
-                ? 'bg-green text-content-on-status'
+                ? 'bg-accent text-content-on-accent'
                 : 'bg-bg-modifier-hover text-primary hover:bg-bg-modifier-active'
             }`}
           >
@@ -213,7 +213,7 @@ export function VoiceControls({
             aria-label={isScreenSharing ? 'Stop sharing screen' : 'Share screen'}
             className={`flex h-11 w-11 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
               isScreenSharing
-                ? 'bg-green text-content-on-status'
+                ? 'bg-accent text-content-on-accent'
                 : 'bg-bg-modifier-hover text-primary hover:bg-bg-modifier-active'
             }`}
           >
@@ -229,7 +229,7 @@ export function VoiceControls({
             whileTap={{ scale: 0.96 }}
             onClick={() => setCurrentVoiceSession(null, null)}
             aria-label="Disconnect from voice room"
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-red text-content-on-status transition-opacity hover:opacity-90"
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-status-danger text-content-on-status transition-opacity hover:opacity-90"
           >
             <Icon name="phoneOff" />
           </motion.button>
@@ -262,7 +262,7 @@ export function VoiceControls({
             aria-valuenow={Math.round(localAudioLevel * 100)}
           >
             <div
-              className="h-full rounded-full bg-green transition-[width] duration-100"
+              className="h-full rounded-full bg-accent transition-[width] duration-100"
               data-design-token-exception="Live microphone level determines meter width."
               style={{ width: `${Math.max(2, localAudioLevel * 100)}%` }}
             />
@@ -274,7 +274,7 @@ export function VoiceControls({
         <p className="text-meta text-muted">Hold Space while this view is focused to talk.</p>
       )}
       {controlError && (
-        <p className="text-meta text-red" role="alert">
+        <p className="text-meta text-status-danger" role="alert">
           {controlError}
         </p>
       )}

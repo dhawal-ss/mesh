@@ -85,7 +85,7 @@ export function DmSidebar() {
                 ? 'bg-status-success'
                 : networkStatus.state === 'connecting'
                   ? 'bg-status-warning'
-                  : 'bg-status-danger'
+                  : 'bg-status-warning'
             }`}
             aria-hidden="true"
           />

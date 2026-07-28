@@ -84,7 +84,7 @@ describe('DiagnosticsPanel', () => {
     expect(container.textContent).toContain('System Diagnostics')
   })
 
-  it('shows Matrix health without legacy peer or TURN warnings in Matrix mode', async () => {
+  it('shows account health without exposing implementation names in product copy', async () => {
     vi.mocked(getBackendStatus).mockResolvedValue({
       kind: 'matrix',
       capabilities: {
@@ -127,15 +127,19 @@ describe('DiagnosticsPanel', () => {
       await new Promise((resolve) => setTimeout(resolve, 10))
     })
 
-    expect(container.textContent).toContain('Your Matrix account is connected and syncing normally.')
+    expect(container.textContent).toContain('Your Mesh account is connected and syncing normally.')
     expect(container.textContent).toContain('@alice:localhost')
     expect(container.textContent).toContain('http://localhost:8008')
-    expect(container.textContent).toContain('MatrixRTC + LiveKit')
-    expect(container.textContent).toContain('org.matrix.msc4143.rtc_foci')
-    expect(container.textContent).toContain('Not configured (/get_token)')
-    expect(container.textContent).toContain('Media E2EE')
+    expect(container.textContent).toContain('Private calling')
+    expect(container.textContent).toContain('Media protection')
     expect(container.textContent).toContain('Not verified')
-    expect(container.textContent).toContain('Origins blocked')
+    expect(container.textContent).toContain('Network policy')
+    expect(container.textContent).toContain('Blocked')
+    expect(container.textContent).toContain('Private calling services are not configured for this account.')
+    expect(container.textContent).not.toContain('MatrixRTC')
+    expect(container.textContent).not.toContain('LiveKit')
+    expect(container.textContent).not.toContain('MSC4195')
+    expect(container.textContent).not.toContain('org.matrix')
     expect(container.textContent).not.toContain('Running solo')
     expect(container.textContent).not.toContain('TURN')
     expect(container.textContent).not.toContain('Reachability probe')

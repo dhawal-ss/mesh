@@ -57,7 +57,7 @@ export function ErrorState({
         </Button>
       )}
       <details className="mt-2 text-xs text-muted">
-        <summary className="w-fit cursor-pointer select-none rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue">
+        <summary className="flex min-h-8 w-fit cursor-pointer select-none items-center rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
           Details
         </summary>
         <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded bg-bg-primary p-2 font-mono text-meta text-secondary">

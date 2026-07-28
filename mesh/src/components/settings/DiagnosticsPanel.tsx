@@ -186,7 +186,7 @@ function MatrixDiagnosticsContent({ data }: { data: BackendStatus }) {
         </Section>
       )}
 
-      <Section title="Matrix account">
+      <Section title="Account connection">
         <Grid>
           <StatusCell
             label="Connection service"
@@ -210,25 +210,25 @@ function MatrixDiagnosticsContent({ data }: { data: BackendStatus }) {
           />
         </Grid>
         {connected && data.warnings.length === 0 && (
-          <p className="mt-2 text-xs text-green">
-            Your Matrix account is connected and syncing normally.
+          <p className="mt-2 text-xs text-status-success">
+            Your Mesh account is connected and syncing normally.
           </p>
         )}
       </Section>
 
       <Section title="Session">
         <div className="space-y-2">
-          <DetailRow label="User" value={data.userId ?? 'Not signed in'} />
-          <DetailRow label="Service URL" value={data.homeserver ?? 'Not configured'} />
-          <DetailRow label="Device" value={data.deviceId ?? 'Unavailable'} />
+          <DetailRow label="Identity" value={data.userId ?? 'Not signed in'} />
+          <DetailRow label="Connected service" value={data.homeserver ?? 'Not configured'} />
+          <DetailRow label="Device code" value={data.deviceId ?? 'Unavailable'} />
         </div>
       </Section>
 
-      <Section title="MatrixRTC calling">
+      <Section title="Private calling">
         <Grid>
           <StatusCell
-            label="Provider"
-            value="MatrixRTC + LiveKit"
+            label="Calling service"
+            value={data.voiceService.provider === 'matrix-rtc' ? 'Connected' : 'Unavailable'}
             ok={data.voiceService.provider === 'matrix-rtc'}
           />
           <StatusCell
@@ -238,44 +238,49 @@ function MatrixDiagnosticsContent({ data }: { data: BackendStatus }) {
             warn={data.voiceService.availability !== 'ready'}
           />
           <StatusCell
-            label="Media E2EE"
+            label="Media protection"
             value={data.voiceService.mediaE2eeVerified ? 'Verified' : 'Not verified'}
             ok={data.voiceService.mediaE2eeVerified}
             warn={!data.voiceService.mediaE2eeVerified}
           />
           <StatusCell
-            label="Tauri CSP"
-            value={data.voiceService.cspReady ? 'Origins allowed' : 'Origins blocked'}
+            label="Network policy"
+            value={data.voiceService.cspReady ? 'Allowed' : 'Blocked'}
             ok={data.voiceService.cspReady}
             warn={!data.voiceService.cspReady}
           />
         </Grid>
-        <div className="mt-2 space-y-2">
-          <DetailRow
-            label=".well-known discovery key"
-            value={data.voiceService.discoveryKey ?? 'Not applicable'}
-          />
-          <DetailRow
-            label="livekit_service_url"
-            value={data.voiceService.livekitServiceUrl ?? 'Not configured'}
-          />
-          <DetailRow
-            label="MSC4195 token exchange"
-            value={data.voiceService.tokenEndpoint ?? 'Not configured (/get_token)'}
-          />
-          <DetailRow
-            label="Expected LiveKit SFU"
-            value={data.voiceService.livekitSfuUrl ?? 'Not configured'}
-          />
-        </div>
+        <details className="mt-3 rounded-md border border-border-subtle bg-bg-primary px-3">
+          <summary className="flex min-h-8 cursor-pointer items-center text-xs font-medium text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+            Technical details
+          </summary>
+          <div className="space-y-2 border-t border-border-subtle py-3">
+            <DetailRow
+              label="Discovery"
+              value={data.voiceService.discoveryKey ? 'Configured' : 'Not configured'}
+            />
+            <DetailRow
+              label="Calling service"
+              value={data.voiceService.livekitServiceUrl ?? 'Not configured'}
+            />
+            <DetailRow
+              label="Access endpoint"
+              value={data.voiceService.tokenEndpoint ?? 'Not configured'}
+            />
+            <DetailRow
+              label="Media relay"
+              value={data.voiceService.livekitSfuUrl ?? 'Not configured'}
+            />
+          </div>
+        </details>
         {data.voiceService.reason && (
-          <p className="mt-2 rounded bg-bg-primary px-3 py-2 text-xs leading-5 text-yellow">
-            {data.voiceService.reason}
+          <p className="mt-2 rounded-md bg-status-warning/10 px-3 py-2 text-xs leading-5 text-status-warning">
+            {friendlyVoiceReason(data.voiceService.availability)}
           </p>
         )}
         <p className="mt-2 text-xs leading-5 text-muted">
-          Configured endpoints do not prove authorization, SFU reachability, or media E2EE.
-          Calling remains disabled until all three are exercised by live acceptance tests.
+          Configured services do not prove that private calling is ready. Mesh keeps calling
+          disabled until service access, media routing, and media protection are verified.
         </p>
       </Section>
     </div>
@@ -292,6 +297,19 @@ function voiceAvailabilityLabel(availability: BackendStatus['voiceService']['ava
       return 'Invalid configuration'
     case 'client-unavailable':
       return 'Client unavailable'
+  }
+}
+
+function friendlyVoiceReason(availability: BackendStatus['voiceService']['availability']): string {
+  switch (availability) {
+    case 'ready':
+      return 'Private calling is ready.'
+    case 'not-configured':
+      return 'Private calling services are not configured for this account.'
+    case 'invalid-configuration':
+      return 'Private calling service settings need attention.'
+    case 'client-unavailable':
+      return 'Private calling is unavailable in this version of Mesh.'
   }
 }
 
