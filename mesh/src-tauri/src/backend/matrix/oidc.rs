@@ -5,6 +5,7 @@ use std::{
     time::Duration,
 };
 
+use subtle::ConstantTimeEq;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -19,6 +20,7 @@ pub(super) const MAX_CALLBACK_REQUEST_BYTES: usize = 8 * 1024;
 pub(super) const CALLBACK_TIMEOUT: Duration = Duration::from_secs(120);
 
 const MAX_INCOMPLETE_CALLBACK_CONNECTIONS: usize = 8;
+const OIDC_STATE_LENGTH: usize = 22;
 
 const SUCCESS_RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\
 Content-Type: text/html; charset=utf-8\r\n\
@@ -204,10 +206,13 @@ async fn handle_connection(
             return Err(error);
         }
     };
-    if callback
+    let callback_state = callback
         .query_pairs()
         .find(|(key, _)| key == "state")
-        .is_none_or(|(_, state)| state != expected_state)
+        .map(|(_, state)| state);
+    if !callback_state
+        .as_deref()
+        .is_some_and(|state| callback_state_matches(expected_state, state))
     {
         let _ = stream.write_all(INVALID_RESPONSE).await;
         return Err(CallbackError::InvalidRequest);
@@ -218,6 +223,21 @@ async fn handle_connection(
         .map_err(|_| CallbackError::Io)?;
     let _ = stream.shutdown().await;
     Ok(callback)
+}
+
+fn callback_state_matches(expected_state: &str, callback_state: &str) -> bool {
+    if !is_valid_callback_state(expected_state) || !is_valid_callback_state(callback_state) {
+        return false;
+    }
+
+    bool::from(expected_state.as_bytes().ct_eq(callback_state.as_bytes()))
+}
+
+fn is_valid_callback_state(state: &str) -> bool {
+    state.len() == OIDC_STATE_LENGTH
+        && state
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
 fn parse_callback_request(request: &[u8]) -> Result<Url, CallbackError> {
@@ -256,6 +276,24 @@ fn parse_callback_request(request: &[u8]) -> Result<Url, CallbackError> {
 mod tests {
     use super::*;
 
+    const TEST_STATE: &str = "abcdefghijklmnopqrstuv";
+    const WRONG_TEST_STATE: &str = "bcdefghijklmnopqrstuvA";
+
+    #[test]
+    fn callback_state_comparison_requires_equal_valid_values() {
+        assert!(callback_state_matches(TEST_STATE, TEST_STATE));
+        assert!(!callback_state_matches(TEST_STATE, WRONG_TEST_STATE));
+        assert!(!callback_state_matches(
+            TEST_STATE,
+            "abcdefghijklmnopqrstuvw"
+        ));
+        assert!(!callback_state_matches(
+            TEST_STATE,
+            "abcdefghijklmnopqrstué"
+        ));
+        assert!(!callback_state_matches("", ""));
+    }
+
     #[test]
     fn callback_parser_accepts_only_the_exact_get_path() {
         let parsed = parse_callback_request(
@@ -291,7 +329,7 @@ mod tests {
         let receive = tokio::spawn(receive_callback(
             listener,
             CancellationToken::new(),
-            "opaque",
+            TEST_STATE,
         ));
         let mut stream = TcpStream::connect(address).await.unwrap();
         let oversized = vec![b'x'; MAX_CALLBACK_REQUEST_BYTES + 1];
@@ -303,16 +341,20 @@ mod tests {
         let mut valid = TcpStream::connect(address).await.unwrap();
         valid
             .write_all(
-                b"GET /oauth/callback?code=real&state=opaque HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+                format!(
+                    "GET /oauth/callback?code=real&state={TEST_STATE} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+                )
+                .as_bytes(),
             )
             .await
             .unwrap();
         let mut valid_response = Vec::new();
         valid.read_to_end(&mut valid_response).await.unwrap();
         assert!(String::from_utf8_lossy(&valid_response).starts_with("HTTP/1.1 200"));
+        let expected_query = format!("code=real&state={TEST_STATE}");
         assert_eq!(
             receive.await.unwrap().unwrap().query(),
-            Some("code=real&state=opaque")
+            Some(expected_query.as_str())
         );
     }
 
@@ -323,13 +365,16 @@ mod tests {
         let receive = tokio::spawn(receive_callback(
             listener,
             CancellationToken::new(),
-            "expected-state",
+            TEST_STATE,
         ));
 
         let mut invalid = TcpStream::connect(address).await.unwrap();
         invalid
             .write_all(
-                b"GET /oauth/callback?code=attacker&state=wrong-state HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+                format!(
+                    "GET /oauth/callback?code=attacker&state={WRONG_TEST_STATE} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+                )
+                .as_bytes(),
             )
             .await
             .unwrap();
@@ -340,7 +385,10 @@ mod tests {
         let mut valid = TcpStream::connect(address).await.unwrap();
         valid
             .write_all(
-                b"GET /oauth/callback?code=real&state=expected-state HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+                format!(
+                    "GET /oauth/callback?code=real&state={TEST_STATE} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+                )
+                .as_bytes(),
             )
             .await
             .unwrap();
@@ -349,7 +397,8 @@ mod tests {
         assert!(String::from_utf8_lossy(&valid_response).starts_with("HTTP/1.1 200"));
 
         let callback = receive.await.unwrap().unwrap();
-        assert_eq!(callback.query(), Some("code=real&state=expected-state"));
+        let expected_query = format!("code=real&state={TEST_STATE}");
+        assert_eq!(callback.query(), Some(expected_query.as_str()));
     }
 
     #[tokio::test]
@@ -360,7 +409,7 @@ mod tests {
             listener,
             CancellationToken::new(),
             Duration::from_secs(1),
-            "expected-state",
+            TEST_STATE,
         ));
 
         let _idle_first = TcpStream::connect(address).await.unwrap();
@@ -370,7 +419,10 @@ mod tests {
         let mut valid = TcpStream::connect(address).await.unwrap();
         valid
             .write_all(
-                b"GET /oauth/callback?code=real&state=expected-state HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+                format!(
+                    "GET /oauth/callback?code=real&state={TEST_STATE} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+                )
+                .as_bytes(),
             )
             .await
             .unwrap();
@@ -383,7 +435,8 @@ mod tests {
             .expect("idle connections must not consume the callback deadline")
             .unwrap()
             .unwrap();
-        assert_eq!(callback.query(), Some("code=real&state=expected-state"));
+        let expected_query = format!("code=real&state={TEST_STATE}");
+        assert_eq!(callback.query(), Some(expected_query.as_str()));
     }
 
     #[tokio::test]
