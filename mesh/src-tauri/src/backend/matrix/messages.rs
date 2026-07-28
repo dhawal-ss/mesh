@@ -1027,4 +1027,112 @@ impl MatrixBackend {
         });
         projected
     }
+
+    fn updated_room_pins(
+        mut pinned_event_ids: Vec<matrix_sdk::ruma::OwnedEventId>,
+        event_id: matrix_sdk::ruma::OwnedEventId,
+    ) -> BackendResult<(Vec<matrix_sdk::ruma::OwnedEventId>, bool)> {
+        let was_pinned = pinned_event_ids.iter().any(|pinned| pinned == &event_id);
+        let mut seen = HashSet::new();
+        pinned_event_ids.retain(|pinned| {
+            pinned != &event_id && seen.insert(pinned.clone())
+        });
+        if was_pinned {
+            return Ok((pinned_event_ids, false));
+        }
+        if pinned_event_ids.len() >= MAX_PINNED_EVENTS {
+            return Err(BackendError::InvalidConfiguration(
+                "This room already has the maximum of 100 pinned messages.".into(),
+            ));
+        }
+        pinned_event_ids.push(event_id);
+        Ok((pinned_event_ids, true))
+    }
+
+    async fn room_pins_snapshot(
+        client: &Client,
+        room: &Room,
+        pinned_event_ids: Vec<matrix_sdk::ruma::OwnedEventId>,
+    ) -> BackendResult<MatrixRoomPins> {
+        let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
+        let can_manage = room
+            .get_member(own_user_id)
+            .await
+            .map_err(Self::map_error)?
+            .is_some_and(|member| member.can_pin_or_unpin_event());
+        let pinned_event_ids = pinned_event_ids
+            .into_iter()
+            .take(MAX_PINNED_EVENTS)
+            .collect::<Vec<_>>();
+        let members = room
+            .members(RoomMemberships::JOIN)
+            .await
+            .map_err(Self::map_error)?
+            .into_iter()
+            .map(|member| (member.user_id().to_string(), member.name().to_owned()))
+            .collect::<HashMap<_, _>>();
+
+        let fetched = futures::stream::iter(pinned_event_ids.clone().into_iter().map(|event_id| {
+            let room = room.clone();
+            async move {
+                let event = room.load_or_fetch_event(&event_id, None).await;
+                (event_id, event)
+            }
+        }))
+        .buffer_unordered(10)
+        .collect::<Vec<_>>()
+        .await;
+
+        let mut values = Vec::new();
+        let mut unavailable = HashSet::new();
+        for (event_id, event) in fetched {
+            let value = event
+                .map_err(Self::map_error)
+                .and_then(|event| event.raw().deserialize_as::<serde_json::Value>().map_err(Self::map_error));
+            match value {
+                Ok(value) => values.push(value),
+                Err(error) => {
+                    tracing::warn!(
+                        target: "mesh::matrix",
+                        room_id = %room.room_id(),
+                        event_id = %event_id,
+                        "Could not load a pinned message: {error}"
+                    );
+                    unavailable.insert(event_id.to_string());
+                }
+            }
+        }
+
+        let mut projected = Self::project_timeline(room.room_id().as_str(), &members, values)
+            .into_iter()
+            .map(|message| (message.id.clone(), message))
+            .collect::<HashMap<_, _>>();
+        let event_ids = pinned_event_ids
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        let messages = event_ids
+            .iter()
+            .filter_map(|event_id| {
+                let message = projected.remove(event_id);
+                if message.is_none() {
+                    unavailable.insert(event_id.clone());
+                }
+                message
+            })
+            .collect();
+        let unavailable_event_ids = event_ids
+            .iter()
+            .filter(|event_id| unavailable.contains(*event_id))
+            .cloned()
+            .collect();
+
+        Ok(MatrixRoomPins {
+            room_id: room.room_id().to_string(),
+            event_ids,
+            messages,
+            unavailable_event_ids,
+            can_manage,
+        })
+    }
 }

@@ -80,6 +80,7 @@ use matrix_sdk::{
                     OriginalSyncRoomMessageEvent, ReplacementMetadata, RoomMessageEventContent,
                     RoomMessageEventContentWithoutRelation,
                 },
+                pinned_events::{OriginalSyncRoomPinnedEventsEvent, RoomPinnedEventsEventContent},
                 EncryptedFile, EncryptedFileHash, EncryptedFileHashAlgorithm, ImageInfo,
                 MediaSource, ThumbnailInfo,
             },
@@ -129,13 +130,14 @@ use super::{
     CreatedCommunity, CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest, MatrixBackendEvent,
     MatrixBackendEventCallback, MatrixDevice, MatrixLogin, MatrixNotification,
     MatrixOidcAvailability, MatrixOidcStatus, MatrixProfile, MatrixQueuedMessageState,
-    MatrixQueuedMessageUpdate, MatrixRecoveryHealth, MatrixRoomNotificationMode,
-    MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease,
-    MatrixRtcMediaKeyPause, MatrixRtcMember, MatrixRtcMembershipUpdate, MatrixTransferDirection,
-    MatrixTransferObserver, MatrixTransferProgress, MatrixTransferProgressCallback,
-    MatrixTransferResult, MatrixTransferRetryMode, MatrixTransferState, MatrixUnreadUpdate,
-    MatrixVerificationSession, MeshBackend, ModerationAuditEntry, SentMessage, TypingUser,
-    UserPreferences, VerificationEmoji, VoiceServiceAvailability, VoiceServiceStatus,
+    MatrixQueuedMessageUpdate, MatrixRecoveryHealth, MatrixRoomNotificationMode, MatrixRoomPins,
+    MatrixRoomPinsUpdate, MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyFailure,
+    MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember, MatrixRtcMembershipUpdate,
+    MatrixTransferDirection, MatrixTransferObserver, MatrixTransferProgress,
+    MatrixTransferProgressCallback, MatrixTransferResult, MatrixTransferRetryMode,
+    MatrixTransferState, MatrixUnreadUpdate, MatrixVerificationSession, MeshBackend,
+    ModerationAuditEntry, SentMessage, TypingUser, UserPreferences, VerificationEmoji,
+    VoiceServiceAvailability, VoiceServiceStatus,
 };
 
 mod moderation;
@@ -148,6 +150,7 @@ const ACCOUNT_REGISTRY_KEY: &str = "matrix-account-registry-v1";
 const TRUSTED_DEVICES_KEY: &str = "matrix-trusted-devices-v1";
 const RECOVERY_TEST_KEY: &str = "matrix-recovery-test-v1";
 const PREFERENCES_EVENT_TYPE: &str = "org.mesh.preferences.v1";
+const MAX_PINNED_EVENTS: usize = 100;
 const MANAGED_HOMESERVER_ENV: &str = "MESH_MANAGED_HOMESERVER";
 const MANAGED_SERVER_NAME_ENV: &str = "MESH_MANAGED_SERVER_NAME";
 const LOGIN_TIMEOUT_SECONDS: u64 = 45;
@@ -2023,6 +2026,38 @@ impl MatrixBackend {
                             is_mention: push_actions.iter().any(Action::is_highlight),
                             is_dm: !room.direct_targets().is_empty(),
                             avatar_url,
+                        }),
+                    );
+                }
+            }
+        });
+        client.add_event_handler({
+            let event_callback = Arc::clone(&self.event_callback);
+            move |event: OriginalSyncRoomPinnedEventsEvent, room: Room| {
+                let event_callback = Arc::clone(&event_callback);
+                async move {
+                    if let Err(error) =
+                        MatrixBackend::require_protected_room(&room, "reading pinned messages")
+                            .await
+                    {
+                        tracing::warn!(
+                            target: "mesh::security",
+                            room_id = %room.room_id(),
+                            "Suppressed pinned-message state from an unprotected room: {error}"
+                        );
+                        return;
+                    }
+                    MatrixBackend::dispatch_backend_event(
+                        &event_callback,
+                        MatrixBackendEvent::RoomPins(MatrixRoomPinsUpdate {
+                            room_id: room.room_id().to_string(),
+                            event_ids: event
+                                .content
+                                .pinned
+                                .into_iter()
+                                .take(MAX_PINNED_EVENTS)
+                                .map(|event_id| event_id.to_string())
+                                .collect(),
                         }),
                     );
                 }
@@ -5636,6 +5671,72 @@ impl MeshBackend for MatrixBackend {
             .await
             .map_err(Self::map_error)?;
         Ok(true)
+    }
+
+    async fn room_pins(&self, room_id: String) -> BackendResult<MatrixRoomPins> {
+        let client = self.client().await?;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let room =
+            Self::existing_protected_text_channel(&client, &room_id, "reading pinned messages")
+                .await?;
+        let pinned_event_ids = room
+            .load_pinned_events()
+            .await
+            .map_err(Self::map_error)?
+            .unwrap_or_default();
+        Self::room_pins_snapshot(&client, &room, pinned_event_ids).await
+    }
+
+    async fn toggle_room_pin(
+        &self,
+        room_id: String,
+        event_id: String,
+    ) -> BackendResult<MatrixRoomPins> {
+        let client = self.client().await?;
+        let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
+        let room =
+            Self::existing_protected_text_channel(&client, &room_id, "changing pinned messages")
+                .await?;
+        let can_manage = room
+            .get_member(own_user_id)
+            .await
+            .map_err(Self::map_error)?
+            .is_some_and(|member| member.can_pin_or_unpin_event());
+        if !can_manage {
+            return Err(BackendError::PermissionDenied(
+                "Only room moderators can manage pinned messages.".into(),
+            ));
+        }
+
+        let pinned_event_ids = room
+            .load_pinned_events()
+            .await
+            .map_err(Self::map_error)?
+            .unwrap_or_default();
+        let (pinned_event_ids, now_pinned) =
+            Self::updated_room_pins(pinned_event_ids, event_id.clone())?;
+        if now_pinned {
+            let event = room
+                .load_or_fetch_event(&event_id, None)
+                .await
+                .map_err(Self::map_error)?;
+            let value = event
+                .raw()
+                .deserialize_as::<serde_json::Value>()
+                .map_err(Self::map_error)?;
+            if !Self::is_base_text_message(&value) {
+                return Err(BackendError::InvalidConfiguration(
+                    "Only readable room messages can be pinned.".into(),
+                ));
+            }
+        }
+
+        room.send_state_event(RoomPinnedEventsEventContent::new(pinned_event_ids.clone()))
+            .await
+            .map_err(Self::map_error)?;
+        Self::room_pins_snapshot(&client, &room, pinned_event_ids).await
     }
 
     async fn mark_read(&self, room_id: String) -> BackendResult<()> {

@@ -12,6 +12,7 @@ import { useCommunityMembers } from '../../store/membership'
 import { useServerEmoji } from '../../store/custom-emoji'
 import * as bridge from '../../lib/bridge'
 import { useFileDownloadStore } from '../../store/file-downloads'
+import { useRoomPinStore } from '../../store/room-pins'
 import { formatFederatedTimestamp } from '../../lib/federated-time'
 import { describeError } from '../../lib/errors'
 import { summarizeModerationResult } from '../../lib/moderation'
@@ -66,13 +67,19 @@ export const MessageComponent = memo(function MessageComponent({
   const updateReaction = useMessageStore((s) => s.updateReaction)
   const editMessage = useMessageStore((s) => s.editMessage)
   const deleteMessage = useMessageStore((s) => s.deleteMessage)
+  const isPinned = useRoomPinStore(
+    (state) => state.roomId === message.channelId && state.eventIds.includes(message.id),
+  )
+  const canManagePins = useRoomPinStore(
+    (state) => state.roomId === message.channelId && state.canManage,
+  )
+  const toggleRoomPin = useRoomPinStore((state) => state.toggle)
 
   const isOwnMessage = myPublicKey === message.authorPublicKey
   const canModerate = myRole === 'owner' || myRole === 'admin'
   const isDeleted = !!message.deletedAt
   const isQueued = !!message.transactionId && message.deliveryStatus !== 'sent'
-  const pinnedBy = message.reactions['📌'] ?? []
-  const isPinnedByMe = myPublicKey ? pinnedBy.includes(myPublicKey) : false
+  const canPinMessage = matrixMode && canManagePins && message.id.startsWith('$')
   const imageAttachmentIndexes = (message.attachments ?? []).flatMap((attachment, index) => (
     attachment.thumbnail ? [index] : []
   ))
@@ -281,7 +288,7 @@ export const MessageComponent = memo(function MessageComponent({
   }
 
   const handlePin = async () => {
-    await handleReaction('📌')
+    await toggleRoomPin(message.channelId, message)
     setContextMenu(null)
     rowRef.current?.focus()
   }
@@ -512,13 +519,13 @@ export const MessageComponent = memo(function MessageComponent({
                 <Icon name="reply" size="sm" />
               </button>
             )}
-            {matrixMode && (
+            {canPinMessage && (
               <button
                 onClick={() => void handlePin()}
                 className={`flex h-8 w-8 items-center justify-center transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
-                  isPinnedByMe ? 'text-accent' : 'text-muted'
+                  isPinned ? 'text-accent' : 'text-muted'
                 }`}
-                aria-label={isPinnedByMe ? 'Remove your pin from message' : 'Pin message'}
+                aria-label={isPinned ? 'Unpin message' : 'Pin message'}
               >
                 <Icon name="pin" size="sm" />
               </button>
@@ -579,14 +586,14 @@ export const MessageComponent = memo(function MessageComponent({
             style={{ left: contextMenu.x, top: contextMenu.y }}
             onClick={(e) => e.stopPropagation()}
           >
-            {matrixMode && !isDeleted && (
+            {canPinMessage && !isDeleted && (
               <button
                 role="menuitem"
                 onClick={() => void handlePin()}
                 className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-secondary transition-colors hover:bg-status-info hover:text-content-on-status"
-                aria-label={isPinnedByMe ? 'Remove your pin from message' : 'Pin message'}
+                aria-label={isPinned ? 'Unpin message' : 'Pin message'}
               >
-                {isPinnedByMe ? 'Remove Your Pin' : 'Pin Message'}
+                {isPinned ? 'Unpin Message' : 'Pin Message'}
               </button>
             )}
             {isOwnMessage && !isDeleted && (

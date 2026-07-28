@@ -11,9 +11,9 @@ use tauri_plugin_notification::NotificationExt;
 
 use crate::backend::{
     MatrixBackendEvent, MatrixNotification, MatrixUnreadUpdate, NotificationPresentationContext,
-    MATRIX_NOTIFICATION_EVENT, MATRIX_QUEUED_MESSAGE_EVENT, MATRIX_RTC_MEDIA_KEY_EVENT,
-    MATRIX_RTC_MEDIA_KEY_FAILURE_EVENT, MATRIX_RTC_MEDIA_KEY_PAUSE_EVENT,
-    MATRIX_RTC_MEMBERSHIP_EVENT, MATRIX_UNREAD_UPDATE_EVENT,
+    MATRIX_NOTIFICATION_EVENT, MATRIX_QUEUED_MESSAGE_EVENT, MATRIX_ROOM_PINS_EVENT,
+    MATRIX_RTC_MEDIA_KEY_EVENT, MATRIX_RTC_MEDIA_KEY_FAILURE_EVENT,
+    MATRIX_RTC_MEDIA_KEY_PAUSE_EVENT, MATRIX_RTC_MEMBERSHIP_EVENT, MATRIX_UNREAD_UPDATE_EVENT,
 };
 
 use super::error::CommandError;
@@ -218,6 +218,14 @@ pub fn handle_matrix_backend_event(app: &AppHandle, event: MatrixBackendEvent) {
                 tracing::warn!(
                     target: "mesh::matrix",
                     "Could not emit queued-message update: {error}"
+                );
+            }
+        }
+        MatrixBackendEvent::RoomPins(update) => {
+            if let Err(error) = app.emit(MATRIX_ROOM_PINS_EVENT, &update) {
+                tracing::warn!(
+                    target: "mesh::matrix",
+                    "Could not emit room-pin update: {error}"
                 );
             }
         }

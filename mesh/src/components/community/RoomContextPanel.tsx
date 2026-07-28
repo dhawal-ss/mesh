@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import type { Channel, Message } from '../../types/ipc'
 import type { RoomTrustSnapshot } from '../../hooks/useRoomTrust'
 import { useMessageStore } from '../../store/messages'
+import { useRoomPinStore } from '../../store/room-pins'
 import { useMessageNavigationStore } from '../../store/message-navigation'
 import { useShellStore } from '../../store/shell'
 import { copyText, matrixRoomPermalink } from '../../lib/notifications'
@@ -40,6 +41,22 @@ export function RoomContextPanel({
   onClose,
 }: RoomContextPanelProps) {
   const messages = useMessageStore((state) => state.messages[channel.id] ?? EMPTY_MESSAGES)
+  const pinnedMessages = useRoomPinStore((state) => (
+    state.roomId === channel.id ? state.messages : EMPTY_MESSAGES
+  ))
+  const pinnedEventCount = useRoomPinStore((state) => (
+    state.roomId === channel.id ? state.eventIds.length : 0
+  ))
+  const unavailablePinCount = useRoomPinStore((state) => (
+    state.roomId === channel.id ? state.unavailableEventIds.length : 0
+  ))
+  const pinsLoading = useRoomPinStore((state) => (
+    state.roomId === channel.id && state.loading
+  ))
+  const pinsLoadFailed = useRoomPinStore((state) => (
+    state.roomId === channel.id && state.loadFailed
+  ))
+  const loadRoomPins = useRoomPinStore((state) => state.load)
   const setSecurityOpen = useShellStore((state) => state.setSecurityOpen)
   const requestNavigation = useMessageNavigationStore((state) => state.requestNavigation)
   const files = useMemo(
@@ -48,10 +65,7 @@ export function RoomContextPanel({
     )).reverse(),
     [messages],
   )
-  const pinnedMessages = useMemo(
-    () => messages.filter((message) => (message.reactions?.['📌'] ?? []).length > 0).reverse(),
-    [messages],
-  )
+  const newestPinnedMessages = useMemo(() => [...pinnedMessages].reverse(), [pinnedMessages])
   const tabs: Array<{ id: RoomContextTab; label: string }> = trust.matrixMode
     ? [
         { id: 'people', label: 'People' },
@@ -356,9 +370,29 @@ export function RoomContextPanel({
               Shared reference points for everyone in this room
             </p>
           </div>
-          {pinnedMessages.length > 0 ? (
+          {pinsLoadFailed ? (
+            <div className="rounded-lg border border-status-warning/30 bg-status-warning/10 px-4 py-5 text-center">
+              <Icon name="triangleAlert" className="mx-auto text-status-warning" />
+              <p className="mt-3 text-xs font-medium text-primary">Pins are unavailable right now</p>
+              <p className="mt-1 text-caption leading-5 text-muted">
+                Messaging still works. Check your connection and try again.
+              </p>
+              <button
+                type="button"
+                className="mt-3 min-h-control-sm rounded-md border border-border-subtle px-3 text-xs font-medium text-secondary transition-colors hover:border-border-strong hover:bg-bg-modifier-hover hover:text-primary"
+                onClick={() => void loadRoomPins(channel.id)}
+              >
+                Try again
+              </button>
+            </div>
+          ) : pinsLoading && pinnedMessages.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border-subtle px-4 py-8 text-center">
+              <Icon name="loader" className="mx-auto animate-spin text-muted" />
+              <p className="mt-3 text-xs font-medium text-secondary">Loading pinned messages…</p>
+            </div>
+          ) : pinnedEventCount > 0 ? (
             <div className="space-y-1.5">
-              {pinnedMessages.map((message) => (
+              {newestPinnedMessages.map((message) => (
                 <button
                   key={message.id}
                   type="button"
@@ -377,6 +411,14 @@ export function RoomContextPanel({
                   </span>
                 </button>
               ))}
+              {unavailablePinCount > 0 && (
+                <div
+                  role="status"
+                  className="rounded-md border border-border-subtle bg-bg-modifier-hover px-3 py-2 text-caption leading-5 text-muted"
+                >
+                  {unavailablePinCount} pinned {unavailablePinCount === 1 ? 'message is' : 'messages are'} no longer available on this device.
+                </div>
+              )}
             </div>
           ) : (
             <div className="rounded-lg border border-dashed border-border-subtle px-4 py-8 text-center">

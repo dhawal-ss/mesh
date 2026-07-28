@@ -28,6 +28,7 @@ vi.mock('framer-motion', () => ({
 
 import type { Message } from '../../types/ipc'
 import * as bridge from '../../lib/bridge'
+import { useRoomPinStore } from '../../store/room-pins'
 import { FileAttachmentCard, MessageComponent } from './Message'
 
 function malformedMessage(): Message {
@@ -72,6 +73,15 @@ describe('MessageComponent federated timestamps', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    useRoomPinStore.setState({
+      roomId: null,
+      eventIds: [],
+      messages: [],
+      unavailableEventIds: [],
+      canManage: false,
+      loading: false,
+      loadFailed: false,
+    })
   })
 
   afterEach(async () => {
@@ -156,15 +166,31 @@ describe('MessageComponent federated timestamps', () => {
     expect(container.querySelector('[aria-label="Edit message"]')).toBeNull()
   })
 
-  it('pins a message through the shared encrypted reaction path', async () => {
+  it('pins a message through native room state when the member has permission', async () => {
     vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
     vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@me:example.org')
-    vi.spyOn(bridge, 'addReaction').mockResolvedValue(true)
 
     const message = {
       ...malformedMessage(),
+      id: '$message-1:example.org',
       timestamp: '2026-07-28T09:41:00.000Z',
     }
+    const togglePin = vi.spyOn(bridge, 'matrixToggleRoomPin').mockResolvedValue({
+      roomId: message.channelId,
+      eventIds: [message.id],
+      messages: [message],
+      unavailableEventIds: [],
+      canManage: true,
+    })
+    useRoomPinStore.setState({
+      roomId: message.channelId,
+      eventIds: [],
+      messages: [],
+      unavailableEventIds: [],
+      canManage: true,
+      loading: false,
+      loadFailed: false,
+    })
     await act(async () => {
       root.render(<MessageComponent message={message} isGrouped={false} />)
     })
@@ -176,17 +202,8 @@ describe('MessageComponent federated timestamps', () => {
       await Promise.resolve()
     })
 
-    expect(bridge.addReaction).toHaveBeenCalledWith(message.id, '📌', message.channelId)
-
-    await act(async () => {
-      root.render(
-        <MessageComponent
-          message={{ ...message, reactions: { '📌': ['@me:example.org'] } }}
-          isGrouped={false}
-        />,
-      )
-    })
-    expect(container.querySelector('[aria-label="Remove your pin from message"]')).not.toBeNull()
+    expect(togglePin).toHaveBeenCalledWith(message.channelId, message.id)
+    expect(container.querySelector('[aria-label="Unpin message"]')).not.toBeNull()
   })
 
   it('loads an encrypted thumbnail only near the viewport and revokes its Blob URL', async () => {

@@ -28,6 +28,10 @@ export type MatrixQueuedMessageUpdate = { roomId: string, transactionId: string,
 
 export type MatrixRoomNotificationMode = "all" | "mentions" | "nothing";
 
+export type MatrixRoomPins = { roomId: string, eventIds: Array<string>, messages: Array<MessageDto>, unavailableEventIds: Array<string>, canManage: boolean, };
+
+export type MatrixRoomPinsUpdate = { roomId: string, eventIds: Array<string>, };
+
 export type MatrixRtcMember = { roomId: string, userId: string, deviceId: string, sessionId: string, displayName: string, avatarUrl: string | null, };
 
 export type MatrixRtcMembershipUpdate = { roomId: string, members: Array<MatrixRtcMember>, };

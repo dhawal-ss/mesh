@@ -10,9 +10,10 @@ use crate::backend::{
     CommunityApplication, CommunityDirectoryEntry, CommunityMember, CommunityModerationResult,
     CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest, MatrixDevice, MatrixLogin,
     MatrixOidcStatus, MatrixProfile, MatrixRecoveryHealth, MatrixRoomNotificationMode,
-    MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyLease, MatrixRtcMember,
-    MatrixTransferObserver, MatrixTransferProgressCallback, MatrixVerificationSession,
-    ModerationAuditEntry, TypingUser, UserPreferences, MATRIX_TRANSFER_PROGRESS_EVENT,
+    MatrixRoomPins, MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyLease,
+    MatrixRtcMember, MatrixTransferObserver, MatrixTransferProgressCallback,
+    MatrixVerificationSession, ModerationAuditEntry, TypingUser, UserPreferences,
+    MATRIX_TRANSFER_PROGRESS_EVENT,
 };
 use crate::state::AppState;
 use crate::types::{
@@ -1130,6 +1131,35 @@ pub async fn matrix_toggle_reaction(
         .backend
         .backend()
         .toggle_reaction(room_id, event_id, key)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_room_pins(
+    room_id: String,
+    state: State<'_, AppState>,
+) -> Result<MatrixRoomPins, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .room_pins(room_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_toggle_room_pin(
+    room_id: String,
+    event_id: String,
+    state: State<'_, AppState>,
+) -> Result<MatrixRoomPins, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .toggle_room_pin(room_id, event_id)
         .await
         .map_err(map_error)
 }

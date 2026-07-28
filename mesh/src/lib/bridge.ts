@@ -25,6 +25,8 @@ import type {
   MatrixQueuedMessageUpdate,
   MatrixUnreadUpdate,
   MatrixRoomNotificationMode,
+  MatrixRoomPins,
+  MatrixRoomPinsUpdate,
   NotificationPresentationContext,
   LegacyArchiveSummary,
   LegacyDryRunReport,
@@ -885,6 +887,17 @@ export async function matrixGetMessages(
   }, READ_IPC_OPTIONS)
 }
 
+export async function matrixRoomPins(roomId: string): Promise<MatrixRoomPins> {
+  return tauriInvoke('matrix_room_pins', { roomId }, READ_IPC_OPTIONS)
+}
+
+export async function matrixToggleRoomPin(
+  roomId: string,
+  eventId: string,
+): Promise<MatrixRoomPins> {
+  return tauriInvoke('matrix_toggle_room_pin', { roomId, eventId }, { toast: true })
+}
+
 export async function matrixWaitForRoomUpdate(roomId: string, timeoutMs = 25_000): Promise<boolean> {
   return tauriInvoke('matrix_wait_for_room_update', { roomId, timeoutMs })
 }
@@ -1646,6 +1659,12 @@ export function onMatrixUnreadUpdate(
   handler: (update: MatrixUnreadUpdate) => void,
 ): Promise<UnlistenFn> {
   return tauriListen('matrix:unread-update', handler)
+}
+
+export function onMatrixRoomPinsUpdate(
+  handler: (update: MatrixRoomPinsUpdate) => void,
+): Promise<UnlistenFn> {
+  return tauriListen('matrix:room-pins', handler)
 }
 
 export function onMatrixQueuedMessage(
