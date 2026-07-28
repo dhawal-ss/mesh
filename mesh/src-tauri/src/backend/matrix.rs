@@ -6670,6 +6670,17 @@ impl MeshBackend for MatrixBackend {
         BackendKind::Matrix
     }
 
+    async fn active_account_storage_root(&self) -> BackendResult<PathBuf> {
+        let profile_id = self
+            .runtime
+            .read()
+            .await
+            .profile_id
+            .clone()
+            .ok_or(BackendError::NotAuthenticated)?;
+        Ok(self.storage_for_profile(&profile_id).store_root)
+    }
+
     fn set_matrix_event_callback(&self, callback: Option<MatrixBackendEventCallback>) {
         match self.event_callback.write() {
             Ok(mut current) => *current = callback,
@@ -11946,6 +11957,24 @@ mod tests {
         assert_eq!(
             alice_id,
             MatrixBackend::profile_id("matrix.example.org", "alice")
+        );
+    }
+
+    #[tokio::test]
+    async fn active_account_storage_root_uses_only_the_authenticated_profile() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = MatrixBackend::new(root.path().join("matrix"));
+        let active_profile = "active-profile";
+        let other_profile = "other-profile";
+        backend.runtime.write().await.profile_id = Some(active_profile.into());
+
+        assert_eq!(
+            backend.active_account_storage_root().await.unwrap(),
+            backend.storage_for_profile(active_profile).store_root
+        );
+        assert_ne!(
+            backend.active_account_storage_root().await.unwrap(),
+            backend.storage_for_profile(other_profile).store_root
         );
     }
 
