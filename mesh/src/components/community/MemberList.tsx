@@ -6,6 +6,8 @@ import { useDmStore } from '../../store/dms'
 import * as bridge from '../../lib/bridge'
 import { summarizeModerationResult } from '../../lib/moderation'
 import { showToast } from '../ui/Toast'
+import { Icon } from '../ui/Icon'
+import { DropdownMenu, type MenuItem } from '../ui/InteractivePrimitives'
 
 interface MemberEntry {
   publicKey: string
@@ -156,9 +158,38 @@ function MemberRow({
 }) {
   const canAct = actions?.canModerate && actions.currentUserId !== member.publicKey && member.role !== 'owner'
   const canDm = actions?.directMessages && actions.currentUserId !== member.publicKey
+  const moderationItems: MenuItem[] = actions && canAct
+    ? [
+        ...(actions.canManageRoles
+          ? [{
+              id: 'role',
+              label: member.role === 'admin' ? 'Make member' : 'Make administrator',
+              onSelect: () => {
+                void actions.onRole(member).catch((error) => console.error('Role update failed:', error))
+              },
+            }]
+          : []),
+        {
+          id: 'remove',
+          label: 'Remove from community',
+          onSelect: () => {
+            void actions.onKick(member).catch((error) => console.error('Member removal failed:', error))
+          },
+        },
+        {
+          id: 'ban',
+          label: 'Ban from community',
+          tone: 'danger' as const,
+          onSelect: () => {
+            void actions.onBan(member).catch((error) => console.error('Member ban failed:', error))
+          },
+        },
+      ]
+    : []
+
   return (
     <div
-      className={`group flex cursor-pointer items-center gap-3 rounded px-2 py-density-row transition-colors hover:bg-bg-modifier-hover ${
+      className={`group flex min-h-10 items-center gap-3 rounded-md px-2 transition-colors hover:bg-bg-modifier-hover focus-within:bg-bg-modifier-hover ${
         !member.online ? 'opacity-40' : ''
       }`}
     >
@@ -177,49 +208,44 @@ function MemberRow({
             {member.displayName}
           </span>
           {member.role !== 'member' && (
-            <span className={`flex-shrink-0 text-caption font-semibold ${
-              member.role === 'owner' ? 'text-accent' : 'text-blue'
+            <span className={`flex-shrink-0 rounded px-1.5 py-0.5 text-micro font-semibold ${
+              member.role === 'owner'
+                ? 'bg-accent/10 text-accent'
+                : 'bg-bg-modifier-active text-muted'
             }`}>
-              {member.role === 'owner' ? '👑' : '🛡️'}
+              {member.role === 'owner' ? 'Owner' : 'Admin'}
             </span>
           )}
         </div>
       </div>
       {(canAct || canDm) && actions && (
-        <div className="hidden items-center gap-0.5 group-hover:flex">
+        <div className="flex items-center gap-0.5">
           {canDm && (
             <button
+              type="button"
               onClick={() => void actions.onDm(member).catch((error) => console.error('DM start failed:', error))}
-              className="rounded px-1 text-caption text-muted hover:bg-bg-modifier-active hover:text-primary"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-bg-modifier-active hover:text-primary"
               title="Message member"
               aria-label={`Message ${member.displayName}`}
             >
-              DM
+              <Icon name="messageCircle" size="sm" />
             </button>
           )}
-          {canAct && actions.canManageRoles && (
-            <button
-              onClick={() => void actions.onRole(member).catch((error) => console.error('Role update failed:', error))}
-              className="rounded px-1 text-caption text-muted hover:bg-bg-modifier-active hover:text-primary"
-              title={member.role === 'admin' ? 'Make member' : 'Make admin'}
-            >
-              {member.role === 'admin' ? 'M' : 'A'}
-            </button>
+          {canAct && (
+            <DropdownMenu
+              label={`Actions for ${member.displayName}`}
+              items={moderationItems}
+              trigger={(
+                <button
+                  type="button"
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-bg-modifier-active hover:text-primary"
+                  aria-label={`More actions for ${member.displayName}`}
+                >
+                  <Icon name="ellipsis" size="sm" />
+                </button>
+              )}
+            />
           )}
-          {canAct && <button
-            onClick={() => void actions.onKick(member).catch((error) => console.error('Kick failed:', error))}
-            className="rounded px-1 text-caption text-muted hover:bg-bg-modifier-active hover:text-primary"
-            title="Kick member"
-          >
-            K
-          </button>}
-          {canAct && <button
-            onClick={() => void actions.onBan(member).catch((error) => console.error('Ban failed:', error))}
-            className="rounded px-1 text-caption text-red hover:bg-red/10"
-            title="Ban member"
-          >
-            B
-          </button>}
         </div>
       )}
     </div>

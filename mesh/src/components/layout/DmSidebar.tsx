@@ -7,6 +7,9 @@ import { UserPanel } from './UserPanel'
 import { registerPoll } from '../../lib/scheduler'
 import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { isQuietHoursActive, useSettingsStore } from '../../store/settings'
+import { Icon } from '../ui/Icon'
+import { useIdentityStore } from '../../store/identity'
+import { useNetworkStore } from '../../store/network'
 
 export function DmSidebar() {
   const conversations = useDmStore((state) => state.conversations)
@@ -15,7 +18,11 @@ export function DmSidebar() {
   const loadConversations = useDmStore((state) => state.loadConversations)
   const setConversations = useDmStore((state) => state.setConversations)
   const patchConversation = useDmStore((state) => state.patchConversation)
+  const storedIdentity = useIdentityStore((state) => state.identity)
+  const networkStatus = useNetworkStore((state) => state.status)
   const notifications = useSettingsStore((state) => state.notifications)
+  const matrixMode = bridge.isMatrixBackend()
+  const identityLabel = storedIdentity?.displayName || (matrixMode ? 'Mesh account' : 'Local identity')
   const showUnreadBadges =
     notifications.enabled &&
     !notifications.doNotDisturb &&
@@ -67,11 +74,27 @@ export function DmSidebar() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div
-        className="flex h-12 flex-shrink-0 items-center border-b border-border-subtle px-4"
-        data-tauri-drag-region
-      >
-        <h2 className="text-sm font-semibold text-primary">Direct Messages</h2>
+      <div className="min-h-20 flex-shrink-0 border-b border-border-subtle px-3 py-3" data-tauri-drag-region>
+        <h2 className="truncate text-sm font-semibold text-primary">Direct messages</h2>
+        <p className="mt-1 truncate text-caption text-muted">Private conversations</p>
+        <p className="mt-0.5 truncate text-caption text-secondary">Identity · {identityLabel}</p>
+        <p className="mt-1 flex items-center gap-1.5 text-caption text-muted">
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              networkStatus.state === 'connected'
+                ? 'bg-status-success'
+                : networkStatus.state === 'connecting'
+                  ? 'bg-status-warning'
+                  : 'bg-status-danger'
+            }`}
+            aria-hidden="true"
+          />
+          {networkStatus.state === 'connected'
+            ? 'Synced'
+            : networkStatus.state === 'connecting'
+              ? 'Syncing'
+              : 'Offline'}
+        </p>
       </div>
 
       {/* Conversation search */}
@@ -83,19 +106,22 @@ export function DmSidebar() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Find a conversation"
-          className="w-full rounded bg-bg-tertiary px-2 py-1.5 text-xs text-primary outline-none placeholder:text-muted"
+          className="min-h-8 w-full rounded-md border border-border-subtle bg-bg-tertiary px-2 text-xs text-primary outline-none placeholder:text-muted focus:border-border-strong"
         />
       </div>
 
       {/* Conversation list */}
       <div className="flex-1 overflow-y-auto px-2">
         {filteredConversations.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-8 text-center">
-            <p className="text-xs text-muted">
+          <div className="flex flex-col items-center justify-center px-3 py-10 text-center">
+            <Icon name={conversations.length === 0 ? 'messageCircle' : 'search'} size="lg" className="mb-3 text-muted" />
+            <p className="text-xs font-medium text-secondary">
               {conversations.length === 0 ? 'No conversations yet' : 'No conversations found'}
             </p>
             {conversations.length === 0 && (
-              <p className="text-xs text-muted mt-1">Start a DM from the member list</p>
+              <p className="mt-1 text-xs leading-5 text-muted">
+                Open People in any room to start a private conversation.
+              </p>
             )}
           </div>
         ) : (
@@ -110,7 +136,7 @@ export function DmSidebar() {
                   onClick={() => void handleSelect(conv.id)}
                   className={`group flex w-full items-center gap-3 rounded px-2 py-density-row text-left transition-colors ${
                     isActive
-                      ? 'bg-bg-modifier-selected text-primary'
+                      ? 'mesh-channel-active bg-bg-modifier-selected text-primary'
                       : 'text-muted hover:bg-bg-modifier-hover hover:text-secondary'
                   }`}
                   aria-label={`Direct message with ${shortName}`}
@@ -122,17 +148,22 @@ export function DmSidebar() {
                   />
 
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
                       <span className="truncate text-sm font-medium">{shortName}</span>
+                      {conv.lastMessageAt && (
+                        <span className="tnum ml-auto flex-shrink-0 text-meta text-muted">
+                          {format(new Date(conv.lastMessageAt), 'MMM d')}
+                        </span>
+                      )}
                       {showUnreadBadges && conv.unreadCount > 0 && (
-                        <span className="badge-count ml-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red px-1 text-meta font-semibold text-content-on-status">
+                        <span className="badge-count flex h-4 min-w-4 flex-shrink-0 items-center justify-center rounded-full bg-accent px-1 text-meta font-semibold text-content-on-accent">
                           {conv.unreadCount > 99 ? '99+' : conv.unreadCount}
                         </span>
                       )}
                     </div>
-                    {conv.lastMessageAt && (
-                      <span className="tnum text-meta text-muted">
-                        {format(new Date(conv.lastMessageAt), 'MMM d')}
+                    {matrixMode && conv.peerPublicKey.startsWith('@') && (
+                      <span className="identifier block truncate font-mono text-caption text-muted">
+                        {conv.peerPublicKey}
                       </span>
                     )}
                   </div>

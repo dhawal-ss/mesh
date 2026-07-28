@@ -173,6 +173,46 @@ async function installAuthenticatedMatrixMessagingMock(page: Page): Promise<void
           return []
         case 'matrix_list_channels':
           return [channel]
+        case 'matrix_room_is_encrypted':
+          return true
+        case 'matrix_devices':
+          return [
+            {
+              deviceId: 'ALICE-E2E',
+              displayName: 'Mesh Desktop',
+              lastSeenIp: null,
+              lastSeenAt: '2026-07-24T00:00:00.000Z',
+              firstSeenAt: '2026-07-20T00:00:00.000Z',
+              current: true,
+              verified: true,
+              crossSigned: true,
+              newDevice: false,
+              identityChanged: false,
+            },
+            {
+              deviceId: 'ALICE-NEW',
+              displayName: 'New phone',
+              lastSeenIp: null,
+              lastSeenAt: '2026-07-24T00:00:00.000Z',
+              firstSeenAt: '2026-07-24T00:00:00.000Z',
+              current: false,
+              verified: false,
+              crossSigned: false,
+              newDevice: true,
+              identityChanged: false,
+            },
+          ]
+        case 'matrix_recovery_health':
+          return {
+            recoveryState: 'enabled',
+            backupState: 'enabled',
+            backupExistsOnServer: true,
+            backupEnabled: true,
+            healthy: true,
+            checkedAt: '2026-07-24T00:00:00.000Z',
+            lastSuccessfulTestAt: '2026-07-24T00:00:00.000Z',
+            warnings: [],
+          }
         case 'matrix_list_members':
           return [
             {
@@ -399,6 +439,25 @@ test.describe('Matrix direct messaging and encrypted attachments', () => {
         attachmentIndex: 0,
       },
     })
+  })
+
+  test('keeps DM trust compact, explains who can read, and opens device review', async ({ page }) => {
+    await openDirectMessage(page)
+
+    const trustSummary = page.getByRole('button', {
+      name: 'Encrypted. Open conversation trust details.',
+    })
+    await expect(trustSummary).toBeVisible()
+    await expect(page.getByText('1 device needs review before it can be fully trusted.')).toBeVisible()
+
+    await trustSummary.click()
+    await expect(page.getByText('Who can read this conversation?')).toBeVisible()
+    await expect(page.getByText('Only you, Bob, and approved devices can read these messages.')).toBeVisible()
+    await expect(page.getByText('Message backup')).toBeVisible()
+
+    await page.getByRole('button', { name: 'Review devices and backup' }).click()
+    await expect(page.getByRole('dialog', { name: 'Your devices' })).toBeVisible()
+    await expect(page.getByText('Message backup is ready')).toBeVisible()
   })
 
   test('sends DM text through the dedicated Matrix direct-message command', async ({ page }) => {

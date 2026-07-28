@@ -742,6 +742,14 @@ textarea {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
+.mesh-search-popover {
+  width: min(24rem, calc(100vw - 4rem));
+}
+
+.mesh-dm-trust-popover {
+  width: min(20rem, calc(100vw - 1rem));
+}
+
 @media (max-width: 1100px) {
   .mesh-member-list {
     display: none;
