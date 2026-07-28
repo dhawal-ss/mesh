@@ -259,13 +259,13 @@ jobs:
             (Resolve-Path mesh/src-tauri/mesh.cdx.json).Path
           )
 
-          $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
+          $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.txt"
           @"
           Matrix-only production beta build. Legacy libp2p is not included.
 
           Verify downloads against ``SHA256SUMS.txt`` and inspect the attached CycloneDX SBOMs.
 
-          Automatic updates are intentionally disabled until Mesh has a provisioned signed-update endpoint and updater public key. Install this beta manually only after completing the operator checklist in ``docs/BETA_RELEASE.md``.
+          Automatic updates are intentionally disabled until Mesh has a provisioned signed-update endpoint and updater public key. Install this beta only in a controlled test environment.
           "@ | Out-File $notesPath -Encoding utf8
 
           gh release create $env:GITHUB_REF_NAME @assets `

@@ -15,14 +15,12 @@
  * What these tests do NOT prove:
  *   - Two peers actually exchanging audio (requires two browser instances
  *     with a signaling server — out of scope for single-instance E2E)
- *   - Real TURN relay behavior (requires deployed TURN — see docs/TURN_SETUP.md)
+ *   - Real TURN relay behavior (requires a deployed TURN service)
  *
  * Running:
  *   npm install --save-dev @playwright/test
  *   npx playwright install chromium
  *   npm run e2e
- *
- * See docs/E2E_TESTING.md for the full setup guide.
  */
 import { test, expect } from '@playwright/test'
 
