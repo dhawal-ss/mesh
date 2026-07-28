@@ -435,7 +435,9 @@ impl VoiceServiceStatus {
             };
         }
 
-        if livekit_service_url.is_none() || livekit_sfu_url.is_none() {
+        let (Some(livekit_service_url), Some(livekit_sfu_url)) =
+            (livekit_service_url.as_deref(), livekit_sfu_url.as_deref())
+        else {
             return Self {
                 availability: VoiceServiceAvailability::InvalidConfiguration,
                 reason: Some(format!(
@@ -445,27 +447,20 @@ impl VoiceServiceStatus {
                 )),
                 ..base
             };
-        }
-
-        let service = match Self::secure_url(
-            Self::MATRIXRTC_SERVICE_ENV,
-            livekit_service_url.as_deref().unwrap(),
-            "https",
-        ) {
-            Ok(url) => url,
-            Err(reason) => {
-                return Self {
-                    availability: VoiceServiceAvailability::InvalidConfiguration,
-                    reason: Some(reason),
-                    ..base
-                };
-            }
         };
-        let sfu = match Self::secure_url(
-            Self::MATRIXRTC_SFU_ENV,
-            livekit_sfu_url.as_deref().unwrap(),
-            "wss",
-        ) {
+
+        let service =
+            match Self::secure_url(Self::MATRIXRTC_SERVICE_ENV, livekit_service_url, "https") {
+                Ok(url) => url,
+                Err(reason) => {
+                    return Self {
+                        availability: VoiceServiceAvailability::InvalidConfiguration,
+                        reason: Some(reason),
+                        ..base
+                    };
+                }
+            };
+        let sfu = match Self::secure_url(Self::MATRIXRTC_SFU_ENV, livekit_sfu_url, "wss") {
             Ok(url) => url,
             Err(reason) => {
                 return Self {

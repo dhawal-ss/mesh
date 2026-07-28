@@ -1204,7 +1204,7 @@ impl MatrixBackend {
             let pending = runtime
                 .pending_activations
                 .get_mut(&(room_id.to_owned(), session_id.to_owned()))
-                .expect("validated pending activation exists");
+                .expect("invariant: validated pending activation remains under the same lock");
             pending.phase = MatrixRtcActivationPhase::Distributed { sent_ts };
         }
         let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;

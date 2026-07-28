@@ -144,7 +144,7 @@ impl MatrixBackend {
                 candidate.insert(direct_user.to_owned(), Vec::new());
                 candidate
                     .get_mut(direct_user)
-                    .expect("the direct-user mapping was just inserted")
+                    .expect("invariant: the direct-user mapping was just inserted")
             } else {
                 // A remote device removed this entire peer mapping. Do not
                 // recreate it from a possibly stale local SDK snapshot.
@@ -221,7 +221,7 @@ impl MatrixBackend {
             let room = direct_rooms
                 .into_iter()
                 .find(|room| room.room_id() == canonical_room_id)
-                .expect("canonical direct room must come from the candidate set");
+                .expect("invariant: canonical direct room comes from the candidate set");
             if inferred || duplicate_count > 1 {
                 Self::reconcile_direct_duplicates(
                     client,

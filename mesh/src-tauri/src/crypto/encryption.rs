@@ -123,7 +123,7 @@ fn derive_keywrap_key(raw_shared_secret: &[u8; 32], community_id: &str) -> [u8; 
     // 32 bytes is always within bounds. This expand call is mathematically
     // infallible per RFC 5869.
     hk.expand(info, &mut okm)
-        .expect("HKDF-SHA256 expand for 32 bytes is infallible per RFC 5869");
+        .expect("invariant: HKDF-SHA256 expansion to 32 bytes is within RFC 5869 limits");
     // Note: caller is responsible for zeroizing okm after use
     okm
 }
@@ -146,7 +146,7 @@ pub fn encrypt_key_wrap(
     // AAD is empty here because HKDF domain separation already binds the
     // ciphertext to the community context.
     let encrypted = encrypt_community_payload(&derived_key, group_key, b"")
-        .expect("ChaCha20-Poly1305 encryption with valid key/nonce is infallible");
+        .expect("invariant: ChaCha20-Poly1305 accepts the fixed-size key and nonce");
     derived_key.zeroize();
     raw_shared.zeroize();
 
@@ -200,7 +200,7 @@ pub fn encrypt_for_recipient(
     // AAD is empty here because HKDF domain separation already binds the
     // ciphertext to its intended domain.
     let encrypted = encrypt_community_payload(&derived_key, plaintext, b"")
-        .expect("ChaCha20-Poly1305 encryption with valid key/nonce is infallible");
+        .expect("invariant: ChaCha20-Poly1305 accepts the fixed-size key and nonce");
     derived_key.zeroize();
     raw_shared.zeroize();
 

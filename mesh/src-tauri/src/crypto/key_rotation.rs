@@ -179,6 +179,7 @@ fn signable_bytes(event: &KeyRotationEvent) -> Vec<u8> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD as BASE64, Engine as _};
     use ed25519_dalek::SigningKey;
