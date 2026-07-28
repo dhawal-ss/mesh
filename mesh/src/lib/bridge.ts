@@ -20,6 +20,7 @@ import type {
   CommunityAccessResult,
   MatrixUserPreferences,
   MatrixNotification,
+  MatrixQueuedMessageUpdate,
   MatrixUnreadUpdate,
   MatrixRoomNotificationMode,
   NotificationPresentationContext,
@@ -587,9 +588,35 @@ export async function matrixSendMessage(
   roomId: string,
   body: string,
   replyToId?: string,
-  transactionId = createMatrixTransactionId(),
+  clientRequestId = createMatrixTransactionId(),
 ): Promise<Message> {
-  return tauriInvoke('matrix_send_message', { roomId, body, replyToId, transactionId })
+  return tauriInvoke('matrix_send_message', {
+    roomId,
+    body,
+    replyToId,
+    transactionId: clientRequestId,
+  })
+}
+
+export async function matrixQueuedMessages(): Promise<Message[]> {
+  if (!isMatrixBackend()) return []
+  return tauriInvoke('matrix_queued_messages', undefined, READ_IPC_OPTIONS)
+}
+
+export async function matrixRetryQueuedMessage(
+  roomId: string,
+  transactionId: string,
+): Promise<void> {
+  if (!isMatrixBackend()) return
+  return tauriInvoke('matrix_retry_queued_message', { roomId, transactionId })
+}
+
+export async function matrixCancelQueuedMessage(
+  roomId: string,
+  transactionId: string,
+): Promise<void> {
+  if (!isMatrixBackend()) return
+  return tauriInvoke('matrix_cancel_queued_message', { roomId, transactionId })
 }
 
 export async function loadComposerDraft(roomId: string): Promise<string | null> {
@@ -1506,6 +1533,12 @@ export function onMatrixUnreadUpdate(
   handler: (update: MatrixUnreadUpdate) => void,
 ): Promise<UnlistenFn> {
   return tauriListen('matrix:unread-update', handler)
+}
+
+export function onMatrixQueuedMessage(
+  handler: (update: MatrixQueuedMessageUpdate) => void,
+): Promise<UnlistenFn> {
+  return tauriListen('matrix:queued-message', handler)
 }
 
 export function onReactionReceived(handler: (data: ReactionEvent) => void): Promise<UnlistenFn> {

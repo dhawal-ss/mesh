@@ -100,6 +100,46 @@ describe('bridge message mutation boundary', () => {
     })
   })
 
+  it('keeps durable queue operations on their exact Matrix boundary', async () => {
+    const bridge = await loadBridge('matrix')
+    const queued = {
+      id: 'txn-1',
+      channelId: '!room:example.org',
+      transactionId: 'txn-1',
+      deliveryStatus: 'pending',
+    } as Message
+    invokeMock
+      .mockResolvedValueOnce([queued] as never)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+
+    await expect(bridge.matrixQueuedMessages()).resolves.toEqual([queued])
+    await bridge.matrixRetryQueuedMessage('!room:example.org', 'txn-1')
+    await bridge.matrixCancelQueuedMessage('!room:example.org', 'txn-1')
+
+    expect(invokeMock.mock.calls).toEqual([
+      ['matrix_queued_messages', undefined],
+      [
+        'matrix_retry_queued_message',
+        { roomId: '!room:example.org', transactionId: 'txn-1' },
+      ],
+      [
+        'matrix_cancel_queued_message',
+        { roomId: '!room:example.org', transactionId: 'txn-1' },
+      ],
+    ])
+  })
+
+  it('does not expose Matrix queue commands to the legacy artifact', async () => {
+    const bridge = await loadBridge('legacy-p2p')
+
+    await expect(bridge.matrixQueuedMessages()).resolves.toEqual([])
+    await bridge.matrixRetryQueuedMessage('channel-1', 'txn-1')
+    await bridge.matrixCancelQueuedMessage('channel-1', 'txn-1')
+
+    expect(invokeMock).not.toHaveBeenCalled()
+  })
+
   it('keeps durable drafts on the protected Matrix room boundary', async () => {
     const bridge = await loadBridge('matrix')
     invokeMock

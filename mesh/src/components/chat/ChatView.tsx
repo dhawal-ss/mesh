@@ -44,6 +44,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
   const removeMessage = useMessageStore((state) => state.removeMessage)
   const removeMessagesByAuthorAllChannels = useMessageStore((state) => state.removeMessagesByAuthorAllChannels)
   const setDeliveryStatus = useMessageStore((state) => state.setDeliveryStatus)
+  const acceptQueuedMessage = useMessageStore((state) => state.acceptQueuedMessage)
   const loadOlderMessages = useMessageStore((state) => state.loadOlderMessages)
   const isLoadingOlder = useMessageStore((state) => state.loadingOlder[channel.id] ?? false)
   const isBrowsingOlder = useMessageStore((state) => state.browsingOlder[channel.id] ?? false)
@@ -592,6 +593,19 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
       }
       return
     }
+    if (matrixMode) {
+      const clientRequestId = bridge.createMatrixTransactionId()
+      const message = await bridge.sendMessage(
+        channel.id,
+        content,
+        [],
+        replyingTo?.id ?? undefined,
+        clientRequestId,
+      )
+      acceptQueuedMessage(message)
+      setReplyingTo(null)
+      return
+    }
     const identity = resolveSenderIdentity(
       useIdentityStore.getState().identity,
       matrixMode ? bridge.getMatrixUserId() : null,
@@ -638,6 +652,19 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
   }
 
   const handleRetry = useCallback(async (failedMessage: MessageType) => {
+    if (matrixMode && failedMessage.transactionId) {
+      setDeliveryStatus(channel.id, failedMessage.id, 'pending')
+      try {
+        await bridge.matrixRetryQueuedMessage(
+          channel.id,
+          failedMessage.transactionId,
+        )
+      } catch (error) {
+        console.error('Failed to retry saved message:', error)
+        setDeliveryStatus(channel.id, failedMessage.id, 'failed')
+      }
+      return
+    }
     removeMessage(channel.id, failedMessage.id)
 
     const identity = resolveSenderIdentity(
@@ -684,7 +711,17 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
       console.error('Failed to retry message:', err)
       setDeliveryStatus(channel.id, retryId, 'failed')
     }
-  }, [addMessage, channel.id, removeMessage, setDeliveryStatus])
+  }, [addMessage, channel.id, matrixMode, removeMessage, setDeliveryStatus])
+
+  const handleCancelQueued = useCallback(async (message: MessageType) => {
+    if (!matrixMode || !message.transactionId) return
+    try {
+      await bridge.matrixCancelQueuedMessage(channel.id, message.transactionId)
+      removeMessage(channel.id, message.id)
+    } catch (error) {
+      console.error('Failed to cancel saved message:', error)
+    }
+  }, [channel.id, matrixMode, removeMessage])
 
   return (
     <div className="flex h-full flex-1 flex-col">
@@ -792,6 +829,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
                       onHeightChange={handleMeasuredHeight}
                       onReply={setReplyingTo}
                       onRetry={handleRetry}
+                      onCancel={handleCancelQueued}
                       limitedActions={false}
                       isHighlighted={highlightedMessageId === message.id}
                       editRequestToken={
@@ -845,7 +883,12 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
         onEditLastMessage={() => {
           const ownMessage = [...channelMessages]
             .reverse()
-            .find((message) => message.authorPublicKey === ownAuthorId && !message.deletedAt)
+            .find((message) =>
+              message.authorPublicKey === ownAuthorId
+              && !message.deletedAt
+              && message.deliveryStatus !== 'pending'
+              && message.deliveryStatus !== 'failed',
+            )
           if (!ownMessage) return
           setEditRequest((current) => ({
             messageId: ownMessage.id,
@@ -865,6 +908,7 @@ interface VirtualMessageRowProps {
   onHeightChange: (rowKey: string, height: number) => void
   onReply: (message: MessageType) => void
   onRetry?: (message: MessageType) => void
+  onCancel?: (message: MessageType) => void
   limitedActions?: boolean
   isHighlighted: boolean
   editRequestToken: number
@@ -878,6 +922,7 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
   onHeightChange,
   onReply,
   onRetry,
+  onCancel,
   limitedActions,
   isHighlighted,
   editRequestToken,
@@ -945,6 +990,7 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
           disableMotion
           onReply={onReply}
           onRetry={onRetry}
+          onCancel={onCancel}
           limitedActions={limitedActions}
           editRequestToken={editRequestToken}
         />

@@ -23,6 +23,7 @@ interface MessageProps {
   disableMotion?: boolean
   onReply?: (message: MessageType) => void
   onRetry?: (message: MessageType) => void
+  onCancel?: (message: MessageType) => void
   replyPreview?: MessageType | null
   limitedActions?: boolean
   editRequestToken?: number
@@ -33,6 +34,7 @@ export const MessageComponent = memo(function MessageComponent({
   isGrouped,
   onReply,
   onRetry,
+  onCancel,
   replyPreview,
   limitedActions = false,
   editRequestToken = 0,
@@ -62,6 +64,7 @@ export const MessageComponent = memo(function MessageComponent({
   const isOwnMessage = myPublicKey === message.authorPublicKey
   const canModerate = myRole === 'owner' || myRole === 'admin'
   const isDeleted = !!message.deletedAt
+  const isQueued = !!message.transactionId && message.deliveryStatus !== 'sent'
 
   useEffect(() => {
     if (!contextMenu) return
@@ -91,6 +94,7 @@ export const MessageComponent = memo(function MessageComponent({
   }, [contextMenu])
 
   const handleContextMenu = (e: React.MouseEvent) => {
+    if (isQueued) return
     if (limitedActions && !isOwnMessage) return
     e.preventDefault()
     setContextMenu({ x: e.clientX, y: e.clientY })
@@ -109,7 +113,7 @@ export const MessageComponent = memo(function MessageComponent({
       reactButtonRef.current?.focus()
       return
     }
-    if (limitedActions && !isOwnMessage) return
+    if (isQueued || (limitedActions && !isOwnMessage)) return
     if (e.key !== 'ContextMenu' && !(e.key === 'F10' && e.shiftKey)) return
     e.preventDefault()
     const rect = e.currentTarget.getBoundingClientRect()
@@ -176,8 +180,10 @@ export const MessageComponent = memo(function MessageComponent({
   }, [message.content])
 
   useEffect(() => {
-    if (editRequestToken > 0 && isOwnMessage && !isDeleted) handleStartEdit()
-  }, [editRequestToken, handleStartEdit, isDeleted, isOwnMessage])
+    if (editRequestToken > 0 && isOwnMessage && !isDeleted && !isQueued) {
+      handleStartEdit()
+    }
+  }, [editRequestToken, handleStartEdit, isDeleted, isOwnMessage, isQueued])
 
   const handleSaveEdit = useCallback(async () => {
     const trimmed = editContent.trim()
@@ -253,7 +259,12 @@ export const MessageComponent = memo(function MessageComponent({
     }
   }
 
-  const messageAriaLabel = `Message from ${message.authorDisplayName}, ${formatFederatedTimestamp(message.timestamp, 'MM/dd/yyyy h:mm a')}`
+  const deliveryLabel = message.deliveryStatus === 'pending'
+    ? ', saved on this device and waiting to send'
+    : message.deliveryStatus === 'failed'
+      ? ', delivery needs attention'
+      : ''
+  const messageAriaLabel = `Message from ${message.authorDisplayName}, ${formatFederatedTimestamp(message.timestamp, 'MM/dd/yyyy h:mm a')}${deliveryLabel}`
 
   return (
     <>
@@ -299,20 +310,34 @@ export const MessageComponent = memo(function MessageComponent({
               <span className="text-meta text-muted">
                 {formatFederatedTimestamp(message.timestamp, 'MM/dd/yyyy h:mm a')}
               </span>
-              {message.deliveryStatus && message.deliveryStatus !== 'sent' && (
-                <span
-                  className={`ml-1 inline-flex items-center gap-1 text-meta ${
-                    message.deliveryStatus === 'pending'
-                      ? 'text-yellow'
-                      : 'text-red'
-                  }`}
+            </div>
+          )}
+
+          {message.deliveryStatus === 'pending' && (
+            <div role="status" className="mt-1 inline-flex items-center gap-1 text-meta text-yellow">
+              <Icon name="loader" size="xs" className="animate-spin" />
+              Saved on this device · Waiting to send
+            </div>
+          )}
+
+          {message.deliveryStatus === 'failed' && (
+            <div role="alert" className="mt-1 flex flex-wrap items-center gap-2 text-meta text-red">
+              <span>Delivery needs attention.</span>
+              <button
+                type="button"
+                onClick={() => onRetry?.(message)}
+                className="min-h-control-sm rounded bg-red/10 px-2 font-medium transition-colors hover:bg-red/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                Retry
+              </button>
+              {onCancel && (
+                <button
+                  type="button"
+                  onClick={() => onCancel(message)}
+                  className="min-h-control-sm rounded px-2 font-medium text-secondary transition-colors hover:bg-bg-modifier-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                 >
-                  {message.deliveryStatus === 'pending' ? (
-                    <Icon name="loader" size="xs" className="animate-spin" />
-                  ) : (
-                    'Failed'
-                  )}
-                </span>
+                  Cancel
+                </button>
               )}
             </div>
           )}
@@ -353,17 +378,6 @@ export const MessageComponent = memo(function MessageComponent({
                 <span className="ml-1 text-caption text-muted">(edited)</span>
               )}
             </>
-          )}
-
-          {/* Retry button for failed messages */}
-          {message.deliveryStatus === 'failed' && (
-            <button
-              onClick={() => { if (onRetry) onRetry(message) }}
-              className="mt-1 inline-flex items-center gap-1 rounded bg-red/10 px-2 py-1 text-meta font-medium text-red transition-colors hover:bg-red/20"
-            >
-              <Icon name="refresh" size="xs" />
-              Retry
-            </button>
           )}
 
           {/* File attachments */}
@@ -407,7 +421,7 @@ export const MessageComponent = memo(function MessageComponent({
             volume-slider pattern in VoicePeerGrid.tsx. pointer-events-none at
             rest keeps the invisible bar from intercepting clicks meant for
             the grouped message rendered underneath it (-top-4 overlap). */}
-        {!contextMenu && !isEditing && !isDeleted && (
+        {!contextMenu && !isEditing && !isDeleted && !isQueued && (
           <div
             className="pointer-events-none absolute -top-4 right-4 z-sticky flex items-center rounded-md border border-border bg-bg-secondary opacity-0 shadow-elevation-high transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
           >
