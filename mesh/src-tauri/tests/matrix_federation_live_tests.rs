@@ -826,6 +826,56 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
     );
     checkpoint!("encrypted federated message delivered");
 
+    let alice_pins = alice
+        .toggle_room_pin(community.channel_id.clone(), online_message.id.clone())
+        .await
+        .unwrap();
+    assert_eq!(alice_pins.event_ids, vec![online_message.id.clone()]);
+    assert!(alice_pins
+        .messages
+        .iter()
+        .any(|message| message.id == online_message.id && message.content == online_body));
+
+    let mut bob_pins = None;
+    for _ in 0..30 {
+        bob.sync_once().await.unwrap();
+        let pins = bob.room_pins(community.channel_id.clone()).await.unwrap();
+        if pins
+            .messages
+            .iter()
+            .any(|message| message.id == online_message.id)
+        {
+            bob_pins = Some(pins);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    let bob_pins = bob_pins.expect("native room pins did not federate");
+    assert!(bob_pins.can_manage);
+    assert!(bob_pins.unavailable_event_ids.is_empty());
+
+    let bob_pins = bob
+        .toggle_room_pin(community.channel_id.clone(), online_message.id.clone())
+        .await
+        .unwrap();
+    assert!(bob_pins.event_ids.is_empty());
+    let mut pin_removed = false;
+    for _ in 0..30 {
+        alice.sync_once().await.unwrap();
+        pin_removed = alice
+            .room_pins(community.channel_id.clone())
+            .await
+            .unwrap()
+            .event_ids
+            .is_empty();
+        if pin_removed {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert!(pin_removed, "native room pin removal did not federate");
+    checkpoint!("native pinned-message state federated and resolved encrypted content");
+
     let legacy_body = format!("legacy-import-{nonce}");
     let legacy_entity_id = format!("legacy-message-{nonce}");
     alice

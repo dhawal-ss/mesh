@@ -16,6 +16,29 @@ const MATRIX_PRODUCTION_SOURCES: &[(&str, &str)] = &[
 ];
 
 #[test]
+fn native_room_pins_are_unique_bounded_and_removable_at_capacity() {
+    let first = matrix_sdk::ruma::EventId::parse("$first:example.org").unwrap();
+    let second = matrix_sdk::ruma::EventId::parse("$second:example.org").unwrap();
+    let (unpinned, now_pinned) =
+        MatrixBackend::updated_room_pins(vec![first.clone(), first.clone(), second.clone()], first)
+            .unwrap();
+    assert!(!now_pinned);
+    assert_eq!(unpinned, vec![second.clone()]);
+
+    let third = matrix_sdk::ruma::EventId::parse("$third:example.org").unwrap();
+    let (pinned, now_pinned) = MatrixBackend::updated_room_pins(unpinned, third.clone()).unwrap();
+    assert!(now_pinned);
+    assert_eq!(pinned, vec![second, third]);
+
+    let at_capacity = (0..MAX_PINNED_EVENTS)
+        .map(|index| matrix_sdk::ruma::EventId::parse(format!("$pin-{index}:example.org")).unwrap())
+        .collect::<Vec<_>>();
+    let overflow = matrix_sdk::ruma::EventId::parse("$overflow:example.org").unwrap();
+    assert!(MatrixBackend::updated_room_pins(at_capacity.clone(), overflow).is_err());
+    assert!(MatrixBackend::updated_room_pins(at_capacity.clone(), at_capacity[0].clone()).is_ok());
+}
+
+#[test]
 fn custom_emoji_shortcodes_and_sanitized_media_are_bounded() {
     assert_eq!(
         MatrixBackend::normalize_custom_emoji_shortcode(":Party_2:").unwrap(),

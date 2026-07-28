@@ -22,6 +22,7 @@ pub const MATRIX_TRANSFER_PROGRESS_EVENT: &str = "matrix:transfer-progress";
 pub const MATRIX_NOTIFICATION_EVENT: &str = "matrix:notification";
 pub const MATRIX_UNREAD_UPDATE_EVENT: &str = "matrix:unread-update";
 pub const MATRIX_QUEUED_MESSAGE_EVENT: &str = "matrix:queued-message";
+pub const MATRIX_ROOM_PINS_EVENT: &str = "matrix:room-pins";
 pub const MATRIX_RTC_MEMBERSHIP_EVENT: &str = "matrix:rtc-membership";
 pub const MATRIX_RTC_MEDIA_KEY_EVENT: &str = "matrix:rtc-media-key";
 pub const MATRIX_RTC_MEDIA_KEY_FAILURE_EVENT: &str = "matrix:rtc-media-key-failure";
@@ -199,6 +200,7 @@ pub enum MatrixBackendEvent {
     Notification(MatrixNotification),
     UnreadUpdate(MatrixUnreadUpdate),
     QueuedMessage(Box<MatrixQueuedMessageUpdate>),
+    RoomPins(MatrixRoomPinsUpdate),
     RtcMembership(MatrixRtcMembershipUpdate),
     RtcMediaKey(MatrixRtcMediaKey),
     RtcMediaKeyFailure(MatrixRtcMediaKeyFailure),
@@ -216,6 +218,23 @@ pub enum MatrixRoomNotificationMode {
     Mentions,
     #[serde(rename = "nothing")]
     Nothing,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixRoomPins {
+    pub room_id: String,
+    pub event_ids: Vec<String>,
+    pub messages: Vec<MessageDto>,
+    pub unavailable_event_ids: Vec<String>,
+    pub can_manage: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixRoomPinsUpdate {
+    pub room_id: String,
+    pub event_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -1353,6 +1372,16 @@ pub trait MeshBackend: Send + Sync {
         _key: String,
     ) -> BackendResult<bool> {
         Err(BackendError::Unsupported("message reactions"))
+    }
+    async fn room_pins(&self, _room_id: String) -> BackendResult<MatrixRoomPins> {
+        Err(BackendError::Unsupported("room pins"))
+    }
+    async fn toggle_room_pin(
+        &self,
+        _room_id: String,
+        _event_id: String,
+    ) -> BackendResult<MatrixRoomPins> {
+        Err(BackendError::Unsupported("room pins"))
     }
     async fn mark_read(&self, _room_id: String) -> BackendResult<()> {
         Err(BackendError::Unsupported("read receipts"))

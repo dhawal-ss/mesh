@@ -14,6 +14,8 @@ import { Icon } from '../ui/Icon'
 import { useShellStore } from '../../store/shell'
 import { useDmStore } from '../../store/dms'
 import { useRoomTrust } from '../../hooks/useRoomTrust'
+import { useRoomPinStore } from '../../store/room-pins'
+import { isMatrixBackend, onMatrixRoomPinsUpdate } from '../../lib/bridge'
 
 export function ContentArea() {
   const activeChannel = useActiveChannel()
@@ -31,6 +33,9 @@ export function ContentArea() {
   const [inviteDraft, setInviteDraft] = useState('')
   const { members } = usePresence()
   const trust = useRoomTrust(activeChannel?.id, members)
+  const activeTextRoomId = activeChannel?.channelType === 'text' ? activeChannel.id : null
+  const loadRoomPins = useRoomPinStore((state) => state.load)
+  const clearRoomPins = useRoomPinStore((state) => state.clear)
   const closeContext = useCallback((restoreFocus = true) => {
     setShowContext(false)
     if (restoreFocus && typeof document !== 'undefined') {
@@ -55,6 +60,34 @@ export function ContentArea() {
     document.addEventListener('keydown', handleEscape)
     return () => document.removeEventListener('keydown', handleEscape)
   }, [closeContext, showContext])
+
+  useEffect(() => {
+    if (!activeTextRoomId || !isMatrixBackend()) {
+      clearRoomPins()
+      return
+    }
+
+    const roomId = activeTextRoomId
+    let active = true
+    let unlisten: (() => void) | null = null
+    void loadRoomPins(roomId)
+    void onMatrixRoomPinsUpdate((update) => {
+      if (active && update.roomId === roomId) void loadRoomPins(roomId)
+    }).then((removeListener) => {
+      if (!active) {
+        removeListener()
+        return
+      }
+      unlisten = removeListener
+    }).catch((error) => {
+      console.error('Could not subscribe to room-pin updates:', error)
+    })
+    return () => {
+      active = false
+      unlisten?.()
+      if (useRoomPinStore.getState().roomId === roomId) clearRoomPins()
+    }
+  }, [activeTextRoomId, clearRoomPins, loadRoomPins])
 
   if (!activeChannel) {
     const hasCommunity = Boolean(activeCommunityId)
