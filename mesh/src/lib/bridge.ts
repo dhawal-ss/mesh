@@ -669,7 +669,7 @@ export async function loadServerEmojiImage(
     || normalized.byteLength > MAX_CUSTOM_EMOJI_BYTES
     || PNG_SIGNATURE.some((byte, index) => normalized[index] !== byte)
   ) {
-    throw normalizeError('Server emoji failed local validation.')
+    throw normalizeError('Community emoji failed local validation.')
   }
   return normalized
 }
@@ -1514,12 +1514,12 @@ export async function matrixRtcRenewMediaKeyLease(
 }
 
 export async function joinVoice(communityId: string, channelId: string): Promise<VoiceSessionSnapshot> {
-  requireLegacyVoice('join a voice channel')
+  requireLegacyVoice('join a voice room')
   return tauriInvoke('join_voice', { communityId, channelId })
 }
 
 export async function leaveVoice(communityId: string, channelId: string): Promise<void> {
-  requireLegacyVoice('leave a voice channel')
+  requireLegacyVoice('leave a voice room')
   return tauriInvoke('leave_voice', { communityId, channelId })
 }
 

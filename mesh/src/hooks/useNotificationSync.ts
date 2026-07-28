@@ -166,7 +166,7 @@ export function useNotificationSync({
                 current.setChannelNotificationLevel(roomId, previousMode)
               }
               showToast(
-                'Could not save notification settings for this channel. Try again.',
+                'Could not save notification settings for this room. Try again.',
                 'error',
               )
             })

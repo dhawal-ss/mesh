@@ -50,7 +50,7 @@ export function CommunityIcon({
   const menuItems: MenuItem[] = [
     {
       id: 'mark-read',
-      label: 'Mark server as read',
+      label: 'Mark community as read',
       disabled: unreadCount <= 0,
       onSelect: onMarkRead,
     },
@@ -62,7 +62,7 @@ export function CommunityIcon({
     },
     {
       id: 'copy-link',
-      label: 'Copy server link',
+      label: 'Copy community link',
       onSelect: onCopyLink,
     },
   ]

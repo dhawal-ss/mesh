@@ -408,7 +408,7 @@ export function MatrixAccountScreen({
         {isAdvanced ? (
           <div className="space-y-3 border-t border-border pt-4">
             <Input
-              label="Server address"
+              label="Service address"
               name="homeserver"
               value={serviceAddress}
               onChange={(value: string) => {

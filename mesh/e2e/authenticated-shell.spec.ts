@@ -157,6 +157,46 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
           }
         case 'matrix_list_communities':
           return [community, secondCommunity]
+        case 'matrix_room_is_encrypted':
+          return true
+        case 'matrix_devices':
+          return [
+            {
+              deviceId: 'ALICE-E2E',
+              displayName: 'Mesh Desktop',
+              lastSeenIp: null,
+              lastSeenAt: '2026-07-24T00:00:00.000Z',
+              firstSeenAt: '2026-07-20T00:00:00.000Z',
+              current: true,
+              verified: true,
+              crossSigned: true,
+              newDevice: false,
+              identityChanged: false,
+            },
+            {
+              deviceId: 'ALICE-NEW',
+              displayName: 'New phone',
+              lastSeenIp: null,
+              lastSeenAt: '2026-07-24T00:00:00.000Z',
+              firstSeenAt: '2026-07-24T00:00:00.000Z',
+              current: false,
+              verified: false,
+              crossSigned: false,
+              newDevice: true,
+              identityChanged: false,
+            },
+          ]
+        case 'matrix_recovery_health':
+          return {
+            recoveryState: 'enabled',
+            backupState: 'enabled',
+            backupExistsOnServer: true,
+            backupEnabled: true,
+            healthy: true,
+            checkedAt: '2026-07-24T00:00:00.000Z',
+            lastSuccessfulTestAt: '2026-07-24T00:00:00.000Z',
+            warnings: [],
+          }
         case 'matrix_list_custom_emoji':
           return []
         case 'matrix_get_profile':
@@ -292,8 +332,12 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
 async function openAuthenticatedShell(page: Page): Promise<void> {
   await installAuthenticatedMatrixMock(page)
   await page.goto('/')
-  await expect(page.getByRole('navigation', { name: 'Servers and DMs' })).toBeVisible()
-  await expect(page.getByRole('log', { name: 'Messages in #general' })).toBeVisible()
+  await expect(
+    page.getByRole('navigation', { name: 'Communities and direct messages' }),
+  ).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByRole('log', { name: 'Messages in #general' })).toBeVisible({
+    timeout: 10_000,
+  })
 }
 
 function ipcCalls(page: Page): Promise<IpcCall[]> {
@@ -305,7 +349,7 @@ function ipcCalls(page: Page): Promise<IpcCall[]> {
 test.describe('authenticated desktop shell', () => {
   test.use({ viewport: { width: 1440, height: 900 } })
 
-  test('exposes communities, channels, and the signed-in Matrix identity', async ({ page }) => {
+  test('exposes communities, rooms, and the signed-in account', async ({ page }) => {
     await openAuthenticatedShell(page)
 
     await expect(page.locator('button[aria-label^="Mesh Test Community"]')).toHaveAttribute(
@@ -315,8 +359,8 @@ test.describe('authenticated desktop shell', () => {
     await expect(
       page.getByRole('button', { name: 'Second Test Community, 3 unread' }),
     ).toBeVisible()
-    await expect(page.getByRole('complementary', { name: 'Channel list' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Text channel: general' })).toHaveAttribute(
+    await expect(page.getByRole('complementary', { name: 'Room list' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Text room: general' })).toHaveAttribute(
       'aria-current',
       'page',
     )
@@ -360,6 +404,33 @@ test.describe('authenticated desktop shell', () => {
     })
   })
 
+  test('opens the room ledger and switches among useful room context views', async ({ page }) => {
+    await openAuthenticatedShell(page)
+
+    const trustSummary = page.getByRole('button', { name: /Encrypted, 2 members, 1 connected service, 1 device needs review. Open room ledger./ })
+    await expect(trustSummary).toBeVisible()
+    await trustSummary.click()
+
+    const context = page.getByRole('complementary', { name: 'Room context for general' })
+    await expect(context).toBeVisible()
+    await expect(context.getByRole('tab', { name: 'Ledger' })).toHaveAttribute('aria-selected', 'true')
+    await expect(context.getByText('Protected end to end')).toBeVisible()
+    await expect(context.getByText('1 need review')).toBeVisible()
+    await expect(context.getByText('Ready', { exact: true })).toBeVisible()
+
+    await context.getByRole('tab', { name: 'Pins' }).click()
+    await expect(context.getByText('Nothing pinned yet')).toBeVisible()
+    await context.getByRole('tab', { name: 'Files' }).click()
+    await expect(context.getByText('No files shared yet')).toBeVisible()
+
+    await context.getByRole('button', { name: 'Close room context' }).click()
+    await expect(context).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Show room context' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+  })
+
   test('opens settings as a labelled modal, closes with Escape, and restores focus', async ({ page }) => {
     await openAuthenticatedShell(page)
 
@@ -392,11 +463,11 @@ test.describe('authenticated desktop shell', () => {
     })
   })
 
-  test('changes channel notification rules and marks unread state from the context menu', async ({ page }) => {
+  test('changes room notification rules and marks unread state from the context menu', async ({ page }) => {
     await openAuthenticatedShell(page)
 
     const randomChannel = page.getByRole('button', {
-      name: 'Text channel: random, 1 unread',
+      name: 'Text room: random, 1 unread',
     })
     await randomChannel.click({ button: 'right' })
     const menu = page.getByRole('menu', { name: 'Actions for random' })
@@ -424,7 +495,7 @@ test.describe('authenticated desktop shell', () => {
       args: { roomId: '!random:mesh.test' },
     })
     await expect(
-      page.getByRole('button', { name: 'Text channel: random' }),
+      page.getByRole('button', { name: 'Text room: random' }),
     ).toBeVisible()
   })
 
@@ -432,7 +503,7 @@ test.describe('authenticated desktop shell', () => {
     await openAuthenticatedShell(page)
 
     await expect(page.getByLabel('Lounge call members').getByText('Bob')).toBeVisible()
-    await page.getByRole('button', { name: 'Voice channel: Lounge' }).click()
+    await page.getByRole('button', { name: 'Voice room: Lounge' }).click()
 
     await expect(page.getByRole('heading', { name: 'Calling is not ready yet' })).toBeVisible()
     await expect(
@@ -454,24 +525,24 @@ test.describe('authenticated narrow shell', () => {
 
   test('@a11y has no automated WCAG A/AA violations with navigation open', async ({ page }) => {
     await openAuthenticatedShell(page)
-    await page.getByRole('button', { name: 'Channels', exact: true }).click()
-    await expect(page.getByRole('button', { name: 'Close channel navigation' })).toBeVisible()
+    await page.getByRole('button', { name: 'Open room navigation' }).click()
+    await expect(page.getByRole('button', { name: 'Close room navigation' })).toBeVisible()
 
-    await expectNoWcagViolations(page, 'Authenticated narrow shell with channel navigation')
+    await expectNoWcagViolations(page, 'Authenticated narrow shell with room navigation')
   })
 
-  test('opens the channel drawer, changes channels, and sends a message without overflow', async ({ page }) => {
+  test('opens the room drawer, changes rooms, and sends a message without overflow', async ({ page }) => {
     await openAuthenticatedShell(page)
 
-    const drawerButton = page.getByRole('button', { name: 'Channels', exact: true })
+    const drawerButton = page.getByRole('button', { name: 'Open room navigation' })
     await expect(drawerButton).toHaveAttribute('aria-expanded', 'false')
     await expect(drawerButton).toHaveAttribute('aria-controls', 'mesh-context-sidebar')
 
     await drawerButton.click()
-    await expect(page.getByRole('button', { name: 'Close channel navigation' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Close room navigation' })).toBeVisible()
     await expect(page.locator('#mesh-context-sidebar')).toHaveAttribute('data-open', 'true')
 
-    await page.getByRole('button', { name: /Text channel: random/ }).click()
+    await page.getByRole('button', { name: /Text room: random/ }).click()
     await expect(page.getByRole('log', { name: 'Messages in #random' })).toBeVisible()
     await expect(page.locator('#mesh-context-sidebar')).toHaveAttribute('data-open', 'false')
 
@@ -490,10 +561,30 @@ test.describe('authenticated narrow shell', () => {
     expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport)
   })
 
+  test('opens room context as a drawer and restores focus after Escape', async ({ page }) => {
+    await openAuthenticatedShell(page)
+
+    const contextToggle = page.getByRole('button', { name: 'Show room context' })
+    await expect(contextToggle).toHaveAttribute('aria-expanded', 'false')
+    await contextToggle.click()
+
+    const context = page.getByRole('complementary', { name: 'Room context for general' })
+    await expect(context).toBeVisible()
+    await expect(page.locator('.mesh-room-context-backdrop')).toBeVisible()
+    await context.getByRole('tab', { name: 'Ledger' }).click()
+    await expect(context.getByText('Protected end to end')).toBeVisible()
+    await expectNoWcagViolations(page, 'Authenticated narrow room context drawer')
+
+    await page.keyboard.press('Escape')
+    await expect(context).toHaveCount(0)
+    await expect(contextToggle).toBeFocused()
+    await expect(contextToggle).toHaveAttribute('aria-expanded', 'false')
+  })
+
   test('opens mobile user settings from the drawer and closes it with Escape', async ({ page }) => {
     await openAuthenticatedShell(page)
 
-    await page.getByRole('button', { name: 'Channels', exact: true }).click()
+    await page.getByRole('button', { name: 'Open room navigation' }).click()
     await expect(page.getByText('Mesh account', { exact: true })).toBeVisible()
     await expect(page.getByText('Anonymous', { exact: true })).toHaveCount(0)
 

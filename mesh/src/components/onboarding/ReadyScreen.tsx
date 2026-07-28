@@ -27,7 +27,7 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
   const timeline = useMemo(
     () => [
       { phase: 'connecting' as const, label: backendKind === 'matrix' ? 'Connecting to Mesh' : 'Finding nearby peers', progress: 24, delay: 280 },
-      { phase: 'syncing' as const, label: backendKind === 'matrix' ? 'Getting your conversations' : 'Syncing channels', progress: 68, delay: 760 },
+      { phase: 'syncing' as const, label: backendKind === 'matrix' ? 'Getting your conversations' : 'Syncing rooms', progress: 68, delay: 760 },
       { phase: 'finalizing' as const, label: 'Finishing setup', progress: 92, delay: 1180 },
       { phase: 'ready' as const, label: 'Ready', progress: 100, delay: 1480 },
     ],
@@ -132,7 +132,7 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
         <div className="grid gap-2 text-2xs uppercase tracking-section text-muted">
           {(backendKind === 'matrix'
             ? ['Signed in', 'Service connected', 'Conversations ready']
-            : ['Identity secured', 'Peers discovered', 'Channels synced']
+            : ['Identity secured', 'Peers discovered', 'Rooms synced']
           ).map((item, index) => (
             <motion.div
               key={item}

@@ -347,13 +347,16 @@ test.describe('message action bar keyboard access (V-25)', () => {
 
     // --- Context menu: Shift+F10 moves focus into the first menu item ---
     await page.keyboard.press('Shift+F10')
+    const pinButton = page.getByRole('menuitem', { name: 'Pin message' })
     const removeButton = page.getByRole('menuitem', { name: 'Remove message' })
+    await expect(pinButton).toBeVisible()
     await expect(removeButton).toBeVisible()
-    await expect(removeButton).toBeFocused()
+    await expect(pinButton).toBeFocused()
 
     // Escape still restores focus to the row (pre-existing behavior for
     // item-selection closes verified separately by the moderation flow).
     await page.keyboard.press('Escape')
+    await expect(pinButton).toHaveCount(0)
     await expect(removeButton).toHaveCount(0)
     await expect(row).toBeFocused()
   })

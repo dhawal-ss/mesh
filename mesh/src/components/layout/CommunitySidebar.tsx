@@ -44,9 +44,9 @@ export function CommunitySidebar() {
         ? matrixRoomPermalink(communityId)
         : await bridge.generateInviteLink(communityId)
       await copyText(link)
-      showToast('Server link copied.', 'success')
+      showToast('Community link copied.', 'success')
     } catch {
-      showToast('Could not copy this server link.', 'error')
+      showToast('Could not copy this community link.', 'error')
     }
   }
 
@@ -72,7 +72,7 @@ export function CommunitySidebar() {
       })
     })
     if (failed) {
-      showToast('Some channels could not be marked as read. Try again.', 'error')
+      showToast('Some rooms could not be marked as read. Try again.', 'error')
     }
   }
 
@@ -176,7 +176,7 @@ export function CommunitySidebar() {
       </div>
 
       {serverModalOpen && (
-        <Suspense fallback={<div role="status" aria-label="Loading server tools" className="flex items-center justify-center p-6"><Spinner /></div>}>
+        <Suspense fallback={<div role="status" aria-label="Loading community tools" className="flex items-center justify-center p-6"><Spinner /></div>}>
           <CreateCommunityModal
             isOpen={serverModalOpen}
             onClose={closeServerModal}

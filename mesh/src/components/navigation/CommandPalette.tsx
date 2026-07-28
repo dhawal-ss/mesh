@@ -24,12 +24,12 @@ interface PaletteCommand {
 
 const SHORTCUTS = [
   ['Ctrl/⌘ K', 'Open command palette'],
-  ['Ctrl/⌘ Shift A', 'Jump to next unread channel'],
-  ['Alt ↑ / ↓', 'Previous / next channel'],
-  ['Ctrl/⌘ Alt ↑ / ↓', 'Previous / next server'],
-  ['Esc', 'Mark the current channel read'],
+  ['Ctrl/⌘ Shift A', 'Jump to next unread room'],
+  ['Alt ↑ / ↓', 'Previous / next room'],
+  ['Ctrl/⌘ Alt ↑ / ↓', 'Previous / next community'],
+  ['Esc', 'Mark the current room read'],
   ['↑ in empty composer', 'Edit your latest message'],
-  ['Shift Esc', 'Mark the current server read'],
+  ['Shift Esc', 'Mark the current community read'],
   ['Ctrl/⌘ Shift M', 'Toggle mute'],
   ['Ctrl/⌘ Shift D', 'Toggle deafen'],
   ['Ctrl/⌘ /', 'Show keyboard shortcuts'],
@@ -96,7 +96,7 @@ function markChannelRead(channelId: string) {
       unreadCount: channel.unreadCount,
       unreadMentions: channel.unreadMentions,
     })
-    showToast('This channel could not be marked as read. Try again.', 'error')
+    showToast('This room could not be marked as read. Try again.', 'error')
   })
 }
 
@@ -149,7 +149,7 @@ export function CommandPalette() {
       const communityName = communities.find((community) => community.id === channel.communityId)?.name ?? ''
       entries.push({
         id: `channel:${channel.id}`,
-        label: `${channel.channelType === 'voice' ? 'Voice' : 'Channel'} · ${channel.name}`,
+        label: `${channel.channelType === 'voice' ? 'Voice room' : 'Room'} · ${channel.name}`,
         keywords: ['channel', channel.channelType, channel.name, communityName],
         run: () => selectChannel(channel.id),
       })
@@ -206,13 +206,13 @@ export function CommandPalette() {
       },
       {
         id: 'action:create-server',
-        label: 'Action · Create a server',
+        label: 'Action · Create a community',
         keywords: ['action', 'create', 'new', 'server', 'community'],
         run: () => useShellStore.getState().openServerModal('create'),
       },
       {
         id: 'action:join-server',
-        label: 'Action · Join a server',
+        label: 'Action · Join a community',
         keywords: ['action', 'join', 'invite', 'server', 'community'],
         run: () => useShellStore.getState().openServerModal('join'),
       },
@@ -220,7 +220,7 @@ export function CommandPalette() {
     if (matrixMode) {
       entries.push({
         id: 'action:explore-servers',
-        label: 'Action · Explore servers',
+        label: 'Action · Explore communities',
         keywords: ['action', 'explore', 'discover', 'search', 'server', 'community'],
         run: () => useShellStore.getState().openServerModal('discover'),
       })

@@ -729,7 +729,8 @@ textarea {
 }
 
 .mesh-compact-header,
-.mesh-nav-backdrop {
+.mesh-nav-backdrop,
+.mesh-room-context-backdrop {
   display: none;
 }
 
@@ -742,9 +743,28 @@ textarea {
 }
 
 @media (max-width: 1100px) {
-  .mesh-member-list,
-  .mesh-room-context-panel {
+  .mesh-member-list {
     display: none;
+  }
+
+  .mesh-room-context-panel {
+    position: fixed;
+    inset-block: 0;
+    right: 0;
+    z-index: 44;
+    display: flex;
+    width: min(320px, calc(100vw - 64px));
+    box-shadow: var(--elev-overlay);
+  }
+
+  .mesh-room-context-backdrop {
+    position: fixed;
+    inset: 0 0 0 64px;
+    z-index: 43;
+    display: block;
+    border: 0;
+    border-radius: 0;
+    background: var(--surface-nav-scrim);
   }
 }
 
@@ -755,6 +775,14 @@ textarea {
 
   .mesh-context-sidebar {
     width: 220px;
+  }
+
+  .mesh-room-context-panel {
+    width: min(320px, calc(100vw - 60px));
+  }
+
+  .mesh-room-context-backdrop {
+    left: 60px;
   }
 }
 
@@ -808,6 +836,14 @@ textarea {
   }
 
   .mesh-nav-backdrop {
+    left: 56px;
+  }
+
+  .mesh-room-context-panel {
+    width: calc(100vw - 56px);
+  }
+
+  .mesh-room-context-backdrop {
     left: 56px;
   }
 }

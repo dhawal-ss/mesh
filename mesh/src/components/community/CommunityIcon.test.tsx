@@ -91,7 +91,7 @@ describe('CommunityIcon notification context menu', () => {
     return container.querySelector('button')!
   }
 
-  it('preserves the accessible server button and primary navigation action', () => {
+  it('preserves the accessible community button and primary navigation action', () => {
     const button = renderIcon()
     expect(button.getAttribute('aria-label')).toBe(`${community.name}, 7 unread`)
     expect(container.querySelector('.bg-status-danger')).toBeTruthy()
@@ -100,7 +100,7 @@ describe('CommunityIcon notification context menu', () => {
     expect(onClick).toHaveBeenCalledOnce()
   })
 
-  it('supports temporary and indefinite server mutes', async () => {
+  it('supports temporary and indefinite community mutes', async () => {
     const button = renderIcon()
     await openContextMenu(button)
 
@@ -115,7 +115,7 @@ describe('CommunityIcon notification context menu', () => {
     expect(settingsMocks.muteCommunityFor).toHaveBeenCalledWith(community.id, null)
   })
 
-  it('wires server notification settings and copy-link actions', async () => {
+  it('wires community notification settings and copy-link actions', async () => {
     const button = renderIcon()
 
     await openContextMenu(button)
@@ -123,18 +123,18 @@ describe('CommunityIcon notification context menu', () => {
     expect(onOpenNotificationSettings).toHaveBeenCalledOnce()
 
     await openContextMenu(button)
-    await act(async () => findMenuItem('Copy server link')?.click())
+    await act(async () => findMenuItem('Copy community link')?.click())
     expect(onCopyLink).toHaveBeenCalledOnce()
   })
 
-  it('marks every unread channel in the server as read through its callback', async () => {
+  it('marks every unread room in the community as read through its callback', async () => {
     const button = renderIcon()
     await openContextMenu(button)
-    await act(async () => findMenuItem('Mark server as read')?.click())
+    await act(async () => findMenuItem('Mark community as read')?.click())
     expect(onMarkRead).toHaveBeenCalledOnce()
   })
 
-  it('announces a muted server and offers to turn notifications back on', async () => {
+  it('announces a muted community and offers to turn notifications back on', async () => {
     settingsMocks.isMuted = true
     const button = renderIcon()
     await openContextMenu(button)

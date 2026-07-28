@@ -98,7 +98,7 @@ export function ChannelItem({
     },
     {
       id: 'copy-link',
-      label: 'Copy channel link',
+      label: 'Copy room link',
       onSelect: onCopyLink,
     },
   ]
@@ -111,7 +111,7 @@ export function ChannelItem({
       <button
         type="button"
         onClick={onClick}
-        aria-label={`${channel.channelType === 'text' ? 'Text' : 'Voice'} channel: ${channel.name}${hasUnread ? `, ${unreadLabel}` : ''}${isMuted ? ', muted' : ''}`}
+        aria-label={`${channel.channelType === 'text' ? 'Text' : 'Voice'} room: ${channel.name}${hasUnread ? `, ${unreadLabel}` : ''}${isMuted ? ', muted' : ''}`}
         aria-current={active ? 'page' : undefined}
         className={`group flex w-full items-center gap-1.5 rounded px-2 py-density-row text-left transition-colors duration-instant ${
           active

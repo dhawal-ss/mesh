@@ -189,7 +189,7 @@ function MatrixDiagnosticsContent({ data }: { data: BackendStatus }) {
       <Section title="Matrix account">
         <Grid>
           <StatusCell
-            label="Homeserver"
+            label="Connection service"
             value={data.authenticated ? 'Connected' : 'Sign-in required'}
             ok={data.authenticated}
           />
@@ -219,7 +219,7 @@ function MatrixDiagnosticsContent({ data }: { data: BackendStatus }) {
       <Section title="Session">
         <div className="space-y-2">
           <DetailRow label="User" value={data.userId ?? 'Not signed in'} />
-          <DetailRow label="Homeserver URL" value={data.homeserver ?? 'Not configured'} />
+          <DetailRow label="Service URL" value={data.homeserver ?? 'Not configured'} />
           <DetailRow label="Device" value={data.deviceId ?? 'Unavailable'} />
         </div>
       </Section>

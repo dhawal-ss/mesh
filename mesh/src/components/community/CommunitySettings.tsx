@@ -200,7 +200,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
         activeCommunityId,
         application.userId,
         accept,
-        accept ? undefined : 'Server application declined',
+        accept ? undefined : 'Community application declined',
       )
       setApplications((current) => current.filter((entry) => entry.userId !== application.userId))
     } catch (error) {
@@ -264,10 +264,10 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
             >
               {/* Header */}
               <div className="flex h-14 flex-shrink-0 items-center justify-between border-b border-border-subtle px-5">
-                <h2 className="text-base font-semibold text-primary">Server Settings</h2>
+                <h2 className="text-base font-semibold text-primary">Community Settings</h2>
                 <button
                   onClick={onClose}
-                  aria-label="Close server settings"
+                  aria-label="Close community settings"
                   className="flex h-8 w-8 items-center justify-center rounded text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary"
                 >
                   <Icon name="x" size="sm" />
@@ -309,10 +309,10 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                     <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Overview</h3>
                     <div className="space-y-3 rounded-lg bg-bg-primary p-4">
                       <Input
-                        label="Server Name"
+                        label="Community Name"
                         value={communityName}
                         onChange={setCommunityName}
-                        placeholder="Server name"
+                        placeholder="Community name"
                       />
                       <div>
                         <label className="mb-1.5 block text-xs font-semibold uppercase text-muted">
@@ -323,7 +323,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                           onChange={(e) => setCommunityDescription(e.target.value)}
                           rows={3}
                           className="w-full resize-none rounded-md bg-bg-tertiary px-3 py-2 text-sm text-primary placeholder:text-muted focus:outline-none"
-                          placeholder="What is this server about?"
+                          placeholder="What is this community about?"
                         />
                       </div>
                       <Button
@@ -348,7 +348,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                         placeholder="design-club"
                       />
                       <p className="text-xs text-muted">
-                        Choose a short name people can use to find this server.
+                        Choose a short name people can use to find this community.
                       </p>
                       <label className="flex cursor-pointer items-start gap-3 rounded-md bg-bg-tertiary p-3">
                         <input
@@ -359,7 +359,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                           className="mt-0.5"
                         />
                         <span>
-                          <span className="block text-sm font-medium text-primary">List this server publicly</span>
+                          <span className="block text-sm font-medium text-primary">List this community publicly</span>
                           <span className="block text-xs text-muted">
                             New members need approval to join.
                           </span>
@@ -368,7 +368,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                       {accessError != null && (
                         <ErrorState
                           error={accessError}
-                          context={{ operation: 'update server access settings', resource: 'server' }}
+                          context={{ operation: 'update community access settings', resource: 'community' }}
                           compact
                         />
                       )}
@@ -422,7 +422,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                     </h3>
                     <div className="space-y-3 rounded-lg bg-bg-primary p-4">
                       <p className="text-xs text-muted">
-                        Emoji images and names are shared server settings. They are not protected
+                        Emoji images and names are shared community settings. They are not protected
                         like message text.
                       </p>
                       <Input
@@ -446,7 +446,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                       {emojiError != null && (
                         <ErrorState
                           error={emojiError}
-                          context={{ operation: 'update custom emoji', resource: 'server' }}
+                          context={{ operation: 'update custom emoji', resource: 'community' }}
                           compact
                         />
                       )}
@@ -501,12 +501,12 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                     </h3>
                     <div className="space-y-3 rounded-lg bg-bg-primary p-4">
                       <p className="text-xs text-muted">
-                        A protected record of administrator actions across this server.
+                        A protected record of administrator actions across this community.
                       </p>
                       {moderationAuditError != null && (
                         <ErrorState
                           error={moderationAuditError}
-                          context={{ operation: 'load moderation activity', resource: 'server' }}
+                          context={{ operation: 'load moderation activity', resource: 'community' }}
                           compact
                         />
                       )}
@@ -568,12 +568,12 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                 {isOwnerOrAdmin && (
                   <div className="mb-6">
                     <div className="mb-2 flex items-center justify-between">
-                      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Channels</h3>
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Rooms</h3>
                       <button
                         onClick={() => setShowCreateChannel(!showCreateChannel)}
                         className="text-xs text-text-link transition-colors hover:underline"
                       >
-                        {showCreateChannel ? 'Cancel' : '+ Create Channel'}
+                        {showCreateChannel ? 'Cancel' : '+ Create Room'}
                       </button>
                     </div>
 
@@ -588,7 +588,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                         >
                           <div className="space-y-3 rounded-lg bg-bg-primary p-4">
                             <Input
-                              label="Channel Name"
+                              label="Room Name"
                               value={channelName}
                               onChange={setChannelName}
                               placeholder="e.g. announcements"
@@ -597,7 +597,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
 
                             <div>
                               <label className="mb-1.5 block text-xs font-semibold uppercase text-muted">
-                                Channel Type
+                                Room Type
                               </label>
                               <div className="flex gap-2">
                                 {(!matrixMode || matrixVoiceReady
@@ -619,7 +619,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                               </div>
                               {matrixMode && !matrixVoiceReady && (
                                 <p className="mt-2 text-xs text-muted">
-                                  Voice channels appear after private calling passes its service checks.
+                                  Voice rooms appear after private calling passes its service checks.
                                 </p>
                               )}
                             </div>
@@ -629,7 +629,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                               disabled={!channelName.trim() || isCreatingChannel}
                               className="w-full"
                             >
-                              {isCreatingChannel ? 'Creating…' : 'Create Channel'}
+                              {isCreatingChannel ? 'Creating…' : 'Create Room'}
                             </Button>
                           </div>
                         </motion.div>
@@ -646,7 +646,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                       onClick={() => setShowLeaveConfirm(true)}
                       className="w-full rounded-md border border-red/30 px-4 py-2.5 text-left text-sm text-red transition-colors hover:bg-red/10"
                     >
-                      {matrixMode ? 'Leave Server' : isOwner ? 'Delete Server' : 'Leave Server'}
+                      {matrixMode ? 'Leave Community' : isOwner ? 'Delete Community' : 'Leave Community'}
                     </button>
                   ) : (
                     <motion.div
@@ -657,11 +657,11 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                       <p className="text-sm text-secondary">
                         {!matrixMode && isOwner ? (
                           <>
-                            Delete <strong className="text-primary">{community.name}</strong>? This will shut down the server for all members.
+                            Delete <strong className="text-primary">{community.name}</strong>? This will close the community for all members.
                           </>
                         ) : (
                           <>
-                            Leave <strong className="text-primary">{community.name}</strong>? You'll lose access to all channels.
+                            Leave <strong className="text-primary">{community.name}</strong>? You'll lose access to all rooms.
                           </>
                         )}
                       </p>

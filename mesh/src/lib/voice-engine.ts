@@ -100,11 +100,11 @@ export class VoiceEngine {
       )
       if (!hasTurn) {
         console.warn('[VoiceEngine] No TURN server configured. Voice may fail behind strict NATs.')
-        this.handlers.onConnectionWarning?.('No TURN server configured. Voice calls may not connect behind firewalls.')
+        this.handlers.onConnectionWarning?.('No relay service is configured. Voice calls may not connect behind firewalls.')
       }
     } catch (e) {
       console.warn('Failed to load ICE servers, using defaults:', e)
-      this.handlers.onConnectionWarning?.('Failed to load voice server configuration.')
+      this.handlers.onConnectionWarning?.('Failed to load voice service configuration.')
     }
   }
 
@@ -166,8 +166,8 @@ export class VoiceEngine {
     }
 
     const snapshot = await joinVoice(this.communityId, this.channelId).catch((error) => {
-      console.error('Failed to join voice channel:', error)
-      const description = describeError(error, { operation: 'join this voice channel' })
+      console.error('Failed to join voice room:', error)
+      const description = describeError(error, { operation: 'join this voice room' })
       const message = `${description.title}. ${description.body}`
       this.handlers.onError?.(message)
       this.handlers.onConnectionState?.('disconnected', message)
@@ -416,7 +416,7 @@ export class VoiceEngine {
 
     if (isTauriRuntime()) {
       await leaveVoice(this.communityId, this.channelId).catch((error) => {
-        console.error('VoiceEngine: failed to leave voice channel cleanly', error)
+        console.error('VoiceEngine: failed to leave voice room cleanly', error)
       })
     }
 

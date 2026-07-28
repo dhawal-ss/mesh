@@ -38,7 +38,7 @@ export function FileBrowser({ communityId, isOpen, onClose }: FileBrowserProps) 
           <h2 className="text-lg font-semibold text-text-primary">Server files</h2>
           <button
             onClick={onClose}
-            aria-label="Close server files"
+            aria-label="Close community files"
             className="text-text-muted hover:text-text-primary"
           >
             <Icon name="x" size="sm" />

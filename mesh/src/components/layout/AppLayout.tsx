@@ -146,11 +146,11 @@ export function AppLayout() {
       <div className="flex flex-1 overflow-hidden">
         <nav
           className="mesh-community-rail flex flex-shrink-0 flex-col items-center overflow-y-auto border-r border-border-subtle bg-bg-tertiary pt-3"
-          aria-label="Servers and DMs"
+          aria-label="Communities and direct messages"
         >
           <ScopedErrorBoundary
-            name="Server navigation"
-            description="Server shortcuts could not be displayed."
+            name="Community navigation"
+            description="Community shortcuts could not be displayed."
             resetKey={activeCommunityId}
           >
             <CommunitySidebar />
@@ -215,7 +215,7 @@ export function AppLayout() {
           <button
             type="button"
             className="mesh-nav-backdrop"
-            aria-label="Close channel navigation"
+            aria-label="Dismiss room navigation"
             onClick={() => setContextNavigationOpen(false)}
           />
         )}
@@ -224,10 +224,10 @@ export function AppLayout() {
           id="mesh-context-sidebar"
           data-open={contextNavigationOpen ? 'true' : 'false'}
           className="mesh-context-sidebar flex flex-shrink-0 flex-col border-r border-border-subtle bg-bg-secondary"
-          aria-label={isDmMode && directMessagesAvailable ? 'Direct message conversations' : 'Channel list'}
+          aria-label={isDmMode && directMessagesAvailable ? 'Direct message conversations' : 'Room list'}
         >
           <ScopedErrorBoundary
-            name={isDmMode && directMessagesAvailable ? 'Conversation list' : 'Channel list'}
+            name={isDmMode && directMessagesAvailable ? 'Conversation list' : 'Room list'}
             description="Navigation failed to render. The current conversation remains available."
             className="m-2"
             resetKey={`${isDmMode ? 'dm' : 'channel'}:${activeCommunityId ?? ''}`}
@@ -243,10 +243,17 @@ export function AppLayout() {
               className="flex h-8 items-center gap-2 rounded px-2 text-sm font-medium text-secondary hover:bg-bg-modifier-hover hover:text-primary"
               aria-controls="mesh-context-sidebar"
               aria-expanded={contextNavigationOpen}
+              aria-label={
+                contextNavigationOpen
+                  ? 'Close room navigation'
+                  : isDmMode
+                    ? 'Open conversation navigation'
+                    : 'Open room navigation'
+              }
               onClick={() => setContextNavigationOpen((open) => !open)}
             >
               <Icon name={contextNavigationOpen ? 'x' : 'menu'} size="sm" />
-              {contextNavigationOpen ? 'Close' : isDmMode ? 'Conversations' : 'Channels'}
+              {contextNavigationOpen ? 'Close' : isDmMode ? 'Conversations' : 'Rooms'}
             </button>
             <span className="truncate text-xs text-muted">
               {matrixMode ? 'Encrypted session' : 'Local Mesh session'}

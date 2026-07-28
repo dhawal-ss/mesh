@@ -42,7 +42,7 @@ describe('MatrixAccountScreen', () => {
     expect(container.querySelector('input[name="username"]')?.getAttribute('placeholder')).toBe('ashvin')
     expect(container.querySelectorAll('input[autocomplete="new-password"]')).toHaveLength(2)
     expect(container.textContent).not.toContain('Matrix')
-    expect(container.textContent).not.toContain('Server address')
+    expect(container.textContent).not.toContain('Service address')
     expect(container.textContent).not.toMatch(/@[a-z0-9._-]+:/i)
   })
 
@@ -116,7 +116,7 @@ describe('MatrixAccountScreen', () => {
     })
     expect(container.textContent).toContain('Welcome back')
     expect(container.textContent).toContain('I have an account somewhere else')
-    expect(container.textContent).not.toContain('Server address')
+    expect(container.textContent).not.toContain('Service address')
 
     await act(async () => {
       setInputValue(findInput('username'), 'Alice')
@@ -146,8 +146,8 @@ describe('MatrixAccountScreen', () => {
     })
 
     expect(container.textContent).toContain('Sign in somewhere else')
-    expect(container.textContent?.match(/server/gi)).toHaveLength(1)
-    expect(container.textContent).toContain('Server address')
+    expect(container.textContent?.match(/service/gi)).toHaveLength(1)
+    expect(container.textContent).toContain('Service address')
     expect(findInput('username').getAttribute('placeholder')).toBe('ashvin')
     expect(container.textContent).not.toMatch(/@[a-z0-9._-]+:/i)
 

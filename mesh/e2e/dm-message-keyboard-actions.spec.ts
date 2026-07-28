@@ -269,7 +269,7 @@ async function installDmKeyboardActionsMock(page: Page): Promise<void> {
 async function openDirectMessage(page: Page): Promise<void> {
   await installDmKeyboardActionsMock(page)
   await page.goto('/')
-  await expect(page.getByRole('navigation', { name: 'Servers and DMs' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'Communities and direct messages' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Direct Messages', exact: true }).click()
   await expect(

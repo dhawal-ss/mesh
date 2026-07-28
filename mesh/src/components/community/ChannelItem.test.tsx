@@ -104,10 +104,10 @@ describe('ChannelItem notification context menu', () => {
     return container.querySelector('button')!
   }
 
-  it('keeps the channel button keyboard-accessible and exposes unread state', () => {
+  it('keeps the room button keyboard-accessible and exposes unread state', () => {
     const button = renderItem()
 
-    expect(button.getAttribute('aria-label')).toBe('Text channel: general, 4 unread')
+    expect(button.getAttribute('aria-label')).toBe('Text room: general, 4 unread')
     expect(button.textContent).toContain('4')
     act(() => button.click())
     expect(onClick).toHaveBeenCalledOnce()
@@ -142,7 +142,7 @@ describe('ChannelItem notification context menu', () => {
     expect(onOpenNotificationSettings).toHaveBeenCalledOnce()
 
     await openContextMenu(button)
-    await act(async () => findMenuItem('Copy channel link')?.click())
+    await act(async () => findMenuItem('Copy room link')?.click())
     expect(onCopyLink).toHaveBeenCalledOnce()
   })
 

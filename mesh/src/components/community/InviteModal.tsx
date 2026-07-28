@@ -84,8 +84,8 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
         <h2 className="mb-1 text-base font-semibold text-primary">Invite to {communityName}</h2>
         <p className="mb-4 text-xs text-muted">
           {matrixMode
-            ? 'Invite someone to this server and its current channels.'
-            : 'Share this link to let others join your server.'}
+            ? 'Invite someone to this community and its current rooms.'
+            : 'Share this link to let others join your community.'}
         </p>
 
         {matrixMode ? (
