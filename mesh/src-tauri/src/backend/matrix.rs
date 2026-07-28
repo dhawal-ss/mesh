@@ -134,11 +134,13 @@ use super::{
     MatrixRtcMediaKeyPause, MatrixRtcMember, MatrixRtcMembershipUpdate, MatrixTransferDirection,
     MatrixTransferObserver, MatrixTransferProgress, MatrixTransferProgressCallback,
     MatrixTransferResult, MatrixTransferRetryMode, MatrixTransferState, MatrixUnreadUpdate,
-    MatrixVerificationSession, MeshBackend, SentMessage, TypingUser, UserPreferences,
-    VerificationEmoji, VoiceServiceAvailability, VoiceServiceStatus,
+    MatrixVerificationSession, MeshBackend, ModerationAuditEntry, SentMessage, TypingUser,
+    UserPreferences, VerificationEmoji, VoiceServiceAvailability, VoiceServiceStatus,
 };
 
+mod moderation;
 mod oidc;
+use moderation::MatrixModerationAction;
 
 const SESSION_KEY: &str = "matrix-session-v1";
 const STORE_PASSPHRASE_KEY: &str = "matrix-store-passphrase-v1";
@@ -6252,25 +6254,14 @@ impl MeshBackend for MatrixBackend {
         community_id: String,
         user_id: String,
         role: String,
-    ) -> BackendResult<()> {
-        let level = match role.as_str() {
-            "admin" => int!(50),
-            "member" => int!(0),
-            _ => {
-                return Err(BackendError::InvalidConfiguration(
-                    "role must be admin or member; ownership transfer is not supported".into(),
-                ))
-            }
-        };
-        let user_id = matrix_sdk::ruma::UserId::parse(user_id).map_err(Self::map_error)?;
-        let mut rooms = self.community_rooms(&community_id).await?;
-        rooms.reverse();
-        for room in rooms {
-            room.update_power_levels(vec![(&user_id, level)])
-                .await
-                .map_err(Self::map_error)?;
-        }
-        Ok(())
+    ) -> BackendResult<super::CommunityModerationResult> {
+        self.apply_community_moderation(
+            community_id,
+            user_id,
+            MatrixModerationAction::role(role)?,
+            None,
+        )
+        .await
     }
 
     async fn kick_member(
@@ -6278,16 +6269,9 @@ impl MeshBackend for MatrixBackend {
         community_id: String,
         user_id: String,
         reason: Option<String>,
-    ) -> BackendResult<()> {
-        let user_id = matrix_sdk::ruma::UserId::parse(user_id).map_err(Self::map_error)?;
-        let mut rooms = self.community_rooms(&community_id).await?;
-        rooms.reverse();
-        for room in rooms {
-            room.kick_user(&user_id, reason.as_deref())
-                .await
-                .map_err(Self::map_error)?;
-        }
-        Ok(())
+    ) -> BackendResult<super::CommunityModerationResult> {
+        self.apply_community_moderation(community_id, user_id, MatrixModerationAction::Kick, reason)
+            .await
     }
 
     async fn ban_member(
@@ -6295,16 +6279,17 @@ impl MeshBackend for MatrixBackend {
         community_id: String,
         user_id: String,
         reason: Option<String>,
-    ) -> BackendResult<()> {
-        let user_id = matrix_sdk::ruma::UserId::parse(user_id).map_err(Self::map_error)?;
-        let mut rooms = self.community_rooms(&community_id).await?;
-        rooms.reverse();
-        for room in rooms {
-            room.ban_user(&user_id, reason.as_deref())
-                .await
-                .map_err(Self::map_error)?;
-        }
-        Ok(())
+    ) -> BackendResult<super::CommunityModerationResult> {
+        self.apply_community_moderation(community_id, user_id, MatrixModerationAction::Ban, reason)
+            .await
+    }
+
+    async fn list_moderation_audit(
+        &self,
+        community_id: String,
+        limit: u32,
+    ) -> BackendResult<Vec<ModerationAuditEntry>> {
+        self.moderation_audit(&community_id, limit).await
     }
 
     async fn user_preferences(&self) -> BackendResult<Option<UserPreferences>> {

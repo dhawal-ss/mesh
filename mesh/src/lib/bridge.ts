@@ -18,6 +18,8 @@ import type {
   CommunityDirectoryEntry,
   CommunityApplication,
   CommunityAccessResult,
+  CommunityModerationResult,
+  ModerationAuditEntry,
   MatrixUserPreferences,
   MatrixNotification,
   MatrixQueuedMessageUpdate,
@@ -1835,18 +1837,28 @@ export async function requestFile(request: FileDownloadRequest): Promise<void> {
 
 // ─── Moderation Commands ────────────────────────────
 
-export async function banUser(communityId: string, bannedPublicKey: string): Promise<void> {
+export async function banUser(
+  communityId: string,
+  bannedPublicKey: string,
+  reason?: string,
+): Promise<CommunityModerationResult | null> {
   if (isMatrixBackend()) {
-    return tauriInvoke('matrix_ban_member', { communityId, userId: bannedPublicKey })
+    return tauriInvoke('matrix_ban_member', { communityId, userId: bannedPublicKey, reason })
   }
-  return tauriInvoke('ban_user', { communityId, bannedPublicKey })
+  await tauriInvoke('ban_user', { communityId, bannedPublicKey })
+  return null
 }
 
-export async function kickUser(communityId: string, targetPublicKey: string, reason?: string): Promise<void> {
+export async function kickUser(
+  communityId: string,
+  targetPublicKey: string,
+  reason?: string,
+): Promise<CommunityModerationResult | null> {
   if (isMatrixBackend()) {
     return tauriInvoke('matrix_kick_member', { communityId, userId: targetPublicKey, reason })
   }
-  return tauriInvoke('kick_user', { communityId, targetPublicKey, reason })
+  await tauriInvoke('kick_user', { communityId, targetPublicKey, reason })
+  return null
 }
 
 export async function timeoutUser(communityId: string, targetPublicKey: string, durationMinutes: number, reason?: string): Promise<void> {
@@ -1856,11 +1868,24 @@ export async function timeoutUser(communityId: string, targetPublicKey: string, 
   return tauriInvoke('timeout_user', { communityId, targetPublicKey, durationMinutes, reason })
 }
 
-export async function updateMemberRole(communityId: string, publicKey: string, role: string): Promise<void> {
+export async function updateMemberRole(
+  communityId: string,
+  publicKey: string,
+  role: string,
+): Promise<CommunityModerationResult | null> {
   if (isMatrixBackend()) {
     return tauriInvoke('matrix_update_member_role', { communityId, userId: publicKey, role })
   }
-  return tauriInvoke('update_member_role', { communityId, publicKey, role })
+  await tauriInvoke('update_member_role', { communityId, publicKey, role })
+  return null
+}
+
+export async function getModerationAudit(
+  communityId: string,
+  limit = 50,
+): Promise<ModerationAuditEntry[]> {
+  if (!isMatrixBackend()) return []
+  return tauriInvoke('matrix_list_moderation_audit', { communityId, limit }, READ_IPC_OPTIONS)
 }
 
 export async function getMembers(

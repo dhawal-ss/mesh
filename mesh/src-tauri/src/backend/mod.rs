@@ -732,6 +732,36 @@ pub struct CommunityMember {
     pub online: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ModerationRoomOutcome {
+    pub room_id: String,
+    pub room_name: String,
+    pub succeeded: bool,
+    pub failure_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ModerationAuditEntry {
+    pub id: String,
+    pub actor_user_id: String,
+    pub actor_display_name: String,
+    pub target_user_id: String,
+    pub target_display_name: String,
+    pub action: String,
+    pub reason: Option<String>,
+    pub occurred_at: String,
+    pub room_outcomes: Vec<ModerationRoomOutcome>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunityModerationResult {
+    pub audit: ModerationAuditEntry,
+    pub audit_recorded: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommunityAccessSettings {
@@ -1421,7 +1451,7 @@ pub trait MeshBackend: Send + Sync {
         _community_id: String,
         _user_id: String,
         _role: String,
-    ) -> BackendResult<()> {
+    ) -> BackendResult<CommunityModerationResult> {
         Err(BackendError::Unsupported("community roles"))
     }
     async fn kick_member(
@@ -1429,7 +1459,7 @@ pub trait MeshBackend: Send + Sync {
         _community_id: String,
         _user_id: String,
         _reason: Option<String>,
-    ) -> BackendResult<()> {
+    ) -> BackendResult<CommunityModerationResult> {
         Err(BackendError::Unsupported("community kicks"))
     }
     async fn ban_member(
@@ -1437,8 +1467,15 @@ pub trait MeshBackend: Send + Sync {
         _community_id: String,
         _user_id: String,
         _reason: Option<String>,
-    ) -> BackendResult<()> {
+    ) -> BackendResult<CommunityModerationResult> {
         Err(BackendError::Unsupported("community bans"))
+    }
+    async fn list_moderation_audit(
+        &self,
+        _community_id: String,
+        _limit: u32,
+    ) -> BackendResult<Vec<ModerationAuditEntry>> {
+        Err(BackendError::Unsupported("community moderation audit"))
     }
     async fn user_preferences(&self) -> BackendResult<Option<UserPreferences>> {
         Err(BackendError::Unsupported("Matrix account-data preferences"))
