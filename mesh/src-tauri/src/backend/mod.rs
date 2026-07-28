@@ -198,7 +198,7 @@ pub struct MatrixQueuedMessageUpdate {
 pub enum MatrixBackendEvent {
     Notification(MatrixNotification),
     UnreadUpdate(MatrixUnreadUpdate),
-    QueuedMessage(MatrixQueuedMessageUpdate),
+    QueuedMessage(Box<MatrixQueuedMessageUpdate>),
     RtcMembership(MatrixRtcMembershipUpdate),
     RtcMediaKey(MatrixRtcMediaKey),
     RtcMediaKeyFailure(MatrixRtcMediaKeyFailure),

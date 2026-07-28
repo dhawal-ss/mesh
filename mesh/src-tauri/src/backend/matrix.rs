@@ -4125,7 +4125,10 @@ impl MatrixBackend {
         };
 
         for update in updates {
-            Self::dispatch_backend_event(callback, MatrixBackendEvent::QueuedMessage(update));
+            Self::dispatch_backend_event(
+                callback,
+                MatrixBackendEvent::QueuedMessage(Box::new(update)),
+            );
         }
         // A lagged stream cannot distinguish a missed successful send from a
         // missed cancellation. Removing the stale local row is authoritative;
@@ -4133,13 +4136,13 @@ impl MatrixBackend {
         for (room_id, transaction_id) in removed {
             Self::dispatch_backend_event(
                 callback,
-                MatrixBackendEvent::QueuedMessage(MatrixQueuedMessageUpdate {
+                MatrixBackendEvent::QueuedMessage(Box::new(MatrixQueuedMessageUpdate {
                     room_id,
                     transaction_id,
                     state: MatrixQueuedMessageState::Cancelled,
                     event_id: None,
                     message: None,
-                }),
+                })),
             );
         }
         Ok(())
@@ -4273,7 +4276,10 @@ impl MatrixBackend {
                 known.remove(&queued_update.room_id);
             }
         }
-        Self::dispatch_backend_event(callback, MatrixBackendEvent::QueuedMessage(queued_update));
+        Self::dispatch_backend_event(
+            callback,
+            MatrixBackendEvent::QueuedMessage(Box::new(queued_update)),
+        );
     }
 
     fn spawn_send_queue_task(
