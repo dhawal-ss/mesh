@@ -51,7 +51,7 @@ export function ToastContainer() {
             initial="initial"
             animate="animate"
             exit="exit"
-            className={`rounded-lg border px-4 py-3 text-sm font-medium shadow-floating ${
+            className={`rounded-lg border px-4 py-3 text-sm font-medium shadow-overlay ${
               toast.tone === 'danger'
                 ? 'border-status-danger/30 bg-status-danger text-content-on-status'
                 : toast.tone === 'success'

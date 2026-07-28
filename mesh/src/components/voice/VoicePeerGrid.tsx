@@ -113,7 +113,7 @@ function VoicePeerTile({
       exit={{ scale: 0.95, opacity: 0, y: 8 }}
       transition={transitions.enter}
       className={`group relative flex min-h-voice-tile flex-col overflow-hidden rounded-lg bg-bg-secondary transition-shadow ${
-        peer.speaking ? 'ring-2 ring-green shadow-elevation-high' : ''
+        peer.speaking ? 'ring-2 ring-green shadow-overlay' : ''
       }`}
     >
       <audio ref={audioRef} autoPlay muted={isDeafened || peer.isSelf} />
@@ -133,7 +133,7 @@ function VoicePeerTile({
           />
         ) : (
           <div
-            className={`flex h-20 w-20 items-center justify-center rounded-full text-lg font-semibold text-content-on-status shadow-elevation-high ${
+            className={`flex h-20 w-20 items-center justify-center rounded-full text-lg font-semibold text-content-on-status shadow-overlay ${
               peer.speaking ? 'ring-4 ring-green/40' : ''
             }`}
             data-design-token-exception="Member-selected avatar color is stored profile data."

@@ -73,7 +73,7 @@ export function ChannelSidebar() {
   if (!activeCommunity) {
     return (
       <div className="flex flex-col h-full">
-        <div className="flex h-12 flex-shrink-0 items-center border-b border-border-subtle px-4 shadow-elevation-low">
+        <div className="flex h-12 flex-shrink-0 items-center border-b border-border-subtle px-4">
           <h2 className="text-sm font-semibold text-primary">Your servers</h2>
         </div>
         <div className="flex flex-1 items-center px-5 py-8 text-center">
@@ -104,7 +104,7 @@ export function ChannelSidebar() {
       <div className="flex flex-col h-full">
         {/* Server name header */}
         <button
-          className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border-subtle px-4 shadow-elevation-low transition-colors hover:bg-bg-modifier-hover"
+          className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border-subtle px-4 transition-colors hover:bg-bg-modifier-hover"
           onClick={() => setShowSettings(true)}
           data-tauri-drag-region
         >

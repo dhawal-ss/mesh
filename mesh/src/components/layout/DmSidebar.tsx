@@ -68,7 +68,7 @@ export function DmSidebar() {
     <div className="flex flex-col h-full">
       {/* Header */}
       <div
-        className="flex h-12 flex-shrink-0 items-center border-b border-border-subtle px-4 shadow-elevation-low"
+        className="flex h-12 flex-shrink-0 items-center border-b border-border-subtle px-4"
         data-tauri-drag-region
       >
         <h2 className="text-sm font-semibold text-primary">Direct Messages</h2>

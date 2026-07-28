@@ -69,7 +69,7 @@ async function installTauriMock(
       get_identity: {
         publicKey: 'mesh-e2e-alice',
         displayName: 'Alice',
-        avatarColor: '#5865f2',
+        avatarColor: '#52b5f4',
       },
       get_communities: [
         {

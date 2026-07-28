@@ -33,7 +33,7 @@ function malformedMessage(): Message {
     channelId: 'channel-1',
     authorPublicKey: '@alice:example.org',
     authorDisplayName: 'Alice',
-    authorAvatarColor: '#5865f2',
+    authorAvatarColor: '#52b5f4',
     content: 'Federated message',
     attachments: [],
     reactions: {},

@@ -17,7 +17,7 @@ export function ReactionPicker({ onSelect, onClose }: ReactionPickerProps) {
       initial="initial"
       animate="animate"
       exit="exit"
-      className="flex items-center gap-0.5 rounded-full border border-border-strong bg-surface-overlay/95 px-2 py-1.5 shadow-floating backdrop-blur-2xl"
+      className="flex items-center gap-0.5 rounded-full border border-border-strong bg-surface-overlay/95 px-2 py-1.5 shadow-overlay backdrop-blur-2xl"
       onMouseLeave={onClose}
     >
       {REACTIONS.map((emoji) => (

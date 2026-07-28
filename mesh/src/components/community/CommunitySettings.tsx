@@ -195,7 +195,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: '100%', opacity: 0 }}
               transition={transitions.enter}
-              className="fixed right-0 top-0 z-drawer flex h-full w-settings-drawer flex-col bg-bg-secondary shadow-floating"
+              className="fixed right-0 top-0 z-drawer flex h-full w-settings-drawer flex-col bg-bg-secondary shadow-overlay"
             >
               {/* Header */}
               <div className="flex h-14 flex-shrink-0 items-center justify-between border-b border-border-subtle px-5">

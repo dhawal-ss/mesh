@@ -85,7 +85,7 @@ async function installDmKeyboardActionsMock(page: Page): Promise<void> {
         conversationId: conversation.id,
         authorPublicKey: '@alice:mesh.test',
         authorDisplayName: 'alice',
-        authorAvatarColor: '#5865f2',
+        authorAvatarColor: '#52b5f4',
         content: "Alice's own DM, editable via keyboard.",
         timestamp: '2026-07-24T00:05:00.000Z',
         signature: '',
@@ -153,7 +153,7 @@ async function installDmKeyboardActionsMock(page: Page): Promise<void> {
             {
               publicKey: '@alice:mesh.test',
               displayName: 'alice',
-              avatarColor: '#5865f2',
+              avatarColor: '#52b5f4',
               role: 'owner',
               joinStatus: 'joined',
               banStatus: 'none',
@@ -172,6 +172,8 @@ async function installDmKeyboardActionsMock(page: Page): Promise<void> {
             },
           ]
         case 'matrix_get_messages':
+          return []
+        case 'matrix_queued_messages':
           return []
         case 'matrix_dm_conversations':
           return [conversation]
