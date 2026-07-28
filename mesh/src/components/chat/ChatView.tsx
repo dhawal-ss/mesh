@@ -21,19 +21,33 @@ import { getBackoffDelay, registerPoll, waitForDelay } from '../../lib/scheduler
 import { useMessageNavigationStore } from '../../store/message-navigation'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
 import { Icon } from '../ui/Icon'
-import { ConversationProtection } from './ConversationProtection'
 import { useCommunityMembers } from '../../store/membership'
+import { useCommunityStore } from '../../store/communities'
+import type { RoomTrustSnapshot } from '../../hooks/useRoomTrust'
+import type { RoomContextTab } from '../community/RoomContextPanel'
+import { RoomTrustSummary } from './RoomTrustSummary'
 
 interface ChatViewProps {
   channel: Channel
-  showMembersToggle?: boolean
-  isMembersOpen?: boolean
-  onToggleMembers?: () => void
+  trust?: RoomTrustSnapshot
+  showContextToggle?: boolean
+  isContextOpen?: boolean
+  activeContextTab?: RoomContextTab
+  onToggleContext?: () => void
+  onOpenContext?: (tab: RoomContextTab) => void
 }
 
 const EMPTY_MESSAGES: MessageType[] = []
 
-export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMembers }: ChatViewProps) {
+export function ChatView({
+  channel,
+  trust,
+  showContextToggle,
+  isContextOpen,
+  activeContextTab,
+  onToggleContext,
+  onOpenContext,
+}: ChatViewProps) {
   const channelMessages = useMessageStore((state) => state.messages[channel.id] ?? EMPTY_MESSAGES)
   const replaceMessages = useMessageStore((state) => state.replaceMessages)
   const prependMessages = useMessageStore((state) => state.prependMessages)
@@ -50,6 +64,9 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
   const isBrowsingOlder = useMessageStore((state) => state.browsingOlder[channel.id] ?? false)
   const hiddenNewerCount = useMessageStore((state) => state.newerGapCount[channel.id] ?? 0)
   const matrixMode = bridge.isMatrixBackend()
+  const communityName = useCommunityStore(
+    (state) => state.communityEntities[channel.communityId]?.name,
+  )
   const communityMembers = useCommunityMembers(channel.communityId)
   const patchChannel = useChannelStore((state) => state.patchChannel)
   const setActiveChannel = useChannelStore((state) => state.setActiveChannel)
@@ -725,39 +742,65 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
 
   return (
     <div className="flex h-full flex-1 flex-col">
-      {/* Channel header */}
       <div
-        className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border-subtle px-4"
+        className="mesh-conversation-header flex flex-shrink-0 items-center justify-between gap-4 border-b border-border-subtle px-4 py-2"
         data-tauri-drag-region
       >
-        <div className="flex min-w-0 items-center gap-2">
-          <Icon name="hash" className="flex-shrink-0 text-muted" />
-          <span className="truncate text-sm font-semibold text-primary">{channel.name}</span>
-          {matrixMode && <ConversationProtection roomId={channel.id} />}
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-baseline gap-2">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <Icon name="hash" size="sm" className="flex-shrink-0 text-muted" />
+              <span className="truncate text-sm font-semibold text-primary">{channel.name}</span>
+            </span>
+            <span className="hidden truncate text-caption text-muted sm:block">
+              {channel.name.toLocaleLowerCase() === 'general'
+                ? `Anything and everything ${communityName ?? 'Mesh'}`
+                : `Conversation in ${communityName ?? 'this community'}`}
+            </span>
+          </div>
+          {matrixMode && trust && onOpenContext && (
+            <div className="mt-1">
+              <RoomTrustSummary trust={trust} onOpenContext={onOpenContext} />
+            </div>
+          )}
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex flex-shrink-0 items-center gap-1">
           <SearchBar onNavigateToMessage={handleNavigateToMessage} />
 
-          {showMembersToggle && (
-            <Tooltip content={isMembersOpen ? 'Hide Member List' : 'Show Member List'} side="bottom">
+          {showContextToggle && (
+            <Tooltip content={isContextOpen ? 'Hide room context' : 'Show room context'} side="bottom">
               <button
-                onClick={onToggleMembers}
-                aria-label={isMembersOpen ? 'Hide member list' : 'Show member list'}
-                className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${
-                  isMembersOpen
+                onClick={onToggleContext}
+                aria-label={isContextOpen ? 'Hide room context' : 'Show room context'}
+                className={`flex h-8 w-8 items-center justify-center rounded transition-colors ${
+                  isContextOpen
                     ? 'text-primary'
                     : 'text-muted hover:text-secondary'
                 }`}
               >
-                <Icon name="users" />
+                <Icon name={activeContextTab === 'ledger' ? 'shieldCheck' : 'panelRight'} size="sm" />
               </button>
             </Tooltip>
           )}
         </div>
       </div>
 
-      {/* Message area */}
+      {matrixMode && trust && !trust.loadingAccountTrust && trust.devicesNeedReview > 0 && (
+        <button
+          type="button"
+          role="alert"
+          className="flex min-h-control-md flex-shrink-0 items-center gap-2 border-b border-status-warning/20 bg-status-warning/10 px-4 text-left text-xs text-status-warning transition-colors hover:bg-status-warning/20"
+          onClick={() => onOpenContext?.('ledger')}
+        >
+          <Icon name="triangleAlert" size="sm" />
+          <span className="min-w-0 flex-1">
+            {trust.devicesNeedReview} {trust.devicesNeedReview === 1 ? 'device needs' : 'devices need'} review before you rely on this room’s trust status.
+          </span>
+          <span className="font-semibold">Review</span>
+        </button>
+      )}
+
       <div className="relative flex-1">
         <p className="sr-only" role="status" aria-live="polite">
           {jumpAnnouncement}

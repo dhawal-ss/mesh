@@ -115,7 +115,7 @@ export function ChannelItem({
         aria-current={active ? 'page' : undefined}
         className={`group flex w-full items-center gap-1.5 rounded px-2 py-density-row text-left transition-colors duration-instant ${
           active
-            ? 'bg-bg-modifier-selected text-primary'
+            ? 'mesh-channel-active bg-bg-modifier-selected text-primary'
             : hasUnread
               ? 'text-primary hover:bg-bg-modifier-hover'
               : 'text-muted hover:bg-bg-modifier-hover hover:text-secondary'

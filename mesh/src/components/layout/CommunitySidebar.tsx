@@ -119,12 +119,11 @@ export function CommunitySidebar() {
           <div className="mx-auto h-rail-separator w-8 rounded-full bg-bg-modifier-active" />
         )}
 
-        {/* Add server */}
-        <Tooltip content="Add a Server" side="right">
+        <Tooltip content="Add a community" side="right">
           <button
             onClick={() => openServerModal('create')}
             className="group flex h-12 w-12 items-center justify-center rounded-community bg-bg-primary text-green transition-all duration-normal hover:rounded-community-active hover:bg-green hover:text-content-on-status"
-            aria-label="Add a server"
+            aria-label="Add a community"
           >
             <Icon name="plus" />
           </button>
@@ -149,11 +148,11 @@ export function CommunitySidebar() {
           </button>
         </Tooltip> : null}
 
-        <Tooltip content="Explore servers" side="right">
+        <Tooltip content="Explore communities" side="right">
           <button
             onClick={() => openServerModal('discover')}
             className="group relative flex h-12 w-12 items-center justify-center rounded-community bg-bg-primary text-muted transition-all duration-normal hover:rounded-community-active hover:bg-accent hover:text-content-on-accent"
-            aria-label="Explore servers"
+            aria-label="Explore communities"
           >
             <Icon name="search" />
           </button>

@@ -71,6 +71,8 @@ export const MessageComponent = memo(function MessageComponent({
   const canModerate = myRole === 'owner' || myRole === 'admin'
   const isDeleted = !!message.deletedAt
   const isQueued = !!message.transactionId && message.deliveryStatus !== 'sent'
+  const pinnedBy = message.reactions['📌'] ?? []
+  const isPinnedByMe = myPublicKey ? pinnedBy.includes(myPublicKey) : false
   const imageAttachmentIndexes = (message.attachments ?? []).flatMap((attachment, index) => (
     attachment.thumbnail ? [index] : []
   ))
@@ -278,6 +280,12 @@ export const MessageComponent = memo(function MessageComponent({
     }
   }
 
+  const handlePin = async () => {
+    await handleReaction('📌')
+    setContextMenu(null)
+    rowRef.current?.focus()
+  }
+
   const deliveryLabel = message.deliveryStatus === 'pending'
     ? ', saved on this device and waiting to send'
     : message.deliveryStatus === 'failed'
@@ -324,10 +332,15 @@ export const MessageComponent = memo(function MessageComponent({
         {/* Content */}
         <div className="min-w-0 flex-1">
           {!isGrouped && (
-            <div className="flex items-baseline gap-2">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
               <span className="text-base font-semibold text-primary">
                 {message.authorDisplayName}
               </span>
+              {matrixMode && message.authorPublicKey.startsWith('@') && (
+                <span className="identifier max-w-full truncate font-mono text-caption text-muted">
+                  {message.authorPublicKey}
+                </span>
+              )}
               <span className="tnum text-meta text-muted">
                 {formatFederatedTimestamp(message.timestamp, 'MM/dd/yyyy h:mm a')}
               </span>
@@ -499,6 +512,17 @@ export const MessageComponent = memo(function MessageComponent({
                 <Icon name="reply" size="sm" />
               </button>
             )}
+            {matrixMode && (
+              <button
+                onClick={() => void handlePin()}
+                className={`flex h-8 w-8 items-center justify-center transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
+                  isPinnedByMe ? 'text-accent' : 'text-muted'
+                }`}
+                aria-label={isPinnedByMe ? 'Remove your pin from message' : 'Pin message'}
+              >
+                <Icon name="pin" size="sm" />
+              </button>
+            )}
           </div>
         )}
 
@@ -555,6 +579,16 @@ export const MessageComponent = memo(function MessageComponent({
             style={{ left: contextMenu.x, top: contextMenu.y }}
             onClick={(e) => e.stopPropagation()}
           >
+            {matrixMode && !isDeleted && (
+              <button
+                role="menuitem"
+                onClick={() => void handlePin()}
+                className="mx-1 w-context-action rounded-sm px-2 py-1.5 text-left text-secondary transition-colors hover:bg-status-info hover:text-content-on-status"
+                aria-label={isPinnedByMe ? 'Remove your pin from message' : 'Pin message'}
+              >
+                {isPinnedByMe ? 'Remove Your Pin' : 'Pin Message'}
+              </button>
+            )}
             {isOwnMessage && !isDeleted && (
               <>
                 <button
@@ -613,7 +647,7 @@ export const MessageComponent = memo(function MessageComponent({
                 </button>
               </>
             )}
-            {!isOwnMessage && (!canModerate || limitedActions) && (
+            {!matrixMode && !isOwnMessage && (!canModerate || limitedActions) && (
               <div className="px-3 py-2 text-muted">No actions available</div>
             )}
           </motion.div>

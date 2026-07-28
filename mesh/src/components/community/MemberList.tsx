@@ -19,11 +19,12 @@ interface MemberListProps {
   isOpen: boolean
   onClose: () => void
   members: MemberEntry[]
+  embedded?: boolean
 }
 
 const ROLE_ORDER = { owner: 0, admin: 1, member: 2 } as const
 
-export function MemberList({ isOpen, members }: MemberListProps) {
+export function MemberList({ isOpen, members, embedded = false }: MemberListProps) {
   const activeCommunityId = useCommunityStore((state) => state.activeCommunityId)
   const activeCommunity = useActiveCommunity()
   const legacyUserId = useIdentityStore((state) => state.identity?.publicKey)
@@ -93,7 +94,11 @@ export function MemberList({ isOpen, members }: MemberListProps) {
   const offline = sorted.filter((m) => !m.online)
 
   return (
-    <div className="mesh-member-list flex w-member-list flex-shrink-0 flex-col overflow-hidden bg-bg-secondary">
+    <div className={
+      embedded
+        ? 'flex min-h-0 flex-1 flex-col overflow-hidden'
+        : 'mesh-member-list flex w-member-list flex-shrink-0 flex-col overflow-hidden bg-bg-secondary'
+    }>
       <div className="flex-1 overflow-y-auto px-2 py-4">
         {/* Online section */}
         {online.length > 0 && (

@@ -14,6 +14,8 @@ import type { Channel } from '../../types/ipc'
 import { useMatrixRtcMembershipSync } from '../../hooks/useMatrixRtcMembershipSync'
 import { canStartMatrixVoice, shouldActivateVoiceSession } from '../../lib/voice-runtime'
 import { Spinner } from '../ui/Spinner'
+import { useIdentityStore } from '../../store/identity'
+import { useNetworkStore } from '../../store/network'
 
 const CommunitySettings = lazy(() =>
   import('../community/CommunitySettings').then((module) => ({ default: module.CommunitySettings })),
@@ -36,6 +38,14 @@ export function ChannelSidebar() {
   const [voiceCollapsed, setVoiceCollapsed] = useState(false)
   const matrixMode = bridge.isMatrixBackend()
   const matrixVoiceReady = canStartMatrixVoice(bridge.getBackendStatusSnapshot())
+  const networkStatus = useNetworkStore((state) => state.status)
+  const storedIdentity = useIdentityStore((state) => state.identity)
+  const matrixAccountId = matrixMode ? bridge.getMatrixUserId() : null
+  const identityLabel = storedIdentity?.displayName || (matrixMode ? 'Mesh account' : 'Local identity')
+  const homeService = serviceName(
+    bridge.getBackendStatusSnapshot()?.homeserver
+      ?? (matrixAccountId?.split(':').slice(1).join(':') || null),
+  )
 
   const activeCommunity = useActiveCommunity()
   const communityChannels = channels.filter((c) => c.communityId === activeCommunityId)
@@ -102,16 +112,40 @@ export function ChannelSidebar() {
   return (
     <>
       <div className="flex flex-col h-full">
-        {/* Server name header */}
         <button
-          className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border-subtle px-4 transition-colors hover:bg-bg-modifier-hover"
+          className="flex min-h-20 flex-shrink-0 items-start justify-between gap-2 border-b border-border-subtle px-3 py-3 text-left transition-colors hover:bg-bg-modifier-hover"
           onClick={() => setShowSettings(true)}
           data-tauri-drag-region
         >
-          <h2 className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-primary">
-            {activeCommunity.name}
-          </h2>
-          <Icon name="chevronDown" size="sm" className="flex-shrink-0 text-muted" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold text-primary">
+              {activeCommunity.name}
+            </span>
+            <span className="mt-1 block truncate text-caption text-muted">
+              {homeService ?? (matrixMode ? 'Connected service' : 'Local community')}
+            </span>
+            <span className="mt-0.5 block truncate text-caption text-secondary">
+              Identity · {identityLabel}
+            </span>
+            <span className="mt-1 flex items-center gap-1.5 text-caption text-muted">
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  networkStatus.state === 'connected'
+                    ? 'bg-status-success'
+                    : networkStatus.state === 'connecting'
+                      ? 'bg-status-warning'
+                      : 'bg-status-danger'
+                }`}
+                aria-hidden="true"
+              />
+              {networkStatus.state === 'connected'
+                ? 'Synced'
+                : networkStatus.state === 'connecting'
+                  ? 'Syncing'
+                  : 'Offline'}
+            </span>
+          </span>
+          <Icon name="chevronDown" size="sm" className="mt-0.5 flex-shrink-0 text-muted" />
         </button>
 
         {/* Channel list */}
@@ -131,7 +165,7 @@ export function ChannelSidebar() {
                   className={`text-muted transition-transform duration-150 ${textCollapsed ? '-rotate-90' : ''}`}
                 />
                 <span className="text-meta font-semibold uppercase tracking-caption text-muted group-hover:text-secondary">
-                  Text Channels
+                  Rooms
                 </span>
               </button>
               {!textCollapsed && (
@@ -167,7 +201,7 @@ export function ChannelSidebar() {
                   className={`text-muted transition-transform duration-150 ${voiceCollapsed ? '-rotate-90' : ''}`}
                 />
                 <span className="text-meta font-semibold uppercase tracking-caption text-muted group-hover:text-secondary">
-                  Voice Channels
+                  Voice rooms
                 </span>
               </button>
               {!voiceCollapsed && (
@@ -293,4 +327,13 @@ export function ChannelSidebar() {
       </DialogErrorBoundary>
     </>
   )
+}
+
+function serviceName(value: string | null | undefined) {
+  if (!value) return null
+  try {
+    return new URL(value).host || null
+  } catch {
+    return value.replace(/^[a-z]+:\/\//i, '').split('/')[0].trim() || null
+  }
 }
