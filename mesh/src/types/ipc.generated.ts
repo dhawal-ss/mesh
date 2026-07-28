@@ -22,6 +22,10 @@ export type MatrixNotification = { roomId: string, eventId: string, sender: stri
 
 export type MatrixUnreadUpdate = { roomId: string, unreadMessages: number, unreadMentions: number, };
 
+export type MatrixQueuedMessageState = "pending" | "failed" | "sent" | "cancelled";
+
+export type MatrixQueuedMessageUpdate = { roomId: string, transactionId: string, state: MatrixQueuedMessageState, eventId?: string | null, message?: MessageDto | null, };
+
 export type MatrixRoomNotificationMode = "all" | "mentions" | "nothing";
 
 export type MatrixRtcMember = { roomId: string, userId: string, deviceId: string, sessionId: string, displayName: string, avatarUrl: string | null, };
@@ -58,6 +62,16 @@ export type AttachmentDto = { fileHash: string, filename: string, size: number, 
 thumbnail?: AttachmentThumbnailDto | null, };
 
 export type MessageDto = { id: string, channelId: string, authorPublicKey: string, authorDisplayName: string, authorAvatarColor: string, content: string, attachments: Array<AttachmentDto>, reactions: Record<string, string[]>, timestamp: string, signature: string, editedAt?: string | null, deletedAt?: string | null, replyToId?: string | null,
+/**
+ * SDK transaction ID used to reconcile a durable local echo with the
+ * eventual server event. This is internal delivery metadata.
+ */
+transactionId?: string | null,
+/**
+ * Renderer request ID retained inside the encrypted event so a lost IPC
+ * response can be retried without publishing a duplicate.
+ */
+clientRequestId?: string | null,
 /**
  * Delivery status: "sent", "pending", or "failed". None = sent.
  */

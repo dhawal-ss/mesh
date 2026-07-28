@@ -1,11 +1,11 @@
 use std::{fs, path::PathBuf};
 
 use mesh_lib::backend::{
-    BackendCapabilities, BackendKind, BackendStatus, MatrixNotification,
-    MatrixRoomNotificationMode, MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyFailure,
-    MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember, MatrixRtcMembershipUpdate,
-    MatrixUnreadUpdate, NotificationPresentationContext, UserPreferences, VoiceProvider,
-    VoiceServiceAvailability, VoiceServiceStatus,
+    BackendCapabilities, BackendKind, BackendStatus, MatrixNotification, MatrixQueuedMessageState,
+    MatrixQueuedMessageUpdate, MatrixRoomNotificationMode, MatrixRtcJoinResult, MatrixRtcMediaKey,
+    MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember,
+    MatrixRtcMembershipUpdate, MatrixUnreadUpdate, NotificationPresentationContext,
+    UserPreferences, VoiceProvider, VoiceServiceAvailability, VoiceServiceStatus,
 };
 use mesh_lib::types::{
     community::{ChannelDto, CommunityDto},
@@ -40,6 +40,8 @@ fn generated_contract() -> String {
     output.push_str(&declaration::<BackendStatus>());
     output.push_str(&declaration::<MatrixNotification>());
     output.push_str(&declaration::<MatrixUnreadUpdate>());
+    output.push_str(&declaration::<MatrixQueuedMessageState>());
+    output.push_str(&declaration::<MatrixQueuedMessageUpdate>());
     output.push_str(&declaration::<MatrixRoomNotificationMode>());
     output.push_str(&declaration::<MatrixRtcMember>());
     output.push_str(&declaration::<MatrixRtcMembershipUpdate>());

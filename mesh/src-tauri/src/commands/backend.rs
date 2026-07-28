@@ -646,6 +646,49 @@ pub async fn matrix_send_message(
 }
 
 #[tauri::command]
+pub async fn matrix_queued_messages(
+    state: State<'_, AppState>,
+) -> Result<Vec<MessageDto>, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .queued_messages()
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_retry_queued_message(
+    room_id: String,
+    transaction_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .retry_queued_message(room_id, transaction_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_cancel_queued_message(
+    room_id: String,
+    transaction_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .cancel_queued_message(room_id, transaction_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
 pub async fn matrix_save_composer_draft(
     room_id: String,
     body: String,

@@ -16,6 +16,7 @@ use base64::{
     engine::general_purpose::{STANDARD_NO_PAD as BASE64_STANDARD, URL_SAFE_NO_PAD as BASE64},
     Engine as _,
 };
+use futures::StreamExt as _;
 use matrix_sdk::{
     authentication::{
         matrix::MatrixSession,
@@ -36,7 +37,7 @@ use matrix_sdk::{
     notification_settings::RoomNotificationMode,
     room::{
         reply::{EnforceThread, Reply},
-        MessagesOptions, Receipts, RoomMemberRole,
+        MessagesOptions, ParentSpace, Receipts, RoomMemberRole,
     },
     ruma::{
         api::{
@@ -83,8 +84,8 @@ use matrix_sdk::{
             },
             space::{child::SpaceChildEventContent, parent::SpaceParentEventContent},
             typing::SyncTypingEvent,
-            AnyGlobalAccountDataEventContent, AnyInitialStateEvent, AnyStateEvent,
-            AnyStateEventContent, AnyToDeviceEvent, AnyToDeviceEventContent,
+            AnyGlobalAccountDataEventContent, AnyInitialStateEvent, AnyMessageLikeEventContent,
+            AnyStateEvent, AnyStateEventContent, AnyToDeviceEvent, AnyToDeviceEventContent,
             GlobalAccountDataEventType, InitialStateEvent, Mentions, StateEvent, StateEventType,
         },
         int,
@@ -96,6 +97,7 @@ use matrix_sdk::{
         OwnedServerName, OwnedTransactionId, OwnedUserId, RoomAliasId, RoomOrAliasId, ServerName,
         UserId,
     },
+    send_queue::{LocalEcho, LocalEchoContent, RoomSendQueueUpdate, SendQueueUpdate},
     store::RoomLoadSettings,
     utils::UrlOrQuery,
     Client, ComposerDraft, ComposerDraftType, LoopCtrl, Room, RoomMemberships, RoomState,
@@ -107,7 +109,7 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
-use tokio::sync::{Mutex, RwLock, Semaphore};
+use tokio::sync::{Mutex, Notify, RwLock, Semaphore};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use zeroize::Zeroize;
@@ -125,13 +127,14 @@ use super::{
     CommunityAccessSettings, CommunityApplication, CommunityDirectoryEntry, CommunityMember,
     CreatedCommunity, MatrixAccount, MatrixAttachmentSendRequest, MatrixBackendEvent,
     MatrixBackendEventCallback, MatrixDevice, MatrixLogin, MatrixNotification,
-    MatrixOidcAvailability, MatrixOidcStatus, MatrixProfile, MatrixRecoveryHealth,
-    MatrixRoomNotificationMode, MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyFailure,
-    MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember, MatrixRtcMembershipUpdate,
-    MatrixTransferDirection, MatrixTransferObserver, MatrixTransferProgress,
-    MatrixTransferProgressCallback, MatrixTransferResult, MatrixTransferRetryMode,
-    MatrixTransferState, MatrixUnreadUpdate, MatrixVerificationSession, MeshBackend, SentMessage,
-    TypingUser, UserPreferences, VerificationEmoji, VoiceServiceAvailability, VoiceServiceStatus,
+    MatrixOidcAvailability, MatrixOidcStatus, MatrixProfile, MatrixQueuedMessageState,
+    MatrixQueuedMessageUpdate, MatrixRecoveryHealth, MatrixRoomNotificationMode,
+    MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease,
+    MatrixRtcMediaKeyPause, MatrixRtcMember, MatrixRtcMembershipUpdate, MatrixTransferDirection,
+    MatrixTransferObserver, MatrixTransferProgress, MatrixTransferProgressCallback,
+    MatrixTransferResult, MatrixTransferRetryMode, MatrixTransferState, MatrixUnreadUpdate,
+    MatrixVerificationSession, MeshBackend, SentMessage, TypingUser, UserPreferences,
+    VerificationEmoji, VoiceServiceAvailability, VoiceServiceStatus,
 };
 
 mod oidc;
@@ -145,10 +148,12 @@ const PREFERENCES_EVENT_TYPE: &str = "org.mesh.preferences.v1";
 const MANAGED_HOMESERVER_ENV: &str = "MESH_MANAGED_HOMESERVER";
 const MANAGED_SERVER_NAME_ENV: &str = "MESH_MANAGED_SERVER_NAME";
 const LOGIN_TIMEOUT_SECONDS: u64 = 45;
+const SESSION_RESTORE_SYNC_TIMEOUT_SECONDS: u64 = 10;
 const REGISTRATION_TIMEOUT_SECONDS: u64 = 45;
 const OIDC_REDIRECT_URI: &str = "http://127.0.0.1:8418/oauth/callback";
 const OIDC_CLIENT_ID_ENV: &str = "MESH_OAUTH_CLIENT_ID";
 const MAX_COMPOSER_DRAFT_BYTES: usize = 16 * 1024;
+const CLIENT_REQUEST_ID_KEY: &str = "org.mesh.client_request_id";
 const MAX_MEDIA_CACHE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES: u64 = 100 * 1024 * 1024;
 const MAX_THUMBNAIL_SOURCE_PIXELS: u64 = 25_000_000;
@@ -583,6 +588,7 @@ struct MatrixRuntime {
     profile_id: Option<String>,
     session_task: Option<JoinHandle<()>>,
     room_updates_task: Option<JoinHandle<()>>,
+    send_queue_task: Option<JoinHandle<()>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -607,6 +613,7 @@ struct MatrixSyncControl {
     cadence: MatrixSyncCadence,
     presence: PresenceState,
     paused: bool,
+    send_queue_reconcile: Option<Arc<Notify>>,
 }
 
 impl Default for MatrixSyncControl {
@@ -617,6 +624,7 @@ impl Default for MatrixSyncControl {
             cadence: MatrixSyncCadence::Normal,
             presence: PresenceState::Offline,
             paused: false,
+            send_queue_reconcile: None,
         }
     }
 }
@@ -687,6 +695,9 @@ pub struct MatrixBackend {
     verification_sessions: RwLock<HashMap<String, DeviceVerificationFlow>>,
     media_uploads: Mutex<HashMap<String, CancellationToken>>,
     media_downloads: Mutex<HashMap<String, CancellationToken>>,
+    send_queue_gate: Arc<Mutex<()>>,
+    send_queue_reconcile: Arc<Notify>,
+    send_queue_known: Arc<Mutex<HashMap<String, HashSet<String>>>>,
     thumbnail_loads: Semaphore,
     rtc_sessions: Arc<Mutex<HashMap<(String, String), MatrixRtcLocalSession>>>,
     rtc_media_keys: Arc<Mutex<MatrixRtcMediaKeyRuntime>>,
@@ -712,6 +723,9 @@ impl MatrixBackend {
             verification_sessions: RwLock::new(HashMap::new()),
             media_uploads: Mutex::new(HashMap::new()),
             media_downloads: Mutex::new(HashMap::new()),
+            send_queue_gate: Arc::new(Mutex::new(())),
+            send_queue_reconcile: Arc::new(Notify::new()),
+            send_queue_known: Arc::new(Mutex::new(HashMap::new())),
             thumbnail_loads: Semaphore::new(MAX_CONCURRENT_THUMBNAIL_LOADS),
             rtc_sessions: Arc::new(Mutex::new(HashMap::new())),
             rtc_media_keys: Arc::new(Mutex::new(MatrixRtcMediaKeyRuntime::default())),
@@ -750,6 +764,9 @@ impl MatrixBackend {
             verification_sessions: RwLock::new(HashMap::new()),
             media_uploads: Mutex::new(HashMap::new()),
             media_downloads: Mutex::new(HashMap::new()),
+            send_queue_gate: Arc::new(Mutex::new(())),
+            send_queue_reconcile: Arc::new(Notify::new()),
+            send_queue_known: Arc::new(Mutex::new(HashMap::new())),
             thumbnail_loads: Semaphore::new(MAX_CONCURRENT_THUMBNAIL_LOADS),
             rtc_sessions: Arc::new(Mutex::new(HashMap::new())),
             rtc_media_keys: Arc::new(Mutex::new(MatrixRtcMediaKeyRuntime::default())),
@@ -3389,6 +3406,37 @@ impl MatrixBackend {
         Ok(room)
     }
 
+    async fn existing_protected_text_channel(
+        client: &Client,
+        room_id: &matrix_sdk::ruma::RoomId,
+        action: &str,
+    ) -> BackendResult<Room> {
+        let room = Self::protected_joined_room(client, room_id, action).await?;
+        if room.is_space() || room.room_type().is_some() || !room.direct_targets().is_empty() {
+            return Err(BackendError::InvalidConfiguration(
+                "message delivery requires an existing protected text channel".into(),
+            ));
+        }
+
+        let mut parents = room.parent_spaces().await.map_err(Self::map_error)?;
+        while let Some(parent) = parents.next().await {
+            let Ok(ParentSpace::Reciprocal(parent)) = parent else {
+                continue;
+            };
+            if parent.is_space()
+                && Self::require_protected_room(&parent, "authorizing a protected text channel")
+                    .await
+                    .is_ok()
+            {
+                drop(parents);
+                return Ok(room);
+            }
+        }
+        Err(BackendError::PermissionDenied(
+            "message delivery requires a verified protected server channel".into(),
+        ))
+    }
+
     async fn room_for_cleanup_redaction(
         client: &Client,
         room_id: &matrix_sdk::ruma::RoomId,
@@ -3858,6 +3906,452 @@ impl MatrixBackend {
         Some(body.to_owned())
     }
 
+    fn queued_event_content(echo: &LocalEcho) -> Option<(&serde_json::value::RawValue, u64, bool)> {
+        let LocalEchoContent::Event {
+            serialized_event,
+            send_handle,
+            send_error,
+        } = &echo.content
+        else {
+            return None;
+        };
+        let (raw, event_type) = serialized_event.raw();
+        if event_type != "m.room.message" {
+            return None;
+        }
+        Some((
+            raw.json(),
+            send_handle.created_at.get().into(),
+            send_error.is_some(),
+        ))
+    }
+
+    fn queued_event_value(echo: &LocalEcho) -> Option<(serde_json::Value, u64, bool)> {
+        let (raw, created_at, failed) = Self::queued_event_content(echo)?;
+        let content = serde_json::from_str(raw.get()).ok()?;
+        Some((content, created_at, failed))
+    }
+
+    fn queued_client_request_id(echo: &LocalEcho) -> Option<String> {
+        let (content, _, _) = Self::queued_event_value(echo)?;
+        let client_request_id = content.get(CLIENT_REQUEST_ID_KEY)?.as_str()?.to_owned();
+        Self::validate_transaction_id(&client_request_id).ok()?;
+        Some(client_request_id)
+    }
+
+    fn is_supported_queued_content(content: &serde_json::Value) -> bool {
+        content.get("msgtype").and_then(serde_json::Value::as_str) == Some("m.text")
+            && Self::visible_message_body(content).is_some_and(|body| !body.trim().is_empty())
+            && content
+                .get(CLIENT_REQUEST_ID_KEY)
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|identifier| Self::validate_transaction_id(identifier).is_ok())
+    }
+
+    fn is_supported_queued_text(echo: &LocalEcho) -> bool {
+        let Some((content, _, _)) = Self::queued_event_value(echo) else {
+            return false;
+        };
+        Self::is_supported_queued_content(&content)
+    }
+
+    async fn queued_message_from_local_echo(
+        client: &Client,
+        room: &Room,
+        echo: &LocalEcho,
+    ) -> BackendResult<Option<MessageDto>> {
+        let Some((content, created_at, failed)) = Self::queued_event_value(echo) else {
+            return Ok(None);
+        };
+        if content.get("msgtype").and_then(serde_json::Value::as_str) != Some("m.text") {
+            return Ok(None);
+        }
+        let Some(body) = Self::visible_message_body(&content) else {
+            return Ok(None);
+        };
+        if body.trim().is_empty() {
+            return Ok(None);
+        }
+        let Some(client_request_id) = content
+            .get(CLIENT_REQUEST_ID_KEY)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+        else {
+            return Ok(None);
+        };
+        Self::validate_transaction_id(&client_request_id)?;
+        let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
+        let display_name = room
+            .get_member(own_user_id)
+            .await
+            .map_err(Self::map_error)?
+            .map(|member| member.name().to_owned())
+            .unwrap_or_else(|| own_user_id.localpart().to_owned());
+        let reply_to_id = content
+            .get("m.relates_to")
+            .and_then(|relation| relation.get("m.in_reply_to"))
+            .and_then(|reply| reply.get("event_id"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned);
+
+        Ok(Some(MessageDto {
+            id: echo.transaction_id.to_string(),
+            channel_id: room.room_id().to_string(),
+            author_public_key: own_user_id.to_string(),
+            author_display_name: display_name,
+            author_avatar_color: Self::avatar_color(own_user_id.as_str()),
+            content: body,
+            attachments: Vec::new(),
+            reactions: HashMap::new(),
+            timestamp: Self::timestamp_from_millis(Some(created_at)),
+            signature: String::new(),
+            edited_at: None,
+            deleted_at: None,
+            reply_to_id,
+            transaction_id: Some(echo.transaction_id.to_string()),
+            client_request_id: Some(client_request_id),
+            delivery_status: Some(if failed { "failed" } else { "pending" }.into()),
+        }))
+    }
+
+    async fn queued_messages_for_client(client: &Client) -> BackendResult<Vec<MessageDto>> {
+        let echoes_by_room = client
+            .send_queue()
+            .local_echoes()
+            .await
+            .map_err(Self::map_error)?;
+        let mut messages = Vec::new();
+        for (room_id, echoes) in echoes_by_room {
+            let Ok(room) =
+                Self::existing_protected_text_channel(client, &room_id, "reading queued messages")
+                    .await
+            else {
+                continue;
+            };
+            for echo in echoes {
+                if let Some(message) =
+                    Self::queued_message_from_local_echo(client, &room, &echo).await?
+                {
+                    messages.push(message);
+                }
+            }
+        }
+        messages.sort_by(|left, right| {
+            left.timestamp
+                .cmp(&right.timestamp)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        Ok(messages)
+    }
+
+    async fn reconcile_protected_send_queues(client: &Client) -> BackendResult<()> {
+        let echoes_by_room = client
+            .send_queue()
+            .local_echoes()
+            .await
+            .map_err(Self::map_error)?;
+        for (room_id, echoes) in echoes_by_room {
+            let Some(room) = client
+                .rooms()
+                .into_iter()
+                .find(|room| room.room_id() == room_id)
+            else {
+                continue;
+            };
+            let protected = Self::existing_protected_text_channel(
+                client,
+                &room_id,
+                "resuming queued message delivery",
+            )
+            .await
+            .is_ok();
+            let supported = !echoes.is_empty() && echoes.iter().all(Self::is_supported_queued_text);
+            room.send_queue().set_enabled(protected && supported);
+            if !protected || !supported {
+                tracing::warn!(
+                    target: "mesh::security",
+                    room_id = %room_id,
+                    "Kept a persisted send queue disabled because its room or content could not be verified"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    async fn resnapshot_send_queue_updates(
+        client: &Client,
+        callback: &Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
+        known: &Arc<Mutex<HashMap<String, HashSet<String>>>>,
+    ) -> BackendResult<()> {
+        let messages = Self::queued_messages_for_client(client).await?;
+        let mut current = HashMap::<String, HashSet<String>>::new();
+        let mut updates = Vec::with_capacity(messages.len());
+        for message in messages {
+            let Some(transaction_id) = message.transaction_id.clone() else {
+                continue;
+            };
+            current
+                .entry(message.channel_id.clone())
+                .or_default()
+                .insert(transaction_id.clone());
+            updates.push(MatrixQueuedMessageUpdate {
+                room_id: message.channel_id.clone(),
+                transaction_id,
+                state: if message.delivery_status.as_deref() == Some("failed") {
+                    MatrixQueuedMessageState::Failed
+                } else {
+                    MatrixQueuedMessageState::Pending
+                },
+                event_id: None,
+                message: Some(message),
+            });
+        }
+
+        let removed = {
+            let mut previous = known.lock().await;
+            let mut removed = Vec::new();
+            for (room_id, transaction_ids) in previous.iter() {
+                for transaction_id in transaction_ids {
+                    if !current
+                        .get(room_id)
+                        .is_some_and(|current_ids| current_ids.contains(transaction_id))
+                    {
+                        removed.push((room_id.clone(), transaction_id.clone()));
+                    }
+                }
+            }
+            *previous = current;
+            removed
+        };
+
+        for update in updates {
+            Self::dispatch_backend_event(callback, MatrixBackendEvent::QueuedMessage(update));
+        }
+        // A lagged stream cannot distinguish a missed successful send from a
+        // missed cancellation. Removing the stale local row is authoritative;
+        // a successful event is restored by the encrypted timeline.
+        for (room_id, transaction_id) in removed {
+            Self::dispatch_backend_event(
+                callback,
+                MatrixBackendEvent::QueuedMessage(MatrixQueuedMessageUpdate {
+                    room_id,
+                    transaction_id,
+                    state: MatrixQueuedMessageState::Cancelled,
+                    event_id: None,
+                    message: None,
+                }),
+            );
+        }
+        Ok(())
+    }
+
+    async fn dispatch_send_queue_update(
+        client: &Client,
+        callback: &Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
+        known: &Arc<Mutex<HashMap<String, HashSet<String>>>>,
+        update: SendQueueUpdate,
+    ) {
+        let Ok(room) = Self::existing_protected_text_channel(
+            client,
+            &update.room_id,
+            "updating queued message delivery",
+        )
+        .await
+        else {
+            return;
+        };
+        let (queued_update, requires_known) = match update.update {
+            RoomSendQueueUpdate::NewLocalEvent(echo) => {
+                let transaction_id = echo.transaction_id.to_string();
+                match Self::queued_message_from_local_echo(client, &room, &echo).await {
+                    Ok(Some(message)) => (
+                        MatrixQueuedMessageUpdate {
+                            room_id: update.room_id.to_string(),
+                            transaction_id,
+                            state: if message.delivery_status.as_deref() == Some("failed") {
+                                MatrixQueuedMessageState::Failed
+                            } else {
+                                MatrixQueuedMessageState::Pending
+                            },
+                            event_id: None,
+                            message: Some(message),
+                        },
+                        false,
+                    ),
+                    Ok(None) => return,
+                    Err(error) => {
+                        tracing::warn!(
+                            target: "mesh::matrix",
+                            room_id = %update.room_id,
+                            "Could not project a queued message: {error}"
+                        );
+                        return;
+                    }
+                }
+            }
+            RoomSendQueueUpdate::SendError {
+                transaction_id,
+                is_recoverable,
+                ..
+            } => (
+                MatrixQueuedMessageUpdate {
+                    room_id: update.room_id.to_string(),
+                    transaction_id: transaction_id.to_string(),
+                    state: if is_recoverable {
+                        MatrixQueuedMessageState::Pending
+                    } else {
+                        MatrixQueuedMessageState::Failed
+                    },
+                    event_id: None,
+                    message: None,
+                },
+                true,
+            ),
+            RoomSendQueueUpdate::RetryEvent { transaction_id } => (
+                MatrixQueuedMessageUpdate {
+                    room_id: update.room_id.to_string(),
+                    transaction_id: transaction_id.to_string(),
+                    state: MatrixQueuedMessageState::Pending,
+                    event_id: None,
+                    message: None,
+                },
+                true,
+            ),
+            RoomSendQueueUpdate::SentEvent {
+                transaction_id,
+                event_id,
+            } => (
+                MatrixQueuedMessageUpdate {
+                    room_id: update.room_id.to_string(),
+                    transaction_id: transaction_id.to_string(),
+                    state: MatrixQueuedMessageState::Sent,
+                    event_id: Some(event_id.to_string()),
+                    message: None,
+                },
+                true,
+            ),
+            RoomSendQueueUpdate::CancelledLocalEvent { transaction_id } => (
+                MatrixQueuedMessageUpdate {
+                    room_id: update.room_id.to_string(),
+                    transaction_id: transaction_id.to_string(),
+                    state: MatrixQueuedMessageState::Cancelled,
+                    event_id: None,
+                    message: None,
+                },
+                true,
+            ),
+            RoomSendQueueUpdate::ReplacedLocalEvent { .. } => {
+                if let Err(error) =
+                    Self::resnapshot_send_queue_updates(client, callback, known).await
+                {
+                    tracing::warn!(
+                        target: "mesh::matrix",
+                        room_id = %update.room_id,
+                        "Could not reconcile a replaced queued message: {error}"
+                    );
+                }
+                return;
+            }
+            RoomSendQueueUpdate::MediaUpload { .. } => return,
+        };
+
+        {
+            let mut known = known.lock().await;
+            let room_transactions = known.entry(queued_update.room_id.clone()).or_default();
+            if requires_known && !room_transactions.contains(&queued_update.transaction_id) {
+                return;
+            }
+            match queued_update.state {
+                MatrixQueuedMessageState::Pending | MatrixQueuedMessageState::Failed => {
+                    room_transactions.insert(queued_update.transaction_id.clone());
+                }
+                MatrixQueuedMessageState::Sent | MatrixQueuedMessageState::Cancelled => {
+                    room_transactions.remove(&queued_update.transaction_id);
+                }
+            }
+            if room_transactions.is_empty() {
+                known.remove(&queued_update.room_id);
+            }
+        }
+        Self::dispatch_backend_event(callback, MatrixBackendEvent::QueuedMessage(queued_update));
+    }
+
+    fn spawn_send_queue_task(
+        client: Client,
+        reconcile: Arc<Notify>,
+        gate: Arc<Mutex<()>>,
+        known: Arc<Mutex<HashMap<String, HashSet<String>>>>,
+        callback: Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
+    ) -> JoinHandle<()> {
+        let mut updates = client.send_queue().subscribe();
+        tokio::spawn(async move {
+            if let Err(error) =
+                Self::resnapshot_send_queue_updates(&client, &callback, &known).await
+            {
+                tracing::warn!(
+                    target: "mesh::matrix",
+                    "Could not restore saved message state: {error}"
+                );
+            }
+            loop {
+                tokio::select! {
+                    _ = reconcile.notified() => {
+                        let _gate = gate.lock().await;
+                        if let Err(error) = Self::reconcile_protected_send_queues(&client).await {
+                            tracing::warn!(
+                                target: "mesh::matrix",
+                                "Could not reconcile protected message queues: {error}"
+                            );
+                        }
+                    }
+                    update = updates.recv() => {
+                        match update {
+                            Ok(update) => {
+                                Self::dispatch_send_queue_update(
+                                    &client,
+                                    &callback,
+                                    &known,
+                                    update,
+                                )
+                                .await;
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                                tracing::warn!(
+                                    target: "mesh::matrix",
+                                    skipped,
+                                    "Queued-message update stream lagged; reconciling durable state"
+                                );
+                                let _gate = gate.lock().await;
+                                if let Err(error) =
+                                    Self::reconcile_protected_send_queues(&client).await
+                                {
+                                    tracing::warn!(
+                                        target: "mesh::matrix",
+                                        "Could not reconcile queued messages after lag: {error}"
+                                    );
+                                }
+                                if let Err(error) =
+                                    Self::resnapshot_send_queue_updates(
+                                        &client,
+                                        &callback,
+                                        &known,
+                                    )
+                                    .await
+                                {
+                                    tracing::warn!(
+                                        target: "mesh::matrix",
+                                        "Could not restore queued message state after lag: {error}"
+                                    );
+                                }
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                        }
+                    }
+                }
+            }
+        })
+    }
+
     fn project_legacy_message(room_id: &str, value: &serde_json::Value) -> Option<MessageDto> {
         if value.get("type").and_then(serde_json::Value::as_str)
             != Some(crate::backend::LEGACY_MATRIX_EVENT_TYPE)
@@ -3941,6 +4435,8 @@ impl MatrixBackend {
                 .get("replyToId")
                 .and_then(serde_json::Value::as_str)
                 .map(|reply| format!("legacy-reply:{reply}")),
+            transaction_id: None,
+            client_request_id: None,
             delivery_status: Some("imported".into()),
         })
     }
@@ -4030,6 +4526,15 @@ impl MatrixBackend {
                 .and_then(|reply| reply.get("event_id"))
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_owned);
+            let transaction_id = value
+                .get("unsigned")
+                .and_then(|unsigned| unsigned.get("transaction_id"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned);
+            let client_request_id = content
+                .get(CLIENT_REQUEST_ID_KEY)
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned);
 
             ordered_ids.push(event_id.clone());
             messages.insert(
@@ -4057,6 +4562,8 @@ impl MatrixBackend {
                     edited_at: None,
                     deleted_at: redacted.then_some(timestamp),
                     reply_to_id,
+                    transaction_id,
+                    client_request_id,
                     delivery_status: Some("sent".into()),
                 },
             );
@@ -4219,10 +4726,16 @@ impl MatrixBackend {
         std::fs::create_dir_all(&storage.store_root).map_err(Self::map_error)?;
         let passphrase = Self::load_or_create_store_passphrase(storage)?;
 
-        Client::builder()
-            // Accept either a Matrix server name (for .well-known discovery)
-            // or an explicit homeserver URL for advanced/self-hosted setups.
-            .server_name_or_homeserver_url(homeserver)
+        let builder = Client::builder();
+        let builder = if homeserver.contains("://") {
+            // Explicit URLs were already validated above and must remain
+            // usable for opening encrypted local state while the server is
+            // offline. Server names still use normal .well-known discovery.
+            builder.homeserver_url(&homeserver)
+        } else {
+            builder.server_name_or_homeserver_url(&homeserver)
+        };
+        let client = builder
             .sqlite_store(&storage.store_root, Some(&passphrase))
             .handle_refresh_tokens()
             .with_encryption_settings(EncryptionSettings {
@@ -4232,7 +4745,12 @@ impl MatrixBackend {
             })
             .build()
             .await
-            .map_err(Self::map_error)
+            .map_err(Self::map_error)?;
+        // Persisted requests must never respawn under the SDK's permissive
+        // default. Mesh enables each room queue only after re-establishing the
+        // joined-and-encrypted invariant for the active account.
+        client.send_queue().set_enabled(false).await;
+        Ok(client)
     }
 
     async fn build_ephemeral_oauth_client(
@@ -4246,8 +4764,13 @@ impl MatrixBackend {
         let encoded_passphrase = BASE64.encode(passphrase);
         passphrase.zeroize();
 
-        Client::builder()
-            .server_name_or_homeserver_url(homeserver)
+        let builder = Client::builder();
+        let builder = if homeserver.contains("://") {
+            builder.homeserver_url(&homeserver)
+        } else {
+            builder.server_name_or_homeserver_url(&homeserver)
+        };
+        builder
             .sqlite_store(store.path(), Some(&encoded_passphrase))
             .handle_refresh_tokens()
             .with_encryption_settings(EncryptionSettings {
@@ -4258,6 +4781,42 @@ impl MatrixBackend {
             .build()
             .await
             .map_err(Self::map_error)
+    }
+
+    async fn sync_once_for_session_restore(client: &Client) -> BackendResult<()> {
+        match tokio::time::timeout(
+            Duration::from_secs(SESSION_RESTORE_SYNC_TIMEOUT_SECONDS),
+            client.sync_once(SyncSettings::default().set_presence(PresenceState::Offline)),
+        )
+        .await
+        {
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(error)) => match Self::map_error(error) {
+                BackendError::Network(detail) => {
+                    tracing::warn!(
+                        target: "mesh::matrix",
+                        "Restored the encrypted local account while offline; sync will retry automatically: {detail}"
+                    );
+                    Ok(())
+                }
+                BackendError::RateLimited(detail) => {
+                    tracing::warn!(
+                        target: "mesh::matrix",
+                        "Restored the encrypted local account while initial sync was rate limited; sync will retry automatically: {detail}"
+                    );
+                    Ok(())
+                }
+                error => Err(error),
+            },
+            Err(_) => {
+                tracing::warn!(
+                    target: "mesh::matrix",
+                    timeout_seconds = SESSION_RESTORE_SYNC_TIMEOUT_SECONDS,
+                    "Restored the encrypted local account while initial sync was unavailable; sync will retry automatically"
+                );
+                Ok(())
+            }
+        }
     }
 
     fn persist_session(
@@ -4542,11 +5101,13 @@ impl MatrixBackend {
         presence: PresenceState,
         task_epoch: u64,
         freshness: Arc<StdMutex<MatrixSyncFreshness>>,
+        send_queue_reconcile: Option<Arc<Notify>>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
             let mut failure_count: u32 = 0;
             loop {
                 let callback_freshness = Arc::clone(&freshness);
+                let callback_send_queue_reconcile = send_queue_reconcile.clone();
                 let result = client
                     .sync_with_result_callback(
                         SyncSettings::default()
@@ -4554,6 +5115,7 @@ impl MatrixBackend {
                             .set_presence(presence.clone()),
                         move |result| {
                             let freshness = Arc::clone(&callback_freshness);
+                            let send_queue_reconcile = callback_send_queue_reconcile.clone();
                             async move {
                                 if Self::lock_matrix_sync_freshness(&freshness).epoch != task_epoch
                                 {
@@ -4566,6 +5128,10 @@ impl MatrixBackend {
                                             task_epoch,
                                             Self::matrix_rtc_monotonic_now_ms(),
                                         ) {
+                                            if let Some(send_queue_reconcile) = send_queue_reconcile
+                                            {
+                                                send_queue_reconcile.notify_one();
+                                            }
                                             Ok(LoopCtrl::Continue)
                                         } else {
                                             Ok(LoopCtrl::Break)
@@ -4627,6 +5193,7 @@ impl MatrixBackend {
                     control.presence.clone(),
                     task_epoch,
                     Arc::clone(freshness),
+                    control.send_queue_reconcile.clone(),
                 ));
             }
         }
@@ -4996,6 +5563,13 @@ impl MatrixBackend {
                 }
             }
         });
+        let send_queue_task = Self::spawn_send_queue_task(
+            client.clone(),
+            Arc::clone(&self.send_queue_reconcile),
+            Arc::clone(&self.send_queue_gate),
+            Arc::clone(&self.send_queue_known),
+            Arc::clone(&self.event_callback),
+        );
 
         let mut runtime = self.runtime.write().await;
         if let Some(previous) = runtime.session_task.take() {
@@ -5004,18 +5578,24 @@ impl MatrixBackend {
         if let Some(previous) = runtime.room_updates_task.take() {
             previous.abort();
         }
+        if let Some(previous) = runtime.send_queue_task.take() {
+            previous.abort();
+        }
         runtime.client = Some(client.clone());
         runtime.homeserver = Some(homeserver);
         runtime.profile_id = Some(profile_id);
         runtime.session_task = session_task;
         runtime.room_updates_task = Some(room_updates_task);
+        runtime.send_queue_task = Some(send_queue_task);
         drop(runtime);
 
         let mut sync = self.matrix_sync_control.lock().await;
         sync.client = Some(client);
         sync.cadence = MatrixSyncCadence::Normal;
         sync.paused = false;
+        sync.send_queue_reconcile = Some(Arc::clone(&self.send_queue_reconcile));
         Self::restart_matrix_sync_locked(&mut sync, &self.matrix_sync_freshness).await;
+        drop(sync);
     }
 
     async fn stop_runtime(&self) -> Option<Client> {
@@ -5025,20 +5605,25 @@ impl MatrixBackend {
             sync.client = None;
             sync.cadence = MatrixSyncCadence::Normal;
             sync.presence = PresenceState::Offline;
+            sync.send_queue_reconcile = None;
             Self::restart_matrix_sync_locked(&mut sync, &self.matrix_sync_freshness).await;
         }
         *self.wire_privacy.write().await = WirePrivacyPreferences::default();
         self.sent_typing_notices.lock().await.clear();
-        let (client, session_task, room_updates_task) = {
+        let (client, session_task, room_updates_task, send_queue_task) = {
             let mut runtime = self.runtime.write().await;
             let client = runtime.client.take();
             let session_task = runtime.session_task.take();
             let room_updates_task = runtime.room_updates_task.take();
+            let send_queue_task = runtime.send_queue_task.take();
             runtime.homeserver = None;
             runtime.profile_id = None;
-            (client, session_task, room_updates_task)
+            (client, session_task, room_updates_task, send_queue_task)
         };
 
+        if let Some(client) = client.as_ref() {
+            client.send_queue().set_enabled(false).await;
+        }
         if let Some(task) = session_task {
             task.abort();
             let _ = task.await;
@@ -5047,6 +5632,11 @@ impl MatrixBackend {
             task.abort();
             let _ = task.await;
         }
+        if let Some(task) = send_queue_task {
+            task.abort();
+            let _ = task.await;
+        }
+        self.send_queue_known.lock().await.clear();
         for session in self
             .rtc_sessions
             .lock()
@@ -5089,6 +5679,11 @@ impl MatrixBackend {
         }
         sync.paused = true;
         Self::restart_matrix_sync_locked(&mut sync, &self.matrix_sync_freshness).await;
+    }
+
+    #[doc(hidden)]
+    pub async fn shutdown_for_test(&self) {
+        self.stop_runtime().await;
     }
 
     pub async fn resume_sync(&self) -> BackendResult<()> {
@@ -6000,6 +6595,67 @@ impl MatrixBackend {
             delivery_status: message.delivery_status,
         }
     }
+
+    async fn send_immediate_protected_message(
+        client: &Client,
+        room: &Room,
+        body: String,
+        reply_to_id: Option<String>,
+        transaction_id: String,
+    ) -> BackendResult<MessageDto> {
+        Self::require_protected_room(room, "sending a direct message").await?;
+        let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
+        let base_content = RoomMessageEventContentWithoutRelation::text_plain(body.clone())
+            .add_mentions(Self::mentions_for_body(body.as_str(), Some(own_user_id)));
+        let content = match reply_to_id.as_deref() {
+            Some(event_id) => {
+                let event_id =
+                    matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
+                room.make_reply_event(
+                    base_content,
+                    Reply {
+                        event_id,
+                        enforce_thread: EnforceThread::Unthreaded,
+                        add_mentions: AddMentions::Yes,
+                    },
+                )
+                .await
+                .map_err(Self::map_error)?
+            }
+            None => base_content.into(),
+        };
+        let transaction_id = Self::validate_transaction_id(&transaction_id)?;
+        let response = room
+            .send(content)
+            .with_transaction_id(transaction_id.clone())
+            .await
+            .map_err(Self::map_error)?;
+        let display_name = room
+            .get_member(own_user_id)
+            .await
+            .map_err(Self::map_error)?
+            .map(|member| member.name().to_owned())
+            .unwrap_or_else(|| own_user_id.localpart().to_owned());
+
+        Ok(MessageDto {
+            id: response.response.event_id.to_string(),
+            channel_id: room.room_id().to_string(),
+            author_public_key: own_user_id.to_string(),
+            author_display_name: display_name,
+            author_avatar_color: Self::avatar_color(own_user_id.as_str()),
+            content: body,
+            attachments: Vec::new(),
+            reactions: HashMap::new(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            signature: String::new(),
+            edited_at: None,
+            deleted_at: None,
+            reply_to_id,
+            transaction_id: Some(transaction_id.to_string()),
+            client_request_id: None,
+            delivery_status: Some("sent".into()),
+        })
+    }
 }
 
 #[async_trait]
@@ -6594,10 +7250,7 @@ impl MeshBackend for MatrixBackend {
                 .restore_session(persisted.authentication.into_sdk_session())
                 .await
                 .map_err(Self::map_error)?;
-            client
-                .sync_once(SyncSettings::default().set_presence(PresenceState::Offline))
-                .await
-                .map_err(Self::map_error)?;
+            Self::sync_once_for_session_restore(&client).await?;
             Ok::<_, BackendError>(client)
         };
         let client = tokio::time::timeout(Duration::from_secs(LOGIN_TIMEOUT_SECONDS), operation)
@@ -6855,10 +7508,7 @@ impl MeshBackend for MatrixBackend {
                 .restore_session(persisted.authentication.into_sdk_session())
                 .await
                 .map_err(Self::map_error)?;
-            client
-                .sync_once(SyncSettings::default().set_presence(PresenceState::Offline))
-                .await
-                .map_err(Self::map_error)?;
+            Self::sync_once_for_session_restore(&client).await?;
             Ok::<_, BackendError>(client)
         };
         let client = tokio::time::timeout(Duration::from_secs(LOGIN_TIMEOUT_SECONDS), operation)
@@ -7877,7 +8527,7 @@ impl MeshBackend for MatrixBackend {
         } else {
             "sending a message"
         };
-        let room = Self::protected_joined_room(&client, &room_id, action).await?;
+        let room = Self::existing_protected_text_channel(&client, &room_id, action).await?;
         let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
         let base_content = RoomMessageEventContentWithoutRelation::text_plain(body.clone())
             .add_mentions(Self::mentions_for_body(body.as_str(), Some(own_user_id)));
@@ -7899,36 +8549,161 @@ impl MeshBackend for MatrixBackend {
             }
             None => base_content.into(),
         };
-        let transaction_id = Self::validate_transaction_id(&transaction_id)?;
-        let response = room
-            .send(content)
-            .with_transaction_id(transaction_id)
+        let client_request_id = Self::validate_transaction_id(&transaction_id)?.to_string();
+        let _queue_gate = self.send_queue_gate.lock().await;
+        let queue = room.send_queue();
+        // Keep the queue asleep until the event is durably present and its SDK
+        // transaction ID has been recovered from the encrypted local echo.
+        queue.set_enabled(false);
+        let (existing_echoes, _) = queue.subscribe().await.map_err(Self::map_error)?;
+        for echo in existing_echoes {
+            if Self::queued_client_request_id(&echo).as_deref() != Some(client_request_id.as_str())
+            {
+                continue;
+            }
+            if let Some(message) =
+                Self::queued_message_from_local_echo(&client, &room, &echo).await?
+            {
+                let last_success_ms =
+                    Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness).last_success_ms;
+                queue.set_enabled(Self::matrix_sync_is_fresh(
+                    last_success_ms,
+                    Self::matrix_rtc_monotonic_now_ms(),
+                ));
+                return Ok(message);
+            }
+        }
+
+        let mut raw_content = serde_json::to_value(&content).map_err(Self::map_error)?;
+        raw_content
+            .as_object_mut()
+            .ok_or_else(|| {
+                BackendError::InvalidConfiguration(
+                    "queued message content was not an object".into(),
+                )
+            })?
+            .insert(
+                CLIENT_REQUEST_ID_KEY.into(),
+                serde_json::Value::String(client_request_id.clone()),
+            );
+        let raw_content = Raw::<AnyMessageLikeEventContent>::from_json_string(
+            serde_json::to_string(&raw_content).map_err(Self::map_error)?,
+        )
+        .map_err(Self::map_error)?;
+        queue
+            .send_raw(raw_content, "m.room.message".into())
             .await
             .map_err(Self::map_error)?;
 
-        let display_name = room
-            .get_member(own_user_id)
-            .await
-            .map_err(Self::map_error)?
-            .map(|member| member.name().to_owned())
-            .unwrap_or_else(|| own_user_id.localpart().to_owned());
+        let (echoes, _) = queue.subscribe().await.map_err(Self::map_error)?;
+        let queued = echoes
+            .iter()
+            .find(|echo| {
+                Self::queued_client_request_id(echo).as_deref() == Some(client_request_id.as_str())
+            })
+            .ok_or_else(|| {
+                BackendError::Other(
+                    "durable message was accepted but its local echo could not be recovered".into(),
+                )
+            })?;
+        let message = Self::queued_message_from_local_echo(&client, &room, queued)
+            .await?
+            .ok_or_else(|| {
+                BackendError::Other("durable message local echo was not displayable".into())
+            })?;
+        let last_success_ms =
+            Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness).last_success_ms;
+        queue.set_enabled(Self::matrix_sync_is_fresh(
+            last_success_ms,
+            Self::matrix_rtc_monotonic_now_ms(),
+        ));
+        Ok(message)
+    }
 
-        Ok(MessageDto {
-            id: response.response.event_id.to_string(),
-            channel_id: room.room_id().to_string(),
-            author_public_key: own_user_id.to_string(),
-            author_display_name: display_name,
-            author_avatar_color: Self::avatar_color(own_user_id.as_str()),
-            content: body,
-            attachments: Vec::new(),
-            reactions: HashMap::new(),
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            signature: String::new(),
-            edited_at: None,
-            deleted_at: None,
-            reply_to_id,
-            delivery_status: Some("sent".into()),
-        })
+    async fn queued_messages(&self) -> BackendResult<Vec<MessageDto>> {
+        let _queue_gate = self.send_queue_gate.lock().await;
+        Self::queued_messages_for_client(&self.client().await?).await
+    }
+
+    async fn retry_queued_message(
+        &self,
+        room_id: String,
+        transaction_id: String,
+    ) -> BackendResult<()> {
+        let client = self.client().await?;
+        let _queue_gate = self.send_queue_gate.lock().await;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let transaction_id = Self::validate_transaction_id(&transaction_id)?;
+        let room =
+            Self::existing_protected_text_channel(&client, &room_id, "retrying a queued message")
+                .await?;
+        let queue = room.send_queue();
+        let (echoes, _) = queue.subscribe().await.map_err(Self::map_error)?;
+        let echo = echoes
+            .into_iter()
+            .find(|echo| echo.transaction_id == transaction_id)
+            .ok_or_else(|| BackendError::NotFound("queued message is no longer pending".into()))?;
+        if !Self::is_supported_queued_text(&echo) {
+            return Err(BackendError::PermissionDenied(
+                "queued message content could not be verified".into(),
+            ));
+        }
+        let LocalEchoContent::Event {
+            send_handle,
+            send_error,
+            ..
+        } = echo.content
+        else {
+            return Err(BackendError::PermissionDenied(
+                "queued message content could not be verified".into(),
+            ));
+        };
+        if send_error.is_some() {
+            send_handle.unwedge().await.map_err(Self::map_error)?;
+        }
+        let last_success_ms =
+            Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness).last_success_ms;
+        queue.set_enabled(Self::matrix_sync_is_fresh(
+            last_success_ms,
+            Self::matrix_rtc_monotonic_now_ms(),
+        ));
+        Ok(())
+    }
+
+    async fn cancel_queued_message(
+        &self,
+        room_id: String,
+        transaction_id: String,
+    ) -> BackendResult<()> {
+        let client = self.client().await?;
+        let _queue_gate = self.send_queue_gate.lock().await;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let transaction_id = Self::validate_transaction_id(&transaction_id)?;
+        let room =
+            Self::existing_protected_text_channel(&client, &room_id, "cancelling a queued message")
+                .await?;
+        let queue = room.send_queue();
+        let (echoes, _) = queue.subscribe().await.map_err(Self::map_error)?;
+        let echo = echoes
+            .into_iter()
+            .find(|echo| echo.transaction_id == transaction_id)
+            .ok_or_else(|| BackendError::NotFound("queued message is no longer pending".into()))?;
+        if !Self::is_supported_queued_text(&echo) {
+            return Err(BackendError::PermissionDenied(
+                "queued message content could not be verified".into(),
+            ));
+        }
+        let LocalEchoContent::Event { send_handle, .. } = echo.content else {
+            return Err(BackendError::PermissionDenied(
+                "queued message content could not be verified".into(),
+            ));
+        };
+        if !send_handle.abort().await.map_err(Self::map_error)? {
+            return Err(BackendError::NotFound(
+                "queued message is already being delivered".into(),
+            ));
+        }
+        Ok(())
     }
 
     async fn save_composer_draft(&self, room_id: String, body: String) -> BackendResult<()> {
@@ -8257,6 +9032,8 @@ impl MeshBackend for MatrixBackend {
                 edited_at: None,
                 deleted_at: None,
                 reply_to_id,
+                transaction_id: None,
+                client_request_id: None,
                 delivery_status: Some("sent".into()),
             })
         }
@@ -8701,9 +9478,9 @@ impl MeshBackend for MatrixBackend {
             ));
         }
         let room = self.direct_room(&client, &recipient).await?;
-        let message = <Self as MeshBackend>::send_message(
-            self,
-            room.room_id().to_string(),
+        let message = Self::send_immediate_protected_message(
+            &client,
+            &room,
             body,
             reply_to_id,
             transaction_id,
@@ -9746,6 +10523,7 @@ impl MeshBackend for MatrixBackend {
                 task_epoch,
                 Self::matrix_rtc_monotonic_now_ms(),
             );
+            self.send_queue_reconcile.notify_one();
         }
         if !sync.paused {
             if let Some(client) = sync.client.clone() {
@@ -9755,6 +10533,7 @@ impl MeshBackend for MatrixBackend {
                     sync.presence.clone(),
                     task_epoch,
                     Arc::clone(&self.matrix_sync_freshness),
+                    sync.send_queue_reconcile.clone(),
                 ));
             }
         }
@@ -11653,6 +12432,8 @@ mod tests {
             edited_at: None,
             deleted_at: None,
             reply_to_id: Some("$root".into()),
+            transaction_id: None,
+            client_request_id: None,
             delivery_status: Some("sent".into()),
         };
         let projected = MatrixBackend::direct_message_from_message(message);
@@ -11686,6 +12467,51 @@ mod tests {
         assert!(MatrixBackend::validate_transaction_id("contains whitespace").is_err());
         assert!(MatrixBackend::validate_transaction_id("contains\nnewline").is_err());
         assert!(MatrixBackend::validate_transaction_id(&"x".repeat(256)).is_err());
+    }
+
+    #[test]
+    fn durable_queue_accepts_only_bounded_nonempty_text_content() {
+        let valid = json!({
+            "msgtype": "m.text",
+            "body": "saved privately",
+            (CLIENT_REQUEST_ID_KEY): "request-123"
+        });
+        assert!(MatrixBackend::is_supported_queued_content(&valid));
+
+        let reply = json!({
+            "msgtype": "m.text",
+            "body": "> <@bob:example.org> quoted\n\nvisible reply",
+            "m.relates_to": {
+                "m.in_reply_to": { "event_id": "$root:example.org" }
+            },
+            (CLIENT_REQUEST_ID_KEY): "reply-123"
+        });
+        assert!(MatrixBackend::is_supported_queued_content(&reply));
+        assert_eq!(
+            MatrixBackend::visible_message_body(&reply).as_deref(),
+            Some("visible reply")
+        );
+
+        for rejected in [
+            json!({
+                "msgtype": "m.file",
+                "body": "not a text queue item",
+                (CLIENT_REQUEST_ID_KEY): "request-123"
+            }),
+            json!({ "msgtype": "m.text", "body": "missing identifier" }),
+            json!({
+                "msgtype": "m.text",
+                "body": "invalid identifier",
+                (CLIENT_REQUEST_ID_KEY): "contains whitespace"
+            }),
+            json!({
+                "msgtype": "m.text",
+                "body": "   ",
+                (CLIENT_REQUEST_ID_KEY): "request-123"
+            }),
+        ] {
+            assert!(!MatrixBackend::is_supported_queued_content(&rejected));
+        }
     }
 
     #[test]

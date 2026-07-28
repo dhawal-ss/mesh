@@ -33,6 +33,110 @@ beforeEach(() => {
     browsingOlder: {},
     newerGapCount: {},
     channelRecency: [],
+    matrixQueueStates: {},
+  })
+})
+
+describe('durable Matrix queue reconciliation', () => {
+  const queued = () => msg({
+    id: 'txn-1',
+    channelId: 'ch-1',
+    content: 'Saved message',
+    timestamp: '2025-01-01T00:00:01Z',
+    transactionId: 'txn-1',
+    clientRequestId: 'request-1',
+    deliveryStatus: 'pending',
+  })
+
+  it('preserves pending and failed local echoes during timeline replacement', () => {
+    const store = useMessageStore.getState()
+    store.acceptQueuedMessage(queued())
+    store.applyQueuedMessageUpdate({
+      roomId: 'ch-1',
+      transactionId: 'txn-1',
+      state: 'failed',
+    })
+
+    store.replaceMessages('ch-1', [
+      msg({ id: '$remote', timestamp: '2025-01-01T00:00:02Z' }),
+    ])
+
+    const messages = useMessageStore.getState().messages['ch-1']
+    expect(messages.map((message) => message.id)).toEqual(['txn-1', '$remote'])
+    expect(messages[0].deliveryStatus).toBe('failed')
+  })
+
+  it('converges when the sent update arrives before the enqueue response', () => {
+    const store = useMessageStore.getState()
+    store.applyQueuedMessageUpdate({
+      roomId: 'ch-1',
+      transactionId: 'txn-1',
+      state: 'sent',
+      eventId: '$event-1',
+    })
+    store.acceptQueuedMessage(queued())
+
+    const messages = useMessageStore.getState().messages['ch-1']
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({
+      id: '$event-1',
+      transactionId: 'txn-1',
+      deliveryStatus: 'sent',
+    })
+  })
+
+  it('merges a timeline echo by client request without moving the row', () => {
+    const store = useMessageStore.getState()
+    store.acceptQueuedMessage(queued())
+    store.replaceMessages('ch-1', [
+      msg({
+        id: '$event-1',
+        channelId: 'ch-1',
+        content: 'Saved message',
+        timestamp: '2025-01-01T00:00:05Z',
+        transactionId: 'txn-1',
+        clientRequestId: 'request-1',
+        deliveryStatus: 'sent',
+      }),
+    ])
+
+    const messages = useMessageStore.getState().messages['ch-1']
+    expect(messages).toHaveLength(1)
+    expect(messages[0].id).toBe('$event-1')
+    expect(messages[0].timestamp).toBe('2025-01-01T00:00:01Z')
+    expect(messages[0].deliveryStatus).toBe('sent')
+  })
+
+  it('does not let a late enqueue response regress failure or delivery', () => {
+    const store = useMessageStore.getState()
+    store.acceptQueuedMessage(queued())
+    store.applyQueuedMessageUpdate({
+      roomId: 'ch-1',
+      transactionId: 'txn-1',
+      state: 'failed',
+    })
+    store.acceptQueuedMessage(queued())
+    expect(useMessageStore.getState().messages['ch-1'][0].deliveryStatus).toBe('failed')
+
+    store.applyQueuedMessageUpdate({
+      roomId: 'ch-1',
+      transactionId: 'txn-1',
+      state: 'pending',
+    })
+    expect(useMessageStore.getState().messages['ch-1'][0].deliveryStatus).toBe('pending')
+  })
+
+  it('keeps acknowledged cancellation removed across a stale snapshot', () => {
+    const store = useMessageStore.getState()
+    store.acceptQueuedMessage(queued())
+    store.applyQueuedMessageUpdate({
+      roomId: 'ch-1',
+      transactionId: 'txn-1',
+      state: 'cancelled',
+    })
+    store.acceptQueuedMessage(queued())
+
+    expect(useMessageStore.getState().messages['ch-1']).toEqual([])
   })
 })
 

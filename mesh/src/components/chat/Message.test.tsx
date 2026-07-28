@@ -97,6 +97,62 @@ describe('MessageComponent federated timestamps', () => {
     },
   )
 
+  it.each([false, true])(
+    'shows protected saved state for %s-group queued messages',
+    async (isGrouped) => {
+      await act(async () => {
+        root.render(
+          <MessageComponent
+            message={{
+              ...malformedMessage(),
+              id: 'txn-1',
+              transactionId: 'txn-1',
+              deliveryStatus: 'pending',
+            }}
+            isGrouped={isGrouped}
+          />,
+        )
+      })
+
+      expect(container.querySelector('[role="status"]')?.textContent)
+        .toContain('Saved on this device')
+      expect(container.getAttribute('aria-label')).toBeNull()
+      expect(container.querySelector('[aria-label="Edit message"]')).toBeNull()
+      expect(container.querySelector('[aria-label^="React to message"]')).toBeNull()
+    },
+  )
+
+  it('offers accessible retry and cancel without exposing event-only actions', async () => {
+    const onRetry = vi.fn()
+    const onCancel = vi.fn()
+    await act(async () => {
+      root.render(
+        <MessageComponent
+          message={{
+            ...malformedMessage(),
+            id: 'txn-1',
+            transactionId: 'txn-1',
+            deliveryStatus: 'failed',
+          }}
+          isGrouped
+          onRetry={onRetry}
+          onCancel={onCancel}
+        />,
+      )
+    })
+
+    const alert = container.querySelector('[role="alert"]')
+    expect(alert?.textContent).toContain('Delivery needs attention')
+    const [retry, cancel] = [...alert!.querySelectorAll('button')]
+    await act(async () => {
+      retry.click()
+      cancel.click()
+    })
+    expect(onRetry).toHaveBeenCalledOnce()
+    expect(onCancel).toHaveBeenCalledOnce()
+    expect(container.querySelector('[aria-label="Edit message"]')).toBeNull()
+  })
+
   it('loads an encrypted thumbnail only near the viewport and revokes its Blob URL', async () => {
     let intersectionCallback: IntersectionObserverCallback | undefined
     class TestIntersectionObserver {

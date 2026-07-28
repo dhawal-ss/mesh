@@ -18,6 +18,7 @@ import { Icon } from '../ui/Icon'
 import { useNotificationSync } from '../../hooks/useNotificationSync'
 import { getEffectiveChannelNotificationLevel } from '../../store/settings'
 import { useNetworkStore } from '../../store/network'
+import { useQueuedMessageSync } from '../../hooks/useQueuedMessageSync'
 
 const CommandPalette = lazy(() =>
   import('../navigation/CommandPalette').then((module) => ({ default: module.CommandPalette })),
@@ -26,6 +27,7 @@ const CommandPalette = lazy(() =>
 export function AppLayout() {
   useCommunitySync()
   const matrixMode = bridge.isMatrixBackend()
+  useQueuedMessageSync(matrixMode)
   const directMessagesAvailable = bridge.getBackendCapabilities().directMessages
   const activeChannelId = useChannelStore((state) => state.activeChannelId)
   const activeCommunityId = useCommunityStore((state) => state.activeCommunityId)
@@ -131,6 +133,14 @@ export function AppLayout() {
           >
             Not now
           </button>
+        </div>
+      )}
+      {matrixMode && networkStatus.state === 'disconnected' && (
+        <div
+          role="status"
+          className="border-b border-status-warning/30 bg-status-warning/10 px-4 py-2 text-center text-xs text-content"
+        >
+          You’re offline. Messages marked Saved will send when Mesh reconnects.
         </div>
       )}
       <div className="flex flex-1 overflow-hidden">

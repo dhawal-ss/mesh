@@ -73,6 +73,8 @@ pub(super) async fn route_signed_message(app_handle: &AppHandle, envelope: &Sign
         edited_at: None,
         deleted_at: None,
         reply_to_id: payload.reply_to_id,
+        transaction_id: None,
+        client_request_id: None,
         delivery_status: None,
     };
 

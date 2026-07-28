@@ -21,6 +21,7 @@ pub const LEGACY_MATRIX_EVENT_TYPE: &str = "org.mesh.legacy_archive.v1";
 pub const MATRIX_TRANSFER_PROGRESS_EVENT: &str = "matrix:transfer-progress";
 pub const MATRIX_NOTIFICATION_EVENT: &str = "matrix:notification";
 pub const MATRIX_UNREAD_UPDATE_EVENT: &str = "matrix:unread-update";
+pub const MATRIX_QUEUED_MESSAGE_EVENT: &str = "matrix:queued-message";
 pub const MATRIX_RTC_MEMBERSHIP_EVENT: &str = "matrix:rtc-membership";
 pub const MATRIX_RTC_MEDIA_KEY_EVENT: &str = "matrix:rtc-media-key";
 pub const MATRIX_RTC_MEDIA_KEY_FAILURE_EVENT: &str = "matrix:rtc-media-key-failure";
@@ -170,10 +171,34 @@ pub struct MatrixUnreadUpdate {
     pub unread_mentions: i64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum MatrixQueuedMessageState {
+    Pending,
+    Failed,
+    Sent,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixQueuedMessageUpdate {
+    pub room_id: String,
+    pub transaction_id: String,
+    pub state: MatrixQueuedMessageState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "string | null")]
+    pub event_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "MessageDto | null")]
+    pub message: Option<MessageDto>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MatrixBackendEvent {
     Notification(MatrixNotification),
     UnreadUpdate(MatrixUnreadUpdate),
+    QueuedMessage(MatrixQueuedMessageUpdate),
     RtcMembership(MatrixRtcMembershipUpdate),
     RtcMediaKey(MatrixRtcMediaKey),
     RtcMediaKeyFailure(MatrixRtcMediaKeyFailure),
@@ -1109,6 +1134,23 @@ pub trait MeshBackend: Send + Sync {
         _transaction_id: String,
     ) -> BackendResult<MessageDto> {
         Err(BackendError::Unsupported("message delivery"))
+    }
+    async fn queued_messages(&self) -> BackendResult<Vec<MessageDto>> {
+        Err(BackendError::Unsupported("durable queued messages"))
+    }
+    async fn retry_queued_message(
+        &self,
+        _room_id: String,
+        _transaction_id: String,
+    ) -> BackendResult<()> {
+        Err(BackendError::Unsupported("durable queued messages"))
+    }
+    async fn cancel_queued_message(
+        &self,
+        _room_id: String,
+        _transaction_id: String,
+    ) -> BackendResult<()> {
+        Err(BackendError::Unsupported("durable queued messages"))
     }
     async fn save_composer_draft(&self, _room_id: String, _body: String) -> BackendResult<()> {
         Err(BackendError::Unsupported("durable message drafts"))

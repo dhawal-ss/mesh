@@ -716,7 +716,11 @@ function MessageInputContent({
         {attachmentError != null && (
           <ErrorState
             error={attachmentError}
-            context={{ operation: 'send this attachment' }}
+            context={{
+              operation: stagedFiles.length > 0
+                ? 'send this attachment'
+                : 'save this message for delivery',
+            }}
             className="mx-2 mb-2"
             compact
           />

@@ -29,6 +29,8 @@ export type {
   IdentityDto,
   MessageDto,
   MatrixNotification,
+  MatrixQueuedMessageState,
+  MatrixQueuedMessageUpdate,
   MatrixRoomNotificationMode,
   MatrixUnreadUpdate,
   NetworkStatusDto,

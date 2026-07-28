@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use ts_rs::TS;
 
 /// Message DTO sent over IPC.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageDto {
     pub id: String,
@@ -26,6 +26,16 @@ pub struct MessageDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "string | null")]
     pub reply_to_id: Option<String>,
+    /// SDK transaction ID used to reconcile a durable local echo with the
+    /// eventual server event. This is internal delivery metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "string | null")]
+    pub transaction_id: Option<String>,
+    /// Renderer request ID retained inside the encrypted event so a lost IPC
+    /// response can be retried without publishing a duplicate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "string | null")]
+    pub client_request_id: Option<String>,
     /// Delivery status: "sent", "pending", or "failed". None = sent.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "\"sent\" | \"pending\" | \"failed\" | null")]
@@ -33,7 +43,7 @@ pub struct MessageDto {
 }
 
 /// File attachment metadata.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AttachmentDto {
     pub file_hash: String,
@@ -53,7 +63,7 @@ pub struct AttachmentDto {
     pub thumbnail: Option<AttachmentThumbnailDto>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AttachmentThumbnailDto {
     pub file_hash: String,

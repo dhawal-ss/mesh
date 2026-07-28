@@ -8,12 +8,28 @@ const searchBarHarness = vi.hoisted(() => ({
 
 const messageHarness = vi.hoisted(() => ({
   renderCounts: {} as Record<string, number>,
+  onRetry: {} as Record<string, ((message: import('../../types/ipc').Message) => void) | undefined>,
+  onCancel: {} as Record<string, ((message: import('../../types/ipc').Message) => void) | undefined>,
+}))
+
+const composerHarness = vi.hoisted(() => ({
+  onSend: null as null | ((content: string) => Promise<void>),
 }))
 
 vi.mock('./Message', () => ({
-  MessageComponent: ({ message }: { message: { id: string; content: string } }) => {
+  MessageComponent: ({
+    message,
+    onRetry,
+    onCancel,
+  }: {
+    message: import('../../types/ipc').Message
+    onRetry?: (message: import('../../types/ipc').Message) => void
+    onCancel?: (message: import('../../types/ipc').Message) => void
+  }) => {
     messageHarness.renderCounts[message.id] =
       (messageHarness.renderCounts[message.id] ?? 0) + 1
+    messageHarness.onRetry[message.id] = onRetry
+    messageHarness.onCancel[message.id] = onCancel
     if (message.content === 'THROW') {
       throw new Error('Malformed federated event')
     }
@@ -22,7 +38,14 @@ vi.mock('./Message', () => ({
 }))
 
 vi.mock('./MessageInput', () => ({
-  MessageInput: () => <div data-message-composer>Message composer</div>,
+  MessageInput: ({
+    onSend,
+  }: {
+    onSend: (content: string) => Promise<void>
+  }) => {
+    composerHarness.onSend = onSend
+    return <div data-message-composer>Message composer</div>
+  },
 }))
 
 vi.mock('./SearchBar', () => ({
@@ -38,6 +61,10 @@ vi.mock('./SearchBar', () => ({
 
 vi.mock('./TypingIndicator', () => ({
   TypingIndicator: () => null,
+}))
+
+vi.mock('./ConversationProtection', () => ({
+  ConversationProtection: () => null,
 }))
 
 vi.mock('../ui/Skeleton', () => ({
@@ -112,6 +139,7 @@ describe('ChatView channel switching', () => {
       browsingOlder: {},
       newerGapCount: {},
       channelRecency: [],
+      matrixQueueStates: {},
     })
     useChannelStore.setState({
       channels: [],
@@ -120,6 +148,9 @@ describe('ChatView channel switching', () => {
     useMessageNavigationStore.setState({ pending: null })
     searchBarHarness.onNavigateToMessage = null
     messageHarness.renderCounts = {}
+    messageHarness.onRetry = {}
+    messageHarness.onCancel = {}
+    composerHarness.onSend = null
 
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
@@ -335,5 +366,97 @@ describe('ChatView channel switching', () => {
     })
     expect(container.textContent).toContain('First')
     expect(container.textContent).toContain('Second')
+  })
+
+  it('accepts one durable Matrix echo and retries or cancels it in place', async () => {
+    const activeChannel = channel('!channel:example.org', 'private')
+    const send = deferred<Message>()
+    const queued = {
+      ...message('txn-1', activeChannel.id, 'Saved while offline'),
+      authorPublicKey: '@alice:example.org',
+      transactionId: 'txn-1',
+      clientRequestId: 'request-1',
+      deliveryStatus: 'pending' as const,
+    }
+
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@alice:example.org')
+    vi.spyOn(bridge, 'getBackendCapabilities').mockReturnValue({
+      encryptedText: true,
+      encryptedAttachments: true,
+      directMessages: true,
+      voice: false,
+      durableTimeouts: false,
+      deviceManagement: true,
+      recovery: true,
+      legacyMigration: false,
+    })
+    vi.spyOn(bridge, 'getMessages').mockResolvedValue([])
+    vi.spyOn(bridge, 'markChannelRead').mockResolvedValue(undefined)
+    vi.spyOn(bridge, 'matrixTypingUsers').mockResolvedValue([])
+    vi.spyOn(bridge, 'createMatrixTransactionId').mockReturnValue('request-1')
+    const sendMessage = vi.spyOn(bridge, 'sendMessage').mockReturnValue(send.promise)
+    const retry = vi.spyOn(bridge, 'matrixRetryQueuedMessage').mockResolvedValue(undefined)
+    const cancel = vi.spyOn(bridge, 'matrixCancelQueuedMessage').mockResolvedValue(undefined)
+
+    await act(async () => {
+      root.render(<ChatView channel={activeChannel} />)
+      await flushAsyncWork()
+    })
+
+    let submission!: Promise<void>
+    await act(async () => {
+      submission = composerHarness.onSend?.('Saved while offline') ?? Promise.resolve()
+      await flushAsyncWork()
+    })
+    expect(useMessageStore.getState().messages[activeChannel.id] ?? []).toEqual([])
+
+    await act(async () => {
+      send.resolve(queued)
+      await submission
+    })
+    expect(sendMessage).toHaveBeenCalledWith(
+      activeChannel.id,
+      'Saved while offline',
+      [],
+      undefined,
+      'request-1',
+    )
+    expect(useMessageStore.getState().messages[activeChannel.id]).toEqual([queued])
+
+    await act(async () => {
+      useMessageStore.getState().applyQueuedMessageUpdate({
+        roomId: activeChannel.id,
+        transactionId: 'txn-1',
+        state: 'failed',
+      })
+    })
+    await act(async () => {
+      messageHarness.onRetry['txn-1']?.(
+        useMessageStore.getState().messages[activeChannel.id][0],
+      )
+      await flushAsyncWork()
+    })
+    expect(retry).toHaveBeenCalledWith(activeChannel.id, 'txn-1')
+    expect(sendMessage).toHaveBeenCalledOnce()
+    expect(
+      useMessageStore.getState().messages[activeChannel.id][0].deliveryStatus,
+    ).toBe('pending')
+
+    await act(async () => {
+      useMessageStore.getState().applyQueuedMessageUpdate({
+        roomId: activeChannel.id,
+        transactionId: 'txn-1',
+        state: 'failed',
+      })
+    })
+    await act(async () => {
+      messageHarness.onCancel['txn-1']?.(
+        useMessageStore.getState().messages[activeChannel.id][0],
+      )
+      await flushAsyncWork()
+    })
+    expect(cancel).toHaveBeenCalledWith(activeChannel.id, 'txn-1')
+    expect(useMessageStore.getState().messages[activeChannel.id]).toEqual([])
   })
 })
