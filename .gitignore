@@ -59,6 +59,8 @@ chats/
 transcripts/
 design/
 designs/
+design_handoff*/
+*_design_handoff*/
 research/
 notes/
 
