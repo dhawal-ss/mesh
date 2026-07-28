@@ -351,8 +351,6 @@
   --settings-content-height: 75vh;
   --composer-content-height: 200px;
   --context-action-width: calc(100% - 8px);
-  --file-browser-width: 600px;
-  --file-browser-height: 80vh;
   --content-error-width: 224px;
   --user-panel-height: 52px;
   --onboarding-shell-height: calc(100vh - 3rem);

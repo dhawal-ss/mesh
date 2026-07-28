@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import {
   getDiagnostics,
   getBackendStatus,
@@ -12,6 +11,9 @@ import {
 } from '../../lib/bridge'
 import { Spinner } from '../ui/Spinner'
 import { ErrorState } from '../ui/ErrorState'
+import { Button } from '../ui/Button'
+import { Icon } from '../ui/Icon'
+import { Modal } from '../ui/Modal'
 
 interface DiagnosticsPanelProps {
   open: boolean
@@ -77,94 +79,62 @@ export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: 
     return () => clearInterval(interval)
   }, [open, refresh])
 
-  useEffect(() => {
-    if (!open) return
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleEscape)
-    return () => document.removeEventListener('keydown', handleEscape)
-  }, [open, onClose])
-
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          className="fixed inset-0 z-modal flex items-center justify-center bg-scrim px-6"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) onClose()
-          }}
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="System diagnostics"
+      description={
+        lastUpdated
+          ? `Updated ${lastUpdated.toLocaleTimeString()}${loading ? ' · refreshing' : ''}`
+          : 'Checking Mesh services…'
+      }
+      size="lg"
+      closeLabel="Close diagnostics"
+    >
+      <div className="mb-4 flex min-h-8 items-center justify-end border-b border-border-subtle pb-3">
+        <Button
+          onClick={refresh}
+          disabled={loading}
+          variant="ghost"
+          size="sm"
+          className="min-h-8"
+          aria-label="Refresh diagnostics"
         >
-          <motion.div
-            className="flex max-h-modal w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-bg-secondary shadow-overlay"
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-border px-5 py-4">
-              <div>
-                <h2 className="text-base font-semibold text-primary">System Diagnostics</h2>
-                <p className="text-xs text-muted">
-                  {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : 'Loading...'}
-                  {loading && ' • refreshing'}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={refresh}
-                  disabled={loading}
-                  className="rounded px-3 py-1.5 text-xs text-secondary hover:bg-bg-tertiary disabled:opacity-50"
-                  aria-label="Refresh diagnostics"
-                >
-                  Refresh
-                </button>
-                <button
-                  onClick={onClose}
-                  className="rounded px-3 py-1.5 text-xs text-muted hover:bg-bg-tertiary hover:text-primary"
-                  aria-label="Close diagnostics"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
+          <Icon name="refresh" size="xs" className={loading ? 'animate-spin' : undefined} />
+          Refresh
+        </Button>
+      </div>
 
-            {/* Body */}
-            <div className="flex-1 overflow-y-auto px-5 py-4">
-              {error != null && (
-                <ErrorState
-                  error={error}
-                  context={{ operation: 'load diagnostics' }}
-                  onAction={refresh}
-                  className="mb-4"
-                  compact
-                />
-              )}
+      <div className="max-h-settings overflow-y-auto pr-1">
+        {error != null && (
+          <ErrorState
+            error={error}
+            context={{ operation: 'load diagnostics' }}
+            onAction={refresh}
+            className="mb-4"
+            compact
+          />
+        )}
 
-              {!diagnostics && !matrixStatus && !error && (
-                <div className="flex h-32 items-center justify-center">
-                  <Spinner />
-                </div>
-              )}
+        {!diagnostics && !matrixStatus && !error && (
+          <div className="flex h-32 items-center justify-center">
+            <Spinner />
+          </div>
+        )}
 
-              {matrixStatus && <MatrixDiagnosticsContent data={matrixStatus} />}
+        {matrixStatus && <MatrixDiagnosticsContent data={matrixStatus} />}
 
-              {diagnostics && (
-                <DiagnosticsContent
-                  data={diagnostics}
-                  probeResults={probeResults}
-                  probeLoading={probeLoading}
-                  onRunProbe={runIceProbe}
-                />
-              )}
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        {diagnostics && (
+          <DiagnosticsContent
+            data={diagnostics}
+            probeResults={probeResults}
+            probeLoading={probeLoading}
+            onRunProbe={runIceProbe}
+          />
+        )}
+      </div>
+    </Modal>
   )
 }
 
@@ -177,8 +147,8 @@ function MatrixDiagnosticsContent({ data }: { data: BackendStatus }) {
         <Section title="Warnings" tone="warning">
           <ul className="space-y-1.5">
             {data.warnings.map((warning, index) => (
-              <li key={index} className="flex items-start gap-2 text-xs text-yellow">
-                <span aria-hidden>⚠</span>
+              <li key={index} className="flex items-start gap-2 text-xs text-status-warning">
+                <Icon name="triangleAlert" size="xs" className="mt-0.5 flex-none" />
                 <span>{warning}</span>
               </li>
             ))}
@@ -331,8 +301,8 @@ function DiagnosticsContent({
         <Section title="Warnings" tone="warning">
           <ul className="space-y-1.5">
             {data.warnings.map((warning, i) => (
-              <li key={i} className="flex items-start gap-2 text-xs text-yellow">
-                <span aria-hidden>⚠</span>
+              <li key={i} className="flex items-start gap-2 text-xs text-status-warning">
+                <Icon name="triangleAlert" size="xs" className="mt-0.5 flex-none" />
                 <span>{warning}</span>
               </li>
             ))}
@@ -414,7 +384,7 @@ function DiagnosticsContent({
           />
         </Grid>
         {!data.iceServerStatus.turnConfigured && (
-          <p className="mt-2 text-xs text-yellow">
+          <p className="mt-2 text-xs text-status-warning">
             No TURN server configured. Voice calls may fail for users behind symmetric NATs.
             Configure one in Settings → Voice & Audio.
           </p>
@@ -426,14 +396,16 @@ function DiagnosticsContent({
             <span className="text-meta font-semibold uppercase tracking-wider text-muted">
               Reachability probe
             </span>
-            <button
+            <Button
               onClick={onRunProbe}
               disabled={probeLoading}
-              className="rounded bg-bg-tertiary px-2 py-1 text-meta text-secondary hover:bg-bg-primary disabled:opacity-50"
+              variant="ghost"
+              size="sm"
+              className="min-h-8"
               aria-label="Run ICE reachability probe"
             >
               {probeLoading ? 'Probing…' : 'Run probe'}
-            </button>
+            </Button>
           </div>
           {probeResults === null && !probeLoading && (
             <p className="text-xs text-muted">
@@ -482,7 +454,7 @@ function Section({
     <div>
       <h3
         className={`mb-2 text-meta font-semibold uppercase tracking-wider ${
-          tone === 'warning' ? 'text-yellow' : 'text-muted'
+          tone === 'warning' ? 'text-status-warning' : 'text-muted'
         }`}
       >
         {title}
@@ -511,7 +483,7 @@ function StatCell({ label, value, ok }: { label: string; value: string; ok?: boo
       <div className="text-caption uppercase tracking-wide text-muted">{label}</div>
       <div
         className={`tnum mt-0.5 font-mono text-sm ${
-          ok === false ? 'text-red' : ok === true ? 'text-green' : 'text-primary'
+          ok === false ? 'text-status-danger' : ok === true ? 'text-status-success' : 'text-primary'
         }`}
       >
         {value}
@@ -531,8 +503,8 @@ function StatusCell({
   ok: boolean
   warn?: boolean
 }) {
-  const color = warn ? 'text-yellow' : ok ? 'text-green' : 'text-red'
-  const dotColor = warn ? 'bg-yellow' : ok ? 'bg-green' : 'bg-red'
+  const color = warn ? 'text-status-warning' : ok ? 'text-status-success' : 'text-status-danger'
+  const dotColor = warn ? 'bg-status-warning' : ok ? 'bg-status-success' : 'bg-status-danger'
   return (
     <div className="rounded bg-bg-primary px-3 py-2">
       <div className="text-caption uppercase tracking-wide text-muted">{label}</div>
@@ -554,11 +526,11 @@ function DownloadCard({ stats }: { stats: SchedulerStats }) {
         ? 'Complete'
         : 'Active'
   const statusColor = stats.isFailed
-    ? 'text-red'
+    ? 'text-status-danger'
     : stats.isStalled
-      ? 'text-yellow'
+      ? 'text-status-warning'
       : stats.isComplete
-        ? 'text-green'
+        ? 'text-status-success'
         : 'text-accent'
   return (
     <div className="rounded bg-bg-primary px-3 py-2">
@@ -654,9 +626,17 @@ function probeOutcomeLabel(outcome: string): string {
 function ProbeRow({ result }: { result: IceServerProbeResult }) {
   const severity = probeSeverity(result.outcome)
   const outcomeColor =
-    severity === 'success' ? 'text-green' : severity === 'error' ? 'text-red' : 'text-yellow'
+    severity === 'success'
+      ? 'text-status-success'
+      : severity === 'error'
+        ? 'text-status-danger'
+        : 'text-status-warning'
   const dot =
-    severity === 'success' ? 'bg-green' : severity === 'error' ? 'bg-red' : 'bg-yellow'
+    severity === 'success'
+      ? 'bg-status-success'
+      : severity === 'error'
+        ? 'bg-status-danger'
+        : 'bg-status-warning'
   const label = probeOutcomeLabel(result.outcome)
   return (
     <div className="rounded bg-bg-primary px-2 py-1.5 text-meta">

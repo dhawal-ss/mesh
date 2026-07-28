@@ -139,7 +139,6 @@ export default {
         'member-list': 'var(--member-list-width)',
         'settings-drawer': 'var(--settings-drawer-width)',
         'context-action': 'var(--context-action-width)',
-        'file-browser': 'var(--file-browser-width)',
         'content-error': 'var(--content-error-width)',
         'onboarding-shell': 'var(--onboarding-shell-width)',
         'voice-label': 'var(--voice-controls-label-width)',
@@ -152,7 +151,6 @@ export default {
         modal: 'var(--modal-content-height)',
         settings: 'var(--settings-content-height)',
         composer: 'var(--composer-content-height)',
-        'file-browser': 'var(--file-browser-height)',
       },
       minHeight: {
         'onboarding-shell': 'var(--onboarding-shell-height)',

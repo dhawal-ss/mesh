@@ -59,7 +59,6 @@ export function UserPanel() {
   }
 
   const openDiagnostics = () => {
-    setShowSettings(false)
     setShowDiagnostics(true)
   }
 

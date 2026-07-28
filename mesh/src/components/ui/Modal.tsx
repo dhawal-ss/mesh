@@ -13,6 +13,7 @@ export interface ModalProps {
   description?: string
   size?: 'sm' | 'md' | 'lg'
   className?: string
+  closeLabel?: string
 }
 
 const sizeClasses = {
@@ -33,6 +34,7 @@ export function Modal({
   description,
   size = 'md',
   className,
+  closeLabel = 'Close dialog',
 }: ModalProps) {
   const openerRef = useRef<HTMLElement | null>(null)
   const openingFocusTarget = useMemo(
@@ -42,7 +44,7 @@ export function Modal({
     [open],
   )
   useLayoutEffect(() => {
-    if (open && openingFocusTarget) {
+    if (open && !openerRef.current && openingFocusTarget) {
       openerRef.current = openingFocusTarget
     }
   }, [open, openingFocusTarget])
@@ -101,7 +103,7 @@ export function Modal({
             <DialogPrimitive.Close asChild>
               <button
                 type="button"
-                aria-label="Close dialog"
+                aria-label={closeLabel}
                 className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-md text-content-muted hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               >
                 <Icon name="x" size="sm" />
