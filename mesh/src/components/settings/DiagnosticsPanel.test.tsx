@@ -69,7 +69,7 @@ describe('DiagnosticsPanel', () => {
       root.render(<DiagnosticsPanel open={false} onClose={() => {}} />)
     })
     // Panel should not render content when closed
-    expect(container.textContent).not.toContain('System Diagnostics')
+    expect(document.body.textContent).not.toContain('System diagnostics')
   })
 
   it('renders the panel title when open', async () => {
@@ -81,7 +81,10 @@ describe('DiagnosticsPanel', () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0))
     })
-    expect(container.textContent).toContain('System Diagnostics')
+    expect(document.body.textContent).toContain('System diagnostics')
+    const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')
+    expect(dialog).toBeTruthy()
+    expect(dialog?.getAttribute('aria-labelledby')).toBeTruthy()
   })
 
   it('shows account health without exposing implementation names in product copy', async () => {
@@ -127,22 +130,22 @@ describe('DiagnosticsPanel', () => {
       await new Promise((resolve) => setTimeout(resolve, 10))
     })
 
-    expect(container.textContent).toContain('Your Mesh account is connected and syncing normally.')
-    expect(container.textContent).toContain('@alice:localhost')
-    expect(container.textContent).toContain('http://localhost:8008')
-    expect(container.textContent).toContain('Private calling')
-    expect(container.textContent).toContain('Media protection')
-    expect(container.textContent).toContain('Not verified')
-    expect(container.textContent).toContain('Network policy')
-    expect(container.textContent).toContain('Blocked')
-    expect(container.textContent).toContain('Private calling services are not configured for this account.')
-    expect(container.textContent).not.toContain('MatrixRTC')
-    expect(container.textContent).not.toContain('LiveKit')
-    expect(container.textContent).not.toContain('MSC4195')
-    expect(container.textContent).not.toContain('org.matrix')
-    expect(container.textContent).not.toContain('Running solo')
-    expect(container.textContent).not.toContain('TURN')
-    expect(container.textContent).not.toContain('Reachability probe')
+    expect(document.body.textContent).toContain('Your Mesh account is connected and syncing normally.')
+    expect(document.body.textContent).toContain('@alice:localhost')
+    expect(document.body.textContent).toContain('http://localhost:8008')
+    expect(document.body.textContent).toContain('Private calling')
+    expect(document.body.textContent).toContain('Media protection')
+    expect(document.body.textContent).toContain('Not verified')
+    expect(document.body.textContent).toContain('Network policy')
+    expect(document.body.textContent).toContain('Blocked')
+    expect(document.body.textContent).toContain('Private calling services are not configured for this account.')
+    expect(document.body.textContent).not.toContain('MatrixRTC')
+    expect(document.body.textContent).not.toContain('LiveKit')
+    expect(document.body.textContent).not.toContain('MSC4195')
+    expect(document.body.textContent).not.toContain('org.matrix')
+    expect(document.body.textContent).not.toContain('Running solo')
+    expect(document.body.textContent).not.toContain('TURN')
+    expect(document.body.textContent).not.toContain('Reachability probe')
     expect(getDiagnostics).not.toHaveBeenCalled()
   })
 
@@ -157,7 +160,7 @@ describe('DiagnosticsPanel', () => {
       await new Promise((r) => setTimeout(r, 10))
     })
     // "You + N peers" is the user-facing framing (user is a peer themselves)
-    expect(container.textContent).toContain('You + 3 peers')
+    expect(document.body.textContent).toContain('You + 3 peers')
   })
 
   it('displays "Running solo" when no other peers are connected', async () => {
@@ -171,9 +174,9 @@ describe('DiagnosticsPanel', () => {
       await new Promise((r) => setTimeout(r, 10))
     })
     // Running solo is a valid working state, not an error
-    expect(container.textContent).toContain('Running solo')
+    expect(document.body.textContent).toContain('Running solo')
     // Explanation should clarify what still works
-    expect(container.textContent).toContain('stored locally and visible to you immediately')
+    expect(document.body.textContent).toContain('stored locally and visible to you immediately')
   })
 
   it('displays warnings when backend reports them', async () => {
@@ -188,9 +191,9 @@ describe('DiagnosticsPanel', () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 10))
     })
-    expect(container.textContent).toContain('Warnings')
-    expect(container.textContent).toContain('No TURN server configured')
-    expect(container.textContent).toContain('2 download(s) stalled')
+    expect(document.body.textContent).toContain('Warnings')
+    expect(document.body.textContent).toContain('No TURN server configured')
+    expect(document.body.textContent).toContain('2 download(s) stalled')
   })
 
   it('displays error message when getDiagnostics rejects', async () => {
@@ -201,7 +204,7 @@ describe('DiagnosticsPanel', () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 10))
     })
-    expect(container.textContent).toContain('connection refused')
+    expect(document.body.textContent).toContain('connection refused')
   })
 
   it('shows community and member counts', async () => {
@@ -215,8 +218,8 @@ describe('DiagnosticsPanel', () => {
       await new Promise((r) => setTimeout(r, 10))
     })
     // Find counts in the overview grid
-    expect(container.textContent).toContain('7')
-    expect(container.textContent).toContain('123')
+    expect(document.body.textContent).toContain('7')
+    expect(document.body.textContent).toContain('123')
   })
 
   it('shows TURN missing warning when turn is not configured', async () => {
@@ -235,8 +238,8 @@ describe('DiagnosticsPanel', () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 10))
     })
-    expect(container.textContent).toContain('Missing')
-    expect(container.textContent).toContain('No TURN server configured')
+    expect(document.body.textContent).toContain('Missing')
+    expect(document.body.textContent).toContain('No TURN server configured')
   })
 
   it('shows download progress when downloads are active', async () => {
@@ -269,10 +272,10 @@ describe('DiagnosticsPanel', () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 10))
     })
-    expect(container.textContent).toContain('42')
-    expect(container.textContent).toContain('100 chunks')
-    expect(container.textContent).toContain('3 seeders')
-    expect(container.textContent).toContain('Active')
+    expect(document.body.textContent).toContain('42')
+    expect(document.body.textContent).toContain('100 chunks')
+    expect(document.body.textContent).toContain('3 seeders')
+    expect(document.body.textContent).toContain('Active')
   })
 
   it('marks a stalled download visibly', async () => {
@@ -305,7 +308,7 @@ describe('DiagnosticsPanel', () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 10))
     })
-    expect(container.textContent).toContain('Stalled')
+    expect(document.body.textContent).toContain('Stalled')
   })
 
   it('calls onClose when close button is clicked', async () => {
@@ -317,7 +320,7 @@ describe('DiagnosticsPanel', () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 10))
     })
-    const closeButton = container.querySelector('button[aria-label="Close diagnostics"]')
+    const closeButton = document.body.querySelector('button[aria-label="Close diagnostics"]')
     expect(closeButton).toBeTruthy()
     await act(async () => {
       ;(closeButton as HTMLButtonElement).click()
@@ -335,7 +338,7 @@ describe('DiagnosticsPanel', () => {
       await new Promise((r) => setTimeout(r, 10))
     })
     const initialCalls = mockFn.mock.calls.length
-    const refreshButton = container.querySelector('button[aria-label="Refresh diagnostics"]')
+    const refreshButton = document.body.querySelector('button[aria-label="Refresh diagnostics"]')
     expect(refreshButton).toBeTruthy()
     await act(async () => {
       ;(refreshButton as HTMLButtonElement).click()
@@ -352,9 +355,9 @@ describe('DiagnosticsPanel', () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 10))
     })
-    expect(container.textContent).toContain('Reachability probe')
-    expect(container.textContent).toContain('Run probe')
-    const probeButton = container.querySelector('button[aria-label="Run ICE reachability probe"]')
+    expect(document.body.textContent).toContain('Reachability probe')
+    expect(document.body.textContent).toContain('Run probe')
+    const probeButton = document.body.querySelector('button[aria-label="Run ICE reachability probe"]')
     expect(probeButton).toBeTruthy()
   })
 
@@ -390,7 +393,7 @@ describe('DiagnosticsPanel', () => {
       await new Promise((r) => setTimeout(r, 10))
     })
 
-    const probeButton = container.querySelector('button[aria-label="Run ICE reachability probe"]')
+    const probeButton = document.body.querySelector('button[aria-label="Run ICE reachability probe"]')
     expect(probeButton).toBeTruthy()
     await act(async () => {
       ;(probeButton as HTMLButtonElement).click()
@@ -398,10 +401,10 @@ describe('DiagnosticsPanel', () => {
     })
 
     // After probe results render — outcome labels are human-readable
-    expect(container.textContent).toContain('stun:stun.l.google.com:19302')
-    expect(container.textContent).toContain('Reachable')
-    expect(container.textContent).toContain('turn:bad.example.com:3478')
-    expect(container.textContent).toContain('DNS failed')
+    expect(document.body.textContent).toContain('stun:stun.l.google.com:19302')
+    expect(document.body.textContent).toContain('Reachable')
+    expect(document.body.textContent).toContain('turn:bad.example.com:3478')
+    expect(document.body.textContent).toContain('DNS failed')
   })
 
   it('translates probe failures and keeps technical detail in disclosure', async () => {
@@ -419,14 +422,14 @@ describe('DiagnosticsPanel', () => {
       await new Promise((resolve) => setTimeout(resolve, 10))
     })
 
-    const probeButton = container.querySelector('button[aria-label="Run ICE reachability probe"]')
+    const probeButton = document.body.querySelector('button[aria-label="Run ICE reachability probe"]')
     await act(async () => {
       ;(probeButton as HTMLButtonElement).click()
       await new Promise((resolve) => setTimeout(resolve, 10))
     })
 
-    expect(container.querySelector('h3')?.textContent).toContain('Connection interrupted')
-    expect(container.textContent).toContain('connection refused by turn.internal.example')
+    expect(document.body.querySelector('h3')?.textContent).toContain('Connection interrupted')
+    expect(document.body.textContent).toContain('connection refused by turn.internal.example')
   })
 
   it('renders unreachable probe outcome with warning color', async () => {
@@ -451,14 +454,14 @@ describe('DiagnosticsPanel', () => {
       await new Promise((r) => setTimeout(r, 10))
     })
 
-    const probeButton = container.querySelector('button[aria-label="Run ICE reachability probe"]')
+    const probeButton = document.body.querySelector('button[aria-label="Run ICE reachability probe"]')
     await act(async () => {
       ;(probeButton as HTMLButtonElement).click()
       await new Promise((r) => setTimeout(r, 10))
     })
 
-    expect(container.textContent).toContain('Unreachable')
-    expect(container.textContent).toContain('connection refused')
+    expect(document.body.textContent).toContain('Unreachable')
+    expect(document.body.textContent).toContain('connection refused')
   })
 
   it('renders TURN allocation_ok outcome with success color', async () => {
@@ -483,15 +486,15 @@ describe('DiagnosticsPanel', () => {
       await new Promise((r) => setTimeout(r, 10))
     })
 
-    const probeButton = container.querySelector('button[aria-label="Run ICE reachability probe"]')
+    const probeButton = document.body.querySelector('button[aria-label="Run ICE reachability probe"]')
     await act(async () => {
       ;(probeButton as HTMLButtonElement).click()
       await new Promise((r) => setTimeout(r, 10))
     })
 
-    expect(container.textContent).toContain('TURN Allocate OK')
-    expect(container.textContent).toContain('accepted credentials')
-    expect(container.textContent).toContain('42ms')
+    expect(document.body.textContent).toContain('TURN Allocate OK')
+    expect(document.body.textContent).toContain('accepted credentials')
+    expect(document.body.textContent).toContain('42ms')
   })
 
   it('renders TURN auth_rejected outcome with error color', async () => {
@@ -516,15 +519,15 @@ describe('DiagnosticsPanel', () => {
       await new Promise((r) => setTimeout(r, 10))
     })
 
-    const probeButton = container.querySelector('button[aria-label="Run ICE reachability probe"]')
+    const probeButton = document.body.querySelector('button[aria-label="Run ICE reachability probe"]')
     await act(async () => {
       ;(probeButton as HTMLButtonElement).click()
       await new Promise((r) => setTimeout(r, 10))
     })
 
-    expect(container.textContent).toContain('Auth rejected')
-    expect(container.textContent).toContain('401')
-    expect(container.textContent).toContain('Unauthorized')
+    expect(document.body.textContent).toContain('Auth rejected')
+    expect(document.body.textContent).toContain('401')
+    expect(document.body.textContent).toContain('Unauthorized')
   })
 
   it('renders stun_reachable outcome for TURN servers that fail auth but answer STUN', async () => {
@@ -549,13 +552,13 @@ describe('DiagnosticsPanel', () => {
       await new Promise((r) => setTimeout(r, 10))
     })
 
-    const probeButton = container.querySelector('button[aria-label="Run ICE reachability probe"]')
+    const probeButton = document.body.querySelector('button[aria-label="Run ICE reachability probe"]')
     await act(async () => {
       ;(probeButton as HTMLButtonElement).click()
       await new Promise((r) => setTimeout(r, 10))
     })
 
-    expect(container.textContent).toContain('STUN reachable')
-    expect(container.textContent).toContain('Allocate failed')
+    expect(document.body.textContent).toContain('STUN reachable')
+    expect(document.body.textContent).toContain('Allocate failed')
   })
 })

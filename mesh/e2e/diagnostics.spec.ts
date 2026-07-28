@@ -16,7 +16,8 @@
  *   - Real Tauri process lifecycle (requires tauri-driver)
  *   - Real backend/network behavior (mocked here)
  */
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Locator, type Page } from '@playwright/test'
+import { expectNoWcagViolations } from './helpers/accessibility'
 
 /**
  * Install a mock Tauri bridge on the page so the frontend's
@@ -134,7 +135,9 @@ async function installTauriMock(
   }, overrides)
 }
 
-async function openAdvancedDiagnostics(page: Page): Promise<void> {
+async function openAdvancedDiagnostics(
+  page: Page,
+): Promise<{ dialog: Locator; trigger: Locator }> {
   await page.getByRole('button', { name: 'Profile', exact: true }).click()
   const settings = page.getByRole('dialog', { name: 'User Settings' })
   await expect(settings).toBeVisible()
@@ -149,7 +152,10 @@ async function openAdvancedDiagnostics(page: Page): Promise<void> {
   const diagnosticsButton = settings.getByRole('button', { name: 'System diagnostics' })
   await expect(diagnosticsButton).toBeVisible()
   await diagnosticsButton.click()
-  await expect(page.getByText('System Diagnostics').first()).toBeVisible()
+  const dialog = page.getByRole('dialog', { name: 'System diagnostics' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText('Overview', { exact: true })).toBeVisible()
+  return { dialog, trigger: diagnosticsButton }
 }
 
 test.describe('diagnostics panel E2E', () => {
@@ -197,6 +203,25 @@ test.describe('diagnostics panel E2E', () => {
     await expect(
       page.getByText(/No TURN server configured/i).first(),
     ).toBeVisible()
+  })
+
+  test('is accessible in a narrow window and restores focus after Escape', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await installTauriMock(page)
+    await page.goto('/')
+    await page.waitForLoadState('networkidle')
+
+    const { dialog, trigger } = await openAdvancedDiagnostics(page)
+    const bounds = await dialog.boundingBox()
+    expect(bounds?.x).toBeGreaterThanOrEqual(0)
+    expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(390)
+    expect(bounds?.height).toBeLessThanOrEqual(844)
+    await expect(dialog.getByRole('button', { name: 'Refresh diagnostics' })).toBeVisible()
+    await expectNoWcagViolations(page, 'Narrow system diagnostics dialog')
+
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+    await expect(trigger).toBeFocused()
   })
 
   test('clicking Run probe triggers the probe and renders results', async ({ page }) => {
