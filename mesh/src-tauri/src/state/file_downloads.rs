@@ -337,10 +337,8 @@ mod tests {
     use std::path::PathBuf;
 
     fn temp_downloads_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "mesh-file-tests-{name}-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("mesh-file-tests-{name}-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
         dir
     }

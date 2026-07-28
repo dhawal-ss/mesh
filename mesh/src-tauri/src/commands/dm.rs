@@ -98,8 +98,7 @@ pub async fn send_dm(
         .map_err(|e| CommandError::Crypto(format!("Invalid recipient key: {}", e)))?;
     let mut plaintext =
         serde_json::to_vec(&envelope).map_err(|e| CommandError::Other(e.to_string()))?;
-    let encrypted =
-        encryption::encrypt_for_recipient(&recipient_x25519, &plaintext, "mesh-dm-v1");
+    let encrypted = encryption::encrypt_for_recipient(&recipient_x25519, &plaintext, "mesh-dm-v1");
     plaintext.zeroize();
 
     // Subscribe to and publish on the deterministic DM topic
