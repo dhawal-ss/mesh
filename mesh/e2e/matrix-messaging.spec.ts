@@ -113,7 +113,7 @@ async function installAuthenticatedMatrixMessagingMock(page: Page): Promise<void
       conversationId: conversation.id,
       authorPublicKey: '@alice:mesh.test',
       authorDisplayName: 'alice',
-      authorAvatarColor: '#5865f2',
+      authorAvatarColor: '#52b5f4',
       content,
       timestamp: new Date().toISOString(),
       signature: '',
@@ -176,7 +176,7 @@ async function installAuthenticatedMatrixMessagingMock(page: Page): Promise<void
             {
               publicKey: '@alice:mesh.test',
               displayName: 'alice',
-              avatarColor: '#5865f2',
+              avatarColor: '#52b5f4',
               role: 'owner',
               joinStatus: 'joined',
               banStatus: 'none',
@@ -196,6 +196,8 @@ async function installAuthenticatedMatrixMessagingMock(page: Page): Promise<void
           ]
         case 'matrix_get_messages':
           return channelTimeline.filter((message) => message.channelId === args.roomId)
+        case 'matrix_queued_messages':
+          return []
         case 'matrix_dm_conversations':
           return [conversation]
         case 'matrix_dm_messages':

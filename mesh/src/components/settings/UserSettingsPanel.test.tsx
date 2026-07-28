@@ -57,7 +57,7 @@ describe('UserSettingsPanel', () => {
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: '@alice:example.org', displayName: 'alice', avatarColor: '#5865f2' }}
+          identity={{ publicKey: '@alice:example.org', displayName: 'alice', avatarColor: '#52b5f4' }}
           matrixAccountId="@alice:example.org"
           matrixMode
           onOpenSecurity={openSecurity}
@@ -91,7 +91,7 @@ describe('UserSettingsPanel', () => {
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: 'local', displayName: 'Local user', avatarColor: '#5865f2' }}
+          identity={{ publicKey: 'local', displayName: 'Local user', avatarColor: '#52b5f4' }}
           matrixAccountId={null}
           matrixMode={false}
           onOpenSecurity={() => {}}
@@ -116,7 +116,7 @@ describe('UserSettingsPanel', () => {
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#5865f2' }}
+          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#52b5f4' }}
           matrixAccountId="@alice:example.org"
           matrixMode
           onOpenSecurity={() => {}}
@@ -162,7 +162,7 @@ describe('UserSettingsPanel', () => {
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#5865f2' }}
+          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#52b5f4' }}
           matrixAccountId="@alice:example.org"
           matrixMode
           onOpenSecurity={() => {}}
@@ -187,7 +187,7 @@ describe('UserSettingsPanel', () => {
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: 'local', displayName: 'Local user', avatarColor: '#5865f2' }}
+          identity={{ publicKey: 'local', displayName: 'Local user', avatarColor: '#52b5f4' }}
           matrixAccountId={null}
           matrixMode={false}
           onOpenSecurity={() => {}}
@@ -243,7 +243,7 @@ describe('UserSettingsPanel', () => {
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: 'local', displayName: 'Local user', avatarColor: '#5865f2' }}
+          identity={{ publicKey: 'local', displayName: 'Local user', avatarColor: '#52b5f4' }}
           matrixAccountId={null}
           matrixMode={false}
           onOpenSecurity={() => {}}
@@ -285,7 +285,7 @@ describe('UserSettingsPanel', () => {
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#5865f2' }}
+          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#52b5f4' }}
           matrixAccountId="@alice:example.org"
           matrixMode
           onUpdateDisplayName={updateDisplayName}
@@ -328,7 +328,7 @@ describe('UserSettingsPanel', () => {
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#5865f2' }}
+          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#52b5f4' }}
           matrixAccountId="@alice:example.org"
           matrixMode
           onUpdateDisplayName={updateDisplayName}
@@ -370,7 +370,7 @@ describe('UserSettingsPanel', () => {
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#5865f2' }}
+          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#52b5f4' }}
           matrixAccountId="@alice:example.org"
           matrixMode
           onOpenSecurity={() => {}}
@@ -405,7 +405,7 @@ describe('UserSettingsPanel', () => {
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#5865f2' }}
+          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#52b5f4' }}
           matrixAccountId="@alice:example.org"
           matrixMode
           onOpenSecurity={() => {}}

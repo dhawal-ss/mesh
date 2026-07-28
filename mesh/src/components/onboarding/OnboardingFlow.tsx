@@ -80,7 +80,7 @@ export function OnboardingFlow({
     <main className="min-h-screen bg-bg-tertiary px-6 py-6 md:px-8 md:py-8">
       <div className="mx-auto flex min-h-onboarding-shell w-full max-w-onboarding-shell items-center">
         <motion.div
-          className="relative w-full overflow-hidden rounded-md bg-bg-secondary px-5 py-6 shadow-elevation-high md:px-8 md:py-8"
+          className="relative w-full overflow-hidden rounded-md bg-bg-secondary px-5 py-6 shadow-overlay md:px-8 md:py-8"
           variants={variants.screen}
           initial="initial"
           animate="animate"

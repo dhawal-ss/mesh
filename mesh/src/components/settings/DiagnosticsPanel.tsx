@@ -99,7 +99,7 @@ export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: 
           }}
         >
           <motion.div
-            className="flex max-h-modal w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-bg-secondary shadow-floating"
+            className="flex max-h-modal w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-bg-secondary shadow-overlay"
             initial={{ opacity: 0, scale: 0.95, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 10 }}

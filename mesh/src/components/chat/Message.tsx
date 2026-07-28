@@ -435,7 +435,7 @@ export const MessageComponent = memo(function MessageComponent({
             the grouped message rendered underneath it (-top-4 overlap). */}
         {!contextMenu && !isEditing && !isDeleted && !isQueued && (
           <div
-            className="pointer-events-none absolute -top-4 right-4 z-sticky flex items-center rounded-md border border-border bg-bg-secondary opacity-0 shadow-elevation-high transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+            className="pointer-events-none absolute -top-4 right-4 z-sticky flex items-center rounded-md border border-border bg-bg-secondary opacity-0 shadow-overlay transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
           >
             <button
               ref={reactButtonRef}
@@ -511,7 +511,7 @@ export const MessageComponent = memo(function MessageComponent({
             initial="initial"
             animate="animate"
             exit="exit"
-            className="fixed z-popover w-48 rounded-lg border border-border-subtle bg-bg-floating py-1.5 text-sm shadow-floating"
+            className="fixed z-popover w-48 rounded-lg border border-border-subtle bg-bg-floating py-1.5 text-sm shadow-overlay"
             data-design-token-exception="data-driven-pointer-position"
             style={{ left: contextMenu.x, top: contextMenu.y }}
             onClick={(e) => e.stopPropagation()}

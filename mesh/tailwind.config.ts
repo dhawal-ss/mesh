@@ -184,10 +184,7 @@ export default {
         slow: 'var(--duration-slow)',
       },
       boxShadow: {
-        'elevation-low': 'var(--shadow-elevation-low)',
-        'elevation-high': 'var(--shadow-elevation-high)',
-        floating: 'var(--shadow-floating)',
-        pane: 'var(--shadow-pane)',
+        overlay: 'var(--elev-overlay)',
       },
       animation: {
         'pulse-soft': 'var(--animation-pulse-soft)',

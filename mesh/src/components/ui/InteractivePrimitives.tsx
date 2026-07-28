@@ -70,7 +70,7 @@ export function Switch({
       >
         <SwitchPrimitive.Thumb
           className={clsx(
-            'block translate-x-0.5 rounded-full bg-content shadow-elevation-low transition-transform duration-fast',
+            'block translate-x-0.5 rounded-full bg-content transition-transform duration-fast',
             size === 'sm' && 'h-3 w-3 data-[state=checked]:translate-x-3.5',
             size === 'md' && 'h-4 w-4 data-[state=checked]:translate-x-4',
             size === 'lg' && 'h-5 w-5 data-[state=checked]:translate-x-5',
@@ -139,7 +139,7 @@ export function Select({
           <SelectPrimitive.Content
             position="popper"
             sideOffset={6}
-            className="z-popover min-w-40 overflow-hidden rounded-md border border-border bg-surface-overlay p-1 text-content shadow-floating"
+            className="z-popover min-w-40 overflow-hidden rounded-md border border-border bg-surface-overlay p-1 text-content shadow-overlay"
           >
             <SelectPrimitive.Viewport>
               {options.map((option) => (
@@ -193,7 +193,7 @@ export function DropdownMenu({
           aria-label={label}
           sideOffset={6}
           collisionPadding={8}
-          className="z-dropdown min-w-40 rounded-md border border-border bg-surface-overlay p-1 shadow-floating"
+          className="z-dropdown min-w-40 rounded-md border border-border bg-surface-overlay p-1 shadow-overlay"
         >
           {items.map((item) => (
             <DropdownMenuPrimitive.Item
@@ -227,7 +227,7 @@ export function ContextMenu({
         <ContextMenuPrimitive.Content
           aria-label={label}
           collisionPadding={8}
-          className="z-dropdown min-w-40 rounded-md border border-border bg-surface-overlay p-1 shadow-floating"
+          className="z-dropdown min-w-40 rounded-md border border-border bg-surface-overlay p-1 shadow-overlay"
         >
           {items.map((item) => (
             <ContextMenuPrimitive.Item
@@ -282,7 +282,7 @@ export function Popover({
           collisionPadding={8}
           aria-labelledby={label ? titleId : undefined}
           aria-describedby={description ? descriptionId : undefined}
-          className={clsx('z-popover w-72 rounded-lg border border-border bg-surface-overlay p-4 text-content shadow-floating', className)}
+          className={clsx('z-popover w-72 rounded-lg border border-border bg-surface-overlay p-4 text-content shadow-overlay', className)}
         >
           {label && <div id={titleId} className="mb-1 text-sm font-semibold">{label}</div>}
           {description && <div id={descriptionId} className="mb-3 text-xs text-content-secondary">{description}</div>}
@@ -371,7 +371,7 @@ export function Sheet({
         <DialogPrimitive.Overlay className="fixed inset-0 z-overlay bg-surface-scrim" />
         <DialogPrimitive.Content
           className={clsx(
-            'fixed inset-y-0 z-modal w-80 overflow-auto bg-surface-raised p-5 text-content shadow-floating outline-none',
+            'fixed inset-y-0 z-modal w-80 overflow-auto bg-surface-raised p-5 text-content shadow-overlay outline-none',
             side === 'right' ? 'right-0' : 'left-0',
           )}
         >
@@ -596,7 +596,7 @@ export function Combobox({
         <div
           id={listboxId}
           role="listbox"
-          className="absolute top-full z-popover mt-1 max-h-56 w-full overflow-auto rounded-md border border-border bg-surface-overlay p-1 shadow-floating"
+          className="absolute top-full z-popover mt-1 max-h-56 w-full overflow-auto rounded-md border border-border bg-surface-overlay p-1 shadow-overlay"
         >
           {filtered.length === 0 ? (
             <p className="px-2 py-3 text-sm text-content-muted">No results</p>
@@ -645,7 +645,7 @@ export function Command({
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-overlay bg-surface-scrim" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/4 z-modal w-11/12 max-w-lg -translate-x-1/2 rounded-lg bg-surface-raised p-4 shadow-floating outline-none">
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/4 z-modal w-11/12 max-w-lg -translate-x-1/2 rounded-lg bg-surface-raised p-4 shadow-overlay outline-none">
           <DialogPrimitive.Title className="sr-only">{title}</DialogPrimitive.Title>
           <Combobox
             label={title}

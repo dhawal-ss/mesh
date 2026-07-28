@@ -50,7 +50,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     if (scope === 'app') {
       return (
         <div className="flex min-h-screen items-center justify-center bg-bg-primary">
-          <div className="flex max-w-sm flex-col items-center gap-4 rounded-lg bg-bg-secondary px-10 py-9 text-center shadow-elevation-high">
+          <div className="flex max-w-sm flex-col items-center gap-4 rounded-lg bg-bg-secondary px-10 py-9 text-center shadow-overlay">
             <Icon name="circleX" size="lg" className="text-red" />
             <h2 className="text-base font-semibold text-primary">Something went wrong</h2>
             <p className="text-sm text-muted">The application encountered an unexpected error.</p>
@@ -68,7 +68,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     if (scope === 'content') {
       return (
         <div className="flex flex-1 items-center justify-center" role="alert">
-          <div className="flex max-w-xs flex-col items-center gap-3 rounded-lg bg-bg-secondary px-8 py-7 text-center shadow-elevation-high">
+          <div className="flex max-w-xs flex-col items-center gap-3 rounded-lg bg-bg-secondary px-8 py-7 text-center shadow-overlay">
             <p className="text-sm text-secondary">This section encountered an error</p>
             <p className="text-xs text-muted">Try again or switch to another channel.</p>
             <button

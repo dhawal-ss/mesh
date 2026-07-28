@@ -357,7 +357,7 @@ export function EmptyState({
 export function Kbd({ className, ...props }: HTMLAttributes<HTMLElement>) {
   return (
     <kbd
-      className={clsx('rounded border border-border bg-surface-sunken px-1.5 py-0.5 font-mono text-xs text-content-secondary shadow-elevation-low', className)}
+      className={clsx('rounded border border-border bg-surface-sunken px-1.5 py-0.5 font-mono text-xs text-content-secondary', className)}
       {...props}
     />
   )
@@ -373,7 +373,7 @@ export function Card({
       className={clsx(
         'rounded-lg',
         variant === 'base' && 'bg-surface-base',
-        variant === 'raised' && 'bg-surface-raised shadow-elevation-low',
+        variant === 'raised' && 'border border-border-subtle bg-surface-raised',
         variant === 'outline' && 'border border-border bg-surface-base',
         className,
       )}

@@ -727,7 +727,7 @@ export function ChatView({ channel, showMembersToggle, isMembersOpen, onToggleMe
     <div className="flex h-full flex-1 flex-col">
       {/* Channel header */}
       <div
-        className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border-subtle px-4 shadow-elevation-low"
+        className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border-subtle px-4"
         data-tauri-drag-region
       >
         <div className="flex min-w-0 items-center gap-2">

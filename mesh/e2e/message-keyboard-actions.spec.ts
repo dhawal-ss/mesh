@@ -129,7 +129,7 @@ async function installKeyboardActionsMock(page: Page): Promise<void> {
             {
               publicKey: '@alice:mesh.test',
               displayName: 'alice',
-              avatarColor: '#5865f2',
+              avatarColor: '#52b5f4',
               role: 'owner',
               joinStatus: 'joined',
               banStatus: 'none',
@@ -149,6 +149,8 @@ async function installKeyboardActionsMock(page: Page): Promise<void> {
           ]
         case 'matrix_get_messages':
           return timeline.filter((message) => message.channelId === args.roomId)
+        case 'matrix_queued_messages':
+          return []
         case 'matrix_load_composer_draft':
           return null
         case 'matrix_send_message': {
@@ -157,7 +159,7 @@ async function installKeyboardActionsMock(page: Page): Promise<void> {
             channelId: String(args.roomId),
             authorPublicKey: '@alice:mesh.test',
             authorDisplayName: 'alice',
-            authorAvatarColor: '#5865f2',
+            authorAvatarColor: '#52b5f4',
             content: String(args.body),
             attachments: [],
             reactions: {},

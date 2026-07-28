@@ -13,7 +13,7 @@ const targetMessage: Message = {
   channelId: 'channel-b',
   authorPublicKey: 'sender-1',
   authorDisplayName: 'Sender',
-  authorAvatarColor: '#5865f2',
+  authorAvatarColor: '#52b5f4',
   content: 'The searched message',
   attachments: [],
   reactions: {},

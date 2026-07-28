@@ -113,7 +113,7 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
             initial="initial"
             animate="animate"
             exit="exit"
-            className="absolute right-0 top-full z-dropdown mt-1 w-96 overflow-hidden rounded-lg bg-bg-floating shadow-floating"
+            className="absolute right-0 top-full z-dropdown mt-1 w-96 overflow-hidden rounded-lg bg-bg-floating shadow-overlay"
           >
             {/* Search input */}
             <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">

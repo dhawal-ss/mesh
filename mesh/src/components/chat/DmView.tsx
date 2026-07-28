@@ -267,7 +267,7 @@ export function DmView() {
   if (!activeConversationId || !conversation) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <div className="rounded-panel border border-border-subtle bg-surface-raised/50 px-8 py-7 text-center shadow-pane backdrop-blur-xl">
+        <div className="rounded-panel border border-border-subtle bg-surface-raised/50 px-8 py-7 text-center shadow-overlay backdrop-blur-xl">
           <p className="mb-1 text-sm text-secondary">Select a conversation</p>
           <p className="text-2xs text-muted">Choose a DM from the sidebar</p>
         </div>
@@ -317,7 +317,7 @@ export function DmView() {
           </div>
         ) : channelMessages.length === 0 ? (
           <div className="flex h-full items-center justify-center">
-            <div className="rounded-panel border border-border-subtle bg-surface-raised/50 px-8 py-7 text-center shadow-pane backdrop-blur-xl">
+            <div className="rounded-panel border border-border-subtle bg-surface-raised/50 px-8 py-7 text-center shadow-overlay backdrop-blur-xl">
               <p className="mb-1 text-sm text-secondary">Start of conversation</p>
               <p className="text-2xs text-muted">Send a message to {peerName}</p>
             </div>
@@ -429,7 +429,7 @@ export function DmView() {
                       reach it; group-hover/group-focus-within reveal it
                       visually, matching Message.tsx's pattern. */}
                   {matrixMode && editingMessageId !== msg.id && (
-                    <div className="pointer-events-none absolute right-4 top-0 z-sticky flex items-center gap-1 rounded border border-border bg-bg-secondary px-1 py-1 opacity-0 shadow-elevation-high transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                    <div className="pointer-events-none absolute right-4 top-0 z-sticky flex items-center gap-1 rounded border border-border bg-bg-secondary px-1 py-1 opacity-0 shadow-overlay transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
                       <button
                         onClick={() => setReplyingTo(msg)}
                         className="rounded px-1.5 py-1 text-meta text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"

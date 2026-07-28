@@ -19,6 +19,9 @@ function literalColorViolations(source) {
   if (/#[\da-f]{3,8}\b/i.test(source)) {
     violations.push('hex color literal')
   }
+  if (/\boklch\(/i.test(source)) {
+    violations.push('OKLCH color literal')
+  }
   if (/rgba?\(\s*(?:\d|\.\d)/i.test(source)) {
     violations.push('numeric rgb/rgba color literal')
   }
@@ -33,6 +36,14 @@ const visualPatterns = [
   {
     kind: 'numeric rgb/rgba color literal',
     expression: /\brgba?\(\s*(?:\d|\.\d)[^)]*\)/gi,
+  },
+  {
+    kind: 'OKLCH color literal',
+    expression: /\boklch\([^)]*\)/gi,
+  },
+  {
+    kind: 'reference-tier token',
+    expression: /var\(\s*--ref-[\w-]+\s*\)/gi,
   },
   {
     kind: 'arbitrary visual Tailwind class',
@@ -68,11 +79,11 @@ function visualViolations(source) {
 }
 
 // Keep self-tests here so weakening either detector cannot silently pass.
-const detectorFixture = "colors: { bad: '#fff', worse: 'rgb(1 2 3)' }"
-const componentFixture = 'bg-[#fff] text-[11px] border-white/10 bg-yellow-500/10 font-bold text-xl'
+const detectorFixture = "colors: { bad: '#fff', worse: 'rgb(1 2 3)', alsoBad: 'oklch(50% 0.1 240)' }"
+const componentFixture = 'bg-[#fff] text-[11px] border-white/10 bg-yellow-500/10 font-bold text-xl var(--ref-neutral-1) oklch(50% 0.1 240)'
 if (
-  literalColorViolations(detectorFixture).length !== 2
-  || visualViolations(componentFixture).length !== 7
+  literalColorViolations(detectorFixture).length !== 3
+  || visualViolations(componentFixture).length !== 9
 ) {
   throw new Error('Design-token checker self-test failed')
 }
@@ -91,33 +102,41 @@ for (const match of rootBlock.matchAll(/^\s*(--[\w-]+)\s*:\s*([^;]+);/gm)) {
   declarations.set(match[1], match[2].trim())
 }
 
-const expectedPrimitiveChannels = new Map([
-  ['--gray-1-rgb', '17 18 20'],
-  ['--gray-3-rgb', '30 31 34'],
-  ['--gray-4-rgb', '43 45 49'],
-  ['--gray-5-rgb', '49 51 56'],
-  ['--gray-6-rgb', '63 65 71'],
-  ['--gray-7-rgb', '78 80 88'],
-  ['--gray-8-rgb', '148 155 164'],
-  ['--gray-9-rgb', '181 186 193'],
-  ['--gray-10-rgb', '219 222 225'],
-  ['--gray-11-rgb', '242 243 245'],
-  ['--gray-hover-rgb', '46 48 53'],
-  ['--gray-active-rgb', '64 66 73'],
-  ['--gray-raised-rgb', '53 55 60'],
-  ['--link-rgb', '0 168 252'],
-  ['--accent-rgb', '212 192 161'],
-  ['--accent-hover-rgb', '239 224 195'],
-  ['--accent-muted-rgb', '141 125 103'],
-  ['--success-rgb', '35 165 89'],
-  ['--danger-rgb', '218 55 60'],
-  ['--warning-rgb', '240 178 50'],
-  ['--info-rgb', '88 101 242'],
+const expectedReferenceColors = new Map([
+  ['--ref-neutral-1', '#101013'],
+  ['--ref-neutral-2', '#17181c'],
+  ['--ref-neutral-3', '#202127'],
+  ['--ref-neutral-4', '#27292f'],
+  ['--ref-neutral-5', '#2e3037'],
+  ['--ref-neutral-6', '#373941'],
+  ['--ref-neutral-7', '#454751'],
+  ['--ref-neutral-8', '#5d606b'],
+  ['--ref-neutral-9', '#6b6e79'],
+  ['--ref-neutral-10', '#797b86'],
+  ['--ref-neutral-11', '#b2b4bb'],
+  ['--ref-neutral-12', '#edeef2'],
+  ['--ref-accent-9', '#c19f66'],
+  ['--ref-accent-10', '#cfaf79'],
+  ['--ref-accent-11', '#e3c697'],
+  ['--ref-green-11', '#57bd72'],
+  ['--ref-red-11', '#ed756e'],
+  ['--ref-amber-11', '#edb345'],
+  ['--ref-blue-11', '#52b5f4'],
 ])
 
-for (const [name, expected] of expectedPrimitiveChannels) {
+for (const [name, expected] of expectedReferenceColors) {
   if (declarations.get(name) !== expected) {
-    errors.push(`${name} must preserve its current value (${expected})`)
+    errors.push(`${name} must use the researched fallback value (${expected})`)
+  }
+}
+
+for (const [index, line] of globals.split(/\r?\n/).entries()) {
+  if (
+    (/#(?:[\da-f]{3,8})\b/i.test(line) || /\boklch\(/i.test(line))
+    && !/^\s*--ref-[\w-]+\s*:/.test(line)
+    && !/^\s*@supports\s+\(color:\s*oklch\(/.test(line)
+  ) {
+    errors.push(`globals.css:${index + 1} contains a color literal outside the reference tier`)
   }
 }
 
@@ -189,10 +208,7 @@ const requiredVariableBackedValues = [
   '--font-size-lg',
   '--radius-default',
   '--radius-xl',
-  '--shadow-elevation-low',
-  '--shadow-elevation-high',
-  '--shadow-floating',
-  '--shadow-pane',
+  '--elev-overlay',
   '--animation-pulse-soft',
   '--z-dropdown',
   '--z-modal',

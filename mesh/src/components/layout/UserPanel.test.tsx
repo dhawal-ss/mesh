@@ -27,7 +27,7 @@ describe('UserPanel Matrix profile editing', () => {
       identity: {
         publicKey: '@alice:example.org',
         displayName: 'Alice',
-        avatarColor: '#5865f2',
+        avatarColor: '#52b5f4',
       },
       isLoading: false,
     })

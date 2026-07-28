@@ -55,7 +55,7 @@ export function VoiceView({ channelId, channelName }: { channelId: string; chann
 
     return (
       <div className="flex h-full w-full flex-col bg-bg-primary">
-        <div className="flex h-12 items-center gap-2 border-b border-border-subtle px-4 shadow-elevation-low">
+        <div className="flex h-12 items-center gap-2 border-b border-border-subtle px-4">
           <Icon name="volume" className="text-muted" />
           <span className="text-sm font-semibold text-primary">{channelName}</span>
           <span className="ml-auto rounded-full bg-status-warning/10 px-2 py-1 text-meta text-yellow">
@@ -65,7 +65,7 @@ export function VoiceView({ channelId, channelName }: { channelId: string; chann
 
         <div className="flex flex-1 items-center justify-center p-6">
           <section
-            className="w-full max-w-lg rounded-xl border border-border bg-bg-secondary p-6 text-center shadow-elevation-low"
+            className="w-full max-w-lg rounded-xl border border-border bg-bg-secondary p-6 text-center"
             aria-labelledby="calling-unavailable-title"
           >
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-bg-modifier-hover">
@@ -137,7 +137,7 @@ export function VoiceView({ channelId, channelName }: { channelId: string; chann
         initial={{ y: -4, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={transitions.enter}
-        className="flex h-12 items-center justify-between border-b border-border-subtle px-4 shadow-elevation-low"
+        className="flex h-12 items-center justify-between border-b border-border-subtle px-4"
         data-tauri-drag-region
       >
         <div className="flex items-center gap-2">

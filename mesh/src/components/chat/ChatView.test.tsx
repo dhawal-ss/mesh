@@ -107,7 +107,7 @@ function message(id: string, channelId: string, content: string): Message {
     channelId,
     authorPublicKey: 'sender-1',
     authorDisplayName: 'Sender',
-    authorAvatarColor: '#5865f2',
+    authorAvatarColor: '#52b5f4',
     content,
     attachments: [],
     reactions: {},

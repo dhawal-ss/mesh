@@ -94,7 +94,7 @@ export function VoiceControls({
       initial={{ y: 20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={transitions.enter}
-      className="flex max-w-5xl flex-col gap-3 rounded-lg bg-bg-secondary px-4 py-3 shadow-floating"
+      className="flex max-w-5xl flex-col gap-3 rounded-lg bg-bg-secondary px-4 py-3 shadow-overlay"
       aria-label="Voice controls"
     >
       <div className="flex items-center gap-3">
