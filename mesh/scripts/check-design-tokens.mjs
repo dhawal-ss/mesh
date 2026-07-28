@@ -78,12 +78,25 @@ function visualViolations(source) {
   return violations
 }
 
+function undersizedControlTokens(source) {
+  const violations = []
+  for (const match of source.matchAll(/(--density-control-[\w-]+)\s*:\s*([\d.]+)px\s*;/g)) {
+    const value = Number(match[2])
+    if (value < 32) {
+      violations.push({ token: match[1], value })
+    }
+  }
+  return violations
+}
+
 // Keep self-tests here so weakening either detector cannot silently pass.
 const detectorFixture = "colors: { bad: '#fff', worse: 'rgb(1 2 3)', alsoBad: 'oklch(50% 0.1 240)' }"
 const componentFixture = 'bg-[#fff] text-[11px] border-white/10 bg-yellow-500/10 font-bold text-xl var(--ref-neutral-1) oklch(50% 0.1 240)'
+const densityFixture = '--density-control-sm: 28px; --density-control-md: 32px;'
 if (
   literalColorViolations(detectorFixture).length !== 3
   || visualViolations(componentFixture).length !== 9
+  || undersizedControlTokens(densityFixture).length !== 1
 ) {
   throw new Error('Design-token checker self-test failed')
 }
@@ -138,6 +151,10 @@ for (const [index, line] of globals.split(/\r?\n/).entries()) {
   ) {
     errors.push(`globals.css:${index + 1} contains a color literal outside the reference tier`)
   }
+}
+
+for (const violation of undersizedControlTokens(globals)) {
+  errors.push(`${violation.token} must be at least 32px, found ${violation.value}px`)
 }
 
 const expectedTypography = new Map([
