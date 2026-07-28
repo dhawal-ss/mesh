@@ -146,7 +146,7 @@ export function UserSettingsPanel({
           </div>
           <p className="mt-3 text-xs leading-5 text-muted">
             {matrixMode
-              ? 'Mesh uses this account across servers and direct messages.'
+              ? 'Mesh uses this account across communities and direct messages.'
               : 'This is your local Mesh identity.'}
           </p>
 

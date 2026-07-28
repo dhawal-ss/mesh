@@ -64,7 +64,7 @@ export function ChannelSidebar() {
       await bridge.markChannelRead(channel.id)
     } catch {
       patchChannel(channel.id, { unreadCount: previousUnread })
-      showToast('Could not mark this channel as read. Try again.', 'error')
+      showToast('Could not mark this room as read. Try again.', 'error')
     }
   }
 
@@ -74,9 +74,9 @@ export function ChannelSidebar() {
         ? matrixRoomPermalink(channel.id)
         : await bridge.generateInviteLink(channel.communityId)
       await copyText(link)
-      showToast('Channel link copied.', 'success')
+      showToast('Room link copied.', 'success')
     } catch {
-      showToast('Could not copy this channel link.', 'error')
+      showToast('Could not copy this room link.', 'error')
     }
   }
 
@@ -89,12 +89,12 @@ export function ChannelSidebar() {
         <div className="flex flex-1 items-center px-5 py-8 text-center">
           <div>
             <p className="text-sm font-medium text-primary">
-              {communityCount > 0 ? 'Choose a server' : 'Find your people'}
+              {communityCount > 0 ? 'Choose a community' : 'Find your people'}
             </p>
             <p className="mt-2 text-xs leading-5 text-muted">
               {communityCount > 0
-                ? 'Select a server icon to view its channels.'
-                : 'Use the plus button to create or join a server.'}
+                ? 'Select a community icon to view its rooms.'
+                : 'Use the plus button to create or join a community.'}
             </p>
           </div>
         </div>
@@ -317,10 +317,10 @@ export function ChannelSidebar() {
       <DialogErrorBoundary
         open={showSettings}
         onClose={() => setShowSettings(false)}
-        title="Server Settings"
+        title="Community Settings"
       >
         {showSettings && (
-          <Suspense fallback={<div role="status" aria-label="Loading server settings" className="flex items-center justify-center p-6"><Spinner /></div>}>
+          <Suspense fallback={<div role="status" aria-label="Loading community settings" className="flex items-center justify-center p-6"><Spinner /></div>}>
             <CommunitySettings isOpen onClose={() => setShowSettings(false)} />
           </Suspense>
         )}

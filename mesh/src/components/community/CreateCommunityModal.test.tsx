@@ -78,7 +78,7 @@ describe('CreateCommunityModal', () => {
     await act(async () => gaming?.click())
 
     const create = Array.from(document.body.querySelectorAll('button'))
-      .find((button) => button.textContent === 'Create Server')
+      .find((button) => button.textContent === 'Create Community')
     await act(async () => {
       create?.click()
       await Promise.resolve()

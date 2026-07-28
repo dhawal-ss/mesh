@@ -407,7 +407,7 @@ describe('MessageInput attachment UX', () => {
     expect(container.querySelector('[role="listbox"]')).toBeNull()
   })
 
-  it('discovers and inserts server emoji from the keyboard', async () => {
+  it('discovers and inserts community emoji from the keyboard', async () => {
     useServerEmojiStore.setState({
       byCommunity: {
         '!community:mesh.test': [{
@@ -428,7 +428,7 @@ describe('MessageInput attachment UX', () => {
     })
 
     await setComposerValue(textarea, 'celebrate :party')
-    expect(container.querySelector('[aria-label="Server emoji"]')?.textContent)
+    expect(container.querySelector('[aria-label="Community emoji"]')?.textContent)
       .toContain(':party_parrot:')
 
     await act(async () => {
@@ -437,7 +437,7 @@ describe('MessageInput attachment UX', () => {
     })
 
     expect(textarea.value).toBe('celebrate :party_parrot: ')
-    expect(container.querySelector('[aria-label="Server emoji"]')).toBeNull()
+    expect(container.querySelector('[aria-label="Community emoji"]')).toBeNull()
   })
 
   it('discards a slow clipboard copy instead of moving it into the next room', async () => {

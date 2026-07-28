@@ -67,7 +67,7 @@ export function recommendedServiceConfigError(value: string): string | null {
       return 'The configured service must use HTTPS.'
     }
     if (!value.includes('://') && (url.pathname !== '/' || url.search || url.hash)) {
-      return 'The configured server name is invalid.'
+      return 'The configured service address is invalid.'
     }
     return null
   } catch {

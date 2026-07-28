@@ -771,8 +771,11 @@ export function ChatView({
           {showContextToggle && (
             <Tooltip content={isContextOpen ? 'Hide room context' : 'Show room context'} side="bottom">
               <button
+                id="mesh-room-context-toggle"
                 onClick={onToggleContext}
                 aria-label={isContextOpen ? 'Hide room context' : 'Show room context'}
+                aria-controls="mesh-room-context-panel"
+                aria-expanded={isContextOpen}
                 className={`flex h-8 w-8 items-center justify-center rounded transition-colors ${
                   isContextOpen
                     ? 'text-primary'
@@ -789,7 +792,8 @@ export function ChatView({
       {matrixMode && trust && !trust.loadingAccountTrust && trust.devicesNeedReview > 0 && (
         <button
           type="button"
-          role="alert"
+          aria-live="polite"
+          aria-label={`${trust.devicesNeedReview} ${trust.devicesNeedReview === 1 ? 'device needs' : 'devices need'} review. Open the room ledger.`}
           className="flex min-h-control-md flex-shrink-0 items-center gap-2 border-b border-status-warning/20 bg-status-warning/10 px-4 text-left text-xs text-status-warning transition-colors hover:bg-status-warning/20"
           onClick={() => onOpenContext?.('ledger')}
         >

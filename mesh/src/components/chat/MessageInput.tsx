@@ -904,7 +904,7 @@ function MessageInputContent({
             <div
               id={`emoji-suggestions-${channelId}`}
               role="listbox"
-              aria-label="Server emoji"
+              aria-label="Community emoji"
               className="absolute bottom-full left-1 right-1 z-dropdown mb-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-raised shadow-lg"
             >
               {emojiSuggestions.map((emoji, index) => (

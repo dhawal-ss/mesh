@@ -116,7 +116,7 @@ export function CreateCommunityModal({
         ),
       )
       if (templateResults.some((result) => result.status === 'rejected')) {
-        console.warn('The server was created, but one or more template channels could not be added.')
+        console.warn('The community was created, but one or more starter rooms could not be added.')
       }
       const channels = await bridge.getChannels(community.id)
       setChannels(channels)
@@ -182,7 +182,7 @@ export function CreateCommunityModal({
       }
       setDirectoryStatus((current) => ({
         ...current,
-        [entry.id]: 'Request sent. Select this server again after an administrator approves it.',
+        [entry.id]: 'Request sent. Select this community again after an administrator approves it.',
       }))
     } catch (err) {
       setDirectoryError(err)
@@ -238,7 +238,7 @@ export function CreateCommunityModal({
               exit={{ opacity: 0, x: 8 }}
               transition={transitions.enter}
             >
-              <h2 className="mb-1 text-base font-semibold text-primary">Create a Server</h2>
+              <h2 className="mb-1 text-base font-semibold text-primary">Create a Community</h2>
               <p className="mb-4 text-xs text-muted">
                 Step {createStep} of 2 · {createStep === 1 ? 'Name and icon' : 'Choose a starting layout'}
               </p>
@@ -246,7 +246,7 @@ export function CreateCommunityModal({
               {createStep === 1 ? (
                 <div className="space-y-3">
                   <Input
-                    label="Server Name"
+                    label="Community Name"
                     value={communityName}
                     onChange={setCommunityName}
                     onKeyDown={handleKeyDown}
@@ -267,7 +267,7 @@ export function CreateCommunityModal({
                               ? 'bg-accent ring-2 ring-accent'
                               : 'bg-bg-tertiary hover:bg-bg-modifier-hover'
                           }`}
-                          aria-label={`Use ${icon} as the server icon`}
+                          aria-label={`Use ${icon} as the community icon`}
                           aria-pressed={communityIcon === icon}
                           onClick={() => setCommunityIcon(icon)}
                         >
@@ -284,7 +284,7 @@ export function CreateCommunityModal({
                       value={communityDescription}
                       onChange={(e) => setCommunityDescription(e.target.value)}
                       onKeyDown={handleKeyDown}
-                      placeholder="What's this server about?"
+                      placeholder="What's this community about?"
                       rows={2}
                       className="w-full resize-none rounded-md bg-bg-tertiary px-3 py-2 text-sm text-primary placeholder:text-muted focus:outline-none"
                     />
@@ -292,7 +292,7 @@ export function CreateCommunityModal({
                 </div>
               ) : (
                 <fieldset className="space-y-2">
-                  <legend className="sr-only">Server template</legend>
+                  <legend className="sr-only">Community template</legend>
                   {(Object.entries(SERVER_TEMPLATES) as Array<
                     [ServerTemplate, (typeof SERVER_TEMPLATES)[ServerTemplate]]
                   >).map(([value, template]) => (
@@ -328,7 +328,7 @@ export function CreateCommunityModal({
                   disabled={!communityName.trim() || isLoading}
                   className="flex-1"
                 >
-                  {createStep === 1 ? 'Next' : isLoading ? 'Creating…' : 'Create Server'}
+                  {createStep === 1 ? 'Next' : isLoading ? 'Creating…' : 'Create Community'}
                 </Button>
               </div>
             </motion.div>
@@ -340,7 +340,7 @@ export function CreateCommunityModal({
               exit={{ opacity: 0, x: -8 }}
               transition={transitions.enter}
             >
-              <h2 className="mb-1 text-base font-semibold text-primary">Join a Server</h2>
+              <h2 className="mb-1 text-base font-semibold text-primary">Join a Community</h2>
               <p className="mb-4 text-xs text-muted">
                 {matrixMode
                   ? 'Paste the invite you received.'
@@ -362,7 +362,7 @@ export function CreateCommunityModal({
               {joinError != null && (
                 <ErrorState
                   error={joinError}
-                  context={{ operation: 'join this server', resource: 'server' }}
+                  context={{ operation: 'join this community', resource: 'community' }}
                   onAction={handleJoin}
                   className="mt-2"
                   compact
@@ -374,7 +374,7 @@ export function CreateCommunityModal({
                 disabled={!inviteLink.trim() || isLoading}
                 className="mt-4 w-full"
               >
-                {isLoading ? 'Joining…' : 'Join Server'}
+                {isLoading ? 'Joining…' : 'Join Community'}
               </Button>
             </motion.div>
           ) : (
@@ -385,9 +385,9 @@ export function CreateCommunityModal({
               exit={{ opacity: 0, x: -8 }}
               transition={transitions.enter}
             >
-              <h2 className="mb-1 text-base font-semibold text-primary">Discover Servers</h2>
+              <h2 className="mb-1 text-base font-semibold text-primary">Discover Communities</h2>
               <p className="mb-4 text-xs text-muted">
-                Search the public server directory. New members may need approval to join.
+                Search the public community directory. New members may need approval to join.
               </p>
 
               <div className="space-y-3">
@@ -396,7 +396,7 @@ export function CreateCommunityModal({
                   value={directoryQuery}
                   onChange={setDirectoryQuery}
                   onKeyDown={handleKeyDown}
-                  placeholder="Server name or topic"
+                  placeholder="Community name or topic"
                   autoFocus
                 />
                 <Input
@@ -427,7 +427,7 @@ export function CreateCommunityModal({
               {directoryError != null && (
                 <ErrorState
                   error={directoryError}
-                  context={{ operation: 'search or join from the server directory', resource: 'server' }}
+                  context={{ operation: 'search or join from the community directory', resource: 'community' }}
                   className="mt-3"
                   compact
                 />
@@ -460,7 +460,7 @@ export function CreateCommunityModal({
                   </div>
                 ))}
                 {!isLoading && directoryResults.length === 0 && !directoryError && (
-                  <p className="py-3 text-center text-xs text-muted">Search to find public servers.</p>
+                  <p className="py-3 text-center text-xs text-muted">Search to find public communities.</p>
                 )}
               </div>
             </motion.div>

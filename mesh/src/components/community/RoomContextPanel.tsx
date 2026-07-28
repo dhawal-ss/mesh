@@ -75,6 +75,7 @@ export function RoomContextPanel({
 
   return (
     <aside
+      id="mesh-room-context-panel"
       className="mesh-room-context-panel flex w-member-list flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-bg-secondary"
       aria-label={`Room context for ${channel.name}`}
     >

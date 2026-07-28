@@ -55,6 +55,6 @@ describe('ReadyScreen', () => {
 
     expect(container.textContent).toContain('Identity secured')
     expect(container.textContent).toContain('Peers discovered')
-    expect(container.textContent).toContain('Channels synced')
+    expect(container.textContent).toContain('Rooms synced')
   })
 })

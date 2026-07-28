@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useActiveChannel } from '../../store/channels'
 import { useCommunityStore } from '../../store/communities'
 import { usePresence } from '../../hooks/usePresence'
@@ -22,11 +22,39 @@ export function ContentArea() {
   const openServerModal = useShellStore((state) => state.openServerModal)
   const setDmMode = useDmStore((state) => state.setDmMode)
 
-  const [showContext, setShowContext] = useState(true)
+  const [showContext, setShowContext] = useState(() => (
+    typeof window === 'undefined'
+    || typeof window.matchMedia !== 'function'
+    || window.matchMedia('(min-width: 1101px)').matches
+  ))
   const [contextTab, setContextTab] = useState<RoomContextTab>('people')
   const [inviteDraft, setInviteDraft] = useState('')
   const { members } = usePresence()
   const trust = useRoomTrust(activeChannel?.id, members)
+  const closeContext = useCallback((restoreFocus = true) => {
+    setShowContext(false)
+    if (restoreFocus && typeof document !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        document.getElementById('mesh-room-context-toggle')?.focus()
+      })
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!showContext) return
+    const handleEscape = (event: KeyboardEvent) => {
+      if (
+        event.key === 'Escape'
+        && !event.defaultPrevented
+        && typeof window.matchMedia === 'function'
+        && window.matchMedia('(max-width: 1100px)').matches
+      ) {
+        closeContext()
+      }
+    }
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [closeContext, showContext])
 
   if (!activeChannel) {
     const hasCommunity = Boolean(activeCommunityId)
@@ -42,22 +70,22 @@ export function ContentArea() {
             {isFirstCommunity
               ? 'Welcome to Mesh'
               : hasCommunity
-                ? 'Choose a channel'
-                : 'Choose a server'}
+                ? 'Choose a room'
+                : 'Choose a community'}
           </h3>
           <p className="text-sm leading-6 text-muted">
             {isFirstCommunity
-              ? 'Create your first server with the plus button, or join one with an invite.'
+              ? 'Create your first community with the plus button, or join one with an invite.'
               : hasCommunity
-                ? 'Select a text channel to start messaging. Voice channels appear when calling is available.'
-                : 'Select a server icon, then choose one of its available channels.'}
+                ? 'Select a room to start messaging. Voice rooms appear when calling is available.'
+                : 'Select a community icon, then choose one of its rooms.'}
           </p>
           {isFirstCommunity && (
             <div className="mt-5 space-y-4">
               <p className="text-sm font-medium text-secondary">You're in. What first?</p>
               <div className="grid gap-2 sm:grid-cols-3">
-                <FirstAction label="Join a server" icon="userPlus" onClick={() => openServerModal('join')} />
-                <FirstAction label="Make a server" icon="plus" onClick={() => openServerModal('create')} />
+                <FirstAction label="Join a community" icon="userPlus" onClick={() => openServerModal('join')} />
+                <FirstAction label="Make a community" icon="plus" onClick={() => openServerModal('create')} />
                 <FirstAction label="Message a friend" icon="send" onClick={() => setDmMode(true)} />
               </div>
               <form
@@ -106,7 +134,7 @@ export function ContentArea() {
               showContextToggle
               isContextOpen={showContext}
               activeContextTab={contextTab}
-              onToggleContext={() => setShowContext(!showContext)}
+              onToggleContext={() => setShowContext((current) => !current)}
               onOpenContext={(tab) => {
                 setContextTab(tab)
                 setShowContext(true)
@@ -117,21 +145,29 @@ export function ContentArea() {
       </div>
 
       {activeChannel.channelType === 'text' && showContext && (
-        <ScopedErrorBoundary
-          name="Room context"
-          description="Room context could not be displayed. Messaging is unaffected."
-          className="m-2 w-content-error"
-          resetKey={activeCommunityId}
-        >
-          <RoomContextPanel
-            channel={activeChannel}
-            members={members}
-            trust={trust}
-            activeTab={contextTab}
-            onTabChange={setContextTab}
-            onClose={() => setShowContext(false)}
+        <>
+          <button
+            type="button"
+            className="mesh-room-context-backdrop"
+            aria-label="Dismiss room context"
+            onClick={() => closeContext()}
           />
-        </ScopedErrorBoundary>
+          <ScopedErrorBoundary
+            name="Room context"
+            description="Room context could not be displayed. Messaging is unaffected."
+            className="m-2 w-content-error"
+            resetKey={activeCommunityId}
+          >
+            <RoomContextPanel
+              channel={activeChannel}
+              members={members}
+              trust={trust}
+              activeTab={contextTab}
+              onTabChange={setContextTab}
+              onClose={() => closeContext()}
+            />
+          </ScopedErrorBoundary>
+        </>
       )}
     </div>
   )

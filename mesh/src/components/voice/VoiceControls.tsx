@@ -228,7 +228,7 @@ export function VoiceControls({
             whileHover={{ scale: 1.04 }}
             whileTap={{ scale: 0.96 }}
             onClick={() => setCurrentVoiceSession(null, null)}
-            aria-label="Disconnect from voice channel"
+            aria-label="Disconnect from voice room"
             className="flex h-11 w-11 items-center justify-center rounded-full bg-red text-content-on-status transition-opacity hover:opacity-90"
           >
             <Icon name="phoneOff" />

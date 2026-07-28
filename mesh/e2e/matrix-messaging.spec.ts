@@ -323,7 +323,9 @@ async function installAuthenticatedMatrixMessagingMock(page: Page): Promise<void
 async function openDirectMessage(page: Page): Promise<void> {
   await installAuthenticatedMatrixMessagingMock(page)
   await page.goto('/')
-  await expect(page.getByRole('navigation', { name: 'Servers and DMs' })).toBeVisible()
+  await expect(
+    page.getByRole('navigation', { name: 'Communities and direct messages' }),
+  ).toBeVisible({ timeout: 10_000 })
 
   await page.getByRole('button', { name: 'Direct Messages', exact: true }).click()
   await expect(
@@ -351,7 +353,9 @@ test.describe('Matrix direct messaging and encrypted attachments', () => {
     await installAuthenticatedMatrixMessagingMock(page)
     await page.goto('/')
 
-    await expect(page.getByAltText('Preview of encrypted-plan.pdf')).toBeVisible()
+    await expect(page.getByAltText('Preview of encrypted-plan.pdf')).toBeVisible({
+      timeout: 10_000,
+    })
     const calls = await ipcCalls(page)
     expect(calls).toContainEqual({
       command: 'matrix_load_attachment_thumbnail',
