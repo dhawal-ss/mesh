@@ -10,7 +10,7 @@ import { useMembershipStore } from '../../store/membership'
 import * as bridge from '../../lib/bridge'
 import { transitions } from '../../lib/motion'
 import { canStartMatrixVoice } from '../../lib/voice-runtime'
-import type { CommunityApplication } from '../../types/ipc'
+import type { CommunityApplication, ModerationAuditEntry } from '../../types/ipc'
 import { Icon } from '../ui/Icon'
 import {
   useServerEmoji,
@@ -49,6 +49,8 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
   const [isSavingAccess, setIsSavingAccess] = useState(false)
   const [accessError, setAccessError] = useState<unknown | null>(null)
   const [applications, setApplications] = useState<CommunityApplication[]>([])
+  const [moderationAudit, setModerationAudit] = useState<ModerationAuditEntry[]>([])
+  const [moderationAuditError, setModerationAuditError] = useState<unknown | null>(null)
   const [emojiShortcode, setEmojiShortcode] = useState('')
   const [emojiFile, setEmojiFile] = useState<File | null>(null)
   const [emojiBusy, setEmojiBusy] = useState<string | null>(null)
@@ -83,6 +85,26 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
         if (!cancelled) {
           setAccessError(error)
         }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeCommunityId, community, isOpen, matrixMode])
+
+  useEffect(() => {
+    if (!isOpen || !matrixMode || !community || !activeCommunityId) return
+    if (community.role !== 'owner' && community.role !== 'admin') return
+
+    let cancelled = false
+    bridge.getModerationAudit(activeCommunityId)
+      .then((entries) => {
+        if (cancelled) return
+        setModerationAudit(entries)
+        setModerationAuditError(null)
+      })
+      .catch((error) => {
+        if (!cancelled) setModerationAuditError(error)
       })
 
     return () => {
@@ -468,6 +490,76 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                           ))}
                         </div>
                       )}
+                    </div>
+                  </div>
+                )}
+
+                {matrixMode && isOwnerOrAdmin && (
+                  <div className="mb-6">
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+                      Moderation Activity
+                    </h3>
+                    <div className="space-y-3 rounded-lg bg-bg-primary p-4">
+                      <p className="text-xs text-muted">
+                        A protected record of administrator actions across this server.
+                      </p>
+                      {moderationAuditError != null && (
+                        <ErrorState
+                          error={moderationAuditError}
+                          context={{ operation: 'load moderation activity', resource: 'server' }}
+                          compact
+                        />
+                      )}
+                      {moderationAuditError == null && moderationAudit.length === 0 && (
+                        <p className="rounded-md bg-bg-tertiary px-3 py-4 text-center text-xs text-muted">
+                          No moderation actions recorded.
+                        </p>
+                      )}
+                      {moderationAudit.map((entry) => {
+                        const failures = entry.roomOutcomes.filter((outcome) => !outcome.succeeded)
+                        const succeeded = entry.roomOutcomes.length - failures.length
+                        return (
+                          <article key={entry.id} className="rounded-md bg-bg-tertiary p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-primary">
+                                  {entry.action}: {entry.targetDisplayName}
+                                </p>
+                                <p className="mt-0.5 text-xs text-muted">
+                                  By {entry.actorDisplayName}
+                                </p>
+                              </div>
+                              <time
+                                dateTime={entry.occurredAt}
+                                className="flex-none text-caption text-muted"
+                              >
+                                {new Date(entry.occurredAt).toLocaleString()}
+                              </time>
+                            </div>
+                            {entry.reason && (
+                              <p className="mt-2 text-xs text-secondary">
+                                Reason: {entry.reason}
+                              </p>
+                            )}
+                            <p className={`mt-2 text-xs ${
+                              failures.length === 0 ? 'text-status-success' : 'text-status-warning'
+                            }`}>
+                              {failures.length === 0
+                                ? `Completed in all ${entry.roomOutcomes.length} places`
+                                : `Completed in ${succeeded} of ${entry.roomOutcomes.length} places`}
+                            </p>
+                            {failures.length > 0 && (
+                              <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-muted">
+                                {failures.map((outcome) => (
+                                  <li key={outcome.roomId}>
+                                    {outcome.roomName}: {outcome.failureReason}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </article>
+                        )
+                      })}
                     </div>
                   </div>
                 )}

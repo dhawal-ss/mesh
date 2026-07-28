@@ -9,6 +9,7 @@ const MATRIX_PRODUCTION_SOURCES: &[(&str, &str)] = &[
     ("emoji.rs", include_str!("../emoji.rs")),
     ("encryption.rs", include_str!("../encryption.rs")),
     ("messages.rs", include_str!("../messages.rs")),
+    ("moderation.rs", include_str!("../moderation.rs")),
     ("oidc.rs", include_str!("../oidc.rs")),
     ("rooms.rs", include_str!("../rooms.rs")),
     ("rtc.rs", include_str!("../rtc.rs")),

@@ -7,12 +7,12 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::backend::{
     BackendError, BackendKind, BackendStatus, CommunityAccessResult, CommunityAccessSettings,
-    CommunityApplication, CommunityDirectoryEntry, CommunityMember, CustomEmoji, MatrixAccount,
-    MatrixAttachmentSendRequest, MatrixDevice, MatrixLogin, MatrixOidcStatus, MatrixProfile,
-    MatrixRecoveryHealth, MatrixRoomNotificationMode, MatrixRtcJoinResult, MatrixRtcMediaKey,
-    MatrixRtcMediaKeyLease, MatrixRtcMember, MatrixTransferObserver,
-    MatrixTransferProgressCallback, MatrixVerificationSession, TypingUser, UserPreferences,
-    MATRIX_TRANSFER_PROGRESS_EVENT,
+    CommunityApplication, CommunityDirectoryEntry, CommunityMember, CommunityModerationResult,
+    CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest, MatrixDevice, MatrixLogin,
+    MatrixOidcStatus, MatrixProfile, MatrixRecoveryHealth, MatrixRoomNotificationMode,
+    MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyLease, MatrixRtcMember,
+    MatrixTransferObserver, MatrixTransferProgressCallback, MatrixVerificationSession,
+    ModerationAuditEntry, TypingUser, UserPreferences, MATRIX_TRANSFER_PROGRESS_EVENT,
 };
 use crate::state::AppState;
 use crate::types::{
@@ -1379,7 +1379,7 @@ pub async fn matrix_update_member_role(
     user_id: String,
     role: String,
     state: State<'_, AppState>,
-) -> Result<(), CommandError> {
+) -> Result<CommunityModerationResult, CommandError> {
     require_matrix(&state)?;
     state
         .backend
@@ -1395,7 +1395,7 @@ pub async fn matrix_kick_member(
     user_id: String,
     reason: Option<String>,
     state: State<'_, AppState>,
-) -> Result<(), CommandError> {
+) -> Result<CommunityModerationResult, CommandError> {
     require_matrix(&state)?;
     state
         .backend
@@ -1411,12 +1411,27 @@ pub async fn matrix_ban_member(
     user_id: String,
     reason: Option<String>,
     state: State<'_, AppState>,
-) -> Result<(), CommandError> {
+) -> Result<CommunityModerationResult, CommandError> {
     require_matrix(&state)?;
     state
         .backend
         .backend()
         .ban_member(community_id, user_id, reason)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_list_moderation_audit(
+    community_id: String,
+    limit: u32,
+    state: State<'_, AppState>,
+) -> Result<Vec<ModerationAuditEntry>, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .list_moderation_audit(community_id, limit)
         .await
         .map_err(map_error)
 }

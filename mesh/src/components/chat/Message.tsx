@@ -14,8 +14,10 @@ import * as bridge from '../../lib/bridge'
 import { useFileDownloadStore } from '../../store/file-downloads'
 import { formatFederatedTimestamp } from '../../lib/federated-time'
 import { describeError } from '../../lib/errors'
+import { summarizeModerationResult } from '../../lib/moderation'
 import { transitions, variants } from '../../lib/motion'
 import { Icon } from '../ui/Icon'
+import { showToast } from '../ui/Toast'
 import { EncryptedAttachmentPreview } from './EncryptedAttachmentPreview'
 import { ProtectedImageLightbox } from './ProtectedImageLightbox'
 
@@ -152,7 +154,9 @@ export const MessageComponent = memo(function MessageComponent({
       return
     }
     try {
-      await bridge.banUser(activeCommunityId, message.authorPublicKey)
+      const result = await bridge.banUser(activeCommunityId, message.authorPublicKey)
+      const summary = summarizeModerationResult(result, `${message.authorDisplayName} was banned`)
+      showToast(summary.message, summary.tone)
     } catch (e) {
       console.error('Failed to ban:', e)
     }
@@ -167,13 +171,15 @@ export const MessageComponent = memo(function MessageComponent({
   const handleKick = useCallback(async () => {
     if (!activeCommunityId) return
     try {
-      await bridge.kickUser(activeCommunityId, message.authorPublicKey)
+      const result = await bridge.kickUser(activeCommunityId, message.authorPublicKey)
+      const summary = summarizeModerationResult(result, `${message.authorDisplayName} was removed`)
+      showToast(summary.message, summary.tone)
     } catch (e) {
       console.error('Kick failed:', e)
     }
     setContextMenu(null)
     rowRef.current?.focus()
-  }, [activeCommunityId, message.authorPublicKey])
+  }, [activeCommunityId, message.authorDisplayName, message.authorPublicKey])
 
   const handleTimeout = useCallback(async () => {
     if (!activeCommunityId) return

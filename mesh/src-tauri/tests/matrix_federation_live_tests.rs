@@ -778,6 +778,11 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         .await
         .unwrap();
     assert_eq!(extra_channel.community_id, community.space_id);
+    alice
+        .invite_user(extra_channel.id.clone(), bob_user.clone())
+        .await
+        .unwrap();
+    bob.join_room(extra_channel.id.clone()).await.unwrap();
 
     let online_body = format!("online-{nonce}");
     let online_request_id = uuid::Uuid::new_v4().to_string();
@@ -1319,7 +1324,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         .await
         .unwrap();
     tokio::time::sleep(Duration::from_secs(2)).await;
-    alice
+    let moderation = alice
         .ban_member(
             community.space_id.clone(),
             bob_user.clone(),
@@ -1327,6 +1332,32 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         )
         .await
         .unwrap();
+    assert!(moderation.audit_recorded);
+    assert_eq!(moderation.audit.actor_user_id, alice_user);
+    assert_eq!(moderation.audit.target_user_id, bob_user);
+    assert_eq!(moderation.audit.action, "Banned member");
+    assert_eq!(
+        moderation.audit.reason.as_deref(),
+        Some("Matrix moderation acceptance test")
+    );
+    for room_id in [
+        &community.space_id,
+        &community.channel_id,
+        &extra_channel.id,
+    ] {
+        assert!(moderation
+            .audit
+            .room_outcomes
+            .iter()
+            .any(|outcome| outcome.room_id == *room_id && outcome.succeeded));
+    }
+    let moderation_audit = alice
+        .list_moderation_audit(community.space_id.clone(), 20)
+        .await
+        .unwrap();
+    assert!(moderation_audit
+        .iter()
+        .any(|entry| entry == &moderation.audit));
     tokio::time::sleep(Duration::from_secs(2)).await;
     alice.sync_once().await.unwrap();
     let final_members = alice
@@ -1338,7 +1369,14 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
             && member.join_status == "left"
             && member.ban_status == "banned"
     }));
-    checkpoint!("leave and coordinated ban verified");
+    restored.sync_once().await.unwrap();
+    for room_id in [&community.channel_id, &extra_channel.id] {
+        assert!(
+            restored.join_room(room_id.clone()).await.is_err(),
+            "banned member rejoined a server channel"
+        );
+    }
+    checkpoint!("server-wide ban and protected moderation audit verified");
 
     alice.logout().await.unwrap();
     restored.logout().await.unwrap();

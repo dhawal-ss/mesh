@@ -4,6 +4,8 @@ import { useIdentityStore } from '../../store/identity'
 import { useMembershipStore } from '../../store/membership'
 import { useDmStore } from '../../store/dms'
 import * as bridge from '../../lib/bridge'
+import { summarizeModerationResult } from '../../lib/moderation'
+import { showToast } from '../ui/Toast'
 
 interface MemberEntry {
   publicKey: string
@@ -44,16 +46,31 @@ export function MemberList({ isOpen, members }: MemberListProps) {
         directMessages: bridge.isMatrixBackend() && bridge.getBackendCapabilities().directMessages,
         onRole: async (member: MemberEntry) => {
           const role = member.role === 'admin' ? 'member' : 'admin'
-          await bridge.updateMemberRole(activeCommunityId, member.publicKey, role)
-          updateRole(activeCommunityId, member.publicKey, role)
+          const result = await bridge.updateMemberRole(activeCommunityId, member.publicKey, role)
+          const summary = summarizeModerationResult(
+            result,
+            `${member.displayName} is now ${role === 'admin' ? 'an administrator' : 'a member'}`,
+          )
+          if (summary.serverSucceeded) {
+            updateRole(activeCommunityId, member.publicKey, role)
+          }
+          showToast(summary.message, summary.tone)
         },
         onKick: async (member: MemberEntry) => {
-          await bridge.kickUser(activeCommunityId, member.publicKey)
-          removeMember(activeCommunityId, member.publicKey)
+          const result = await bridge.kickUser(activeCommunityId, member.publicKey)
+          const summary = summarizeModerationResult(result, `${member.displayName} was removed`)
+          if (summary.serverSucceeded) {
+            removeMember(activeCommunityId, member.publicKey)
+          }
+          showToast(summary.message, summary.tone)
         },
         onBan: async (member: MemberEntry) => {
-          await bridge.banUser(activeCommunityId, member.publicKey)
-          banMember(activeCommunityId, member.publicKey)
+          const result = await bridge.banUser(activeCommunityId, member.publicKey)
+          const summary = summarizeModerationResult(result, `${member.displayName} was banned`)
+          if (summary.serverSucceeded) {
+            banMember(activeCommunityId, member.publicKey)
+          }
+          showToast(summary.message, summary.tone)
         },
         onDm: async (member: MemberEntry) => {
           const conversation = await bridge.ensureDm(member.publicKey)

@@ -48,6 +48,12 @@ export type UserPreferences = { schemaVersion: number, notificationsEnabled: boo
 
 export type CustomEmoji = { shortcode: string, body: string, mxcUri: string, contentType: string, width: number, height: number, sizeBytes: number, };
 
+export type ModerationRoomOutcome = { roomId: string, roomName: string, succeeded: boolean, failureReason: string | null, };
+
+export type ModerationAuditEntry = { id: string, actorUserId: string, actorDisplayName: string, targetUserId: string, targetDisplayName: string, action: string, reason: string | null, occurredAt: string, roomOutcomes: Array<ModerationRoomOutcome>, };
+
+export type CommunityModerationResult = { audit: ModerationAuditEntry, auditRecorded: boolean, };
+
 export type IdentityDto = { publicKey: string, displayName: string, avatarColor: string, };
 
 export type CommunityDto = { id: string, name: string, description: string, memberCount: number, role: "owner" | "admin" | "member", joinedAt: string | null, };
