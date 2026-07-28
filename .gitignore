@@ -48,6 +48,12 @@ e2e-results/
 *.prompt
 *.chat
 *.transcript
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.tgz
 prompts/
 chats/
 transcripts/
