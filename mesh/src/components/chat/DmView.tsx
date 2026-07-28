@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react'
 import { useDmConversation, useDmStore } from '../../store/dms'
 import { useIdentityStore } from '../../store/identity'
 import { MessageInput } from './MessageInput'
@@ -13,7 +13,10 @@ import {
 } from '../../lib/federated-time'
 import { getBackoffDelay, waitForDelay } from '../../lib/scheduler'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
-import { ConversationProtection } from './ConversationProtection'
+import { useRoomTrust } from '../../hooks/useRoomTrust'
+import { useShellStore } from '../../store/shell'
+import { DmTrustSummary } from './DmTrustSummary'
+import { Icon } from '../ui/Icon'
 
 const EMPTY_DIRECT_MESSAGES: DirectMessage[] = []
 
@@ -65,6 +68,7 @@ export function DmView() {
   const patchMessage = useDmStore((state) => state.patchMessage)
   const updateReaction = useDmStore((state) => state.updateReaction)
   const identity = useIdentityStore((s) => s.identity)
+  const setSecurityOpen = useShellStore((state) => state.setSecurityOpen)
   const matrixMode = bridge.isMatrixBackend()
   const ownAuthorId = matrixMode ? bridge.getMatrixUserId() : identity?.publicKey
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -75,6 +79,13 @@ export function DmView() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [replyingTo, setReplyingTo] = useState<DirectMessage | null>(null)
+  const trustMembers = useMemo(
+    () => [ownAuthorId, conversation?.peerPublicKey]
+      .filter((publicKey): publicKey is string => Boolean(publicKey))
+      .map((publicKey) => ({ publicKey })),
+    [conversation?.peerPublicKey, ownAuthorId],
+  )
+  const trust = useRoomTrust(activeConversationId, trustMembers)
 
   useEffect(() => {
     if (!matrixMode || !conversation) {
@@ -267,9 +278,12 @@ export function DmView() {
   if (!activeConversationId || !conversation) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <div className="rounded-panel border border-border-subtle bg-surface-raised/50 px-8 py-7 text-center shadow-overlay backdrop-blur-xl">
-          <p className="mb-1 text-sm text-secondary">Select a conversation</p>
-          <p className="text-2xs text-muted">Choose a DM from the sidebar</p>
+        <div className="max-w-xs px-8 text-center">
+          <Icon name="messageCircle" size="lg" className="mx-auto mb-3 text-muted" />
+          <p className="text-sm font-medium text-secondary">Select a conversation</p>
+          <p className="mt-1 text-xs leading-5 text-muted">
+            Choose a private conversation from the sidebar.
+          </p>
         </div>
       </div>
     )
@@ -299,22 +313,43 @@ export function DmView() {
             </span>
           )}
         </span>
-        {matrixMode && (
-          <span className="ml-2">
-            <ConversationProtection roomId={activeConversationId} />
-          </span>
-        )}
-        {matrixMode && (
-          <button
-            onClick={() => void handleToggleBlocked()}
-            disabled={isBlockBusy}
-            className="ml-auto rounded px-2 py-1 text-meta font-medium text-muted transition-colors hover:bg-red/10 hover:text-red disabled:opacity-50"
-            aria-label={isBlocked ? `Unblock ${peerName}` : `Block ${peerName}`}
-          >
-            {isBlockBusy ? 'Saving…' : isBlocked ? 'Unblock' : 'Block'}
-          </button>
-        )}
+        <div className="ml-auto flex items-center gap-1.5">
+          {matrixMode && (
+            <DmTrustSummary
+              trust={trust}
+              peerName={peerName}
+              onReviewDevices={() => setSecurityOpen(true)}
+            />
+          )}
+          {matrixMode && (
+            <button
+              type="button"
+              onClick={() => void handleToggleBlocked()}
+              disabled={isBlockBusy}
+              className="min-h-8 rounded-md px-2 text-caption font-medium text-muted transition-colors hover:bg-status-danger/10 hover:text-status-danger disabled:opacity-50"
+              aria-label={isBlocked ? `Unblock ${peerName}` : `Block ${peerName}`}
+            >
+              {isBlockBusy ? 'Saving…' : isBlocked ? 'Unblock' : 'Block'}
+            </button>
+          )}
+        </div>
       </div>
+
+      {matrixMode && !trust.loadingAccountTrust && trust.devicesNeedReview > 0 && (
+        <div className="flex min-h-10 items-center gap-2 border-b border-status-warning/20 bg-status-warning/5 px-4 py-1.5 text-xs text-secondary">
+          <Icon name="triangleAlert" size="sm" className="flex-shrink-0 text-status-warning" />
+          <span className="min-w-0 flex-1">
+            {trust.devicesNeedReview} {trust.devicesNeedReview === 1 ? 'device needs' : 'devices need'} review before it can be fully trusted.
+          </span>
+          <button
+            type="button"
+            onClick={() => setSecurityOpen(true)}
+            className="min-h-8 flex-shrink-0 rounded-md px-2 font-semibold text-status-warning hover:bg-status-warning/10"
+          >
+            Review
+          </button>
+        </div>
+      )}
 
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto py-4">
@@ -324,9 +359,10 @@ export function DmView() {
           </div>
         ) : channelMessages.length === 0 ? (
           <div className="flex h-full items-center justify-center">
-            <div className="rounded-panel border border-border-subtle bg-surface-raised/50 px-8 py-7 text-center shadow-overlay backdrop-blur-xl">
-              <p className="mb-1 text-sm text-secondary">Start of conversation</p>
-              <p className="text-2xs text-muted">Send a message to {peerName}</p>
+            <div className="max-w-xs px-8 text-center">
+              <Icon name="messageCircle" size="lg" className="mx-auto mb-3 text-muted" />
+              <p className="text-sm font-medium text-secondary">Start of conversation</p>
+              <p className="mt-1 text-xs leading-5 text-muted">Send a message to {peerName}.</p>
             </div>
           </div>
         ) : (
@@ -399,13 +435,25 @@ export function DmView() {
                             }
                             if (event.key === 'Escape') setEditingMessageId(null)
                           }}
-                          className="w-full resize-none rounded bg-bg-modifier-hover px-2 py-1.5 text-sm text-primary outline-none"
+                          className="min-h-control-md w-full resize-none rounded-md border border-border-subtle bg-bg-modifier-hover px-2 py-1.5 text-sm text-primary outline-none focus:border-border-strong"
                           rows={Math.min(6, editValue.split('\n').length + 1)}
                           autoFocus
                         />
-                        <div className="flex gap-2 text-meta text-muted">
-                          <button onClick={() => void handleSaveEdit()} className="text-blue hover:underline">Save</button>
-                          <button onClick={() => setEditingMessageId(null)} className="hover:underline">Cancel</button>
+                        <div className="flex gap-1.5 text-caption">
+                          <button
+                            type="button"
+                            onClick={() => void handleSaveEdit()}
+                            className="min-h-8 rounded-md bg-accent px-2 font-semibold text-content-on-accent hover:bg-accent-hover"
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingMessageId(null)}
+                            className="min-h-8 rounded-md px-2 text-muted hover:bg-bg-modifier-hover hover:text-primary"
+                          >
+                            Cancel
+                          </button>
                         </div>
                       </div>
                     ) : (
@@ -429,7 +477,7 @@ export function DmView() {
                           <button
                             key={emoji}
                             onClick={() => void handleReaction(msg, emoji)}
-                            className={`rounded border px-1.5 py-0.5 text-xs ${ownAuthorId && users.includes(ownAuthorId) ? 'border-blue/40 bg-blue/10 text-blue' : 'border-border bg-bg-modifier-hover text-secondary'}`}
+                            className={`min-h-8 rounded-md border px-2 text-xs ${ownAuthorId && users.includes(ownAuthorId) ? 'border-accent/40 bg-accent/10 text-accent' : 'border-border bg-bg-modifier-hover text-secondary'}`}
                           >
                             {emoji} {users.length}
                           </button>
@@ -444,12 +492,12 @@ export function DmView() {
                     <div className="pointer-events-none absolute right-4 top-0 z-sticky flex items-center gap-1 rounded border border-border bg-bg-secondary px-1 py-1 opacity-0 shadow-overlay transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
                       <button
                         onClick={() => setReplyingTo(msg)}
-                        className="rounded px-1.5 py-1 text-meta text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                        className="min-h-8 rounded-md px-2 text-caption text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                         aria-label="Reply to message"
                       >Reply</button>
                       <button
                         onClick={() => setReactionTargetId(reactionTargetId === msg.id ? null : msg.id)}
-                        className="rounded px-1.5 py-1 text-meta text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                        className="min-h-8 rounded-md px-2 text-caption text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                         aria-label="Add reaction"
                         aria-expanded={reactionTargetId === msg.id}
                       >React</button>
@@ -459,7 +507,7 @@ export function DmView() {
                             setEditingMessageId(msg.id)
                             setEditValue(msg.content)
                           }}
-                          className="rounded px-1.5 py-1 text-meta text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                          className="min-h-8 rounded-md px-2 text-caption text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                           aria-label="Edit message"
                         >Edit</button>
                       )}
@@ -480,14 +528,21 @@ export function DmView() {
       </div>
 
       {isBlocked && (
-        <div className="mx-4 mb-2 rounded border border-red/20 bg-red/5 px-3 py-2 text-xs text-red">
+        <div className="mx-4 mb-2 rounded-md border border-status-danger/20 bg-status-danger/5 px-3 py-2 text-xs text-status-danger">
           Messages from this user are blocked. Unblock them to resume this conversation.
         </div>
       )}
       {replyingTo && (
-        <div className="mx-4 mb-2 flex items-center justify-between rounded border border-blue/20 bg-blue/5 px-3 py-2 text-xs text-secondary">
+        <div className="mx-4 mb-2 flex items-center justify-between rounded-md border border-accent/20 bg-accent/5 px-3 py-1.5 text-xs text-secondary">
           <span>Replying to {replyingTo.authorDisplayName}: {replyingTo.content.slice(0, 80)}</span>
-          <button onClick={() => setReplyingTo(null)} className="text-muted hover:text-primary" aria-label="Cancel reply">Cancel</button>
+          <button
+            type="button"
+            onClick={() => setReplyingTo(null)}
+            className="min-h-8 rounded-md px-2 text-muted hover:bg-bg-modifier-hover hover:text-primary"
+            aria-label="Cancel reply"
+          >
+            Cancel
+          </button>
         </div>
       )}
       <MessageInput

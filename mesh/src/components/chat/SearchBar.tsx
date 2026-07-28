@@ -17,8 +17,10 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Message[]>([])
   const [isSearching, setIsSearching] = useState(false)
+  const [searchFailed, setSearchFailed] = useState(false)
   const [activeResultIndex, setActiveResultIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const searchGenerationRef = useRef(0)
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
@@ -31,18 +33,22 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
       if (!normalizedQuery || !activeCommunityId) {
         setResults([])
         setIsSearching(false)
+        setSearchFailed(false)
         return
       }
       setIsSearching(true)
+      setSearchFailed(false)
       try {
         const found = await bridge.searchMessages(normalizedQuery, activeCommunityId, 20)
         if (generation !== searchGenerationRef.current) return
         setResults(found)
         setActiveResultIndex(0)
+        setSearchFailed(false)
       } catch {
         if (generation !== searchGenerationRef.current) return
         setResults([])
         setActiveResultIndex(0)
+        setSearchFailed(true)
       } finally {
         if (generation === searchGenerationRef.current) setIsSearching(false)
       }
@@ -54,6 +60,7 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
     (value: string) => {
       setQuery(value)
       setActiveResultIndex(0)
+      setSearchFailed(false)
       clearTimeout(debounceRef.current)
       debounceRef.current = setTimeout(() => performSearch(value), 300)
     },
@@ -70,6 +77,7 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
     setResults([])
     setActiveResultIndex(0)
     setIsSearching(false)
+    setSearchFailed(false)
   }, [activeCommunityId])
 
   useEffect(() => {
@@ -82,13 +90,16 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
     setQuery('')
     setResults([])
     setActiveResultIndex(0)
+    setSearchFailed(false)
   }
 
-  const closeSearch = () => {
+  const closeSearch = (restoreFocus = true) => {
     setIsOpen(false)
     setQuery('')
     setResults([])
     setActiveResultIndex(0)
+    setSearchFailed(false)
+    if (restoreFocus) triggerRef.current?.focus()
   }
 
   const getChannelName = (channelId: string) => {
@@ -96,12 +107,22 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
   }
 
   return (
-    <>
+    <div className="relative">
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex h-6 w-6 items-center justify-center rounded text-muted transition-colors hover:text-secondary"
+        ref={triggerRef}
+        type="button"
+        onClick={() => {
+          if (isOpen) {
+            closeSearch(false)
+          } else {
+            setIsOpen(true)
+          }
+        }}
+        className="flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary"
         title="Search messages"
         aria-label="Search messages"
+        aria-expanded={isOpen}
+        aria-controls={isOpen ? 'message-search-popover' : undefined}
       >
         <Icon name="search" size="sm" />
       </button>
@@ -109,11 +130,12 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
       <AnimatePresence>
         {isOpen && (
           <motion.div
+            id="message-search-popover"
             variants={variants.popover}
             initial="initial"
             animate="animate"
             exit="exit"
-            className="absolute right-0 top-full z-dropdown mt-1 w-96 overflow-hidden rounded-lg bg-bg-floating shadow-overlay"
+            className="mesh-search-popover absolute right-0 top-full z-dropdown mt-1 overflow-hidden rounded-lg border border-border-subtle bg-bg-floating shadow-overlay"
           >
             {/* Search input */}
             <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
@@ -128,7 +150,7 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
                 aria-autocomplete="list"
                 aria-controls="search-results"
                 aria-activedescendant={results[activeResultIndex] ? `search-result-${results[activeResultIndex].id}` : undefined}
-                className="flex-1 bg-transparent text-sm text-primary outline-none placeholder:text-muted"
+                className="min-w-0 flex-1 bg-transparent text-sm text-primary outline-none placeholder:text-muted"
                 onKeyDown={(e) => {
                   if (e.key === 'ArrowDown' && results.length > 0) {
                     e.preventDefault()
@@ -151,13 +173,40 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
                 }}
               />
               {isSearching && (
-                <div className="h-3 w-3 animate-spin rounded-full border border-muted border-t-primary" />
+                <div
+                  className="h-3 w-3 flex-shrink-0 animate-spin rounded-full border border-muted border-t-primary"
+                  role="status"
+                  aria-label="Searching messages"
+                />
               )}
+              <button
+                type="button"
+                onClick={() => closeSearch()}
+                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted hover:bg-bg-modifier-hover hover:text-primary"
+                aria-label="Close message search"
+              >
+                <Icon name="x" size="sm" />
+              </button>
             </div>
 
             {/* Results */}
             <div id="search-results" className="max-h-80 overflow-y-auto" role="listbox" aria-label="Search results">
-              {query.trim() && results.length === 0 && !isSearching && (
+              {query.trim() && searchFailed && !isSearching && (
+                <div className="px-4 py-6 text-center">
+                  <Icon name="triangleAlert" size="sm" className="mx-auto mb-2 text-status-warning" />
+                  <p className="text-sm font-medium text-secondary">Search is temporarily unavailable</p>
+                  <p className="mt-1 text-xs text-muted">Check your connection, then try again.</p>
+                  <button
+                    type="button"
+                    onClick={() => void performSearch(query)}
+                    className="mt-3 min-h-8 rounded-md border border-border-subtle px-3 text-xs font-semibold text-secondary hover:bg-bg-modifier-hover hover:text-primary"
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
+
+              {query.trim() && results.length === 0 && !isSearching && !searchFailed && (
                 <div className="px-4 py-6 text-center text-sm text-muted">
                   No messages found
                 </div>
@@ -192,6 +241,6 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
           </motion.div>
         )}
       </AnimatePresence>
-    </>
+    </div>
   )
 }

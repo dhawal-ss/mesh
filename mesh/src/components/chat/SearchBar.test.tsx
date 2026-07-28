@@ -189,4 +189,62 @@ describe('SearchBar', () => {
     })
     expect(navigate).toHaveBeenCalledWith(secondMessage)
   })
+
+  it('explains a failed search and retries the same query', async () => {
+    const searchMessages = vi.spyOn(bridge, 'searchMessages')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce([targetMessage])
+
+    await act(async () => {
+      root.render(<SearchBar onNavigateToMessage={vi.fn()} />)
+    })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[title="Search messages"]')?.click()
+    })
+    const input = container.querySelector<HTMLInputElement>('input[type="text"]')
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set
+    await act(async () => {
+      setValue?.call(input, 'searched')
+      input?.dispatchEvent(new Event('input', { bubbles: true }))
+      vi.advanceTimersByTime(300)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Search is temporarily unavailable')
+    const retryButton = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Try again',
+    )
+    await act(async () => {
+      retryButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(searchMessages).toHaveBeenNthCalledWith(2, 'searched', 'community-1', 20)
+    expect(container.textContent).toContain(targetMessage.content)
+  })
+
+  it('returns focus to the search trigger when Escape closes the popover', async () => {
+    await act(async () => {
+      root.render(<SearchBar onNavigateToMessage={vi.fn()} />)
+    })
+    const trigger = container.querySelector<HTMLButtonElement>('button[title="Search messages"]')
+    await act(async () => {
+      trigger?.click()
+    })
+    const input = container.querySelector<HTMLInputElement>('input[type="text"]')
+    expect(document.activeElement).toBe(input)
+
+    await act(async () => {
+      input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(trigger?.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(trigger)
+  })
 })
