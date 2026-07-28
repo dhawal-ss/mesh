@@ -604,10 +604,7 @@ async fn build_invite_join_response(
                         // Backward compat: also publish to the legacy community-wide topic
                         let _ = net
                             .send_command(NetworkCommand::PublishMessage {
-                                topic: format!(
-                                    "mesh/community/{}/messages",
-                                    request.community_id
-                                ),
+                                topic: format!("mesh/community/{}/messages", request.community_id),
                                 data,
                             })
                             .await;

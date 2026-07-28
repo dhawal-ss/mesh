@@ -80,8 +80,7 @@ pub async fn get_diagnostics(
 
     if !network_started {
         warnings.push(
-            "Network not started — check logs for startup errors (target: mesh::startup)"
-                .into(),
+            "Network not started — check logs for startup errors (target: mesh::startup)".into(),
         );
     } else if !network_ready {
         warnings.push("Network starting — waiting for swarm to become ready".into());

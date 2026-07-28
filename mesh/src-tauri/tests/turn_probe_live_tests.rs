@@ -216,8 +216,7 @@ async fn probes_public_stun_server() {
         return;
     }
 
-    let url =
-        env::var("MESH_STUN_URL").unwrap_or_else(|_| "stun:stun.l.google.com:19302".into());
+    let url = env::var("MESH_STUN_URL").unwrap_or_else(|_| "stun:stun.l.google.com:19302".into());
 
     let server = IceServerConfig {
         urls: vec![url.clone()],
