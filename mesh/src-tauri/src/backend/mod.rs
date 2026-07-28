@@ -951,6 +951,9 @@ pub type BackendResult<T> = Result<T, BackendError>;
 #[async_trait]
 pub trait MeshBackend: Send + Sync {
     fn kind(&self) -> BackendKind;
+    async fn active_account_storage_root(&self) -> BackendResult<PathBuf> {
+        Err(BackendError::Unsupported("active account storage"))
+    }
     fn set_matrix_event_callback(&self, _callback: Option<MatrixBackendEventCallback>) {}
     async fn start(&self) -> BackendResult<()>;
     async fn status(&self) -> BackendStatus;
