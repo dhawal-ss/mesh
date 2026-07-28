@@ -137,6 +137,10 @@ jobs:
         working-directory: mesh
         run: npm run check:ipc-contract
 
+      - name: Check documented security invariant symbols
+        working-directory: mesh
+        run: npm run check:security-invariants
+
       - name: Check design token source of truth
         working-directory: mesh
         run: npm run check:design-tokens
