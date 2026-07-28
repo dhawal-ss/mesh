@@ -12,6 +12,7 @@
     "check:icons": "node scripts/check-icon-contract.mjs",
     "check:ipc-contract": "node --test scripts/check-tauri-ipc-contract.test.mjs && node scripts/check-tauri-ipc-contract.mjs",
     "check:ipc-types": "node scripts/check-generated-ipc-types.mjs",
+    "check:security-invariants": "node scripts/check-security-invariants.mjs",
     "generate:ipc-types": "cargo run --manifest-path src-tauri/Cargo.toml --bin export_ipc_types --no-default-features --features matrix-backend --locked",
     "preview": "vite preview",
     "tauri": "tauri",
