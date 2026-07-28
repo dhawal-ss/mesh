@@ -1,3 +1,5 @@
+#![deny(clippy::unwrap_used)]
+
 pub mod app_state;
 #[cfg(feature = "legacy-p2p")]
 pub mod download_scheduler;

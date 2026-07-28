@@ -4567,7 +4567,8 @@ impl MeshBackend for MatrixBackend {
                 .as_deref()
                 .and_then(|value| mime::Mime::from_str(value).ok())
                 .unwrap_or_else(|| {
-                    mime::Mime::from_str("application/octet-stream").expect("valid MIME")
+                    mime::Mime::from_str("application/octet-stream")
+                        .expect("invariant: application/octet-stream is a valid MIME")
                 });
             Self::emit_transfer_progress(
                 &progress,

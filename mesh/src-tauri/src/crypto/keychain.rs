@@ -73,6 +73,7 @@ pub fn delete_secret(key_name: &str) -> anyhow::Result<()> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

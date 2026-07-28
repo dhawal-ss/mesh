@@ -1,3 +1,5 @@
+#![deny(clippy::unwrap_used)]
+
 #[cfg(feature = "legacy-p2p")]
 pub mod community_key;
 #[cfg(feature = "legacy-p2p")]
@@ -9,7 +11,9 @@ pub mod key_rotation;
 pub mod keychain;
 
 #[cfg(all(test, feature = "legacy-p2p"))]
+#[allow(clippy::unwrap_used)]
 mod crypto_tests;
 
 #[cfg(all(test, feature = "legacy-p2p"))]
+#[allow(clippy::unwrap_used)]
 mod identity_tests;
