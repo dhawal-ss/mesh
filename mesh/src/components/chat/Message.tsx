@@ -16,6 +16,7 @@ import { describeError } from '../../lib/errors'
 import { variants } from '../../lib/motion'
 import { Icon } from '../ui/Icon'
 import { EncryptedAttachmentPreview } from './EncryptedAttachmentPreview'
+import { ProtectedImageLightbox } from './ProtectedImageLightbox'
 
 interface MessageProps {
   message: MessageType
@@ -45,6 +46,7 @@ export const MessageComponent = memo(function MessageComponent({
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState('')
   const [confirmBan, setConfirmBan] = useState(false)
+  const [activeImageAttachmentIndex, setActiveImageAttachmentIndex] = useState<number | null>(null)
   const rowRef = useRef<HTMLDivElement>(null)
   const reactButtonRef = useRef<HTMLButtonElement>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
@@ -65,6 +67,15 @@ export const MessageComponent = memo(function MessageComponent({
   const canModerate = myRole === 'owner' || myRole === 'admin'
   const isDeleted = !!message.deletedAt
   const isQueued = !!message.transactionId && message.deliveryStatus !== 'sent'
+  const imageAttachmentIndexes = (message.attachments ?? []).flatMap((attachment, index) => (
+    attachment.thumbnail ? [index] : []
+  ))
+  const activeImagePosition = activeImageAttachmentIndex === null
+    ? -1
+    : imageAttachmentIndexes.indexOf(activeImageAttachmentIndex)
+  const activeImageAttachment = activeImagePosition < 0
+    ? undefined
+    : message.attachments[imageAttachmentIndexes[activeImagePosition]]
 
   useEffect(() => {
     if (!contextMenu) return
@@ -390,6 +401,7 @@ export const MessageComponent = memo(function MessageComponent({
                   roomId={message.channelId}
                   eventId={message.id}
                   attachmentIndex={attachmentIndex}
+                  onOpenImage={att.thumbnail ? () => setActiveImageAttachmentIndex(attachmentIndex) : undefined}
                 />
               ))}
             </div>
@@ -464,6 +476,29 @@ export const MessageComponent = memo(function MessageComponent({
           )}
         </AnimatePresence>
       </div>
+
+      {activeImageAttachment && activeImageAttachmentIndex !== null && activeImageAttachment.thumbnail && (
+        <ProtectedImageLightbox
+          key={`${message.id}:${activeImageAttachmentIndex}`}
+          filename={activeImageAttachment.filename}
+          roomId={message.channelId}
+          eventId={message.id}
+          attachmentIndex={activeImageAttachmentIndex}
+          thumbnail={activeImageAttachment.thumbnail}
+          imagePosition={activeImagePosition}
+          imageCount={imageAttachmentIndexes.length}
+          onPrevious={() => {
+            const previousPosition = (activeImagePosition - 1 + imageAttachmentIndexes.length)
+              % imageAttachmentIndexes.length
+            setActiveImageAttachmentIndex(imageAttachmentIndexes[previousPosition])
+          }}
+          onNext={() => {
+            const nextPosition = (activeImagePosition + 1) % imageAttachmentIndexes.length
+            setActiveImageAttachmentIndex(imageAttachmentIndexes[nextPosition])
+          }}
+          onClose={() => setActiveImageAttachmentIndex(null)}
+        />
+      )}
 
       {/* Context menu */}
       <AnimatePresence>
@@ -554,11 +589,13 @@ export function FileAttachmentCard({
   roomId,
   eventId,
   attachmentIndex,
+  onOpenImage,
 }: {
   attachment: MessageType['attachments'][number]
   roomId: string
   eventId: string
   attachmentIndex: number
+  onOpenImage?: () => void
 }) {
   const download = useFileDownloadStore((s) => s.downloads[attachment.fileHash])
   const sourcePeerId = attachment.sourcePeerId
@@ -690,6 +727,7 @@ export function FileAttachmentCard({
           eventId={eventId}
           attachmentIndex={attachmentIndex}
           thumbnail={attachment.thumbnail}
+          onOpen={onOpenImage}
         />
       )}
 
