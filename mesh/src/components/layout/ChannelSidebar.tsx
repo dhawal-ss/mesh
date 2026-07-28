@@ -113,8 +113,9 @@ export function ChannelSidebar() {
     <>
       <div className="flex flex-col h-full">
         <button
-          className="flex min-h-20 flex-shrink-0 items-start justify-between gap-2 border-b border-border-subtle px-3 py-3 text-left transition-colors hover:bg-bg-modifier-hover"
+          className="flex min-h-20 flex-shrink-0 items-start justify-between gap-2 border-b border-border-subtle px-3 py-3 text-left transition-colors hover:bg-bg-modifier-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           onClick={() => setShowSettings(true)}
+          aria-label={`Open settings for ${activeCommunity.name}`}
           data-tauri-drag-region
         >
           <span className="min-w-0 flex-1">
@@ -145,7 +146,7 @@ export function ChannelSidebar() {
                   : 'Offline'}
             </span>
           </span>
-          <Icon name="chevronDown" size="sm" className="mt-0.5 flex-shrink-0 text-muted" />
+          <Icon name="settings" size="sm" className="mt-0.5 flex-shrink-0 text-muted" />
         </button>
 
         {/* Channel list */}

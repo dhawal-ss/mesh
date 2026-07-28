@@ -1,6 +1,8 @@
 import {
   useId,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type KeyboardEvent,
   type ReactNode,
@@ -15,6 +17,8 @@ import {
   Tabs as TabsPrimitive,
 } from 'radix-ui'
 import clsx from 'clsx'
+import { motion } from 'framer-motion'
+import { transitions, variants } from '../../lib/motion'
 import type { UiSize, UiTone } from './Button'
 import { Icon } from './Icon'
 import { IconButton } from './IconButton'
@@ -357,6 +361,9 @@ export function Sheet({
   description,
   children,
   side = 'right',
+  size = 'sm',
+  closeLabel = 'Close sheet',
+  className,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -364,29 +371,86 @@ export function Sheet({
   description?: string
   children: ReactNode
   side?: 'left' | 'right'
+  size?: 'sm' | 'md' | 'lg'
+  closeLabel?: string
+  className?: string
 }) {
+  const openerRef = useRef<HTMLElement | null>(null)
+  const openingFocusTarget = useMemo(
+    () => open && typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+    [open],
+  )
+
+  useLayoutEffect(() => {
+    if (open && !openerRef.current && openingFocusTarget) {
+      openerRef.current = openingFocusTarget
+    }
+  }, [open, openingFocusTarget])
+
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+    <DialogPrimitive.Root
+      open={open}
+      onOpenChange={(nextOpen) => {
+        onOpenChange(nextOpen)
+        if (nextOpen) return
+        window.setTimeout(() => {
+          openerRef.current?.focus()
+          openerRef.current = null
+        }, 0)
+      }}
+    >
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-overlay bg-surface-scrim" />
+        <DialogPrimitive.Overlay asChild>
+          <motion.div
+            className="fixed inset-0 z-overlay bg-surface-scrim"
+            variants={variants.overlay}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+          />
+        </DialogPrimitive.Overlay>
         <DialogPrimitive.Content
-          className={clsx(
-            'fixed inset-y-0 z-modal w-80 overflow-auto bg-surface-raised p-5 text-content shadow-overlay outline-none',
-            side === 'right' ? 'right-0' : 'left-0',
-          )}
+          asChild
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            openerRef.current?.focus()
+          }}
         >
-          <DialogPrimitive.Title className="pr-10 text-base font-semibold">{title}</DialogPrimitive.Title>
-          {description && (
-            <DialogPrimitive.Description className="mt-1 text-sm text-content-secondary">
-              {description}
-            </DialogPrimitive.Description>
-          )}
-          <DialogPrimitive.Close asChild>
-            <IconButton aria-label="Close sheet" className="absolute right-3 top-3">
-              <Icon name="x" size="sm" />
-            </IconButton>
-          </DialogPrimitive.Close>
-          <div className="mt-4">{children}</div>
+          <motion.div
+            className={clsx(
+              'fixed inset-y-0 z-modal flex w-full flex-col overflow-hidden bg-surface-raised text-content shadow-overlay outline-none',
+              side === 'right' ? 'right-0' : 'left-0',
+              size === 'sm' && 'sm:w-80',
+              size === 'md' && 'sm:w-96',
+              size === 'lg' && 'sm:w-settings-drawer',
+              className,
+            )}
+            initial={{ opacity: 0, x: side === 'right' ? '100%' : '-100%' }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: side === 'right' ? '100%' : '-100%' }}
+            transition={transitions.enter}
+          >
+            <header className="flex min-h-16 flex-none items-start border-b border-border-subtle px-5 py-4">
+              <div className="min-w-0 pr-10">
+                <DialogPrimitive.Title className="text-base font-semibold">{title}</DialogPrimitive.Title>
+                {description && (
+                  <DialogPrimitive.Description className="mt-1 text-xs leading-5 text-content-secondary">
+                    {description}
+                  </DialogPrimitive.Description>
+                )}
+              </div>
+              <DialogPrimitive.Close asChild>
+                <IconButton aria-label={closeLabel} className="absolute right-3 top-3">
+                  <Icon name="x" size="sm" />
+                </IconButton>
+              </DialogPrimitive.Close>
+            </header>
+            <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-5">
+              {children}
+            </div>
+          </motion.div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
