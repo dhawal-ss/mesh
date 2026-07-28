@@ -492,7 +492,7 @@ function StatCell({ label, value, ok }: { label: string; value: string; ok?: boo
     <div className="rounded bg-bg-primary px-3 py-2">
       <div className="text-caption uppercase tracking-wide text-muted">{label}</div>
       <div
-        className={`mt-0.5 font-mono text-sm ${
+        className={`tnum mt-0.5 font-mono text-sm ${
           ok === false ? 'text-red' : ok === true ? 'text-green' : 'text-primary'
         }`}
       >

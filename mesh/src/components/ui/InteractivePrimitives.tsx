@@ -576,8 +576,8 @@ export function Combobox({
         }}
         onKeyDown={onKeyDown}
         className={clsx(
-          'w-full rounded-md border border-border bg-surface-sunken text-content placeholder:text-content-muted focus:border-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50',
-          error && 'border-status-danger focus:border-status-danger focus-visible:ring-status-danger/30',
+          'w-full rounded-md border border-border bg-surface-sunken text-content placeholder:text-content-muted focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50',
+          error && 'border-status-danger focus:border-status-danger',
           size === 'sm' && 'px-2.5 py-1.5 text-xs',
           size === 'md' && 'px-3 py-2 text-sm',
           size === 'lg' && 'px-3.5 py-2.5 text-base',

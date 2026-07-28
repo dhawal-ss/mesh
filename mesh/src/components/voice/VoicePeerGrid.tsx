@@ -111,7 +111,7 @@ function VoicePeerTile({
       initial={{ scale: 0.95, opacity: 0, y: 8 }}
       animate={{ scale: 1, opacity: 1, y: 0 }}
       exit={{ scale: 0.95, opacity: 0, y: 8 }}
-      transition={transitions.enter}
+      transition={transitions.move}
       className={`group relative flex min-h-voice-tile flex-col overflow-hidden rounded-lg bg-bg-secondary transition-shadow ${
         peer.speaking ? 'ring-2 ring-green shadow-overlay' : ''
       }`}

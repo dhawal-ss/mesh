@@ -360,10 +360,10 @@ export function DmView() {
                       >
                         {msg.authorDisplayName[0]?.toUpperCase() ?? '?'}
                       </div>
-                      <span className={`text-xs font-medium ${isOwnMessage ? 'text-accent' : 'text-primary'}`}>
+                      <span className={`text-base font-semibold ${isOwnMessage ? 'text-accent' : 'text-primary'}`}>
                         {isOwnMessage ? 'You' : msg.authorDisplayName}
                       </span>
-                      <span className="font-mono text-2xs text-muted">
+                      <span className="tnum text-2xs text-muted">
                         {formatFederatedTimestamp(msg.timestamp, 'HH:mm')}
                       </span>
                     </div>

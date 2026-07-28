@@ -179,7 +179,7 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
                     <span className="text-xs text-muted">
                       in #{getChannelName(message.channelId)}
                     </span>
-                    <span className="ml-auto text-xs text-muted">
+                    <span className="tnum ml-auto text-xs text-muted">
                       {formatFederatedTimestamp(message.timestamp, 'MMM d, HH:mm')}
                     </span>
                   </div>

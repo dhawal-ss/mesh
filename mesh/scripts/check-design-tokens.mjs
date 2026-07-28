@@ -65,6 +65,10 @@ const visualPatterns = [
     kind: 'unsupported font-size class',
     expression: /\btext-(?:xl|[2-9]xl)\b/gi,
   },
+  {
+    kind: 'box-shadow focus ring',
+    expression: /\bfocus(?:-visible)?:ring(?:-[^\s'"]+)?/gi,
+  },
 ]
 
 function visualViolations(source) {
@@ -91,11 +95,11 @@ function undersizedControlTokens(source) {
 
 // Keep self-tests here so weakening either detector cannot silently pass.
 const detectorFixture = "colors: { bad: '#fff', worse: 'rgb(1 2 3)', alsoBad: 'oklch(50% 0.1 240)' }"
-const componentFixture = 'bg-[#fff] text-[11px] border-white/10 bg-yellow-500/10 font-bold text-xl var(--ref-neutral-1) oklch(50% 0.1 240)'
+const componentFixture = 'bg-[#fff] text-[11px] border-white/10 bg-yellow-500/10 font-bold text-xl var(--ref-neutral-1) oklch(50% 0.1 240) focus-visible:ring-2'
 const densityFixture = '--density-control-sm: 28px; --density-control-md: 32px;'
 if (
   literalColorViolations(detectorFixture).length !== 3
-  || visualViolations(componentFixture).length !== 9
+  || visualViolations(componentFixture).length !== 10
   || undersizedControlTokens(densityFixture).length !== 1
 ) {
   throw new Error('Design-token checker self-test failed')
@@ -158,15 +162,23 @@ for (const violation of undersizedControlTokens(globals)) {
 }
 
 const expectedTypography = new Map([
-  ['--font-size-2xs', '11px'],
-  ['--font-size-micro', '11px'],
-  ['--font-size-meta', '11px'],
-  ['--font-size-xs', '12px'],
-  ['--font-size-code', '13px'],
-  ['--font-size-sm', '15px'],
-  ['--font-size-base', '17px'],
-  ['--font-size-md', '22px'],
-  ['--font-size-lg', '28px'],
+  ['--ref-size-11', '11px'],
+  ['--ref-size-12', '12px'],
+  ['--ref-size-13', '13px'],
+  ['--ref-size-14', '14px'],
+  ['--ref-size-15', '15px'],
+  ['--ref-size-18', '18px'],
+  ['--ref-size-22', '22px'],
+  ['--ref-size-28', '28px'],
+  ['--font-size-2xs', 'var(--ref-size-11)'],
+  ['--font-size-xs', 'var(--ref-size-12)'],
+  ['--font-size-code', 'var(--ref-size-13)'],
+  ['--font-size-dense', 'var(--ref-size-13)'],
+  ['--font-size-sm', 'var(--ref-size-14)'],
+  ['--font-size-base', 'var(--ref-size-15)'],
+  ['--font-size-md', 'var(--ref-size-18)'],
+  ['--font-size-title', 'var(--ref-size-22)'],
+  ['--font-size-lg', 'var(--ref-size-28)'],
   ['--font-weight-regular', '400'],
   ['--font-weight-medium', '500'],
   ['--font-weight-semibold', '600'],
@@ -176,8 +188,69 @@ for (const [name, expected] of expectedTypography) {
   if (declarations.get(name) !== expected) {
     errors.push(`${name} must use the production typography value (${expected})`)
   }
+}
+
+for (const name of [
+  '--font-size-2xs',
+  '--font-size-xs',
+  '--font-size-code',
+  '--font-size-dense',
+  '--font-size-sm',
+  '--font-size-base',
+  '--font-size-md',
+  '--font-size-title',
+  '--font-size-lg',
+  '--font-weight-regular',
+  '--font-weight-medium',
+  '--font-weight-semibold',
+]) {
   if (!tailwind.includes(`var(${name})`)) {
     errors.push(`Tailwind must consume typography token ${name}`)
+  }
+}
+
+const expectedMotion = new Map([
+  ['--ref-dur-50', '50ms'],
+  ['--ref-dur-100', '100ms'],
+  ['--ref-dur-150', '150ms'],
+  ['--ref-dur-200', '200ms'],
+  ['--ref-dur-250', '250ms'],
+  ['--ref-dur-300', '300ms'],
+  ['--ref-ease-out-quart', 'cubic-bezier(0.165, 0.84, 0.44, 1)'],
+  ['--ref-ease-out-quint', 'cubic-bezier(0.23, 1, 0.32, 1)'],
+  ['--ref-ease-in-out-cubic', 'cubic-bezier(0.645, 0.045, 0.355, 1)'],
+  ['--ref-ease-hover', 'ease'],
+  ['--motion-dur-micro', 'var(--ref-dur-100)'],
+  ['--motion-dur-fast', 'var(--ref-dur-150)'],
+  ['--motion-dur-base', 'var(--ref-dur-200)'],
+  ['--motion-dur-slow', 'var(--ref-dur-250)'],
+  ['--motion-dur-exit', 'var(--ref-dur-150)'],
+  ['--motion-ease-enter', 'var(--ref-ease-out-quart)'],
+  ['--motion-ease-exit', 'var(--ref-ease-out-quart)'],
+  ['--motion-ease-move', 'var(--ref-ease-in-out-cubic)'],
+  ['--motion-ease-hover', 'var(--ref-ease-hover)'],
+])
+
+for (const [name, expected] of expectedMotion) {
+  if (declarations.get(name) !== expected) {
+    errors.push(`${name} must use the researched motion value (${expected})`)
+  }
+}
+
+if (globals.includes('--ease-spring')) {
+  errors.push('globals.css must not restore the overshooting --ease-spring token')
+}
+
+for (const requiredRule of [
+  "font-feature-settings: 'liga' 1, 'calt' 1",
+  "font-variation-settings: 'opsz' 14",
+  "font-variation-settings: 'opsz' 28",
+  "font-feature-settings: 'tnum' 1, 'calt' 1",
+  'outline: 2px solid var(--border-focus)',
+  'outline-offset: 2px',
+]) {
+  if (!globals.includes(requiredRule)) {
+    errors.push(`globals.css must include ${requiredRule}`)
   }
 }
 
@@ -229,8 +302,12 @@ const requiredVariableBackedValues = [
   '--animation-pulse-soft',
   '--z-dropdown',
   '--z-modal',
-  '--duration-instant',
-  '--duration-slow',
+  '--motion-dur-micro',
+  '--motion-dur-slow',
+  '--motion-ease-enter',
+  '--motion-ease-exit',
+  '--motion-ease-move',
+  '--motion-ease-hover',
   '--density-row-block',
   '--density-control-lg',
 ]

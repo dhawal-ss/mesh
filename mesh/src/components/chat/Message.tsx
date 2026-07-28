@@ -13,7 +13,7 @@ import * as bridge from '../../lib/bridge'
 import { useFileDownloadStore } from '../../store/file-downloads'
 import { formatFederatedTimestamp } from '../../lib/federated-time'
 import { describeError } from '../../lib/errors'
-import { variants } from '../../lib/motion'
+import { transitions, variants } from '../../lib/motion'
 import { Icon } from '../ui/Icon'
 import { EncryptedAttachmentPreview } from './EncryptedAttachmentPreview'
 import { ProtectedImageLightbox } from './ProtectedImageLightbox'
@@ -284,7 +284,9 @@ export const MessageComponent = memo(function MessageComponent({
         role="group"
         aria-label={messageAriaLabel}
         tabIndex={-1}
-        className={`group relative flex gap-4 py-0.5 pl-message-gutter pr-12 outline-none hover:bg-bg-modifier-hover ${
+        className={`group relative flex gap-4 py-0.5 pl-message-gutter pr-12 outline-none transition-opacity duration-fast hover:bg-bg-modifier-hover ${
+          message.deliveryStatus === 'pending' ? 'opacity-60' : 'opacity-100'
+        } ${
           !isGrouped ? 'mt-message-group' : ''
         }`}
         onMouseEnter={() => setHovered(true)}
@@ -302,7 +304,7 @@ export const MessageComponent = memo(function MessageComponent({
             <Avatar color={message.authorAvatarColor} size={40} name={message.authorDisplayName} />
           ) : (
             <span
-              className={`flex h-full items-center justify-end pr-1 text-meta text-muted transition-opacity ${
+              className={`tnum flex h-full items-center justify-end pr-1 text-meta text-muted transition-opacity ${
                 hovered ? 'opacity-100' : 'opacity-0'
               }`}
             >
@@ -315,10 +317,10 @@ export const MessageComponent = memo(function MessageComponent({
         <div className="min-w-0 flex-1">
           {!isGrouped && (
             <div className="flex items-baseline gap-2">
-              <span className="text-sm font-medium text-primary">
+              <span className="text-base font-semibold text-primary">
                 {message.authorDisplayName}
               </span>
-              <span className="text-meta text-muted">
+              <span className="tnum text-meta text-muted">
                 {formatFederatedTimestamp(message.timestamp, 'MM/dd/yyyy h:mm a')}
               </span>
             </div>
@@ -332,7 +334,13 @@ export const MessageComponent = memo(function MessageComponent({
           )}
 
           {message.deliveryStatus === 'failed' && (
-            <div role="alert" className="mt-1 flex flex-wrap items-center gap-2 text-meta text-red">
+            <motion.div
+              role="alert"
+              className="mt-1 flex flex-wrap items-center gap-2 text-meta text-red"
+              initial={{ x: 0 }}
+              animate={{ x: [0, -2, 2, 0] }}
+              transition={transitions.failure}
+            >
               <span>Delivery needs attention.</span>
               <button
                 type="button"
@@ -350,7 +358,7 @@ export const MessageComponent = memo(function MessageComponent({
                   Cancel
                 </button>
               )}
-            </div>
+            </motion.div>
           )}
 
           {/* Reply preview */}
@@ -420,8 +428,14 @@ export const MessageComponent = memo(function MessageComponent({
                       : 'border-border bg-bg-modifier-hover text-secondary hover:border-border-light'
                   }`}
                 >
-                  <span>{emoji}</span>
-                  <span className="text-meta">{users.length}</span>
+                  <motion.span
+                    initial={{ scale: 0.8 }}
+                    animate={{ scale: 1 }}
+                    transition={transitions.reaction}
+                  >
+                    {emoji}
+                  </motion.span>
+                  <span className="badge-count text-meta">{users.length}</span>
                 </button>
               ))}
             </div>

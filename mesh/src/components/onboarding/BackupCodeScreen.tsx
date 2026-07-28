@@ -158,7 +158,7 @@ export function BackupCodeScreen({
                     autoCapitalize="characters"
                     spellCheck={false}
                     aria-invalid={attempted && !complete ? true : undefined}
-                    className="mt-1.5 block w-full rounded-md border border-border bg-surface-sunken px-3 py-2 font-mono text-sm uppercase text-content outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+                    className="mt-1.5 block w-full rounded-md border border-border bg-surface-sunken px-3 py-2 font-mono text-sm uppercase text-content outline-none focus:border-accent"
                     onChange={(event) => {
                       setAttempted(false)
                       setAnswers((current) => ({
