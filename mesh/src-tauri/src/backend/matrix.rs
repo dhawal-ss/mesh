@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
     io::{Cursor, Read},
     path::{Component, Path, PathBuf},
     str::FromStr,
@@ -68,6 +68,7 @@ use matrix_sdk::{
             call::member::{CallMemberStateKey, Focus, OriginalSyncCallMemberEvent},
             direct::{DirectEventContent, DirectUserIdentifier},
             ignored_user_list::{IgnoredUser, IgnoredUserListEventContent},
+            image_pack::{PackImage, PackInfo, PackUsage, RoomImagePackEventContent},
             presence::PresenceEvent,
             reaction::ReactionEventContent,
             relation::Annotation,
@@ -79,8 +80,8 @@ use matrix_sdk::{
                     OriginalSyncRoomMessageEvent, ReplacementMetadata, RoomMessageEventContent,
                     RoomMessageEventContentWithoutRelation,
                 },
-                EncryptedFile, EncryptedFileHash, EncryptedFileHashAlgorithm, MediaSource,
-                ThumbnailInfo,
+                EncryptedFile, EncryptedFileHash, EncryptedFileHashAlgorithm, ImageInfo,
+                MediaSource, ThumbnailInfo,
             },
             space::{child::SpaceChildEventContent, parent::SpaceParentEventContent},
             typing::SyncTypingEvent,
@@ -95,7 +96,7 @@ use matrix_sdk::{
         serde::Raw,
         EventEncryptionAlgorithm, MxcUri, OwnedDeviceId, OwnedRoomAliasId, OwnedRoomId,
         OwnedServerName, OwnedTransactionId, OwnedUserId, RoomAliasId, RoomOrAliasId, ServerName,
-        UserId,
+        UInt, UserId,
     },
     send_queue::{LocalEcho, LocalEchoContent, RoomSendQueueUpdate, SendQueueUpdate},
     store::RoomLoadSettings,
@@ -125,7 +126,7 @@ use crate::types::{
 use super::{
     BackendError, BackendKind, BackendResult, BackendStatus, CommunityAccessResult,
     CommunityAccessSettings, CommunityApplication, CommunityDirectoryEntry, CommunityMember,
-    CreatedCommunity, MatrixAccount, MatrixAttachmentSendRequest, MatrixBackendEvent,
+    CreatedCommunity, CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest, MatrixBackendEvent,
     MatrixBackendEventCallback, MatrixDevice, MatrixLogin, MatrixNotification,
     MatrixOidcAvailability, MatrixOidcStatus, MatrixProfile, MatrixQueuedMessageState,
     MatrixQueuedMessageUpdate, MatrixRecoveryHealth, MatrixRoomNotificationMode,
@@ -696,6 +697,7 @@ pub struct MatrixBackend {
     verification_sessions: RwLock<HashMap<String, DeviceVerificationFlow>>,
     media_uploads: Mutex<HashMap<String, CancellationToken>>,
     media_downloads: Mutex<HashMap<String, CancellationToken>>,
+    custom_emoji_writes: Mutex<()>,
     send_queue_gate: Arc<Mutex<()>>,
     send_queue_reconcile: Arc<Notify>,
     send_queue_known: Arc<Mutex<HashMap<String, HashSet<String>>>>,
@@ -719,6 +721,7 @@ include!("matrix/encryption.rs");
 include!("matrix/attachments.rs");
 include!("matrix/rooms.rs");
 include!("matrix/dm.rs");
+include!("matrix/emoji.rs");
 
 impl MatrixBackend {
     pub fn new(store_root: PathBuf) -> Self {
@@ -732,6 +735,7 @@ impl MatrixBackend {
             verification_sessions: RwLock::new(HashMap::new()),
             media_uploads: Mutex::new(HashMap::new()),
             media_downloads: Mutex::new(HashMap::new()),
+            custom_emoji_writes: Mutex::new(()),
             send_queue_gate: Arc::new(Mutex::new(())),
             send_queue_reconcile: Arc::new(Notify::new()),
             send_queue_known: Arc::new(Mutex::new(HashMap::new())),
@@ -774,6 +778,7 @@ impl MatrixBackend {
             verification_sessions: RwLock::new(HashMap::new()),
             media_uploads: Mutex::new(HashMap::new()),
             media_downloads: Mutex::new(HashMap::new()),
+            custom_emoji_writes: Mutex::new(()),
             send_queue_gate: Arc::new(Mutex::new(())),
             send_queue_reconcile: Arc::new(Notify::new()),
             send_queue_known: Arc::new(Mutex::new(HashMap::new())),
@@ -3794,6 +3799,150 @@ impl MeshBackend for MatrixBackend {
             channel_type,
             unread_count: 0,
         })
+    }
+
+    async fn list_custom_emoji(&self, community_id: String) -> BackendResult<Vec<CustomEmoji>> {
+        let client = self.client().await?;
+        let space_id = matrix_sdk::ruma::RoomId::parse(&community_id).map_err(Self::map_error)?;
+        let space = Self::protected_joined_room(&client, &space_id, "reading server emoji").await?;
+        if !space.is_space() {
+            return Err(BackendError::InvalidConfiguration(
+                "community ID does not identify a server".into(),
+            ));
+        }
+        let pack = Self::custom_emoji_pack(&space).await?;
+        if pack.images.len() > MAX_CUSTOM_EMOJI_COUNT {
+            return Err(BackendError::InvalidConfiguration(
+                "server emoji settings exceed the 100-item limit".into(),
+            ));
+        }
+        pack.images
+            .iter()
+            .map(|(shortcode, image)| Self::custom_emoji_info(shortcode, image))
+            .collect()
+    }
+
+    async fn upload_custom_emoji(
+        &self,
+        community_id: String,
+        shortcode: String,
+        filename: String,
+        content_type: String,
+        bytes: Vec<u8>,
+    ) -> BackendResult<CustomEmoji> {
+        let shortcode = Self::normalize_custom_emoji_shortcode(&shortcode)?;
+        let sanitized = Self::sanitize_custom_emoji(&bytes, content_type.trim(), filename.trim())?;
+        let client = self.client().await?;
+        let space_id = matrix_sdk::ruma::RoomId::parse(&community_id).map_err(Self::map_error)?;
+        let space = Self::protected_joined_room(&client, &space_id, "adding server emoji").await?;
+        if !space.is_space() {
+            return Err(BackendError::InvalidConfiguration(
+                "community ID does not identify a server".into(),
+            ));
+        }
+
+        let _write = self.custom_emoji_writes.lock().await;
+        let mut pack = Self::custom_emoji_pack(&space).await?;
+        if pack.images.len() >= MAX_CUSTOM_EMOJI_COUNT && !pack.images.contains_key(&shortcode) {
+            return Err(BackendError::InvalidConfiguration(
+                "this server already has 100 custom emoji".into(),
+            ));
+        }
+        if pack.images.contains_key(&shortcode) {
+            return Err(BackendError::InvalidConfiguration(
+                "that emoji name is already in use".into(),
+            ));
+        }
+
+        let size_bytes = sanitized.bytes.len();
+        let width = sanitized.width;
+        let height = sanitized.height;
+        let upload = client
+            .media()
+            .upload(&mime::IMAGE_PNG, sanitized.bytes, None)
+            .await
+            .map_err(Self::map_error)?;
+        let mut info = ImageInfo::new();
+        info.width = Some(UInt::try_from(u64::from(sanitized.width)).map_err(Self::map_error)?);
+        info.height = Some(UInt::try_from(u64::from(sanitized.height)).map_err(Self::map_error)?);
+        info.mimetype = Some("image/png".into());
+        let mut image = PackImage::new(upload.content_uri);
+        image.body = Some(shortcode.clone());
+        image.info = Some(info);
+        image.usage = BTreeSet::from([PackUsage::Emoticon]);
+        let content = image.url.to_string();
+        if let Some(info) = image.info.as_mut() {
+            info.size = Some(UInt::try_from(size_bytes as u64).map_err(Self::map_error)?);
+        }
+        pack.images.insert(shortcode.clone(), image);
+        let mut pack_info = PackInfo::new();
+        pack_info.display_name = Some(CUSTOM_EMOJI_PACK_NAME.into());
+        pack_info.usage = BTreeSet::from([PackUsage::Emoticon]);
+        pack.pack = Some(pack_info);
+        space
+            .send_state_event_for_key(CUSTOM_EMOJI_PACK_STATE_KEY, pack)
+            .await
+            .map_err(Self::map_error)?;
+
+        Ok(CustomEmoji {
+            shortcode: shortcode.clone(),
+            body: shortcode,
+            mxc_uri: content,
+            content_type: "image/png".into(),
+            width,
+            height,
+            size_bytes: size_bytes as u32,
+        })
+    }
+
+    async fn remove_custom_emoji(
+        &self,
+        community_id: String,
+        shortcode: String,
+    ) -> BackendResult<()> {
+        let shortcode = Self::normalize_custom_emoji_shortcode(&shortcode)?;
+        let client = self.client().await?;
+        let space_id = matrix_sdk::ruma::RoomId::parse(&community_id).map_err(Self::map_error)?;
+        let space =
+            Self::protected_joined_room(&client, &space_id, "removing server emoji").await?;
+        if !space.is_space() {
+            return Err(BackendError::InvalidConfiguration(
+                "community ID does not identify a server".into(),
+            ));
+        }
+        let _write = self.custom_emoji_writes.lock().await;
+        let mut pack = Self::custom_emoji_pack(&space).await?;
+        if pack.images.remove(&shortcode).is_none() {
+            return Err(BackendError::NotFound("server emoji was not found".into()));
+        }
+        space
+            .send_state_event_for_key(CUSTOM_EMOJI_PACK_STATE_KEY, pack)
+            .await
+            .map_err(Self::map_error)?;
+        Ok(())
+    }
+
+    async fn load_custom_emoji_image(
+        &self,
+        community_id: String,
+        shortcode: String,
+    ) -> BackendResult<Vec<u8>> {
+        let shortcode = Self::normalize_custom_emoji_shortcode(&shortcode)?;
+        let client = self.client().await?;
+        let space_id = matrix_sdk::ruma::RoomId::parse(&community_id).map_err(Self::map_error)?;
+        let space = Self::protected_joined_room(&client, &space_id, "loading server emoji").await?;
+        if !space.is_space() {
+            return Err(BackendError::InvalidConfiguration(
+                "community ID does not identify a server".into(),
+            ));
+        }
+        let pack = Self::custom_emoji_pack(&space).await?;
+        let image = pack
+            .images
+            .get(&shortcode)
+            .ok_or_else(|| BackendError::NotFound("server emoji was not found".into()))?;
+        Self::custom_emoji_info(&shortcode, image)?;
+        Self::download_custom_emoji(&client, &image.url).await
     }
 
     async fn matrix_rtc_join(&self, room_id: String) -> BackendResult<MatrixRtcJoinResult> {

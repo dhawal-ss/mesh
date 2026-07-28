@@ -1,4 +1,5 @@
 import React, { memo, useMemo } from 'react'
+import type { LoadedServerEmoji } from '../../store/custom-emoji'
 import type { MemberRecord } from '../../store/membership'
 
 interface MarkdownContentProps {
@@ -6,6 +7,7 @@ interface MarkdownContentProps {
   className?: string
   /** Member data is resolved at render time so profile renames propagate. */
   members?: readonly Pick<MemberRecord, 'publicKey' | 'displayName'>[]
+  customEmoji?: readonly LoadedServerEmoji[]
   ownUserId?: string | null
   /** Room-wide mentions remain opt-in until power-level policy is available. */
   roomWideMentionsAllowed?: boolean
@@ -15,12 +17,18 @@ export const MarkdownContent = memo(function MarkdownContent({
   content,
   className = '',
   members = [],
+  customEmoji = [],
   ownUserId = null,
   roomWideMentionsAllowed = false,
 }: MarkdownContentProps) {
   const rendered = useMemo(
-    () => parseMarkdown(content, { members, ownUserId, roomWideMentionsAllowed }),
-    [content, members, ownUserId, roomWideMentionsAllowed],
+    () => parseMarkdown(content, {
+      members,
+      customEmoji,
+      ownUserId,
+      roomWideMentionsAllowed,
+    }),
+    [content, customEmoji, members, ownUserId, roomWideMentionsAllowed],
   )
 
   return (
@@ -36,6 +44,7 @@ type InlineNode = string | React.ReactElement
 
 interface MentionRenderOptions {
   members: readonly Pick<MemberRecord, 'publicKey' | 'displayName'>[]
+  customEmoji: readonly LoadedServerEmoji[]
   ownUserId: string | null
   roomWideMentionsAllowed: boolean
 }
@@ -98,10 +107,10 @@ function parseInline(
 ): InlineNode[] {
   const nodes: InlineNode[] = []
   const regex =
-    /(`[^`]+`)|(\*\*[^*]+\*\*)|(~~[^~]+~~)|(\*[^*]+\*|_[^_]+_)|(\[([^\]]+)\]\(([^)]+)\))|(@[A-Za-z0-9._=-]+:[^\s]+|@(everyone|here|room)\b|@\w[\w-]*)/g
+    /(`[^`]+`)|(\*\*[^*]+\*\*)|(~~[^~]+~~)|(\*[^*]+\*|_[^_]+_)|(\[([^\]]+)\]\(([^)]+)\))|(@[A-Za-z0-9._=-]+:[^\s]+|@(everyone|here|room)\b|@\w[\w-]*)|(:([a-z0-9_]{2,32}):)/gi
 
   let lastIndex = 0
-  let match
+  let match: RegExpExecArray | null
 
   while ((match = regex.exec(text)) !== null) {
     if (match.index > lastIndex) {
@@ -186,6 +195,26 @@ function parseInline(
         )
       }
       if (trailingPunctuation) nodes.push(trailingPunctuation)
+    } else if (match[10]) {
+      const shortcode = match[11]
+      const emoji = mentionOptions.customEmoji.find(
+        (candidate) => (
+          candidate.shortcode.toLocaleLowerCase() === shortcode.toLocaleLowerCase()
+        ),
+      )
+      if (emoji) {
+        nodes.push(
+          <img
+            key={key}
+            src={emoji.imageUrl}
+            alt={`:${emoji.shortcode}:`}
+            title={emoji.body}
+            className="mx-0.5 inline-block h-5 w-5 object-contain align-text-bottom"
+          />,
+        )
+      } else {
+        nodes.push(match[10])
+      }
     }
 
     lastIndex = regex.lastIndex

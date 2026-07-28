@@ -120,6 +120,8 @@ async function installKeyboardActionsMock(page: Page): Promise<void> {
           }
         case 'matrix_list_communities':
           return [community]
+        case 'matrix_list_custom_emoji':
+          return []
         case 'matrix_get_profile':
           return matrixProfile
         case 'matrix_list_channels':

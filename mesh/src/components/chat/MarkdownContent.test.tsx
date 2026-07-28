@@ -63,4 +63,30 @@ describe('MarkdownContent mentions', () => {
     expect(container.querySelectorAll('[data-mention-id]')).toHaveLength(0)
     expect(container.textContent).toBe('@alice:example.org')
   })
+
+  it('renders known server emoji while preserving unknown names and inline code', async () => {
+    await act(async () => {
+      root.render(
+        <MarkdownContent
+          content="Known :party_parrot: unknown :missing: code `:party_parrot:`"
+          customEmoji={[{
+            shortcode: 'party_parrot',
+            body: 'Party parrot',
+            mxcUri: 'mxc://example.org/party',
+            contentType: 'image/png',
+            width: 32,
+            height: 32,
+            sizeBytes: 128,
+            imageUrl: 'blob:party-parrot',
+          }]}
+        />,
+      )
+    })
+
+    const emoji = container.querySelector<HTMLImageElement>('img')
+    expect(emoji?.getAttribute('src')).toBe('blob:party-parrot')
+    expect(emoji?.getAttribute('alt')).toBe(':party_parrot:')
+    expect(container.textContent).toContain('unknown :missing: code :party_parrot:')
+    expect(container.querySelector('code')?.textContent).toBe(':party_parrot:')
+  })
 })

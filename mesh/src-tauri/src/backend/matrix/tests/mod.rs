@@ -6,12 +6,36 @@ const MATRIX_PRODUCTION_SOURCES: &[(&str, &str)] = &[
     ("matrix.rs", include_str!("../../matrix.rs")),
     ("attachments.rs", include_str!("../attachments.rs")),
     ("dm.rs", include_str!("../dm.rs")),
+    ("emoji.rs", include_str!("../emoji.rs")),
     ("encryption.rs", include_str!("../encryption.rs")),
     ("messages.rs", include_str!("../messages.rs")),
     ("oidc.rs", include_str!("../oidc.rs")),
     ("rooms.rs", include_str!("../rooms.rs")),
     ("rtc.rs", include_str!("../rtc.rs")),
 ];
+
+#[test]
+fn custom_emoji_shortcodes_and_sanitized_media_are_bounded() {
+    assert_eq!(
+        MatrixBackend::normalize_custom_emoji_shortcode(":Party_2:").unwrap(),
+        "party_2"
+    );
+    for invalid in ["x", "has space", "slash/name", "punctuation!"] {
+        assert!(MatrixBackend::normalize_custom_emoji_shortcode(invalid).is_err());
+    }
+    assert!(MatrixBackend::normalize_custom_emoji_shortcode(&"a".repeat(33)).is_err());
+
+    let mut source = Cursor::new(Vec::new());
+    image::DynamicImage::new_rgba8(256, 64)
+        .write_to(&mut source, image::ImageFormat::Png)
+        .unwrap();
+    let sanitized =
+        MatrixBackend::sanitize_custom_emoji(source.get_ref(), "image/png", "../party.png")
+            .unwrap();
+    assert_eq!((sanitized.width, sanitized.height), (128, 32));
+    assert!(sanitized.bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+    assert!(sanitized.bytes.len() <= MAX_CUSTOM_EMOJI_UPLOAD_BYTES);
+}
 
 #[test]
 fn composer_drafts_are_plain_bounded_and_new_message_only() {

@@ -15,6 +15,7 @@ matrix-backend = [
   "dep:matrix-sdk-crypto",
   "dep:qrcode",
   "dep:reqwest",
+  "dep:ruma",
 ]
 legacy-p2p = ["dep:libp2p"]
 
@@ -80,6 +81,7 @@ matrix-sdk-crypto = { version = "0.18", optional = true }
 qrcode = { version = "0.14", optional = true, default-features = false, features = ["svg"] }
 image = { version = "0.25", optional = true, default-features = false, features = ["jpeg", "png", "webp"] }
 reqwest = { version = "0.12", optional = true, default-features = false, features = ["json", "rustls-tls-native-roots"] }
+ruma = { version = "0.16", optional = true, default-features = false, features = ["unstable-msc2545"] }
 
 # Cryptography
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
