@@ -13,12 +13,14 @@ export function EncryptedAttachmentPreview({
   eventId,
   attachmentIndex,
   thumbnail,
+  onOpen,
 }: {
   filename: string
   roomId: string
   eventId: string
   attachmentIndex: number
   thumbnail: AttachmentThumbnail
+  onOpen?: () => void
 }) {
   const previewRef = useRef<HTMLDivElement>(null)
   const objectUrlRef = useRef<string | null>(null)
@@ -127,23 +129,50 @@ export function EncryptedAttachmentPreview({
       aria-live="polite"
     >
       {preview.status === 'ready' && (
-        <img
-          src={preview.url}
-          alt={`Preview of ${filename}`}
-          className="h-full max-h-80 w-full object-contain"
-          loading="lazy"
-          decoding="async"
-          draggable={false}
-          onError={() => {
-            URL.revokeObjectURL(preview.url)
-            objectUrlRef.current = null
-            setPreview((current) => ({
-              status: 'failed',
-              url: null,
-              attempt: current.attempt,
-            }))
-          }}
-        />
+        onOpen ? (
+          <button
+            type="button"
+            onClick={onOpen}
+            className="h-full w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            aria-label={`Open ${filename} full size`}
+          >
+            <img
+              src={preview.url}
+              alt={`Preview of ${filename}`}
+              className="h-full max-h-80 w-full object-contain"
+              loading="lazy"
+              decoding="async"
+              draggable={false}
+              onError={() => {
+                URL.revokeObjectURL(preview.url)
+                objectUrlRef.current = null
+                setPreview((current) => ({
+                  status: 'failed',
+                  url: null,
+                  attempt: current.attempt,
+                }))
+              }}
+            />
+          </button>
+        ) : (
+          <img
+            src={preview.url}
+            alt={`Preview of ${filename}`}
+            className="h-full max-h-80 w-full object-contain"
+            loading="lazy"
+            decoding="async"
+            draggable={false}
+            onError={() => {
+              URL.revokeObjectURL(preview.url)
+              objectUrlRef.current = null
+              setPreview((current) => ({
+                status: 'failed',
+                url: null,
+                attempt: current.attempt,
+              }))
+            }}
+          />
+        )
       )}
       {preview.status === 'loading' && (
         <span role="status" className="text-xs text-muted">

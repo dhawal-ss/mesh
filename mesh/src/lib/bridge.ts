@@ -81,8 +81,37 @@ const THUMBNAIL_IPC_OPTIONS: TauriInvokeOptions = {
   timeoutMs: 45_000,
   maxAttempts: 1,
 }
+const LIGHTBOX_IMAGE_IPC_OPTIONS: TauriInvokeOptions = {
+  idempotent: true,
+  timeoutMs: 60_000,
+  maxAttempts: 1,
+}
 const MAX_INLINE_THUMBNAIL_BYTES = 2 * 1024 * 1024
+const MAX_LIGHTBOX_IMAGE_BYTES = 100 * 1024 * 1024
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10] as const
+
+export interface ProtectedImage {
+  bytes: Uint8Array
+  contentType: 'image/jpeg' | 'image/png' | 'image/webp'
+}
+
+function protectedImageContentType(bytes: Uint8Array): ProtectedImage['contentType'] | null {
+  if (PNG_SIGNATURE.every((byte, index) => bytes[index] === byte)) return 'image/png'
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
+  if (
+    bytes[0] === 0x52
+    && bytes[1] === 0x49
+    && bytes[2] === 0x46
+    && bytes[3] === 0x46
+    && bytes[8] === 0x57
+    && bytes[9] === 0x45
+    && bytes[10] === 0x42
+    && bytes[11] === 0x50
+  ) {
+    return 'image/webp'
+  }
+  return null
+}
 
 function stableRequestKey(command: string, args?: Record<string, unknown>): string {
   if (!args) return command
@@ -709,6 +738,29 @@ export async function matrixLoadAttachmentThumbnail(
     throw normalizeError('Protected preview failed local validation')
   }
   return normalized
+}
+
+export async function matrixLoadAttachmentImage(
+  roomId: string,
+  eventId: string,
+  attachmentIndex: number,
+): Promise<ProtectedImage | null> {
+  if (!isMatrixBackend()) return null
+  const bytes = await tauriInvoke<ArrayBuffer | Uint8Array | number[]>(
+    'matrix_load_attachment_image',
+    { roomId, eventId, attachmentIndex },
+    LIGHTBOX_IMAGE_IPC_OPTIONS,
+  )
+  const normalized = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
+  const contentType = protectedImageContentType(normalized)
+  if (
+    normalized.byteLength === 0
+    || normalized.byteLength > MAX_LIGHTBOX_IMAGE_BYTES
+    || !contentType
+  ) {
+    throw normalizeError('Protected image failed local validation')
+  }
+  return { bytes: normalized, contentType }
 }
 
 export async function matrixCancelAttachmentDownload(fileHash: string): Promise<void> {

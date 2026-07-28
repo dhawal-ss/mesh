@@ -163,6 +163,7 @@ const MAX_THUMBNAIL_DIMENSION: u32 = 512;
 const MAX_THUMBNAIL_BYTES: usize = 2 * 1024 * 1024;
 const MAX_INLINE_THUMBNAIL_DECODE_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_CONCURRENT_THUMBNAIL_LOADS: usize = 4;
+const MAX_CONCURRENT_LIGHTBOX_IMAGE_LOADS: usize = 1;
 const MEDIA_DOWNLOAD_PROGRESS_INTERVAL_BYTES: u64 = 1024 * 1024;
 // A Content-Length hint is remote-claimed and unverified, so the initial
 // allocation it sizes must stay modest regardless of what the header claims
@@ -699,6 +700,7 @@ pub struct MatrixBackend {
     send_queue_reconcile: Arc<Notify>,
     send_queue_known: Arc<Mutex<HashMap<String, HashSet<String>>>>,
     thumbnail_loads: Semaphore,
+    lightbox_image_loads: Semaphore,
     rtc_sessions: Arc<Mutex<HashMap<(String, String), MatrixRtcLocalSession>>>,
     rtc_media_keys: Arc<Mutex<MatrixRtcMediaKeyRuntime>>,
     rtc_membership_writes: Arc<Mutex<()>>,
@@ -727,6 +729,7 @@ impl MatrixBackend {
             send_queue_reconcile: Arc::new(Notify::new()),
             send_queue_known: Arc::new(Mutex::new(HashMap::new())),
             thumbnail_loads: Semaphore::new(MAX_CONCURRENT_THUMBNAIL_LOADS),
+            lightbox_image_loads: Semaphore::new(MAX_CONCURRENT_LIGHTBOX_IMAGE_LOADS),
             rtc_sessions: Arc::new(Mutex::new(HashMap::new())),
             rtc_media_keys: Arc::new(Mutex::new(MatrixRtcMediaKeyRuntime::default())),
             rtc_membership_writes: Arc::new(Mutex::new(())),
@@ -768,6 +771,7 @@ impl MatrixBackend {
             send_queue_reconcile: Arc::new(Notify::new()),
             send_queue_known: Arc::new(Mutex::new(HashMap::new())),
             thumbnail_loads: Semaphore::new(MAX_CONCURRENT_THUMBNAIL_LOADS),
+            lightbox_image_loads: Semaphore::new(MAX_CONCURRENT_LIGHTBOX_IMAGE_LOADS),
             rtc_sessions: Arc::new(Mutex::new(HashMap::new())),
             rtc_media_keys: Arc::new(Mutex::new(MatrixRtcMediaKeyRuntime::default())),
             rtc_membership_writes: Arc::new(Mutex::new(())),
@@ -6179,13 +6183,10 @@ impl MatrixBackend {
         }
     }
 
-    fn generate_sanitized_thumbnail(
+    fn decode_image_with_safe_limits(
         data: &[u8],
-        content_type: &str,
-    ) -> BackendResult<Option<GeneratedThumbnail>> {
-        let Some(format) = Self::thumbnail_image_format(content_type) else {
-            return Ok(None);
-        };
+        format: image::ImageFormat,
+    ) -> BackendResult<(image::DynamicImage, (u32, u32))> {
         let dimensions = image::ImageReader::with_format(Cursor::new(data), format)
             .into_dimensions()
             .map_err(|_| {
@@ -6197,7 +6198,7 @@ impl MatrixBackend {
             .checked_mul(u64::from(dimensions.1))
             .ok_or_else(|| {
                 BackendError::InvalidConfiguration(
-                    "image attachment dimensions overflow the thumbnail limit".into(),
+                    "image attachment dimensions overflow the display limit".into(),
                 )
             })?;
         if dimensions.0 == 0
@@ -6207,7 +6208,7 @@ impl MatrixBackend {
             || pixels > MAX_THUMBNAIL_SOURCE_PIXELS
         {
             return Err(BackendError::InvalidConfiguration(format!(
-                "image attachment exceeds the {MAX_THUMBNAIL_SOURCE_PIXELS}-pixel thumbnail limit"
+                "image attachment exceeds the {MAX_THUMBNAIL_SOURCE_PIXELS}-pixel display limit"
             )));
         }
 
@@ -6219,14 +6220,34 @@ impl MatrixBackend {
         reader.limits(decode_limits);
         let decoded = reader.decode().map_err(|_| {
             BackendError::InvalidConfiguration(
-                "image attachment could not be decoded within thumbnail limits".into(),
+                "image attachment could not be decoded within display limits".into(),
             )
         })?;
-        if decoded.width() != dimensions.0 || decoded.height() != dimensions.1 {
+        if (decoded.width(), decoded.height()) != dimensions {
             return Err(BackendError::InvalidConfiguration(
                 "decoded image dimensions do not match its header".into(),
             ));
         }
+        Ok((decoded, dimensions))
+    }
+
+    fn validate_lightbox_image(data: &[u8], content_type: &str) -> BackendResult<()> {
+        let format = Self::thumbnail_image_format(content_type).ok_or_else(|| {
+            BackendError::InvalidConfiguration(
+                "attachment is not a supported protected image".into(),
+            )
+        })?;
+        Self::decode_image_with_safe_limits(data, format).map(|_| ())
+    }
+
+    fn generate_sanitized_thumbnail(
+        data: &[u8],
+        content_type: &str,
+    ) -> BackendResult<Option<GeneratedThumbnail>> {
+        let Some(format) = Self::thumbnail_image_format(content_type) else {
+            return Ok(None);
+        };
+        let (decoded, _) = Self::decode_image_with_safe_limits(data, format)?;
         let thumbnail = decoded.thumbnail(MAX_THUMBNAIL_DIMENSION, MAX_THUMBNAIL_DIMENSION);
         let width = thumbnail.width();
         let height = thumbnail.height();
@@ -9351,6 +9372,65 @@ impl MeshBackend for MatrixBackend {
         tokio::task::spawn_blocking(move || Self::sanitize_inline_thumbnail(&data, &metadata))
             .await
             .map_err(Self::map_error)?
+    }
+
+    async fn load_attachment_image(
+        &self,
+        room_id: String,
+        event_id: String,
+        attachment_index: u32,
+    ) -> BackendResult<Vec<u8>> {
+        let client = self.client().await?;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
+        let resolved_attachment =
+            Self::resolve_protected_attachment(&client, &room_id, &event_id, attachment_index)
+                .await?;
+        let content_type = resolved_attachment
+            .metadata
+            .content_type
+            .clone()
+            .ok_or_else(|| {
+                BackendError::InvalidConfiguration(
+                    "attachment does not declare a supported protected image type".into(),
+                )
+            })?;
+        if Self::thumbnail_image_format(&content_type).is_none() {
+            return Err(BackendError::InvalidConfiguration(
+                "attachment does not declare a supported protected image type".into(),
+            ));
+        }
+        Self::validate_attachment_size(resolved_attachment.metadata.size)?;
+        let _permit =
+            self.lightbox_image_loads.acquire().await.map_err(|_| {
+                BackendError::Other("protected image scheduler is unavailable".into())
+            })?;
+        let data = Self::download_bounded_encrypted_media(
+            &client,
+            &resolved_attachment.encrypted_file,
+            MAX_ATTACHMENT_BYTES,
+            &mut |_| {},
+        )
+        .await?;
+        Self::validate_attachment_size(data.len() as u64)?;
+        if resolved_attachment.metadata.size > 0
+            && data.len() as u64 != resolved_attachment.metadata.size
+        {
+            return Err(BackendError::Other(
+                "decrypted attachment size does not match its metadata".into(),
+            ));
+        }
+        Self::validate_media_payload(
+            &data,
+            Some(&content_type),
+            &resolved_attachment.metadata.filename,
+        )?;
+        tokio::task::spawn_blocking(move || {
+            Self::validate_lightbox_image(&data, &content_type)?;
+            Ok::<_, BackendError>(data)
+        })
+        .await
+        .map_err(Self::map_error)?
     }
 
     async fn cancel_attachment_download(&self, file_hash: String) -> BackendResult<()> {
@@ -12710,6 +12790,39 @@ mod tests {
                 .unwrap()
                 .is_none(),
             "active vector content must never enter thumbnail decoding"
+        );
+    }
+
+    #[test]
+    fn lightbox_image_validation_requires_a_supported_matching_image() {
+        let source = image::DynamicImage::new_rgb8(64, 32);
+        let mut encoded = Cursor::new(Vec::new());
+        source
+            .write_to(&mut encoded, image::ImageFormat::Png)
+            .unwrap();
+        let encoded = encoded.into_inner();
+
+        assert!(MatrixBackend::validate_lightbox_image(&encoded, "image/png").is_ok());
+        assert!(MatrixBackend::validate_lightbox_image(&encoded, "image/webp").is_err());
+        assert!(MatrixBackend::validate_lightbox_image(b"<svg/>", "image/svg+xml").is_err());
+    }
+
+    #[tokio::test]
+    async fn lightbox_image_scheduler_limits_full_image_reads() {
+        let backend = MatrixBackend::with_profile(
+            std::env::temp_dir().join("mesh-lightbox-image-scheduler-test"),
+            "lightbox-image-scheduler",
+        );
+        assert_eq!(
+            backend.lightbox_image_loads.available_permits(),
+            MAX_CONCURRENT_LIGHTBOX_IMAGE_LOADS
+        );
+        let permit = backend.lightbox_image_loads.acquire().await.unwrap();
+        assert_eq!(backend.lightbox_image_loads.available_permits(), 0);
+        drop(permit);
+        assert_eq!(
+            backend.lightbox_image_loads.available_permits(),
+            MAX_CONCURRENT_LIGHTBOX_IMAGE_LOADS
         );
     }
 

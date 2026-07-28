@@ -831,6 +831,23 @@ pub async fn matrix_load_attachment_thumbnail(
 }
 
 #[tauri::command]
+pub async fn matrix_load_attachment_image(
+    room_id: String,
+    event_id: String,
+    attachment_index: u32,
+    state: State<'_, AppState>,
+) -> Result<tauri::ipc::Response, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .load_attachment_image(room_id, event_id, attachment_index)
+        .await
+        .map(tauri::ipc::Response::new)
+        .map_err(map_error)
+}
+
+#[tauri::command]
 pub async fn matrix_cancel_attachment_download(
     file_hash: String,
     state: State<'_, AppState>,

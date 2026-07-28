@@ -204,6 +204,29 @@ describe('bridge message mutation boundary', () => {
     ).rejects.toThrow('Protected preview failed local validation')
   })
 
+  it('loads only recognized protected image bytes for the full-size viewer', async () => {
+    const bridge = await loadBridge('matrix')
+    const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
+    invokeMock
+      .mockResolvedValueOnce(png.buffer as never)
+      .mockResolvedValueOnce(new Uint8Array([0, 1, 2, 3]).buffer as never)
+
+    await expect(
+      bridge.matrixLoadAttachmentImage('!room:example.org', '$event:example.org', 0),
+    ).resolves.toEqual({ bytes: png, contentType: 'image/png' })
+    expect(invokeMock).toHaveBeenCalledWith(
+      'matrix_load_attachment_image',
+      {
+        roomId: '!room:example.org',
+        eventId: '$event:example.org',
+        attachmentIndex: 0,
+      },
+    )
+    await expect(
+      bridge.matrixLoadAttachmentImage('!room:example.org', '$invalid:example.org', 0),
+    ).rejects.toThrow('Protected image failed local validation')
+  })
+
   it('coalesces identical protected thumbnail reads without retry amplification', async () => {
     const bridge = await loadBridge('matrix')
     let resolveRead: ((value: number[]) => void) | undefined
