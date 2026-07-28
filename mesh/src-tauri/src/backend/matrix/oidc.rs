@@ -8,6 +8,7 @@ use std::{
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    task::JoinSet,
 };
 use tokio_util::sync::CancellationToken;
 use url::Url;
@@ -16,6 +17,8 @@ pub(super) const CALLBACK_ADDRESS: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::LO
 pub(super) const CALLBACK_PATH: &str = "/oauth/callback";
 pub(super) const MAX_CALLBACK_REQUEST_BYTES: usize = 8 * 1024;
 pub(super) const CALLBACK_TIMEOUT: Duration = Duration::from_secs(120);
+
+const MAX_INCOMPLETE_CALLBACK_CONNECTIONS: usize = 8;
 
 const SUCCESS_RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\
 Content-Type: text/html; charset=utf-8\r\n\
@@ -136,18 +139,25 @@ async fn receive_callback_with_timeout(
     tokio::select! {
         _ = cancellation.cancelled() => Err(CallbackError::Cancelled),
         result = tokio::time::timeout(timeout, async {
+            let mut callbacks = JoinSet::new();
             loop {
-                let (stream, peer) = listener.accept().await.map_err(|_| CallbackError::Io)?;
-                if !peer.ip().is_loopback() {
-                    let mut stream = stream;
-                    let _ = stream.write_all(INVALID_RESPONSE).await;
-                    continue;
-                }
+                tokio::select! {
+                    joined = callbacks.join_next(), if !callbacks.is_empty() => {
+                        if let Some(Ok(Ok(callback))) = joined {
+                            return Ok(callback);
+                        }
+                    }
+                    accepted = listener.accept(), if callbacks.len() < MAX_INCOMPLETE_CALLBACK_CONNECTIONS => {
+                        let (stream, peer) = accepted.map_err(|_| CallbackError::Io)?;
+                        if !peer.ip().is_loopback() {
+                            let mut stream = stream;
+                            let _ = stream.write_all(INVALID_RESPONSE).await;
+                            continue;
+                        }
 
-                match handle_connection(stream, expected_state).await {
-                    Ok(callback) => return Ok(callback),
-                    Err(CallbackError::Io) => continue,
-                    Err(_) => continue,
+                        let expected_state = expected_state.to_owned();
+                        callbacks.spawn(async move { handle_connection(stream, &expected_state).await });
+                    }
                 }
             }
         }) => result.unwrap_or(Err(CallbackError::TimedOut)),
@@ -339,6 +349,40 @@ mod tests {
         assert!(String::from_utf8_lossy(&valid_response).starts_with("HTTP/1.1 200"));
 
         let callback = receive.await.unwrap().unwrap();
+        assert_eq!(callback.query(), Some("code=real&state=expected-state"));
+    }
+
+    #[tokio::test]
+    async fn idle_loopback_connections_do_not_starve_the_valid_redirect() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut receive = tokio::spawn(receive_callback_with_timeout(
+            listener,
+            CancellationToken::new(),
+            Duration::from_secs(1),
+            "expected-state",
+        ));
+
+        let _idle_first = TcpStream::connect(address).await.unwrap();
+        let _idle_second = TcpStream::connect(address).await.unwrap();
+        tokio::task::yield_now().await;
+
+        let mut valid = TcpStream::connect(address).await.unwrap();
+        valid
+            .write_all(
+                b"GET /oauth/callback?code=real&state=expected-state HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+            )
+            .await
+            .unwrap();
+        let mut valid_response = Vec::new();
+        valid.read_to_end(&mut valid_response).await.unwrap();
+        assert!(String::from_utf8_lossy(&valid_response).starts_with("HTTP/1.1 200"));
+
+        let callback = tokio::time::timeout(Duration::from_millis(250), &mut receive)
+            .await
+            .expect("idle connections must not consume the callback deadline")
+            .unwrap()
+            .unwrap();
         assert_eq!(callback.query(), Some("code=real&state=expected-state"));
     }
 
