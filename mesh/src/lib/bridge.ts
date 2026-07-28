@@ -46,6 +46,7 @@ import type {
   BanEvent,
   DmConversation,
   DirectMessage,
+  ServerEmoji,
   VoiceServiceStatus,
 } from '../types/ipc'
 
@@ -88,6 +89,7 @@ const LIGHTBOX_IMAGE_IPC_OPTIONS: TauriInvokeOptions = {
 }
 const MAX_INLINE_THUMBNAIL_BYTES = 2 * 1024 * 1024
 const MAX_LIGHTBOX_IMAGE_BYTES = 100 * 1024 * 1024
+const MAX_CUSTOM_EMOJI_BYTES = 512 * 1024
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10] as const
 
 export interface ProtectedImage {
@@ -611,6 +613,63 @@ export async function matrixCreateChannel(
     channel,
   ])
   return channel
+}
+
+export async function listServerEmoji(communityId: string): Promise<ServerEmoji[]> {
+  if (!isMatrixBackend()) return []
+  return tauriInvoke(
+    'matrix_list_custom_emoji',
+    { communityId },
+    READ_IPC_OPTIONS,
+  )
+}
+
+export async function uploadServerEmoji(
+  communityId: string,
+  shortcode: string,
+  file: File,
+): Promise<ServerEmoji> {
+  if (!isMatrixBackend()) throw normalizeError('Custom emoji require the production backend.')
+  if (file.size === 0 || file.size > MAX_CUSTOM_EMOJI_BYTES) {
+    throw normalizeError('Emoji images must be 512 KB or smaller.')
+  }
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  return tauriInvoke('matrix_upload_custom_emoji', {
+    communityId,
+    shortcode,
+    filename: file.name,
+    contentType: file.type,
+    bytes: Array.from(bytes),
+  })
+}
+
+export async function removeServerEmoji(
+  communityId: string,
+  shortcode: string,
+): Promise<void> {
+  if (!isMatrixBackend()) return
+  return tauriInvoke('matrix_remove_custom_emoji', { communityId, shortcode })
+}
+
+export async function loadServerEmojiImage(
+  communityId: string,
+  shortcode: string,
+): Promise<Uint8Array> {
+  if (!isMatrixBackend()) return new Uint8Array()
+  const bytes = await tauriInvoke<ArrayBuffer | Uint8Array | number[]>(
+    'matrix_load_custom_emoji_image',
+    { communityId, shortcode },
+    THUMBNAIL_IPC_OPTIONS,
+  )
+  const normalized = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
+  if (
+    normalized.byteLength === 0
+    || normalized.byteLength > MAX_CUSTOM_EMOJI_BYTES
+    || PNG_SIGNATURE.some((byte, index) => normalized[index] !== byte)
+  ) {
+    throw normalizeError('Server emoji failed local validation.')
+  }
+  return normalized
 }
 
 export async function matrixSendMessage(

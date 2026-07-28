@@ -18,6 +18,7 @@ import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
 import type { MemberRecord } from '../../store/membership'
 import { truncateDraft, useDraftStore } from '../../store/drafts'
+import { useServerEmoji } from '../../store/custom-emoji'
 import { useDurableDraft } from '../../hooks/useDurableDraft'
 import {
   expandSlashCommand,
@@ -44,6 +45,7 @@ interface MessageInputProps {
 
 const TYPING_THROTTLE_MS = 5000
 const MAX_MENTION_SUGGESTIONS = 6
+const MAX_EMOJI_SUGGESTIONS = 6
 
 interface MentionContext {
   start: number
@@ -58,6 +60,21 @@ function getMentionContext(value: string, cursor: number): MentionContext | null
 
   const token = match[0]
   const tokenOffset = token.startsWith('@') ? 0 : 1
+  return {
+    start: cursor - token.length + tokenOffset,
+    end: cursor,
+    query: match[1],
+  }
+}
+
+function getEmojiContext(value: string, cursor: number): MentionContext | null {
+  if (/^[a-z0-9_:]/i.test(value.slice(cursor))) return null
+  const beforeCursor = value.slice(0, cursor)
+  const match = beforeCursor.match(/(?:^|\s):([a-z0-9_]*)$/i)
+  if (!match) return null
+
+  const token = match[0]
+  const tokenOffset = token.startsWith(':') ? 0 : 1
   return {
     start: cursor - token.length + tokenOffset,
     end: cursor,
@@ -120,6 +137,8 @@ function MessageInputContent({
   const [mentionsDismissed, setMentionsDismissed] = useState(false)
   const [slashIndex, setSlashIndex] = useState(0)
   const [slashDismissed, setSlashDismissed] = useState(false)
+  const [emojiIndex, setEmojiIndex] = useState(0)
+  const [emojiDismissed, setEmojiDismissed] = useState(false)
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [isStaging, setIsStaging] = useState(false)
@@ -136,6 +155,7 @@ function MessageInputContent({
   const mountedRef = useRef(true)
   const lastTypingBroadcast = useRef<number>(0)
   const pendingSelectionRef = useRef<{ start: number; end: number } | null>(null)
+  const customEmoji = useServerEmoji(communityId)
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -190,6 +210,19 @@ function MessageInputContent({
       .slice(0, MAX_MENTION_SUGGESTIONS)
     : []
   const activeMentionIndex = Math.min(mentionIndex, Math.max(mentionSuggestions.length - 1, 0))
+  const emojiContext = !emojiDismissed && communityId && bridge.isMatrixBackend()
+    ? getEmojiContext(value, mentionCursor)
+    : null
+  const emojiSuggestions = emojiContext
+    ? customEmoji
+      .filter((emoji) => {
+        const query = emojiContext.query.toLocaleLowerCase()
+        return emoji.shortcode.toLocaleLowerCase().includes(query)
+          || emoji.body.toLocaleLowerCase().includes(query)
+      })
+      .slice(0, MAX_EMOJI_SUGGESTIONS)
+    : []
+  const activeEmojiIndex = Math.min(emojiIndex, Math.max(emojiSuggestions.length - 1, 0))
   const slashContext = !slashDismissed ? getSlashCommandContext(value, mentionCursor) : null
   const slashSuggestions = slashContext ? getSlashCommandSuggestions(slashContext.query) : []
   const activeSlashIndex = Math.min(slashIndex, Math.max(slashSuggestions.length - 1, 0))
@@ -206,10 +239,31 @@ function MessageInputContent({
     updateDraftValue(nextValue)
     setMentionCursor(nextCursor)
     setMentionsDismissed(true)
+    setEmojiDismissed(true)
     setSlashDismissed(true)
     requestAnimationFrame(() => {
       inputRef.current?.focus()
       inputRef.current?.setSelectionRange(nextCursor, nextCursor)
+    })
+  }
+
+  const selectEmoji = (emoji: (typeof emojiSuggestions)[number]) => {
+    if (!emojiContext) return
+    const replacement = `:${emoji.shortcode}: `
+    const nextValue = truncateDraft(
+      `${value.slice(0, emojiContext.start)}${replacement}${value.slice(emojiContext.end)}`,
+    )
+    const nextCursor = Math.min(emojiContext.start + replacement.length, nextValue.length)
+    updateDraftValue(nextValue)
+    setMentionCursor(nextCursor)
+    setMentionsDismissed(true)
+    setEmojiDismissed(true)
+    setSlashDismissed(true)
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      inputRef.current?.setSelectionRange(nextCursor, nextCursor)
+      setMentionCursor(nextCursor)
+      setEmojiDismissed(true)
     })
   }
 
@@ -238,6 +292,34 @@ function MessageInputContent({
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
         selectMention(mentionSuggestions[activeMentionIndex])
+        return
+      }
+    }
+
+    if (emojiSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setEmojiIndex((current) => (
+          (Math.min(current, emojiSuggestions.length - 1) + 1) % emojiSuggestions.length
+        ))
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setEmojiIndex((current) => (
+          (Math.min(current, emojiSuggestions.length - 1) - 1 + emojiSuggestions.length)
+            % emojiSuggestions.length
+        ))
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setEmojiDismissed(true)
+        return
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        selectEmoji(emojiSuggestions[activeEmojiIndex])
         return
       }
     }
@@ -402,6 +484,7 @@ function MessageInputContent({
     updateDraftValue(nextValue)
     setMentionCursor(selectionEnd)
     setMentionsDismissed(true)
+    setEmojiDismissed(true)
     setSlashDismissed(true)
     pendingSelectionRef.current = {
       start: selectionStart,
@@ -662,6 +745,8 @@ function MessageInputContent({
     setMentionsDismissed(false)
     setSlashIndex(0)
     setSlashDismissed(false)
+    setEmojiIndex(0)
+    setEmojiDismissed(false)
   }, [channelId, clearDraft])
 
   useEffect(() => {
@@ -815,6 +900,39 @@ function MessageInputContent({
               ))}
             </div>
           )}
+          {emojiSuggestions.length > 0 && (
+            <div
+              id={`emoji-suggestions-${channelId}`}
+              role="listbox"
+              aria-label="Server emoji"
+              className="absolute bottom-full left-1 right-1 z-dropdown mb-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-raised shadow-lg"
+            >
+              {emojiSuggestions.map((emoji, index) => (
+                <button
+                  key={emoji.shortcode}
+                  id={`emoji-suggestion-${channelId}-${index}`}
+                  type="button"
+                  role="option"
+                  aria-selected={index === activeEmojiIndex}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => selectEmoji(emoji)}
+                  className={`flex min-h-control-md w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                    index === activeEmojiIndex
+                      ? 'bg-bg-modifier-hover text-primary'
+                      : 'text-secondary hover:bg-bg-modifier-hover'
+                  }`}
+                >
+                  <img
+                    src={emoji.imageUrl}
+                    alt=""
+                    className="h-7 w-7 flex-none object-contain"
+                  />
+                  <span className="truncate font-mono font-medium">:{emoji.shortcode}:</span>
+                  <span className="truncate text-muted">{emoji.body}</span>
+                </button>
+              ))}
+            </div>
+          )}
           {/* Attachment button */}
           {!disableAttachments && !disabled && (
             <Tooltip content="Attach file" side="top">
@@ -841,6 +959,8 @@ function MessageInputContent({
               setMentionsDismissed(false)
               setSlashIndex(0)
               setSlashDismissed(false)
+              setEmojiIndex(0)
+              setEmojiDismissed(false)
               if (nextValue.trim()) {
                 broadcastTypingThrottled()
               } else {
@@ -852,20 +972,31 @@ function MessageInputContent({
               setMentionCursor(event.currentTarget.selectionStart)
               setMentionIndex(0)
               setMentionsDismissed(false)
+              setEmojiDismissed(false)
               setSlashDismissed(false)
             }}
             onPaste={handlePaste}
             placeholder={`Message #${channelName}`}
             aria-label={`Message ${channelName}`}
             aria-describedby={stagedFiles.length > 0 ? `pending-attachments-${channelId}` : undefined}
-            aria-autocomplete={mentionSuggestions.length > 0 || slashSuggestions.length > 0 ? 'list' : undefined}
+            aria-autocomplete={
+              mentionSuggestions.length > 0
+              || emojiSuggestions.length > 0
+              || slashSuggestions.length > 0
+                ? 'list'
+                : undefined
+            }
             aria-controls={mentionSuggestions.length > 0
               ? `mention-suggestions-${channelId}`
+              : emojiSuggestions.length > 0
+                ? `emoji-suggestions-${channelId}`
               : slashSuggestions.length > 0
                 ? `slash-suggestions-${channelId}`
                 : undefined}
             aria-activedescendant={mentionSuggestions.length > 0
               ? `mention-suggestion-${channelId}-${activeMentionIndex}`
+              : emojiSuggestions.length > 0
+                ? `emoji-suggestion-${channelId}-${activeEmojiIndex}`
               : slashSuggestions.length > 0
                 ? `slash-suggestion-${channelId}-${activeSlashIndex}`
                 : undefined}

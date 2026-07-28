@@ -46,6 +46,8 @@ export type NotificationPresentationContext = { activeRoomId: string | null, not
 
 export type UserPreferences = { schemaVersion: number, notificationsEnabled: boolean, notificationSound: boolean, notificationSoundId?: string | null, doNotDisturb: boolean, quietHoursEnabled: boolean, quietHoursStart?: string | null, quietHoursEnd?: string | null, mutedChannels: Array<string>, mutedCommunities: Array<string>, mutedChannelUntil: { [key in string]?: string | null }, mutedCommunityUntil: { [key in string]?: string | null }, channelNotificationLevels: { [key in string]?: MatrixRoomNotificationMode }, sendReadReceipts: boolean, sendTypingIndicators: boolean, sharePresence: boolean, invisibleMode: boolean, updatedAt: string, };
 
+export type CustomEmoji = { shortcode: string, body: string, mxcUri: string, contentType: string, width: number, height: number, sizeBytes: number, };
+
 export type IdentityDto = { publicKey: string, displayName: string, avatarColor: string, };
 
 export type CommunityDto = { id: string, name: string, description: string, memberCount: number, role: "owner" | "admin" | "member", joinedAt: string | null, };

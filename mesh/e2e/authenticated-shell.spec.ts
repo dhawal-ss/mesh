@@ -157,6 +157,8 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
           }
         case 'matrix_list_communities':
           return [community, secondCommunity]
+        case 'matrix_list_custom_emoji':
+          return []
         case 'matrix_get_profile':
           return matrixProfile
         case 'matrix_update_profile_display_name':

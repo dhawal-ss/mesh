@@ -169,6 +169,8 @@ async function installAuthenticatedMatrixMessagingMock(page: Page): Promise<void
           }
         case 'matrix_list_communities':
           return [community]
+        case 'matrix_list_custom_emoji':
+          return []
         case 'matrix_list_channels':
           return [channel]
         case 'matrix_list_members':

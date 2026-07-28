@@ -767,6 +767,22 @@ pub struct CommunityAccessResult {
     pub community: Option<CommunityDto>,
 }
 
+/// A server-scoped custom emoji published through a room image pack.
+///
+/// Unlike encrypted message content, image-pack state and its media URI are
+/// visible to the homeservers participating in the server.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomEmoji {
+    pub shortcode: String,
+    pub body: String,
+    pub mxc_uri: String,
+    pub content_type: String,
+    pub width: u32,
+    pub height: u32,
+    pub size_bytes: u32,
+}
+
 /// Portable, non-secret preferences synchronized through Matrix account data.
 /// Device credentials, recovery material, and machine-local network settings
 /// are intentionally outside this contract.
@@ -1076,6 +1092,33 @@ pub trait MeshBackend: Send + Sync {
         _channel_type: String,
     ) -> BackendResult<ChannelDto> {
         Err(BackendError::Unsupported("channel creation"))
+    }
+    async fn list_custom_emoji(&self, _community_id: String) -> BackendResult<Vec<CustomEmoji>> {
+        Err(BackendError::Unsupported("server custom emoji"))
+    }
+    async fn upload_custom_emoji(
+        &self,
+        _community_id: String,
+        _shortcode: String,
+        _filename: String,
+        _content_type: String,
+        _bytes: Vec<u8>,
+    ) -> BackendResult<CustomEmoji> {
+        Err(BackendError::Unsupported("server custom emoji"))
+    }
+    async fn remove_custom_emoji(
+        &self,
+        _community_id: String,
+        _shortcode: String,
+    ) -> BackendResult<()> {
+        Err(BackendError::Unsupported("server custom emoji"))
+    }
+    async fn load_custom_emoji_image(
+        &self,
+        _community_id: String,
+        _shortcode: String,
+    ) -> BackendResult<Vec<u8>> {
+        Err(BackendError::Unsupported("server custom emoji"))
     }
     async fn matrix_rtc_join(&self, _room_id: String) -> BackendResult<MatrixRtcJoinResult> {
         Err(BackendError::Unsupported("MatrixRTC calling"))

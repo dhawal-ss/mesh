@@ -1,11 +1,12 @@
 use std::{fs, path::PathBuf};
 
 use mesh_lib::backend::{
-    BackendCapabilities, BackendKind, BackendStatus, MatrixNotification, MatrixQueuedMessageState,
-    MatrixQueuedMessageUpdate, MatrixRoomNotificationMode, MatrixRtcJoinResult, MatrixRtcMediaKey,
-    MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember,
-    MatrixRtcMembershipUpdate, MatrixUnreadUpdate, NotificationPresentationContext,
-    UserPreferences, VoiceProvider, VoiceServiceAvailability, VoiceServiceStatus,
+    BackendCapabilities, BackendKind, BackendStatus, CustomEmoji, MatrixNotification,
+    MatrixQueuedMessageState, MatrixQueuedMessageUpdate, MatrixRoomNotificationMode,
+    MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease,
+    MatrixRtcMediaKeyPause, MatrixRtcMember, MatrixRtcMembershipUpdate, MatrixUnreadUpdate,
+    NotificationPresentationContext, UserPreferences, VoiceProvider, VoiceServiceAvailability,
+    VoiceServiceStatus,
 };
 use mesh_lib::types::{
     community::{ChannelDto, CommunityDto},
@@ -52,6 +53,7 @@ fn generated_contract() -> String {
     output.push_str(&declaration::<MatrixRtcJoinResult>());
     output.push_str(&declaration::<NotificationPresentationContext>());
     output.push_str(&declaration::<UserPreferences>());
+    output.push_str(&declaration::<CustomEmoji>());
     output.push_str(&declaration::<IdentityDto>());
     output.push_str(&declaration::<CommunityDto>());
     output.push_str(&declaration::<ChannelDto>());

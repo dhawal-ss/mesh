@@ -29,6 +29,7 @@ import { MessageInput } from './MessageInput'
 import type { StagedFile } from './FileAttachment'
 import type { MemberRecord } from '../../store/membership'
 import { useDraftStore } from '../../store/drafts'
+import { useServerEmojiStore } from '../../store/custom-emoji'
 
 function clipboardFile(name: string, type: string, bytes: number[]): File {
   return {
@@ -54,7 +55,13 @@ describe('MessageInput attachment UX', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     useDraftStore.setState({ drafts: {} })
+    useServerEmojiStore.setState({
+      byCommunity: {},
+      loading: {},
+      load: vi.fn(async () => {}),
+    })
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0)
       return 1
@@ -398,6 +405,39 @@ describe('MessageInput attachment UX', () => {
     const validRosterInput = container.querySelector('textarea') as HTMLTextAreaElement
     await setComposerValue(validRosterInput, 'email@alice')
     expect(container.querySelector('[role="listbox"]')).toBeNull()
+  })
+
+  it('discovers and inserts server emoji from the keyboard', async () => {
+    useServerEmojiStore.setState({
+      byCommunity: {
+        '!community:mesh.test': [{
+          shortcode: 'party_parrot',
+          body: 'Party parrot',
+          mxcUri: 'mxc://mesh.test/party',
+          contentType: 'image/png',
+          width: 32,
+          height: 32,
+          sizeBytes: 128,
+          imageUrl: 'blob:party-parrot',
+        }],
+      },
+    })
+    const textarea = await render(vi.fn(), {
+      communityId: '!community:mesh.test',
+      members: [],
+    })
+
+    await setComposerValue(textarea, 'celebrate :party')
+    expect(container.querySelector('[aria-label="Server emoji"]')?.textContent)
+      .toContain(':party_parrot:')
+
+    await act(async () => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await flushAsyncWork()
+    })
+
+    expect(textarea.value).toBe('celebrate :party_parrot: ')
+    expect(container.querySelector('[aria-label="Server emoji"]')).toBeNull()
   })
 
   it('discards a slow clipboard copy instead of moving it into the next room', async () => {

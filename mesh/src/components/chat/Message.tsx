@@ -9,6 +9,7 @@ import { useIdentityStore } from '../../store/identity'
 import { useChannelStore } from '../../store/channels'
 import { useMessageStore } from '../../store/messages'
 import { useCommunityMembers } from '../../store/membership'
+import { useServerEmoji } from '../../store/custom-emoji'
 import * as bridge from '../../lib/bridge'
 import { useFileDownloadStore } from '../../store/file-downloads'
 import { formatFederatedTimestamp } from '../../lib/federated-time'
@@ -53,6 +54,7 @@ export const MessageComponent = memo(function MessageComponent({
   const matrixMode = bridge.isMatrixBackend()
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
   const communityMembers = useCommunityMembers(activeCommunityId)
+  const customEmoji = useServerEmoji(activeCommunityId)
   const myRole = useCommunityStore((s) =>
     s.activeCommunityId ? s.communityEntities[s.activeCommunityId]?.role : undefined,
   )
@@ -391,6 +393,7 @@ export const MessageComponent = memo(function MessageComponent({
               <MarkdownContent
                 content={message.content}
                 members={communityMembers}
+                customEmoji={customEmoji}
                 ownUserId={myPublicKey ?? null}
               />
               {message.editedAt && (
@@ -418,26 +421,38 @@ export const MessageComponent = memo(function MessageComponent({
           {/* Reactions */}
           {Object.keys(message.reactions).length > 0 && (
             <div className="mt-1 flex flex-wrap gap-1">
-              {Object.entries(message.reactions).map(([emoji, users]) => (
-                <button
-                  key={emoji}
-                  onClick={() => handleReaction(emoji)}
-                  className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs transition-colors ${
-                    myPublicKey && users.includes(myPublicKey)
-                      ? 'border-blue/40 bg-blue/10 text-blue'
-                      : 'border-border bg-bg-modifier-hover text-secondary hover:border-border-light'
-                  }`}
-                >
-                  <motion.span
-                    initial={{ scale: 0.8 }}
-                    animate={{ scale: 1 }}
-                    transition={transitions.reaction}
+              {Object.entries(message.reactions).map(([emoji, users]) => {
+                const custom = customEmoji.find(
+                  (candidate) => `:${candidate.shortcode}:` === emoji,
+                )
+                return (
+                  <button
+                    key={emoji}
+                    onClick={() => handleReaction(emoji)}
+                    className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs transition-colors ${
+                      myPublicKey && users.includes(myPublicKey)
+                        ? 'border-blue/40 bg-blue/10 text-blue'
+                        : 'border-border bg-bg-modifier-hover text-secondary hover:border-border-light'
+                    }`}
                   >
-                    {emoji}
-                  </motion.span>
-                  <span className="badge-count text-meta">{users.length}</span>
-                </button>
-              ))}
+                    <motion.span
+                      initial={{ scale: 0.8 }}
+                      animate={{ scale: 1 }}
+                      transition={transitions.reaction}
+                    >
+                      {custom ? (
+                        <img
+                          src={custom.imageUrl}
+                          alt={emoji}
+                          title={custom.body}
+                          className="h-4 w-4 object-contain"
+                        />
+                      ) : emoji}
+                    </motion.span>
+                    <span className="badge-count text-meta">{users.length}</span>
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
@@ -485,7 +500,11 @@ export const MessageComponent = memo(function MessageComponent({
         <AnimatePresence>
           {showReactions && (
             <div className="absolute -top-10 right-4 z-dropdown">
-              <ReactionPicker onSelect={handleReaction} onClose={() => setShowReactions(false)} />
+              <ReactionPicker
+                onSelect={handleReaction}
+                onClose={() => setShowReactions(false)}
+                customEmoji={customEmoji}
+              />
             </div>
           )}
         </AnimatePresence>

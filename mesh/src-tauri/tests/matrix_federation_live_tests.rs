@@ -1,7 +1,7 @@
 #![cfg(feature = "matrix-backend")]
 
 use std::{
-    io::{Read, Write},
+    io::{Cursor, Read, Write},
     net::{SocketAddr, TcpStream},
     path::PathBuf,
     process::Command,
@@ -670,6 +670,104 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
             && item.description == updated_description
     }));
     checkpoint!("power levels and Space metadata propagated");
+
+    let emoji_shortcode = format!("party_{}", &nonce[..8]);
+    let mut emoji_source = Cursor::new(Vec::new());
+    image::DynamicImage::new_rgba8(64, 32)
+        .write_to(&mut emoji_source, image::ImageFormat::Png)
+        .unwrap();
+    let uploaded_emoji = alice
+        .upload_custom_emoji(
+            community.space_id.clone(),
+            emoji_shortcode.clone(),
+            "party.png".into(),
+            "image/png".into(),
+            emoji_source.into_inner(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(uploaded_emoji.shortcode, emoji_shortcode);
+    alice.sync_once().await.unwrap();
+
+    let mut bob_emoji = Vec::new();
+    for _ in 0..20 {
+        bob.sync_once().await.unwrap();
+        bob_emoji = bob
+            .list_custom_emoji(community.space_id.clone())
+            .await
+            .unwrap();
+        if bob_emoji
+            .iter()
+            .any(|emoji| emoji.shortcode == emoji_shortcode)
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert!(bob_emoji
+        .iter()
+        .any(|emoji| emoji.shortcode == emoji_shortcode));
+    let federated_emoji = bob
+        .load_custom_emoji_image(community.space_id.clone(), emoji_shortcode.clone())
+        .await
+        .unwrap();
+    assert!(federated_emoji.starts_with(b"\x89PNG\r\n\x1a\n"));
+
+    let emoji_body = format!("federated :{emoji_shortcode}:");
+    bob.send_message(
+        community.channel_id.clone(),
+        emoji_body.clone(),
+        None,
+        uuid::Uuid::new_v4().to_string(),
+    )
+    .await
+    .unwrap();
+    let mut emoji_message = None;
+    for _ in 0..30 {
+        alice.sync_once().await.unwrap();
+        emoji_message = alice
+            .messages(community.channel_id.clone(), 20, None, None)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|message| message.content == emoji_body);
+        if emoji_message.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    let emoji_message = emoji_message.expect("custom emoji message did not federate");
+    let reaction_key = format!(":{emoji_shortcode}:");
+    alice
+        .toggle_reaction(
+            community.channel_id.clone(),
+            emoji_message.id.clone(),
+            reaction_key.clone(),
+        )
+        .await
+        .unwrap();
+    let mut reaction_federated = false;
+    for _ in 0..20 {
+        bob.sync_once().await.unwrap();
+        reaction_federated = bob
+            .messages(community.channel_id.clone(), 20, None, None)
+            .await
+            .unwrap()
+            .iter()
+            .any(|message| {
+                message.id == emoji_message.id
+                    && message
+                        .reactions
+                        .get(&reaction_key)
+                        .is_some_and(|users| users.iter().any(|user| user == &alice_user))
+            });
+        if reaction_federated {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert!(reaction_federated);
+    checkpoint!("custom emoji state, media, message, and reaction federated");
 
     let extra_channel = alice
         .create_channel(

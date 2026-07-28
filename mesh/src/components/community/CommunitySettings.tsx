@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
@@ -12,6 +12,10 @@ import { transitions } from '../../lib/motion'
 import { canStartMatrixVoice } from '../../lib/voice-runtime'
 import type { CommunityApplication } from '../../types/ipc'
 import { Icon } from '../ui/Icon'
+import {
+  useServerEmoji,
+  useServerEmojiStore,
+} from '../../store/custom-emoji'
 
 interface CommunitySettingsProps {
   isOpen: boolean
@@ -45,6 +49,13 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
   const [isSavingAccess, setIsSavingAccess] = useState(false)
   const [accessError, setAccessError] = useState<unknown | null>(null)
   const [applications, setApplications] = useState<CommunityApplication[]>([])
+  const [emojiShortcode, setEmojiShortcode] = useState('')
+  const [emojiFile, setEmojiFile] = useState<File | null>(null)
+  const [emojiBusy, setEmojiBusy] = useState<string | null>(null)
+  const [emojiError, setEmojiError] = useState<unknown | null>(null)
+  const emojiFileInputRef = useRef<HTMLInputElement>(null)
+  const serverEmoji = useServerEmoji(activeCommunityId)
+  const refreshServerEmoji = useServerEmojiStore((state) => state.load)
 
   useEffect(() => {
     if (!community) return
@@ -175,6 +186,38 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
     }
   }
 
+  const handleEmojiUpload = async () => {
+    if (!emojiFile || !emojiShortcode.trim()) return
+    setEmojiBusy('upload')
+    setEmojiError(null)
+    try {
+      await bridge.uploadServerEmoji(activeCommunityId, emojiShortcode, emojiFile)
+      await bridge.matrixSyncOnce()
+      await refreshServerEmoji(activeCommunityId, true)
+      setEmojiShortcode('')
+      setEmojiFile(null)
+      if (emojiFileInputRef.current) emojiFileInputRef.current.value = ''
+    } catch (error) {
+      setEmojiError(error)
+    } finally {
+      setEmojiBusy(null)
+    }
+  }
+
+  const handleEmojiRemove = async (shortcode: string) => {
+    setEmojiBusy(shortcode)
+    setEmojiError(null)
+    try {
+      await bridge.removeServerEmoji(activeCommunityId, shortcode)
+      await bridge.matrixSyncOnce()
+      await refreshServerEmoji(activeCommunityId, true)
+    } catch (error) {
+      setEmojiError(error)
+    } finally {
+      setEmojiBusy(null)
+    }
+  }
+
   return (
     <>
       <AnimatePresence>
@@ -287,6 +330,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                       </p>
                       <label className="flex cursor-pointer items-start gap-3 rounded-md bg-bg-tertiary p-3">
                         <input
+                          ref={emojiFileInputRef}
                           type="checkbox"
                           checked={isDiscoverable}
                           onChange={(event) => setIsDiscoverable(event.target.checked)}
@@ -346,6 +390,85 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                         ))}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {matrixMode && isOwnerOrAdmin && (
+                  <div className="mb-6">
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+                      Custom Emoji
+                    </h3>
+                    <div className="space-y-3 rounded-lg bg-bg-primary p-4">
+                      <p className="text-xs text-muted">
+                        Emoji images and names are shared server settings. They are not protected
+                        like message text.
+                      </p>
+                      <Input
+                        label="Emoji name"
+                        value={emojiShortcode}
+                        onChange={setEmojiShortcode}
+                        placeholder="party_parrot"
+                      />
+                      <label className="block text-xs font-semibold uppercase text-muted">
+                        Image
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          onChange={(event) => setEmojiFile(event.target.files?.[0] ?? null)}
+                          className="mt-1.5 block min-h-control-md w-full cursor-pointer rounded-md bg-bg-tertiary px-3 py-2 text-sm font-normal normal-case text-secondary file:mr-3 file:rounded file:border-0 file:bg-bg-modifier-hover file:px-3 file:py-1 file:text-xs file:font-semibold file:text-primary"
+                        />
+                      </label>
+                      <p className="text-xs text-muted">
+                        PNG, JPEG, or WebP · up to 512 KB. Images are resized for emoji use.
+                      </p>
+                      {emojiError != null && (
+                        <ErrorState
+                          error={emojiError}
+                          context={{ operation: 'update custom emoji', resource: 'server' }}
+                          compact
+                        />
+                      )}
+                      <Button
+                        onClick={handleEmojiUpload}
+                        disabled={
+                          !emojiShortcode.trim()
+                          || !emojiFile
+                          || emojiBusy != null
+                        }
+                        className="w-full"
+                      >
+                        {emojiBusy === 'upload' ? 'Adding…' : 'Add Emoji'}
+                      </Button>
+
+                      {serverEmoji.length > 0 && (
+                        <div className="space-y-1 border-t border-border-subtle pt-3">
+                          {serverEmoji.map((emoji) => (
+                            <div
+                              key={emoji.shortcode}
+                              className="flex min-h-control-md items-center gap-3 rounded-md px-2 hover:bg-bg-modifier-hover"
+                            >
+                              <img
+                                src={emoji.imageUrl}
+                                alt={`:${emoji.shortcode}:`}
+                                className="h-7 w-7 flex-none object-contain"
+                              />
+                              <span className="min-w-0 flex-1 truncate font-mono text-sm text-secondary">
+                                :{emoji.shortcode}:
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => void handleEmojiRemove(emoji.shortcode)}
+                                disabled={emojiBusy != null}
+                                aria-label={`Remove ${emoji.shortcode} emoji`}
+                                className="flex h-8 w-8 flex-none items-center justify-center rounded text-muted transition-colors hover:bg-red/10 hover:text-red disabled:opacity-40"
+                              >
+                                <Icon name="x" size="sm" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 

@@ -7,7 +7,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::backend::{
     BackendError, BackendKind, BackendStatus, CommunityAccessResult, CommunityAccessSettings,
-    CommunityApplication, CommunityDirectoryEntry, CommunityMember, MatrixAccount,
+    CommunityApplication, CommunityDirectoryEntry, CommunityMember, CustomEmoji, MatrixAccount,
     MatrixAttachmentSendRequest, MatrixDevice, MatrixLogin, MatrixOidcStatus, MatrixProfile,
     MatrixRecoveryHealth, MatrixRoomNotificationMode, MatrixRtcJoinResult, MatrixRtcMediaKey,
     MatrixRtcMediaKeyLease, MatrixRtcMember, MatrixTransferObserver,
@@ -508,6 +508,69 @@ pub async fn matrix_create_channel(
         .backend()
         .create_channel(community_id, name, channel_type)
         .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_list_custom_emoji(
+    community_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<CustomEmoji>, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .list_custom_emoji(community_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_upload_custom_emoji(
+    community_id: String,
+    shortcode: String,
+    filename: String,
+    content_type: String,
+    bytes: Vec<u8>,
+    state: State<'_, AppState>,
+) -> Result<CustomEmoji, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .upload_custom_emoji(community_id, shortcode, filename, content_type, bytes)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_remove_custom_emoji(
+    community_id: String,
+    shortcode: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .remove_custom_emoji(community_id, shortcode)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_load_custom_emoji_image(
+    community_id: String,
+    shortcode: String,
+    state: State<'_, AppState>,
+) -> Result<tauri::ipc::Response, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .load_custom_emoji_image(community_id, shortcode)
+        .await
+        .map(tauri::ipc::Response::new)
         .map_err(map_error)
 }
 

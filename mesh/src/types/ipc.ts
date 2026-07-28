@@ -7,6 +7,7 @@ import type {
   AttachmentThumbnailDto,
   ChannelDto,
   CommunityDto,
+  CustomEmoji,
   DirectMessageDto,
   DmConversationDto,
   IdentityDto,
@@ -24,6 +25,7 @@ export type {
   BackendStatus,
   ChannelDto,
   CommunityDto,
+  CustomEmoji,
   DirectMessageDto,
   DmConversationDto,
   IdentityDto,
@@ -49,6 +51,8 @@ export interface Identity extends IdentityDto {
 }
 
 export type Community = CommunityDto
+
+export type ServerEmoji = CustomEmoji
 
 export interface CommunityAccessSettings {
   alias: string | null
