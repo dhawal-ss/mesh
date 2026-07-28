@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { OnboardingFlow } from './components/onboarding/OnboardingFlow'
-import { AppLayout } from './components/layout/AppLayout'
 import { ToastContainer } from './components/ui/Toast'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { useIdentityStore } from './store/identity'
@@ -16,6 +15,10 @@ import { matrixIdentity, matrixProfileIdentity } from './lib/matrixIdentity'
 import type { Identity } from './types/ipc'
 import { registerPoll } from './lib/scheduler'
 
+const AppLayout = lazy(() =>
+  import('./components/layout/AppLayout').then((module) => ({ default: module.AppLayout })),
+)
+
 const BOOTSTRAP_STEPS = {
   connecting: { label: 'Connecting to the DHT', progress: 28 },
   syncing: { label: 'Resolving nearby peers with mDNS', progress: 62 },
@@ -29,6 +32,8 @@ const MATRIX_BOOTSTRAP_STEPS = {
   finalizing: { label: 'Restoring recent messages', progress: 88 },
   ready: { label: 'Your conversations are ready', progress: 100 },
 } as const
+
+const MATRIX_STATUS_POLL_INTERVAL_MS = 5_000
 
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms))
 
@@ -62,6 +67,14 @@ function mapNetworkState(status: { connected: boolean; peerCount: number; averag
         : 'connecting',
     peerCount: status.peerCount,
     averageLatency: status.averageLatency,
+  } as const
+}
+
+function mapMatrixNetworkState(authenticated: boolean, syncRunning: boolean) {
+  return {
+    state: !authenticated ? 'connecting' : syncRunning ? 'connected' : 'disconnected',
+    peerCount: 0,
+    averageLatency: 0,
   } as const
 }
 
@@ -143,16 +156,53 @@ export default function App() {
   }, [isTauriRuntime, setActiveCommunity, setCommunities, setIdentity, setLoading])
 
   useEffect(() => {
-    if (!isTauriRuntime) {
+    if (!isTauriRuntime || backendStatus?.kind !== 'matrix') {
       return
     }
 
-    if (backendStatus?.kind === 'matrix') {
-      setNetworkStatus({
-        state: backendStatus.authenticated && backendStatus.syncRunning ? 'connected' : 'connecting',
-        peerCount: 0,
-        averageLatency: 0,
-      })
+    setNetworkStatus(mapMatrixNetworkState(backendStatus.authenticated, backendStatus.syncRunning))
+  }, [backendStatus?.authenticated, backendStatus?.kind, backendStatus?.syncRunning, isTauriRuntime, setNetworkStatus])
+
+  useEffect(() => {
+    if (!isTauriRuntime || backendStatus?.kind !== 'matrix') {
+      return
+    }
+
+    let alive = true
+    const unregisterPoll = registerPoll({
+      key: 'matrix-backend-status',
+      intervalMs: MATRIX_STATUS_POLL_INTERVAL_MS,
+      pauseWhenHidden: true,
+      backoffOnError: true,
+      run: async () => {
+        try {
+          const nextStatus = await bridge.getBackendStatus()
+          if (alive) {
+            setBackendStatus(nextStatus)
+          }
+        } catch (error) {
+          if (alive) {
+            setNetworkStatus({
+              state: 'disconnected',
+              peerCount: 0,
+              averageLatency: 0,
+            })
+            console.warn('Could not refresh connection status; Mesh will retry.', error)
+          }
+          throw error
+        }
+      },
+    })
+
+    return () => {
+      alive = false
+      unregisterPoll()
+    }
+  }, [backendStatus?.kind, isTauriRuntime, setNetworkStatus])
+
+  useEffect(() => {
+    if (!isTauriRuntime) {
+      return
     }
 
     const communityIds = communityIdsKey ? communityIdsKey.split('\u0000') : []
@@ -192,12 +242,10 @@ export default function App() {
     }
   }, [
     activeCommunityId,
-    backendStatus,
     communityIdsKey,
     isTauriRuntime,
     setActiveChannel,
     setChannels,
-    setNetworkStatus,
   ])
 
   useEffect(() => {
@@ -225,7 +273,7 @@ export default function App() {
       alive = false
       unregisterPoll()
     }
-  }, [backendStatus, isTauriRuntime])
+  }, [backendStatus?.authenticated, backendStatus?.kind, backendStatus?.userId, isTauriRuntime])
 
   useEffect(() => {
     if (!isTauriRuntime) {
@@ -493,7 +541,9 @@ export default function App() {
             exit="exit"
             className="h-full"
           >
-            <AppLayout />
+            <Suspense fallback={<div className="flex h-full items-center justify-center" role="status" aria-label="Loading Mesh"><Spinner /></div>}>
+              <AppLayout />
+            </Suspense>
           </motion.div>
           </ErrorBoundary>
         )}

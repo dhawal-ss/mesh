@@ -329,6 +329,7 @@ fn compute_file_sha256(path: &Path) -> anyhow::Result<String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::{DownloadManager, DownloadUpdate, CHUNK_SIZE_BYTES};
     use sha2::{Digest, Sha256};

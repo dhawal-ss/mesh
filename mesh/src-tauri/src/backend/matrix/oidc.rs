@@ -5,9 +5,11 @@ use std::{
     time::Duration,
 };
 
+use subtle::ConstantTimeEq;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    task::JoinSet,
 };
 use tokio_util::sync::CancellationToken;
 use url::Url;
@@ -16,6 +18,9 @@ pub(super) const CALLBACK_ADDRESS: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::LO
 pub(super) const CALLBACK_PATH: &str = "/oauth/callback";
 pub(super) const MAX_CALLBACK_REQUEST_BYTES: usize = 8 * 1024;
 pub(super) const CALLBACK_TIMEOUT: Duration = Duration::from_secs(120);
+
+const MAX_INCOMPLETE_CALLBACK_CONNECTIONS: usize = 8;
+const OIDC_STATE_LENGTH: usize = 22;
 
 const SUCCESS_RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\
 Content-Type: text/html; charset=utf-8\r\n\
@@ -122,32 +127,49 @@ pub(super) async fn bind_callback_listener() -> Result<TcpListener, CallbackErro
 pub(super) async fn receive_callback(
     listener: TcpListener,
     cancellation: CancellationToken,
+    expected_state: &str,
 ) -> Result<Url, CallbackError> {
-    receive_callback_with_timeout(listener, cancellation, CALLBACK_TIMEOUT).await
+    receive_callback_with_timeout(listener, cancellation, CALLBACK_TIMEOUT, expected_state).await
 }
 
 async fn receive_callback_with_timeout(
     listener: TcpListener,
     cancellation: CancellationToken,
     timeout: Duration,
+    expected_state: &str,
 ) -> Result<Url, CallbackError> {
     tokio::select! {
         _ = cancellation.cancelled() => Err(CallbackError::Cancelled),
-        result = tokio::time::timeout(timeout, listener.accept()) => {
-            match result {
-                Err(_) => Err(CallbackError::TimedOut),
-                Ok(Err(_)) => Err(CallbackError::Io),
-                Ok(Ok((stream, peer))) if peer.ip().is_loopback() => handle_connection(stream).await,
-                Ok(Ok((mut stream, _))) => {
-                    let _ = stream.write_all(INVALID_RESPONSE).await;
-                    Err(CallbackError::InvalidRequest)
+        result = tokio::time::timeout(timeout, async {
+            let mut callbacks = JoinSet::new();
+            loop {
+                tokio::select! {
+                    joined = callbacks.join_next(), if !callbacks.is_empty() => {
+                        if let Some(Ok(Ok(callback))) = joined {
+                            return Ok(callback);
+                        }
+                    }
+                    accepted = listener.accept(), if callbacks.len() < MAX_INCOMPLETE_CALLBACK_CONNECTIONS => {
+                        let (stream, peer) = accepted.map_err(|_| CallbackError::Io)?;
+                        if !peer.ip().is_loopback() {
+                            let mut stream = stream;
+                            let _ = stream.write_all(INVALID_RESPONSE).await;
+                            continue;
+                        }
+
+                        let expected_state = expected_state.to_owned();
+                        callbacks.spawn(async move { handle_connection(stream, &expected_state).await });
+                    }
                 }
             }
-        }
+        }) => result.unwrap_or(Err(CallbackError::TimedOut)),
     }
 }
 
-async fn handle_connection(mut stream: TcpStream) -> Result<Url, CallbackError> {
+async fn handle_connection(
+    mut stream: TcpStream,
+    expected_state: &str,
+) -> Result<Url, CallbackError> {
     let mut request = Vec::with_capacity(1024);
     let mut chunk = [0_u8; 1024];
     loop {
@@ -184,12 +206,38 @@ async fn handle_connection(mut stream: TcpStream) -> Result<Url, CallbackError> 
             return Err(error);
         }
     };
+    let callback_state = callback
+        .query_pairs()
+        .find(|(key, _)| key == "state")
+        .map(|(_, state)| state);
+    if !callback_state
+        .as_deref()
+        .is_some_and(|state| callback_state_matches(expected_state, state))
+    {
+        let _ = stream.write_all(INVALID_RESPONSE).await;
+        return Err(CallbackError::InvalidRequest);
+    }
     stream
         .write_all(SUCCESS_RESPONSE)
         .await
         .map_err(|_| CallbackError::Io)?;
     let _ = stream.shutdown().await;
     Ok(callback)
+}
+
+fn callback_state_matches(expected_state: &str, callback_state: &str) -> bool {
+    if !is_valid_callback_state(expected_state) || !is_valid_callback_state(callback_state) {
+        return false;
+    }
+
+    bool::from(expected_state.as_bytes().ct_eq(callback_state.as_bytes()))
+}
+
+fn is_valid_callback_state(state: &str) -> bool {
+    state.len() == OIDC_STATE_LENGTH
+        && state
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
 fn parse_callback_request(request: &[u8]) -> Result<Url, CallbackError> {
@@ -228,6 +276,24 @@ fn parse_callback_request(request: &[u8]) -> Result<Url, CallbackError> {
 mod tests {
     use super::*;
 
+    const TEST_STATE: &str = "abcdefghijklmnopqrstuv";
+    const WRONG_TEST_STATE: &str = "bcdefghijklmnopqrstuvA";
+
+    #[test]
+    fn callback_state_comparison_requires_equal_valid_values() {
+        assert!(callback_state_matches(TEST_STATE, TEST_STATE));
+        assert!(!callback_state_matches(TEST_STATE, WRONG_TEST_STATE));
+        assert!(!callback_state_matches(
+            TEST_STATE,
+            "abcdefghijklmnopqrstuvw"
+        ));
+        assert!(!callback_state_matches(
+            TEST_STATE,
+            "abcdefghijklmnopqrstué"
+        ));
+        assert!(!callback_state_matches("", ""));
+    }
+
     #[test]
     fn callback_parser_accepts_only_the_exact_get_path() {
         let parsed = parse_callback_request(
@@ -260,17 +326,117 @@ mod tests {
     async fn oversized_callback_is_rejected_without_echoing_sensitive_input() {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
         let address = listener.local_addr().unwrap();
-        let receive = tokio::spawn(receive_callback(listener, CancellationToken::new()));
+        let receive = tokio::spawn(receive_callback(
+            listener,
+            CancellationToken::new(),
+            TEST_STATE,
+        ));
         let mut stream = TcpStream::connect(address).await.unwrap();
         let oversized = vec![b'x'; MAX_CALLBACK_REQUEST_BYTES + 1];
         stream.write_all(&oversized).await.unwrap();
         let mut response = Vec::new();
         stream.read_to_end(&mut response).await.unwrap();
         assert!(String::from_utf8_lossy(&response).starts_with("HTTP/1.1 413"));
-        assert!(matches!(
-            receive.await.unwrap(),
-            Err(CallbackError::RequestTooLarge)
+
+        let mut valid = TcpStream::connect(address).await.unwrap();
+        valid
+            .write_all(
+                format!(
+                    "GET /oauth/callback?code=real&state={TEST_STATE} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        let mut valid_response = Vec::new();
+        valid.read_to_end(&mut valid_response).await.unwrap();
+        assert!(String::from_utf8_lossy(&valid_response).starts_with("HTTP/1.1 200"));
+        let expected_query = format!("code=real&state={TEST_STATE}");
+        assert_eq!(
+            receive.await.unwrap().unwrap().query(),
+            Some(expected_query.as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_first_callback_does_not_preempt_the_valid_redirect() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let receive = tokio::spawn(receive_callback(
+            listener,
+            CancellationToken::new(),
+            TEST_STATE,
         ));
+
+        let mut invalid = TcpStream::connect(address).await.unwrap();
+        invalid
+            .write_all(
+                format!(
+                    "GET /oauth/callback?code=attacker&state={WRONG_TEST_STATE} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        let mut invalid_response = Vec::new();
+        invalid.read_to_end(&mut invalid_response).await.unwrap();
+        assert!(String::from_utf8_lossy(&invalid_response).starts_with("HTTP/1.1 400"));
+
+        let mut valid = TcpStream::connect(address).await.unwrap();
+        valid
+            .write_all(
+                format!(
+                    "GET /oauth/callback?code=real&state={TEST_STATE} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        let mut valid_response = Vec::new();
+        valid.read_to_end(&mut valid_response).await.unwrap();
+        assert!(String::from_utf8_lossy(&valid_response).starts_with("HTTP/1.1 200"));
+
+        let callback = receive.await.unwrap().unwrap();
+        let expected_query = format!("code=real&state={TEST_STATE}");
+        assert_eq!(callback.query(), Some(expected_query.as_str()));
+    }
+
+    #[tokio::test]
+    async fn idle_loopback_connections_do_not_starve_the_valid_redirect() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut receive = tokio::spawn(receive_callback_with_timeout(
+            listener,
+            CancellationToken::new(),
+            Duration::from_secs(1),
+            TEST_STATE,
+        ));
+
+        let _idle_first = TcpStream::connect(address).await.unwrap();
+        let _idle_second = TcpStream::connect(address).await.unwrap();
+        tokio::task::yield_now().await;
+
+        let mut valid = TcpStream::connect(address).await.unwrap();
+        valid
+            .write_all(
+                format!(
+                    "GET /oauth/callback?code=real&state={TEST_STATE} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        let mut valid_response = Vec::new();
+        valid.read_to_end(&mut valid_response).await.unwrap();
+        assert!(String::from_utf8_lossy(&valid_response).starts_with("HTTP/1.1 200"));
+
+        let callback = tokio::time::timeout(Duration::from_millis(250), &mut receive)
+            .await
+            .expect("idle connections must not consume the callback deadline")
+            .unwrap()
+            .unwrap();
+        let expected_query = format!("code=real&state={TEST_STATE}");
+        assert_eq!(callback.query(), Some(expected_query.as_str()));
     }
 
     #[tokio::test]
@@ -280,7 +446,7 @@ mod tests {
         let cancellation = CancellationToken::new();
         cancellation.cancel();
         assert!(matches!(
-            receive_callback(listener, cancellation).await,
+            receive_callback(listener, cancellation, "opaque").await,
             Err(CallbackError::Cancelled)
         ));
         TcpListener::bind(address)
@@ -297,6 +463,7 @@ mod tests {
                 listener,
                 CancellationToken::new(),
                 Duration::from_millis(10),
+                "opaque",
             )
             .await,
             Err(CallbackError::TimedOut)

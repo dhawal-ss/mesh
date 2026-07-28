@@ -235,6 +235,8 @@ impl Database {
             edited_at: row.get(10)?,
             deleted_at: row.get(11)?,
             reply_to_id: row.get(12)?,
+            transaction_id: None,
+            client_request_id: None,
             delivery_status: None,
         })
     }

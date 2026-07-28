@@ -2,8 +2,6 @@ import { lazy, Suspense, useRef, useState, type MouseEvent } from 'react'
 import { useIdentityStore } from '../../store/identity'
 import { Avatar } from '../ui/Avatar'
 import { Tooltip } from '../ui/Tooltip'
-import { UserSettingsPanel } from '../settings/UserSettingsPanel'
-import { SecurityDevicesPanel } from '../settings/SecurityDevicesPanel'
 import { matrixProfileIdentity, resolveSenderIdentity } from '../../lib/matrixIdentity'
 import * as bridge from '../../lib/bridge'
 import { DialogErrorBoundary } from '../ui/ScopedErrorBoundary'
@@ -17,6 +15,12 @@ import { Spinner } from '../ui/Spinner'
 
 const DiagnosticsPanel = lazy(() =>
   import('../settings/DiagnosticsPanel').then((module) => ({ default: module.DiagnosticsPanel })),
+)
+const UserSettingsPanel = lazy(() =>
+  import('../settings/UserSettingsPanel').then((module) => ({ default: module.UserSettingsPanel })),
+)
+const SecurityDevicesPanel = lazy(() =>
+  import('../settings/SecurityDevicesPanel').then((module) => ({ default: module.SecurityDevicesPanel })),
 )
 const LegacyMigrationPanel = lazy(() =>
   import('../community/LegacyMigrationPanel').then((module) => ({ default: module.LegacyMigrationPanel })),
@@ -100,73 +104,81 @@ export function UserPanel() {
         onClose={closeSettings}
         title="User Settings"
       >
-        <UserSettingsPanel
-          open={showSettings}
-          onClose={closeSettings}
-          identity={identity}
-          matrixAccountId={matrixAccountId}
-          matrixMode={matrixMode}
-          onUpdateDisplayName={async (displayName) => {
-            const profile = await bridge.matrixUpdateProfileDisplayName(displayName)
-            setIdentity(matrixProfileIdentity(profile))
-          }}
-          onOpenSecurity={openSecurity}
-          backupReminderDue={backupReminderDue}
-          onOpenDiagnostics={openDiagnostics}
-          onOpenImport={openImport}
-          onTestNotification={async () => {
-            await bridge.sendTestNotification()
-            const notifications = useSettingsStore.getState().notifications
-            if (notifications.sound) {
-              bridge.playNotificationSound(notifications.soundId)
-            }
-          }}
-        />
+        {showSettings && (
+          <Suspense fallback={<Modal open onClose={closeSettings} title="User Settings"><div role="status" aria-label="Loading settings"><Spinner /></div></Modal>}>
+            <UserSettingsPanel
+              open
+              onClose={closeSettings}
+              identity={identity}
+              matrixAccountId={matrixAccountId}
+              matrixMode={matrixMode}
+              onUpdateDisplayName={async (displayName) => {
+                const profile = await bridge.matrixUpdateProfileDisplayName(displayName)
+                setIdentity(matrixProfileIdentity(profile))
+              }}
+              onOpenSecurity={openSecurity}
+              backupReminderDue={backupReminderDue}
+              onOpenDiagnostics={openDiagnostics}
+              onOpenImport={openImport}
+              onTestNotification={async () => {
+                await bridge.sendTestNotification()
+                const notifications = useSettingsStore.getState().notifications
+                if (notifications.sound) {
+                  bridge.playNotificationSound(notifications.soundId)
+                }
+              }}
+            />
+          </Suspense>
+        )}
       </DialogErrorBoundary>
       <DialogErrorBoundary
         open={showSecurity}
         onClose={() => setShowSecurity(false)}
         title="Security & Devices"
       >
-        <SecurityDevicesPanel open={showSecurity} onClose={() => setShowSecurity(false)} />
+        {showSecurity && (
+          <Suspense fallback={<Modal open onClose={() => setShowSecurity(false)} title="Security & Devices"><div role="status" aria-label="Loading security settings"><Spinner /></div></Modal>}>
+            <SecurityDevicesPanel open onClose={() => setShowSecurity(false)} />
+          </Suspense>
+        )}
       </DialogErrorBoundary>
       <DialogErrorBoundary
         open={showDiagnostics}
         onClose={() => setShowDiagnostics(false)}
         title="System diagnostics"
       >
-        <Suspense fallback={<div role="status" aria-label="Loading diagnostics"><Spinner /></div>}>
-          <DiagnosticsPanel
-            open={showDiagnostics}
-            onClose={() => setShowDiagnostics(false)}
-            backendKind={matrixMode ? 'matrix' : 'legacy-p2p'}
-          />
-        </Suspense>
+        {showDiagnostics && (
+          <Suspense fallback={<div role="status" aria-label="Loading diagnostics"><Spinner /></div>}>
+            <DiagnosticsPanel
+              open
+              onClose={() => setShowDiagnostics(false)}
+              backendKind={matrixMode ? 'matrix' : 'legacy-p2p'}
+            />
+          </Suspense>
+        )}
       </DialogErrorBoundary>
       <DialogErrorBoundary
         open={showImport}
         onClose={() => setShowImport(false)}
         title="Import older Mesh data"
       >
-        <Modal
-          open={showImport}
-          onClose={() => setShowImport(false)}
-          title="Import older Mesh data"
-        >
-          <Suspense fallback={<div role="status" aria-label="Loading import tools"><Spinner /></div>}>
-            {activeCommunity ? (
-              <LegacyMigrationPanel
-                communityId={activeCommunity.id}
-                channels={channels}
-                canManage={activeCommunity.role === 'owner' || activeCommunity.role === 'admin'}
-              />
-            ) : (
-              <p className="text-sm text-content-secondary">
-                Choose a server before importing older Mesh data.
-              </p>
-            )}
-          </Suspense>
-        </Modal>
+        {showImport && (
+          <Modal open onClose={() => setShowImport(false)} title="Import older Mesh data">
+            <Suspense fallback={<div role="status" aria-label="Loading import tools"><Spinner /></div>}>
+              {activeCommunity ? (
+                <LegacyMigrationPanel
+                  communityId={activeCommunity.id}
+                  channels={channels}
+                  canManage={activeCommunity.role === 'owner' || activeCommunity.role === 'admin'}
+                />
+              ) : (
+                <p className="text-sm text-content-secondary">
+                  Choose a server before importing older Mesh data.
+                </p>
+              )}
+            </Suspense>
+          </Modal>
+        )}
       </DialogErrorBoundary>
     </>
   )

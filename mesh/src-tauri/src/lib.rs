@@ -1,5 +1,10 @@
 #![recursion_limit = "512"]
 
+#[cfg(all(feature = "matrix-backend", feature = "legacy-p2p"))]
+compile_error!(
+    "matrix-backend and legacy-p2p are mutually exclusive; build separate Mesh artifacts"
+);
+
 #[cfg(feature = "legacy-p2p")]
 mod app_runtime;
 pub mod backend;
@@ -212,25 +217,39 @@ pub fn run() {
                 let network_state = state.network.clone();
 
                 // Try to load existing identity for the network keypair
-                let identity_loaded = crate::crypto::identity::Identity::exists();
-                if identity_loaded {
-                    if let Ok(identity) = crate::crypto::identity::Identity::load() {
-                        *identity_state.write().await = Some(identity);
+                match crate::crypto::identity::Identity::exists() {
+                    Ok(true) => {
+                        match crate::crypto::identity::Identity::load() {
+                            Ok(identity) => {
+                                *identity_state.write().await = Some(identity);
 
-                        if let Err(e) = app_runtime::ensure_network_started(
-                            app_handle.clone(),
-                            identity_state,
-                            network_state,
-                        )
-                        .await
-                        {
-                            tracing::error!("Failed to start network: {}", e);
-                        } else {
-                            tracing::info!("Network started successfully");
+                                if let Err(e) = app_runtime::ensure_network_started(
+                                    app_handle.clone(),
+                                    identity_state,
+                                    network_state,
+                                )
+                                .await
+                                {
+                                    tracing::error!("Failed to start network: {}", e);
+                                } else {
+                                    tracing::info!("Network started successfully");
+                                }
+                            }
+                            Err(error) => {
+                                tracing::error!(
+                                    "Could not load the local identity from the OS credential store: {error}"
+                                );
+                            }
                         }
                     }
-                } else {
-                    tracing::info!("No identity found, waiting for onboarding...");
+                    Ok(false) => {
+                        tracing::info!("No identity found, waiting for onboarding...");
+                    }
+                    Err(error) => {
+                        tracing::error!(
+                            "Could not inspect the OS credential store for the local identity: {error}"
+                        );
+                    }
                 }
             }
         });
@@ -282,6 +301,10 @@ pub fn run() {
         commands::backend::matrix_list_communities,
         commands::backend::matrix_list_channels,
         commands::backend::matrix_create_channel,
+        commands::backend::matrix_list_custom_emoji,
+        commands::backend::matrix_upload_custom_emoji,
+        commands::backend::matrix_remove_custom_emoji,
+        commands::backend::matrix_load_custom_emoji_image,
         commands::backend::matrix_rtc_join,
         commands::backend::matrix_rtc_ack_media_key_pause,
         commands::backend::matrix_rtc_ack_media_key,
@@ -290,9 +313,17 @@ pub fn run() {
         commands::backend::matrix_rtc_leave,
         commands::backend::matrix_rtc_members,
         commands::backend::matrix_send_message,
+        commands::backend::matrix_queued_messages,
+        commands::backend::matrix_retry_queued_message,
+        commands::backend::matrix_cancel_queued_message,
+        commands::backend::matrix_save_composer_draft,
+        commands::backend::matrix_load_composer_draft,
+        commands::backend::matrix_clear_composer_draft,
         commands::backend::matrix_send_attachment,
         commands::backend::matrix_cancel_attachment_upload,
         commands::backend::matrix_download_attachment,
+        commands::backend::matrix_load_attachment_thumbnail,
+        commands::backend::matrix_load_attachment_image,
         commands::backend::matrix_cancel_attachment_download,
         commands::backend::matrix_dm_conversations,
         commands::backend::matrix_ensure_dm,
@@ -325,6 +356,7 @@ pub fn run() {
         commands::backend::matrix_update_member_role,
         commands::backend::matrix_kick_member,
         commands::backend::matrix_ban_member,
+        commands::backend::matrix_list_moderation_audit,
         commands::backend::matrix_sync_once,
         commands::backend::matrix_enable_recovery,
         commands::backend::matrix_recover,
@@ -373,6 +405,10 @@ pub fn run() {
         commands::backend::matrix_list_communities,
         commands::backend::matrix_list_channels,
         commands::backend::matrix_create_channel,
+        commands::backend::matrix_list_custom_emoji,
+        commands::backend::matrix_upload_custom_emoji,
+        commands::backend::matrix_remove_custom_emoji,
+        commands::backend::matrix_load_custom_emoji_image,
         commands::backend::matrix_rtc_join,
         commands::backend::matrix_rtc_ack_media_key_pause,
         commands::backend::matrix_rtc_ack_media_key,
@@ -381,9 +417,17 @@ pub fn run() {
         commands::backend::matrix_rtc_leave,
         commands::backend::matrix_rtc_members,
         commands::backend::matrix_send_message,
+        commands::backend::matrix_queued_messages,
+        commands::backend::matrix_retry_queued_message,
+        commands::backend::matrix_cancel_queued_message,
+        commands::backend::matrix_save_composer_draft,
+        commands::backend::matrix_load_composer_draft,
+        commands::backend::matrix_clear_composer_draft,
         commands::backend::matrix_send_attachment,
         commands::backend::matrix_cancel_attachment_upload,
         commands::backend::matrix_download_attachment,
+        commands::backend::matrix_load_attachment_thumbnail,
+        commands::backend::matrix_load_attachment_image,
         commands::backend::matrix_cancel_attachment_download,
         commands::backend::matrix_dm_conversations,
         commands::backend::matrix_ensure_dm,
@@ -416,6 +460,7 @@ pub fn run() {
         commands::backend::matrix_update_member_role,
         commands::backend::matrix_kick_member,
         commands::backend::matrix_ban_member,
+        commands::backend::matrix_list_moderation_audit,
         commands::backend::matrix_sync_once,
         commands::backend::matrix_enable_recovery,
         commands::backend::matrix_recover,

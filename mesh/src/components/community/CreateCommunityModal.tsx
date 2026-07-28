@@ -219,7 +219,7 @@ export function CreateCommunityModal({
                 <motion.div
                   layoutId="tab-indicator"
                   className="absolute inset-0 rounded-md bg-bg-modifier-active"
-                  transition={transitions.directSpring}
+                  transition={transitions.enter}
                 />
               )}
               <span className="relative z-sticky capitalize">
@@ -442,7 +442,7 @@ export function CreateCommunityModal({
                         {entry.description && (
                           <p className="mt-1 line-clamp-2 text-xs text-muted">{entry.description}</p>
                         )}
-                        <p className="mt-1 text-meta text-muted">
+                        <p className="member-count mt-1 text-meta text-muted">
                           {entry.memberCount} member{entry.memberCount === 1 ? '' : 's'} · {entry.joinRule}
                         </p>
                       </div>

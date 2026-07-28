@@ -23,7 +23,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
       aria-invalid={error || undefined}
       className={clsx(
         'w-full resize-y rounded-md border border-border bg-surface-sunken text-content placeholder:text-content-muted',
-        'transition-colors duration-fast focus:border-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
+        'transition-colors duration-fast focus:border-accent focus:outline-none',
         error && 'border-status-danger focus:border-status-danger',
         size === 'sm' && 'min-h-20 px-2.5 py-1.5 text-xs',
         size === 'md' && 'min-h-24 px-3 py-2 text-sm',
@@ -123,7 +123,7 @@ export const Checkbox = forwardRef<HTMLInputElement, ChoiceProps>(
           type="checkbox"
           disabled={disabled}
           aria-describedby={description ? descriptionId : describedBy}
-          className="mt-0.5 h-4 w-4 rounded border-border accent-accent focus-visible:ring-2 focus-visible:ring-accent/40"
+          className="mt-0.5 h-4 w-4 rounded border-border accent-accent"
           {...props}
         />
         <span>
@@ -157,7 +157,7 @@ export const Radio = forwardRef<HTMLInputElement, ChoiceProps>(
           type="radio"
           disabled={disabled}
           aria-describedby={description ? descriptionId : describedBy}
-          className="mt-0.5 h-4 w-4 border-border accent-accent focus-visible:ring-2 focus-visible:ring-accent/40"
+          className="mt-0.5 h-4 w-4 border-border accent-accent"
           {...props}
         />
         <span>
@@ -357,7 +357,7 @@ export function EmptyState({
 export function Kbd({ className, ...props }: HTMLAttributes<HTMLElement>) {
   return (
     <kbd
-      className={clsx('rounded border border-border bg-surface-sunken px-1.5 py-0.5 font-mono text-xs text-content-secondary shadow-elevation-low', className)}
+      className={clsx('rounded border border-border bg-surface-sunken px-1.5 py-0.5 font-mono text-xs text-content-secondary', className)}
       {...props}
     />
   )
@@ -373,7 +373,7 @@ export function Card({
       className={clsx(
         'rounded-lg',
         variant === 'base' && 'bg-surface-base',
-        variant === 'raised' && 'bg-surface-raised shadow-elevation-low',
+        variant === 'raised' && 'border border-border-subtle bg-surface-raised',
         variant === 'outline' && 'border border-border bg-surface-base',
         className,
       )}

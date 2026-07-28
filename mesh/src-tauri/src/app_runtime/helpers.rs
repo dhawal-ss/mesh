@@ -30,7 +30,6 @@ pub fn signed_file_announcement_to_message(
             size: payload.size,
             chunks: payload.chunks,
             source_peer_id: payload.source_peer_id.clone(),
-            media_source: None,
             content_type: None,
             thumbnail: None,
         }],
@@ -40,6 +39,8 @@ pub fn signed_file_announcement_to_message(
         edited_at: None,
         deleted_at: None,
         reply_to_id: None,
+        transaction_id: None,
+        client_request_id: None,
         delivery_status: None,
     })
 }

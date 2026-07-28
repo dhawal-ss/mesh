@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { CommunitySidebar } from './CommunitySidebar'
 import { ChannelSidebar } from './ChannelSidebar'
 import { ContentArea } from './ContentArea'
@@ -13,16 +13,21 @@ import { isBackupReminderDue, useSettingsStore } from '../../store/settings'
 import { useShellStore } from '../../store/shell'
 import * as bridge from '../../lib/bridge'
 import { playNotificationSound } from '../../lib/bridge'
-import type { NetworkStatus } from '../../types/ipc'
 import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
 import { useNotificationSync } from '../../hooks/useNotificationSync'
 import { getEffectiveChannelNotificationLevel } from '../../store/settings'
-import { CommandPalette } from '../navigation/CommandPalette'
+import { useNetworkStore } from '../../store/network'
+import { useQueuedMessageSync } from '../../hooks/useQueuedMessageSync'
+
+const CommandPalette = lazy(() =>
+  import('../navigation/CommandPalette').then((module) => ({ default: module.CommandPalette })),
+)
 
 export function AppLayout() {
   useCommunitySync()
   const matrixMode = bridge.isMatrixBackend()
+  useQueuedMessageSync(matrixMode)
   const directMessagesAvailable = bridge.getBackendCapabilities().directMessages
   const activeChannelId = useChannelStore((state) => state.activeChannelId)
   const activeCommunityId = useCommunityStore((state) => state.activeCommunityId)
@@ -34,9 +39,9 @@ export function AppLayout() {
   const dismissBackupReminder = useSettingsStore((state) => state.dismissBackupReminder)
   const setProfileOpen = useShellStore((state) => state.setProfileOpen)
   const backupReminderDue = isBackupReminderDue(backup)
+  const networkStatus = useNetworkStore((state) => state.status)
 
   const myPublicKey = useIdentityStore((state) => state.identity?.publicKey)
-  const [networkStatus, setNetworkStatus] = useState<NetworkStatus | null>(null)
   const [contextNavigationOpen, setContextNavigationOpen] = useState(false)
   const activeRoomId = isDmMode ? activeConversationId : activeChannelId
   useNotificationSync({ matrixMode, activeRoomId })
@@ -48,14 +53,6 @@ export function AppLayout() {
   useEffect(() => {
     setContextNavigationOpen(false)
   }, [activeChannelId, activeCommunityId, isDmMode])
-
-  useEffect(() => {
-    if (matrixMode) return
-    const unlisten = bridge.onNetworkStatus((status) => {
-      setNetworkStatus(status)
-    })
-    return () => { unlisten.then((fn) => fn()) }
-  }, [matrixMode])
 
   useEffect(() => {
     const unlisten = matrixMode
@@ -103,12 +100,18 @@ export function AppLayout() {
   // Banner is NEVER shown for solo mode. If the swarm task hasn't started
   // at all (real failure), the user sees errors elsewhere. Solo is
   // advertised gently via the sidebar indicator instead.
-  const remotePeerCount = networkStatus?.peerCount ?? 0
-  const isRunningSolo = networkStatus !== null && remotePeerCount === 0
+  const remotePeerCount = networkStatus.peerCount
+  const isRunningSolo =
+    !matrixMode
+    && networkStatus.state !== 'connecting'
+    && networkStatus.state !== 'disconnected'
+    && remotePeerCount === 0
 
   return (
     <div className="relative flex h-screen flex-col overflow-hidden">
-      <CommandPalette />
+      <Suspense fallback={null}>
+        <CommandPalette />
+      </Suspense>
       {backupReminderDue && (
         <div
           role="status"
@@ -132,6 +135,14 @@ export function AppLayout() {
           </button>
         </div>
       )}
+      {matrixMode && networkStatus.state === 'disconnected' && (
+        <div
+          role="status"
+          className="border-b border-status-warning/30 bg-status-warning/10 px-4 py-2 text-center text-xs text-content"
+        >
+          You’re offline. Messages marked Saved will send when Mesh reconnects.
+        </div>
+      )}
       <div className="flex flex-1 overflow-hidden">
         {/* Server icon bar — Discord: 72px, dark */}
         <nav
@@ -149,33 +160,53 @@ export function AppLayout() {
             <div className="flex items-center gap-1.5 px-1 text-center text-caption text-muted"
               title={
                 matrixMode
-                  ? 'Connected to Mesh'
-                  : isRunningSolo
-                  ? 'You are running as a solo peer. Messages are stored locally and will sync when other peers join.'
-                  : `Connected to ${remotePeerCount} other peer${remotePeerCount === 1 ? '' : 's'}`
+                  ? networkStatus.state === 'connected'
+                    ? 'Connected to Mesh'
+                    : networkStatus.state === 'connecting'
+                      ? 'Connecting to Mesh'
+                      : 'Mesh is offline. It will retry automatically.'
+                  : networkStatus.state === 'connecting'
+                    ? 'Starting Mesh'
+                    : isRunningSolo
+                      ? 'You are running as a solo peer. Messages are stored locally and will sync when other peers join.'
+                      : networkStatus.state === 'disconnected'
+                        ? 'Mesh is offline. It will retry automatically.'
+                        : `Connected to ${remotePeerCount} other peer${remotePeerCount === 1 ? '' : 's'}`
               }
             >
               <span
                 className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                  // Solo = yellow (working but alone), connected = green, not started = red
+                  // Solo = yellow (working but alone), connected = green, unavailable = red.
                   matrixMode
-                    ? 'bg-green'
-                    : networkStatus === null
-                    ? 'bg-red'
-                    : isRunningSolo
-                      ? 'bg-yellow'
-                      : 'bg-green'
+                    ? networkStatus.state === 'connected'
+                      ? 'bg-green'
+                      : networkStatus.state === 'connecting'
+                        ? 'bg-yellow'
+                        : 'bg-red'
+                    : networkStatus.state === 'connecting'
+                      ? 'bg-red'
+                      : isRunningSolo
+                        ? 'bg-yellow'
+                        : networkStatus.state === 'connected' || networkStatus.state === 'degraded'
+                          ? 'bg-green'
+                          : 'bg-red'
                 }`}
                 aria-hidden
               />
               <span>
                 {matrixMode
-                  ? 'Online'
-                  : networkStatus === null
-                  ? 'Starting'
-                  : isRunningSolo
-                    ? 'Solo (you)'
-                    : `You + ${remotePeerCount}`}
+                  ? networkStatus.state === 'connected'
+                    ? 'Online'
+                    : networkStatus.state === 'connecting'
+                      ? 'Connecting'
+                      : 'Offline'
+                  : networkStatus.state === 'connecting'
+                    ? 'Starting'
+                    : networkStatus.state === 'disconnected'
+                      ? 'Offline'
+                      : isRunningSolo
+                        ? 'Solo (you)'
+                        : `You + ${remotePeerCount}`}
               </span>
             </div>
           </div>

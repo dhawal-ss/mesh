@@ -1,9 +1,8 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { useActiveCommunity, useCommunityStore } from '../../store/communities'
 import { useChannelStore } from '../../store/channels'
 import { useVoiceStore } from '../../store/voice'
 import { ChannelItem } from '../community/ChannelItem'
-import { CommunitySettings } from '../community/CommunitySettings'
 import { UserPanel } from './UserPanel'
 import { DialogErrorBoundary, ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
@@ -14,6 +13,11 @@ import { showToast } from '../ui/Toast'
 import type { Channel } from '../../types/ipc'
 import { useMatrixRtcMembershipSync } from '../../hooks/useMatrixRtcMembershipSync'
 import { canStartMatrixVoice, shouldActivateVoiceSession } from '../../lib/voice-runtime'
+import { Spinner } from '../ui/Spinner'
+
+const CommunitySettings = lazy(() =>
+  import('../community/CommunitySettings').then((module) => ({ default: module.CommunitySettings })),
+)
 
 export function ChannelSidebar() {
   const communityCount = useCommunityStore((state) => state.communityOrder.length)
@@ -69,7 +73,7 @@ export function ChannelSidebar() {
   if (!activeCommunity) {
     return (
       <div className="flex flex-col h-full">
-        <div className="flex h-12 flex-shrink-0 items-center border-b border-border-subtle px-4 shadow-elevation-low">
+        <div className="flex h-12 flex-shrink-0 items-center border-b border-border-subtle px-4">
           <h2 className="text-sm font-semibold text-primary">Your servers</h2>
         </div>
         <div className="flex flex-1 items-center px-5 py-8 text-center">
@@ -100,7 +104,7 @@ export function ChannelSidebar() {
       <div className="flex flex-col h-full">
         {/* Server name header */}
         <button
-          className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border-subtle px-4 shadow-elevation-low transition-colors hover:bg-bg-modifier-hover"
+          className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border-subtle px-4 transition-colors hover:bg-bg-modifier-hover"
           onClick={() => setShowSettings(true)}
           data-tauri-drag-region
         >
@@ -117,7 +121,9 @@ export function ChannelSidebar() {
             <div className="mb-1">
               <button
                 onClick={() => setTextCollapsed(!textCollapsed)}
-                className="group flex w-full items-center gap-0.5 px-0.5 pb-1 text-left"
+                className="group flex min-h-8 w-full items-center gap-0.5 px-0.5 text-left"
+                aria-expanded={!textCollapsed}
+                aria-controls="text-channel-list"
               >
                 <Icon
                   name="chevronDown"
@@ -129,7 +135,7 @@ export function ChannelSidebar() {
                 </span>
               </button>
               {!textCollapsed && (
-                <div className="space-y-0.5">
+                <div id="text-channel-list" className="space-y-0.5">
                   {textChannels.map((channel) => (
                     <ChannelItem
                       key={channel.id}
@@ -151,7 +157,9 @@ export function ChannelSidebar() {
             <div className="mb-1 mt-3">
               <button
                 onClick={() => setVoiceCollapsed(!voiceCollapsed)}
-                className="group flex w-full items-center gap-0.5 px-0.5 pb-1 text-left"
+                className="group flex min-h-8 w-full items-center gap-0.5 px-0.5 text-left"
+                aria-expanded={!voiceCollapsed}
+                aria-controls="voice-channel-list"
               >
                 <Icon
                   name="chevronDown"
@@ -163,7 +171,7 @@ export function ChannelSidebar() {
                 </span>
               </button>
               {!voiceCollapsed && (
-                <div className="space-y-0.5">
+                <div id="voice-channel-list" className="space-y-0.5">
                   {voiceChannels.map((channel) => {
                     const members = matrixRtcMembersByRoom[channel.id] ?? []
                     const joinChannel = () => {
@@ -247,7 +255,7 @@ export function ChannelSidebar() {
                               </button>
                             ))}
                             {members.length > 8 && (
-                              <div className="px-1 text-meta text-muted">
+                              <div className="member-count px-1 text-meta text-muted">
                                 +{members.length - 8} more
                               </div>
                             )}
@@ -277,7 +285,11 @@ export function ChannelSidebar() {
         onClose={() => setShowSettings(false)}
         title="Server Settings"
       >
-        <CommunitySettings isOpen={showSettings} onClose={() => setShowSettings(false)} />
+        {showSettings && (
+          <Suspense fallback={<div role="status" aria-label="Loading server settings" className="flex items-center justify-center p-6"><Spinner /></div>}>
+            <CommunitySettings isOpen onClose={() => setShowSettings(false)} />
+          </Suspense>
+        )}
       </DialogErrorBoundary>
     </>
   )

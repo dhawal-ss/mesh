@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { motion } from 'framer-motion'
 import { Button, type ButtonVariant, type UiTone } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Avatar } from '../ui/Avatar'
@@ -34,6 +35,8 @@ import {
 import { Skeleton } from '../ui/Skeleton'
 import { showToast } from '../ui/Toast'
 import { Tooltip } from '../ui/Tooltip'
+import { transitions } from '../../lib/motion'
+import { useReducedMotionPreference } from '../../hooks/useReducedMotionPreference'
 
 const TONES: UiTone[] = ['neutral', 'accent', 'success', 'danger', 'warning']
 const BUTTON_VARIANTS: ButtonVariant[] = ['solid', 'soft', 'outline', 'ghost']
@@ -46,6 +49,7 @@ const OPTIONS = [
 ]
 
 export function KitchenSink() {
+  const reduceMotion = useReducedMotionPreference()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
@@ -68,6 +72,14 @@ export function KitchenSink() {
 
   return (
     <ScrollArea className="h-screen bg-surface-sunken p-6 text-content">
+      <motion.div
+        aria-hidden="true"
+        data-ambient-motion-probe
+        data-reduced-motion={reduceMotion ? 'true' : 'false'}
+        className="pointer-events-none fixed left-0 top-0 h-px w-px"
+        animate={{ x: reduceMotion ? 0 : [0, 24] }}
+        transition={reduceMotion ? transitions.reduced : transitions.ambientLoop}
+      />
       <header className="mx-auto mb-8 max-w-6xl">
         <Badge tone="accent">Development only</Badge>
         <h1 className="mt-3 text-lg font-semibold">Mesh design-system kitchen sink</h1>
@@ -186,7 +198,7 @@ export function KitchenSink() {
 
 function PrimitiveTheme({ theme }: { theme: typeof THEMES[number] }) {
   return (
-    <section data-theme={theme} className="rounded-xl bg-surface-base p-5 shadow-elevation-low">
+    <section data-theme={theme} className="rounded-xl border border-border-subtle bg-surface-base p-5">
       <div className="mb-5 flex items-center justify-between gap-4">
         <h2 className="text-base font-semibold capitalize">{theme.replace('-', ' ')}</h2>
         <Badge>{theme}</Badge>

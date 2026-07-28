@@ -1,11 +1,12 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    io::Cursor,
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
+    io::{Cursor, Read},
     path::{Component, Path, PathBuf},
     str::FromStr,
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc, Mutex as StdMutex, OnceLock, RwLock as StdRwLock,
+        Arc, Mutex as StdMutex, MutexGuard as StdMutexGuard, OnceLock, RwLock as StdRwLock,
     },
     time::{Duration, Instant, SystemTime},
 };
@@ -15,6 +16,7 @@ use base64::{
     engine::general_purpose::{STANDARD_NO_PAD as BASE64_STANDARD, URL_SAFE_NO_PAD as BASE64},
     Engine as _,
 };
+use futures::StreamExt as _;
 use matrix_sdk::{
     authentication::{
         matrix::MatrixSession,
@@ -32,14 +34,14 @@ use matrix_sdk::{
         },
         BackupDownloadStrategy, EncryptionSettings,
     },
-    media::{MediaFormat, MediaRequestParameters},
     notification_settings::RoomNotificationMode,
     room::{
         reply::{EnforceThread, Reply},
-        MessagesOptions, Receipts, RoomMemberRole,
+        MessagesOptions, ParentSpace, Receipts, RoomMemberRole,
     },
     ruma::{
         api::{
+            auth_scheme::SendAccessToken,
             client::{
                 account::{
                     get_username_availability, register::v3::Request as RegistrationRequest,
@@ -54,16 +56,19 @@ use matrix_sdk::{
                     create_room::v3::{CreationContent, Request as CreateRoomRequest, RoomPreset},
                     Visibility,
                 },
+                rtc::{transports::v1::Request as MatrixRtcTransportsRequest, RtcTransport},
                 state::{get_state_events, send_state_event},
                 uiaa::{self, AuthData, AuthType, Dummy, UiaaInfo},
             },
             error::ErrorKind,
+            Metadata, OutgoingRequest, SupportedVersions,
         },
         directory::{Filter, RoomTypeFilter},
         events::{
             call::member::{CallMemberStateKey, Focus, OriginalSyncCallMemberEvent},
             direct::{DirectEventContent, DirectUserIdentifier},
             ignored_user_list::{IgnoredUser, IgnoredUserListEventContent},
+            image_pack::{PackImage, PackInfo, PackUsage, RoomImagePackEventContent},
             presence::PresenceEvent,
             reaction::ReactionEventContent,
             relation::Annotation,
@@ -75,34 +80,37 @@ use matrix_sdk::{
                     OriginalSyncRoomMessageEvent, ReplacementMetadata, RoomMessageEventContent,
                     RoomMessageEventContentWithoutRelation,
                 },
-                EncryptedFile, EncryptedFileHash, EncryptedFileHashAlgorithm, MediaSource,
-                ThumbnailInfo,
+                EncryptedFile, EncryptedFileHash, EncryptedFileHashAlgorithm, ImageInfo,
+                MediaSource, ThumbnailInfo,
             },
             space::{child::SpaceChildEventContent, parent::SpaceParentEventContent},
             typing::SyncTypingEvent,
-            AnyGlobalAccountDataEventContent, AnyStateEvent, AnyStateEventContent,
-            AnyToDeviceEvent, AnyToDeviceEventContent, GlobalAccountDataEventType,
-            InitialStateEvent, StateEvent, StateEventType,
+            AnyGlobalAccountDataEventContent, AnyInitialStateEvent, AnyMessageLikeEventContent,
+            AnyStateEvent, AnyStateEventContent, AnyToDeviceEvent, AnyToDeviceEventContent,
+            GlobalAccountDataEventType, InitialStateEvent, Mentions, StateEvent, StateEventType,
         },
         int,
         presence::PresenceState,
         push::Action,
         room::RoomType,
         serde::Raw,
-        EventEncryptionAlgorithm, OwnedDeviceId, OwnedRoomAliasId, OwnedRoomId, OwnedServerName,
-        OwnedUserId, RoomAliasId, RoomOrAliasId, ServerName, UserId,
+        EventEncryptionAlgorithm, MxcUri, OwnedDeviceId, OwnedRoomAliasId, OwnedRoomId,
+        OwnedServerName, OwnedTransactionId, OwnedUserId, RoomAliasId, RoomOrAliasId, ServerName,
+        UInt, UserId,
     },
+    send_queue::{LocalEcho, LocalEchoContent, RoomSendQueueUpdate, SendQueueUpdate},
     store::RoomLoadSettings,
     utils::UrlOrQuery,
-    Client, LoopCtrl, Room, RoomMemberships, RoomState, SessionChange,
+    Client, ComposerDraft, ComposerDraftType, LoopCtrl, Room, RoomMemberships, RoomState,
+    SessionChange,
 };
-use matrix_sdk_crypto::CollectStrategy;
+use matrix_sdk_crypto::{AttachmentDecryptor, CollectStrategy};
 use qrcode::render::svg;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, Notify, RwLock, Semaphore};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use zeroize::Zeroize;
@@ -118,18 +126,21 @@ use crate::types::{
 use super::{
     BackendError, BackendKind, BackendResult, BackendStatus, CommunityAccessResult,
     CommunityAccessSettings, CommunityApplication, CommunityDirectoryEntry, CommunityMember,
-    CreatedCommunity, MatrixAccount, MatrixAttachmentSendRequest, MatrixBackendEvent,
+    CreatedCommunity, CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest, MatrixBackendEvent,
     MatrixBackendEventCallback, MatrixDevice, MatrixLogin, MatrixNotification,
-    MatrixOidcAvailability, MatrixOidcStatus, MatrixProfile, MatrixRecoveryHealth,
-    MatrixRoomNotificationMode, MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyFailure,
-    MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember, MatrixRtcMembershipUpdate,
-    MatrixTransferDirection, MatrixTransferObserver, MatrixTransferProgress,
-    MatrixTransferProgressCallback, MatrixTransferResult, MatrixTransferRetryMode,
-    MatrixTransferState, MatrixUnreadUpdate, MatrixVerificationSession, MeshBackend, SentMessage,
-    TypingUser, UserPreferences, VerificationEmoji, VoiceServiceAvailability, VoiceServiceStatus,
+    MatrixOidcAvailability, MatrixOidcStatus, MatrixProfile, MatrixQueuedMessageState,
+    MatrixQueuedMessageUpdate, MatrixRecoveryHealth, MatrixRoomNotificationMode,
+    MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease,
+    MatrixRtcMediaKeyPause, MatrixRtcMember, MatrixRtcMembershipUpdate, MatrixTransferDirection,
+    MatrixTransferObserver, MatrixTransferProgress, MatrixTransferProgressCallback,
+    MatrixTransferResult, MatrixTransferRetryMode, MatrixTransferState, MatrixUnreadUpdate,
+    MatrixVerificationSession, MeshBackend, ModerationAuditEntry, SentMessage, TypingUser,
+    UserPreferences, VerificationEmoji, VoiceServiceAvailability, VoiceServiceStatus,
 };
 
+mod moderation;
 mod oidc;
+use moderation::MatrixModerationAction;
 
 const SESSION_KEY: &str = "matrix-session-v1";
 const STORE_PASSPHRASE_KEY: &str = "matrix-store-passphrase-v1";
@@ -140,17 +151,39 @@ const PREFERENCES_EVENT_TYPE: &str = "org.mesh.preferences.v1";
 const MANAGED_HOMESERVER_ENV: &str = "MESH_MANAGED_HOMESERVER";
 const MANAGED_SERVER_NAME_ENV: &str = "MESH_MANAGED_SERVER_NAME";
 const LOGIN_TIMEOUT_SECONDS: u64 = 45;
+const SESSION_RESTORE_SYNC_TIMEOUT_SECONDS: u64 = 10;
 const REGISTRATION_TIMEOUT_SECONDS: u64 = 45;
 const OIDC_REDIRECT_URI: &str = "http://127.0.0.1:8418/oauth/callback";
 const OIDC_CLIENT_ID_ENV: &str = "MESH_OAUTH_CLIENT_ID";
+const MAX_COMPOSER_DRAFT_BYTES: usize = 16 * 1024;
+const CLIENT_REQUEST_ID_KEY: &str = "org.mesh.client_request_id";
 const MAX_MEDIA_CACHE_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES: u64 = 100 * 1024 * 1024;
 const MAX_THUMBNAIL_SOURCE_PIXELS: u64 = 25_000_000;
 const MAX_THUMBNAIL_SOURCE_DIMENSION: u32 = 16_384;
 const MAX_THUMBNAIL_DECODE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_THUMBNAIL_DIMENSION: u32 = 512;
 const MAX_THUMBNAIL_BYTES: usize = 2 * 1024 * 1024;
+const MAX_INLINE_THUMBNAIL_DECODE_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_CONCURRENT_THUMBNAIL_LOADS: usize = 4;
+const MAX_CONCURRENT_LIGHTBOX_IMAGE_LOADS: usize = 1;
+const MEDIA_DOWNLOAD_PROGRESS_INTERVAL_BYTES: u64 = 1024 * 1024;
+// A Content-Length hint is remote-claimed and unverified, so the initial
+// allocation it sizes must stay modest regardless of what the header claims
+// (a lying server can otherwise force a large up-front allocation per
+// concurrent download). Real growth still happens via normal Vec
+// reallocation as bytes actually arrive.
+const MEDIA_DOWNLOAD_INITIAL_CAPACITY_BYTES: u64 = 1024 * 1024;
+const MEDIA_DOWNLOAD_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+// A read/idle timeout, not a total-transfer timeout: it fires only when no
+// bytes arrive for this long, so a large-but-healthy download near the byte
+// cap isn't penalized for taking a while overall.
+const MEDIA_DOWNLOAD_READ_TIMEOUT: Duration = Duration::from_secs(30);
 const DIRECT_ACCOUNT_DATA_MERGE_ATTEMPTS: usize = 3;
 const MATRIX_RTC_SLOT_ID: &str = "m.call#ROOM";
+const MATRIX_RTC_TRANSPORTS_PATH: &str =
+    "/_matrix/client/unstable/org.matrix.msc4143/rtc/transports";
+const MATRIX_RTC_DISCOVERY_KEY: &str = "org.matrix.msc4143.rtc_foci";
 const MATRIX_RTC_MEMBERSHIP_TTL: Duration = Duration::from_secs(120);
 const MATRIX_RTC_MEMBERSHIP_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 const MATRIX_RTC_TOKEN_TIMEOUT: Duration = Duration::from_secs(15);
@@ -165,6 +198,8 @@ const MATRIX_RTC_KEY_LEASE_TTL: Duration = Duration::from_secs(3);
 const MATRIX_RTC_COMPLETED_ACTIVATION_TTL: Duration = Duration::from_secs(60);
 const MATRIX_SYNC_NORMAL_TIMEOUT: Duration = Duration::from_secs(30);
 const MATRIX_RTC_SYNC_TIMEOUT: Duration = Duration::from_secs(1);
+const MATRIX_SYNC_STATUS_FRESHNESS: Duration = Duration::from_secs(90);
+const MATRIX_SYNC_RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
 // With a three-second renderer lease, accepting only a sync completion from
 // the last two seconds bounds publication after the last successful `/sync`
 // response to five seconds.
@@ -183,10 +218,73 @@ const BLOCKED_MEDIA_CONTENT_TYPES: &[&str] = &[
     "text/x-shellscript",
 ];
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MatrixRtcDiscoverySource {
+    AuthenticatedEndpoint,
+    WellKnownFallback,
+}
+
+impl MatrixRtcDiscoverySource {
+    fn label(self) -> &'static str {
+        match self {
+            Self::AuthenticatedEndpoint => "authenticated MSC4143 transport endpoint",
+            Self::WellKnownFallback => ".well-known MatrixRTC fallback",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct MatrixRtcDiscovery {
+    service_url: String,
+    source: MatrixRtcDiscoverySource,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MatrixRtcEndpointFailure {
+    /// The endpoint is not implemented. MSC4143 permits falling back to the
+    /// unauthenticated client well-known in this case.
+    FallbackToWellKnown,
+    Unauthorized,
+    RateLimited,
+    Other,
+}
+
 struct GeneratedThumbnail {
     bytes: Vec<u8>,
     width: u32,
     height: u32,
+}
+
+struct ResolvedMatrixThumbnail {
+    metadata: AttachmentThumbnailDto,
+    encrypted_file: EncryptedFile,
+}
+
+struct ResolvedMatrixAttachment {
+    metadata: AttachmentDto,
+    encrypted_file: EncryptedFile,
+    thumbnail: Option<ResolvedMatrixThumbnail>,
+}
+
+/// Incremental view of a media transfer so the download cap can be enforced on
+/// bytes as they arrive instead of on a finished buffer.
+#[async_trait]
+trait MediaChunkSource: Send {
+    async fn next_chunk(&mut self) -> BackendResult<Option<Vec<u8>>>;
+}
+
+struct HttpMediaChunkSource(reqwest::Response);
+
+#[async_trait]
+impl MediaChunkSource for HttpMediaChunkSource {
+    async fn next_chunk(&mut self) -> BackendResult<Option<Vec<u8>>> {
+        Ok(self
+            .0
+            .chunk()
+            .await
+            .map_err(|error| BackendError::Network(error.to_string()))?
+            .map(|chunk| chunk.to_vec()))
+    }
 }
 
 #[derive(Clone)]
@@ -494,6 +592,7 @@ struct MatrixRuntime {
     profile_id: Option<String>,
     session_task: Option<JoinHandle<()>>,
     room_updates_task: Option<JoinHandle<()>>,
+    send_queue_task: Option<JoinHandle<()>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -518,6 +617,7 @@ struct MatrixSyncControl {
     cadence: MatrixSyncCadence,
     presence: PresenceState,
     paused: bool,
+    send_queue_reconcile: Option<Arc<Notify>>,
 }
 
 impl Default for MatrixSyncControl {
@@ -528,6 +628,7 @@ impl Default for MatrixSyncControl {
             cadence: MatrixSyncCadence::Normal,
             presence: PresenceState::Offline,
             paused: false,
+            send_queue_reconcile: None,
         }
     }
 }
@@ -558,6 +659,10 @@ impl WirePrivacyPreferences {
         } else {
             PresenceState::Offline
         }
+    }
+
+    fn should_send_typing_notice(self, already_sent: bool, typing: bool) -> bool {
+        (typing && self.send_typing_indicators) || (!typing && already_sent)
     }
 }
 
@@ -594,16 +699,31 @@ pub struct MatrixBackend {
     verification_sessions: RwLock<HashMap<String, DeviceVerificationFlow>>,
     media_uploads: Mutex<HashMap<String, CancellationToken>>,
     media_downloads: Mutex<HashMap<String, CancellationToken>>,
+    custom_emoji_writes: Mutex<()>,
+    send_queue_gate: Arc<Mutex<()>>,
+    send_queue_reconcile: Arc<Notify>,
+    send_queue_known: Arc<Mutex<HashMap<String, HashSet<String>>>>,
+    thumbnail_loads: Semaphore,
+    lightbox_image_loads: Semaphore,
     rtc_sessions: Arc<Mutex<HashMap<(String, String), MatrixRtcLocalSession>>>,
     rtc_media_keys: Arc<Mutex<MatrixRtcMediaKeyRuntime>>,
     rtc_membership_writes: Arc<Mutex<()>>,
     matrix_sync_freshness: Arc<StdMutex<MatrixSyncFreshness>>,
     matrix_sync_control: Arc<Mutex<MatrixSyncControl>>,
     wire_privacy: Arc<RwLock<WirePrivacyPreferences>>,
+    sent_typing_notices: Mutex<HashSet<String>>,
     typing_users: Arc<RwLock<HashMap<String, Vec<String>>>>,
     presence: Arc<RwLock<HashMap<String, String>>>,
     event_callback: Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
 }
+
+include!("matrix/messages.rs");
+include!("matrix/rtc.rs");
+include!("matrix/encryption.rs");
+include!("matrix/attachments.rs");
+include!("matrix/rooms.rs");
+include!("matrix/dm.rs");
+include!("matrix/emoji.rs");
 
 impl MatrixBackend {
     pub fn new(store_root: PathBuf) -> Self {
@@ -617,12 +737,19 @@ impl MatrixBackend {
             verification_sessions: RwLock::new(HashMap::new()),
             media_uploads: Mutex::new(HashMap::new()),
             media_downloads: Mutex::new(HashMap::new()),
+            custom_emoji_writes: Mutex::new(()),
+            send_queue_gate: Arc::new(Mutex::new(())),
+            send_queue_reconcile: Arc::new(Notify::new()),
+            send_queue_known: Arc::new(Mutex::new(HashMap::new())),
+            thumbnail_loads: Semaphore::new(MAX_CONCURRENT_THUMBNAIL_LOADS),
+            lightbox_image_loads: Semaphore::new(MAX_CONCURRENT_LIGHTBOX_IMAGE_LOADS),
             rtc_sessions: Arc::new(Mutex::new(HashMap::new())),
             rtc_media_keys: Arc::new(Mutex::new(MatrixRtcMediaKeyRuntime::default())),
             rtc_membership_writes: Arc::new(Mutex::new(())),
             matrix_sync_freshness: Arc::new(StdMutex::new(MatrixSyncFreshness::default())),
             matrix_sync_control: Arc::new(Mutex::new(MatrixSyncControl::default())),
             wire_privacy: Arc::new(RwLock::new(WirePrivacyPreferences::default())),
+            sent_typing_notices: Mutex::new(HashSet::new()),
             typing_users: Arc::new(RwLock::new(HashMap::new())),
             presence: Arc::new(RwLock::new(HashMap::new())),
             event_callback: Arc::new(StdRwLock::new(None)),
@@ -653,1795 +780,23 @@ impl MatrixBackend {
             verification_sessions: RwLock::new(HashMap::new()),
             media_uploads: Mutex::new(HashMap::new()),
             media_downloads: Mutex::new(HashMap::new()),
+            custom_emoji_writes: Mutex::new(()),
+            send_queue_gate: Arc::new(Mutex::new(())),
+            send_queue_reconcile: Arc::new(Notify::new()),
+            send_queue_known: Arc::new(Mutex::new(HashMap::new())),
+            thumbnail_loads: Semaphore::new(MAX_CONCURRENT_THUMBNAIL_LOADS),
+            lightbox_image_loads: Semaphore::new(MAX_CONCURRENT_LIGHTBOX_IMAGE_LOADS),
             rtc_sessions: Arc::new(Mutex::new(HashMap::new())),
             rtc_media_keys: Arc::new(Mutex::new(MatrixRtcMediaKeyRuntime::default())),
             rtc_membership_writes: Arc::new(Mutex::new(())),
             matrix_sync_freshness: Arc::new(StdMutex::new(MatrixSyncFreshness::default())),
             matrix_sync_control: Arc::new(Mutex::new(MatrixSyncControl::default())),
             wire_privacy: Arc::new(RwLock::new(WirePrivacyPreferences::default())),
+            sent_typing_notices: Mutex::new(HashSet::new()),
             typing_users: Arc::new(RwLock::new(HashMap::new())),
             presence: Arc::new(RwLock::new(HashMap::new())),
             event_callback: Arc::new(StdRwLock::new(None)),
         }
-    }
-
-    fn dispatch_backend_event(
-        callback: &Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
-        event: MatrixBackendEvent,
-    ) {
-        let callback = callback
-            .read()
-            .ok()
-            .and_then(|callback| callback.as_ref().cloned());
-        if let Some(callback) = callback {
-            callback(event);
-        }
-    }
-
-    fn notification_preview(body: &str) -> String {
-        let normalized = body.split_whitespace().collect::<Vec<_>>().join(" ");
-        let mut preview = normalized.chars().take(240).collect::<String>();
-        if normalized.chars().count() > 240 {
-            preview.push('…');
-        }
-        preview
-    }
-
-    async fn emit_room_unread(
-        client: &Client,
-        callback: &Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
-        room_id: &matrix_sdk::ruma::RoomId,
-    ) {
-        let Some(room) = client.get_room(room_id) else {
-            return;
-        };
-        Self::dispatch_backend_event(
-            callback,
-            MatrixBackendEvent::UnreadUpdate(MatrixUnreadUpdate {
-                room_id: room.room_id().to_string(),
-                unread_messages: room.num_unread_messages().min(i64::MAX as u64) as i64,
-                unread_mentions: room.num_unread_mentions().min(i64::MAX as u64) as i64,
-            }),
-        );
-    }
-
-    async fn emit_all_room_unreads(
-        client: &Client,
-        callback: &Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
-    ) {
-        for room in client.rooms() {
-            Self::emit_room_unread(client, callback, room.room_id()).await;
-        }
-    }
-
-    fn matrix_rtc_room_name(room_id: &str) -> BackendResult<String> {
-        let canonical = serde_json::to_vec(&[room_id, MATRIX_RTC_SLOT_ID])
-            .map_err(|error| BackendError::Serialization(error.to_string()))?;
-        Ok(BASE64_STANDARD.encode(Sha256::digest(canonical)))
-    }
-
-    fn matrix_rtc_participant_identity(
-        user_id: &str,
-        device_id: &str,
-        member_id: &str,
-    ) -> BackendResult<String> {
-        let canonical = serde_json::to_vec(&[user_id, device_id, member_id])
-            .map_err(|error| BackendError::Serialization(error.to_string()))?;
-        Ok(BASE64_STANDARD.encode(Sha256::digest(canonical)))
-    }
-
-    fn matrix_rtc_membership_id(raw_event: &str, sender: &str, device_id: &str) -> String {
-        let content = serde_json::from_str::<serde_json::Value>(raw_event)
-            .ok()
-            .and_then(|event| event.get("content").cloned());
-        let explicit = content.as_ref().and_then(|content| {
-            content
-                .get("membershipID")
-                .and_then(serde_json::Value::as_str)
-                .filter(|member_id| !member_id.is_empty())
-                .map(ToOwned::to_owned)
-                .or_else(|| {
-                    content
-                        .get("memberships")
-                        .and_then(serde_json::Value::as_array)
-                        .and_then(|memberships| {
-                            memberships.iter().find_map(|membership| {
-                                (membership
-                                    .get("device_id")
-                                    .and_then(serde_json::Value::as_str)
-                                    == Some(device_id))
-                                .then(|| {
-                                    membership
-                                        .get("membershipID")
-                                        .and_then(serde_json::Value::as_str)
-                                        .filter(|member_id| !member_id.is_empty())
-                                        .map(ToOwned::to_owned)
-                                })
-                                .flatten()
-                            })
-                        })
-                })
-        });
-        explicit.unwrap_or_else(|| format!("{sender}:{device_id}"))
-    }
-
-    fn matrix_rtc_key_now_ms() -> u64 {
-        u64::from(matrix_sdk::ruma::MilliSecondsSinceUnixEpoch::now().get())
-    }
-
-    fn matrix_rtc_monotonic_now_ms() -> u64 {
-        static PROCESS_EPOCH: OnceLock<Instant> = OnceLock::new();
-        (PROCESS_EPOCH
-            .get_or_init(Instant::now)
-            .elapsed()
-            .as_millis()
-            .min(u128::from(u64::MAX)) as u64)
-            .saturating_add(1)
-    }
-
-    fn decode_matrix_rtc_media_key(
-        encoded: &str,
-    ) -> BackendResult<[u8; MATRIX_RTC_MEDIA_KEY_BYTES]> {
-        let mut decoded = BASE64_STANDARD.decode(encoded).map_err(|_| {
-            BackendError::InvalidConfiguration(
-                "MatrixRTC media key was not valid canonical unpadded base64".into(),
-            )
-        })?;
-        if decoded.len() != MATRIX_RTC_MEDIA_KEY_BYTES
-            || BASE64_STANDARD.encode(&decoded) != encoded
-        {
-            decoded.zeroize();
-            return Err(BackendError::InvalidConfiguration(format!(
-                "MatrixRTC media key must decode to exactly {MATRIX_RTC_MEDIA_KEY_BYTES} bytes"
-            )));
-        }
-        let mut key = [0_u8; MATRIX_RTC_MEDIA_KEY_BYTES];
-        key.copy_from_slice(&decoded);
-        decoded.zeroize();
-        Ok(key)
-    }
-
-    fn validate_matrix_rtc_media_key(
-        content: MatrixRtcToDeviceKeyContent,
-        envelope_sender: &str,
-        olm_sender: &str,
-        olm_device: &str,
-        memberships: &[ActiveMatrixRtcMembership],
-        now_ms: u64,
-        runtime: &mut MatrixRtcMediaKeyRuntime,
-    ) -> BackendResult<MatrixRtcMediaKey> {
-        if envelope_sender != olm_sender {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC media key sender did not match its Olm sender".into(),
-            ));
-        }
-        if content.session.application != "m.call"
-            || !content.session.call_id.is_empty()
-            || content.session.scope != "m.room"
-        {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC media key was for a different RTC session".into(),
-            ));
-        }
-        if content.member.claimed_device_id != olm_device {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC media key claimed a different Olm device".into(),
-            ));
-        }
-        if content.sent_ts
-            > now_ms.saturating_add(MATRIX_RTC_KEY_MAX_FUTURE_SKEW.as_millis() as u64)
-            || now_ms.saturating_sub(content.sent_ts) > MATRIX_RTC_KEY_MAX_AGE.as_millis() as u64
-        {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC media key was stale or too far in the future".into(),
-            ));
-        }
-
-        let membership = memberships.iter().find(|membership| {
-            membership.member.room_id == content.room_id
-                && membership.member.user_id == envelope_sender
-                && membership.member.device_id == olm_device
-                && membership.member_id == content.member.id
-        });
-        let Some(_membership) = membership else {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC media key was not bound to a current room membership".into(),
-            ));
-        };
-
-        let key_entry = content.keys;
-        let mut key = Self::decode_matrix_rtc_media_key(&key_entry.key)?;
-        let key_digest: [u8; 32] = Sha256::digest(key).into();
-        let publisher = (
-            content.room_id.clone(),
-            envelope_sender.to_owned(),
-            olm_device.to_owned(),
-            content.member.id.clone(),
-        );
-        if let Some(previous) = runtime.inbound.get(&publisher) {
-            if content.sent_ts <= previous.sent_ts {
-                key.zeroize();
-                return Err(BackendError::PermissionDenied(
-                    "MatrixRTC media key was replayed or stale".into(),
-                ));
-            }
-            let generation_delta = key_entry.index.wrapping_sub(previous.key_index);
-            if generation_delta == 0 || generation_delta > 127 {
-                key.zeroize();
-                return Err(BackendError::PermissionDenied(
-                    "MatrixRTC media key index was replayed or moved backwards".into(),
-                ));
-            }
-            if key_digest == previous.key_digest {
-                key.zeroize();
-                return Err(BackendError::PermissionDenied(
-                    "MatrixRTC publisher reused key material across rotations".into(),
-                ));
-            }
-        } else if runtime.inbound.len() >= MATRIX_RTC_MAX_INBOUND_PUBLISHERS {
-            key.zeroize();
-            return Err(BackendError::RateLimited(
-                "MatrixRTC inbound publisher key limit reached".into(),
-            ));
-        }
-
-        let participant_identity =
-            Self::matrix_rtc_participant_identity(envelope_sender, olm_device, &content.member.id)?;
-        runtime.inbound.insert(
-            publisher,
-            MatrixRtcInboundMediaKey {
-                key_index: key_entry.index,
-                sent_ts: content.sent_ts,
-                key_digest,
-            },
-        );
-        key.zeroize();
-        Ok(MatrixRtcMediaKey {
-            room_id: content.room_id,
-            user_id: envelope_sender.to_owned(),
-            device_id: olm_device.to_owned(),
-            member_id: content.member.id,
-            session_id: None,
-            activation_id: None,
-            participant_identity,
-            key_index: key_entry.index,
-            key: key_entry.key,
-            sent_ts: content.sent_ts,
-        })
-    }
-
-    fn record_matrix_rtc_key_attempt(
-        runtime: &mut MatrixRtcMediaKeyRuntime,
-        sender: &str,
-        device_id: &str,
-        now_ms: u64,
-    ) -> BackendResult<()> {
-        let cutoff = now_ms.saturating_sub(Duration::from_secs(60).as_millis() as u64);
-        runtime.attempts.retain(|_, attempts| {
-            while attempts.front().is_some_and(|attempt| *attempt < cutoff) {
-                attempts.pop_front();
-            }
-            !attempts.is_empty()
-        });
-        let identity = (sender.to_owned(), device_id.to_owned());
-        if !runtime.attempts.contains_key(&identity)
-            && runtime.attempts.len() >= MATRIX_RTC_MAX_INBOUND_PUBLISHERS
-        {
-            return Err(BackendError::RateLimited(
-                "MatrixRTC media key sender limit reached".into(),
-            ));
-        }
-        let attempts = runtime.attempts.entry(identity).or_default();
-        if attempts.len() >= MATRIX_RTC_KEY_ATTEMPTS_PER_MINUTE {
-            return Err(BackendError::RateLimited(
-                "MatrixRTC media key attempt rate exceeded".into(),
-            ));
-        }
-        attempts.push_back(now_ms);
-        Ok(())
-    }
-
-    fn matrix_rtc_key_recipients(
-        memberships: &[ActiveMatrixRtcMembership],
-        own_user_id: &str,
-        own_device_id: &str,
-    ) -> BackendResult<HashSet<MatrixRtcKeyParticipant>> {
-        let recipients = memberships
-            .iter()
-            .filter(|membership| {
-                membership.member.user_id != own_user_id
-                    || membership.member.device_id != own_device_id
-            })
-            .map(|membership| MatrixRtcKeyParticipant {
-                user_id: membership.member.user_id.clone(),
-                device_id: membership.member.device_id.clone(),
-                member_id: membership.member_id.clone(),
-            })
-            .collect::<HashSet<_>>();
-        if recipients.len() > MATRIX_RTC_MAX_PARTICIPANTS {
-            return Err(BackendError::RateLimited(format!(
-                "MatrixRTC media key recipient limit of {MATRIX_RTC_MAX_PARTICIPANTS} exceeded"
-            )));
-        }
-        Ok(recipients)
-    }
-
-    fn matrix_rtc_membership_content(
-        device_id: &str,
-        member_id: &str,
-        livekit_service_url: &str,
-        created_ts: u64,
-        now: u64,
-    ) -> BackendResult<serde_json::Value> {
-        let expires = now
-            .saturating_sub(created_ts)
-            .saturating_add(MATRIX_RTC_MEMBERSHIP_TTL.as_millis() as u64);
-        serde_json::to_value(MatrixRtcSessionEventContent {
-            application: "m.call".into(),
-            call_id: String::new(),
-            scope: "m.room".into(),
-            device_id: device_id.to_owned(),
-            membership_id: member_id.to_owned(),
-            expires,
-            created_ts,
-            focus_active: MatrixRtcActiveFocus {
-                focus_type: "livekit".into(),
-                focus_selection: "oldest_membership".into(),
-            },
-            foci_preferred: vec![MatrixRtcPreferredFocus {
-                focus_type: "livekit".into(),
-                livekit_service_url: livekit_service_url.to_owned(),
-            }],
-            call_intent: "audio".into(),
-        })
-        .map_err(|error| BackendError::Serialization(error.to_string()))
-    }
-
-    fn validate_matrix_rtc_sfu_url(returned: &str, expected: &str) -> BackendResult<String> {
-        let returned = VoiceServiceStatus::secure_url("MSC4195 LiveKit URL", returned, "wss")
-            .map_err(BackendError::InvalidConfiguration)?;
-        let expected =
-            VoiceServiceStatus::secure_url("MESH_MATRIXRTC_LIVEKIT_SFU_URL", expected, "wss")
-                .map_err(BackendError::InvalidConfiguration)?;
-        if returned != expected {
-            return Err(BackendError::InvalidConfiguration(
-                "MatrixRTC authorization returned an unexpected LiveKit endpoint".into(),
-            ));
-        }
-        Ok(returned.to_string())
-    }
-
-    fn matrix_rtc_config() -> BackendResult<VoiceServiceStatus> {
-        let status = VoiceServiceStatus::for_kind(BackendKind::Matrix);
-        match status.availability {
-            VoiceServiceAvailability::ClientUnavailable
-                if status.csp_ready
-                    && status.livekit_service_url.is_some()
-                    && status.livekit_sfu_url.is_some() =>
-            {
-                Ok(status)
-            }
-            _ => Err(BackendError::InvalidConfiguration(
-                status
-                    .reason
-                    .unwrap_or_else(|| "MatrixRTC service is not configured".into()),
-            )),
-        }
-    }
-
-    fn require_matrix_rtc_media_e2ee_ready() -> BackendResult<()> {
-        Err(BackendError::Unsupported(
-            "MatrixRTC joining is disabled until membership-bound media E2EE is implemented and verified",
-        ))
-    }
-
-    async fn active_matrix_rtc_memberships(
-        room: &Room,
-    ) -> BackendResult<Vec<ActiveMatrixRtcMembership>> {
-        let response = room
-            .client()
-            .send(get_state_events::v3::Request::new(
-                room.room_id().to_owned(),
-            ))
-            .await
-            .map_err(Self::map_error)?;
-        let mut memberships = Vec::new();
-
-        for raw in response.room_state {
-            let raw_event = raw.json().get().to_owned();
-            let event = raw.deserialize().map_err(Self::map_error)?;
-            let AnyStateEvent::CallMember(StateEvent::Original(event)) = event else {
-                continue;
-            };
-            if event.state_key.user_id() != event.sender {
-                continue;
-            }
-            let Some(room_member) = room
-                .get_member(&event.sender)
-                .await
-                .map_err(Self::map_error)?
-            else {
-                continue;
-            };
-            if room_member.membership().as_str() != "join" {
-                continue;
-            }
-
-            for membership in event
-                .content
-                .active_memberships(Some(event.origin_server_ts))
-            {
-                if !membership.is_room_call() {
-                    continue;
-                }
-                let member_id = Self::matrix_rtc_membership_id(
-                    &raw_event,
-                    event.sender.as_str(),
-                    membership.device_id().as_str(),
-                );
-                let session_id = event.state_key.as_ref().to_owned();
-                let livekit_service_url =
-                    membership
-                        .foci_preferred()
-                        .iter()
-                        .find_map(|focus| match focus {
-                            Focus::Livekit(focus) => Some(focus.service_url.clone()),
-                            #[allow(unreachable_patterns)]
-                            _ => None,
-                        });
-                memberships.push(ActiveMatrixRtcMembership {
-                    member_id,
-                    member: MatrixRtcMember {
-                        room_id: room.room_id().to_string(),
-                        user_id: event.sender.to_string(),
-                        device_id: membership.device_id().to_string(),
-                        session_id,
-                        display_name: room_member.name().to_owned(),
-                        avatar_url: room_member.avatar_url().map(ToString::to_string),
-                    },
-                    created_ts: membership.created_ts().unwrap_or(event.origin_server_ts),
-                    livekit_service_url,
-                });
-            }
-        }
-
-        memberships.sort_by(|left, right| {
-            left.created_ts
-                .cmp(&right.created_ts)
-                .then_with(|| left.member.user_id.cmp(&right.member.user_id))
-                .then_with(|| left.member.device_id.cmp(&right.member.device_id))
-                .then_with(|| left.member.session_id.cmp(&right.member.session_id))
-        });
-        Ok(memberships)
-    }
-
-    async fn matrix_rtc_members_for_room(room: &Room) -> BackendResult<Vec<MatrixRtcMember>> {
-        Ok(Self::active_matrix_rtc_memberships(room)
-            .await?
-            .into_iter()
-            .map(|membership| membership.member)
-            .collect())
-    }
-
-    fn matrix_rtc_recipient_fingerprint(
-        recipients: &HashSet<MatrixRtcKeyParticipant>,
-    ) -> BackendResult<String> {
-        let mut canonical = recipients
-            .iter()
-            .map(|recipient| {
-                (
-                    recipient.user_id.as_str(),
-                    recipient.device_id.as_str(),
-                    recipient.member_id.as_str(),
-                )
-            })
-            .collect::<Vec<_>>();
-        canonical.sort_unstable();
-        let canonical = serde_json::to_vec(&canonical)
-            .map_err(|error| BackendError::Serialization(error.to_string()))?;
-        Ok(BASE64_STANDARD.encode(Sha256::digest(canonical)))
-    }
-
-    fn ensure_matrix_rtc_local_membership(
-        memberships: &[ActiveMatrixRtcMembership],
-        own_user_id: &str,
-        session: &MatrixRtcLocalSession,
-    ) -> BackendResult<()> {
-        if memberships.iter().any(|membership| {
-            membership.member.user_id == own_user_id
-                && membership.member.device_id == session.device_id.as_str()
-                && membership.member_id == session.member_id
-        }) {
-            Ok(())
-        } else {
-            Err(BackendError::PermissionDenied(
-                "MatrixRTC local membership epoch is no longer current".into(),
-            ))
-        }
-    }
-
-    fn matrix_rtc_local_media_key(
-        own_user_id: &str,
-        session: &MatrixRtcLocalSession,
-        key_index: u8,
-        key: &[u8; MATRIX_RTC_MEDIA_KEY_BYTES],
-        sent_ts: u64,
-        activation_id: Option<String>,
-    ) -> BackendResult<MatrixRtcMediaKey> {
-        Ok(MatrixRtcMediaKey {
-            room_id: session.room.room_id().to_string(),
-            user_id: own_user_id.to_owned(),
-            device_id: session.device_id.to_string(),
-            member_id: session.member_id.clone(),
-            session_id: Some(session.session_id.clone()),
-            activation_id,
-            participant_identity: Self::matrix_rtc_participant_identity(
-                own_user_id,
-                session.device_id.as_str(),
-                &session.member_id,
-            )?,
-            key_index,
-            key: BASE64_STANDARD.encode(key),
-            sent_ts,
-        })
-    }
-
-    async fn distribute_matrix_rtc_media_key(
-        client: &Client,
-        session: &MatrixRtcLocalSession,
-        recipients: &HashSet<MatrixRtcKeyParticipant>,
-        key_index: u8,
-        key: &[u8; MATRIX_RTC_MEDIA_KEY_BYTES],
-        sent_ts: u64,
-    ) -> BackendResult<()> {
-        let content = MatrixRtcToDeviceKeyContent {
-            keys: MatrixRtcMediaKeyEntry {
-                index: key_index,
-                key: BASE64_STANDARD.encode(key),
-            },
-            room_id: session.room.room_id().to_string(),
-            member: MatrixRtcMediaKeyMember {
-                claimed_device_id: session.device_id.to_string(),
-                id: session.member_id.clone(),
-            },
-            session: MatrixRtcMediaKeySession {
-                application: "m.call".into(),
-                call_id: String::new(),
-                scope: "m.room".into(),
-            },
-            sent_ts,
-        };
-        let mut devices = Vec::new();
-        let mut device_targets = HashSet::new();
-        for recipient in recipients {
-            if !device_targets.insert((recipient.user_id.clone(), recipient.device_id.clone())) {
-                continue;
-            }
-            let user_id =
-                matrix_sdk::ruma::UserId::parse(&recipient.user_id).map_err(Self::map_error)?;
-            let device_id = OwnedDeviceId::from(recipient.device_id.clone());
-            let device = client
-                .encryption()
-                .get_device(&user_id, &device_id)
-                .await
-                .map_err(Self::map_error)?
-                .ok_or_else(|| {
-                    BackendError::PermissionDenied(
-                        "MatrixRTC recipient device is absent from the encrypted device store"
-                            .into(),
-                    )
-                })?;
-            devices.push(device);
-        }
-        if devices.is_empty() {
-            return Ok(());
-        }
-        let raw: Raw<AnyToDeviceEventContent> = Raw::new(&content)
-            .map_err(|error| BackendError::Serialization(error.to_string()))?
-            .cast_unchecked();
-        let failures = client
-            .encryption()
-            .encrypt_and_send_raw_to_device(
-                devices.iter().collect(),
-                MATRIX_RTC_KEY_TO_DEVICE_EVENT_TYPE,
-                raw,
-                CollectStrategy::AllDevices,
-            )
-            .await
-            .map_err(Self::map_error)?;
-        if failures.is_empty() {
-            Ok(())
-        } else {
-            Err(BackendError::Network(format!(
-                "MatrixRTC media key delivery failed for {} recipient device(s)",
-                failures.len()
-            )))
-        }
-    }
-
-    async fn create_initial_matrix_rtc_media_key(
-        client: &Client,
-        session: &MatrixRtcLocalSession,
-        memberships: &[ActiveMatrixRtcMembership],
-        runtime: &Arc<Mutex<MatrixRtcMediaKeyRuntime>>,
-    ) -> BackendResult<MatrixRtcMediaKey> {
-        let own_user_id = client
-            .user_id()
-            .ok_or(BackendError::NotAuthenticated)?
-            .to_owned();
-        Self::ensure_matrix_rtc_local_membership(memberships, own_user_id.as_str(), session)?;
-        let recipients = Self::matrix_rtc_key_recipients(
-            memberships,
-            own_user_id.as_str(),
-            session.device_id.as_str(),
-        )?;
-        let mut key = [0_u8; MATRIX_RTC_MEDIA_KEY_BYTES];
-        rand::rngs::OsRng.fill_bytes(&mut key);
-        let sent_ts = Self::matrix_rtc_key_now_ms();
-        Self::distribute_matrix_rtc_media_key(client, session, &recipients, 0, &key, sent_ts)
-            .await?;
-        tokio::time::sleep(MATRIX_RTC_KEY_DISTRIBUTION_DELAY).await;
-        let latest_memberships = Self::active_matrix_rtc_memberships(&session.room).await?;
-        Self::ensure_matrix_rtc_local_membership(
-            &latest_memberships,
-            own_user_id.as_str(),
-            session,
-        )?;
-        let latest_recipients = Self::matrix_rtc_key_recipients(
-            &latest_memberships,
-            own_user_id.as_str(),
-            session.device_id.as_str(),
-        )?;
-        if latest_recipients != recipients {
-            key.zeroize();
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC membership changed during initial key activation".into(),
-            ));
-        }
-        let media_key = Self::matrix_rtc_local_media_key(
-            own_user_id.as_str(),
-            session,
-            0,
-            &key,
-            sent_ts,
-            None,
-        )?;
-        let state_key = (
-            session.room.room_id().to_string(),
-            session.session_id.clone(),
-        );
-        let mut runtime = runtime.lock().await;
-        if runtime.outbound.contains_key(&state_key)
-            || runtime.pending_activations.contains_key(&state_key)
-        {
-            key.zeroize();
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC initial key activation was superseded".into(),
-            ));
-        }
-        runtime.lease_blocked.remove(&state_key);
-        runtime.outbound.insert(
-            state_key,
-            MatrixRtcOutboundMediaKey {
-                key_index: 0,
-                key,
-                recipients,
-            },
-        );
-        Ok(media_key)
-    }
-
-    async fn prepare_matrix_rtc_media_key_activation(
-        session: &MatrixRtcLocalSession,
-        memberships: &[ActiveMatrixRtcMembership],
-        own_user_id: &str,
-        runtime: &Arc<Mutex<MatrixRtcMediaKeyRuntime>>,
-    ) -> BackendResult<Option<MatrixRtcMediaKeyPause>> {
-        Self::ensure_matrix_rtc_local_membership(memberships, own_user_id, session)?;
-        let recipients =
-            Self::matrix_rtc_key_recipients(memberships, own_user_id, session.device_id.as_str())?;
-        let recipient_fingerprint = Self::matrix_rtc_recipient_fingerprint(&recipients)?;
-        let state_key = (
-            session.room.room_id().to_string(),
-            session.session_id.clone(),
-        );
-        let now = Self::matrix_rtc_monotonic_now_ms();
-        let mut runtime = runtime.lock().await;
-        runtime.completed_activations.retain(|_, completed| {
-            now.saturating_sub(completed.completed_at)
-                <= MATRIX_RTC_COMPLETED_ACTIVATION_TTL.as_millis() as u64
-        });
-        if runtime
-            .outbound
-            .get(&state_key)
-            .is_some_and(|current| current.recipients == recipients)
-        {
-            runtime.pending_activations.remove(&state_key);
-            return Ok(None);
-        }
-        if let Some(pending) = runtime.pending_activations.get(&state_key) {
-            if pending.expires_at > now
-                && pending.member_id == session.member_id
-                && pending.recipients == recipients
-            {
-                return Ok(None);
-            }
-        }
-        runtime.pending_activations.remove(&state_key);
-        runtime.completed_activations.remove(&state_key);
-        if runtime.pending_activations.len() >= MATRIX_RTC_MAX_PENDING_ACTIVATIONS {
-            return Err(BackendError::RateLimited(
-                "MatrixRTC pending activation limit reached".into(),
-            ));
-        }
-        let key_index = runtime
-            .outbound
-            .get(&state_key)
-            .map_or(0, |current| current.key_index.wrapping_add(1));
-        let activation_id = uuid::Uuid::new_v4().to_string();
-        let mut key = [0_u8; MATRIX_RTC_MEDIA_KEY_BYTES];
-        rand::rngs::OsRng.fill_bytes(&mut key);
-        runtime.pending_activations.insert(
-            state_key,
-            MatrixRtcPendingActivation {
-                activation_id: activation_id.clone(),
-                room_id: session.room.room_id().to_string(),
-                session_id: session.session_id.clone(),
-                member_id: session.member_id.clone(),
-                key_index,
-                key,
-                recipients,
-                recipient_fingerprint,
-                expires_at: now.saturating_add(MATRIX_RTC_KEY_ACTIVATION_TTL.as_millis() as u64),
-                phase: MatrixRtcActivationPhase::AwaitingPauseAck,
-            },
-        );
-        Ok(Some(MatrixRtcMediaKeyPause {
-            room_id: session.room.room_id().to_string(),
-            session_id: session.session_id.clone(),
-            member_id: session.member_id.clone(),
-            activation_id,
-            key_index,
-        }))
-    }
-
-    fn spawn_matrix_rtc_activation_timeout(
-        pause: MatrixRtcMediaKeyPause,
-        runtime: Arc<Mutex<MatrixRtcMediaKeyRuntime>>,
-        sessions: Arc<Mutex<HashMap<(String, String), MatrixRtcLocalSession>>>,
-        writes: Arc<Mutex<()>>,
-        sync: MatrixSyncCoordinator,
-        callback: Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
-    ) {
-        tokio::spawn(async move {
-            tokio::time::sleep(MATRIX_RTC_KEY_ACTIVATION_TTL).await;
-            let state_key = (pause.room_id.clone(), pause.session_id.clone());
-            let removed = {
-                let mut runtime = runtime.lock().await;
-                let expired = runtime
-                    .pending_activations
-                    .get(&state_key)
-                    .is_some_and(|pending| {
-                        pending.activation_id == pause.activation_id
-                            && pending.member_id == pause.member_id
-                            && pending.expires_at <= Self::matrix_rtc_monotonic_now_ms()
-                    });
-                if expired {
-                    runtime.pending_activations.remove(&state_key);
-                    runtime.outbound.remove(&state_key);
-                    runtime.completed_activations.remove(&state_key);
-                    runtime.lease_blocked.insert(state_key.clone());
-                }
-                expired
-            };
-            if !removed {
-                return;
-            }
-            let session = {
-                let mut sessions = sessions.lock().await;
-                sessions.get_mut(&state_key).and_then(|active| {
-                    (active.member_id == pause.member_id).then(|| {
-                        active.ready = false;
-                        active.clone()
-                    })
-                })
-            };
-            Self::reconcile_matrix_sync_cadence(&sessions, &sync.control, &sync.freshness).await;
-            let cleared = if let Some(session) = session {
-                session.cancellation.cancel();
-                Self::clear_current_matrix_rtc_membership(&session, &sessions, &writes)
-                    .await
-                    .unwrap_or(false)
-            } else {
-                false
-            };
-            {
-                let mut runtime = runtime.lock().await;
-                runtime.outbound.remove(&state_key);
-                runtime.completed_activations.remove(&state_key);
-                if cleared {
-                    runtime.lease_blocked.remove(&state_key);
-                }
-            }
-            Self::dispatch_backend_event(
-                &callback,
-                MatrixBackendEvent::RtcMediaKeyFailure(MatrixRtcMediaKeyFailure {
-                    room_id: pause.room_id,
-                    code: "activation-expired".into(),
-                }),
-            );
-        });
-    }
-
-    async fn fail_closed_matrix_rtc_room(
-        room_id: &str,
-        sessions: &Arc<Mutex<HashMap<(String, String), MatrixRtcLocalSession>>>,
-        runtime: &Arc<Mutex<MatrixRtcMediaKeyRuntime>>,
-        writes: &Arc<Mutex<()>>,
-        sync: &MatrixSyncCoordinator,
-        callback: &Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
-        code: &str,
-    ) {
-        let failed_sessions = {
-            let mut sessions = sessions.lock().await;
-            sessions
-                .iter_mut()
-                .filter(|((active_room_id, _), _)| active_room_id == room_id)
-                .map(|(_, session)| {
-                    session.ready = false;
-                    session.cancellation.cancel();
-                    session.clone()
-                })
-                .collect::<Vec<_>>()
-        };
-        let failed_keys = failed_sessions
-            .iter()
-            .map(|session| (room_id.to_owned(), session.session_id.clone()))
-            .collect::<Vec<_>>();
-        {
-            let mut runtime = runtime.lock().await;
-            for key in &failed_keys {
-                runtime.lease_blocked.insert(key.clone());
-                runtime.outbound.remove(key);
-                runtime.pending_activations.remove(key);
-                runtime.completed_activations.remove(key);
-            }
-        }
-        Self::reconcile_matrix_sync_cadence(sessions, &sync.control, &sync.freshness).await;
-        for (session, key) in failed_sessions.iter().zip(&failed_keys) {
-            let cleared = Self::clear_current_matrix_rtc_membership(session, sessions, writes)
-                .await
-                .unwrap_or(false);
-            if cleared {
-                runtime.lock().await.lease_blocked.remove(key);
-            }
-        }
-        Self::dispatch_backend_event(
-            callback,
-            MatrixBackendEvent::RtcMediaKeyFailure(MatrixRtcMediaKeyFailure {
-                room_id: room_id.to_owned(),
-                code: code.to_owned(),
-            }),
-        );
-    }
-
-    async fn sync_matrix_rtc_media_keys_for_room(
-        room: &Room,
-        sessions: &Arc<Mutex<HashMap<(String, String), MatrixRtcLocalSession>>>,
-        runtime: &Arc<Mutex<MatrixRtcMediaKeyRuntime>>,
-        writes: &Arc<Mutex<()>>,
-        sync: &MatrixSyncCoordinator,
-        callback: &Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
-    ) -> BackendResult<()> {
-        if room.state() != RoomState::Joined {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC media keys require a joined room".into(),
-            ));
-        }
-        Self::require_encrypted_room(room, "processing MatrixRTC media keys").await?;
-        let memberships = Self::active_matrix_rtc_memberships(room).await?;
-        let current_publishers = memberships
-            .iter()
-            .map(|membership| {
-                (
-                    membership.member.user_id.clone(),
-                    membership.member.device_id.clone(),
-                    membership.member_id.clone(),
-                )
-            })
-            .collect::<HashSet<_>>();
-        {
-            let room_id = room.room_id().as_str();
-            runtime.lock().await.inbound.retain(
-                |(key_room_id, user_id, device_id, member_id), _| {
-                    key_room_id != room_id
-                        || current_publishers.contains(&(
-                            user_id.clone(),
-                            device_id.clone(),
-                            member_id.clone(),
-                        ))
-                },
-            );
-        }
-        let local_sessions = sessions
-            .lock()
-            .await
-            .values()
-            .filter(|session| session.room.room_id() == room.room_id() && session.ready)
-            .cloned()
-            .collect::<Vec<_>>();
-        let client = room.client();
-        let own_user_id = client
-            .user_id()
-            .ok_or(BackendError::NotAuthenticated)?
-            .to_owned();
-        for session in local_sessions {
-            if let Some(pause) = Self::prepare_matrix_rtc_media_key_activation(
-                &session,
-                &memberships,
-                own_user_id.as_str(),
-                runtime,
-            )
-            .await?
-            {
-                Self::spawn_matrix_rtc_activation_timeout(
-                    pause.clone(),
-                    Arc::clone(runtime),
-                    Arc::clone(sessions),
-                    Arc::clone(writes),
-                    sync.clone(),
-                    Arc::clone(callback),
-                );
-                Self::dispatch_backend_event(callback, MatrixBackendEvent::RtcMediaKeyPause(pause));
-            }
-        }
-        Ok(())
-    }
-
-    async fn current_matrix_rtc_recipients(
-        client: &Client,
-        session: &MatrixRtcLocalSession,
-    ) -> BackendResult<HashSet<MatrixRtcKeyParticipant>> {
-        if session.room.state() != RoomState::Joined {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC local session room is no longer joined".into(),
-            ));
-        }
-        Self::require_encrypted_room(&session.room, "activating a MatrixRTC media key").await?;
-        let own_user_id = client
-            .user_id()
-            .ok_or(BackendError::NotAuthenticated)?
-            .to_owned();
-        let memberships = Self::active_matrix_rtc_memberships(&session.room).await?;
-        Self::ensure_matrix_rtc_local_membership(&memberships, own_user_id.as_str(), session)?;
-        Self::matrix_rtc_key_recipients(
-            &memberships,
-            own_user_id.as_str(),
-            session.device_id.as_str(),
-        )
-    }
-
-    async fn current_matrix_rtc_local_session(
-        sessions: &Arc<Mutex<HashMap<(String, String), MatrixRtcLocalSession>>>,
-        room_id: &str,
-        session_id: &str,
-        member_id: &str,
-    ) -> BackendResult<MatrixRtcLocalSession> {
-        let session = sessions
-            .lock()
-            .await
-            .get(&(room_id.to_owned(), session_id.to_owned()))
-            .cloned()
-            .ok_or_else(|| {
-                BackendError::NotFound("MatrixRTC local session is not active".into())
-            })?;
-        if session.member_id != member_id || !session.ready {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC local session epoch is not active".into(),
-            ));
-        }
-        Ok(session)
-    }
-
-    fn matrix_rtc_pending_activation_snapshot(
-        runtime: &MatrixRtcMediaKeyRuntime,
-        room_id: &str,
-        session_id: &str,
-        member_id: &str,
-        activation_id: &str,
-        phase: MatrixRtcActivationPhase,
-        now: u64,
-    ) -> BackendResult<MatrixRtcPendingActivationSnapshot> {
-        let pending = runtime
-            .pending_activations
-            .get(&(room_id.to_owned(), session_id.to_owned()))
-            .ok_or_else(|| {
-                BackendError::NotFound("MatrixRTC media-key activation is not pending".into())
-            })?;
-        if pending.room_id != room_id
-            || pending.session_id != session_id
-            || pending.member_id != member_id
-            || pending.activation_id != activation_id
-            || pending.phase != phase
-        {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC media-key activation acknowledgement did not match".into(),
-            ));
-        }
-        if pending.expires_at <= now {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC media-key activation expired".into(),
-            ));
-        }
-        Ok(MatrixRtcPendingActivationSnapshot {
-            activation_id: pending.activation_id.clone(),
-            key_index: pending.key_index,
-            key: pending.key,
-            recipients: pending.recipients.clone(),
-            recipient_fingerprint: pending.recipient_fingerprint.clone(),
-            expires_at: pending.expires_at,
-        })
-    }
-
-    async fn ack_matrix_rtc_media_key_pause_inner(
-        &self,
-        room_id: &str,
-        session_id: &str,
-        member_id: &str,
-        activation_id: &str,
-    ) -> BackendResult<MatrixRtcMediaKey> {
-        let session = Self::current_matrix_rtc_local_session(
-            &self.rtc_sessions,
-            room_id,
-            session_id,
-            member_id,
-        )
-        .await?;
-        let client = self.client().await?;
-        let now = Self::matrix_rtc_monotonic_now_ms();
-        let distributed_retry = {
-            let runtime = self.rtc_media_keys.lock().await;
-            runtime
-                .pending_activations
-                .get(&(room_id.to_owned(), session_id.to_owned()))
-                .and_then(|pending| {
-                    (pending.activation_id == activation_id
-                        && pending.member_id == member_id
-                        && pending.expires_at > now)
-                        .then_some(pending.phase)
-                })
-        };
-        if let Some(MatrixRtcActivationPhase::Distributed { sent_ts }) = distributed_retry {
-            let snapshot = {
-                let runtime = self.rtc_media_keys.lock().await;
-                Self::matrix_rtc_pending_activation_snapshot(
-                    &runtime,
-                    room_id,
-                    session_id,
-                    member_id,
-                    activation_id,
-                    MatrixRtcActivationPhase::Distributed { sent_ts },
-                    now,
-                )?
-            };
-            let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
-            return Self::matrix_rtc_local_media_key(
-                own_user_id.as_str(),
-                &session,
-                snapshot.key_index,
-                &snapshot.key,
-                sent_ts,
-                Some(snapshot.activation_id.clone()),
-            );
-        }
-        let snapshot = {
-            let runtime = self.rtc_media_keys.lock().await;
-            Self::matrix_rtc_pending_activation_snapshot(
-                &runtime,
-                room_id,
-                session_id,
-                member_id,
-                activation_id,
-                MatrixRtcActivationPhase::AwaitingPauseAck,
-                now,
-            )?
-        };
-        let recipients = Self::current_matrix_rtc_recipients(&client, &session).await?;
-        if recipients != snapshot.recipients
-            || Self::matrix_rtc_recipient_fingerprint(&recipients)?
-                != snapshot.recipient_fingerprint
-        {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC recipients changed before key distribution".into(),
-            ));
-        }
-        let sent_ts = Self::matrix_rtc_key_now_ms();
-        Self::distribute_matrix_rtc_media_key(
-            &client,
-            &session,
-            &snapshot.recipients,
-            snapshot.key_index,
-            &snapshot.key,
-            sent_ts,
-        )
-        .await?;
-        tokio::time::sleep(MATRIX_RTC_KEY_DISTRIBUTION_DELAY).await;
-        let recipients = Self::current_matrix_rtc_recipients(&client, &session).await?;
-        if recipients != snapshot.recipients
-            || Self::matrix_rtc_recipient_fingerprint(&recipients)?
-                != snapshot.recipient_fingerprint
-        {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC recipients changed during key distribution".into(),
-            ));
-        }
-        let now = Self::matrix_rtc_monotonic_now_ms();
-        {
-            let mut runtime = self.rtc_media_keys.lock().await;
-            let current = Self::matrix_rtc_pending_activation_snapshot(
-                &runtime,
-                room_id,
-                session_id,
-                member_id,
-                activation_id,
-                MatrixRtcActivationPhase::AwaitingPauseAck,
-                now,
-            )?;
-            if current.key_index != snapshot.key_index
-                || current.recipients != snapshot.recipients
-                || current.recipient_fingerprint != snapshot.recipient_fingerprint
-                || current.expires_at != snapshot.expires_at
-            {
-                return Err(BackendError::PermissionDenied(
-                    "MatrixRTC media-key activation was superseded".into(),
-                ));
-            }
-            let pending = runtime
-                .pending_activations
-                .get_mut(&(room_id.to_owned(), session_id.to_owned()))
-                .expect("validated pending activation exists");
-            pending.phase = MatrixRtcActivationPhase::Distributed { sent_ts };
-        }
-        let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
-        Self::matrix_rtc_local_media_key(
-            own_user_id.as_str(),
-            &session,
-            snapshot.key_index,
-            &snapshot.key,
-            sent_ts,
-            Some(snapshot.activation_id.clone()),
-        )
-    }
-
-    async fn ack_matrix_rtc_media_key_inner(
-        &self,
-        room_id: &str,
-        session_id: &str,
-        member_id: &str,
-        activation_id: &str,
-        key_index: u8,
-        sent_ts: u64,
-    ) -> BackendResult<()> {
-        let session = Self::current_matrix_rtc_local_session(
-            &self.rtc_sessions,
-            room_id,
-            session_id,
-            member_id,
-        )
-        .await?;
-        let client = self.client().await?;
-        let phase = MatrixRtcActivationPhase::Distributed { sent_ts };
-        {
-            let mut runtime = self.rtc_media_keys.lock().await;
-            let now = Self::matrix_rtc_monotonic_now_ms();
-            runtime.completed_activations.retain(|_, completed| {
-                now.saturating_sub(completed.completed_at)
-                    <= MATRIX_RTC_COMPLETED_ACTIVATION_TTL.as_millis() as u64
-            });
-            if runtime
-                .completed_activations
-                .get(&(room_id.to_owned(), session_id.to_owned()))
-                .is_some_and(|completed| {
-                    completed.activation_id == activation_id
-                        && completed.member_id == member_id
-                        && completed.key_index == key_index
-                        && completed.sent_ts == sent_ts
-                })
-            {
-                return Ok(());
-            }
-        }
-        let snapshot = {
-            let runtime = self.rtc_media_keys.lock().await;
-            Self::matrix_rtc_pending_activation_snapshot(
-                &runtime,
-                room_id,
-                session_id,
-                member_id,
-                activation_id,
-                phase,
-                Self::matrix_rtc_monotonic_now_ms(),
-            )?
-        };
-        if snapshot.key_index != key_index {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC media-key acknowledgement used the wrong key index".into(),
-            ));
-        }
-        let recipients = Self::current_matrix_rtc_recipients(&client, &session).await?;
-        if recipients != snapshot.recipients
-            || Self::matrix_rtc_recipient_fingerprint(&recipients)?
-                != snapshot.recipient_fingerprint
-        {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC recipients changed before key activation".into(),
-            ));
-        }
-        let state_key = (room_id.to_owned(), session_id.to_owned());
-        let mut runtime = self.rtc_media_keys.lock().await;
-        let current = Self::matrix_rtc_pending_activation_snapshot(
-            &runtime,
-            room_id,
-            session_id,
-            member_id,
-            activation_id,
-            phase,
-            Self::matrix_rtc_monotonic_now_ms(),
-        )?;
-        if current.key_index != key_index
-            || current.recipients != snapshot.recipients
-            || current.recipient_fingerprint != snapshot.recipient_fingerprint
-        {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC media-key activation was superseded".into(),
-            ));
-        }
-        runtime.pending_activations.remove(&state_key);
-        runtime.lease_blocked.remove(&state_key);
-        runtime.outbound.insert(
-            state_key.clone(),
-            MatrixRtcOutboundMediaKey {
-                key_index,
-                key: snapshot.key,
-                recipients: snapshot.recipients.clone(),
-            },
-        );
-        runtime.completed_activations.insert(
-            state_key,
-            MatrixRtcCompletedActivation {
-                activation_id: activation_id.to_owned(),
-                member_id: member_id.to_owned(),
-                key_index,
-                sent_ts,
-                completed_at: Self::matrix_rtc_monotonic_now_ms(),
-            },
-        );
-        Ok(())
-    }
-
-    fn revoke_matrix_rtc_publication(
-        runtime: &mut MatrixRtcMediaKeyRuntime,
-        state_key: &(String, String),
-    ) {
-        runtime.outbound.remove(state_key);
-        runtime.pending_activations.remove(state_key);
-        runtime.completed_activations.remove(state_key);
-        runtime.lease_blocked.remove(state_key);
-    }
-
-    fn matrix_rtc_local_lease_state(
-        runtime: &mut MatrixRtcMediaKeyRuntime,
-        state_key: &(String, String),
-        now: u64,
-    ) -> BackendResult<MatrixRtcLocalLeaseState> {
-        if runtime.lease_blocked.contains(state_key) {
-            return Ok(MatrixRtcLocalLeaseState::Paused);
-        }
-        if runtime
-            .pending_activations
-            .get(state_key)
-            .is_some_and(|pending| pending.expires_at <= now)
-        {
-            runtime.pending_activations.remove(state_key);
-            runtime.outbound.remove(state_key);
-            runtime.completed_activations.remove(state_key);
-            runtime.lease_blocked.insert(state_key.clone());
-            return Ok(MatrixRtcLocalLeaseState::Expired);
-        }
-        if runtime.pending_activations.contains_key(state_key) {
-            return Ok(MatrixRtcLocalLeaseState::Paused);
-        }
-        let key_index = runtime
-            .outbound
-            .get(state_key)
-            .map(|outbound| outbound.key_index)
-            .ok_or_else(|| {
-                BackendError::PermissionDenied(
-                    "MatrixRTC publisher has no activated media key".into(),
-                )
-            })?;
-        Ok(MatrixRtcLocalLeaseState::Active { key_index })
-    }
-
-    async fn renew_matrix_rtc_media_key_lease_inner(
-        &self,
-        room_id: &str,
-        session_id: &str,
-        member_id: &str,
-    ) -> BackendResult<MatrixRtcMediaKeyLease> {
-        let session = Self::current_matrix_rtc_local_session(
-            &self.rtc_sessions,
-            room_id,
-            session_id,
-            member_id,
-        )
-        .await?;
-        let state_key = (room_id.to_owned(), session_id.to_owned());
-        let monotonic_now = Self::matrix_rtc_monotonic_now_ms();
-        let last_sync_success = self
-            .matrix_sync_freshness
-            .lock()
-            .expect("Matrix sync freshness lock poisoned")
-            .last_success_ms;
-        if !Self::matrix_rtc_sync_is_fresh(last_sync_success, monotonic_now) {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC publisher lease requires a recent successful Matrix sync".into(),
-            ));
-        }
-        let lease_state = {
-            let mut runtime = self.rtc_media_keys.lock().await;
-            Self::matrix_rtc_local_lease_state(&mut runtime, &state_key, monotonic_now)?
-        };
-        let key_index = match lease_state {
-            MatrixRtcLocalLeaseState::Active { key_index } => key_index,
-            MatrixRtcLocalLeaseState::Paused => {
-                return Err(BackendError::PermissionDenied(
-                    "MatrixRTC publisher is paused for media-key activation".into(),
-                ))
-            }
-            MatrixRtcLocalLeaseState::Expired => {
-                if let Some(active) = self.rtc_sessions.lock().await.get_mut(&state_key) {
-                    if active.member_id == member_id {
-                        active.ready = false;
-                    }
-                }
-                session.cancellation.cancel();
-                Self::reconcile_matrix_sync_cadence(
-                    &self.rtc_sessions,
-                    &self.matrix_sync_control,
-                    &self.matrix_sync_freshness,
-                )
-                .await;
-                let cleared = Self::clear_current_matrix_rtc_membership(
-                    &session,
-                    &self.rtc_sessions,
-                    &self.rtc_membership_writes,
-                )
-                .await
-                .unwrap_or(false);
-                {
-                    let mut runtime = self.rtc_media_keys.lock().await;
-                    runtime.outbound.remove(&state_key);
-                    runtime.completed_activations.remove(&state_key);
-                    if cleared {
-                        runtime.lease_blocked.remove(&state_key);
-                    }
-                }
-                Self::dispatch_backend_event(
-                    &self.event_callback,
-                    MatrixBackendEvent::RtcMediaKeyFailure(MatrixRtcMediaKeyFailure {
-                        room_id: room_id.to_owned(),
-                        code: "activation-expired".into(),
-                    }),
-                );
-                return Err(BackendError::PermissionDenied(
-                    "MatrixRTC media-key activation expired".into(),
-                ));
-            }
-        };
-        Ok(MatrixRtcMediaKeyLease {
-            room_id: room_id.to_owned(),
-            session_id: session_id.to_owned(),
-            member_id: member_id.to_owned(),
-            key_index,
-            expires_at: Self::matrix_rtc_key_now_ms()
-                .saturating_add(MATRIX_RTC_KEY_LEASE_TTL.as_millis() as u64),
-        })
-    }
-
-    async fn handle_matrix_rtc_media_key_event(
-        raw: Raw<AnyToDeviceEvent>,
-        encryption_info: Option<EncryptionInfo>,
-        client: Client,
-        sessions: Arc<Mutex<HashMap<(String, String), MatrixRtcLocalSession>>>,
-        runtime: Arc<Mutex<MatrixRtcMediaKeyRuntime>>,
-        callback: Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
-    ) -> BackendResult<()> {
-        if raw.json().get().len() > MATRIX_RTC_MAX_TO_DEVICE_BYTES {
-            return Err(BackendError::RateLimited(
-                "MatrixRTC media key event exceeded the size limit".into(),
-            ));
-        }
-        if raw
-            .get_field::<String>("type")
-            .map_err(|error| BackendError::Serialization(error.to_string()))?
-            .as_deref()
-            != Some(MATRIX_RTC_KEY_TO_DEVICE_EVENT_TYPE)
-        {
-            return Ok(());
-        }
-        let envelope: MatrixRtcToDeviceEnvelope = serde_json::from_str(raw.json().get())
-            .map_err(|error| BackendError::Serialization(error.to_string()))?;
-        if envelope.event_type != MATRIX_RTC_KEY_TO_DEVICE_EVENT_TYPE {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC media key used an unexpected event type".into(),
-            ));
-        }
-        let encryption_info = encryption_info.ok_or_else(|| {
-            BackendError::PermissionDenied(
-                "MatrixRTC media key was not decrypted from an Olm to-device event".into(),
-            )
-        })?;
-        let curve25519_public_key_base64 = match &encryption_info.algorithm_info {
-            AlgorithmInfo::OlmV1Curve25519AesSha2 {
-                curve25519_public_key_base64,
-            } => curve25519_public_key_base64,
-            _ => {
-                return Err(BackendError::PermissionDenied(
-                    "MatrixRTC media key did not use Olm v1".into(),
-                ))
-            }
-        };
-        let sender_device = encryption_info.sender_device.as_ref().ok_or_else(|| {
-            BackendError::PermissionDenied(
-                "MatrixRTC media key Olm metadata omitted its sender device".into(),
-            )
-        })?;
-        if envelope.sender != encryption_info.sender.as_str() {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC media key sender did not match its Olm metadata".into(),
-            ));
-        }
-        let room_id =
-            matrix_sdk::ruma::RoomId::parse(&envelope.content.room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::NotFound("MatrixRTC media key room is not in the local store".into())
-        })?;
-        if room.state() != RoomState::Joined {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC media key room is not joined".into(),
-            ));
-        }
-        Self::require_encrypted_room(&room, "accepting a MatrixRTC media key").await?;
-        let local_ready = sessions
-            .lock()
-            .await
-            .values()
-            .filter(|session| session.room.room_id() == room.room_id())
-            .map(|session| session.ready)
-            .reduce(|left, right| left || right);
-        let Some(local_ready) = local_ready else {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC media key has no active local RTC session".into(),
-            ));
-        };
-        let now_ms = Self::matrix_rtc_key_now_ms();
-        {
-            let mut runtime = runtime.lock().await;
-            Self::record_matrix_rtc_key_attempt(
-                &mut runtime,
-                encryption_info.sender.as_str(),
-                sender_device.as_str(),
-                now_ms,
-            )?;
-        }
-
-        let known_device = client
-            .encryption()
-            .get_device(&encryption_info.sender, sender_device)
-            .await
-            .map_err(Self::map_error)?
-            .ok_or_else(|| {
-                BackendError::PermissionDenied(
-                    "MatrixRTC media key sender device is not in the encrypted device store".into(),
-                )
-            })?;
-        if known_device
-            .curve25519_key()
-            .is_none_or(|key| key.to_base64() != curve25519_public_key_base64.trim_end_matches('='))
-        {
-            return Err(BackendError::PermissionDenied(
-                "MatrixRTC media key Olm identity did not match the current sender device".into(),
-            ));
-        }
-        let memberships = Self::active_matrix_rtc_memberships(&room).await?;
-        let mut runtime = runtime.lock().await;
-        let key = Self::validate_matrix_rtc_media_key(
-            envelope.content,
-            &envelope.sender,
-            encryption_info.sender.as_str(),
-            sender_device.as_str(),
-            &memberships,
-            now_ms,
-            &mut runtime,
-        )?;
-        if local_ready {
-            drop(runtime);
-            Self::dispatch_backend_event(&callback, MatrixBackendEvent::RtcMediaKey(key));
-        } else {
-            let pending_count = runtime.pending.values().map(Vec::len).sum::<usize>();
-            if pending_count >= MATRIX_RTC_MAX_PENDING_KEYS {
-                return Err(BackendError::RateLimited(
-                    "MatrixRTC pending media key limit reached".into(),
-                ));
-            }
-            runtime
-                .pending
-                .entry(room.room_id().to_string())
-                .or_default()
-                .push(key);
-        }
-        Ok(())
-    }
-
-    async fn emit_matrix_rtc_membership(
-        room: &Room,
-        callback: &Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
-    ) {
-        match Self::matrix_rtc_members_for_room(room).await {
-            Ok(members) => Self::dispatch_backend_event(
-                callback,
-                MatrixBackendEvent::RtcMembership(MatrixRtcMembershipUpdate {
-                    room_id: room.room_id().to_string(),
-                    members,
-                }),
-            ),
-            Err(error) => tracing::warn!(
-                target: "mesh::matrixrtc",
-                room_id = %room.room_id(),
-                "Could not refresh MatrixRTC memberships: {error}"
-            ),
-        }
-    }
-
-    async fn select_matrix_rtc_service_url(
-        room: &Room,
-        configured_service_url: &str,
-    ) -> BackendResult<String> {
-        let memberships = Self::active_matrix_rtc_memberships(room).await?;
-        let Some(oldest) = memberships.first() else {
-            return Ok(configured_service_url.to_owned());
-        };
-        let selected = oldest.livekit_service_url.as_deref().ok_or_else(|| {
-            BackendError::InvalidConfiguration(
-                "the oldest active MatrixRTC membership does not advertise a LiveKit focus".into(),
-            )
-        })?;
-        let selected = VoiceServiceStatus::secure_url(
-            "oldest MatrixRTC membership livekit_service_url",
-            selected,
-            "https",
-        )
-        .map_err(BackendError::InvalidConfiguration)?;
-        let configured = VoiceServiceStatus::secure_url(
-            "MESH_MATRIXRTC_LIVEKIT_SERVICE_URL",
-            configured_service_url,
-            "https",
-        )
-        .map_err(BackendError::InvalidConfiguration)?;
-        if selected != configured {
-            return Err(BackendError::InvalidConfiguration(
-                "the oldest active MatrixRTC membership selected a different focus; federated focus authorization is not verified in this client"
-                    .into(),
-            ));
-        }
-        Ok(configured.to_string())
-    }
-
-    async fn publish_matrix_rtc_membership(
-        session: &MatrixRtcLocalSession,
-        active: bool,
-    ) -> BackendResult<()> {
-        CallMemberStateKey::from_str(&session.state_key).map_err(Self::map_error)?;
-        let content = if active {
-            let created_ts = u64::from(session.created_ts.get());
-            let now = u64::from(matrix_sdk::ruma::MilliSecondsSinceUnixEpoch::now().get());
-            Self::matrix_rtc_membership_content(
-                session.device_id.as_str(),
-                &session.member_id,
-                &session.livekit_service_url,
-                created_ts,
-                now,
-            )?
-        } else {
-            serde_json::json!({})
-        };
-        let body = Raw::<AnyStateEventContent>::from_json(
-            serde_json::value::to_raw_value(&content)
-                .map_err(|error| BackendError::Serialization(error.to_string()))?,
-        );
-        session
-            .room
-            .client()
-            .send(send_state_event::v3::Request::new_raw(
-                session.room.room_id().to_owned(),
-                StateEventType::CallMember,
-                session.state_key.clone(),
-                body,
-            ))
-            .await
-            .map_err(Self::map_error)?;
-        Ok(())
-    }
-
-    async fn publish_current_matrix_rtc_membership(
-        session: &MatrixRtcLocalSession,
-        sessions: &Arc<Mutex<HashMap<(String, String), MatrixRtcLocalSession>>>,
-        writes: &Arc<Mutex<()>>,
-        active: bool,
-    ) -> BackendResult<bool> {
-        let _write_guard = writes.lock().await;
-        let key = (
-            session.room.room_id().to_string(),
-            session.session_id.clone(),
-        );
-        let is_current = sessions
-            .lock()
-            .await
-            .get(&key)
-            .is_some_and(|current| current.member_id == session.member_id);
-        if !is_current {
-            return Ok(false);
-        }
-        Self::publish_matrix_rtc_membership(session, active).await?;
-        Ok(true)
-    }
-
-    async fn clear_current_matrix_rtc_membership(
-        session: &MatrixRtcLocalSession,
-        sessions: &Arc<Mutex<HashMap<(String, String), MatrixRtcLocalSession>>>,
-        writes: &Arc<Mutex<()>>,
-    ) -> BackendResult<bool> {
-        let _write_guard = writes.lock().await;
-        let key = (
-            session.room.room_id().to_string(),
-            session.session_id.clone(),
-        );
-        let is_current = sessions
-            .lock()
-            .await
-            .get(&key)
-            .is_some_and(|current| current.member_id == session.member_id);
-        if !is_current {
-            return Ok(false);
-        }
-        Self::publish_matrix_rtc_membership(session, false).await?;
-        let mut sessions = sessions.lock().await;
-        if sessions
-            .get(&key)
-            .is_some_and(|current| current.member_id == session.member_id)
-        {
-            sessions.remove(&key);
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
-
-    fn spawn_matrix_rtc_membership_refresh(
-        session: MatrixRtcLocalSession,
-        sessions: Arc<Mutex<HashMap<(String, String), MatrixRtcLocalSession>>>,
-        writes: Arc<Mutex<()>>,
-        callback: Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
-    ) {
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(MATRIX_RTC_MEMBERSHIP_REFRESH_INTERVAL);
-            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            interval.tick().await;
-            loop {
-                tokio::select! {
-                    _ = session.cancellation.cancelled() => break,
-                    _ = interval.tick() => {
-                        match Self::publish_current_matrix_rtc_membership(
-                            &session, &sessions, &writes, true
-                        ).await {
-                            Ok(true) => {}
-                            Ok(false) => break,
-                            Err(error) => {
-                                tracing::warn!(
-                                    target: "mesh::matrixrtc",
-                                    room_id = %session.room.room_id(),
-                                    "MatrixRTC membership refresh stopped: {error}"
-                                );
-                                break;
-                            }
-                        }
-                        Self::emit_matrix_rtc_membership(&session.room, &callback).await;
-                    }
-                }
-            }
-        });
-    }
-
-    async fn exchange_matrix_rtc_token(
-        client: &Client,
-        room_id: &str,
-        member_id: &str,
-        user_id: &OwnedUserId,
-        device_id: &OwnedDeviceId,
-        livekit_service_url: &str,
-        expected_sfu_url: &str,
-    ) -> BackendResult<MatrixRtcTokenResponse> {
-        let openid = client
-            .send(request_openid_token::v3::Request::new(user_id.clone()))
-            .await
-            .map_err(Self::map_error)?;
-        let request = MatrixRtcTokenRequest {
-            room_id: room_id.to_owned(),
-            slot_id: MATRIX_RTC_SLOT_ID.to_owned(),
-            openid_token: MatrixRtcOpenIdToken {
-                access_token: openid.access_token,
-                token_type: openid.token_type.to_string(),
-                matrix_server_name: openid.matrix_server_name.to_string(),
-                expires_in: openid.expires_in.as_secs(),
-            },
-            member: MatrixRtcTokenMember {
-                id: member_id.to_owned(),
-                claimed_user_id: user_id.to_string(),
-                claimed_device_id: device_id.to_string(),
-            },
-        };
-        let endpoint = format!("{}/get_token", livekit_service_url.trim_end_matches('/'));
-        let http = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(MATRIX_RTC_TOKEN_TIMEOUT)
-            .build()
-            .map_err(|error| BackendError::Network(error.to_string()))?;
-        let mut response = http
-            .post(endpoint)
-            .json(&request)
-            .send()
-            .await
-            .map_err(|error| BackendError::Network(error.to_string()))?;
-        let status = response.status();
-        if !status.is_success() {
-            return Err(match status.as_u16() {
-                401 | 403 => BackendError::PermissionDenied(
-                    "MatrixRTC authorization service rejected the request".into(),
-                ),
-                429 => BackendError::RateLimited(
-                    "MatrixRTC authorization service rate limited the request".into(),
-                ),
-                _ => BackendError::Network(format!(
-                    "MatrixRTC authorization service returned HTTP {status}"
-                )),
-            });
-        }
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|error| BackendError::Network(error.to_string()))?
-        {
-            if bytes.len().saturating_add(chunk.len()) > MATRIX_RTC_TOKEN_RESPONSE_MAX_BYTES {
-                return Err(BackendError::Serialization(
-                    "MatrixRTC authorization response exceeded 64 KiB".into(),
-                ));
-            }
-            bytes.extend_from_slice(&chunk);
-        }
-        let response: MatrixRtcTokenResponse = serde_json::from_slice(&bytes)
-            .map_err(|error| BackendError::Serialization(error.to_string()))?;
-        if response.jwt.trim().is_empty() {
-            return Err(BackendError::Serialization(
-                "MatrixRTC authorization response omitted the LiveKit JWT".into(),
-            ));
-        }
-        let returned_sfu = Self::validate_matrix_rtc_sfu_url(&response.url, expected_sfu_url)?;
-        Ok(MatrixRtcTokenResponse {
-            url: returned_sfu,
-            jwt: response.jwt,
-        })
     }
 
     fn storage_for_profile(&self, profile_id: &str) -> AccountStorage {
@@ -2500,11 +855,12 @@ impl MatrixBackend {
 
     fn load_trusted_devices(storage: &AccountStorage) -> BackendResult<TrustedDeviceRegistry> {
         let key = Self::trusted_devices_key(storage);
-        if !keychain::secret_exists(&key) {
-            return Ok(TrustedDeviceRegistry::default());
+        match keychain::lookup_secret(&key).map_err(Self::map_secure_storage_error)? {
+            keychain::SecretLookup::Found(serialized) => {
+                serde_json::from_slice(&serialized).map_err(Self::map_error)
+            }
+            keychain::SecretLookup::Missing => Ok(TrustedDeviceRegistry::default()),
         }
-        let serialized = keychain::load_secret(&key).map_err(Self::map_error)?;
-        serde_json::from_slice(&serialized).map_err(Self::map_error)
     }
 
     fn persist_trusted_devices(
@@ -2513,7 +869,7 @@ impl MatrixBackend {
     ) -> BackendResult<()> {
         let serialized = serde_json::to_vec(devices).map_err(Self::map_error)?;
         keychain::store_secret(&Self::trusted_devices_key(storage), &serialized)
-            .map_err(Self::map_error)
+            .map_err(Self::map_secure_storage_error)
     }
 
     fn device_fingerprint(
@@ -2529,17 +885,19 @@ impl MatrixBackend {
         Ok(format!("{:x}", digest.finalize()))
     }
 
-    fn load_last_recovery_test(storage: &AccountStorage) -> Option<String> {
+    fn load_last_recovery_test(storage: &AccountStorage) -> BackendResult<Option<String>> {
         let key = Self::recovery_test_key(storage);
-        keychain::secret_exists(&key)
-            .then(|| keychain::load_secret(&key).ok())
-            .flatten()
-            .and_then(|bytes| String::from_utf8(bytes).ok())
+        match keychain::lookup_secret(&key).map_err(Self::map_secure_storage_error)? {
+            keychain::SecretLookup::Found(bytes) => {
+                String::from_utf8(bytes).map(Some).map_err(Self::map_error)
+            }
+            keychain::SecretLookup::Missing => Ok(None),
+        }
     }
 
     fn persist_last_recovery_test(storage: &AccountStorage, tested_at: &str) -> BackendResult<()> {
         keychain::store_secret(&Self::recovery_test_key(storage), tested_at.as_bytes())
-            .map_err(Self::map_error)
+            .map_err(Self::map_secure_storage_error)
     }
 
     fn account_registry_key(&self) -> String {
@@ -2550,18 +908,24 @@ impl MatrixBackend {
         }
     }
 
-    fn load_registry(&self) -> BackendResult<AccountRegistry> {
+    fn load_registry_if_present(&self) -> BackendResult<Option<AccountRegistry>> {
         let key = self.account_registry_key();
-        if !keychain::secret_exists(&key) {
-            return Ok(AccountRegistry::default());
+        match keychain::lookup_secret(&key).map_err(Self::map_secure_storage_error)? {
+            keychain::SecretLookup::Found(serialized) => serde_json::from_slice(&serialized)
+                .map(Some)
+                .map_err(Self::map_error),
+            keychain::SecretLookup::Missing => Ok(None),
         }
-        let serialized = keychain::load_secret(&key).map_err(Self::map_error)?;
-        serde_json::from_slice(&serialized).map_err(Self::map_error)
+    }
+
+    fn load_registry(&self) -> BackendResult<AccountRegistry> {
+        Ok(self.load_registry_if_present()?.unwrap_or_default())
     }
 
     fn persist_registry(&self, registry: &AccountRegistry) -> BackendResult<()> {
         let serialized = serde_json::to_vec(registry).map_err(Self::map_error)?;
-        keychain::store_secret(&self.account_registry_key(), &serialized).map_err(Self::map_error)
+        keychain::store_secret(&self.account_registry_key(), &serialized)
+            .map_err(Self::map_secure_storage_error)
     }
 
     fn remember_account(
@@ -2602,11 +966,11 @@ impl MatrixBackend {
     }
 
     fn active_storage_from_registry(&self) -> BackendResult<AccountStorage> {
-        let registry_exists = keychain::secret_exists(&self.account_registry_key());
-        let registry = self.load_registry()?;
-        match registry.active_profile_id.as_deref() {
-            Some(profile_id) => Ok(self.storage_for_profile(profile_id)),
-            None if registry_exists => Err(BackendError::NotAuthenticated),
+        match self.load_registry_if_present()? {
+            Some(registry) => match registry.active_profile_id.as_deref() {
+                Some(profile_id) => Ok(self.storage_for_profile(profile_id)),
+                None => Err(BackendError::NotAuthenticated),
+            },
             None => Ok(self.storage_for_profile("default")),
         }
     }
@@ -3006,761 +1370,16 @@ impl MatrixBackend {
         }
     }
 
-    fn map_error(error: impl std::fmt::Display) -> BackendError {
-        BackendError::from_sdk_error(error)
-    }
-
-    fn normalize_display_name(display_name: &str) -> BackendResult<String> {
-        let display_name = display_name.trim();
-        if display_name.is_empty() {
-            return Err(BackendError::InvalidConfiguration(
-                "display name cannot be empty".into(),
-            ));
-        }
-        if display_name.chars().count() > 100 {
-            return Err(BackendError::InvalidConfiguration(
-                "display name must be 100 characters or fewer".into(),
-            ));
-        }
-        if display_name.chars().any(char::is_control) {
-            return Err(BackendError::InvalidConfiguration(
-                "display name cannot contain control characters".into(),
-            ));
-        }
-        Ok(display_name.to_owned())
-    }
-
-    fn ensure_room_is_encrypted(
-        room_id: &str,
-        action: &str,
-        is_encrypted: bool,
-    ) -> BackendResult<()> {
-        if is_encrypted {
-            return Ok(());
-        }
-
-        Err(BackendError::NotEncrypted(format!(
-            "Mesh blocked {action} in unencrypted Matrix room {room_id}. Ask a community \
-             administrator to enable end-to-end encryption, then leave and rejoin the room"
-        )))
-    }
-
-    async fn require_encrypted_room(room: &Room, action: &str) -> BackendResult<()> {
-        let is_encrypted = room
-            .latest_encryption_state()
-            .await
-            .map_err(|error| {
-                BackendError::InvalidConfiguration(format!(
-                    "Mesh could not verify end-to-end encryption before {action} in Matrix room \
-                     {}: {error}. Resynchronize the room and try again",
-                    room.room_id()
-                ))
-            })?
-            .is_encrypted();
-        Self::ensure_room_is_encrypted(room.room_id().as_str(), action, is_encrypted)
-    }
-
-    fn verification_snapshot(
-        verification_id: String,
-        flow: &DeviceVerificationFlow,
-    ) -> BackendResult<MatrixVerificationSession> {
-        match flow {
-            DeviceVerificationFlow::Request { request, device_id } => {
-                let mut cancellation_reason = None;
-                let phase = match request.state() {
-                    VerificationRequestState::Created { .. }
-                    | VerificationRequestState::Requested { .. } => "waiting-for-device",
-                    VerificationRequestState::Ready { .. }
-                    | VerificationRequestState::Transitioned { .. } => "choose-method",
-                    VerificationRequestState::Done => "done",
-                    VerificationRequestState::Cancelled(info) => {
-                        cancellation_reason = Some(info.reason().to_owned());
-                        "cancelled"
-                    }
-                };
-                Ok(MatrixVerificationSession {
-                    verification_id,
-                    device_id: device_id.clone(),
-                    phase: phase.into(),
-                    method: None,
-                    emojis: Vec::new(),
-                    decimals: None,
-                    qr_svg: None,
-                    cancellation_reason,
-                })
-            }
-            DeviceVerificationFlow::Sas(sas) => {
-                Ok(Self::sas_verification_snapshot(verification_id, sas))
-            }
-            DeviceVerificationFlow::Qr(qr) => Self::qr_verification_snapshot(verification_id, qr),
-        }
-    }
-
-    fn sas_verification_snapshot(
-        verification_id: String,
-        sas: &SasVerification,
-    ) -> MatrixVerificationSession {
-        let device_id = sas.other_device().device_id().to_string();
-        let mut emojis = Vec::new();
-        let mut decimals = None;
-        let mut cancellation_reason = None;
-        let phase = match sas.state() {
-            SasState::Created { .. } => "waiting-for-device",
-            SasState::Started { .. } => "started",
-            SasState::Accepted { .. } => "accepted",
-            SasState::KeysExchanged {
-                emojis: sas_emojis,
-                decimals: sas_decimals,
-            } => {
-                if let Some(sas_emojis) = sas_emojis {
-                    emojis = sas_emojis
-                        .emojis
-                        .into_iter()
-                        .map(|emoji| VerificationEmoji {
-                            symbol: emoji.symbol.to_owned(),
-                            description: emoji.description.to_owned(),
-                        })
-                        .collect();
-                }
-                decimals = Some([sas_decimals.0, sas_decimals.1, sas_decimals.2]);
-                "compare"
-            }
-            SasState::Confirmed => "confirmed",
-            SasState::Done { .. } => "done",
-            SasState::Cancelled(info) => {
-                cancellation_reason = Some(info.reason().to_owned());
-                "cancelled"
-            }
-        };
-        MatrixVerificationSession {
-            verification_id,
-            device_id,
-            phase: phase.to_owned(),
-            method: Some("sas".into()),
-            emojis,
-            decimals,
-            qr_svg: None,
-            cancellation_reason,
-        }
-    }
-
-    fn qr_verification_snapshot(
-        verification_id: String,
-        qr: &QrVerification,
-    ) -> BackendResult<MatrixVerificationSession> {
-        let mut cancellation_reason = None;
-        let phase = match qr.state() {
-            QrVerificationState::Started | QrVerificationState::Reciprocated => "qr-show",
-            QrVerificationState::Scanned => "qr-scanned",
-            QrVerificationState::Confirmed => "confirmed",
-            QrVerificationState::Done { .. } => "done",
-            QrVerificationState::Cancelled(info) => {
-                cancellation_reason = Some(info.reason().to_owned());
-                "cancelled"
-            }
-        };
-        let qr_svg = if matches!(phase, "qr-show" | "qr-scanned") && qr.we_started() {
-            let code = qr.to_qr_code().map_err(Self::map_error)?;
-            Some(
-                code.render::<svg::Color>()
-                    .min_dimensions(280, 280)
-                    .dark_color(svg::Color("#111827"))
-                    .light_color(svg::Color("#ffffff"))
-                    .build(),
-            )
-        } else {
-            None
-        };
-        Ok(MatrixVerificationSession {
-            verification_id,
-            device_id: qr.other_device().device_id().to_string(),
-            phase: phase.into(),
-            method: Some("qr".into()),
-            emojis: Vec::new(),
-            decimals: None,
-            qr_svg,
-            cancellation_reason,
-        })
-    }
-
-    fn recovery_state_name(state: RecoveryState) -> &'static str {
-        match state {
-            RecoveryState::Unknown => "unknown",
-            RecoveryState::Enabled => "enabled",
-            RecoveryState::Disabled => "disabled",
-            RecoveryState::Incomplete => "incomplete",
-        }
-    }
-
-    fn backup_state_name(state: BackupState) -> &'static str {
-        match state {
-            BackupState::Unknown => "unknown",
-            BackupState::Creating => "creating",
-            BackupState::Enabling => "enabling",
-            BackupState::Resuming => "resuming",
-            BackupState::Enabled => "enabled",
-            BackupState::Downloading => "downloading",
-            BackupState::Disabling => "disabling",
-        }
-    }
-
-    fn avatar_color(seed: &str) -> String {
-        let digest = Sha256::digest(seed.as_bytes());
-        format!("#{:02x}{:02x}{:02x}", digest[0], digest[1], digest[2])
-    }
-
-    fn timestamp_from_millis(timestamp: Option<u64>) -> String {
-        timestamp
-            .and_then(|millis| {
-                chrono::DateTime::<chrono::Utc>::from_timestamp_millis(millis as i64)
-            })
-            .unwrap_or_else(chrono::Utc::now)
-            .to_rfc3339()
-    }
-
-    fn event_timestamp(value: &serde_json::Value) -> String {
-        Self::timestamp_from_millis(
-            value
-                .get("origin_server_ts")
-                .and_then(serde_json::Value::as_u64),
-        )
-    }
-
-    fn is_base_text_message(value: &serde_json::Value) -> bool {
-        if value.get("type").and_then(serde_json::Value::as_str) != Some("m.room.message") {
-            return false;
-        }
-        let Some(content) = value.get("content") else {
-            return false;
-        };
-        if content
-            .get("m.relates_to")
-            .and_then(|relation| relation.get("rel_type"))
-            .and_then(serde_json::Value::as_str)
-            == Some("m.replace")
-        {
-            return false;
-        }
-        let msgtype = content.get("msgtype").and_then(serde_json::Value::as_str);
-        matches!(
-            msgtype,
-            Some("m.text" | "m.notice" | "m.emote" | "m.file" | "m.image" | "m.audio" | "m.video")
-        ) && content
-            .get("body")
-            .and_then(serde_json::Value::as_str)
-            .is_some()
-    }
-
-    fn encrypted_file_sha256(encrypted_file: &EncryptedFile) -> Option<String> {
-        match encrypted_file
-            .hashes
-            .get(&EncryptedFileHashAlgorithm::Sha256)?
-        {
-            EncryptedFileHash::Sha256(hash) => Some(hash.to_string()),
-            _ => None,
-        }
-    }
-
-    fn matrix_thumbnail_from_content(
-        content: &serde_json::Value,
-    ) -> Option<AttachmentThumbnailDto> {
-        let info = content.get("info")?;
-        // Plain `thumbnail_url` metadata is never accepted for encrypted-room
-        // attachments. The SDK needs the complete encrypted-file descriptor to
-        // authenticate ciphertext before any future sandbox can consume bytes.
-        let source = info.get("thumbnail_file")?.clone();
-        let encrypted_file: EncryptedFile = serde_json::from_value(source.clone()).ok()?;
-        if !encrypted_file.url.as_str().starts_with("mxc://") {
-            return None;
-        }
-        let sha256 = Self::encrypted_file_sha256(&encrypted_file)?;
-        let thumbnail_info = info.get("thumbnail_info")?;
-        let size = thumbnail_info.get("size")?.as_u64()?;
-        let width = u32::try_from(thumbnail_info.get("w")?.as_u64()?).ok()?;
-        let height = u32::try_from(thumbnail_info.get("h")?.as_u64()?).ok()?;
-        let content_type = thumbnail_info.get("mimetype")?.as_str()?;
-        let pixels = u64::from(width).checked_mul(u64::from(height))?;
-        if size == 0
-            || size > MAX_THUMBNAIL_BYTES as u64
-            || width == 0
-            || height == 0
-            || width > MAX_THUMBNAIL_DIMENSION
-            || height > MAX_THUMBNAIL_DIMENSION
-            || pixels > u64::from(MAX_THUMBNAIL_DIMENSION).pow(2)
-            || content_type != "image/png"
-        {
-            return None;
-        }
-        Some(AttachmentThumbnailDto {
-            file_hash: format!("matrix-sha256:{sha256}"),
-            size,
-            width,
-            height,
-            content_type: content_type.to_owned(),
-            media_source: source,
-        })
-    }
-
-    fn matrix_attachment_from_content(content: &serde_json::Value) -> Option<AttachmentDto> {
-        let msgtype = content.get("msgtype").and_then(serde_json::Value::as_str)?;
-        if !matches!(msgtype, "m.file" | "m.image" | "m.audio" | "m.video") {
-            return None;
-        }
-        let filename = content
-            .get("filename")
-            .and_then(serde_json::Value::as_str)
-            .or_else(|| content.get("body").and_then(serde_json::Value::as_str))?
-            .trim();
-        if filename.is_empty() {
-            return None;
-        }
-        let source = content.get("file")?.clone();
-        let url = source.get("url")?.as_str()?;
-        let sha256 = source
-            .get("hashes")
-            .and_then(|hashes| hashes.get("sha256"))
-            .and_then(serde_json::Value::as_str)?;
-        let size = content
-            .get("info")
-            .and_then(|info| info.get("size"))
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or_default();
-        let content_type = content
-            .get("info")
-            .and_then(|info| info.get("mimetype"))
-            .and_then(serde_json::Value::as_str)
-            .map(str::to_owned);
-        let thumbnail = Self::matrix_thumbnail_from_content(content);
-        Some(AttachmentDto {
-            file_hash: format!("matrix-sha256:{sha256}"),
-            filename: filename.to_owned(),
-            size,
-            chunks: 1,
-            source_peer_id: format!("matrix:{url}"),
-            media_source: Some(source),
-            content_type,
-            thumbnail,
-        })
-    }
-
-    async fn timeline_values(
-        room: &Room,
-        minimum_base_messages: usize,
-        before_id: Option<&str>,
-    ) -> BackendResult<Vec<serde_json::Value>> {
-        const PAGE_SIZE: u32 = 100;
-        const MAX_EVENTS: usize = 10_000;
-
-        let mut values = Vec::new();
-        let mut from = None;
-        let mut anchor_seen = before_id.is_none();
-        let mut qualifying_messages = 0_usize;
-
-        loop {
-            let mut options = MessagesOptions::backward();
-            options.limit = PAGE_SIZE.into();
-            options.from = from;
-            let response = room.messages(options).await.map_err(Self::map_error)?;
-            if response.chunk.is_empty() {
-                break;
-            }
-
-            for event in response.chunk {
-                let value = match event.raw().deserialize_as::<serde_json::Value>() {
-                    Ok(value) => value,
-                    Err(error) => {
-                        tracing::warn!(target: "mesh::matrix", "Skipping malformed timeline event: {error}");
-                        continue;
-                    }
-                };
-                let event_id = value.get("event_id").and_then(serde_json::Value::as_str);
-                let legacy_message_id = Self::legacy_message_id(&value);
-                if !anchor_seen
-                    && (event_id == before_id || legacy_message_id.as_deref() == before_id)
-                {
-                    anchor_seen = true;
-                } else if anchor_seen
-                    && (Self::is_base_text_message(&value) || legacy_message_id.is_some())
-                {
-                    qualifying_messages += 1;
-                }
-                values.push(value);
-            }
-
-            if qualifying_messages >= minimum_base_messages || values.len() >= MAX_EVENTS {
-                break;
-            }
-            let Some(next) = response.end else {
-                break;
-            };
-            from = Some(next);
-        }
-
-        Ok(values)
-    }
-
-    fn visible_message_body(content: &serde_json::Value) -> Option<String> {
-        let body = content.get("body")?.as_str()?;
-        let is_reply = content
-            .get("m.relates_to")
-            .and_then(|relation| relation.get("m.in_reply_to"))
-            .is_some();
-        if is_reply && body.starts_with('>') {
-            if let Some((_, visible)) = body.split_once("\n\n") {
-                return Some(visible.to_owned());
-            }
-        }
-        Some(body.to_owned())
-    }
-
-    fn project_legacy_message(room_id: &str, value: &serde_json::Value) -> Option<MessageDto> {
-        if value.get("type").and_then(serde_json::Value::as_str)
-            != Some(crate::backend::LEGACY_MATRIX_EVENT_TYPE)
-        {
-            return None;
-        }
-        let content = value.get("content")?;
-        let status = content
-            .get("conflictStatus")
-            .and_then(serde_json::Value::as_str)?;
-        if status == "approved_non_selected_variant" {
-            return None;
-        }
-        let record = content.get("record")?;
-        if record.get("kind").and_then(serde_json::Value::as_str) != Some("message") {
-            return None;
-        }
-        let payload = record.get("payload")?;
-        let id = Self::legacy_message_id(value)?;
-        let author = payload
-            .get("authorPublicKey")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("legacy:unknown")
-            .to_owned();
-        let attachments = payload
-            .get("attachments")
-            .cloned()
-            .and_then(|attachments| serde_json::from_value::<Vec<AttachmentDto>>(attachments).ok())
-            .unwrap_or_default();
-        let original_timestamp = record
-            .get("originalTimestamp")
-            .and_then(serde_json::Value::as_str)
-            .map(str::to_owned)
-            .unwrap_or_else(|| Self::event_timestamp(value));
-        let deleted_at = payload
-            .get("deletedAt")
-            .and_then(serde_json::Value::as_str)
-            .map(str::to_owned);
-
-        Some(MessageDto {
-            id,
-            channel_id: room_id.to_owned(),
-            author_public_key: author.clone(),
-            author_display_name: payload
-                .get("authorDisplayName")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("Legacy member")
-                .to_owned(),
-            author_avatar_color: payload
-                .get("authorAvatarColor")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-                .unwrap_or_else(|| Self::avatar_color(&author)),
-            content: if deleted_at.is_some() {
-                String::new()
-            } else {
-                payload
-                    .get("content")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or_default()
-                    .to_owned()
-            },
-            attachments,
-            reactions: payload
-                .get("reactions")
-                .cloned()
-                .and_then(|reactions| serde_json::from_value(reactions).ok())
-                .unwrap_or_default(),
-            timestamp: original_timestamp,
-            signature: record
-                .get("originalSignature")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-            edited_at: payload
-                .get("editedAt")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned),
-            deleted_at,
-            reply_to_id: payload
-                .get("replyToId")
-                .and_then(serde_json::Value::as_str)
-                .map(|reply| format!("legacy-reply:{reply}")),
-            delivery_status: Some("imported".into()),
-        })
-    }
-
-    fn legacy_message_id(value: &serde_json::Value) -> Option<String> {
-        if value.get("type").and_then(serde_json::Value::as_str)
-            != Some(crate::backend::LEGACY_MATRIX_EVENT_TYPE)
-        {
-            return None;
-        }
-        let content = value.get("content")?;
-        if content
-            .get("conflictStatus")
-            .and_then(serde_json::Value::as_str)
-            == Some("approved_non_selected_variant")
-        {
-            return None;
-        }
-        let record = content.get("record")?;
-        if record.get("kind").and_then(serde_json::Value::as_str) != Some("message") {
-            return None;
-        }
-        record
-            .get("entityId")
-            .and_then(serde_json::Value::as_str)
-            .map(|entity_id| format!("legacy:{entity_id}"))
-    }
-
-    fn project_timeline(
-        room_id: &str,
-        members: &HashMap<String, String>,
-        mut values: Vec<serde_json::Value>,
-    ) -> Vec<MessageDto> {
-        values.sort_by(|left, right| {
-            left.get("origin_server_ts")
-                .and_then(serde_json::Value::as_u64)
-                .cmp(
-                    &right
-                        .get("origin_server_ts")
-                        .and_then(serde_json::Value::as_u64),
-                )
-                .then_with(|| {
-                    left.get("event_id")
-                        .and_then(serde_json::Value::as_str)
-                        .cmp(&right.get("event_id").and_then(serde_json::Value::as_str))
-                })
-        });
-
-        let mut messages = HashMap::<String, MessageDto>::new();
-        let mut ordered_ids = Vec::new();
-
-        for value in &values {
-            if let Some(message) = Self::project_legacy_message(room_id, value) {
-                ordered_ids.push(message.id.clone());
-                messages.insert(message.id.clone(), message);
-                continue;
-            }
-            if !Self::is_base_text_message(value) {
-                continue;
-            }
-            let Some(event_id) = value
-                .get("event_id")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-            else {
-                continue;
-            };
-            let Some(content) = value.get("content") else {
-                continue;
-            };
-            let Some(body) = Self::visible_message_body(content) else {
-                continue;
-            };
-            let sender = value
-                .get("sender")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("@unknown:invalid")
-                .to_owned();
-            let timestamp = Self::event_timestamp(value);
-            let redacted = value
-                .get("unsigned")
-                .and_then(|unsigned| unsigned.get("redacted_because"))
-                .is_some();
-            let reply_to_id = content
-                .get("m.relates_to")
-                .and_then(|relation| relation.get("m.in_reply_to"))
-                .and_then(|reply| reply.get("event_id"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned);
-
-            ordered_ids.push(event_id.clone());
-            messages.insert(
-                event_id.clone(),
-                MessageDto {
-                    id: event_id,
-                    channel_id: room_id.to_owned(),
-                    author_public_key: sender.clone(),
-                    author_display_name: members.get(&sender).cloned().unwrap_or_else(|| {
-                        sender
-                            .split(':')
-                            .next()
-                            .unwrap_or(&sender)
-                            .trim_start_matches('@')
-                            .to_owned()
-                    }),
-                    author_avatar_color: Self::avatar_color(&sender),
-                    content: if redacted { String::new() } else { body },
-                    attachments: Self::matrix_attachment_from_content(content)
-                        .into_iter()
-                        .collect(),
-                    reactions: HashMap::new(),
-                    timestamp: timestamp.clone(),
-                    signature: String::new(),
-                    edited_at: None,
-                    deleted_at: redacted.then_some(timestamp),
-                    reply_to_id,
-                    delivery_status: Some("sent".into()),
-                },
-            );
-        }
-
-        let mut reaction_events = HashMap::<String, (String, String, String)>::new();
-        let mut redacted_events = HashSet::<String>::new();
-        for value in &values {
-            let event_type = value
-                .get("type")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default();
-            let event_id = value
-                .get("event_id")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default();
-            let sender = value
-                .get("sender")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("@unknown:invalid");
-            let timestamp = Self::event_timestamp(value);
-
-            match event_type {
-                "m.room.message" => {
-                    let Some(content) = value.get("content") else {
-                        continue;
-                    };
-                    let relation = content.get("m.relates_to");
-                    if relation
-                        .and_then(|relation| relation.get("rel_type"))
-                        .and_then(serde_json::Value::as_str)
-                        != Some("m.replace")
-                    {
-                        continue;
-                    }
-                    let Some(target_id) = relation
-                        .and_then(|relation| relation.get("event_id"))
-                        .and_then(serde_json::Value::as_str)
-                    else {
-                        continue;
-                    };
-                    let Some(message) = messages.get_mut(target_id) else {
-                        continue;
-                    };
-                    if message.author_public_key != sender || message.deleted_at.is_some() {
-                        continue;
-                    }
-                    let replacement = relation
-                        .and_then(|relation| relation.get("m.new_content"))
-                        .or_else(|| content.get("m.new_content"));
-                    if let Some(body) = replacement
-                        .and_then(|content| content.get("body"))
-                        .and_then(serde_json::Value::as_str)
-                    {
-                        message.content = body.to_owned();
-                        message.edited_at = Some(timestamp);
-                    }
-                }
-                "m.reaction" => {
-                    let redacted = value
-                        .get("unsigned")
-                        .and_then(|unsigned| unsigned.get("redacted_because"))
-                        .is_some();
-                    let relation = value
-                        .get("content")
-                        .and_then(|content| content.get("m.relates_to"));
-                    let Some(target_id) = relation
-                        .and_then(|relation| relation.get("event_id"))
-                        .and_then(serde_json::Value::as_str)
-                    else {
-                        continue;
-                    };
-                    let Some(key) = relation
-                        .and_then(|relation| relation.get("key"))
-                        .and_then(serde_json::Value::as_str)
-                    else {
-                        continue;
-                    };
-                    reaction_events.insert(
-                        event_id.to_owned(),
-                        (target_id.to_owned(), key.to_owned(), sender.to_owned()),
-                    );
-                    if !redacted {
-                        if let Some(message) = messages.get_mut(target_id) {
-                            let authors = message.reactions.entry(key.to_owned()).or_default();
-                            if !authors.iter().any(|author| author == sender) {
-                                authors.push(sender.to_owned());
-                            }
-                        }
-                    }
-                }
-                "m.room.redaction" => {
-                    let target_id = value
-                        .get("redacts")
-                        .or_else(|| {
-                            value
-                                .get("content")
-                                .and_then(|content| content.get("redacts"))
-                        })
-                        .and_then(serde_json::Value::as_str);
-                    if let Some(target_id) = target_id {
-                        redacted_events.insert(target_id.to_owned());
-                        if let Some(message) = messages.get_mut(target_id) {
-                            message.content.clear();
-                            message.deleted_at = Some(timestamp);
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        for reaction_event_id in redacted_events {
-            let Some((target_id, key, sender)) = reaction_events.get(&reaction_event_id) else {
-                continue;
-            };
-            let Some(message) = messages.get_mut(target_id) else {
-                continue;
-            };
-            if let Some(authors) = message.reactions.get_mut(key) {
-                authors.retain(|author| author != sender);
-                if authors.is_empty() {
-                    message.reactions.remove(key);
-                }
-            }
-        }
-
-        let mut projected = ordered_ids
-            .into_iter()
-            .filter_map(|event_id| messages.remove(&event_id))
-            .collect::<Vec<_>>();
-        projected.sort_by(|left, right| {
-            left.timestamp
-                .cmp(&right.timestamp)
-                .then_with(|| left.id.cmp(&right.id))
-        });
-        projected
-    }
-
     fn load_or_create_store_passphrase(storage: &AccountStorage) -> BackendResult<String> {
         let key = Self::store_passphrase_key(storage);
-        if keychain::secret_exists(&key) {
-            let bytes = keychain::load_secret(&key).map_err(Self::map_error)?;
-            return Ok(BASE64.encode(bytes));
+        match keychain::lookup_secret(&key).map_err(Self::map_secure_storage_error)? {
+            keychain::SecretLookup::Found(bytes) => return Ok(BASE64.encode(bytes)),
+            keychain::SecretLookup::Missing => {}
         }
 
         let mut bytes = [0_u8; 32];
         rand::thread_rng().fill_bytes(&mut bytes);
-        keychain::store_secret(&key, &bytes).map_err(Self::map_error)?;
+        keychain::store_secret(&key, &bytes).map_err(Self::map_secure_storage_error)?;
         Ok(BASE64.encode(bytes))
     }
 
@@ -3774,10 +1393,16 @@ impl MatrixBackend {
         std::fs::create_dir_all(&storage.store_root).map_err(Self::map_error)?;
         let passphrase = Self::load_or_create_store_passphrase(storage)?;
 
-        Client::builder()
-            // Accept either a Matrix server name (for .well-known discovery)
-            // or an explicit homeserver URL for advanced/self-hosted setups.
-            .server_name_or_homeserver_url(homeserver)
+        let builder = Client::builder();
+        let builder = if homeserver.contains("://") {
+            // Explicit URLs were already validated above and must remain
+            // usable for opening encrypted local state while the server is
+            // offline. Server names still use normal .well-known discovery.
+            builder.homeserver_url(&homeserver)
+        } else {
+            builder.server_name_or_homeserver_url(&homeserver)
+        };
+        let client = builder
             .sqlite_store(&storage.store_root, Some(&passphrase))
             .handle_refresh_tokens()
             .with_encryption_settings(EncryptionSettings {
@@ -3787,7 +1412,12 @@ impl MatrixBackend {
             })
             .build()
             .await
-            .map_err(Self::map_error)
+            .map_err(Self::map_error)?;
+        // Persisted requests must never respawn under the SDK's permissive
+        // default. Mesh enables each room queue only after re-establishing the
+        // joined-and-encrypted invariant for the active account.
+        client.send_queue().set_enabled(false).await;
+        Ok(client)
     }
 
     async fn build_ephemeral_oauth_client(
@@ -3801,8 +1431,13 @@ impl MatrixBackend {
         let encoded_passphrase = BASE64.encode(passphrase);
         passphrase.zeroize();
 
-        Client::builder()
-            .server_name_or_homeserver_url(homeserver)
+        let builder = Client::builder();
+        let builder = if homeserver.contains("://") {
+            builder.homeserver_url(&homeserver)
+        } else {
+            builder.server_name_or_homeserver_url(&homeserver)
+        };
+        builder
             .sqlite_store(store.path(), Some(&encoded_passphrase))
             .handle_refresh_tokens()
             .with_encryption_settings(EncryptionSettings {
@@ -3813,6 +1448,42 @@ impl MatrixBackend {
             .build()
             .await
             .map_err(Self::map_error)
+    }
+
+    async fn sync_once_for_session_restore(client: &Client) -> BackendResult<()> {
+        match tokio::time::timeout(
+            Duration::from_secs(SESSION_RESTORE_SYNC_TIMEOUT_SECONDS),
+            client.sync_once(SyncSettings::default().set_presence(PresenceState::Offline)),
+        )
+        .await
+        {
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(error)) => match Self::map_error(error) {
+                BackendError::Network(detail) => {
+                    tracing::warn!(
+                        target: "mesh::matrix",
+                        "Restored the encrypted local account while offline; sync will retry automatically: {detail}"
+                    );
+                    Ok(())
+                }
+                BackendError::RateLimited(detail) => {
+                    tracing::warn!(
+                        target: "mesh::matrix",
+                        "Restored the encrypted local account while initial sync was rate limited; sync will retry automatically: {detail}"
+                    );
+                    Ok(())
+                }
+                error => Err(error),
+            },
+            Err(_) => {
+                tracing::warn!(
+                    target: "mesh::matrix",
+                    timeout_seconds = SESSION_RESTORE_SYNC_TIMEOUT_SECONDS,
+                    "Restored the encrypted local account while initial sync was unavailable; sync will retry automatically"
+                );
+                Ok(())
+            }
+        }
     }
 
     fn persist_session(
@@ -3828,7 +1499,8 @@ impl MatrixBackend {
             },
         };
         let serialized = serde_json::to_vec(&value).map_err(Self::map_error)?;
-        keychain::store_secret(&Self::session_key(storage), &serialized).map_err(Self::map_error)
+        keychain::store_secret(&Self::session_key(storage), &serialized)
+            .map_err(Self::map_secure_storage_error)
     }
 
     fn persist_oauth_session(
@@ -3844,7 +1516,8 @@ impl MatrixBackend {
             },
         };
         let serialized = serde_json::to_vec(&value).map_err(Self::map_error)?;
-        keychain::store_secret(&Self::session_key(storage), &serialized).map_err(Self::map_error)
+        keychain::store_secret(&Self::session_key(storage), &serialized)
+            .map_err(Self::map_secure_storage_error)
     }
 
     fn rollback_unregistered_oauth_storage(&self, storage: &AccountStorage) -> BackendResult<()> {
@@ -3857,8 +1530,8 @@ impl MatrixBackend {
     }
 
     fn load_session(&self, storage: &AccountStorage) -> BackendResult<PersistedSession> {
-        let serialized =
-            keychain::load_secret(&Self::session_key(storage)).map_err(Self::map_error)?;
+        let serialized = keychain::load_secret(&Self::session_key(storage))
+            .map_err(Self::map_secure_storage_error)?;
         Self::decode_persisted_session(&serialized)
     }
 
@@ -4054,19 +1727,39 @@ impl MatrixBackend {
         })
     }
 
+    // `MatrixSyncFreshness` is advisory (staleness telemetry for the status
+    // banner and the MatrixRTC lease gate), not a correctness invariant, so a
+    // poisoned lock is recovered rather than left to panic every caller forever.
+    fn lock_matrix_sync_freshness(
+        freshness: &StdMutex<MatrixSyncFreshness>,
+    ) -> StdMutexGuard<'_, MatrixSyncFreshness> {
+        freshness
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     fn record_matrix_sync_success(
         freshness: &StdMutex<MatrixSyncFreshness>,
         task_epoch: u64,
         now_ms: u64,
     ) -> bool {
-        let mut freshness = freshness
-            .lock()
-            .expect("Matrix sync freshness lock poisoned");
+        let mut freshness = Self::lock_matrix_sync_freshness(freshness);
         if freshness.epoch != task_epoch {
             return false;
         }
         freshness.last_success_ms = now_ms;
         true
+    }
+
+    fn matrix_sync_is_fresh(last_success_ms: u64, now_ms: u64) -> bool {
+        last_success_ms != 0
+            && now_ms.saturating_sub(last_success_ms)
+                <= MATRIX_SYNC_STATUS_FRESHNESS.as_millis() as u64
+    }
+
+    fn matrix_sync_retry_delay(failure_count: u32) -> Duration {
+        let exponent = failure_count.saturating_sub(1).min(5);
+        Duration::from_secs(1_u64 << exponent).min(MATRIX_SYNC_RETRY_MAX_DELAY)
     }
 
     fn spawn_matrix_sync(
@@ -4075,52 +1768,72 @@ impl MatrixBackend {
         presence: PresenceState,
         task_epoch: u64,
         freshness: Arc<StdMutex<MatrixSyncFreshness>>,
+        send_queue_reconcile: Option<Arc<Notify>>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            let callback_freshness = Arc::clone(&freshness);
-            let result = client
-                .sync_with_result_callback(
-                    SyncSettings::default()
-                        .timeout(cadence.timeout())
-                        .set_presence(presence),
-                    move |result| {
-                        let freshness = Arc::clone(&callback_freshness);
-                        async move {
-                            if freshness
-                                .lock()
-                                .expect("Matrix sync freshness lock poisoned")
-                                .epoch
-                                != task_epoch
-                            {
-                                return Ok(LoopCtrl::Break);
-                            }
-                            match result {
-                                Ok(_) => {
-                                    if Self::record_matrix_sync_success(
-                                        &freshness,
-                                        task_epoch,
-                                        Self::matrix_rtc_monotonic_now_ms(),
-                                    ) {
-                                        Ok(LoopCtrl::Continue)
-                                    } else {
-                                        Ok(LoopCtrl::Break)
-                                    }
+            let mut failure_count: u32 = 0;
+            loop {
+                let callback_freshness = Arc::clone(&freshness);
+                let callback_send_queue_reconcile = send_queue_reconcile.clone();
+                let result = client
+                    .sync_with_result_callback(
+                        SyncSettings::default()
+                            .timeout(cadence.timeout())
+                            .set_presence(presence.clone()),
+                        move |result| {
+                            let freshness = Arc::clone(&callback_freshness);
+                            let send_queue_reconcile = callback_send_queue_reconcile.clone();
+                            async move {
+                                if Self::lock_matrix_sync_freshness(&freshness).epoch != task_epoch
+                                {
+                                    return Ok(LoopCtrl::Break);
                                 }
-                                Err(error) => Err(error),
+                                match result {
+                                    Ok(_) => {
+                                        if Self::record_matrix_sync_success(
+                                            &freshness,
+                                            task_epoch,
+                                            Self::matrix_rtc_monotonic_now_ms(),
+                                        ) {
+                                            if let Some(send_queue_reconcile) = send_queue_reconcile
+                                            {
+                                                send_queue_reconcile.notify_one();
+                                            }
+                                            Ok(LoopCtrl::Continue)
+                                        } else {
+                                            Ok(LoopCtrl::Break)
+                                        }
+                                    }
+                                    Err(error) => Err(error),
+                                }
                             }
-                        }
-                    },
-                )
-                .await;
-            if let Err(error) = result {
-                if freshness
-                    .lock()
-                    .expect("Matrix sync freshness lock poisoned")
-                    .epoch
-                    == task_epoch
-                {
-                    tracing::error!(target: "mesh::matrix", "Matrix sync stopped: {error}");
+                        },
+                    )
+                    .await;
+
+                let current_epoch = Self::lock_matrix_sync_freshness(&freshness).epoch;
+                if current_epoch != task_epoch {
+                    break;
                 }
+
+                match result {
+                    Ok(()) => {
+                        // A clean SDK exit is unusual for a live client. Re-enter
+                        // the loop so a transient transport shutdown cannot leave
+                        // the account silently stale.
+                        failure_count = 0;
+                    }
+                    Err(error) => {
+                        failure_count = failure_count.saturating_add(1);
+                        tracing::warn!(
+                            target: "mesh::matrix",
+                            failure_count,
+                            "Matrix sync paused; retrying automatically: {error}"
+                        );
+                    }
+                }
+
+                tokio::time::sleep(Self::matrix_sync_retry_delay(failure_count)).await;
             }
         })
     }
@@ -4130,9 +1843,7 @@ impl MatrixBackend {
         freshness: &Arc<StdMutex<MatrixSyncFreshness>>,
     ) {
         let task_epoch = {
-            let mut freshness = freshness
-                .lock()
-                .expect("Matrix sync freshness lock poisoned");
+            let mut freshness = Self::lock_matrix_sync_freshness(freshness);
             freshness.epoch = freshness.epoch.saturating_add(1);
             freshness.last_success_ms = 0;
             freshness.epoch
@@ -4149,6 +1860,7 @@ impl MatrixBackend {
                     control.presence.clone(),
                     task_epoch,
                     Arc::clone(freshness),
+                    control.send_queue_reconcile.clone(),
                 ));
             }
         }
@@ -4173,9 +1885,65 @@ impl MatrixBackend {
         Self::restart_matrix_sync_locked(&mut control, freshness).await;
     }
 
+    async fn clear_sent_typing_notices(&self) {
+        let mut sent_rooms = self.sent_typing_notices.lock().await;
+        if sent_rooms.is_empty() {
+            return;
+        }
+        let client = self.runtime.read().await.client.clone();
+        let Some(client) = client else {
+            sent_rooms.clear();
+            return;
+        };
+
+        for room_id in sent_rooms.clone() {
+            let Ok(room_id) = matrix_sdk::ruma::RoomId::parse(&room_id) else {
+                sent_rooms.remove(&room_id);
+                continue;
+            };
+            let room = match Self::protected_joined_room(
+                &client,
+                &room_id,
+                "clearing typing status",
+            )
+            .await
+            {
+                Ok(room) => room,
+                Err(error) => {
+                    tracing::warn!(
+                        target: "mesh::privacy",
+                        room_id = %room_id,
+                        "Could not clear a previously sent typing notice: {error}"
+                    );
+                    continue;
+                }
+            };
+            match room.typing_notice(false).await {
+                Ok(()) => {
+                    sent_rooms.remove(room_id.as_str());
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        target: "mesh::privacy",
+                        room_id = %room_id,
+                        "Could not clear a previously sent typing notice: {error}"
+                    );
+                }
+            }
+        }
+    }
+
     async fn apply_wire_privacy(&self, preferences: &UserPreferences) {
         let next = WirePrivacyPreferences::from(preferences);
-        *self.wire_privacy.write().await = next;
+        let previous = {
+            let mut current = self.wire_privacy.write().await;
+            let previous = *current;
+            *current = next;
+            previous
+        };
+        if previous.send_typing_indicators && !next.send_typing_indicators {
+            self.clear_sent_typing_notices().await;
+        }
 
         let mut control = self.matrix_sync_control.lock().await;
         let presence = next.presence();
@@ -4222,6 +1990,16 @@ impl MatrixBackend {
                     if !push_actions.iter().any(Action::should_notify)
                         || room.own_user_id() == event.sender
                     {
+                        return;
+                    }
+                    if let Err(error) =
+                        MatrixBackend::require_protected_room(&room, "showing a notification").await
+                    {
+                        tracing::warn!(
+                            target: "mesh::security",
+                            room_id = %room.room_id(),
+                            "Suppressed a notification from an unprotected room: {error}"
+                        );
                         return;
                     }
 
@@ -4342,6 +2120,17 @@ impl MatrixBackend {
             move |event: SyncTypingEvent, room: Room| {
                 let typing_users = Arc::clone(&typing_users);
                 async move {
+                    if let Err(error) =
+                        MatrixBackend::require_protected_room(&room, "reading typing status").await
+                    {
+                        typing_users.write().await.remove(room.room_id().as_str());
+                        tracing::warn!(
+                            target: "mesh::security",
+                            room_id = %room.room_id(),
+                            "Suppressed typing status from an unprotected room: {error}"
+                        );
+                        return;
+                    }
                     let own_user_id = room.own_user_id();
                     let users = event
                         .content
@@ -4441,6 +2230,13 @@ impl MatrixBackend {
                 }
             }
         });
+        let send_queue_task = Self::spawn_send_queue_task(
+            client.clone(),
+            Arc::clone(&self.send_queue_reconcile),
+            Arc::clone(&self.send_queue_gate),
+            Arc::clone(&self.send_queue_known),
+            Arc::clone(&self.event_callback),
+        );
 
         let mut runtime = self.runtime.write().await;
         if let Some(previous) = runtime.session_task.take() {
@@ -4449,18 +2245,24 @@ impl MatrixBackend {
         if let Some(previous) = runtime.room_updates_task.take() {
             previous.abort();
         }
+        if let Some(previous) = runtime.send_queue_task.take() {
+            previous.abort();
+        }
         runtime.client = Some(client.clone());
         runtime.homeserver = Some(homeserver);
         runtime.profile_id = Some(profile_id);
         runtime.session_task = session_task;
         runtime.room_updates_task = Some(room_updates_task);
+        runtime.send_queue_task = Some(send_queue_task);
         drop(runtime);
 
         let mut sync = self.matrix_sync_control.lock().await;
         sync.client = Some(client);
         sync.cadence = MatrixSyncCadence::Normal;
         sync.paused = false;
+        sync.send_queue_reconcile = Some(Arc::clone(&self.send_queue_reconcile));
         Self::restart_matrix_sync_locked(&mut sync, &self.matrix_sync_freshness).await;
+        drop(sync);
     }
 
     async fn stop_runtime(&self) -> Option<Client> {
@@ -4470,19 +2272,25 @@ impl MatrixBackend {
             sync.client = None;
             sync.cadence = MatrixSyncCadence::Normal;
             sync.presence = PresenceState::Offline;
+            sync.send_queue_reconcile = None;
             Self::restart_matrix_sync_locked(&mut sync, &self.matrix_sync_freshness).await;
         }
         *self.wire_privacy.write().await = WirePrivacyPreferences::default();
-        let (client, session_task, room_updates_task) = {
+        self.sent_typing_notices.lock().await.clear();
+        let (client, session_task, room_updates_task, send_queue_task) = {
             let mut runtime = self.runtime.write().await;
             let client = runtime.client.take();
             let session_task = runtime.session_task.take();
             let room_updates_task = runtime.room_updates_task.take();
+            let send_queue_task = runtime.send_queue_task.take();
             runtime.homeserver = None;
             runtime.profile_id = None;
-            (client, session_task, room_updates_task)
+            (client, session_task, room_updates_task, send_queue_task)
         };
 
+        if let Some(client) = client.as_ref() {
+            client.send_queue().set_enabled(false).await;
+        }
         if let Some(task) = session_task {
             task.abort();
             let _ = task.await;
@@ -4491,6 +2299,11 @@ impl MatrixBackend {
             task.abort();
             let _ = task.await;
         }
+        if let Some(task) = send_queue_task {
+            task.abort();
+            let _ = task.await;
+        }
+        self.send_queue_known.lock().await.clear();
         for session in self
             .rtc_sessions
             .lock()
@@ -4512,10 +2325,7 @@ impl MatrixBackend {
         self.typing_users.write().await.clear();
         self.presence.write().await.clear();
         self.verification_sessions.write().await.clear();
-        self.matrix_sync_freshness
-            .lock()
-            .expect("Matrix sync freshness lock poisoned")
-            .last_success_ms = 0;
+        Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness).last_success_ms = 0;
         client
     }
 
@@ -4530,15 +2340,17 @@ impl MatrixBackend {
 
     pub async fn pause_sync(&self) {
         let mut sync = self.matrix_sync_control.lock().await;
-        self.matrix_sync_freshness
-            .lock()
-            .expect("Matrix sync freshness lock poisoned")
-            .last_success_ms = 0;
+        Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness).last_success_ms = 0;
         if sync.paused && sync.task.is_none() {
             return;
         }
         sync.paused = true;
         Self::restart_matrix_sync_locked(&mut sync, &self.matrix_sync_freshness).await;
+    }
+
+    #[doc(hidden)]
+    pub async fn shutdown_for_test(&self) {
+        self.stop_runtime().await;
     }
 
     pub async fn resume_sync(&self) -> BackendResult<()> {
@@ -4559,609 +2371,23 @@ impl MatrixBackend {
         drop(sessions);
         Ok(())
     }
-
-    async fn space_child_ids(&self, space: &Room) -> BackendResult<Vec<OwnedRoomId>> {
-        let response = self
-            .client()
-            .await?
-            .send(get_state_events::v3::Request::new(
-                space.room_id().to_owned(),
-            ))
-            .await
-            .map_err(Self::map_error)?;
-
-        Ok(response
-            .room_state
-            .into_iter()
-            .filter_map(|event| {
-                let event_type = event.get_field::<String>("type").ok().flatten()?;
-                if event_type != "m.space.child" {
-                    return None;
-                }
-                let state_key = event.get_field::<String>("state_key").ok().flatten()?;
-                matrix_sdk::ruma::RoomId::parse(state_key).ok()
-            })
-            .collect())
-    }
-
-    async fn community_rooms(&self, community_id: &str) -> BackendResult<Vec<Room>> {
-        let client = self.client().await?;
-        let space_id = matrix_sdk::ruma::RoomId::parse(community_id).map_err(Self::map_error)?;
-        let space = client.get_room(&space_id).ok_or_else(|| {
-            BackendError::Other("community Space is not present in the local Matrix store".into())
-        })?;
-        if !space.is_space() {
-            return Err(BackendError::InvalidConfiguration(
-                "community ID does not identify a Matrix Space".into(),
-            ));
-        }
-
-        let mut rooms = vec![space];
-        for child_id in self.space_child_ids(&rooms[0]).await? {
-            if let Some(room) = client.get_room(&child_id) {
-                if !room.is_space() {
-                    rooms.push(room);
-                }
-            }
-        }
-        Ok(rooms)
-    }
-
-    fn direct_rooms(client: &Client, user_id: &matrix_sdk::ruma::UserId) -> Vec<Room> {
-        let mut rooms: Vec<Room> = client
-            .joined_rooms()
-            .into_iter()
-            .filter(|room| {
-                let targets = room.direct_targets();
-                targets.len() == 1
-                    && targets
-                        .iter()
-                        .any(|target| target.as_str() == user_id.as_str())
-            })
-            .collect();
-        rooms.sort_by(|left, right| left.room_id().cmp(right.room_id()));
-        rooms
-    }
-
-    async fn inferred_direct_rooms(
-        client: &Client,
-        user_id: &matrix_sdk::ruma::UserId,
-    ) -> BackendResult<Vec<Room>> {
-        let Some(own_user_id) = client.user_id() else {
-            return Err(BackendError::NotAuthenticated);
-        };
-        let mut rooms = Vec::new();
-        for room in client.joined_rooms() {
-            if room.is_space() {
-                continue;
-            }
-            let members = room
-                .members(RoomMemberships::JOIN)
-                .await
-                .map_err(Self::map_error)?;
-            if members.len() != 2
-                || !members.iter().any(|member| member.user_id() == own_user_id)
-                || !members.iter().any(|member| member.user_id() == user_id)
-            {
-                continue;
-            }
-            Self::require_encrypted_room(&room, "opening this direct message").await?;
-            rooms.push(room);
-        }
-        rooms.sort_by(|left, right| left.room_id().cmp(right.room_id()));
-        Ok(rooms)
-    }
-
-    fn canonical_direct_room_id(mut room_ids: Vec<OwnedRoomId>) -> Option<OwnedRoomId> {
-        room_ids.sort();
-        room_ids.into_iter().next()
-    }
-
-    fn merge_direct_room_ids(target: &mut Vec<OwnedRoomId>, source: &[OwnedRoomId]) -> bool {
-        let mut additions = source
-            .iter()
-            .filter(|room_id| !target.contains(room_id))
-            .cloned()
-            .collect::<Vec<_>>();
-        additions.sort();
-        let changed = !additions.is_empty();
-        target.extend(additions);
-        changed
-    }
-
-    fn merge_direct_content_preserving_mappings(
-        target: &mut DirectEventContent,
-        source: &DirectEventContent,
-    ) -> bool {
-        let mut changed = false;
-        for (user_id, source_room_ids) in source.iter() {
-            if let Some(target_room_ids) = target.get_mut(user_id) {
-                changed |= Self::merge_direct_room_ids(target_room_ids, source_room_ids);
-            } else {
-                target.insert(user_id.clone(), source_room_ids.clone());
-                changed = true;
-            }
-        }
-        changed
-    }
-
-    fn direct_content_preserves(
-        observed: &DirectEventContent,
-        required: &DirectEventContent,
-    ) -> bool {
-        required.iter().all(|(user_id, required_room_ids)| {
-            observed.get(user_id).is_some_and(|observed_room_ids| {
-                required_room_ids
-                    .iter()
-                    .all(|room_id| observed_room_ids.contains(room_id))
-            })
-        })
-    }
-
-    async fn reconcile_direct_duplicates(
-        client: &Client,
-        user_id: &matrix_sdk::ruma::UserId,
-        local_room_ids: &[OwnedRoomId],
-        preserved_content: Option<&DirectEventContent>,
-        allow_missing_user_mapping: bool,
-    ) -> BackendResult<bool> {
-        let direct_user = <&DirectUserIdentifier>::from(user_id);
-        let mut accumulated = preserved_content.cloned();
-        let mut wrote = false;
-
-        for _ in 0..DIRECT_ACCOUNT_DATA_MERGE_ATTEMPTS {
-            let Some(first_raw) = client
-                .account()
-                .fetch_account_data_static::<DirectEventContent>()
-                .await
-                .map_err(Self::map_error)?
-            else {
-                return Ok(wrote);
-            };
-            let first = first_raw.deserialize().map_err(Self::map_error)?;
-
-            let Some(second_raw) = client
-                .account()
-                .fetch_account_data_static::<DirectEventContent>()
-                .await
-                .map_err(Self::map_error)?
-            else {
-                if let Some(accumulated_content) = accumulated.as_mut() {
-                    Self::merge_direct_content_preserving_mappings(accumulated_content, &first);
-                } else {
-                    accumulated = Some(first);
-                }
-                continue;
-            };
-            let second = second_raw.deserialize().map_err(Self::map_error)?;
-
-            let snapshots_match = serde_json::to_vec(&first).map_err(Self::map_error)?
-                == serde_json::to_vec(&second).map_err(Self::map_error)?;
-            let accumulated_content = accumulated.get_or_insert_with(|| first.clone());
-            Self::merge_direct_content_preserving_mappings(accumulated_content, &first);
-            Self::merge_direct_content_preserving_mappings(accumulated_content, &second);
-            if !snapshots_match {
-                continue;
-            }
-
-            let mut candidate = second;
-            Self::merge_direct_content_preserving_mappings(&mut candidate, accumulated_content);
-            let room_ids = if let Some(room_ids) = candidate.get_mut(direct_user) {
-                room_ids
-            } else if allow_missing_user_mapping {
-                candidate.insert(direct_user.to_owned(), Vec::new());
-                candidate
-                    .get_mut(direct_user)
-                    .expect("the direct-user mapping was just inserted")
-            } else {
-                // A remote device removed this entire peer mapping. Do not
-                // recreate it from a possibly stale local SDK snapshot.
-                return Ok(wrote);
-            };
-            Self::merge_direct_room_ids(room_ids, local_room_ids);
-
-            if Self::direct_content_preserves(&first, &candidate) {
-                return Ok(wrote);
-            }
-
-            client
-                .account()
-                .set_account_data(candidate.clone())
-                .await
-                .map_err(Self::map_error)?;
-            wrote = true;
-
-            let Some(verification_raw) = client
-                .account()
-                .fetch_account_data_static::<DirectEventContent>()
-                .await
-                .map_err(Self::map_error)?
-            else {
-                continue;
-            };
-            let verification = verification_raw.deserialize().map_err(Self::map_error)?;
-            if Self::direct_content_preserves(&verification, &candidate) {
-                return Ok(true);
-            }
-            Self::merge_direct_content_preserving_mappings(accumulated_content, &candidate);
-            Self::merge_direct_content_preserving_mappings(accumulated_content, &verification);
-        }
-
-        Err(BackendError::Other(
-            "Matrix direct-message account data changed repeatedly; retry after other devices finish updating"
-                .into(),
-        ))
-    }
-
-    async fn is_ignored_user(
-        client: &Client,
-        user_id: &matrix_sdk::ruma::UserId,
-    ) -> BackendResult<bool> {
-        let Some(raw_content) = client
-            .account()
-            .fetch_account_data_static::<IgnoredUserListEventContent>()
-            .await
-            .map_err(Self::map_error)?
-        else {
-            return Ok(false);
-        };
-        let content = raw_content.deserialize().map_err(Self::map_error)?;
-        Ok(content.ignored_users.contains_key(user_id))
-    }
-
-    async fn direct_room(
-        &self,
-        client: &Client,
-        user_id: &matrix_sdk::ruma::UserId,
-    ) -> BackendResult<Room> {
-        let mut direct_rooms = Self::direct_rooms(client, user_id);
-        let inferred = direct_rooms.is_empty();
-        if inferred {
-            direct_rooms = Self::inferred_direct_rooms(client, user_id).await?;
-        }
-        let duplicate_count = direct_rooms.len();
-        let direct_room_ids = direct_rooms
-            .iter()
-            .map(|room| room.room_id().to_owned())
-            .collect::<Vec<_>>();
-        let canonical_room_id = Self::canonical_direct_room_id(direct_room_ids.clone());
-        let room = if let Some(canonical_room_id) = canonical_room_id {
-            let room = direct_rooms
-                .into_iter()
-                .find(|room| room.room_id() == canonical_room_id)
-                .expect("canonical direct room must come from the candidate set");
-            if inferred || duplicate_count > 1 {
-                Self::reconcile_direct_duplicates(
-                    client,
-                    user_id,
-                    &direct_room_ids,
-                    None,
-                    inferred,
-                )
-                .await?;
-            }
-            room
-        } else {
-            // A second device can have a stale local account-data snapshot even
-            // while the homeserver already contains valid m.direct mappings
-            // written by another device. Preserve the authoritative snapshot
-            // before create_dm updates last-write-wins account data, then merge
-            // and verify it alongside the newly created room.
-            let preserved_content = client
-                .account()
-                .fetch_account_data_static::<DirectEventContent>()
-                .await
-                .map_err(Self::map_error)?
-                .map(|raw| raw.deserialize().map_err(Self::map_error))
-                .transpose()?;
-            let room = client.create_dm(user_id).await.map_err(Self::map_error)?;
-            Self::reconcile_direct_duplicates(
-                client,
-                user_id,
-                &[room.room_id().to_owned()],
-                preserved_content.as_ref(),
-                true,
-            )
-            .await?;
-            room
-        };
-        Self::require_encrypted_room(&room, "opening this direct message").await?;
-        Ok(room)
-    }
-
-    fn safe_media_filename(filename: &str) -> BackendResult<String> {
-        let safe = Path::new(filename.trim())
-            .file_name()
-            .and_then(|name| name.to_str())
-            .filter(|name| !name.is_empty())
-            .unwrap_or("attachment.bin")
-            .to_owned();
-        if has_blocked_attachment_extension(Path::new(&safe)) {
-            return Err(BackendError::InvalidConfiguration(
-                "refusing to write an executable Matrix attachment".into(),
-            ));
-        }
-        Ok(safe)
-    }
-
-    fn validate_transfer_id(transfer_id: &str) -> BackendResult<()> {
-        if transfer_id.len() != 36 || uuid::Uuid::parse_str(transfer_id).is_err() {
-            return Err(BackendError::InvalidConfiguration(
-                "Matrix transfer id must be a UUID".into(),
-            ));
-        }
-        Ok(())
-    }
-
-    fn emit_transfer_progress(
-        progress: &MatrixTransferProgressCallback,
-        transfer_id: &str,
-        direction: MatrixTransferDirection,
-        transferred_bytes: u64,
-        total_bytes: Option<u64>,
-        state: MatrixTransferState,
-        result: Option<MatrixTransferResult>,
-    ) {
-        let terminal_retry = matches!(
-            state,
-            MatrixTransferState::Cancelled | MatrixTransferState::Failed
-        );
-        let error = match state {
-            MatrixTransferState::Cancelled => {
-                Some("Transfer cancelled. Restarting begins again from zero.".into())
-            }
-            MatrixTransferState::Failed => {
-                Some("Transfer failed. Restarting begins again from zero.".into())
-            }
-            _ => None,
-        };
-        progress(MatrixTransferProgress {
-            transfer_id: transfer_id.to_owned(),
-            direction,
-            transferred_bytes,
-            total_bytes,
-            state,
-            retryable: terminal_retry,
-            retry_mode: terminal_retry.then_some(MatrixTransferRetryMode::RestartFromZero),
-            result,
-            error,
-        });
-    }
-
-    fn validate_media_payload(
-        data: &[u8],
-        content_type: Option<&str>,
-        filename: &str,
-    ) -> BackendResult<()> {
-        let blocked_content_type = content_type.is_some_and(|content_type| {
-            BLOCKED_MEDIA_CONTENT_TYPES
-                .iter()
-                .any(|blocked| blocked.eq_ignore_ascii_case(content_type.trim()))
-        });
-        let executable_header = data.starts_with(b"MZ")
-            || data.starts_with(b"\x7fELF")
-            || data.starts_with(b"\xfe\xed\xfa\xce")
-            || data.starts_with(b"\xce\xfa\xed\xfe")
-            || data.starts_with(b"\xfe\xed\xfa\xcf")
-            || data.starts_with(b"\xcf\xfa\xed\xfe");
-        if blocked_content_type || executable_header {
-            return Err(BackendError::InvalidConfiguration(format!(
-                "refusing to cache or send executable Matrix attachment payload: {filename}"
-            )));
-        }
-        Ok(())
-    }
-
-    fn thumbnail_image_format(content_type: &str) -> Option<image::ImageFormat> {
-        match content_type.trim().to_ascii_lowercase().as_str() {
-            "image/jpeg" => Some(image::ImageFormat::Jpeg),
-            "image/png" => Some(image::ImageFormat::Png),
-            "image/webp" => Some(image::ImageFormat::WebP),
-            _ => None,
-        }
-    }
-
-    fn generate_sanitized_thumbnail(
-        data: &[u8],
-        content_type: &str,
-    ) -> BackendResult<Option<GeneratedThumbnail>> {
-        let Some(format) = Self::thumbnail_image_format(content_type) else {
-            return Ok(None);
-        };
-        let dimensions = image::ImageReader::with_format(Cursor::new(data), format)
-            .into_dimensions()
-            .map_err(|_| {
-                BackendError::InvalidConfiguration(
-                    "image attachment does not match its declared content type".into(),
-                )
-            })?;
-        let pixels = u64::from(dimensions.0)
-            .checked_mul(u64::from(dimensions.1))
-            .ok_or_else(|| {
-                BackendError::InvalidConfiguration(
-                    "image attachment dimensions overflow the thumbnail limit".into(),
-                )
-            })?;
-        if dimensions.0 == 0
-            || dimensions.1 == 0
-            || dimensions.0 > MAX_THUMBNAIL_SOURCE_DIMENSION
-            || dimensions.1 > MAX_THUMBNAIL_SOURCE_DIMENSION
-            || pixels > MAX_THUMBNAIL_SOURCE_PIXELS
-        {
-            return Err(BackendError::InvalidConfiguration(format!(
-                "image attachment exceeds the {MAX_THUMBNAIL_SOURCE_PIXELS}-pixel thumbnail limit"
-            )));
-        }
-
-        let mut decode_limits = image::Limits::default();
-        decode_limits.max_image_width = Some(MAX_THUMBNAIL_SOURCE_DIMENSION);
-        decode_limits.max_image_height = Some(MAX_THUMBNAIL_SOURCE_DIMENSION);
-        decode_limits.max_alloc = Some(MAX_THUMBNAIL_DECODE_BYTES);
-        let mut reader = image::ImageReader::with_format(Cursor::new(data), format);
-        reader.limits(decode_limits);
-        let decoded = reader.decode().map_err(|_| {
-            BackendError::InvalidConfiguration(
-                "image attachment could not be decoded within thumbnail limits".into(),
-            )
-        })?;
-        if decoded.width() != dimensions.0 || decoded.height() != dimensions.1 {
-            return Err(BackendError::InvalidConfiguration(
-                "decoded image dimensions do not match its header".into(),
-            ));
-        }
-        let thumbnail = decoded.thumbnail(MAX_THUMBNAIL_DIMENSION, MAX_THUMBNAIL_DIMENSION);
-        let width = thumbnail.width();
-        let height = thumbnail.height();
-        let mut output = Cursor::new(Vec::new());
-        thumbnail
-            .write_to(&mut output, image::ImageFormat::Png)
-            .map_err(|_| BackendError::Other("failed to encode sanitized thumbnail".into()))?;
-        let bytes = output.into_inner();
-        if bytes.is_empty()
-            || bytes.len() > MAX_THUMBNAIL_BYTES
-            || !bytes.starts_with(b"\x89PNG\r\n\x1a\n")
-        {
-            return Err(BackendError::Other(
-                "sanitized thumbnail exceeded its encoded-size limit".into(),
-            ));
-        }
-        let verified_dimensions =
-            image::ImageReader::with_format(Cursor::new(&bytes), image::ImageFormat::Png)
-                .into_dimensions()
-                .map_err(|_| BackendError::Other("sanitized thumbnail validation failed".into()))?;
-        if verified_dimensions != (width, height)
-            || width == 0
-            || height == 0
-            || width > MAX_THUMBNAIL_DIMENSION
-            || height > MAX_THUMBNAIL_DIMENSION
-        {
-            return Err(BackendError::Other(
-                "sanitized thumbnail dimensions failed validation".into(),
-            ));
-        }
-        Ok(Some(GeneratedThumbnail {
-            bytes,
-            width,
-            height,
-        }))
-    }
-
-    async fn upload_encrypted_media_bytes(
-        client: &Client,
-        data: &[u8],
-        cancellation: &CancellationToken,
-        progress: &MatrixTransferProgressCallback,
-        transfer_id: &str,
-        transferred_bytes: &Arc<AtomicU64>,
-        progress_range: (u64, u64),
-    ) -> BackendResult<EncryptedFile> {
-        let (offset, total_bytes) = progress_range;
-        let mut reader = Cursor::new(data);
-        let upload = client.upload_encrypted_file(&mut reader);
-        let mut upload_progress = upload.subscribe_to_send_progress();
-        let progress_callback = progress.clone();
-        let progress_transfer_id = transfer_id.to_owned();
-        let progress_bytes = transferred_bytes.clone();
-        let progress_task = tokio::spawn(async move {
-            while let Some(update) = upload_progress.next().await {
-                let current = offset.saturating_add(update.current as u64);
-                progress_bytes.store(current, Ordering::Relaxed);
-                Self::emit_transfer_progress(
-                    &progress_callback,
-                    &progress_transfer_id,
-                    MatrixTransferDirection::Upload,
-                    current,
-                    Some(total_bytes),
-                    MatrixTransferState::Uploading,
-                    None,
-                );
-            }
-        });
-        let result = tokio::select! {
-            result = upload => result.map_err(Self::map_error),
-            _ = cancellation.cancelled() => {
-                Err(BackendError::Other("Matrix attachment upload cancelled".into()))
-            }
-        };
-        progress_task.abort();
-        if result.is_ok() {
-            transferred_bytes.store(offset.saturating_add(data.len() as u64), Ordering::Relaxed);
-        }
-        result
-    }
-
-    async fn enforce_media_cache_quota(cache_root: &Path, protected: &Path) -> BackendResult<()> {
-        Self::enforce_media_cache_quota_with_limit(cache_root, protected, MAX_MEDIA_CACHE_BYTES)
-            .await
-    }
-
-    async fn enforce_media_cache_quota_with_limit(
-        cache_root: &Path,
-        protected: &Path,
-        max_bytes: u64,
-    ) -> BackendResult<()> {
-        let mut entries = Vec::new();
-        let mut total = 0u64;
-        let mut read_dir = tokio::fs::read_dir(cache_root)
-            .await
-            .map_err(Self::map_error)?;
-        while let Some(entry) = read_dir.next_entry().await.map_err(Self::map_error)? {
-            let file_type = entry.file_type().await.map_err(Self::map_error)?;
-            if !file_type.is_file() {
-                continue;
-            }
-            let metadata = entry.metadata().await.map_err(Self::map_error)?;
-            total = total.saturating_add(metadata.len());
-            entries.push((
-                entry.path(),
-                metadata.len(),
-                metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
-            ));
-        }
-        if total <= max_bytes {
-            return Ok(());
-        }
-
-        entries.sort_by_key(|(_, _, modified)| *modified);
-        for (path, size, _) in entries {
-            if total <= max_bytes {
-                break;
-            }
-            if path.as_path() == protected {
-                continue;
-            }
-            tokio::fs::remove_file(&path)
-                .await
-                .map_err(Self::map_error)?;
-            total = total.saturating_sub(size);
-        }
-        Ok(())
-    }
-
-    fn direct_message_from_message(message: MessageDto) -> DirectMessageDto {
-        DirectMessageDto {
-            id: message.id,
-            conversation_id: message.channel_id,
-            author_public_key: message.author_public_key,
-            author_display_name: message.author_display_name,
-            author_avatar_color: message.author_avatar_color,
-            content: message.content,
-            timestamp: message.timestamp,
-            signature: message.signature,
-            attachments: message.attachments,
-            reactions: message.reactions,
-            edited_at: message.edited_at,
-            deleted_at: message.deleted_at,
-            reply_to_id: message.reply_to_id,
-            delivery_status: message.delivery_status,
-        }
-    }
 }
 
 #[async_trait]
 impl MeshBackend for MatrixBackend {
     fn kind(&self) -> BackendKind {
         BackendKind::Matrix
+    }
+
+    async fn active_account_storage_root(&self) -> BackendResult<PathBuf> {
+        let profile_id = self
+            .runtime
+            .read()
+            .await
+            .profile_id
+            .clone()
+            .ok_or(BackendError::NotAuthenticated)?;
+        Ok(self.storage_for_profile(&profile_id).store_root)
     }
 
     fn set_matrix_event_callback(&self, callback: Option<MatrixBackendEventCallback>) {
@@ -5182,20 +2408,29 @@ impl MeshBackend for MatrixBackend {
             Err(BackendError::NotAuthenticated) => return Ok(()),
             Err(error) => return Err(error),
         };
-        if keychain::secret_exists(&Self::session_key(&storage)) {
-            self.restore_session().await?;
+        match keychain::lookup_secret(&Self::session_key(&storage))
+            .map_err(Self::map_secure_storage_error)?
+        {
+            keychain::SecretLookup::Found(_) => {
+                self.restore_session().await?;
+            }
+            keychain::SecretLookup::Missing => {}
         }
         Ok(())
     }
 
     async fn status(&self) -> BackendStatus {
-        let sync_running = self
+        let sync_running_task = self
             .matrix_sync_control
             .lock()
             .await
             .task
             .as_ref()
             .is_some_and(|task| !task.is_finished());
+        let last_success_ms =
+            Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness).last_success_ms;
+        let sync_running = sync_running_task
+            && Self::matrix_sync_is_fresh(last_success_ms, Self::matrix_rtc_monotonic_now_ms());
         let runtime = self.runtime.read().await;
         let user_id = runtime
             .client
@@ -5209,10 +2444,14 @@ impl MeshBackend for MatrixBackend {
             .map(ToString::to_string);
         let authenticated = user_id.is_some();
 
-        let warnings = if authenticated {
-            Vec::new()
+        let warnings = if !authenticated {
+            vec!["Sign in to synchronize communities and messages".into()]
+        } else if !sync_running {
+            vec![
+                "Your connection is temporarily unavailable. Mesh will retry automatically.".into(),
+            ]
         } else {
-            vec!["Sign in to a Matrix homeserver to synchronize communities and messages".into()]
+            Vec::new()
         };
 
         BackendStatus {
@@ -5233,6 +2472,8 @@ impl MeshBackend for MatrixBackend {
     async fn matrix_room_is_encrypted(&self, room_id: String) -> BackendResult<bool> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        // This is the status probe used before opening a room, so it cannot use
+        // `protected_joined_room` without making an unencrypted result unobservable.
         let room = client.get_room(&room_id).ok_or_else(|| {
             BackendError::NotFound("room is not present in the local Matrix store".into())
         })?;
@@ -5253,9 +2494,8 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<MatrixRoomNotificationMode> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::NotFound("room is not present in the local Matrix store".into())
-        })?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "reading notification settings").await?;
         let mode = room.notification_mode().await.ok_or_else(|| {
             BackendError::Other("Matrix notification mode is not available for this room".into())
         })?;
@@ -5273,14 +2513,9 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<()> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::NotFound("room is not present in the local Matrix store".into())
-        })?;
-        if !matches!(room.state(), RoomState::Joined) {
-            return Err(BackendError::InvalidConfiguration(
-                "notification mode can only be changed for joined Matrix rooms".into(),
-            ));
-        }
+        let _room =
+            Self::protected_joined_room(&client, &room_id, "updating notification settings")
+                .await?;
         let mode = match mode {
             MatrixRoomNotificationMode::All => RoomNotificationMode::AllMessages,
             MatrixRoomNotificationMode::Mentions => RoomNotificationMode::MentionsAndKeywordsOnly,
@@ -5568,7 +2803,13 @@ impl MeshBackend for MatrixBackend {
                 ));
             }
 
-            let callback = match oidc::receive_callback(listener, cancellation.clone()).await {
+            let callback = match oidc::receive_callback(
+                listener,
+                cancellation.clone(),
+                authorization.state.secret(),
+            )
+            .await
+            {
                 Ok(callback) => callback,
                 Err(oidc::CallbackError::Cancelled) => {
                     oauth.abort_login(&authorization.state).await;
@@ -5735,10 +2976,7 @@ impl MeshBackend for MatrixBackend {
                 .restore_session(persisted.authentication.into_sdk_session())
                 .await
                 .map_err(Self::map_error)?;
-            client
-                .sync_once(SyncSettings::default().set_presence(PresenceState::Offline))
-                .await
-                .map_err(Self::map_error)?;
+            Self::sync_once_for_session_restore(&client).await?;
             Ok::<_, BackendError>(client)
         };
         let client = tokio::time::timeout(Duration::from_secs(LOGIN_TIMEOUT_SECONDS), operation)
@@ -5770,8 +3008,8 @@ impl MeshBackend for MatrixBackend {
         }
         self.stop_runtime().await;
         let session_key = Self::session_key(&storage);
-        if keychain::secret_exists(&session_key) {
-            keychain::delete_secret(&session_key).map_err(Self::map_error)?;
+        if keychain::try_secret_exists(&session_key).map_err(Self::map_secure_storage_error)? {
+            keychain::delete_secret(&session_key).map_err(Self::map_secure_storage_error)?;
         }
         let mut registry = self.load_registry()?;
         registry
@@ -5916,14 +3154,14 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn remove_local_account(&self) -> BackendResult<()> {
-        let profile_id = self
-            .runtime
-            .read()
-            .await
-            .profile_id
-            .clone()
-            .or_else(|| self.load_registry().ok()?.active_profile_id)
-            .unwrap_or_else(|| "default".into());
+        let runtime_profile_id = self.runtime.read().await.profile_id.clone();
+        let profile_id = match runtime_profile_id {
+            Some(profile_id) => profile_id,
+            None => self
+                .load_registry()?
+                .active_profile_id
+                .unwrap_or_else(|| "default".into()),
+        };
         let storage = self.storage_for_profile(&profile_id);
         let plan = self.local_account_removal_plan(&storage)?;
         let client = self.stop_runtime().await;
@@ -5996,10 +3234,7 @@ impl MeshBackend for MatrixBackend {
                 .restore_session(persisted.authentication.into_sdk_session())
                 .await
                 .map_err(Self::map_error)?;
-            client
-                .sync_once(SyncSettings::default().set_presence(PresenceState::Offline))
-                .await
-                .map_err(Self::map_error)?;
+            Self::sync_once_for_session_restore(&client).await?;
             Ok::<_, BackendError>(client)
         };
         let client = tokio::time::timeout(Duration::from_secs(LOGIN_TIMEOUT_SECONDS), operation)
@@ -6067,7 +3302,7 @@ impl MeshBackend for MatrixBackend {
             .clone()
             .ok_or(BackendError::NotAuthenticated)?;
         let storage = self.storage_for_profile(&profile_id);
-        let last_successful_test_at = Self::load_last_recovery_test(&storage);
+        let last_successful_test_at = Self::load_last_recovery_test(&storage)?;
         let recovery_test_is_fresh = last_successful_test_at
             .as_deref()
             .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
@@ -6367,12 +3602,12 @@ impl MeshBackend for MatrixBackend {
             (!description.trim().is_empty()).then(|| description.trim().to_owned());
         space_request.preset = Some(RoomPreset::PrivateChat);
         space_request.creation_content = Some(Raw::new(&space_creation).map_err(Self::map_error)?);
+        space_request.initial_state = vec![Self::encrypted_room_initial_state()];
         let space = client
             .create_room(space_request)
             .await
             .map_err(Self::map_error)?;
 
-        let encryption = RoomEncryptionEventContent::new(EventEncryptionAlgorithm::MegolmV1AesSha2);
         let mut parent = SpaceParentEventContent::new(via.clone());
         parent.canonical = true;
 
@@ -6381,7 +3616,7 @@ impl MeshBackend for MatrixBackend {
         channel_request.topic = Some(format!("General discussion for {}", name.trim()));
         channel_request.preset = Some(RoomPreset::PrivateChat);
         channel_request.initial_state = vec![
-            InitialStateEvent::with_empty_state_key(encryption).to_raw_any(),
+            Self::encrypted_room_initial_state(),
             InitialStateEvent::new(space.room_id().to_owned(), parent).to_raw_any(),
         ];
         let channel = client
@@ -6413,6 +3648,7 @@ impl MeshBackend for MatrixBackend {
             .into_iter()
             .filter(|room| room.is_space())
         {
+            Self::require_protected_room(&room, "listing communities").await?;
             let role = if room
                 .creators()
                 .is_some_and(|creators| creators.iter().any(|creator| creator == own_user_id))
@@ -6453,9 +3689,8 @@ impl MeshBackend for MatrixBackend {
     async fn list_channels(&self, community_id: String) -> BackendResult<Vec<ChannelDto>> {
         let client = self.client().await?;
         let space_id = matrix_sdk::ruma::RoomId::parse(&community_id).map_err(Self::map_error)?;
-        let space = client.get_room(&space_id).ok_or_else(|| {
-            BackendError::Other("community Space is not present in the local Matrix store".into())
-        })?;
+        let space =
+            Self::protected_joined_room(&client, &space_id, "opening this community").await?;
         if !space.is_space() {
             return Err(BackendError::InvalidConfiguration(
                 "community ID does not identify a Matrix Space".into(),
@@ -6464,13 +3699,20 @@ impl MeshBackend for MatrixBackend {
 
         let mut channels = Vec::new();
         for child_id in self.space_child_ids(&space).await? {
-            let Some(room) = client.get_room(&child_id) else {
-                continue;
+            let room = match Self::protected_joined_room(
+                &client,
+                &child_id,
+                "opening this community channel",
+            )
+            .await
+            {
+                Ok(room) => room,
+                Err(BackendError::NotFound(_)) => continue,
+                Err(error) => return Err(error),
             };
-            if room.state() != RoomState::Joined || room.is_space() {
+            if room.is_space() {
                 continue;
             }
-            Self::require_encrypted_room(&room, "opening this community channel").await?;
 
             channels.push(ChannelDto {
                 id: room.room_id().to_string(),
@@ -6518,9 +3760,8 @@ impl MeshBackend for MatrixBackend {
 
         let client = self.client().await?;
         let space_id = matrix_sdk::ruma::RoomId::parse(&community_id).map_err(Self::map_error)?;
-        let space = client.get_room(&space_id).ok_or_else(|| {
-            BackendError::Other("community Space is not present in the local Matrix store".into())
-        })?;
+        let space =
+            Self::protected_joined_room(&client, &space_id, "adding a community channel").await?;
         if !space.is_space() {
             return Err(BackendError::InvalidConfiguration(
                 "community ID does not identify a Matrix Space".into(),
@@ -6529,7 +3770,6 @@ impl MeshBackend for MatrixBackend {
 
         let user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
         let via = vec![user_id.server_name().to_owned()];
-        let encryption = RoomEncryptionEventContent::new(EventEncryptionAlgorithm::MegolmV1AesSha2);
         let mut parent = SpaceParentEventContent::new(via.clone());
         parent.canonical = true;
 
@@ -6542,7 +3782,7 @@ impl MeshBackend for MatrixBackend {
             request.creation_content = Some(Raw::new(&creation).map_err(Self::map_error)?);
         }
         request.initial_state = vec![
-            InitialStateEvent::with_empty_state_key(encryption).to_raw_any(),
+            Self::encrypted_room_initial_state(),
             InitialStateEvent::new(space.room_id().to_owned(), parent).to_raw_any(),
         ];
         let channel = client.create_room(request).await.map_err(Self::map_error)?;
@@ -6563,6 +3803,150 @@ impl MeshBackend for MatrixBackend {
         })
     }
 
+    async fn list_custom_emoji(&self, community_id: String) -> BackendResult<Vec<CustomEmoji>> {
+        let client = self.client().await?;
+        let space_id = matrix_sdk::ruma::RoomId::parse(&community_id).map_err(Self::map_error)?;
+        let space = Self::protected_joined_room(&client, &space_id, "reading server emoji").await?;
+        if !space.is_space() {
+            return Err(BackendError::InvalidConfiguration(
+                "community ID does not identify a server".into(),
+            ));
+        }
+        let pack = Self::custom_emoji_pack(&space).await?;
+        if pack.images.len() > MAX_CUSTOM_EMOJI_COUNT {
+            return Err(BackendError::InvalidConfiguration(
+                "server emoji settings exceed the 100-item limit".into(),
+            ));
+        }
+        pack.images
+            .iter()
+            .map(|(shortcode, image)| Self::custom_emoji_info(shortcode, image))
+            .collect()
+    }
+
+    async fn upload_custom_emoji(
+        &self,
+        community_id: String,
+        shortcode: String,
+        filename: String,
+        content_type: String,
+        bytes: Vec<u8>,
+    ) -> BackendResult<CustomEmoji> {
+        let shortcode = Self::normalize_custom_emoji_shortcode(&shortcode)?;
+        let sanitized = Self::sanitize_custom_emoji(&bytes, content_type.trim(), filename.trim())?;
+        let client = self.client().await?;
+        let space_id = matrix_sdk::ruma::RoomId::parse(&community_id).map_err(Self::map_error)?;
+        let space = Self::protected_joined_room(&client, &space_id, "adding server emoji").await?;
+        if !space.is_space() {
+            return Err(BackendError::InvalidConfiguration(
+                "community ID does not identify a server".into(),
+            ));
+        }
+
+        let _write = self.custom_emoji_writes.lock().await;
+        let mut pack = Self::custom_emoji_pack(&space).await?;
+        if pack.images.len() >= MAX_CUSTOM_EMOJI_COUNT && !pack.images.contains_key(&shortcode) {
+            return Err(BackendError::InvalidConfiguration(
+                "this server already has 100 custom emoji".into(),
+            ));
+        }
+        if pack.images.contains_key(&shortcode) {
+            return Err(BackendError::InvalidConfiguration(
+                "that emoji name is already in use".into(),
+            ));
+        }
+
+        let size_bytes = sanitized.bytes.len();
+        let width = sanitized.width;
+        let height = sanitized.height;
+        let upload = client
+            .media()
+            .upload(&mime::IMAGE_PNG, sanitized.bytes, None)
+            .await
+            .map_err(Self::map_error)?;
+        let mut info = ImageInfo::new();
+        info.width = Some(UInt::try_from(u64::from(sanitized.width)).map_err(Self::map_error)?);
+        info.height = Some(UInt::try_from(u64::from(sanitized.height)).map_err(Self::map_error)?);
+        info.mimetype = Some("image/png".into());
+        let mut image = PackImage::new(upload.content_uri);
+        image.body = Some(shortcode.clone());
+        image.info = Some(info);
+        image.usage = BTreeSet::from([PackUsage::Emoticon]);
+        let content = image.url.to_string();
+        if let Some(info) = image.info.as_mut() {
+            info.size = Some(UInt::try_from(size_bytes as u64).map_err(Self::map_error)?);
+        }
+        pack.images.insert(shortcode.clone(), image);
+        let mut pack_info = PackInfo::new();
+        pack_info.display_name = Some(CUSTOM_EMOJI_PACK_NAME.into());
+        pack_info.usage = BTreeSet::from([PackUsage::Emoticon]);
+        pack.pack = Some(pack_info);
+        space
+            .send_state_event_for_key(CUSTOM_EMOJI_PACK_STATE_KEY, pack)
+            .await
+            .map_err(Self::map_error)?;
+
+        Ok(CustomEmoji {
+            shortcode: shortcode.clone(),
+            body: shortcode,
+            mxc_uri: content,
+            content_type: "image/png".into(),
+            width,
+            height,
+            size_bytes: size_bytes as u32,
+        })
+    }
+
+    async fn remove_custom_emoji(
+        &self,
+        community_id: String,
+        shortcode: String,
+    ) -> BackendResult<()> {
+        let shortcode = Self::normalize_custom_emoji_shortcode(&shortcode)?;
+        let client = self.client().await?;
+        let space_id = matrix_sdk::ruma::RoomId::parse(&community_id).map_err(Self::map_error)?;
+        let space =
+            Self::protected_joined_room(&client, &space_id, "removing server emoji").await?;
+        if !space.is_space() {
+            return Err(BackendError::InvalidConfiguration(
+                "community ID does not identify a server".into(),
+            ));
+        }
+        let _write = self.custom_emoji_writes.lock().await;
+        let mut pack = Self::custom_emoji_pack(&space).await?;
+        if pack.images.remove(&shortcode).is_none() {
+            return Err(BackendError::NotFound("server emoji was not found".into()));
+        }
+        space
+            .send_state_event_for_key(CUSTOM_EMOJI_PACK_STATE_KEY, pack)
+            .await
+            .map_err(Self::map_error)?;
+        Ok(())
+    }
+
+    async fn load_custom_emoji_image(
+        &self,
+        community_id: String,
+        shortcode: String,
+    ) -> BackendResult<Vec<u8>> {
+        let shortcode = Self::normalize_custom_emoji_shortcode(&shortcode)?;
+        let client = self.client().await?;
+        let space_id = matrix_sdk::ruma::RoomId::parse(&community_id).map_err(Self::map_error)?;
+        let space = Self::protected_joined_room(&client, &space_id, "loading server emoji").await?;
+        if !space.is_space() {
+            return Err(BackendError::InvalidConfiguration(
+                "community ID does not identify a server".into(),
+            ));
+        }
+        let pack = Self::custom_emoji_pack(&space).await?;
+        let image = pack
+            .images
+            .get(&shortcode)
+            .ok_or_else(|| BackendError::NotFound("server emoji was not found".into()))?;
+        Self::custom_emoji_info(&shortcode, image)?;
+        Self::download_custom_emoji(&client, &image.url).await
+    }
+
     async fn matrix_rtc_join(&self, room_id: String) -> BackendResult<MatrixRtcJoinResult> {
         // This guard is deliberately enforced in Rust before publishing call
         // membership or requesting an SFU token. Renderer capability checks
@@ -6579,15 +3963,28 @@ impl MeshBackend for MatrixBackend {
         })?;
         let client = self.client().await?;
         let parsed_room_id = matrix_sdk::ruma::RoomId::parse(&room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&parsed_room_id).ok_or_else(|| {
-            BackendError::NotFound("room is not present in the local Matrix store".into())
-        })?;
-        if room.state() != RoomState::Joined {
-            return Err(BackendError::PermissionDenied(
-                "join the Matrix room before joining its call".into(),
-            ));
+        let room =
+            Self::protected_joined_room(&client, &parsed_room_id, "joining a MatrixRTC call")
+                .await?;
+        let discovered = Self::discover_matrix_rtc_service_url(&client).await?;
+        let configured_service = VoiceServiceStatus::secure_url(
+            "MESH_MATRIXRTC_LIVEKIT_SERVICE_URL",
+            configured_service_url,
+            "https",
+        )
+        .map_err(BackendError::InvalidConfiguration)?;
+        let discovered_service = VoiceServiceStatus::secure_url(
+            "discovered MatrixRTC LiveKit service URL",
+            &discovered.service_url,
+            "https",
+        )
+        .map_err(BackendError::InvalidConfiguration)?;
+        if discovered_service != configured_service {
+            return Err(BackendError::InvalidConfiguration(format!(
+                "MESH_MATRIXRTC_LIVEKIT_SERVICE_URL does not match the {} LiveKit service URL discovered from the homeserver",
+                discovered.source.label()
+            )));
         }
-        Self::require_encrypted_room(&room, "joining a MatrixRTC call").await?;
         let livekit_service_url =
             Self::select_matrix_rtc_service_url(&room, configured_service_url).await?;
         let user_id = client
@@ -6951,9 +4348,8 @@ impl MeshBackend for MatrixBackend {
     async fn matrix_rtc_members(&self, room_id: String) -> BackendResult<Vec<MatrixRtcMember>> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::NotFound("room is not present in the local Matrix store".into())
-        })?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "reading MatrixRTC membership").await?;
         Self::matrix_rtc_members_for_room(&room).await
     }
 
@@ -6965,12 +4361,14 @@ impl MeshBackend for MatrixBackend {
         }
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
-        Self::require_encrypted_room(&room, "sending a message").await?;
+        let room = Self::protected_joined_room(&client, &room_id, "sending a message").await?;
+        let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
+        let mentions = Self::mentions_for_body(body.as_str(), Some(own_user_id));
+        let content = RoomMessageEventContent::text_plain(body).add_mentions(mentions);
+        let transaction_id = Self::validate_transaction_id(&uuid::Uuid::new_v4().to_string())?;
         let response = room
-            .send(RoomMessageEventContent::text_plain(body))
+            .send(content)
+            .with_transaction_id(transaction_id)
             .await
             .map_err(Self::map_error)?;
         Ok(SentMessage {
@@ -6984,6 +4382,7 @@ impl MeshBackend for MatrixBackend {
         room_id: String,
         body: String,
         reply_to_id: Option<String>,
+        transaction_id: String,
     ) -> BackendResult<MessageDto> {
         if body.trim().is_empty() {
             return Err(BackendError::InvalidConfiguration(
@@ -6993,59 +4392,229 @@ impl MeshBackend for MatrixBackend {
 
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
         let action = if reply_to_id.is_some() {
             "sending a reply"
         } else {
             "sending a message"
         };
-        Self::require_encrypted_room(&room, action).await?;
+        let room = Self::existing_protected_text_channel(&client, &room_id, action).await?;
+        let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
+        let base_content = RoomMessageEventContentWithoutRelation::text_plain(body.clone())
+            .add_mentions(Self::mentions_for_body(body.as_str(), Some(own_user_id)));
 
         let content = match reply_to_id.as_deref() {
             Some(event_id) => {
                 let event_id =
                     matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
                 room.make_reply_event(
-                    RoomMessageEventContentWithoutRelation::text_plain(body.clone()),
+                    base_content,
                     Reply {
                         event_id,
                         enforce_thread: EnforceThread::Unthreaded,
-                        add_mentions: AddMentions::No,
+                        add_mentions: AddMentions::Yes,
                     },
                 )
                 .await
                 .map_err(Self::map_error)?
             }
-            None => RoomMessageEventContent::text_plain(body.clone()),
+            None => base_content.into(),
         };
-        let response = room.send(content).await.map_err(Self::map_error)?;
+        let client_request_id = Self::validate_transaction_id(&transaction_id)?.to_string();
+        let _queue_gate = self.send_queue_gate.lock().await;
+        let queue = room.send_queue();
+        // Keep the queue asleep until the event is durably present and its SDK
+        // transaction ID has been recovered from the encrypted local echo.
+        queue.set_enabled(false);
+        let (existing_echoes, _) = queue.subscribe().await.map_err(Self::map_error)?;
+        for echo in existing_echoes {
+            if Self::queued_client_request_id(&echo).as_deref() != Some(client_request_id.as_str())
+            {
+                continue;
+            }
+            if let Some(message) =
+                Self::queued_message_from_local_echo(&client, &room, &echo).await?
+            {
+                let last_success_ms =
+                    Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness).last_success_ms;
+                queue.set_enabled(Self::matrix_sync_is_fresh(
+                    last_success_ms,
+                    Self::matrix_rtc_monotonic_now_ms(),
+                ));
+                return Ok(message);
+            }
+        }
 
-        let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
-        let display_name = room
-            .get_member(own_user_id)
+        let mut raw_content = serde_json::to_value(&content).map_err(Self::map_error)?;
+        raw_content
+            .as_object_mut()
+            .ok_or_else(|| {
+                BackendError::InvalidConfiguration(
+                    "queued message content was not an object".into(),
+                )
+            })?
+            .insert(
+                CLIENT_REQUEST_ID_KEY.into(),
+                serde_json::Value::String(client_request_id.clone()),
+            );
+        let raw_content = Raw::<AnyMessageLikeEventContent>::from_json_string(
+            serde_json::to_string(&raw_content).map_err(Self::map_error)?,
+        )
+        .map_err(Self::map_error)?;
+        queue
+            .send_raw(raw_content, "m.room.message".into())
             .await
-            .map_err(Self::map_error)?
-            .map(|member| member.name().to_owned())
-            .unwrap_or_else(|| own_user_id.localpart().to_owned());
+            .map_err(Self::map_error)?;
 
-        Ok(MessageDto {
-            id: response.response.event_id.to_string(),
-            channel_id: room.room_id().to_string(),
-            author_public_key: own_user_id.to_string(),
-            author_display_name: display_name,
-            author_avatar_color: Self::avatar_color(own_user_id.as_str()),
-            content: body,
-            attachments: Vec::new(),
-            reactions: HashMap::new(),
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            signature: String::new(),
-            edited_at: None,
-            deleted_at: None,
-            reply_to_id,
-            delivery_status: Some("sent".into()),
-        })
+        let (echoes, _) = queue.subscribe().await.map_err(Self::map_error)?;
+        let queued = echoes
+            .iter()
+            .find(|echo| {
+                Self::queued_client_request_id(echo).as_deref() == Some(client_request_id.as_str())
+            })
+            .ok_or_else(|| {
+                BackendError::Other(
+                    "durable message was accepted but its local echo could not be recovered".into(),
+                )
+            })?;
+        let message = Self::queued_message_from_local_echo(&client, &room, queued)
+            .await?
+            .ok_or_else(|| {
+                BackendError::Other("durable message local echo was not displayable".into())
+            })?;
+        let last_success_ms =
+            Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness).last_success_ms;
+        queue.set_enabled(Self::matrix_sync_is_fresh(
+            last_success_ms,
+            Self::matrix_rtc_monotonic_now_ms(),
+        ));
+        Ok(message)
+    }
+
+    async fn queued_messages(&self) -> BackendResult<Vec<MessageDto>> {
+        let _queue_gate = self.send_queue_gate.lock().await;
+        Self::queued_messages_for_client(&self.client().await?).await
+    }
+
+    async fn retry_queued_message(
+        &self,
+        room_id: String,
+        transaction_id: String,
+    ) -> BackendResult<()> {
+        let client = self.client().await?;
+        let _queue_gate = self.send_queue_gate.lock().await;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let transaction_id = Self::validate_transaction_id(&transaction_id)?;
+        let room =
+            Self::existing_protected_text_channel(&client, &room_id, "retrying a queued message")
+                .await?;
+        let queue = room.send_queue();
+        let (echoes, _) = queue.subscribe().await.map_err(Self::map_error)?;
+        let echo = echoes
+            .into_iter()
+            .find(|echo| echo.transaction_id == transaction_id)
+            .ok_or_else(|| BackendError::NotFound("queued message is no longer pending".into()))?;
+        if !Self::is_supported_queued_text(&echo) {
+            return Err(BackendError::PermissionDenied(
+                "queued message content could not be verified".into(),
+            ));
+        }
+        let LocalEchoContent::Event {
+            send_handle,
+            send_error,
+            ..
+        } = echo.content
+        else {
+            return Err(BackendError::PermissionDenied(
+                "queued message content could not be verified".into(),
+            ));
+        };
+        if send_error.is_some() {
+            send_handle.unwedge().await.map_err(Self::map_error)?;
+        }
+        let last_success_ms =
+            Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness).last_success_ms;
+        queue.set_enabled(Self::matrix_sync_is_fresh(
+            last_success_ms,
+            Self::matrix_rtc_monotonic_now_ms(),
+        ));
+        Ok(())
+    }
+
+    async fn cancel_queued_message(
+        &self,
+        room_id: String,
+        transaction_id: String,
+    ) -> BackendResult<()> {
+        let client = self.client().await?;
+        let _queue_gate = self.send_queue_gate.lock().await;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let transaction_id = Self::validate_transaction_id(&transaction_id)?;
+        let room =
+            Self::existing_protected_text_channel(&client, &room_id, "cancelling a queued message")
+                .await?;
+        let queue = room.send_queue();
+        let (echoes, _) = queue.subscribe().await.map_err(Self::map_error)?;
+        let echo = echoes
+            .into_iter()
+            .find(|echo| echo.transaction_id == transaction_id)
+            .ok_or_else(|| BackendError::NotFound("queued message is no longer pending".into()))?;
+        if !Self::is_supported_queued_text(&echo) {
+            return Err(BackendError::PermissionDenied(
+                "queued message content could not be verified".into(),
+            ));
+        }
+        let LocalEchoContent::Event { send_handle, .. } = echo.content else {
+            return Err(BackendError::PermissionDenied(
+                "queued message content could not be verified".into(),
+            ));
+        };
+        if !send_handle.abort().await.map_err(Self::map_error)? {
+            return Err(BackendError::NotFound(
+                "queued message is already being delivered".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    async fn save_composer_draft(&self, room_id: String, body: String) -> BackendResult<()> {
+        let client = self.client().await?;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let room = Self::protected_joined_room(&client, &room_id, "saving a message draft").await?;
+        match Self::new_message_composer_draft(body)? {
+            Some(draft) => room
+                .save_composer_draft(draft, None)
+                .await
+                .map_err(Self::map_error),
+            None => room
+                .clear_composer_draft(None)
+                .await
+                .map_err(Self::map_error),
+        }
+    }
+
+    async fn load_composer_draft(&self, room_id: String) -> BackendResult<Option<String>> {
+        let client = self.client().await?;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "loading a message draft").await?;
+        let draft = room
+            .load_composer_draft(None)
+            .await
+            .map_err(Self::map_error)?;
+        draft
+            .map(Self::new_message_composer_draft_body)
+            .transpose()
+            .map(Option::flatten)
+    }
+
+    async fn clear_composer_draft(&self, room_id: String) -> BackendResult<()> {
+        let client = self.client().await?;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "clearing a message draft").await?;
+        room.clear_composer_draft(None)
+            .await
+            .map_err(Self::map_error)
     }
 
     async fn send_attachment(
@@ -7054,8 +4623,8 @@ impl MeshBackend for MatrixBackend {
         request: MatrixAttachmentSendRequest,
         transfer: MatrixTransferObserver,
     ) -> BackendResult<MessageDto> {
-        const MAX_ATTACHMENT_BYTES: u64 = 100 * 1024 * 1024;
         let MatrixAttachmentSendRequest {
+            transaction_id,
             file_path,
             filename,
             content_type,
@@ -7068,6 +4637,7 @@ impl MeshBackend for MatrixBackend {
         } = transfer;
 
         Self::validate_transfer_id(&transfer_id)?;
+        let transaction_id = Self::validate_transaction_id(&transaction_id)?;
         Self::emit_transfer_progress(
             &progress,
             &transfer_id,
@@ -7107,7 +4677,7 @@ impl MeshBackend for MatrixBackend {
                 "attachment path is not a regular file".into(),
             ));
         }
-        if metadata.len() > MAX_ATTACHMENT_BYTES {
+        if let Err(error) = Self::validate_attachment_size(metadata.len()) {
             Self::emit_transfer_progress(
                 &progress,
                 &transfer_id,
@@ -7117,9 +4687,7 @@ impl MeshBackend for MatrixBackend {
                 MatrixTransferState::Failed,
                 None,
             );
-            return Err(BackendError::InvalidConfiguration(
-                "attachment exceeds the 100 MB limit".into(),
-            ));
+            return Err(error);
         }
         let total_bytes = metadata.len();
         let cancellation = CancellationToken::new();
@@ -7150,7 +4718,8 @@ impl MeshBackend for MatrixBackend {
                 .as_deref()
                 .and_then(|value| mime::Mime::from_str(value).ok())
                 .unwrap_or_else(|| {
-                    mime::Mime::from_str("application/octet-stream").expect("valid MIME")
+                    mime::Mime::from_str("application/octet-stream")
+                        .expect("invariant: application/octet-stream is a valid MIME")
                 });
             Self::emit_transfer_progress(
                 &progress,
@@ -7167,6 +4736,7 @@ impl MeshBackend for MatrixBackend {
                     return Err(BackendError::Other("Matrix attachment upload cancelled".into()))
                 }
             };
+            Self::validate_attachment_size(data.len() as u64)?;
             let content_type_string = content_type.to_string();
             Self::validate_media_payload(&data, Some(&content_type_string), &filename)?;
             let thumbnail_content_type = content_type_string.clone();
@@ -7186,10 +4756,9 @@ impl MeshBackend for MatrixBackend {
 
             let client = self.client().await?;
             let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-            let room = client.get_room(&room_id).ok_or_else(|| {
-                BackendError::Other("room is not present in the local Matrix store".into())
-            })?;
-            Self::require_encrypted_room(&room, "sending an attachment").await?;
+            let room =
+                Self::protected_joined_room(&client, &room_id, "sending an attachment").await?;
+            let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
 
             Self::emit_transfer_progress(
                 &progress,
@@ -7218,7 +4787,6 @@ impl MeshBackend for MatrixBackend {
             let sha256 = Self::encrypted_file_sha256(&encrypted_file).ok_or_else(|| {
                 BackendError::Other("Matrix encrypted attachment omitted SHA-256".into())
             })?;
-            let media_source = serde_json::to_value(&encrypted_file).map_err(Self::map_error)?;
             let mut info = FileInfo::new();
             info.mimetype = Some(content_type.to_string());
             info.size = total_bytes.try_into().ok();
@@ -7237,8 +4805,6 @@ impl MeshBackend for MatrixBackend {
                     .ok_or_else(|| {
                         BackendError::Other("Matrix encrypted thumbnail omitted SHA-256".into())
                     })?;
-                let thumbnail_source =
-                    serde_json::to_value(&encrypted_thumbnail).map_err(Self::map_error)?;
                 let mut thumbnail_info = ThumbnailInfo::new();
                 thumbnail_info.width = Some(thumbnail.width.into());
                 thumbnail_info.height = Some(thumbnail.height.into());
@@ -7252,7 +4818,6 @@ impl MeshBackend for MatrixBackend {
                     width: thumbnail.width,
                     height: thumbnail.height,
                     content_type: "image/png".into(),
-                    media_source: thumbnail_source,
                 })
             } else {
                 None
@@ -7267,7 +4832,8 @@ impl MeshBackend for MatrixBackend {
             file_content.filename = Some(filename.clone());
             file_content.info = Some(Box::new(info));
             let base_content =
-                RoomMessageEventContentWithoutRelation::new(MessageType::File(file_content));
+                RoomMessageEventContentWithoutRelation::new(MessageType::File(file_content))
+                    .add_mentions(Self::mentions_for_body(body.as_str(), Some(own_user_id)));
             let content = match reply_to_id.as_deref() {
                 Some(event_id) => {
                     let event_id =
@@ -7277,7 +4843,7 @@ impl MeshBackend for MatrixBackend {
                         Reply {
                             event_id,
                             enforce_thread: EnforceThread::Unthreaded,
-                            add_mentions: AddMentions::No,
+                            add_mentions: AddMentions::Yes,
                         },
                     )
                     .await
@@ -7299,8 +4865,11 @@ impl MeshBackend for MatrixBackend {
                     "Matrix attachment upload cancelled".into(),
                 ));
             }
-            let response = room.send(content).await.map_err(Self::map_error)?;
-            let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
+            let response = room
+                .send(content)
+                .with_transaction_id(transaction_id)
+                .await
+                .map_err(Self::map_error)?;
             let display_name = room
                 .get_member(own_user_id)
                 .await
@@ -7324,14 +4893,7 @@ impl MeshBackend for MatrixBackend {
                     filename,
                     size: total_bytes,
                     chunks: 1,
-                    source_peer_id: format!(
-                        "matrix:{}",
-                        media_source
-                            .get("url")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or_default()
-                    ),
-                    media_source: Some(media_source),
+                    source_peer_id: "matrix".into(),
                     content_type: Some(content_type.to_string()),
                     thumbnail: thumbnail_dto,
                 }],
@@ -7341,6 +4903,8 @@ impl MeshBackend for MatrixBackend {
                 edited_at: None,
                 deleted_at: None,
                 reply_to_id,
+                transaction_id: None,
+                client_request_id: None,
                 delivery_status: Some("sent".into()),
             })
         }
@@ -7390,7 +4954,9 @@ impl MeshBackend for MatrixBackend {
 
     async fn download_attachment(
         &self,
-        attachment: AttachmentDto,
+        room_id: String,
+        event_id: String,
+        attachment_index: u32,
         transfer: MatrixTransferObserver,
     ) -> BackendResult<String> {
         let MatrixTransferObserver {
@@ -7398,7 +4964,30 @@ impl MeshBackend for MatrixBackend {
             progress,
         } = transfer;
         Self::validate_transfer_id(&transfer_id)?;
+        let client = self.client().await?;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
+        let resolved_attachment =
+            Self::resolve_protected_attachment(&client, &room_id, &event_id, attachment_index)
+                .await?;
+        let ResolvedMatrixAttachment {
+            metadata: attachment,
+            encrypted_file,
+            ..
+        } = resolved_attachment;
         let total_bytes = (attachment.size > 0).then_some(attachment.size);
+        if let Err(error) = Self::validate_attachment_size(attachment.size) {
+            Self::emit_transfer_progress(
+                &progress,
+                &transfer_id,
+                MatrixTransferDirection::Download,
+                0,
+                total_bytes,
+                MatrixTransferState::Failed,
+                None,
+            );
+            return Err(error);
+        }
         Self::emit_transfer_progress(
             &progress,
             &transfer_id,
@@ -7431,21 +5020,7 @@ impl MeshBackend for MatrixBackend {
         let transferred_bytes = Arc::new(AtomicU64::new(0));
 
         let result: BackendResult<String> = async {
-            let source = attachment.media_source.clone().ok_or_else(|| {
-                BackendError::InvalidConfiguration(
-                    "attachment has no Matrix encrypted-file metadata".into(),
-                )
-            })?;
-            let encrypted_file: EncryptedFile =
-                serde_json::from_value(source).map_err(Self::map_error)?;
-            let request = MediaRequestParameters {
-                source: MediaSource::Encrypted(Box::new(encrypted_file)),
-                format: MediaFormat::File,
-            };
             let client = self.client().await?;
-            let media = client.media();
-            // matrix-rust-sdk 0.18 buffers and decrypts encrypted media before
-            // returning it, so no honest intermediate receive byte count exists.
             Self::emit_transfer_progress(
                 &progress,
                 &transfer_id,
@@ -7455,10 +5030,25 @@ impl MeshBackend for MatrixBackend {
                 MatrixTransferState::Downloading,
                 None,
             );
+            let mut on_progress = |received| {
+                transferred_bytes.store(received, Ordering::Relaxed);
+                Self::emit_transfer_progress(
+                    &progress,
+                    &transfer_id,
+                    MatrixTransferDirection::Download,
+                    received,
+                    total_bytes,
+                    MatrixTransferState::Downloading,
+                    None,
+                );
+            };
             let data = tokio::select! {
-                result = media.get_media_content(&request, false) => {
-                    result.map_err(Self::map_error)?
-                }
+                result = Self::download_bounded_encrypted_media(
+                    &client,
+                    &encrypted_file,
+                    MAX_ATTACHMENT_BYTES,
+                    &mut on_progress,
+                ) => result?,
                 _ = cancellation.cancelled() => {
                     return Err(BackendError::Other("Matrix attachment download cancelled".into()))
                 }
@@ -7470,6 +5060,7 @@ impl MeshBackend for MatrixBackend {
             }
             let received_bytes = data.len() as u64;
             transferred_bytes.store(received_bytes, Ordering::Relaxed);
+            Self::validate_attachment_size(received_bytes)?;
             Self::emit_transfer_progress(
                 &progress,
                 &transfer_id,
@@ -7587,6 +5178,94 @@ impl MeshBackend for MatrixBackend {
         result
     }
 
+    async fn load_attachment_thumbnail(
+        &self,
+        room_id: String,
+        event_id: String,
+        attachment_index: u32,
+    ) -> BackendResult<Vec<u8>> {
+        let client = self.client().await?;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
+        let thumbnail =
+            Self::resolve_protected_thumbnail(&client, &room_id, &event_id, attachment_index)
+                .await?;
+        let _permit =
+            self.thumbnail_loads.acquire().await.map_err(|_| {
+                BackendError::Other("inline preview scheduler is unavailable".into())
+            })?;
+        let data = Self::download_bounded_encrypted_media(
+            &client,
+            &thumbnail.encrypted_file,
+            MAX_THUMBNAIL_BYTES as u64,
+            &mut |_| {},
+        )
+        .await?;
+        let metadata = thumbnail.metadata;
+        tokio::task::spawn_blocking(move || Self::sanitize_inline_thumbnail(&data, &metadata))
+            .await
+            .map_err(Self::map_error)?
+    }
+
+    async fn load_attachment_image(
+        &self,
+        room_id: String,
+        event_id: String,
+        attachment_index: u32,
+    ) -> BackendResult<Vec<u8>> {
+        let client = self.client().await?;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
+        let resolved_attachment =
+            Self::resolve_protected_attachment(&client, &room_id, &event_id, attachment_index)
+                .await?;
+        let content_type = resolved_attachment
+            .metadata
+            .content_type
+            .clone()
+            .ok_or_else(|| {
+                BackendError::InvalidConfiguration(
+                    "attachment does not declare a supported protected image type".into(),
+                )
+            })?;
+        if Self::thumbnail_image_format(&content_type).is_none() {
+            return Err(BackendError::InvalidConfiguration(
+                "attachment does not declare a supported protected image type".into(),
+            ));
+        }
+        Self::validate_attachment_size(resolved_attachment.metadata.size)?;
+        let _permit =
+            self.lightbox_image_loads.acquire().await.map_err(|_| {
+                BackendError::Other("protected image scheduler is unavailable".into())
+            })?;
+        let data = Self::download_bounded_encrypted_media(
+            &client,
+            &resolved_attachment.encrypted_file,
+            MAX_ATTACHMENT_BYTES,
+            &mut |_| {},
+        )
+        .await?;
+        Self::validate_attachment_size(data.len() as u64)?;
+        if resolved_attachment.metadata.size > 0
+            && data.len() as u64 != resolved_attachment.metadata.size
+        {
+            return Err(BackendError::Other(
+                "decrypted attachment size does not match its metadata".into(),
+            ));
+        }
+        Self::validate_media_payload(
+            &data,
+            Some(&content_type),
+            &resolved_attachment.metadata.filename,
+        )?;
+        tokio::task::spawn_blocking(move || {
+            Self::validate_lightbox_image(&data, &content_type)?;
+            Ok::<_, BackendError>(data)
+        })
+        .await
+        .map_err(Self::map_error)?
+    }
+
     async fn cancel_attachment_download(&self, file_hash: String) -> BackendResult<()> {
         if let Some(cancellation) = self.media_downloads.lock().await.get(&file_hash) {
             cancellation.cancel();
@@ -7602,6 +5281,7 @@ impl MeshBackend for MatrixBackend {
             if targets.len() != 1 {
                 continue;
             }
+            Self::require_protected_room(&room, "listing direct messages").await?;
             let Some(target) = targets.into_iter().next() else {
                 continue;
             };
@@ -7687,11 +5367,8 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<Vec<DirectMessageDto>> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(&conversation_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other(
-                "direct-message room is not present in the local Matrix store".into(),
-            )
-        })?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "reading direct messages").await?;
         if room.direct_targets().len() != 1 {
             return Err(BackendError::InvalidConfiguration(
                 "conversation is not a one-to-one Matrix direct room".into(),
@@ -7710,6 +5387,7 @@ impl MeshBackend for MatrixBackend {
         recipient_user_id: String,
         body: String,
         reply_to_id: Option<String>,
+        transaction_id: String,
     ) -> BackendResult<DirectMessageDto> {
         if body.trim().is_empty() {
             return Err(BackendError::InvalidConfiguration(
@@ -7730,11 +5408,12 @@ impl MeshBackend for MatrixBackend {
             ));
         }
         let room = self.direct_room(&client, &recipient).await?;
-        let message = <Self as MeshBackend>::send_message(
-            self,
-            room.room_id().to_string(),
+        let message = Self::send_immediate_protected_message(
+            &client,
+            &room,
             body,
             reply_to_id,
+            transaction_id,
         )
         .await?;
         Ok(Self::direct_message_from_message(message))
@@ -7768,11 +5447,9 @@ impl MeshBackend for MatrixBackend {
     async fn mark_dm_read(&self, conversation_id: String) -> BackendResult<()> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(&conversation_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other(
-                "direct-message room is not present in the local Matrix store".into(),
-            )
-        })?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "updating direct-message receipts")
+                .await?;
         if room.direct_targets().len() != 1 {
             return Err(BackendError::InvalidConfiguration(
                 "conversation is not a one-to-one Matrix direct room".into(),
@@ -7831,9 +5508,7 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<Vec<MessageDto>> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
+        let room = Self::protected_joined_room(&client, &room_id, "reading messages").await?;
 
         let members: HashMap<String, String> = room
             .members(RoomMemberships::JOIN)
@@ -7875,10 +5550,7 @@ impl MeshBackend for MatrixBackend {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
-        Self::require_encrypted_room(&room, "editing a message").await?;
+        let room = Self::protected_joined_room(&client, &room_id, "editing a message").await?;
         let replacement = RoomMessageEventContent::text_plain(body)
             .make_replacement(ReplacementMetadata::new(event_id, None));
         room.send(replacement).await.map_err(Self::map_error)?;
@@ -7889,11 +5561,9 @@ impl MeshBackend for MatrixBackend {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
+        let room = Self::room_for_cleanup_redaction(&client, &room_id).await?;
         // Keep explicit redaction available for legacy plaintext rooms so users can remove
-        // previously exposed content. Reaction removal is guarded in `toggle_reaction`.
+        // previously exposed content. Every other content path uses `protected_joined_room`.
         room.redact(&event_id, None, None)
             .await
             .map_err(Self::map_error)?;
@@ -7915,10 +5585,7 @@ impl MeshBackend for MatrixBackend {
         let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let target_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
-        Self::require_encrypted_room(&room, "changing a reaction").await?;
+        let room = Self::protected_joined_room(&client, &room_id, "changing a reaction").await?;
 
         let values = Self::timeline_values(&room, 500, None).await?;
         let redacted: HashSet<&str> = values
@@ -7975,9 +5642,8 @@ impl MeshBackend for MatrixBackend {
         let send_read_receipts = self.wire_privacy.read().await.send_read_receipts;
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "updating message receipts").await?;
         let values = Self::timeline_values(&room, 1, None).await?;
         let Some(event_id) = values
             .iter()
@@ -7996,23 +5662,27 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn set_typing(&self, room_id: String, typing: bool) -> BackendResult<()> {
-        if typing && !self.wire_privacy.read().await.send_typing_indicators {
+        let privacy = *self.wire_privacy.read().await;
+        let mut sent_rooms = self.sent_typing_notices.lock().await;
+        if !privacy.should_send_typing_notice(sent_rooms.contains(&room_id), typing) {
             return Ok(());
         }
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
-        room.typing_notice(typing).await.map_err(Self::map_error)
+        let room = Self::protected_joined_room(&client, &room_id, "updating typing status").await?;
+        room.typing_notice(typing).await.map_err(Self::map_error)?;
+        if typing {
+            sent_rooms.insert(room_id.to_string());
+        } else {
+            sent_rooms.remove(room_id.as_str());
+        }
+        Ok(())
     }
 
     async fn typing_users(&self, room_id: String) -> BackendResult<Vec<TypingUser>> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
+        let room = Self::protected_joined_room(&client, &room_id, "reading typing status").await?;
         let user_ids = self
             .typing_users
             .read()
@@ -8072,9 +5742,8 @@ impl MeshBackend for MatrixBackend {
     async fn wait_for_room_update(&self, room_id: String, timeout_ms: u64) -> BackendResult<bool> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "waiting for message updates").await?;
         let mut updates = room.subscribe_to_updates();
         Ok(matches!(
             tokio::time::timeout(
@@ -8180,10 +5849,10 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<CommunityAccessSettings> {
         let client = self.client().await?;
         let space_id = matrix_sdk::ruma::RoomId::parse(community_id).map_err(Self::map_error)?;
-        let space = client.get_room(&space_id).ok_or_else(|| {
-            BackendError::Other("community Space is not present in the local Matrix store".into())
-        })?;
-        if !space.is_space() || space.state() != RoomState::Joined {
+        let space =
+            Self::protected_joined_room(&client, &space_id, "reading community access settings")
+                .await?;
+        if !space.is_space() {
             return Err(BackendError::InvalidConfiguration(
                 "community access settings require a joined Matrix Space".into(),
             ));
@@ -8212,10 +5881,10 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<CommunityAccessSettings> {
         let client = self.client().await?;
         let space_id = matrix_sdk::ruma::RoomId::parse(community_id).map_err(Self::map_error)?;
-        let space = client.get_room(&space_id).ok_or_else(|| {
-            BackendError::Other("community Space is not present in the local Matrix store".into())
-        })?;
-        if !space.is_space() || space.state() != RoomState::Joined {
+        let space =
+            Self::protected_joined_room(&client, &space_id, "updating community access settings")
+                .await?;
+        if !space.is_space() {
             return Err(BackendError::InvalidConfiguration(
                 "community access settings require a joined Matrix Space".into(),
             ));
@@ -8414,9 +6083,9 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<Vec<CommunityApplication>> {
         let client = self.client().await?;
         let space_id = matrix_sdk::ruma::RoomId::parse(community_id).map_err(Self::map_error)?;
-        let space = client.get_room(&space_id).ok_or_else(|| {
-            BackendError::Other("community Space is not present in the local Matrix store".into())
-        })?;
+        let space =
+            Self::protected_joined_room(&client, &space_id, "reading community applications")
+                .await?;
         let mut applications = Vec::new();
         for member in space
             .members(RoomMemberships::KNOCK)
@@ -8452,9 +6121,12 @@ impl MeshBackend for MatrixBackend {
         let client = self.client().await?;
         let space_id = matrix_sdk::ruma::RoomId::parse(&community_id).map_err(Self::map_error)?;
         let user_id = matrix_sdk::ruma::UserId::parse(user_id).map_err(Self::map_error)?;
-        let space = client.get_room(&space_id).ok_or_else(|| {
-            BackendError::Other("community Space is not present in the local Matrix store".into())
-        })?;
+        let space = Self::protected_joined_room(
+            &client,
+            &space_id,
+            "responding to a community application",
+        )
+        .await?;
         let is_pending = space
             .members(RoomMemberships::KNOCK)
             .await
@@ -8496,11 +6168,8 @@ impl MeshBackend for MatrixBackend {
             ));
         }
 
-        let space = client.get_room(space.room_id()).ok_or_else(|| {
-            BackendError::Other(
-                "joined community Space is absent from the local Matrix store".into(),
-            )
-        })?;
+        let space =
+            Self::protected_joined_room(&client, space.room_id(), "joining this community").await?;
         let mut opened_child_ids = Vec::new();
         for child_id in self.space_child_ids(&space).await? {
             if client
@@ -8520,15 +6189,7 @@ impl MeshBackend for MatrixBackend {
             .map_err(Self::map_error)?;
 
         for child_id in opened_child_ids {
-            let room = client.get_room(&child_id).ok_or_else(|| {
-                BackendError::InvalidConfiguration(format!(
-                    "Mesh could not validate end-to-end encryption for Space child room \
-                     {child_id} after joining. The community was not opened"
-                ))
-            })?;
-            if !room.is_space() {
-                Self::require_encrypted_room(&room, "joining this community").await?;
-            }
+            Self::protected_joined_room(&client, &child_id, "joining this community").await?;
         }
 
         let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
@@ -8593,25 +6254,14 @@ impl MeshBackend for MatrixBackend {
         community_id: String,
         user_id: String,
         role: String,
-    ) -> BackendResult<()> {
-        let level = match role.as_str() {
-            "admin" => int!(50),
-            "member" => int!(0),
-            _ => {
-                return Err(BackendError::InvalidConfiguration(
-                    "role must be admin or member; ownership transfer is not supported".into(),
-                ))
-            }
-        };
-        let user_id = matrix_sdk::ruma::UserId::parse(user_id).map_err(Self::map_error)?;
-        let mut rooms = self.community_rooms(&community_id).await?;
-        rooms.reverse();
-        for room in rooms {
-            room.update_power_levels(vec![(&user_id, level)])
-                .await
-                .map_err(Self::map_error)?;
-        }
-        Ok(())
+    ) -> BackendResult<super::CommunityModerationResult> {
+        self.apply_community_moderation(
+            community_id,
+            user_id,
+            MatrixModerationAction::role(role)?,
+            None,
+        )
+        .await
     }
 
     async fn kick_member(
@@ -8619,16 +6269,9 @@ impl MeshBackend for MatrixBackend {
         community_id: String,
         user_id: String,
         reason: Option<String>,
-    ) -> BackendResult<()> {
-        let user_id = matrix_sdk::ruma::UserId::parse(user_id).map_err(Self::map_error)?;
-        let mut rooms = self.community_rooms(&community_id).await?;
-        rooms.reverse();
-        for room in rooms {
-            room.kick_user(&user_id, reason.as_deref())
-                .await
-                .map_err(Self::map_error)?;
-        }
-        Ok(())
+    ) -> BackendResult<super::CommunityModerationResult> {
+        self.apply_community_moderation(community_id, user_id, MatrixModerationAction::Kick, reason)
+            .await
     }
 
     async fn ban_member(
@@ -8636,16 +6279,17 @@ impl MeshBackend for MatrixBackend {
         community_id: String,
         user_id: String,
         reason: Option<String>,
-    ) -> BackendResult<()> {
-        let user_id = matrix_sdk::ruma::UserId::parse(user_id).map_err(Self::map_error)?;
-        let mut rooms = self.community_rooms(&community_id).await?;
-        rooms.reverse();
-        for room in rooms {
-            room.ban_user(&user_id, reason.as_deref())
-                .await
-                .map_err(Self::map_error)?;
-        }
-        Ok(())
+    ) -> BackendResult<super::CommunityModerationResult> {
+        self.apply_community_moderation(community_id, user_id, MatrixModerationAction::Ban, reason)
+            .await
+    }
+
+    async fn list_moderation_audit(
+        &self,
+        community_id: String,
+        limit: u32,
+    ) -> BackendResult<Vec<ModerationAuditEntry>> {
+        self.moderation_audit(&community_id, limit).await
     }
 
     async fn user_preferences(&self) -> BackendResult<Option<UserPreferences>> {
@@ -8693,9 +6337,7 @@ impl MeshBackend for MatrixBackend {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let user_id = matrix_sdk::ruma::UserId::parse(user_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
+        let room = Self::protected_joined_room(&client, &room_id, "inviting a room member").await?;
         room.invite_user_by_id(&user_id)
             .await
             .map_err(Self::map_error)
@@ -8714,9 +6356,8 @@ impl MeshBackend for MatrixBackend {
     async fn recent_texts(&self, room_id: String, limit: u32) -> BackendResult<Vec<String>> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other("room is not present in the local Matrix store".into())
-        })?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "reading recent messages").await?;
         let mut options = MessagesOptions::backward();
         options.limit = limit.into();
         let messages = room.messages(options).await.map_err(Self::map_error)?;
@@ -8772,10 +6413,7 @@ impl MeshBackend for MatrixBackend {
         let client = self.client().await?;
         let mut sync = self.matrix_sync_control.lock().await;
         let task_epoch = {
-            let mut freshness = self
-                .matrix_sync_freshness
-                .lock()
-                .expect("Matrix sync freshness lock poisoned");
+            let mut freshness = Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness);
             freshness.epoch = freshness.epoch.saturating_add(1);
             freshness.last_success_ms = 0;
             freshness.epoch
@@ -8798,6 +6436,7 @@ impl MeshBackend for MatrixBackend {
                 task_epoch,
                 Self::matrix_rtc_monotonic_now_ms(),
             );
+            self.send_queue_reconcile.notify_one();
         }
         if !sync.paused {
             if let Some(client) = sync.client.clone() {
@@ -8807,6 +6446,7 @@ impl MeshBackend for MatrixBackend {
                     sync.presence.clone(),
                     task_epoch,
                     Arc::clone(&self.matrix_sync_freshness),
+                    sync.send_queue_reconcile.clone(),
                 ));
             }
         }
@@ -8820,12 +6460,8 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<String> {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let room = client.get_room(&room_id).ok_or_else(|| {
-            BackendError::Other(
-                "legacy import target is not present in the local Matrix store".into(),
-            )
-        })?;
-        Self::require_encrypted_room(&room, "importing legacy provenance").await?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "importing legacy provenance").await?;
         let response = room
             .send_raw(crate::backend::LEGACY_MATRIX_EVENT_TYPE, content)
             .await
@@ -8835,1690 +6471,5 @@ impl MeshBackend for MatrixBackend {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use matrix_sdk::{authentication::SessionTokens, SessionMeta};
-    use serde_json::json;
-
-    #[test]
-    fn wire_privacy_presence_requires_sharing_without_invisible_mode() {
-        let visible = WirePrivacyPreferences {
-            share_presence: true,
-            invisible_mode: false,
-            ..WirePrivacyPreferences::default()
-        };
-        let private = WirePrivacyPreferences {
-            share_presence: false,
-            ..visible
-        };
-        let invisible = WirePrivacyPreferences {
-            invisible_mode: true,
-            ..visible
-        };
-
-        assert_eq!(visible.presence(), PresenceState::Online);
-        assert_eq!(private.presence(), PresenceState::Offline);
-        assert_eq!(invisible.presence(), PresenceState::Offline);
-    }
-
-    fn password_session() -> MatrixSession {
-        MatrixSession {
-            meta: SessionMeta {
-                user_id: "@alice:example.org".try_into().unwrap(),
-                device_id: "MESHDEVICE".into(),
-            },
-            tokens: SessionTokens {
-                access_token: "access-token".into(),
-                refresh_token: Some("refresh-token".into()),
-            },
-        }
-    }
-
-    fn matrix_rtc_test_membership(
-        user_id: &str,
-        device_id: &str,
-        member_id: &str,
-    ) -> ActiveMatrixRtcMembership {
-        ActiveMatrixRtcMembership {
-            member: MatrixRtcMember {
-                room_id: "!room:example.org".into(),
-                user_id: user_id.into(),
-                device_id: device_id.into(),
-                session_id: format!("_{user_id}_{device_id}_m.call"),
-                display_name: user_id.into(),
-                avatar_url: None,
-            },
-            member_id: member_id.into(),
-            created_ts: matrix_sdk::ruma::MilliSecondsSinceUnixEpoch::now(),
-            livekit_service_url: None,
-        }
-    }
-
-    fn matrix_rtc_test_key_content(
-        member_id: &str,
-        index: u8,
-        key_byte: u8,
-        sent_ts: u64,
-    ) -> MatrixRtcToDeviceKeyContent {
-        MatrixRtcToDeviceKeyContent {
-            keys: MatrixRtcMediaKeyEntry {
-                index,
-                key: BASE64_STANDARD.encode([key_byte; MATRIX_RTC_MEDIA_KEY_BYTES]),
-            },
-            room_id: "!room:example.org".into(),
-            member: MatrixRtcMediaKeyMember {
-                claimed_device_id: "BOBDEVICE".into(),
-                id: member_id.into(),
-            },
-            session: MatrixRtcMediaKeySession {
-                application: "m.call".into(),
-                call_id: String::new(),
-                scope: "m.room".into(),
-            },
-            sent_ts,
-        }
-    }
-
-    #[test]
-    fn matrix_rtc_media_key_wire_shape_matches_current_matrix_js() {
-        let content = matrix_rtc_test_key_content("member-bob", 7, 42, 1_000);
-        let value = serde_json::to_value(content).unwrap();
-        assert!(value["keys"].is_object());
-        assert_eq!(value["keys"]["index"], 7);
-        assert!(!value["keys"]["key"].as_str().unwrap().contains('='));
-        assert_eq!(value["member"]["claimed_device_id"], "BOBDEVICE");
-        assert_eq!(value["member"]["id"], "member-bob");
-        assert_eq!(value["session"]["application"], "m.call");
-        assert_eq!(value["session"]["call_id"], "");
-        assert_eq!(value["session"]["scope"], "m.room");
-    }
-
-    #[test]
-    fn matrix_rtc_media_key_requires_canonical_16_byte_unpadded_base64() {
-        let canonical = BASE64_STANDARD.encode([9_u8; MATRIX_RTC_MEDIA_KEY_BYTES]);
-        assert_eq!(
-            MatrixBackend::decode_matrix_rtc_media_key(&canonical).unwrap(),
-            [9_u8; MATRIX_RTC_MEDIA_KEY_BYTES]
-        );
-        assert!(MatrixBackend::decode_matrix_rtc_media_key(&format!("{canonical}==")).is_err());
-        assert!(
-            MatrixBackend::decode_matrix_rtc_media_key(&BASE64_STANDARD.encode([9_u8; 15]))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn matrix_rtc_media_key_validation_binds_olm_sender_device_and_membership() {
-        let memberships = vec![matrix_rtc_test_membership(
-            "@bob:example.org",
-            "BOBDEVICE",
-            "member-bob",
-        )];
-        let now = 1_000_000;
-        let mut runtime = MatrixRtcMediaKeyRuntime::default();
-        assert!(MatrixBackend::validate_matrix_rtc_media_key(
-            matrix_rtc_test_key_content("member-bob", 0, 1, now),
-            "@mallory:example.org",
-            "@bob:example.org",
-            "BOBDEVICE",
-            &memberships,
-            now,
-            &mut runtime,
-        )
-        .is_err());
-        assert!(MatrixBackend::validate_matrix_rtc_media_key(
-            matrix_rtc_test_key_content("old-member", 0, 1, now),
-            "@bob:example.org",
-            "@bob:example.org",
-            "BOBDEVICE",
-            &memberships,
-            now,
-            &mut runtime,
-        )
-        .is_err());
-        assert!(MatrixBackend::validate_matrix_rtc_media_key(
-            matrix_rtc_test_key_content("member-bob", 0, 1, now),
-            "@bob:example.org",
-            "@bob:example.org",
-            "OTHERDEVICE",
-            &memberships,
-            now,
-            &mut runtime,
-        )
-        .is_err());
-    }
-
-    #[test]
-    fn matrix_rtc_media_key_rejects_replay_stale_and_backward_generations() {
-        let memberships = vec![matrix_rtc_test_membership(
-            "@bob:example.org",
-            "BOBDEVICE",
-            "member-bob",
-        )];
-        let now = 1_000_000;
-        let mut runtime = MatrixRtcMediaKeyRuntime::default();
-        MatrixBackend::validate_matrix_rtc_media_key(
-            matrix_rtc_test_key_content("member-bob", 250, 1, now - 3),
-            "@bob:example.org",
-            "@bob:example.org",
-            "BOBDEVICE",
-            &memberships,
-            now,
-            &mut runtime,
-        )
-        .unwrap();
-        assert!(MatrixBackend::validate_matrix_rtc_media_key(
-            matrix_rtc_test_key_content("member-bob", 250, 1, now - 3),
-            "@bob:example.org",
-            "@bob:example.org",
-            "BOBDEVICE",
-            &memberships,
-            now,
-            &mut runtime,
-        )
-        .is_err());
-        MatrixBackend::validate_matrix_rtc_media_key(
-            matrix_rtc_test_key_content("member-bob", 252, 2, now - 2),
-            "@bob:example.org",
-            "@bob:example.org",
-            "BOBDEVICE",
-            &memberships,
-            now,
-            &mut runtime,
-        )
-        .expect("a lost intermediate generation must not wedge the publisher");
-        assert!(MatrixBackend::validate_matrix_rtc_media_key(
-            matrix_rtc_test_key_content("member-bob", 251, 3, now - 1),
-            "@bob:example.org",
-            "@bob:example.org",
-            "BOBDEVICE",
-            &memberships,
-            now,
-            &mut runtime,
-        )
-        .is_err());
-        assert!(MatrixBackend::validate_matrix_rtc_media_key(
-            matrix_rtc_test_key_content(
-                "member-bob",
-                253,
-                4,
-                now - MATRIX_RTC_KEY_MAX_AGE.as_millis() as u64 - 1,
-            ),
-            "@bob:example.org",
-            "@bob:example.org",
-            "BOBDEVICE",
-            &memberships,
-            now,
-            &mut runtime,
-        )
-        .is_err());
-    }
-
-    #[test]
-    fn matrix_rtc_media_key_generation_wraps_from_255_to_zero() {
-        let memberships = vec![matrix_rtc_test_membership(
-            "@bob:example.org",
-            "BOBDEVICE",
-            "member-bob",
-        )];
-        let now = 1_000_000;
-        let mut runtime = MatrixRtcMediaKeyRuntime::default();
-        for (index, key_byte, sent_ts) in [(255, 1, now - 1), (0, 2, now)] {
-            MatrixBackend::validate_matrix_rtc_media_key(
-                matrix_rtc_test_key_content("member-bob", index, key_byte, sent_ts),
-                "@bob:example.org",
-                "@bob:example.org",
-                "BOBDEVICE",
-                &memberships,
-                now,
-                &mut runtime,
-            )
-            .unwrap();
-        }
-    }
-
-    #[test]
-    fn matrix_rtc_recipient_set_tracks_exact_current_membership_epochs() {
-        let own = matrix_rtc_test_membership("@alice:example.org", "ALICEDEVICE", "member-alice");
-        let old = matrix_rtc_test_membership("@bob:example.org", "BOBDEVICE", "old-member");
-        let current = matrix_rtc_test_membership("@bob:example.org", "BOBDEVICE", "new-member");
-        let before = MatrixBackend::matrix_rtc_key_recipients(
-            &[own.clone(), old],
-            "@alice:example.org",
-            "ALICEDEVICE",
-        )
-        .unwrap();
-        let after = MatrixBackend::matrix_rtc_key_recipients(
-            &[own, current],
-            "@alice:example.org",
-            "ALICEDEVICE",
-        )
-        .unwrap();
-        assert_eq!(before.len(), 1);
-        assert_eq!(after.len(), 1);
-        assert_ne!(before, after);
-        assert!(after
-            .iter()
-            .any(|recipient| recipient.member_id == "new-member"));
-    }
-
-    #[test]
-    fn matrix_rtc_key_attempts_are_rate_limited_and_expire() {
-        let mut runtime = MatrixRtcMediaKeyRuntime::default();
-        for _ in 0..MATRIX_RTC_KEY_ATTEMPTS_PER_MINUTE {
-            MatrixBackend::record_matrix_rtc_key_attempt(
-                &mut runtime,
-                "@bob:example.org",
-                "BOBDEVICE",
-                1_000,
-            )
-            .unwrap();
-        }
-        assert!(MatrixBackend::record_matrix_rtc_key_attempt(
-            &mut runtime,
-            "@bob:example.org",
-            "BOBDEVICE",
-            1_000,
-        )
-        .is_err());
-        MatrixBackend::record_matrix_rtc_key_attempt(
-            &mut runtime,
-            "@bob:example.org",
-            "BOBDEVICE",
-            61_001,
-        )
-        .unwrap();
-    }
-
-    #[test]
-    fn matrix_rtc_media_key_debug_is_redacted() {
-        let key = MatrixRtcMediaKey {
-            room_id: "!room:example.org".into(),
-            user_id: "@bob:example.org".into(),
-            device_id: "BOBDEVICE".into(),
-            member_id: "member-bob".into(),
-            session_id: None,
-            activation_id: None,
-            participant_identity: "identity".into(),
-            key_index: 0,
-            key: "super-secret-key".into(),
-            sent_ts: 1_000,
-        };
-        let debug = format!("{key:?}");
-        assert!(!debug.contains("super-secret-key"));
-        assert!(debug.contains("[REDACTED]"));
-    }
-
-    #[test]
-    fn matrix_rtc_pending_activation_rejects_wrong_ack_without_mutation() {
-        let state_key = ("!room:example.org".into(), "local-session".into());
-        let recipients = HashSet::from([MatrixRtcKeyParticipant {
-            user_id: "@bob:example.org".into(),
-            device_id: "BOBDEVICE".into(),
-            member_id: "member-bob".into(),
-        }]);
-        let mut runtime = MatrixRtcMediaKeyRuntime::default();
-        runtime.pending_activations.insert(
-            state_key.clone(),
-            MatrixRtcPendingActivation {
-                activation_id: "expected-activation".into(),
-                room_id: state_key.0.clone(),
-                session_id: state_key.1.clone(),
-                member_id: "member-alice".into(),
-                key_index: 4,
-                key: [7; MATRIX_RTC_MEDIA_KEY_BYTES],
-                recipient_fingerprint: MatrixBackend::matrix_rtc_recipient_fingerprint(&recipients)
-                    .unwrap(),
-                recipients,
-                expires_at: 2_000,
-                phase: MatrixRtcActivationPhase::AwaitingPauseAck,
-            },
-        );
-        assert!(MatrixBackend::matrix_rtc_pending_activation_snapshot(
-            &runtime,
-            &state_key.0,
-            &state_key.1,
-            "member-alice",
-            "wrong-activation",
-            MatrixRtcActivationPhase::AwaitingPauseAck,
-            1_000,
-        )
-        .is_err());
-        assert_eq!(runtime.pending_activations.len(), 1);
-        assert_eq!(
-            runtime
-                .pending_activations
-                .get(&state_key)
-                .unwrap()
-                .activation_id,
-            "expected-activation"
-        );
-    }
-
-    #[test]
-    fn matrix_rtc_pending_activation_never_renews_and_expiry_is_terminal() {
-        let state_key = ("!room:example.org".into(), "local-session".into());
-        let mut runtime = MatrixRtcMediaKeyRuntime::default();
-        runtime.outbound.insert(
-            state_key.clone(),
-            MatrixRtcOutboundMediaKey {
-                key_index: 3,
-                key: [3; MATRIX_RTC_MEDIA_KEY_BYTES],
-                recipients: HashSet::new(),
-            },
-        );
-        assert!(matches!(
-            MatrixBackend::matrix_rtc_local_lease_state(&mut runtime, &state_key, 1_000).unwrap(),
-            MatrixRtcLocalLeaseState::Active { key_index: 3 }
-        ));
-        runtime.pending_activations.insert(
-            state_key.clone(),
-            MatrixRtcPendingActivation {
-                activation_id: "activation".into(),
-                room_id: state_key.0.clone(),
-                session_id: state_key.1.clone(),
-                member_id: "member-alice".into(),
-                key_index: 4,
-                key: [4; MATRIX_RTC_MEDIA_KEY_BYTES],
-                recipients: HashSet::new(),
-                recipient_fingerprint: MatrixBackend::matrix_rtc_recipient_fingerprint(
-                    &HashSet::new(),
-                )
-                .unwrap(),
-                expires_at: 2_000,
-                phase: MatrixRtcActivationPhase::AwaitingPauseAck,
-            },
-        );
-        assert!(matches!(
-            MatrixBackend::matrix_rtc_local_lease_state(&mut runtime, &state_key, 1_000).unwrap(),
-            MatrixRtcLocalLeaseState::Paused
-        ));
-        assert!(matches!(
-            MatrixBackend::matrix_rtc_local_lease_state(&mut runtime, &state_key, 2_000).unwrap(),
-            MatrixRtcLocalLeaseState::Expired
-        ));
-        assert!(!runtime.pending_activations.contains_key(&state_key));
-        assert!(!runtime.outbound.contains_key(&state_key));
-        assert!(runtime.lease_blocked.contains(&state_key));
-        assert!(matches!(
-            MatrixBackend::matrix_rtc_local_lease_state(&mut runtime, &state_key, 2_001).unwrap(),
-            MatrixRtcLocalLeaseState::Paused
-        ));
-    }
-
-    #[test]
-    fn matrix_rtc_failed_leave_clear_cannot_restore_local_lease() {
-        let state_key = ("!room:example.org".into(), "local-session".into());
-        let mut runtime = MatrixRtcMediaKeyRuntime::default();
-        runtime.outbound.insert(
-            state_key.clone(),
-            MatrixRtcOutboundMediaKey {
-                key_index: 3,
-                key: [3; MATRIX_RTC_MEDIA_KEY_BYTES],
-                recipients: HashSet::new(),
-            },
-        );
-        runtime.pending_activations.insert(
-            state_key.clone(),
-            MatrixRtcPendingActivation {
-                activation_id: "activation".into(),
-                room_id: state_key.0.clone(),
-                session_id: state_key.1.clone(),
-                member_id: "member-alice".into(),
-                key_index: 4,
-                key: [4; MATRIX_RTC_MEDIA_KEY_BYTES],
-                recipients: HashSet::new(),
-                recipient_fingerprint: MatrixBackend::matrix_rtc_recipient_fingerprint(
-                    &HashSet::new(),
-                )
-                .unwrap(),
-                expires_at: 2_000,
-                phase: MatrixRtcActivationPhase::AwaitingPauseAck,
-            },
-        );
-        runtime.completed_activations.insert(
-            state_key.clone(),
-            MatrixRtcCompletedActivation {
-                activation_id: "previous-activation".into(),
-                member_id: "member-alice".into(),
-                key_index: 3,
-                sent_ts: 900,
-                completed_at: 900,
-            },
-        );
-        runtime.lease_blocked.insert(state_key.clone());
-
-        MatrixBackend::revoke_matrix_rtc_publication(&mut runtime, &state_key);
-        let membership_clear_result: BackendResult<bool> =
-            Err(BackendError::Other("simulated Matrix state failure".into()));
-        assert!(membership_clear_result.is_err());
-
-        assert!(!runtime.outbound.contains_key(&state_key));
-        assert!(!runtime.pending_activations.contains_key(&state_key));
-        assert!(!runtime.completed_activations.contains_key(&state_key));
-        assert!(!runtime.lease_blocked.contains(&state_key));
-        assert!(
-            MatrixBackend::matrix_rtc_local_lease_state(&mut runtime, &state_key, 1_000).is_err()
-        );
-    }
-
-    #[test]
-    fn matrix_rtc_publication_lease_rejects_frozen_sync() {
-        let freshness = MATRIX_RTC_SYNC_FRESHNESS.as_millis() as u64;
-        assert!(!MatrixBackend::matrix_rtc_sync_is_fresh(0, 1_000));
-        assert!(MatrixBackend::matrix_rtc_sync_is_fresh(
-            1_000,
-            1_000 + freshness
-        ));
-        assert!(!MatrixBackend::matrix_rtc_sync_is_fresh(
-            1_000,
-            1_001 + freshness
-        ));
-    }
-
-    #[test]
-    fn matrix_rtc_active_sync_cadence_bounds_final_publication_lease() {
-        assert_eq!(
-            MatrixBackend::matrix_sync_cadence_for_active_call(false),
-            MatrixSyncCadence::Normal
-        );
-        assert_eq!(
-            MatrixBackend::matrix_sync_cadence_for_active_call(true),
-            MatrixSyncCadence::ActiveCall
-        );
-        assert_eq!(MatrixSyncCadence::Normal.timeout(), Duration::from_secs(30));
-        assert_eq!(
-            MatrixSyncCadence::ActiveCall.timeout(),
-            Duration::from_secs(1)
-        );
-        assert_eq!(
-            MATRIX_RTC_SYNC_FRESHNESS + MATRIX_RTC_KEY_LEASE_TTL,
-            Duration::from_secs(5)
-        );
-        assert!(MATRIX_RTC_SYNC_FRESHNESS + MATRIX_RTC_KEY_LEASE_TTL <= Duration::from_secs(6));
-    }
-
-    #[test]
-    fn matrix_sync_stale_epoch_cannot_refresh_freshness() {
-        let freshness = StdMutex::new(MatrixSyncFreshness {
-            epoch: 7,
-            last_success_ms: 0,
-        });
-        assert!(!MatrixBackend::record_matrix_sync_success(
-            &freshness, 6, 1_000,
-        ));
-        assert_eq!(freshness.lock().unwrap().last_success_ms, 0);
-        assert!(MatrixBackend::record_matrix_sync_success(
-            &freshness, 7, 1_001,
-        ));
-        assert_eq!(freshness.lock().unwrap().last_success_ms, 1_001);
-        freshness.lock().unwrap().epoch = 8;
-        assert!(!MatrixBackend::record_matrix_sync_success(
-            &freshness, 7, 1_002,
-        ));
-        assert_eq!(freshness.lock().unwrap().last_success_ms, 1_001);
-    }
-
-    #[tokio::test]
-    async fn matrix_sync_cadence_transitions_are_idempotent_and_reset_freshness() {
-        let backend = MatrixBackend::new(tempfile::tempdir().unwrap().path().to_owned());
-        backend
-            .matrix_sync_freshness
-            .lock()
-            .unwrap()
-            .last_success_ms = 1_000;
-        MatrixBackend::set_matrix_sync_cadence(
-            &backend.matrix_sync_control,
-            &backend.matrix_sync_freshness,
-            MatrixSyncCadence::ActiveCall,
-        )
-        .await;
-        let active_epoch = backend.matrix_sync_freshness.lock().unwrap().epoch;
-        assert!(active_epoch > 0);
-        assert_eq!(
-            backend
-                .matrix_sync_freshness
-                .lock()
-                .unwrap()
-                .last_success_ms,
-            0,
-        );
-        assert_eq!(
-            backend.matrix_sync_control.lock().await.cadence,
-            MatrixSyncCadence::ActiveCall
-        );
-
-        MatrixBackend::set_matrix_sync_cadence(
-            &backend.matrix_sync_control,
-            &backend.matrix_sync_freshness,
-            MatrixSyncCadence::ActiveCall,
-        )
-        .await;
-        assert_eq!(
-            backend.matrix_sync_freshness.lock().unwrap().epoch,
-            active_epoch
-        );
-
-        backend.pause_sync().await;
-        let paused_epoch = backend.matrix_sync_freshness.lock().unwrap().epoch;
-        assert!(paused_epoch > active_epoch);
-        assert!(backend.matrix_sync_control.lock().await.paused);
-        backend.pause_sync().await;
-        assert_eq!(
-            backend.matrix_sync_freshness.lock().unwrap().epoch,
-            paused_epoch
-        );
-    }
-
-    #[test]
-    fn matrix_rtc_pause_generation_is_the_candidate_key_index() {
-        let pause = MatrixRtcMediaKeyPause {
-            room_id: "!room:example.org".into(),
-            session_id: "local-session".into(),
-            member_id: "member-alice".into(),
-            activation_id: "activation".into(),
-            key_index: 9,
-        };
-        let value = serde_json::to_value(pause).unwrap();
-        assert_eq!(value["keyIndex"], 9);
-        assert_eq!(value["activationId"], "activation");
-    }
-
-    #[test]
-    fn matrix_rtc_membership_matches_current_matrix_js_shape_and_renews_expiry() {
-        let initial = MatrixBackend::matrix_rtc_membership_content(
-            "MESHDEVICE",
-            "@alice:example.org:MESHDEVICE",
-            "https://rtc.example.org/livekit/jwt",
-            1_000,
-            1_000,
-        )
-        .unwrap();
-        assert_eq!(initial["application"], "m.call");
-        assert_eq!(initial["call_id"], "");
-        assert_eq!(initial["scope"], "m.room");
-        assert_eq!(initial["device_id"], "MESHDEVICE");
-        assert_eq!(initial["membershipID"], "@alice:example.org:MESHDEVICE");
-        assert_eq!(initial["focus_active"]["type"], "livekit");
-        assert_eq!(
-            initial["focus_active"]["focus_selection"],
-            "oldest_membership"
-        );
-        assert_eq!(
-            initial["foci_preferred"][0]["livekit_service_url"],
-            "https://rtc.example.org/livekit/jwt"
-        );
-        assert_eq!(initial["m.call.intent"], "audio");
-        assert_eq!(initial["created_ts"], 1_000);
-        assert_eq!(initial["expires"], 120_000);
-
-        let refreshed = MatrixBackend::matrix_rtc_membership_content(
-            "MESHDEVICE",
-            "@alice:example.org:MESHDEVICE",
-            "https://rtc.example.org/livekit/jwt",
-            1_000,
-            61_000,
-        )
-        .unwrap();
-        assert_eq!(refreshed["created_ts"], initial["created_ts"]);
-        assert_eq!(refreshed["expires"], 180_000);
-    }
-
-    #[test]
-    fn matrix_rtc_state_key_and_token_request_use_interoperable_contract() {
-        let user_id = matrix_sdk::ruma::UserId::parse("@alice:example.org").unwrap();
-        let state_key = CallMemberStateKey::new(user_id, Some("MESHDEVICE_m.call".into()), true);
-        assert_eq!(state_key.as_ref(), "_@alice:example.org_MESHDEVICE_m.call");
-
-        let request = MatrixRtcTokenRequest {
-            room_id: "!room:example.org".into(),
-            slot_id: MATRIX_RTC_SLOT_ID.into(),
-            openid_token: MatrixRtcOpenIdToken {
-                access_token: "openid".into(),
-                token_type: "Bearer".into(),
-                matrix_server_name: "example.org".into(),
-                expires_in: 3_600,
-            },
-            member: MatrixRtcTokenMember {
-                id: "@alice:example.org:MESHDEVICE".into(),
-                claimed_user_id: "@alice:example.org".into(),
-                claimed_device_id: "MESHDEVICE".into(),
-            },
-        };
-        let value = serde_json::to_value(request).unwrap();
-        assert_eq!(value["slot_id"], "m.call#ROOM");
-        assert_eq!(value["openid_token"]["access_token"], "openid");
-        assert_eq!(value["member"]["claimed_device_id"], "MESHDEVICE");
-        assert!(value.get("room").is_none());
-        assert!(value.get("device_id").is_none());
-    }
-
-    #[test]
-    fn matrix_rtc_alias_and_identity_are_standard_unpadded_base64() {
-        let room_name = MatrixBackend::matrix_rtc_room_name("!room:example.org").unwrap();
-        let identity = MatrixBackend::matrix_rtc_participant_identity(
-            "@alice:example.org",
-            "MESHDEVICE",
-            "@alice:example.org:MESHDEVICE",
-        )
-        .unwrap();
-        assert!(!room_name.contains('='));
-        assert!(!identity.contains('='));
-        assert_ne!(room_name, identity);
-        assert_eq!(
-            room_name,
-            MatrixBackend::matrix_rtc_room_name("!room:example.org").unwrap()
-        );
-    }
-
-    #[test]
-    fn matrix_rtc_token_response_requires_the_exact_configured_sfu_endpoint() {
-        assert_eq!(
-            MatrixBackend::validate_matrix_rtc_sfu_url(
-                "wss://livekit.example.org/livekit/sfu",
-                "wss://livekit.example.org/livekit/sfu",
-            )
-            .unwrap(),
-            "wss://livekit.example.org/livekit/sfu"
-        );
-        assert!(MatrixBackend::validate_matrix_rtc_sfu_url(
-            "wss://livekit.example.org/attacker-controlled",
-            "wss://livekit.example.org/livekit/sfu",
-        )
-        .is_err());
-        assert!(MatrixBackend::validate_matrix_rtc_sfu_url(
-            "wss://other.example.org/livekit/sfu",
-            "wss://livekit.example.org/livekit/sfu",
-        )
-        .is_err());
-        assert!(MatrixBackend::validate_matrix_rtc_sfu_url(
-            "wss://livekit.example.org/livekit/sfu?token=leak",
-            "wss://livekit.example.org/livekit/sfu",
-        )
-        .is_err());
-    }
-
-    #[tokio::test]
-    async fn matrix_rtc_leave_is_idempotent_for_renderer_cleanup() {
-        let backend = MatrixBackend::new(tempfile::tempdir().unwrap().path().to_owned());
-        backend
-            .matrix_rtc_leave(
-                "!room:example.org".into(),
-                "_@alice:example.org_MESHDEVICE_m.call".into(),
-            )
-            .await
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn matrix_rtc_join_fails_before_authentication_without_verified_media_e2ee() {
-        let backend = MatrixBackend::new(tempfile::tempdir().unwrap().path().to_owned());
-        let error = backend
-            .matrix_rtc_join("!room:example.org".into())
-            .await
-            .unwrap_err();
-        assert!(matches!(error, BackendError::Unsupported(_)));
-        assert!(backend.rtc_sessions.lock().await.is_empty());
-    }
-
-    #[test]
-    fn notification_preview_is_single_line_and_bounded() {
-        assert_eq!(
-            MatrixBackend::notification_preview("  hello\n\nMatrix\tworld  "),
-            "hello Matrix world"
-        );
-        let preview = MatrixBackend::notification_preview(&"a".repeat(300));
-        assert_eq!(preview.chars().count(), 241);
-        assert!(preview.ends_with('…'));
-    }
-
-    #[test]
-    fn oidc_client_id_configuration_fails_closed() {
-        assert_eq!(MatrixBackend::normalize_oidc_client_id(None).unwrap(), None);
-        assert_eq!(
-            MatrixBackend::normalize_oidc_client_id(Some("  mesh-desktop  ".into())).unwrap(),
-            Some("mesh-desktop".into())
-        );
-        assert!(MatrixBackend::normalize_oidc_client_id(Some("bad\nclient".into())).is_err());
-        assert!(MatrixBackend::normalize_oidc_client_id(Some("x".repeat(513))).is_err());
-    }
-
-    #[test]
-    fn oidc_requires_every_native_authorization_capability() {
-        assert!(MatrixBackend::has_required_oidc_capabilities(
-            true, true, true, true, true
-        ));
-        for missing in 0..5 {
-            let mut capabilities = [true; 5];
-            capabilities[missing] = false;
-            assert!(!MatrixBackend::has_required_oidc_capabilities(
-                capabilities[0],
-                capabilities[1],
-                capabilities[2],
-                capabilities[3],
-                capabilities[4],
-            ));
-        }
-    }
-
-    #[test]
-    fn persisted_sessions_record_auth_kind_and_migrate_password_v1() {
-        let current = PersistedSession {
-            homeserver: "https://matrix.example.org/".into(),
-            authentication: PersistedAuthentication::Password {
-                session: password_session(),
-            },
-        };
-        let current_json = serde_json::to_value(&current).unwrap();
-        assert_eq!(
-            current_json.pointer("/authentication/kind"),
-            Some(&json!("password"))
-        );
-
-        let legacy_json = json!({
-            "homeserver": "https://matrix.example.org/",
-            "session": password_session()
-        });
-        let migrated =
-            MatrixBackend::decode_persisted_session(&serde_json::to_vec(&legacy_json).unwrap())
-                .unwrap();
-        assert!(matches!(
-            migrated.authentication,
-            PersistedAuthentication::Password { .. }
-        ));
-    }
-
-    #[test]
-    fn matrix_display_names_are_trimmed_and_bounded() {
-        assert_eq!(
-            MatrixBackend::normalize_display_name("  Alice Example  ").unwrap(),
-            "Alice Example"
-        );
-        assert!(matches!(
-            MatrixBackend::normalize_display_name(" \t "),
-            Err(BackendError::InvalidConfiguration(_))
-        ));
-        assert!(matches!(
-            MatrixBackend::normalize_display_name(&"a".repeat(101)),
-            Err(BackendError::InvalidConfiguration(_))
-        ));
-        assert!(matches!(
-            MatrixBackend::normalize_display_name("Alice\nAdmin"),
-            Err(BackendError::InvalidConfiguration(_))
-        ));
-    }
-
-    #[test]
-    fn encrypted_room_guard_allows_encrypted_rooms() {
-        assert!(MatrixBackend::ensure_room_is_encrypted(
-            "!safe:example.org",
-            "sending a message",
-            true,
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn encrypted_room_guard_fails_closed_with_actionable_room_context() {
-        let protected_actions = [
-            "sending a message",
-            "sending a reply",
-            "sending an attachment",
-            "editing a message",
-            "changing a reaction",
-            "importing legacy provenance",
-            "opening this community channel",
-            "joining this community",
-            "opening this direct message",
-        ];
-
-        for action in protected_actions {
-            let error =
-                MatrixBackend::ensure_room_is_encrypted("!plaintext:example.org", action, false)
-                    .expect_err("unencrypted rooms must be rejected");
-            let BackendError::NotEncrypted(message) = error else {
-                panic!("encryption guard must return a typed not-encrypted error");
-            };
-            assert!(message.contains(action));
-            assert!(message.contains("!plaintext:example.org"));
-            assert!(message.contains("enable end-to-end encryption"));
-            assert!(message.contains("leave and rejoin"));
-        }
-    }
-
-    #[test]
-    fn managed_usernames_are_normalized_and_protocol_addresses_are_rejected() {
-        assert_eq!(
-            MatrixBackend::normalize_product_username("  Alice_Smith  ").unwrap(),
-            "alice_smith"
-        );
-        assert!(MatrixBackend::normalize_product_username("@alice:example.org").is_err());
-        assert!(MatrixBackend::normalize_product_username("two words").is_err());
-        assert!(MatrixBackend::normalize_product_username("ab").is_err());
-    }
-
-    #[test]
-    fn managed_configuration_fails_closed_and_qualifies_product_inputs_in_rust() {
-        assert!(matches!(
-            MatrixBackend::managed_homeserver_config_from(None, None),
-            Err(BackendError::ManagedHomeserverUnconfigured)
-        ));
-        let managed = MatrixBackend::managed_homeserver_config_from(
-            Some("https://matrix.example.org"),
-            Some("example.org"),
-        )
-        .unwrap();
-        assert_eq!(managed.homeserver, "https://matrix.example.org");
-        assert_eq!(managed.server_name.as_str(), "example.org");
-        assert_eq!(
-            MatrixBackend::qualify_user_input("Alice", &managed)
-                .unwrap()
-                .as_str(),
-            "@alice:example.org"
-        );
-        assert_eq!(
-            MatrixBackend::qualify_user_input("@expert:elsewhere.org", &managed)
-                .unwrap()
-                .as_str(),
-            "@expert:elsewhere.org"
-        );
-        assert_eq!(
-            MatrixBackend::qualify_public_link_input("Garden-Club", &managed)
-                .unwrap()
-                .as_str(),
-            "#garden-club:example.org"
-        );
-        assert_eq!(
-            MatrixBackend::qualify_public_link_input("#raw:elsewhere.org", &managed)
-                .unwrap()
-                .as_str(),
-            "#raw:elsewhere.org"
-        );
-    }
-
-    #[test]
-    fn registration_uiaa_only_auto_completes_dummy_and_classifies_terms() {
-        let dummy = UiaaInfo::new(vec![uiaa::AuthFlow::new(vec![AuthType::Dummy])]);
-        assert!(MatrixBackend::uiaa_can_complete_with_dummy(&dummy));
-
-        let terms = UiaaInfo::new(vec![uiaa::AuthFlow::new(vec![AuthType::Terms])]);
-        assert!(!MatrixBackend::uiaa_can_complete_with_dummy(&terms));
-        assert!(MatrixBackend::uiaa_has_incomplete_stage(
-            &terms,
-            AuthType::Terms
-        ));
-
-        let recaptcha = UiaaInfo::new(vec![uiaa::AuthFlow::new(vec![AuthType::ReCaptcha])]);
-        assert!(!MatrixBackend::uiaa_can_complete_with_dummy(&recaptcha));
-    }
-
-    #[test]
-    fn homeserver_input_accepts_discovery_names_and_secure_urls() {
-        assert_eq!(
-            MatrixBackend::normalize_homeserver_input(" matrix.example.org ").unwrap(),
-            "matrix.example.org"
-        );
-        assert_eq!(
-            MatrixBackend::normalize_homeserver_input("https://matrix.example.org").unwrap(),
-            "https://matrix.example.org"
-        );
-        assert_eq!(
-            MatrixBackend::normalize_homeserver_input("http://127.0.0.1:8008").unwrap(),
-            "http://127.0.0.1:8008"
-        );
-        assert_eq!(
-            MatrixBackend::normalize_homeserver_input("localhost:8009").unwrap(),
-            "http://localhost:8009"
-        );
-        assert_eq!(
-            MatrixBackend::normalize_homeserver_input("[::1]:8010").unwrap(),
-            "http://[::1]:8010"
-        );
-    }
-
-    #[test]
-    fn homeserver_input_rejects_insecure_remote_urls_and_embedded_credentials() {
-        assert!(MatrixBackend::normalize_homeserver_input("http://matrix.example.org").is_err());
-        let credentialed_url = ["https://alice:", "secret", "@matrix.example.org"].concat();
-        assert!(MatrixBackend::normalize_homeserver_input(&credentialed_url).is_err());
-    }
-
-    #[test]
-    fn production_account_removal_is_scoped_to_a_dedicated_matrix_directory() {
-        let root = tempfile::tempdir().unwrap();
-        let safe = MatrixBackend::new(root.path().join("matrix"));
-        let safe_storage = safe.storage_for_profile("default");
-        assert!(safe.validate_store_root_for_removal(&safe_storage).is_ok());
-
-        let unsafe_backend = MatrixBackend::new(root.path().to_owned());
-        let unsafe_storage = unsafe_backend.storage_for_profile("default");
-        assert!(unsafe_backend
-            .validate_store_root_for_removal(&unsafe_storage)
-            .is_err());
-    }
-
-    #[test]
-    fn production_accounts_use_stable_separate_store_and_key_namespaces() {
-        let root = tempfile::tempdir().unwrap();
-        let backend = MatrixBackend::new(root.path().join("matrix"));
-        let alice_id = MatrixBackend::profile_id("matrix.example.org", "@alice:example.org");
-        let bob_id = MatrixBackend::profile_id("matrix.example.org", "@bob:example.org");
-        let alice = backend.storage_for_profile(&alice_id);
-        let bob = backend.storage_for_profile(&bob_id);
-
-        assert_ne!(alice.profile_id, bob.profile_id);
-        assert_ne!(alice.store_root, bob.store_root);
-        assert_ne!(
-            MatrixBackend::session_key(&alice),
-            MatrixBackend::session_key(&bob)
-        );
-        assert_ne!(
-            MatrixBackend::trusted_devices_key(&alice),
-            MatrixBackend::trusted_devices_key(&bob)
-        );
-        assert_ne!(
-            MatrixBackend::recovery_test_key(&alice),
-            MatrixBackend::recovery_test_key(&bob)
-        );
-        assert!(alice
-            .store_root
-            .starts_with(root.path().join("matrix").join("accounts")));
-        assert_eq!(
-            alice_id,
-            MatrixBackend::profile_id("MATRIX.EXAMPLE.ORG", "@ALICE:EXAMPLE.ORG")
-        );
-        assert_eq!(
-            alice_id,
-            MatrixBackend::profile_id("matrix.example.org", "alice")
-        );
-    }
-
-    #[test]
-    fn local_account_removal_erases_every_account_artifact_and_preserves_other_accounts() {
-        use std::cell::RefCell;
-
-        let root = tempfile::tempdir().unwrap();
-        let backend = MatrixBackend::new(root.path().join("matrix"));
-        let target_profile = format!("wipe-target-{}", uuid::Uuid::new_v4());
-        let other_profile = format!("wipe-keep-{}", uuid::Uuid::new_v4());
-        let target = backend.storage_for_profile(&target_profile);
-        let other = backend.storage_for_profile(&other_profile);
-
-        std::fs::create_dir_all(target.store_root.join("media-cache")).unwrap();
-        std::fs::create_dir_all(target.store_root.join("local-search")).unwrap();
-        std::fs::write(
-            target.store_root.join("matrix-sdk-crypto.sqlite3"),
-            b"encrypted SDK store",
-        )
-        .unwrap();
-        std::fs::write(
-            target.store_root.join("media-cache").join("decrypted-file"),
-            b"cached plaintext",
-        )
-        .unwrap();
-        std::fs::write(
-            target
-                .store_root
-                .join("local-search")
-                .join("decrypted-index"),
-            b"search data",
-        )
-        .unwrap();
-        std::fs::create_dir_all(&other.store_root).unwrap();
-        std::fs::write(other.store_root.join("keep"), b"other account").unwrap();
-
-        let plan = backend.local_account_removal_plan(&target).unwrap();
-        let target_keys = plan.key_names.clone();
-        let other_keys = [
-            MatrixBackend::session_key(&other),
-            MatrixBackend::store_passphrase_key(&other),
-            MatrixBackend::trusted_devices_key(&other),
-            MatrixBackend::recovery_test_key(&other),
-        ];
-        let secrets = RefCell::new(
-            target_keys
-                .iter()
-                .chain(other_keys.iter())
-                .cloned()
-                .collect::<HashSet<_>>(),
-        );
-
-        MatrixBackend::erase_local_account_artifacts_with(
-            &plan,
-            |key| Ok(secrets.borrow().contains(key)),
-            |key| {
-                secrets.borrow_mut().remove(key);
-                Ok(())
-            },
-        )
-        .unwrap();
-
-        assert!(!target.store_root.exists());
-        assert_eq!(
-            std::fs::read(other.store_root.join("keep")).unwrap(),
-            b"other account"
-        );
-        for key in target_keys {
-            assert!(!secrets.borrow().contains(&key));
-        }
-        for key in other_keys {
-            assert!(secrets.borrow().contains(&key));
-        }
-
-        let mut registry = AccountRegistry {
-            active_profile_id: Some(target_profile.clone()),
-            accounts: vec![
-                SavedAccount {
-                    profile_id: target_profile.clone(),
-                    user_id: "@target:example.org".into(),
-                    homeserver: "https://example.org".into(),
-                    device_id: "TARGET".into(),
-                    last_used_at: "2026-07-24T00:00:00Z".into(),
-                },
-                SavedAccount {
-                    profile_id: other_profile.clone(),
-                    user_id: "@other:example.org".into(),
-                    homeserver: "https://example.org".into(),
-                    device_id: "OTHER".into(),
-                    last_used_at: "2026-07-23T00:00:00Z".into(),
-                },
-            ],
-        };
-        MatrixBackend::remove_account_from_registry(&mut registry, &target_profile);
-        assert_eq!(registry.active_profile_id, None);
-        assert_eq!(registry.accounts.len(), 1);
-        assert_eq!(registry.accounts[0].profile_id, other_profile);
-    }
-
-    #[test]
-    fn local_account_removal_fails_closed_when_keychain_erasure_cannot_be_verified() {
-        let root = tempfile::tempdir().unwrap();
-        let backend = MatrixBackend::new(root.path().join("matrix"));
-        let storage = backend.storage_for_profile("verification-failure");
-        std::fs::create_dir_all(&storage.store_root).unwrap();
-        let plan = backend.local_account_removal_plan(&storage).unwrap();
-
-        let error = MatrixBackend::erase_local_account_artifacts_with(
-            &plan,
-            |key| Ok(key == plan.key_names[0]),
-            |_key| Ok(()),
-        )
-        .unwrap_err();
-
-        assert!(error
-            .to_string()
-            .contains("remained after local account cleanup"));
-    }
-
-    #[test]
-    fn projects_standard_edits_reactions_redactions_and_replies() {
-        let members = HashMap::from([
-            ("@alice:example.org".into(), "Alice".into()),
-            ("@bob:example.org".into(), "Bob".into()),
-        ]);
-        let events = vec![
-            json!({
-                "type": "m.room.message",
-                "event_id": "$one",
-                "sender": "@alice:example.org",
-                "origin_server_ts": 1,
-                "content": { "msgtype": "m.text", "body": "original" }
-            }),
-            json!({
-                "type": "m.room.message",
-                "event_id": "$edit",
-                "sender": "@alice:example.org",
-                "origin_server_ts": 2,
-                "content": {
-                    "msgtype": "m.text",
-                    "body": "* edited",
-                    "m.new_content": { "msgtype": "m.text", "body": "edited" },
-                    "m.relates_to": { "rel_type": "m.replace", "event_id": "$one" }
-                }
-            }),
-            json!({
-                "type": "m.reaction",
-                "event_id": "$reaction-one",
-                "sender": "@bob:example.org",
-                "origin_server_ts": 3,
-                "content": { "m.relates_to": { "rel_type": "m.annotation", "event_id": "$one", "key": "thumbsup" } }
-            }),
-            json!({
-                "type": "m.room.message",
-                "event_id": "$reply",
-                "sender": "@bob:example.org",
-                "origin_server_ts": 4,
-                "content": {
-                    "msgtype": "m.text",
-                    "body": "> <@alice:example.org> edited\n\nreply body",
-                    "m.relates_to": { "m.in_reply_to": { "event_id": "$one" } }
-                }
-            }),
-            json!({
-                "type": "m.room.redaction",
-                "event_id": "$redact-reaction",
-                "sender": "@bob:example.org",
-                "origin_server_ts": 5,
-                "redacts": "$reaction-one",
-                "content": {}
-            }),
-            json!({
-                "type": "m.room.redaction",
-                "event_id": "$redact-message",
-                "sender": "@alice:example.org",
-                "origin_server_ts": 6,
-                "content": { "redacts": "$one" }
-            }),
-        ];
-
-        let projected = MatrixBackend::project_timeline("!room:example.org", &members, events);
-        assert_eq!(projected.len(), 2);
-        assert_eq!(projected[0].id, "$one");
-        assert_eq!(projected[0].content, "");
-        assert!(projected[0].edited_at.is_some());
-        assert!(projected[0].deleted_at.is_some());
-        assert!(projected[0].reactions.is_empty());
-        assert_eq!(projected[1].content, "reply body");
-        assert_eq!(projected[1].reply_to_id.as_deref(), Some("$one"));
-    }
-
-    #[test]
-    fn ignores_replacements_from_a_different_sender() {
-        let members = HashMap::new();
-        let events = vec![
-            json!({
-                "type": "m.room.message",
-                "event_id": "$one",
-                "sender": "@alice:example.org",
-                "origin_server_ts": 1,
-                "content": { "msgtype": "m.text", "body": "original" }
-            }),
-            json!({
-                "type": "m.room.message",
-                "event_id": "$bad-edit",
-                "sender": "@mallory:example.org",
-                "origin_server_ts": 2,
-                "content": {
-                    "msgtype": "m.text",
-                    "body": "* forged",
-                    "m.new_content": { "msgtype": "m.text", "body": "forged" },
-                    "m.relates_to": { "rel_type": "m.replace", "event_id": "$one" }
-                }
-            }),
-        ];
-
-        let projected = MatrixBackend::project_timeline("!room:example.org", &members, events);
-        assert_eq!(projected[0].content, "original");
-        assert!(projected[0].edited_at.is_none());
-    }
-
-    #[test]
-    fn projects_only_the_approved_legacy_message_variant_with_original_provenance() {
-        let events = vec![
-            json!({
-                "type": crate::backend::LEGACY_MATRIX_EVENT_TYPE,
-                "event_id": "$selected",
-                "sender": "@importer:example.org",
-                "origin_server_ts": 200,
-                "content": {
-                    "conflictStatus": "approved_selected",
-                    "record": {
-                        "kind": "message",
-                        "entityId": "legacy-message",
-                        "recordSha256": "selected-hash",
-                        "originalTimestamp": "2020-01-02T03:04:05Z",
-                        "originalSignature": "legacy-signature",
-                        "payload": {
-                            "authorPublicKey": "legacy-author",
-                            "authorDisplayName": "Legacy Alice",
-                            "authorAvatarColor": "#123456",
-                            "content": "selected history",
-                            "attachments": [],
-                            "reactions": {}
-                        }
-                    }
-                }
-            }),
-            json!({
-                "type": crate::backend::LEGACY_MATRIX_EVENT_TYPE,
-                "event_id": "$non-selected",
-                "sender": "@importer:example.org",
-                "origin_server_ts": 201,
-                "content": {
-                    "conflictStatus": "approved_non_selected_variant",
-                    "record": {
-                        "kind": "message",
-                        "entityId": "legacy-message",
-                        "recordSha256": "other-hash",
-                        "payload": { "content": "other history" }
-                    }
-                }
-            }),
-        ];
-
-        let projected =
-            MatrixBackend::project_timeline("!room:example.org", &HashMap::new(), events);
-        assert_eq!(projected.len(), 1);
-        assert_eq!(projected[0].id, "legacy:legacy-message");
-        assert_eq!(projected[0].content, "selected history");
-        assert_eq!(projected[0].author_public_key, "legacy-author");
-        assert_eq!(projected[0].timestamp, "2020-01-02T03:04:05Z");
-        assert_eq!(projected[0].signature, "legacy-signature");
-        assert_eq!(projected[0].delivery_status.as_deref(), Some("imported"));
-    }
-
-    #[test]
-    fn encrypted_attachment_ciphertext_tampering_is_rejected() {
-        use matrix_sdk_crypto::{AttachmentDecryptor, AttachmentEncryptor};
-        use std::io::{Cursor, Read};
-
-        let plaintext = b"mesh encrypted attachment";
-        let mut input = Cursor::new(plaintext.to_vec());
-        let mut encryptor = AttachmentEncryptor::new(&mut input);
-        let mut ciphertext = Vec::new();
-        encryptor.read_to_end(&mut ciphertext).unwrap();
-        let encryption_info = encryptor.finish();
-
-        ciphertext[0] ^= 0x01;
-        let mut tampered = Cursor::new(ciphertext);
-        let mut decryptor = AttachmentDecryptor::new(&mut tampered, encryption_info).unwrap();
-        let mut decrypted = Vec::new();
-        assert!(decryptor.read_to_end(&mut decrypted).is_err());
-    }
-
-    #[test]
-    fn encrypted_matrix_attachment_projection_requires_encrypted_file_metadata() {
-        let encrypted = json!({
-            "msgtype": "m.file",
-            "body": "Quarterly report",
-            "filename": "report.pdf",
-            "file": {
-                "url": "mxc://example.org/media",
-                "key": { "kty": "oct", "alg": "A256CTR", "ext": true, "k": "key", "key_ops": ["encrypt", "decrypt"] },
-                "iv": "iv",
-                "hashes": { "sha256": "ciphertext-hash" },
-                "v": "v2"
-            },
-            "info": {
-                "size": 42,
-                "mimetype": "application/pdf",
-                "thumbnail_file": {
-                    "url": "mxc://example.org/thumbnail",
-                    "key": { "kty": "oct", "alg": "A256CTR", "ext": true, "k": "TLlG_OpX807zzQuuwv4QZGJ21_u7weemFGYJFszMn9A", "key_ops": ["encrypt", "decrypt"] },
-                    "iv": "S22dq3NAX8wAAAAAAAAAAA",
-                    "hashes": { "sha256": "aWOHudBnDkJ9IwaR1Nd8XKoI7DOrqDTwt6xDPfVGN6Q" },
-                    "v": "v2"
-                },
-                "thumbnail_info": {
-                    "w": 320,
-                    "h": 180,
-                    "size": 12000,
-                    "mimetype": "image/png"
-                }
-            }
-        });
-        let attachment = MatrixBackend::matrix_attachment_from_content(&encrypted).unwrap();
-        assert_eq!(attachment.filename, "report.pdf");
-        assert_eq!(attachment.size, 42);
-        assert_eq!(attachment.file_hash, "matrix-sha256:ciphertext-hash");
-        assert_eq!(attachment.content_type.as_deref(), Some("application/pdf"));
-        assert!(attachment.media_source.is_some());
-        let thumbnail = attachment.thumbnail.unwrap();
-        assert_eq!(thumbnail.width, 320);
-        assert_eq!(thumbnail.height, 180);
-        assert_eq!(
-            thumbnail.file_hash,
-            "matrix-sha256:aWOHudBnDkJ9IwaR1Nd8XKoI7DOrqDTwt6xDPfVGN6Q"
-        );
-
-        let plain = json!({
-            "msgtype": "m.file",
-            "body": "report.pdf",
-            "url": "mxc://example.org/media"
-        });
-        assert!(MatrixBackend::matrix_attachment_from_content(&plain).is_none());
-    }
-
-    #[test]
-    fn encrypted_attachment_projection_ignores_plain_or_oversized_thumbnails() {
-        let base = json!({
-            "msgtype": "m.file",
-            "body": "report.pdf",
-            "file": {
-                "url": "mxc://example.org/media",
-                "key": { "kty": "oct", "alg": "A256CTR", "ext": true, "k": "key", "key_ops": ["encrypt", "decrypt"] },
-                "iv": "iv",
-                "hashes": { "sha256": "ciphertext-hash" },
-                "v": "v2"
-            },
-            "info": {
-                "size": 42,
-                "mimetype": "application/pdf",
-                "thumbnail_url": "mxc://example.org/plain-thumbnail",
-                "thumbnail_info": {
-                    "w": 320,
-                    "h": 180,
-                    "size": 12000,
-                    "mimetype": "image/png"
-                }
-            }
-        });
-        assert!(MatrixBackend::matrix_attachment_from_content(&base)
-            .unwrap()
-            .thumbnail
-            .is_none());
-
-        let mut oversized = base;
-        oversized["info"]["thumbnail_url"] = serde_json::Value::Null;
-        oversized["info"]["thumbnail_file"] = json!({
-            "url": "mxc://example.org/encrypted-thumbnail",
-            "hashes": { "sha256": "thumbnail-hash" }
-        });
-        oversized["info"]["thumbnail_info"]["w"] = json!(513);
-        assert!(MatrixBackend::matrix_attachment_from_content(&oversized)
-            .unwrap()
-            .thumbnail
-            .is_none());
-    }
-
-    #[test]
-    fn projects_encrypted_file_messages_with_attachment_metadata() {
-        let events = vec![json!({
-            "type": "m.room.message",
-            "event_id": "$file",
-            "sender": "@alice:example.org",
-            "origin_server_ts": 10,
-            "content": {
-                "msgtype": "m.file",
-                "body": "Quarterly report",
-                "filename": "report.pdf",
-                "file": {
-                    "url": "mxc://example.org/media",
-                    "key": { "kty": "oct", "alg": "A256CTR", "ext": true, "k": "key", "key_ops": ["encrypt", "decrypt"] },
-                    "iv": "iv",
-                    "hashes": { "sha256": "ciphertext-hash" },
-                    "v": "v2"
-                },
-                "info": { "size": 42, "mimetype": "application/pdf" }
-            }
-        })];
-        let projected =
-            MatrixBackend::project_timeline("!room:example.org", &HashMap::new(), events);
-        assert_eq!(projected.len(), 1);
-        assert_eq!(projected[0].content, "Quarterly report");
-        assert_eq!(projected[0].attachments.len(), 1);
-        assert_eq!(projected[0].attachments[0].filename, "report.pdf");
-    }
-
-    #[test]
-    fn direct_message_projection_reuses_matrix_message_and_attachment_fields() {
-        let message = MessageDto {
-            id: "$dm".into(),
-            channel_id: "!dm:example.org".into(),
-            author_public_key: "@alice:example.org".into(),
-            author_display_name: "Alice".into(),
-            author_avatar_color: "#123456".into(),
-            content: "hello".into(),
-            attachments: vec![AttachmentDto {
-                file_hash: "matrix-sha256:hash".into(),
-                filename: "note.txt".into(),
-                size: 5,
-                chunks: 1,
-                source_peer_id: "matrix:mxc://example.org/note".into(),
-                media_source: Some(json!({ "url": "mxc://example.org/note" })),
-                content_type: Some("text/plain".into()),
-                thumbnail: None,
-            }],
-            reactions: HashMap::from([("like".into(), vec!["@alice:example.org".into()])]),
-            timestamp: "2026-07-23T00:00:00Z".into(),
-            signature: String::new(),
-            edited_at: None,
-            deleted_at: None,
-            reply_to_id: Some("$root".into()),
-            delivery_status: Some("sent".into()),
-        };
-        let projected = MatrixBackend::direct_message_from_message(message);
-        assert_eq!(projected.conversation_id, "!dm:example.org");
-        assert_eq!(projected.reply_to_id.as_deref(), Some("$root"));
-        assert_eq!(projected.attachments[0].filename, "note.txt");
-        assert_eq!(projected.reactions["like"], vec!["@alice:example.org"]);
-    }
-
-    #[test]
-    fn matrix_media_filename_policy_rejects_executable_names() {
-        assert_eq!(
-            MatrixBackend::safe_media_filename("../quarterly-report.pdf").unwrap(),
-            "quarterly-report.pdf"
-        );
-        assert!(MatrixBackend::safe_media_filename("payload.EXE").is_err());
-        assert!(MatrixBackend::safe_media_filename("scripts/run.ps1").is_err());
-        assert_eq!(
-            MatrixBackend::safe_media_filename(" ").unwrap(),
-            "attachment.bin"
-        );
-    }
-
-    #[test]
-    fn matrix_media_payload_sniffing_rejects_executable_headers_and_mimes() {
-        assert!(MatrixBackend::validate_media_payload(b"MZ\x90\0", None, "report.pdf").is_err());
-        assert!(MatrixBackend::validate_media_payload(
-            b"#!/bin/sh\necho unsafe",
-            Some("application/x-shellscript"),
-            "notes.txt"
-        )
-        .is_err());
-        assert!(MatrixBackend::validate_media_payload(
-            b"%PDF-1.7\n",
-            Some("application/pdf"),
-            "report.pdf"
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn matrix_thumbnail_generation_is_bounded_and_reencodes_to_png() {
-        let source = image::DynamicImage::new_rgb8(1024, 512);
-        let mut encoded = Cursor::new(Vec::new());
-        source
-            .write_to(&mut encoded, image::ImageFormat::Png)
-            .unwrap();
-        let encoded = encoded.into_inner();
-
-        let thumbnail = MatrixBackend::generate_sanitized_thumbnail(&encoded, "image/png")
-            .unwrap()
-            .unwrap();
-        assert_eq!((thumbnail.width, thumbnail.height), (512, 256));
-        assert!(thumbnail.bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
-        assert!(thumbnail.bytes.len() <= MAX_THUMBNAIL_BYTES);
-        assert!(
-            MatrixBackend::generate_sanitized_thumbnail(&encoded, "image/webp").is_err(),
-            "declared MIME and decoder format must agree"
-        );
-        assert!(
-            MatrixBackend::generate_sanitized_thumbnail(b"<svg/>", "image/svg+xml")
-                .unwrap()
-                .is_none(),
-            "active vector content must never enter thumbnail decoding"
-        );
-    }
-
-    #[test]
-    fn matrix_dm_duplicate_resolution_is_deterministic_and_non_destructive() {
-        let rooms = vec![
-            matrix_sdk::ruma::RoomId::parse("!zeta:example.org").unwrap(),
-            matrix_sdk::ruma::RoomId::parse("!alpha:example.org").unwrap(),
-        ];
-        let canonical = MatrixBackend::canonical_direct_room_id(rooms).unwrap();
-        assert_eq!(canonical.as_str(), "!alpha:example.org");
-    }
-
-    #[test]
-    fn matrix_dm_account_data_merge_preserves_every_observed_mapping() {
-        let mut local: DirectEventContent = serde_json::from_value(json!({
-            "@alice:example.org": [
-                "!local:example.org",
-                "!shared:example.org"
-            ],
-            "@carol:example.org": ["!carol:example.org"]
-        }))
-        .unwrap();
-        let remote: DirectEventContent = serde_json::from_value(json!({
-            "@alice:example.org": [
-                "!remote:example.org",
-                "!shared:example.org"
-            ],
-            "@bob:example.org": ["!bob:example.org"]
-        }))
-        .unwrap();
-
-        assert!(MatrixBackend::merge_direct_content_preserving_mappings(
-            &mut local, &remote
-        ));
-        assert!(MatrixBackend::direct_content_preserves(&local, &remote));
-        assert!(!MatrixBackend::merge_direct_content_preserving_mappings(
-            &mut local, &remote
-        ));
-
-        let serialized = serde_json::to_value(local).unwrap();
-        assert_eq!(
-            serialized["@alice:example.org"],
-            json!([
-                "!local:example.org",
-                "!shared:example.org",
-                "!remote:example.org"
-            ])
-        );
-        assert_eq!(serialized["@bob:example.org"], json!(["!bob:example.org"]));
-        assert_eq!(
-            serialized["@carol:example.org"],
-            json!(["!carol:example.org"])
-        );
-    }
-
-    #[test]
-    fn matrix_dm_account_data_compare_detects_and_repairs_lost_concurrent_rooms() {
-        let required: DirectEventContent = serde_json::from_value(json!({
-            "@alice:example.org": [
-                "!first:example.org",
-                "!concurrent:example.org"
-            ],
-            "@bob:example.org": ["!bob:example.org"]
-        }))
-        .unwrap();
-        let mut overwritten: DirectEventContent = serde_json::from_value(json!({
-            "@alice:example.org": ["!first:example.org"]
-        }))
-        .unwrap();
-
-        assert!(!MatrixBackend::direct_content_preserves(
-            &overwritten,
-            &required
-        ));
-        assert!(MatrixBackend::merge_direct_content_preserving_mappings(
-            &mut overwritten,
-            &required
-        ));
-        assert!(MatrixBackend::direct_content_preserves(
-            &overwritten,
-            &required
-        ));
-    }
-
-    #[tokio::test]
-    async fn matrix_media_cache_evicts_old_entries_without_deleting_new_download() {
-        let root = tempfile::tempdir().unwrap();
-        let old = root.path().join("old.bin");
-        let new = root.path().join("new.bin");
-        tokio::fs::write(&old, b"old").await.unwrap();
-        tokio::fs::write(&new, b"new").await.unwrap();
-
-        MatrixBackend::enforce_media_cache_quota_with_limit(root.path(), &new, 3)
-            .await
-            .unwrap();
-
-        assert!(!old.exists());
-        assert_eq!(tokio::fs::read(&new).await.unwrap(), b"new");
-    }
-
-    #[tokio::test]
-    async fn matrix_attachment_cancellation_is_idempotent_and_signals_active_download() {
-        let backend = MatrixBackend::new(tempfile::tempdir().unwrap().path().to_owned());
-        let cancellation = CancellationToken::new();
-        backend
-            .media_downloads
-            .lock()
-            .await
-            .insert("matrix-sha256:test".into(), cancellation.clone());
-
-        backend
-            .cancel_attachment_download("matrix-sha256:test".into())
-            .await
-            .unwrap();
-        backend
-            .cancel_attachment_download("matrix-sha256:test".into())
-            .await
-            .unwrap();
-        assert!(cancellation.is_cancelled());
-        assert!(backend
-            .media_downloads
-            .lock()
-            .await
-            .contains_key("matrix-sha256:test"));
-    }
-
-    #[tokio::test]
-    async fn matrix_attachment_upload_cancellation_is_idempotent_and_uuid_scoped() {
-        let backend = MatrixBackend::new(tempfile::tempdir().unwrap().path().to_owned());
-        let transfer_id = uuid::Uuid::new_v4().to_string();
-        let cancellation = CancellationToken::new();
-        backend
-            .media_uploads
-            .lock()
-            .await
-            .insert(transfer_id.clone(), cancellation.clone());
-
-        backend
-            .cancel_attachment_upload(transfer_id.clone())
-            .await
-            .unwrap();
-        backend.cancel_attachment_upload(transfer_id).await.unwrap();
-        assert!(cancellation.is_cancelled());
-        assert_eq!(backend.media_uploads.lock().await.len(), 1);
-        assert!(backend
-            .cancel_attachment_upload("not-a-transfer-id".into())
-            .await
-            .is_err());
-    }
-
-    #[test]
-    fn matrix_transfer_failure_is_typed_as_restart_from_zero() {
-        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let captured = events.clone();
-        let progress: MatrixTransferProgressCallback = Arc::new(move |event| {
-            captured.lock().unwrap().push(event);
-        });
-        let transfer_id = uuid::Uuid::new_v4().to_string();
-
-        MatrixBackend::emit_transfer_progress(
-            &progress,
-            &transfer_id,
-            MatrixTransferDirection::Download,
-            17,
-            Some(100),
-            MatrixTransferState::Failed,
-            None,
-        );
-
-        let event = events.lock().unwrap().pop().unwrap();
-        assert_eq!(event.transferred_bytes, 17);
-        assert!(event.retryable);
-        assert_eq!(
-            event.retry_mode,
-            Some(MatrixTransferRetryMode::RestartFromZero)
-        );
-        let serialized = serde_json::to_value(event).unwrap();
-        assert_eq!(serialized["state"], "failed");
-        assert_eq!(serialized["retryMode"], "restart-from-zero");
-        assert_eq!(serialized["totalBytes"], 100);
-    }
-}
+#[path = "matrix/tests/mod.rs"]
+mod tests;

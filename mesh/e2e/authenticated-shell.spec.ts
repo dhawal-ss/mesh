@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { expectNoWcagViolations } from './helpers/accessibility'
 
 type IpcCall = {
   command: string
@@ -156,6 +157,8 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
           }
         case 'matrix_list_communities':
           return [community, secondCommunity]
+        case 'matrix_list_custom_emoji':
+          return []
         case 'matrix_get_profile':
           return matrixProfile
         case 'matrix_update_profile_display_name':
@@ -170,7 +173,7 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
             {
               publicKey: '@alice:mesh.test',
               displayName: 'alice',
-              avatarColor: '#5865f2',
+              avatarColor: '#52b5f4',
               role: 'owner',
               joinStatus: 'joined',
               banStatus: 'none',
@@ -190,13 +193,17 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
           ]
         case 'matrix_get_messages':
           return timeline.filter((message) => message.channelId === args.roomId)
+        case 'matrix_queued_messages':
+          return []
+        case 'matrix_load_composer_draft':
+          return null
         case 'matrix_send_message': {
           const message = {
             id: `$sent-${timeline.length}`,
             channelId: String(args.roomId),
             authorPublicKey: '@alice:mesh.test',
             authorDisplayName: 'alice',
-            authorAvatarColor: '#5865f2',
+            authorAvatarColor: '#52b5f4',
             content: String(args.body),
             attachments: [],
             reactions: {},
@@ -219,6 +226,8 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
           return []
         case 'matrix_mark_read':
         case 'matrix_set_typing':
+        case 'matrix_save_composer_draft':
+        case 'matrix_clear_composer_draft':
         case 'plugin:event|unlisten':
           return null
         case 'matrix_wait_for_room_update':
@@ -317,6 +326,17 @@ test.describe('authenticated desktop shell', () => {
     await expect(page.getByText('Anonymous', { exact: true })).toHaveCount(0)
   })
 
+  test('@a11y has no automated WCAG A/AA violations in the shell and settings', async ({ page }) => {
+    await openAuthenticatedShell(page)
+    await expectNoWcagViolations(page, 'Authenticated desktop shell')
+
+    await page.getByRole('button', { name: 'User settings' }).click()
+    const dialog = page.getByRole('dialog', { name: 'User Settings' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.locator(':scope > div').first()).toHaveCSS('opacity', '1')
+    await expectNoWcagViolations(page, 'User Settings dialog')
+  })
+
   test('sends a message through the Matrix boundary and renders it in the chat log', async ({ page }) => {
     await openAuthenticatedShell(page)
 
@@ -352,7 +372,13 @@ test.describe('authenticated desktop shell', () => {
 
     await dialog.getByRole('textbox', { name: 'Display name' }).fill('Alice Updated')
     await dialog.getByRole('button', { name: 'Save display name' }).click()
-    await expect(dialog.getByRole('status')).toHaveText('Profile updated')
+    // The Privacy Center's own save-sync status can legitimately be visible
+    // at the same time (e.g. an initial preference sync completing), so this
+    // must target the display-name status by its distinguishing name rather
+    // than assuming it's the only `role="status"` region in the dialog.
+    await expect(
+      dialog.getByRole('status', { name: 'Display name save status' }),
+    ).toHaveText('Profile updated')
 
     await page.keyboard.press('Escape')
     await expect(dialog).toHaveCount(0)
@@ -425,6 +451,14 @@ test.describe('authenticated desktop shell', () => {
 
 test.describe('authenticated narrow shell', () => {
   test.use({ viewport: { width: 390, height: 844 } })
+
+  test('@a11y has no automated WCAG A/AA violations with navigation open', async ({ page }) => {
+    await openAuthenticatedShell(page)
+    await page.getByRole('button', { name: 'Channels', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Close channel navigation' })).toBeVisible()
+
+    await expectNoWcagViolations(page, 'Authenticated narrow shell with channel navigation')
+  })
 
   test('opens the channel drawer, changes channels, and sends a message without overflow', async ({ page }) => {
     await openAuthenticatedShell(page)

@@ -69,7 +69,7 @@ async function installTauriMock(
       get_identity: {
         publicKey: 'mesh-e2e-alice',
         displayName: 'Alice',
-        avatarColor: '#5865f2',
+        avatarColor: '#52b5f4',
       },
       get_communities: [
         {
@@ -138,6 +138,13 @@ async function openAdvancedDiagnostics(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Profile', exact: true }).click()
   const settings = page.getByRole('dialog', { name: 'User Settings' })
   await expect(settings).toBeVisible()
+  // UserSettingsPanel is lazy-loaded: the dialog that first becomes visible
+  // can be the Suspense fallback (a spinner in a dialog titled "User
+  // Settings" too), which has no Ctrl+Shift+D listener. Wait for real panel
+  // content — not just the dialog title — before sending the shortcut, or
+  // the keypress can land before the actual component (and its keydown
+  // listener) has mounted.
+  await expect(settings.getByText('Account', { exact: true })).toBeVisible()
   await page.keyboard.press('Control+Shift+D')
   const diagnosticsButton = settings.getByRole('button', { name: 'System diagnostics' })
   await expect(diagnosticsButton).toBeVisible()

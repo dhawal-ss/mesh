@@ -97,21 +97,23 @@ mod tests {
     }
 
     #[test]
-    fn downloaded_file_scope_rejects_siblings_and_nested_spoofs() {
+    fn downloaded_file_scope_rejects_siblings_spoofs_and_other_accounts() {
         let root = tempfile::tempdir().unwrap();
         let matrix_root = root.path().join("matrix");
-        let cache = matrix_root
-            .join("accounts")
-            .join("profile")
-            .join("media-cache");
+        let active_account = matrix_root.join("accounts").join("active-profile");
+        let cache = active_account.join("media-cache");
         std::fs::create_dir_all(&cache).unwrap();
         let allowed = cache.join("photo.png");
         std::fs::write(&allowed, b"image").unwrap();
-        let sibling = matrix_root
-            .join("accounts")
-            .join("profile")
-            .join("session.db");
+        let sibling = active_account.join("session.db");
         std::fs::write(&sibling, b"secret").unwrap();
+        let other_account_cache = matrix_root
+            .join("accounts")
+            .join("other-profile")
+            .join("media-cache");
+        std::fs::create_dir_all(&other_account_cache).unwrap();
+        let other_account_file = other_account_cache.join("private.png");
+        std::fs::write(&other_account_file, b"image").unwrap();
         let spoof = root.path().join("outside").join("media-cache");
         std::fs::create_dir_all(&spoof).unwrap();
         let spoofed_file = spoof.join("photo.png");
@@ -119,17 +121,22 @@ mod tests {
 
         assert!(is_file_in_named_directory_under(
             &allowed,
-            &matrix_root,
+            &active_account,
             "media-cache"
         ));
         assert!(!is_file_in_named_directory_under(
             &sibling,
-            &matrix_root,
+            &active_account,
+            "media-cache"
+        ));
+        assert!(!is_file_in_named_directory_under(
+            &other_account_file,
+            &active_account,
             "media-cache"
         ));
         assert!(!is_file_in_named_directory_under(
             &spoofed_file,
-            &matrix_root,
+            &active_account,
             "media-cache"
         ));
     }

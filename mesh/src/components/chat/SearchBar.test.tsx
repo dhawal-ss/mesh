@@ -13,12 +13,20 @@ const targetMessage: Message = {
   channelId: 'channel-b',
   authorPublicKey: 'sender-1',
   authorDisplayName: 'Sender',
-  authorAvatarColor: '#5865f2',
+  authorAvatarColor: '#52b5f4',
   content: 'The searched message',
   attachments: [],
   reactions: {},
   timestamp: '2026-07-25T11:30:00.000Z',
   signature: '',
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve
+  })
+  return { promise, resolve }
 }
 
 describe('SearchBar', () => {
@@ -94,5 +102,91 @@ describe('SearchBar', () => {
 
     expect(navigate).toHaveBeenCalledWith(targetMessage)
     expect(useChannelStore.getState().activeChannelId).toBe('channel-a')
+  })
+
+  it('ignores a slower result from an older query', async () => {
+    const first = deferred<Message[]>()
+    const second = deferred<Message[]>()
+    const firstMessage = { ...targetMessage, id: 'first-result', content: 'first result' }
+    const secondMessage = { ...targetMessage, id: 'second-result', content: 'second result' }
+    const searchMessages = vi.spyOn(bridge, 'searchMessages').mockImplementation((query) => (
+      query === 'first' ? first.promise : second.promise
+    ))
+
+    await act(async () => {
+      root.render(<SearchBar onNavigateToMessage={vi.fn()} />)
+    })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[title="Search messages"]')?.click()
+    })
+    const input = container.querySelector<HTMLInputElement>('input[type="text"]')
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set
+
+    await act(async () => {
+      setValue?.call(input, 'first')
+      input?.dispatchEvent(new Event('input', { bubbles: true }))
+      vi.advanceTimersByTime(300)
+      await Promise.resolve()
+    })
+    expect(searchMessages).toHaveBeenCalledWith('first', 'community-1', 20)
+
+    await act(async () => {
+      setValue?.call(input, 'second')
+      input?.dispatchEvent(new Event('input', { bubbles: true }))
+      vi.advanceTimersByTime(300)
+      await Promise.resolve()
+    })
+    expect(searchMessages).toHaveBeenCalledWith('second', 'community-1', 20)
+
+    await act(async () => {
+      first.resolve([firstMessage])
+      await Promise.resolve()
+    })
+    expect(container.textContent).not.toContain('first result')
+
+    await act(async () => {
+      second.resolve([secondMessage])
+      await Promise.resolve()
+    })
+    expect(container.textContent).toContain('second result')
+  })
+
+  it('supports ArrowDown and Enter result selection', async () => {
+    const navigate = vi.fn()
+    const secondMessage = { ...targetMessage, id: 'second-result', content: 'second result' }
+    vi.spyOn(bridge, 'searchMessages').mockResolvedValue([targetMessage, secondMessage])
+
+    await act(async () => {
+      root.render(<SearchBar onNavigateToMessage={navigate} />)
+    })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[title="Search messages"]')?.click()
+    })
+    const input = container.querySelector<HTMLInputElement>('input[type="text"]')
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set
+    await act(async () => {
+      setValue?.call(input, 'searched')
+      input?.dispatchEvent(new Event('input', { bubbles: true }))
+      vi.advanceTimersByTime(300)
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(input?.getAttribute('aria-activedescendant')).toBe('search-result-second-result')
+
+    await act(async () => {
+      input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(navigate).toHaveBeenCalledWith(secondMessage)
   })
 })

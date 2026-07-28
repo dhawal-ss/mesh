@@ -93,7 +93,7 @@ export function CommunityIcon({
           }`}
         >
           <Avatar
-            color={active ? 'var(--accent)' : 'var(--status-info)'}
+            color={active ? 'var(--accent)' : 'var(--avatar-blue)'}
             size={48}
             name={community.name}
             className="!rounded-none"

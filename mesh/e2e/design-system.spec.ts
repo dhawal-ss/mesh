@@ -1,6 +1,20 @@
 import { expect, test, type Page } from '@playwright/test'
+import { expectNoWcagViolations } from './helpers/accessibility'
 
 const runtimeErrors = new WeakMap<Page, string[]>()
+
+async function sampleAmbientMotion(page: Page): Promise<string[]> {
+  const probe = page.locator('[data-ambient-motion-probe]')
+  await expect(probe).toBeAttached()
+  return probe.evaluate(async (element) => {
+    const transforms: string[] = []
+    for (let index = 0; index < 5; index += 1) {
+      transforms.push(getComputedStyle(element).transform)
+      await new Promise((resolve) => window.setTimeout(resolve, 80))
+    }
+    return transforms
+  })
+}
 
 test.beforeEach(async ({ page }) => {
   const errors: string[] = []
@@ -42,6 +56,39 @@ test('renders every supported theme and exposes keyboard-operable primitives', a
   await expect(page.getByRole('tabpanel').getByText('Detail content')).toBeVisible()
 })
 
+test('runs ambient motion when the operating system allows it', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Mesh design-system kitchen sink' })).toBeVisible()
+
+  expect(new Set(await sampleAmbientMotion(page)).size).toBeGreaterThan(1)
+})
+
+test('updates ambient motion when the OS preference changes without a reload', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Mesh design-system kitchen sink' })).toBeVisible()
+  expect(new Set(await sampleAmbientMotion(page)).size).toBeGreaterThan(1)
+
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await expect(page.locator('[data-ambient-motion-probe]')).toHaveAttribute(
+    'data-reduced-motion',
+    'true',
+  )
+  expect(new Set((await sampleAmbientMotion(page)).slice(1)).size).toBe(1)
+
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await expect(page.locator('[data-ambient-motion-probe]')).toHaveAttribute(
+    'data-reduced-motion',
+    'false',
+  )
+  expect(new Set(await sampleAmbientMotion(page)).size).toBeGreaterThan(1)
+})
+
+test('@a11y has no automated WCAG A/AA violations across the component gallery', async ({ page }) => {
+  await expectNoWcagViolations(page, 'Design-system component gallery')
+})
+
 test('traps dialog focus, closes with Escape, and restores the trigger', async ({ page }) => {
   const trigger = page.getByRole('button', { name: 'Open dialog' })
   await trigger.click()
@@ -71,5 +118,6 @@ test.describe('reduced motion and narrow layout', () => {
     }))
     expect(dimensions.reduced).toBe(true)
     expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport)
+    expect(new Set(await sampleAmbientMotion(page)).size).toBe(1)
   })
 })

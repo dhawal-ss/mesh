@@ -57,8 +57,8 @@ impl Identity {
     }
 
     /// Check if a keypair already exists in the keychain.
-    pub fn exists() -> bool {
-        crate::crypto::keychain::secret_exists("identity_private_key")
+    pub fn exists() -> anyhow::Result<bool> {
+        crate::crypto::keychain::try_secret_exists("identity_private_key")
     }
 
     /// Get the raw private key bytes (for seeding the libp2p keypair).
@@ -220,7 +220,7 @@ fn derive_export_key_legacy_v1(passphrase: &str) -> [u8; 32] {
     let hk = Hkdf::<Sha256>::new(Some(salt), passphrase.as_bytes());
     let mut okm = [0u8; 32];
     hk.expand(b"", &mut okm)
-        .expect("HKDF-SHA256 expand for 32 bytes is infallible per RFC 5869");
+        .expect("invariant: HKDF-SHA256 expansion to 32 bytes is within RFC 5869 limits");
     okm
 }
 
