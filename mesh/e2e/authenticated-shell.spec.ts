@@ -199,6 +199,15 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
           }
         case 'matrix_list_custom_emoji':
           return []
+        case 'matrix_community_access_settings':
+          return {
+            alias: 'mesh-test-community',
+            discoverable: false,
+            joinRule: 'invite',
+          }
+        case 'matrix_list_community_applications':
+        case 'matrix_list_moderation_audit':
+          return []
         case 'matrix_get_profile':
           return matrixProfile
         case 'matrix_update_profile_display_name':
@@ -377,6 +386,7 @@ test.describe('authenticated desktop shell', () => {
     await page.getByRole('button', { name: 'User settings' }).click()
     const dialog = page.getByRole('dialog', { name: 'User Settings' })
     await expect(dialog).toBeVisible()
+    await expect(dialog.getByText('Account', { exact: true })).toBeVisible()
     await expect(dialog.locator(':scope > div').first()).toHaveCSS('opacity', '1')
     await expectNoWcagViolations(page, 'User Settings dialog')
   })
@@ -461,6 +471,42 @@ test.describe('authenticated desktop shell', () => {
       command: 'matrix_update_profile_display_name',
       args: { displayName: 'Alice Updated' },
     })
+  })
+
+  test('opens community management as an accessible sheet and restores focus', async ({ page }) => {
+    await openAuthenticatedShell(page)
+
+    const settingsButton = page.getByRole('button', {
+      name: 'Open settings for Mesh Test Community',
+    })
+    await settingsButton.click()
+
+    const sheet = page.getByRole('dialog', { name: 'Community settings' })
+    await expect(sheet).toBeVisible()
+    await expect(
+      sheet.getByText('Manage Mesh Test Community, its rooms, and who can find it.'),
+    ).toBeVisible()
+    await expect(sheet.getByRole('switch', { name: 'List this community publicly' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    )
+
+    const createRoom = sheet.getByRole('button', { name: 'Create room', exact: true })
+    await createRoom.click()
+    await expect(sheet.getByRole('button', { name: 'Cancel', exact: true })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    await expect(sheet.getByRole('button', { name: 'Text' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await expect(sheet.getByRole('button', { name: 'Voice' })).toHaveCount(0)
+    await expectNoWcagViolations(page, 'Community settings sheet')
+
+    await page.keyboard.press('Escape')
+    await expect(sheet).toHaveCount(0)
+    await expect(settingsButton).toBeFocused()
   })
 
   test('changes room notification rules and marks unread state from the context menu', async ({ page }) => {
@@ -595,5 +641,33 @@ test.describe('authenticated narrow shell', () => {
 
     await page.keyboard.press('Escape')
     await expect(dialog).toHaveCount(0)
+  })
+
+  test('fits community management to the viewport and restores its drawer trigger', async ({ page }) => {
+    await openAuthenticatedShell(page)
+
+    await page.getByRole('button', { name: 'Open room navigation' }).click()
+    const settingsButton = page.getByRole('button', {
+      name: 'Open settings for Mesh Test Community',
+    })
+    await settingsButton.click()
+
+    const sheet = page.getByRole('dialog', { name: 'Community settings' })
+    await expect(sheet).toBeVisible()
+    await expect.poll(async () => Math.round((await sheet.boundingBox())?.x ?? -1)).toBe(0)
+    const bounds = await sheet.boundingBox()
+    expect(Math.abs(bounds?.x ?? Number.POSITIVE_INFINITY)).toBeLessThan(0.5)
+    expect(bounds?.width).toBe(390)
+
+    const dimensions = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      content: document.documentElement.scrollWidth,
+    }))
+    expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport)
+    await expectNoWcagViolations(page, 'Narrow community settings sheet')
+
+    await page.keyboard.press('Escape')
+    await expect(sheet).toHaveCount(0)
+    await expect(settingsButton).toBeFocused()
   })
 })
