@@ -53,6 +53,26 @@ describe('OnboardingFlow account outcomes', () => {
     container.remove()
   })
 
+  it('introduces Mesh trust cues and exposes the current setup step', async () => {
+    await act(async () => {
+      root.render(
+        <OnboardingFlow
+          backendKind="matrix"
+          onComplete={() => {}}
+        />,
+      )
+    })
+
+    expect(container.querySelector('[aria-label="Set up Mesh"]')).not.toBeNull()
+    expect(container.textContent).toContain('Conversations that stay yours.')
+    expect(container.textContent).toContain('Protected from the first message')
+
+    const progress = container.querySelector<HTMLOListElement>('ol[aria-label="Setup progress"]')
+    expect(progress).not.toBeNull()
+    expect(progress?.querySelector('[aria-current="step"]')?.textContent).toContain('Account')
+    expect(progress?.textContent).toContain('Ready')
+  })
+
   it('requires the backup-code step immediately after registration', async () => {
     const createBackupCode = vi.fn().mockResolvedValue('MESH-ONE-TWO-THREE-FOUR')
     const configured = vi.fn()
