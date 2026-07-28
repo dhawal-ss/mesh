@@ -169,8 +169,7 @@ pub async fn get_diagnostics(
     if !turn_configured {
         warnings.push(
             "No TURN server configured — voice may fail behind strict NATs. \
-             Configure a TURN server in Settings → Voice & Audio. \
-             See docs/TURN_SETUP.md for a coturn deployment guide."
+             Configure a TURN server in Settings → Voice & Audio."
                 .into(),
         );
     }

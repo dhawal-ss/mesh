@@ -9,11 +9,12 @@ target/
 # Logs & temp output
 *.log
 *.txt
-!README.txt
 coverage/
 playwright-report/
 test-results/
 soak-logs/
+.playwright/
+e2e-results/
 
 # Editor
 .vscode/
@@ -25,9 +26,50 @@ soak-logs/
 *.sw?
 .DS_Store
 
-# Claude/AI artifacts
+# Internal documents, prompts, chats, and design artifacts
+*.md
+*.mdx
+*.doc
+*.docx
+*.pages
+*.pdf
+*.ppt
+*.pptx
+*.key
+*.odp
+*.fig
+*.figma
+*.sketch
+*.psd
+*.xcf
+*.ai
+*.drawio
+*.excalidraw
+*.prompt
+*.chat
+*.transcript
+prompts/
+chats/
+transcripts/
+design/
+designs/
+research/
+notes/
+
+# AI workspace artifacts
+.ai/
+.aider*
+.chatgpt/
 .claude/
+.codex/
+.continue/
+.cursor/
+.superpowers/
+.windsurf/
 claudereview/
+
+# Generated local integration-test state
+**/infra/matrix-spike/runtime/
 
 # Local configuration and secrets
 .env

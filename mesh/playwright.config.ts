@@ -22,7 +22,7 @@ import { defineConfig, devices } from '@playwright/test'
  *      These drive the Vite dev server with a Tauri bridge mock so the
  *      full React tree renders and IPC commands are recorded. Deeper
  *      integration (actually launching the Tauri process) requires
- *      tauri-driver (see docs/E2E_TESTING.md).
+ *      tauri-driver.
  *
  *   3. Authenticated responsive shell tests (e2e/authenticated-shell.spec.ts)
  *      These validate Matrix identity, navigation, messaging, settings,
@@ -31,8 +31,6 @@ import { defineConfig, devices } from '@playwright/test'
  *   4. Matrix DM/file tests (e2e/matrix-messaging.spec.ts)
  *      These validate encrypted DM history, text/attachment sends, download
  *      decryption handoff, and OS-open behavior against strict IPC mocks.
- *
- * Both suites are documented in docs/E2E_TESTING.md.
  */
 export default defineConfig({
   testDir: './e2e',
