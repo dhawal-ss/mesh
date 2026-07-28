@@ -246,8 +246,8 @@ export function MatrixAccountScreen({
     || !password
 
   return (
-    <form className="space-y-6" onSubmit={submit}>
-      <header className="space-y-3">
+    <form className="space-y-5" onSubmit={submit}>
+      <header className="space-y-2">
         <p className="text-2xs uppercase tracking-eyebrow text-muted">Mesh</p>
         <h1 className="text-lg font-semibold tracking-tight text-primary">
           {isCreate ? 'Create your account' : isAdvanced ? 'Sign in somewhere else' : 'Welcome back'}
@@ -287,7 +287,7 @@ export function MatrixAccountScreen({
         </section>
       ) : null}
 
-      <div className="space-y-4 rounded-lg bg-surface-sunken p-5">
+      <div className="space-y-3 rounded-lg bg-surface-sunken p-4">
         <Input
           label="Username"
           name="username"

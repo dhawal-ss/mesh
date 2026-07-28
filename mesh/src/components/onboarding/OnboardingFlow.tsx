@@ -7,10 +7,41 @@ import { MatrixAccountScreen, type MatrixAccountOutcome } from './MatrixAccountS
 import { BackupCodeScreen } from './BackupCodeScreen'
 import { ErrorState } from '../ui/ErrorState'
 import { Spinner } from '../ui/Spinner'
+import { Icon, type IconName } from '../ui/Icon'
 import { variants } from '../../lib/motion'
 import { DEFAULT_AVATAR_COLORS, type OnboardingFlowProps, type OnboardingProfile } from './types'
 
 type Step = 'account' | 'identity' | 'profile' | 'backup' | 'bootstrap'
+
+const STEP_LABELS: Record<Step, string> = {
+  account: 'Account',
+  identity: 'Identity',
+  profile: 'Profile',
+  backup: 'Backup',
+  bootstrap: 'Ready',
+}
+
+const TRUST_CUES: Array<{
+  icon: IconName
+  title: string
+  description: string
+}> = [
+  {
+    icon: 'lock',
+    title: 'Protected from the first message',
+    description: 'A conversation must be protected before Mesh will send or show messages.',
+  },
+  {
+    icon: 'shieldCheck',
+    title: 'Trust stays visible',
+    description: 'Review every signed-in device and check new ones before relying on them.',
+  },
+  {
+    icon: 'refresh',
+    title: 'Recovery you control',
+    description: 'Restore saved messages on another device with your private backup code.',
+  },
+]
 
 export function OnboardingFlow({
   onComplete,
@@ -77,115 +108,208 @@ export function OnboardingFlow({
   }
 
   return (
-    <main className="min-h-screen bg-bg-tertiary px-6 py-6 md:px-8 md:py-8">
-      <div className="mx-auto flex min-h-onboarding-shell w-full max-w-onboarding-shell items-center">
-        <motion.div
-          className="relative w-full overflow-hidden rounded-md bg-bg-secondary px-5 py-6 shadow-overlay md:px-8 md:py-8"
-          variants={variants.screen}
-          initial="initial"
-          animate="animate"
-          exit="exit"
-        >
-          <div aria-hidden="true" className="mb-8 flex gap-1.5">
-            {steps.map((item, index) => (
-              <div
-                key={item}
-                className={`h-1 flex-1 rounded-full transition-colors duration-normal ${
-                  index <= currentIndex ? 'bg-accent' : 'bg-bg-modifier-hover'
-                }`}
-              />
+    <main className="min-h-screen bg-surface-sunken p-4 sm:p-6 lg:p-8">
+      <motion.section
+        aria-label="Set up Mesh"
+        data-onboarding-shell
+        className="mx-auto grid min-h-onboarding-shell w-full max-w-onboarding-shell overflow-hidden rounded-xl border border-border-subtle bg-surface-base shadow-overlay lg:grid-cols-[minmax(17rem,0.78fr)_minmax(28rem,1.22fr)]"
+        variants={variants.screen}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+      >
+        <aside className="flex flex-col border-b border-border-subtle bg-surface-base px-5 py-5 sm:px-8 sm:py-6 lg:border-b-0 lg:border-r lg:px-10 lg:py-8">
+          <div className="flex items-center gap-3" aria-label="Mesh">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-content-on-accent">
+              <Icon name="shieldCheck" size="md" />
+            </span>
+            <span>
+              <span className="block text-sm font-semibold tracking-tight text-content">Mesh</span>
+              <span className="block text-caption uppercase tracking-section text-content-muted">
+                Community messenger
+              </span>
+            </span>
+          </div>
+
+          <div className="mt-6 lg:mt-12">
+            <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">
+              Your account, your trust
+            </p>
+            <h2 className="mt-3 max-w-sm text-title font-semibold tracking-tight text-content lg:text-lg">
+              Conversations that stay yours.
+            </h2>
+            <p className="mt-3 max-w-sm text-sm leading-6 text-content-secondary">
+              Familiar rooms and messages, with protection, device trust, and recovery built into
+              the experience.
+            </p>
+          </div>
+
+          <div className="mt-8 hidden space-y-4 lg:block">
+            {TRUST_CUES.map((cue) => (
+              <TrustCue key={cue.title} {...cue} />
             ))}
           </div>
 
-          <AnimatePresence mode="wait" initial={false}>
-            {step === 'account' && (
-              <motion.div key="account" variants={variants.screen} initial="initial" animate="animate" exit="exit">
-                <MatrixAccountScreen
-                  onMatrixCheckUsernameAvailable={onMatrixCheckUsernameAvailable}
-                  onMatrixRegisterAccount={onMatrixRegisterAccount}
-                  onMatrixLogin={onMatrixLogin}
-                  onMatrixSwitchAccount={onMatrixSwitchAccount}
-                  onNext={handleMatrixAccount}
-                />
-              </motion.div>
-            )}
+          <p className="mt-auto hidden pt-6 text-caption leading-5 text-content-muted lg:block">
+            Mesh explains who can read a conversation and which devices need your attention.
+          </p>
+        </aside>
 
-            {step === 'backup' && (
-              <motion.div key="backup" variants={variants.screen} initial="initial" animate="animate" exit="exit">
-                {preparingBackup ? (
-                  <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-center">
-                    <Spinner />
-                    <p className="text-sm text-content-secondary">Preparing your backup code…</p>
-                  </div>
-                ) : backupError != null || !backupCode ? (
-                  <div className="space-y-4">
-                    <h1 className="text-lg font-semibold text-content">Protect your messages</h1>
-                    <ErrorState
-                      error={backupError ?? new Error('The backup code could not be prepared.')}
-                      context={{ operation: 'prepare your message backup' }}
-                      onAction={() => void prepareBackupCode()}
+        <div className="flex min-w-0 flex-col bg-surface-raised px-5 py-6 sm:px-8 sm:py-8 lg:px-12">
+          <div className="mb-6">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-caption font-semibold uppercase tracking-section text-content-muted">
+                Setup progress
+              </p>
+              <p className="text-caption text-content-secondary">
+                Step {Math.max(currentIndex + 1, 1)} of {steps.length}
+              </p>
+            </div>
+            <ol aria-label="Setup progress" className="mt-3 grid grid-flow-col auto-cols-fr gap-2">
+              {steps.map((item, index) => {
+                const complete = index < currentIndex
+                const current = index === currentIndex
+                return (
+                  <li
+                    key={item}
+                    aria-current={current ? 'step' : undefined}
+                    className="min-w-0"
+                  >
+                    <span
+                      className={`block h-1 rounded-full transition-colors duration-normal ${
+                        index <= currentIndex ? 'bg-accent' : 'bg-surface-active'
+                      }`}
                     />
-                  </div>
-                ) : (
-                  <BackupCodeScreen
-                    backupCode={backupCode}
-                    onCopy={(code) => navigator.clipboard.writeText(code)}
-                    onSaveFile={saveBackupCodeFile}
-                    onPrint={() => window.print()}
-                    onContinue={() => {
-                      onBackupConfigured?.()
-                      setStep('bootstrap')
+                    <span
+                      className={`mt-2 hidden truncate text-caption sm:block ${
+                        current
+                          ? 'font-medium text-content'
+                          : complete
+                            ? 'text-content-secondary'
+                            : 'text-content-muted'
+                      }`}
+                    >
+                      {STEP_LABELS[item]}
+                    </span>
+                  </li>
+                )
+              })}
+            </ol>
+          </div>
+
+          <div className="my-auto w-full max-w-lg">
+            <AnimatePresence mode="wait" initial={false}>
+              {step === 'account' && (
+                <motion.div key="account" variants={variants.screen} initial="initial" animate="animate" exit="exit">
+                  <MatrixAccountScreen
+                    onMatrixCheckUsernameAvailable={onMatrixCheckUsernameAvailable}
+                    onMatrixRegisterAccount={onMatrixRegisterAccount}
+                    onMatrixLogin={onMatrixLogin}
+                    onMatrixSwitchAccount={onMatrixSwitchAccount}
+                    onNext={handleMatrixAccount}
+                  />
+                </motion.div>
+              )}
+
+              {step === 'backup' && (
+                <motion.div key="backup" variants={variants.screen} initial="initial" animate="animate" exit="exit">
+                  {preparingBackup ? (
+                    <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-center">
+                      <Spinner />
+                      <p className="text-sm text-content-secondary">Preparing your backup code…</p>
+                    </div>
+                  ) : backupError != null || !backupCode ? (
+                    <div className="space-y-4">
+                      <h1 className="text-lg font-semibold text-content">Protect your messages</h1>
+                      <ErrorState
+                        error={backupError ?? new Error('The backup code could not be prepared.')}
+                        context={{ operation: 'prepare your message backup' }}
+                        onAction={() => void prepareBackupCode()}
+                      />
+                    </div>
+                  ) : (
+                    <BackupCodeScreen
+                      backupCode={backupCode}
+                      onCopy={(code) => navigator.clipboard.writeText(code)}
+                      onSaveFile={saveBackupCodeFile}
+                      onPrint={() => window.print()}
+                      onContinue={() => {
+                        onBackupConfigured?.()
+                        setStep('bootstrap')
+                      }}
+                      onSkip={() => {
+                        onBackupSkipped?.()
+                        setStep('bootstrap')
+                      }}
+                    />
+                  )}
+                </motion.div>
+              )}
+
+              {step === 'identity' && (
+                <motion.div key="identity" variants={variants.screen} initial="initial" animate="animate" exit="exit">
+                  <IdentityScreen
+                    backendKind={backendKind}
+                    onGenerateIdentity={async () => {
+                      await onGenerateIdentity?.()
                     }}
-                    onSkip={() => {
-                      onBackupSkipped?.()
+                    onNext={() => setStep('profile')}
+                  />
+                </motion.div>
+              )}
+
+              {step === 'profile' && (
+                <motion.div key="profile" variants={variants.screen} initial="initial" animate="animate" exit="exit">
+                  <JoinScreen
+                    avatarColors={avatarColors}
+                    initialProfile={profile}
+                    onBack={() => setStep('identity')}
+                    onNext={async (nextProfile) => {
+                      setProfile(nextProfile)
+                      await onUpdateProfile?.(nextProfile)
                       setStep('bootstrap')
                     }}
                   />
-                )}
-              </motion.div>
-            )}
+                </motion.div>
+              )}
 
-            {step === 'identity' && (
-              <motion.div key="identity" variants={variants.screen} initial="initial" animate="animate" exit="exit">
-                <IdentityScreen
-                  backendKind={backendKind}
-                  onGenerateIdentity={async () => {
-                    await onGenerateIdentity?.()
-                  }}
-                  onNext={() => setStep('profile')}
-                />
-              </motion.div>
-            )}
-
-            {step === 'profile' && (
-              <motion.div key="profile" variants={variants.screen} initial="initial" animate="animate" exit="exit">
-                <JoinScreen
-                  avatarColors={avatarColors}
-                  initialProfile={profile}
-                  onBack={() => setStep('identity')}
-                  onNext={async (nextProfile) => {
-                    setProfile(nextProfile)
-                    await onUpdateProfile?.(nextProfile)
-                    setStep('bootstrap')
-                  }}
-                />
-              </motion.div>
-            )}
-
-            {step === 'bootstrap' && (
-              <motion.div key="bootstrap" variants={variants.screen} initial="initial" animate="animate" exit="exit">
-                <ReadyScreen
-                  backendKind={backendKind}
-                  onComplete={onComplete}
-                  onBootstrap={onBootstrap}
-                  onBack={backendKind === 'matrix' ? undefined : () => setStep('profile')}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
-      </div>
+              {step === 'bootstrap' && (
+                <motion.div key="bootstrap" variants={variants.screen} initial="initial" animate="animate" exit="exit">
+                  <ReadyScreen
+                    backendKind={backendKind}
+                    onComplete={onComplete}
+                    onBootstrap={onBootstrap}
+                    onBack={backendKind === 'matrix' ? undefined : () => setStep('profile')}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+      </motion.section>
     </main>
+  )
+}
+
+function TrustCue({
+  icon,
+  title,
+  description,
+}: {
+  icon: IconName
+  title: string
+  description: string
+}) {
+  return (
+    <div className="flex gap-3">
+      <span className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-md bg-accent/10 text-accent">
+        <Icon name={icon} size="sm" />
+      </span>
+      <span>
+        <span className="block text-sm font-medium text-content">{title}</span>
+        <span className="mt-1 block text-xs leading-5 text-content-muted">{description}</span>
+      </span>
+    </div>
   )
 }
 
