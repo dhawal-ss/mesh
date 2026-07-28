@@ -776,15 +776,15 @@ function MessageInputContent({
       <div
         className={`rounded-lg transition-colors ${
           isDragOver
-            ? 'bg-blue/10 ring-2 ring-blue/40'
+            ? 'bg-accent/10 ring-2 ring-accent/40'
             : 'bg-surface-raised'
         }`}
       >
         {/* Drag overlay */}
         {isDragOver && (
           <div className="flex items-center justify-center gap-2 px-4 py-3">
-            <Icon name="upload" size="sm" className="text-blue" />
-            <span className="text-sm font-medium text-blue">Drop files to attach</span>
+            <Icon name="upload" size="sm" className="text-accent" />
+            <span className="text-sm font-medium text-accent">Drop files to attach</span>
           </div>
         )}
 

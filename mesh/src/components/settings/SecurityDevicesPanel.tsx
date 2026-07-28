@@ -412,7 +412,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                           setLostDeviceId(device.deviceId)
                           setLostDeviceAcknowledged(false)
                         }}
-                        className="mt-0.5 h-4 w-4 accent-blue"
+                        className="mt-0.5 h-4 w-4 accent-accent"
                       />
                       <span>
                         <span className="block font-medium text-primary">
@@ -438,7 +438,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                     type="checkbox"
                     checked={lostDeviceAcknowledged}
                     onChange={(event) => setLostDeviceAcknowledged(event.target.checked)}
-                    className="mt-0.5 h-4 w-4 accent-blue"
+                    className="mt-0.5 h-4 w-4 accent-accent"
                   />
                   I understand that this signs the selected device out but cannot erase anything
                   already saved on it or guarantee that older messages can be restored.
@@ -507,7 +507,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-primary">
-                      {device.displayName || 'Unnamed device'} {device.current && <span className="text-blue">(this device)</span>}
+                      {device.displayName || 'Unnamed device'} {device.current && <span className="text-accent">(this device)</span>}
                     </p>
                     <p className="mt-1 break-all font-mono text-meta text-muted">{device.deviceId}</p>
                     <p className="mt-1 text-xs text-muted">
@@ -557,7 +557,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
           </ul>
 
           {verification && (
-            <div className="space-y-3 rounded-md border border-blue/40 bg-blue/5 p-3">
+            <div className="space-y-3 rounded-md border border-accent/40 bg-accent/5 p-3">
               <div>
                 <p className="text-sm font-medium text-primary">Is this you?</p>
                 <p aria-live="polite" className="mt-1 text-xs leading-5 text-muted">

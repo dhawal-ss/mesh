@@ -450,7 +450,7 @@ export const MessageComponent = memo(function MessageComponent({
                     onClick={() => handleReaction(emoji)}
                     className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs transition-colors ${
                       myPublicKey && users.includes(myPublicKey)
-                        ? 'border-blue/40 bg-blue/10 text-blue'
+                        ? 'border-accent/40 bg-accent/10 text-accent'
                         : 'border-border bg-bg-modifier-hover text-secondary hover:border-border-light'
                     }`}
                   >
@@ -817,7 +817,7 @@ export function FileAttachmentCard({
             <div className="mt-1.5">
               <div className="h-1 overflow-hidden rounded-full bg-bg-modifier-hover">
                 <div
-                  className="h-full rounded-full bg-blue transition-[width] duration-normal"
+                  className="h-full rounded-full bg-accent transition-[width] duration-normal"
                   data-design-token-exception="data-driven-transfer-progress-width"
                   style={{ width: `${progressPercent}%` }}
                 />

@@ -107,7 +107,7 @@ export function CommunityIcon({
       {hasUnread && !active && (
         <span
           aria-hidden="true"
-          className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-bg-tertiary bg-status-danger"
+          className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-bg-tertiary bg-accent"
         />
       )}
     </div>

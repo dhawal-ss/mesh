@@ -279,7 +279,7 @@ export function MatrixAccountScreen({
                 </span>
                 <span className="block truncate text-xs text-muted">Saved account</span>
               </span>
-              <span className="text-xs text-blue">
+              <span className="text-xs font-medium text-accent">
                 {switchingProfile === account.profileId ? 'Opening…' : 'Continue'}
               </span>
             </button>
@@ -481,7 +481,7 @@ export function MatrixAccountScreen({
           Already have an account?{' '}
           <button
             type="button"
-            className="text-blue transition-colors hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue"
+            className="inline-flex min-h-8 items-center rounded-md px-1 text-accent transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             onClick={() => changeMode(hasRecommendedService ? 'sign-in' : 'advanced')}
           >
             Sign in
@@ -492,7 +492,7 @@ export function MatrixAccountScreen({
           {!isAdvanced ? (
             <button
               type="button"
-              className="block w-full text-xs text-muted transition-colors hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue"
+              className="flex min-h-8 w-full items-center justify-center rounded-md px-2 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               onClick={() => changeMode('advanced')}
             >
               I have an account somewhere else
@@ -500,7 +500,7 @@ export function MatrixAccountScreen({
           ) : hasRecommendedService ? (
             <button
               type="button"
-              className="block w-full text-xs text-muted transition-colors hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue"
+              className="flex min-h-8 w-full items-center justify-center rounded-md px-2 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               onClick={() => changeMode('sign-in')}
             >
               Back to Mesh sign in
@@ -508,7 +508,7 @@ export function MatrixAccountScreen({
           ) : null}
           <button
             type="button"
-            className="text-sm text-blue transition-colors hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue"
+            className="inline-flex min-h-8 items-center rounded-md px-2 text-sm text-accent transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             onClick={() => changeMode('create')}
           >
             Create a new account

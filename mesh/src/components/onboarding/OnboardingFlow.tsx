@@ -91,7 +91,7 @@ export function OnboardingFlow({
               <div
                 key={item}
                 className={`h-1 flex-1 rounded-full transition-colors duration-normal ${
-                  index <= currentIndex ? 'bg-blue' : 'bg-bg-modifier-hover'
+                  index <= currentIndex ? 'bg-accent' : 'bg-bg-modifier-hover'
                 }`}
               />
             ))}

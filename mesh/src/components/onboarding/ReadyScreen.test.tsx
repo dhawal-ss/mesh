@@ -37,6 +37,7 @@ describe('ReadyScreen', () => {
     expect(container.textContent).not.toContain('Account secured')
     expect(container.textContent?.toLowerCase()).not.toContain('recovery')
     expect(container.textContent).not.toContain('encrypted history restored')
+    expect(container.querySelector('.bg-accent')).toBeTruthy()
   })
 
   it('preserves the separate legacy peer setup checklist', async () => {

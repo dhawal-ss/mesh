@@ -102,7 +102,7 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
 
         <div className="h-1 overflow-hidden rounded-full bg-bg-modifier-hover">
           <motion.div
-            className="h-full w-1/3 rounded-full bg-blue"
+            className="h-full w-1/3 rounded-full bg-accent"
             animate={
               reduceMotion
                 ? { x: 0, opacity: phase === 'done' ? 0.95 : 1 }
@@ -174,7 +174,7 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
         <button
           type="button"
           onClick={() => setAttempt((value) => value + 1)}
-          className="text-sm text-secondary transition-colors hover:text-primary"
+          className="min-h-8 rounded-md px-2 text-sm text-secondary transition-colors hover:bg-bg-modifier-hover hover:text-primary"
         >
           Retry identity generation
         </button>

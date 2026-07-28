@@ -73,7 +73,7 @@ export function FileAttachmentPreview({
                 {transferActive && (
                   <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-active">
                     <div
-                      className="h-full rounded-full bg-blue transition-[width] duration-normal"
+                      className="h-full rounded-full bg-accent transition-[width] duration-normal"
                       data-design-token-exception="data-driven-transfer-progress-width"
                       style={{ width: `${progressPercent}%` }}
                     />
@@ -94,7 +94,7 @@ export function FileAttachmentPreview({
                       ? `Publishing ${file.name}`
                       : `Remove ${file.name}`
                 }
-                className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-surface-hover text-muted transition-colors hover:bg-surface-active hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue"
+                className="absolute right-1.5 top-1.5 flex h-8 w-8 items-center justify-center rounded-full bg-surface-hover text-muted transition-colors hover:bg-surface-active hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               >
                 <Icon name="x" size="xs" />
               </button>

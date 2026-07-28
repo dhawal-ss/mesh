@@ -585,7 +585,7 @@ export function UserSettingsPanel({
 
         <button
           type="button"
-          className="mx-auto block rounded px-2 py-1 text-caption text-muted hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          className="mx-auto flex min-h-8 items-center rounded-md px-2 text-caption text-muted hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           aria-label="Mesh version 0.1.0"
           onClick={() => {
             versionTapCount.current += 1
@@ -674,7 +674,7 @@ function ToggleRow({
       </span>
       <input
         type="checkbox"
-        className="mt-0.5 h-4 w-4 flex-shrink-0 accent-blue"
+        className="mt-0.5 h-4 w-4 flex-shrink-0 accent-accent"
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}

@@ -94,7 +94,7 @@ describe('CommunityIcon notification context menu', () => {
   it('preserves the accessible community button and primary navigation action', () => {
     const button = renderIcon()
     expect(button.getAttribute('aria-label')).toBe(`${community.name}, 7 unread`)
-    expect(container.querySelector('.bg-status-danger')).toBeTruthy()
+    expect(container.querySelector('.bg-accent')).toBeTruthy()
 
     act(() => button.click())
     expect(onClick).toHaveBeenCalledOnce()
@@ -140,7 +140,7 @@ describe('CommunityIcon notification context menu', () => {
     await openContextMenu(button)
 
     expect(button.getAttribute('aria-label')).toBe(`${community.name}, muted`)
-    expect(container.querySelector('.bg-status-danger')).toBeNull()
+    expect(container.querySelector('.bg-accent')).toBeNull()
     expect(document.body.textContent).not.toContain('Mute for 15 minutes')
 
     await act(async () => findMenuItem('Turn notifications back on')?.click())

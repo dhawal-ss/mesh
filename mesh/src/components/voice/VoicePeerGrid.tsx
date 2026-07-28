@@ -113,7 +113,7 @@ function VoicePeerTile({
       exit={{ scale: 0.95, opacity: 0, y: 8 }}
       transition={transitions.move}
       className={`group relative flex min-h-voice-tile flex-col overflow-hidden rounded-lg bg-bg-secondary transition-shadow ${
-        peer.speaking ? 'ring-2 ring-green shadow-overlay' : ''
+        peer.speaking ? 'ring-2 ring-accent shadow-overlay' : ''
       }`}
     >
       <audio ref={audioRef} autoPlay muted={isDeafened || peer.isSelf} />
@@ -134,7 +134,7 @@ function VoicePeerTile({
         ) : (
           <div
             className={`flex h-20 w-20 items-center justify-center rounded-full text-lg font-semibold text-content-on-status shadow-overlay ${
-              peer.speaking ? 'ring-4 ring-green/40' : ''
+              peer.speaking ? 'ring-4 ring-accent/40' : ''
             }`}
             data-design-token-exception="Member-selected avatar color is stored profile data."
             style={{ backgroundColor: peer.avatarColor }}
@@ -163,7 +163,7 @@ function VoicePeerTile({
             {peer.latency > 0 ? `${peer.latency} ms` : 'live'}
           </span>
           {peer.speaking ? (
-            <span className="rounded-md bg-green/10 px-2 py-1 text-green">
+            <span className="rounded-md bg-accent/10 px-2 py-1 text-accent">
               Speaking
             </span>
           ) : null}
@@ -189,7 +189,7 @@ function VoicePeerTile({
                 onParticipantVolume?.(peer.publicKey, next)
               }}
               aria-label={`${peer.displayName} local volume`}
-              className="w-24 accent-green"
+              className="w-24 accent-accent"
             />
             <span className="w-8 text-right">{Math.round(volume * 100)}%</span>
           </label>

@@ -175,20 +175,18 @@ export function AppLayout() {
             >
               <span
                 className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                  // Solo = yellow (working but alone), connected = green, unavailable = red.
+                  // Connected is verified green; every recoverable network state uses attention amber.
                   matrixMode
                     ? networkStatus.state === 'connected'
-                      ? 'bg-green'
-                      : networkStatus.state === 'connecting'
-                        ? 'bg-yellow'
-                        : 'bg-red'
+                      ? 'bg-status-success'
+                      : 'bg-status-warning'
                     : networkStatus.state === 'connecting'
-                      ? 'bg-red'
+                      ? 'bg-status-warning'
                       : isRunningSolo
-                        ? 'bg-yellow'
-                        : networkStatus.state === 'connected' || networkStatus.state === 'degraded'
-                          ? 'bg-green'
-                          : 'bg-red'
+                        ? 'bg-status-warning'
+                        : networkStatus.state === 'connected'
+                          ? 'bg-status-success'
+                          : 'bg-status-warning'
                 }`}
                 aria-hidden
               />

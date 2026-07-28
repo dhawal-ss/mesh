@@ -32,7 +32,7 @@ export function ScopedErrorBoundary({
           <button
             type="button"
             onClick={resetError}
-            className="text-xs font-medium text-text-link transition-colors hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue"
+            className="inline-flex min-h-8 items-center rounded-md px-2 text-xs font-medium text-text-link transition-colors hover:bg-bg-modifier-hover hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           >
             Try again
           </button>
@@ -81,7 +81,7 @@ export function DialogErrorBoundary({
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded bg-bg-modifier-hover px-3 py-1.5 text-xs font-medium text-primary hover:bg-bg-modifier-active focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue"
+                className="min-h-8 rounded-md bg-bg-modifier-hover px-3 text-xs font-medium text-primary hover:bg-bg-modifier-active focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               >
                 Close
               </button>
