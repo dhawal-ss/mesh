@@ -40,12 +40,12 @@ export function ErrorState({
       role="alert"
       aria-labelledby={titleId}
       className={clsx(
-        'rounded-md border border-red/40 bg-red/10 text-left',
+        'rounded-panel border border-status-danger/40 bg-status-danger/10 text-left',
         compact ? 'px-3 py-2' : 'p-4',
         className,
       )}
     >
-      <h3 id={titleId} className={clsx('font-semibold text-red', compact ? 'text-xs' : 'text-sm')}>
+      <h3 id={titleId} className={clsx('font-semibold text-status-danger', compact ? 'text-xs' : 'text-sm')}>
         {description.title}
       </h3>
       <p className={clsx('leading-5 text-secondary', compact ? 'mt-0.5 text-xs' : 'mt-1 text-sm')}>
@@ -60,7 +60,7 @@ export function ErrorState({
         <summary className="flex min-h-8 w-fit cursor-pointer select-none items-center rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
           Details
         </summary>
-        <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded bg-bg-primary p-2 font-mono text-meta text-secondary">
+        <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-control bg-surface-sunken p-2 font-mono text-meta text-secondary">
           {details}
         </pre>
         <div className="mt-2 flex items-center gap-2">

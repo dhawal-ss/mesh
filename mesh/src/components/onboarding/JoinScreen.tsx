@@ -67,7 +67,7 @@ export function JoinScreen({
       </div>
 
       <motion.div
-        className="space-y-6 rounded-lg bg-bg-primary p-5"
+        className="space-y-6 rounded-panel border border-border-subtle bg-surface-sunken p-5"
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={transitions.enter}
@@ -100,7 +100,7 @@ export function JoinScreen({
                   type="button"
                   onClick={() => setAvatarColor(color)}
                   className={clsx(
-                    'h-10 rounded-full border-2 transition-transform duration-150',
+                    'h-10 rounded-control border-2 transition-transform duration-150',
                     selected
                       ? 'border-accent ring-2 ring-accent/30'
                       : 'border-transparent hover:scale-[1.03] hover:border-border'

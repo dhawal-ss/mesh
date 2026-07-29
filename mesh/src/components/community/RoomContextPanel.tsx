@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, type KeyboardEvent } from 'react'
 import type { Channel, Message } from '../../types/ipc'
 import type { RoomTrustSnapshot } from '../../hooks/useRoomTrust'
 import { useMessageStore } from '../../store/messages'
@@ -10,6 +10,9 @@ import { formatFederatedTimestamp } from '../../lib/federated-time'
 import { showToast } from '../ui/Toast'
 import { Icon } from '../ui/Icon'
 import { MemberList } from './MemberList'
+import { EmptyState } from '../ui/Primitives'
+import { Button } from '../ui/Button'
+import { Spinner } from '../ui/Spinner'
 
 export type RoomContextTab = 'people' | 'ledger' | 'files' | 'pins'
 
@@ -87,24 +90,63 @@ export function RoomContextPanel({
     }
   }
 
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    const currentTab = (event.target as HTMLElement).closest<HTMLElement>('[role="tab"]')
+    if (!currentTab) return
+    const currentIndex = tabs.findIndex((tab) => `room-context-tab-${tab.id}` === currentTab.id)
+    if (currentIndex < 0) return
+
+    event.preventDefault()
+    const nextIndex =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? tabs.length - 1
+          : event.key === 'ArrowRight'
+            ? (currentIndex + 1) % tabs.length
+            : (currentIndex - 1 + tabs.length) % tabs.length
+    const nextTab = tabs[nextIndex]
+    onTabChange(nextTab.id)
+    event.currentTarget
+      .querySelector<HTMLElement>(`#room-context-tab-${nextTab.id}`)
+      ?.focus()
+  }
+
   return (
     <aside
       id="mesh-room-context-panel"
-      className="mesh-room-context-panel flex w-member-list flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-bg-secondary"
+      className="mesh-room-context-panel flex w-member-list flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-sidebar"
       aria-label={`Room context for ${channel.name}`}
     >
-      <div className="flex h-12 flex-shrink-0 items-center gap-1 border-b border-border-subtle px-2">
-        <div className="flex min-w-0 flex-1" role="tablist" aria-label="Room context">
+      <div className="flex h-conversation-header flex-shrink-0 items-center gap-1 border-b border-border-subtle px-2">
+        <button
+          type="button"
+          className="order-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
+          aria-label="Close room context"
+          onClick={onClose}
+        >
+          <Icon name="x" size="sm" />
+        </button>
+        <div
+          className="order-1 flex min-w-0 flex-1"
+          role="tablist"
+          aria-label="Room context"
+          onKeyDown={handleTabKeyDown}
+        >
           {tabs.map((tab) => (
             <button
               key={tab.id}
+              id={`room-context-tab-${tab.id}`}
               type="button"
               role="tab"
+              tabIndex={activeTab === tab.id ? 0 : -1}
               aria-selected={activeTab === tab.id}
-              className={`min-h-control-sm flex-1 rounded px-1 text-xs font-medium transition-colors ${
+              aria-controls={`room-context-${tab.id}`}
+              className={`min-h-control-sm flex-1 border-b-2 border-transparent px-1 text-xs font-medium transition-colors ${
                 activeTab === tab.id
-                  ? 'bg-bg-modifier-active text-primary'
-                  : 'text-muted hover:bg-bg-modifier-hover hover:text-secondary'
+                  ? 'border-accent text-primary'
+                  : 'text-muted hover:bg-surface-hover hover:text-secondary'
               }`}
               onClick={() => onTabChange(tab.id)}
             >
@@ -112,18 +154,15 @@ export function RoomContextPanel({
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary"
-          aria-label="Close room context"
-          onClick={onClose}
-        >
-          <Icon name="x" size="sm" />
-        </button>
       </div>
 
       {activeTab === 'people' && (
-        <div role="tabpanel" className="flex min-h-0 flex-1 flex-col">
+        <div
+          id="room-context-people"
+          role="tabpanel"
+          aria-labelledby="room-context-tab-people"
+          className="flex min-h-0 flex-1 flex-col"
+        >
           <div className="border-b border-border-subtle px-4 py-3">
             <p className="text-xs font-medium text-primary">
               {members.length} {members.length === 1 ? 'person' : 'people'}
@@ -137,7 +176,12 @@ export function RoomContextPanel({
       )}
 
       {activeTab === 'ledger' && trust.matrixMode && (
-        <div role="tabpanel" className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
+        <div
+          id="room-context-ledger"
+          role="tabpanel"
+          aria-labelledby="room-context-tab-ledger"
+          className="flex-1 space-y-5 overflow-y-auto px-4 py-4"
+        >
           <section>
             <p className="text-caption font-semibold uppercase tracking-caption text-muted">
               Room ledger
@@ -154,7 +198,7 @@ export function RoomContextPanel({
                 ? 'border-status-success/30 bg-status-success/10'
                 : trust.protection === 'blocked'
                   ? 'border-status-warning/30 bg-status-warning/10'
-                  : 'border-border-subtle bg-bg-modifier-hover'
+                  : 'border-border-subtle bg-surface-sunken'
             }`}
           >
             <div className="flex items-start gap-2">
@@ -220,7 +264,7 @@ export function RoomContextPanel({
                         </span>
                         <span className="member-count text-muted">{service.memberCount}</span>
                       </div>
-                      <div className="mt-1 h-1 overflow-hidden rounded-full bg-bg-modifier-active">
+                      <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-active">
                         <div
                           className="h-full rounded-full bg-accent"
                           data-design-token-exception="data-driven-service-distribution-width"
@@ -271,7 +315,7 @@ export function RoomContextPanel({
             )}
             <button
               type="button"
-              className="min-h-control-md w-full rounded-md border border-border-subtle px-3 text-xs font-medium text-secondary transition-colors hover:border-border-strong hover:bg-bg-modifier-hover hover:text-primary"
+              className="min-h-control-md w-full rounded-control border border-border-subtle px-3 text-xs font-medium text-secondary transition-colors hover:border-border-strong hover:bg-surface-hover hover:text-primary"
               onClick={() => setSecurityOpen(true)}
             >
               Review devices
@@ -306,7 +350,7 @@ export function RoomContextPanel({
               </button>
               <button
                 type="button"
-                className="min-h-control-md rounded-md border border-border-subtle px-3 text-xs font-medium text-secondary transition-colors hover:border-border-strong hover:bg-bg-modifier-hover hover:text-primary"
+                className="min-h-control-md rounded-control border border-border-subtle px-3 text-xs font-medium text-secondary transition-colors hover:border-border-strong hover:bg-surface-hover hover:text-primary"
                 onClick={() => void copyRoomLink()}
               >
                 Copy room link
@@ -317,7 +361,12 @@ export function RoomContextPanel({
       )}
 
       {activeTab === 'files' && (
-        <div role="tabpanel" className="flex-1 overflow-y-auto p-3">
+        <div
+          id="room-context-files"
+          role="tabpanel"
+          aria-labelledby="room-context-tab-files"
+          className="flex-1 overflow-y-auto p-3"
+        >
           <div className="mb-3">
             <p className="text-xs font-medium text-primary">Shared in #{channel.name}</p>
             <p className="mt-1 text-caption text-muted">
@@ -330,10 +379,10 @@ export function RoomContextPanel({
                 <button
                   key={`${message.id}:${attachment.fileHash}:${index}`}
                   type="button"
-                  className="flex min-h-control-lg w-full items-start gap-2 rounded-md border border-transparent p-2 text-left transition-colors hover:border-border-subtle hover:bg-bg-modifier-hover"
+                  className="flex min-h-control-lg w-full items-start gap-2 rounded-panel border border-transparent p-2 text-left transition-colors hover:border-border-subtle hover:bg-surface-hover"
                   onClick={() => requestNavigation(message)}
                 >
-                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-bg-modifier-active text-accent">
+                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-control bg-surface-active text-accent">
                     <Icon name="file" size="sm" />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -351,19 +400,23 @@ export function RoomContextPanel({
               ))}
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-border-subtle px-4 py-8 text-center">
-              <Icon name="file" className="mx-auto text-muted" />
-              <p className="mt-3 text-xs font-medium text-secondary">No files shared yet</p>
-              <p className="mt-1 text-caption leading-5 text-muted">
-                Encrypted attachments from loaded messages will collect here.
-              </p>
-            </div>
+            <EmptyState
+              variant="compact"
+              icon={<Icon name="file" />}
+              title="No files shared yet"
+              description="Encrypted attachments from loaded messages will collect here."
+            />
           )}
         </div>
       )}
 
       {activeTab === 'pins' && trust.matrixMode && (
-        <div role="tabpanel" className="flex-1 overflow-y-auto p-3">
+        <div
+          id="room-context-pins"
+          role="tabpanel"
+          aria-labelledby="room-context-tab-pins"
+          className="flex-1 overflow-y-auto p-3"
+        >
           <div className="mb-3">
             <p className="text-xs font-medium text-primary">Pinned in #{channel.name}</p>
             <p className="mt-1 text-caption text-muted">
@@ -371,24 +424,27 @@ export function RoomContextPanel({
             </p>
           </div>
           {pinsLoadFailed ? (
-            <div className="rounded-lg border border-status-warning/30 bg-status-warning/10 px-4 py-5 text-center">
-              <Icon name="triangleAlert" className="mx-auto text-status-warning" />
-              <p className="mt-3 text-xs font-medium text-primary">Pins are unavailable right now</p>
-              <p className="mt-1 text-caption leading-5 text-muted">
-                Messaging still works. Check your connection and try again.
-              </p>
-              <button
-                type="button"
-                className="mt-3 min-h-control-sm rounded-md border border-border-subtle px-3 text-xs font-medium text-secondary transition-colors hover:border-border-strong hover:bg-bg-modifier-hover hover:text-primary"
-                onClick={() => void loadRoomPins(channel.id)}
-              >
-                Try again
-              </button>
+            <div role="alert">
+              <EmptyState
+                variant="compact"
+                icon={<Icon name="triangleAlert" className="text-status-warning" />}
+                title="Pins are unavailable right now"
+                description="Messaging still works. Check your connection and try again."
+                action={
+                  <Button variant="secondary" size="sm" onClick={() => void loadRoomPins(channel.id)}>
+                    Try again
+                  </Button>
+                }
+              />
             </div>
           ) : pinsLoading && pinnedMessages.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border-subtle px-4 py-8 text-center">
-              <Icon name="loader" className="mx-auto animate-spin text-muted" />
-              <p className="mt-3 text-xs font-medium text-secondary">Loading pinned messages…</p>
+            <div role="status">
+              <EmptyState
+                variant="compact"
+                icon={<Spinner size={16} />}
+                title="Loading pinned messages"
+                description="Checking the room’s pinned references."
+              />
             </div>
           ) : pinnedEventCount > 0 ? (
             <div className="space-y-1.5">
@@ -396,7 +452,7 @@ export function RoomContextPanel({
                 <button
                   key={message.id}
                   type="button"
-                  className="min-h-control-lg w-full rounded-md border border-transparent p-2 text-left transition-colors hover:border-border-subtle hover:bg-bg-modifier-hover"
+                  className="min-h-control-lg w-full rounded-panel border border-transparent p-2 text-left transition-colors hover:border-border-subtle hover:bg-surface-hover"
                   onClick={() => requestNavigation(message)}
                 >
                   <span className="flex items-center gap-1.5 text-caption text-accent">
@@ -414,20 +470,19 @@ export function RoomContextPanel({
               {unavailablePinCount > 0 && (
                 <div
                   role="status"
-                  className="rounded-md border border-border-subtle bg-bg-modifier-hover px-3 py-2 text-caption leading-5 text-muted"
+                  className="rounded-panel border border-border-subtle bg-surface-sunken px-3 py-2 text-caption leading-5 text-muted"
                 >
                   {unavailablePinCount} pinned {unavailablePinCount === 1 ? 'message is' : 'messages are'} no longer available on this device.
                 </div>
               )}
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-border-subtle px-4 py-8 text-center">
-              <Icon name="pin" className="mx-auto text-muted" />
-              <p className="mt-3 text-xs font-medium text-secondary">Nothing pinned yet</p>
-              <p className="mt-1 text-caption leading-5 text-muted">
-                Use a message’s actions to pin an important decision or reference for the room.
-              </p>
-            </div>
+            <EmptyState
+              variant="compact"
+              icon={<Icon name="pin" />}
+              title="Nothing pinned yet"
+              description="Use a message’s actions to pin an important decision or reference for the room."
+            />
           )}
         </div>
       )}

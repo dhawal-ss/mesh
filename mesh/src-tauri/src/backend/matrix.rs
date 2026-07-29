@@ -153,6 +153,8 @@ const PREFERENCES_EVENT_TYPE: &str = "org.mesh.preferences.v1";
 const MAX_PINNED_EVENTS: usize = 100;
 const MANAGED_HOMESERVER_ENV: &str = "MESH_MANAGED_HOMESERVER";
 const MANAGED_SERVER_NAME_ENV: &str = "MESH_MANAGED_SERVER_NAME";
+const DEFAULT_MANAGED_HOMESERVER: &str = "https://matrix.mesh.dhawal.org";
+const DEFAULT_MANAGED_SERVER_NAME: &str = "mesh.dhawal.org";
 const LOGIN_TIMEOUT_SECONDS: u64 = 45;
 const SESSION_RESTORE_SYNC_TIMEOUT_SECONDS: u64 = 10;
 const REGISTRATION_TIMEOUT_SECONDS: u64 = 45;
@@ -1092,11 +1094,13 @@ impl MatrixBackend {
     fn managed_homeserver_config() -> BackendResult<ManagedHomeserverConfig> {
         let homeserver = std::env::var(MANAGED_HOMESERVER_ENV)
             .ok()
-            .or_else(|| option_env!("MESH_MANAGED_HOMESERVER").map(str::to_owned));
+            .or_else(|| option_env!("MESH_MANAGED_HOMESERVER").map(str::to_owned))
+            .unwrap_or_else(|| DEFAULT_MANAGED_HOMESERVER.to_owned());
         let server_name = std::env::var(MANAGED_SERVER_NAME_ENV)
             .ok()
-            .or_else(|| option_env!("MESH_MANAGED_SERVER_NAME").map(str::to_owned));
-        Self::managed_homeserver_config_from(homeserver.as_deref(), server_name.as_deref())
+            .or_else(|| option_env!("MESH_MANAGED_SERVER_NAME").map(str::to_owned))
+            .unwrap_or_else(|| DEFAULT_MANAGED_SERVER_NAME.to_owned());
+        Self::managed_homeserver_config_from(Some(&homeserver), Some(&server_name))
     }
 
     fn normalize_product_username(input: &str) -> BackendResult<String> {

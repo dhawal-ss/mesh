@@ -86,15 +86,15 @@ export function CommunityIcon({
           onClick={onClick}
           aria-label={`${community.name}${hasUnread ? `, ${unreadCount} unread` : ''}${isMuted ? ', muted' : ''}`}
           aria-current={active ? 'true' : undefined}
-          className={`group relative flex h-12 w-12 items-center justify-center overflow-hidden transition-all duration-normal ${
+          className={`group relative flex h-10 w-10 items-center justify-center overflow-hidden transition-all duration-normal ${
             active
               ? 'rounded-community-active bg-accent'
-              : 'rounded-community bg-bg-primary hover:rounded-community-active hover:bg-accent'
+              : 'rounded-community bg-surface-sunken hover:rounded-community-active hover:bg-accent'
           }`}
         >
           <Avatar
             color={active ? 'var(--accent)' : 'var(--avatar-blue)'}
-            size={48}
+            size={40}
             name={community.name}
             className="!rounded-none"
           />

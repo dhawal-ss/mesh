@@ -17,6 +17,8 @@ import { useRoomTrust } from '../../hooks/useRoomTrust'
 import { useShellStore } from '../../store/shell'
 import { DmTrustSummary } from './DmTrustSummary'
 import { Icon } from '../ui/Icon'
+import { MessageSkeleton } from '../ui/Skeleton'
+import { EmptyState } from '../ui/Primitives'
 
 const EMPTY_DIRECT_MESSAGES: DirectMessage[] = []
 
@@ -31,14 +33,14 @@ function DmMessageBoundary({
     <ErrorBoundary
       scope="feature"
       fallback={(resetError) => (
-        <div className="mx-4 my-1 flex items-center gap-2 rounded bg-red/5 px-3 py-2" role="alert">
+        <div className="mx-4 my-1 flex items-center gap-2 rounded-panel bg-status-danger/5 px-3 py-2" role="alert">
           <p className="min-w-0 flex-1 text-xs text-muted">
             One message could not be displayed.
           </p>
           <button
             type="button"
             onClick={resetError}
-            className="min-h-8 rounded-md px-2 text-xs font-medium text-text-link hover:bg-bg-modifier-hover hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            className="min-h-8 rounded-control px-2 text-xs font-medium text-text-link hover:bg-surface-hover hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             aria-label={`Retry message ${messageId}`}
           >
             Retry
@@ -278,13 +280,11 @@ export function DmView() {
   if (!activeConversationId || !conversation) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <div className="max-w-xs px-8 text-center">
-          <Icon name="messageCircle" size="lg" className="mx-auto mb-3 text-muted" />
-          <p className="text-sm font-medium text-secondary">Select a conversation</p>
-          <p className="mt-1 text-xs leading-5 text-muted">
-            Choose a private conversation from the sidebar.
-          </p>
-        </div>
+        <EmptyState
+          icon={<Icon name="messageCircle" size="lg" />}
+          title="Select a conversation"
+          description="Choose a private conversation from the sidebar."
+        />
       </div>
     )
   }
@@ -295,11 +295,11 @@ export function DmView() {
     <div className="flex h-full flex-1 flex-col">
       {/* Header */}
       <div
-        className="flex min-h-14 flex-shrink-0 items-center border-b border-border-subtle px-4 py-2"
+        className="mesh-conversation-header flex h-conversation-header flex-shrink-0 items-center border-b border-border-subtle px-4 py-2"
         data-tauri-drag-region
       >
         <div
-          className="mr-2 flex h-6 w-6 items-center justify-center rounded-full text-micro font-semibold text-content-on-status/90"
+          className="mr-2 flex h-6 w-6 items-center justify-center rounded-control text-micro font-semibold text-content-on-avatar/90"
           data-design-token-exception="data-driven-federated-avatar-color"
           style={{ backgroundColor: conversation.peerAvatarColor }}
         >
@@ -326,7 +326,7 @@ export function DmView() {
               type="button"
               onClick={() => void handleToggleBlocked()}
               disabled={isBlockBusy}
-              className="min-h-8 rounded-md px-2 text-caption font-medium text-muted transition-colors hover:bg-status-danger/10 hover:text-status-danger disabled:opacity-50"
+              className="min-h-8 rounded-control px-2 text-caption font-medium text-muted transition-colors hover:bg-status-danger/10 hover:text-status-danger disabled:opacity-50"
               aria-label={isBlocked ? `Unblock ${peerName}` : `Block ${peerName}`}
             >
               {isBlockBusy ? 'Saving…' : isBlocked ? 'Unblock' : 'Block'}
@@ -344,7 +344,7 @@ export function DmView() {
           <button
             type="button"
             onClick={() => setSecurityOpen(true)}
-            className="min-h-8 flex-shrink-0 rounded-md px-2 font-semibold text-status-warning hover:bg-status-warning/10"
+            className="min-h-8 flex-shrink-0 rounded-control px-2 font-semibold text-status-warning hover:bg-status-warning/10"
           >
             Review
           </button>
@@ -354,16 +354,18 @@ export function DmView() {
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto py-4">
         {isLoading ? (
-          <div className="flex h-full items-center justify-center">
-            <p className="text-sm text-muted">Loading messages...</p>
+          <div aria-label="Loading messages" role="status">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <MessageSkeleton key={index} />
+            ))}
           </div>
         ) : channelMessages.length === 0 ? (
           <div className="flex h-full items-center justify-center">
-            <div className="max-w-xs px-8 text-center">
-              <Icon name="messageCircle" size="lg" className="mx-auto mb-3 text-muted" />
-              <p className="text-sm font-medium text-secondary">Start of conversation</p>
-              <p className="mt-1 text-xs leading-5 text-muted">Send a message to {peerName}.</p>
-            </div>
+            <EmptyState
+              icon={<Icon name="messageCircle" size="lg" />}
+              title="Start of conversation"
+              description={`Send a message to ${peerName}.`}
+            />
           </div>
         ) : (
           <div className="space-y-0.5">
@@ -397,7 +399,7 @@ export function DmView() {
                   {!isGrouped && (
                     <div className="mb-0.5 flex flex-wrap items-center gap-x-2 gap-y-0">
                       <div
-                        className="flex h-6 w-6 items-center justify-center rounded-full text-micro font-semibold text-content-on-status/90"
+                        className="flex h-6 w-6 items-center justify-center rounded-control text-micro font-semibold text-content-on-avatar/90"
                         data-design-token-exception="data-driven-federated-avatar-color"
                         style={{ backgroundColor: msg.authorAvatarColor }}
                       >
@@ -435,7 +437,7 @@ export function DmView() {
                             }
                             if (event.key === 'Escape') setEditingMessageId(null)
                           }}
-                          className="min-h-control-md w-full resize-none rounded-md border border-border-subtle bg-bg-modifier-hover px-2 py-1.5 text-sm text-primary outline-none focus:border-border-strong"
+                          className="min-h-control-md w-full resize-none rounded-control border border-border bg-surface-sunken px-2 py-1.5 text-sm text-primary outline-none focus:border-accent"
                           rows={Math.min(6, editValue.split('\n').length + 1)}
                           autoFocus
                         />
@@ -443,14 +445,14 @@ export function DmView() {
                           <button
                             type="button"
                             onClick={() => void handleSaveEdit()}
-                            className="min-h-8 rounded-md bg-accent px-2 font-semibold text-content-on-accent hover:bg-accent-hover"
+                            className="min-h-8 rounded-control bg-accent px-2 font-semibold text-content-on-accent hover:bg-accent-hover"
                           >
                             Save
                           </button>
                           <button
                             type="button"
                             onClick={() => setEditingMessageId(null)}
-                            className="min-h-8 rounded-md px-2 text-muted hover:bg-bg-modifier-hover hover:text-primary"
+                            className="min-h-8 rounded-control px-2 text-muted hover:bg-surface-hover hover:text-primary"
                           >
                             Cancel
                           </button>
@@ -477,7 +479,7 @@ export function DmView() {
                           <button
                             key={emoji}
                             onClick={() => void handleReaction(msg, emoji)}
-                            className={`min-h-8 rounded-md border px-2 text-xs ${ownAuthorId && users.includes(ownAuthorId) ? 'border-accent/40 bg-accent/10 text-accent' : 'border-border bg-bg-modifier-hover text-secondary'}`}
+                            className={`min-h-8 rounded-control border px-2 text-xs ${ownAuthorId && users.includes(ownAuthorId) ? 'border-accent/40 bg-accent/10 text-accent' : 'border-border bg-surface-hover text-secondary'}`}
                           >
                             {emoji} {users.length}
                           </button>
@@ -489,32 +491,35 @@ export function DmView() {
                       reach it; group-hover/group-focus-within reveal it
                       visually, matching Message.tsx's pattern. */}
                   {matrixMode && editingMessageId !== msg.id && (
-                    <div className="pointer-events-none absolute right-4 top-0 z-sticky flex items-center gap-1 rounded border border-border bg-bg-secondary px-1 py-1 opacity-0 shadow-overlay transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                    <div className="mesh-message-actions pointer-events-none absolute -top-4 right-4 z-sticky flex items-center rounded-panel border border-border-subtle bg-surface-overlay opacity-0 shadow-overlay transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
                       <button
+                        type="button"
                         onClick={() => setReplyingTo(msg)}
-                        className="min-h-8 rounded-md px-2 text-caption text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                        className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                         aria-label="Reply to message"
-                      >Reply</button>
+                      ><Icon name="reply" size="sm" /></button>
                       <button
+                        type="button"
                         onClick={() => setReactionTargetId(reactionTargetId === msg.id ? null : msg.id)}
-                        className="min-h-8 rounded-md px-2 text-caption text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                        className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                         aria-label="Add reaction"
                         aria-expanded={reactionTargetId === msg.id}
-                      >React</button>
+                      ><Icon name="smile" size="sm" /></button>
                       {isOwnMessage && (
                         <button
+                          type="button"
                           onClick={() => {
                             setEditingMessageId(msg.id)
                             setEditValue(msg.content)
                           }}
-                          className="min-h-8 rounded-md px-2 text-caption text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                          className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                           aria-label="Edit message"
-                        >Edit</button>
+                        ><Icon name="squarePen" size="sm" /></button>
                       )}
                     </div>
                   )}
                   {matrixMode && reactionTargetId === msg.id && (
-                    <div className="absolute right-4 top-8 z-dropdown">
+                    <div className="absolute -top-10 right-4 z-popover">
                       <ReactionPicker onSelect={(emoji) => void handleReaction(msg, emoji)} onClose={() => setReactionTargetId(null)} />
                     </div>
                   )}
@@ -528,17 +533,17 @@ export function DmView() {
       </div>
 
       {isBlocked && (
-        <div className="mx-4 mb-2 rounded-md border border-status-danger/20 bg-status-danger/5 px-3 py-2 text-xs text-status-danger">
+        <div className="mx-4 mb-2 rounded-panel border border-status-danger/20 bg-status-danger/5 px-3 py-2 text-xs text-status-danger">
           Messages from this user are blocked. Unblock them to resume this conversation.
         </div>
       )}
       {replyingTo && (
-        <div className="mx-4 mb-2 flex items-center justify-between rounded-md border border-accent/20 bg-accent/5 px-3 py-1.5 text-xs text-secondary">
+        <div className="flex items-center justify-between gap-2 border-t border-border-subtle bg-surface-sunken px-4 py-2 text-xs text-secondary">
           <span>Replying to {replyingTo.authorDisplayName}: {replyingTo.content.slice(0, 80)}</span>
           <button
             type="button"
             onClick={() => setReplyingTo(null)}
-            className="min-h-8 rounded-md px-2 text-muted hover:bg-bg-modifier-hover hover:text-primary"
+            className="min-h-8 rounded-control px-2 text-muted hover:bg-surface-hover hover:text-primary"
             aria-label="Cancel reply"
           >
             Cancel

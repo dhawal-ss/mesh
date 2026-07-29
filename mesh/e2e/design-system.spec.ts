@@ -3,6 +3,23 @@ import { expectNoWcagViolations } from './helpers/accessibility'
 
 const runtimeErrors = new WeakMap<Page, string[]>()
 
+function relativeLuminance(hex: string): number {
+  const channels = [1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16) / 255)
+  const [red, green, blue] = channels.map((channel) =>
+    channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+  )
+  return (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
+}
+
+function contrastRatio(foreground: string, background: string): number {
+  const foregroundLuminance = relativeLuminance(foreground)
+  const backgroundLuminance = relativeLuminance(background)
+  return (
+    (Math.max(foregroundLuminance, backgroundLuminance) + 0.05)
+    / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05)
+  )
+}
+
 async function sampleAmbientMotion(page: Page): Promise<string[]> {
   const probe = page.locator('[data-ambient-motion-probe]')
   await expect(probe).toBeAttached()
@@ -54,6 +71,46 @@ test('renders every supported theme and exposes keyboard-operable primitives', a
 
   await page.getByRole('tab', { name: 'Details' }).click()
   await expect(page.getByRole('tabpanel').getByText('Detail content')).toBeVisible()
+})
+
+test('keeps semantic foregrounds and focus indicators contrast-safe in light theme', async ({ page }) => {
+  const lightTheme = page.locator('section[data-theme="light"]')
+  const tokens = await lightTheme.evaluate((element) => {
+    const styles = getComputedStyle(element)
+    const value = (name: string) => styles.getPropertyValue(name).trim()
+    return {
+      canvas: value('--surface-canvas'),
+      accent: value('--content-accent'),
+      link: value('--content-link'),
+      focus: value('--border-focus'),
+      success: value('--status-success'),
+      warning: value('--status-warning'),
+      avatar: value('--avatar-sand'),
+      onAvatar: value('--content-on-avatar'),
+    }
+  })
+
+  expect(contrastRatio(tokens.accent, tokens.canvas)).toBeGreaterThanOrEqual(4.5)
+  expect(contrastRatio(tokens.link, tokens.canvas)).toBeGreaterThanOrEqual(4.5)
+  expect(contrastRatio(tokens.success, tokens.canvas)).toBeGreaterThanOrEqual(4.5)
+  expect(contrastRatio(tokens.warning, tokens.canvas)).toBeGreaterThanOrEqual(4.5)
+  expect(contrastRatio(tokens.focus, tokens.canvas)).toBeGreaterThanOrEqual(3)
+  expect(contrastRatio(tokens.onAvatar, tokens.avatar)).toBeGreaterThanOrEqual(4.5)
+})
+
+test('renders the command palette as one compact surface', async ({ page }) => {
+  await page.getByRole('button', { name: /Commands/ }).click()
+
+  const dialog = page.getByRole('dialog', { name: 'Command palette' })
+  const input = dialog.getByRole('combobox', { name: 'Command palette' })
+  const listbox = dialog.getByRole('listbox')
+  await expect(dialog).toBeVisible()
+  await expect(input).toBeFocused()
+  await expect(listbox).toBeVisible()
+  await expect(dialog).toHaveCSS('padding', '0px')
+  await expect(input).toHaveCSS('border-top-width', '0px')
+  await expect(listbox).toHaveCSS('position', 'static')
+  await expect(listbox).toHaveCSS('box-shadow', 'none')
 })
 
 test('runs ambient motion when the operating system allows it', async ({ page }) => {

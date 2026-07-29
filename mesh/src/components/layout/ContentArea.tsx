@@ -47,19 +47,56 @@ export function ContentArea() {
 
   useEffect(() => {
     if (!showContext) return
-    const handleEscape = (event: KeyboardEvent) => {
-      if (
-        event.key === 'Escape'
-        && !event.defaultPrevented
-        && typeof window.matchMedia === 'function'
-        && window.matchMedia('(max-width: 1100px)').matches
-      ) {
+    const compact = typeof window.matchMedia === 'function'
+      && window.matchMedia('(max-width: 1100px)').matches
+    if (!compact) return
+    const focusableSelector = [
+      'button:not([disabled])',
+      'a[href]',
+      'input:not([disabled])',
+      'select:not([disabled])',
+      'textarea:not([disabled])',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(',')
+    const contextPanel = document.getElementById('mesh-room-context-panel')
+    const focusFirst = window.requestAnimationFrame(() => {
+      contextPanel?.querySelector<HTMLElement>(focusableSelector)?.focus()
+    })
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) {
+        event.preventDefault()
         closeContext()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const focusable = [...(contextPanel?.querySelectorAll<HTMLElement>(focusableSelector) ?? [])]
+        .filter((element) => !element.hidden && element.getClientRects().length > 0)
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
       }
     }
-    document.addEventListener('keydown', handleEscape)
-    return () => document.removeEventListener('keydown', handleEscape)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.cancelAnimationFrame(focusFirst)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
   }, [closeContext, showContext])
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const media = window.matchMedia('(min-width: 1101px)')
+    const syncToViewport = () => setShowContext(media.matches)
+    syncToViewport()
+    media.addEventListener('change', syncToViewport)
+    return () => media.removeEventListener('change', syncToViewport)
+  }, [])
 
   useEffect(() => {
     if (!activeTextRoomId || !isMatrixBackend()) {
@@ -94,9 +131,9 @@ export function ContentArea() {
     const isFirstCommunity = communityCount === 0
 
     return (
-      <div className="flex min-w-0 flex-1 items-center justify-center px-6 py-8">
-        <div className="max-w-md text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-bg-modifier-hover">
+      <div className="flex min-h-0 min-w-0 flex-1 items-stretch justify-start overflow-y-auto px-4 py-6 sm:items-center sm:justify-center sm:px-6 sm:py-8">
+        <div className="w-full min-w-0 max-w-md text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-panel border border-border-subtle bg-surface-sunken">
             <Icon name="messageCircle" size="lg" className="text-muted" />
           </div>
           <h3 className="mb-1 text-base font-semibold text-primary">
