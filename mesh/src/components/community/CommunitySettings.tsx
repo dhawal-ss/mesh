@@ -257,9 +257,9 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
       >
         <div className="flex min-h-full flex-col">
           {/* Community info card */}
-          <div className="mb-6 rounded-lg border border-border-subtle bg-surface-sunken p-4">
+          <div className="mb-6 rounded-panel border border-border-subtle bg-surface-sunken p-4">
             <div className="mb-3 flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent text-lg font-semibold text-accent-content">
+              <div className="flex h-10 w-10 items-center justify-center rounded-control bg-accent text-lg font-semibold text-accent-content">
                 {community.name[0]?.toUpperCase()}
               </div>
               <div className="min-w-0 flex-1">
@@ -287,7 +287,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
           {isOwnerOrAdmin && (
             <div className="mb-6">
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Overview</h3>
-              <div className="space-y-3 rounded-lg border border-border-subtle bg-surface-sunken p-4">
+              <div className="space-y-3 border-b border-border-subtle pb-5">
                 <Input
                   label="Community Name"
                   value={communityName}
@@ -318,7 +318,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
           {matrixMode && isOwnerOrAdmin && (
             <div className="mb-6">
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Access & Discovery</h3>
-              <div className="space-y-3 rounded-lg border border-border-subtle bg-surface-sunken p-4">
+              <div className="space-y-3 border-b border-border-subtle pb-5">
                 <Input
                   label="Public link"
                   value={communityAlias}
@@ -352,14 +352,14 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
               </div>
 
               {applications.length > 0 && (
-                <div className="mt-3 space-y-2 rounded-lg border border-border-subtle bg-surface-sunken p-4">
+                <div className="mt-3 space-y-2 rounded-panel border border-border-subtle bg-surface-sunken p-4">
                   <h4 className="text-xs font-semibold uppercase tracking-wide text-muted">
                     Applications ({applications.length})
                   </h4>
                   {applications.map((application) => (
                     <div key={application.userId} className="rounded-md bg-surface-hover p-3">
                       <p className="text-sm font-medium text-primary">{application.displayName}</p>
-                      <p className="text-xs text-text-link">{application.userId}</p>
+                      <p className="break-all text-xs text-text-link">{application.userId}</p>
                       {application.reason && (
                         <p className="mt-1 text-xs text-secondary">{application.reason}</p>
                       )}
@@ -390,7 +390,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
                 Custom Emoji
               </h3>
-              <div className="space-y-3 rounded-lg border border-border-subtle bg-surface-sunken p-4">
+              <div className="space-y-3 border-b border-border-subtle pb-5">
                 <p className="text-xs text-muted">
                   Emoji images and names are shared community settings. They are not protected
                   like message text.
@@ -438,7 +438,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                     {serverEmoji.map((emoji) => (
                       <div
                         key={emoji.shortcode}
-                        className="flex min-h-control-md items-center gap-3 rounded-md px-2 hover:bg-bg-modifier-hover"
+                        className="flex min-h-control-md items-center gap-3 rounded-control px-2 hover:bg-surface-hover"
                       >
                         <img
                           src={emoji.imageUrl}
@@ -469,7 +469,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
                 Moderation Activity
               </h3>
-              <div className="space-y-3 rounded-lg border border-border-subtle bg-surface-sunken p-4">
+              <div className="space-y-3 border-b border-border-subtle pb-5">
                 <p className="text-xs text-muted">
                   A protected record of administrator actions across this community.
                 </p>
@@ -561,7 +561,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                     transition={transitions.enter}
                     className="overflow-hidden"
                   >
-                    <div className="space-y-3 rounded-lg border border-border-subtle bg-surface-sunken p-4">
+                    <div className="space-y-3 rounded-panel border border-border-subtle bg-surface-sunken p-4">
                       <Input
                         label="Room Name"
                         value={channelName}
@@ -629,7 +629,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
               <motion.div
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="space-y-3 rounded-lg border border-status-danger/30 bg-status-danger/5 p-4"
+                className="space-y-3 rounded-panel border border-status-danger/30 bg-status-danger/5 p-4"
               >
                 <p className="text-sm text-secondary">
                   {!matrixMode && isOwner ? (

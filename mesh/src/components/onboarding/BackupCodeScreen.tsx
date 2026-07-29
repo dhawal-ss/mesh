@@ -84,7 +84,7 @@ export function BackupCodeScreen({
       <section aria-label="Your backup code" className="space-y-4">
         <output
           aria-label="Backup code"
-          className="block break-all rounded-lg border border-border bg-surface-sunken px-4 py-5 text-center font-mono text-base font-semibold tracking-wide text-content"
+          className="block break-all rounded-panel border border-border-subtle bg-surface-sunken px-4 py-5 text-center font-mono text-base font-semibold tracking-wide text-content"
         >
           {backupCode}
         </output>
@@ -173,7 +173,7 @@ export function BackupCodeScreen({
           </fieldset>
 
           {attempted && !complete && (
-            <p role="alert" className="rounded-md bg-status-danger/10 px-3 py-2 text-sm text-status-danger">
+            <p role="alert" className="rounded-control border border-status-danger/30 bg-status-danger/10 px-3 py-2 text-sm text-status-danger">
               Those parts do not match. Check your saved copy and try again.
             </p>
           )}

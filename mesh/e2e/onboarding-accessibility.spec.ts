@@ -36,10 +36,27 @@ test('@a11y has no automated WCAG A/AA violations on account creation', async ({
 
 test('@a11y has no automated WCAG A/AA violations on sign in', async ({ page }) => {
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Sign in somewhere else' })).toBeVisible()
+  const signInHeading = page.getByRole('heading', { name: 'Sign in somewhere else' })
+  await expect(signInHeading).toBeVisible()
   await waitForAccountScreenMotion(page)
+  await expect(signInHeading).toBeFocused()
 
   await expectNoWcagViolations(page, 'Sign In screen')
+})
+
+test('keeps the primary account actions visible at a compact desktop height', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+
+  const createAccount = page.getByRole('button', { name: 'Create account' })
+  const signIn = page.getByRole('button', { name: 'Sign in', exact: true })
+  await expect(createAccount).toBeVisible()
+  await expect(signIn).toBeVisible()
+
+  const createBounds = await createAccount.boundingBox()
+  const signInBounds = await signIn.boundingBox()
+  expect((createBounds?.y ?? 720) + (createBounds?.height ?? 0)).toBeLessThanOrEqual(720)
+  expect((signInBounds?.y ?? 720) + (signInBounds?.height ?? 0)).toBeLessThanOrEqual(720)
+  expect(await page.locator('main').evaluate((element) => element.scrollHeight <= element.clientHeight)).toBe(true)
 })
 
 test('keeps trust context and account setup usable in a narrow window', async ({ page }) => {
@@ -56,4 +73,21 @@ test('keeps trust context and account setup usable in a narrow window', async ({
   expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(390)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
   await expectNoWcagViolations(page, 'Narrow account setup')
+})
+
+test('keeps the onboarding masthead compact at tablet widths', async ({ page }) => {
+  await page.setViewportSize({ width: 768, height: 1024 })
+  await page.reload()
+
+  const shell = page.locator('[data-onboarding-shell]')
+  const masthead = shell.locator('aside')
+  await expect(shell).toBeVisible()
+  await expect(masthead).toBeVisible()
+
+  const dimensions = await masthead.evaluate((element) => ({
+    width: element.getBoundingClientRect().width,
+    height: element.getBoundingClientRect().height,
+  }))
+  expect(dimensions.width).toBeLessThanOrEqual(768)
+  expect(dimensions.height).toBeLessThan(240)
 })

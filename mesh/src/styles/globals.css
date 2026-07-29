@@ -7,62 +7,72 @@
   font-feature-settings: 'liga' 1, 'calt' 1;
 
   /*
-   * Tier 1 — reference colors. Hex values are the compatibility fallback;
-   * the @supports block below promotes the same palette to native OKLCH.
+   * Tier 1 — reference colors. This palette is intentionally quiet and
+   * neutral: the accent is reserved for identity, focus, and action.
    * Components may consume semantic or component tokens only.
    */
-  --ref-neutral-1: #101013;
-  --ref-neutral-1-rgb: 16 16 19;
-  --ref-neutral-sidebar: #121317;
-  --ref-neutral-sidebar-rgb: 18 19 23;
-  --ref-neutral-2: #17181c;
-  --ref-neutral-2-rgb: 23 24 28;
-  --ref-neutral-3: #202127;
-  --ref-neutral-3-rgb: 32 33 39;
-  --ref-neutral-4: #27292f;
-  --ref-neutral-4-rgb: 39 41 47;
-  --ref-neutral-5: #2e3037;
-  --ref-neutral-5-rgb: 46 48 55;
-  --ref-neutral-6: #373941;
-  --ref-neutral-6-rgb: 55 57 65;
-  --ref-neutral-7: #454751;
-  --ref-neutral-7-rgb: 69 71 81;
-  --ref-neutral-8: #5d606b;
-  --ref-neutral-8-rgb: 93 96 107;
-  --ref-neutral-9: #6b6e79;
-  --ref-neutral-9-rgb: 107 110 121;
-  --ref-neutral-10: #797b86;
-  --ref-neutral-10-rgb: 121 123 134;
-  --ref-neutral-11: #b2b4bb;
-  --ref-neutral-11-rgb: 178 180 187;
-  --ref-neutral-12: #edeef2;
-  --ref-neutral-12-rgb: 237 238 242;
+  --ref-neutral-1: #101113;
+  --ref-neutral-1-rgb: 16 17 19;
+  --ref-neutral-sidebar: #151619;
+  --ref-neutral-sidebar-rgb: 21 22 25;
+  --ref-neutral-2: #1b1c1f;
+  --ref-neutral-2-rgb: 27 28 31;
+  --ref-neutral-3: #202125;
+  --ref-neutral-3-rgb: 32 33 37;
+  --ref-neutral-4: #27292e;
+  --ref-neutral-4-rgb: 39 41 46;
+  --ref-neutral-5: #2e3036;
+  --ref-neutral-5-rgb: 46 48 54;
+  --ref-neutral-6: #383a40;
+  --ref-neutral-6-rgb: 56 58 64;
+  --ref-neutral-7: #4a4d54;
+  --ref-neutral-7-rgb: 74 77 84;
+  --ref-neutral-8: #5a5e65;
+  --ref-neutral-8-rgb: 90 94 101;
+  --ref-neutral-9: #71757c;
+  --ref-neutral-9-rgb: 113 117 124;
+  --ref-neutral-10: #9fa3aa;
+  --ref-neutral-10-rgb: 159 163 170;
+  --ref-neutral-11: #c6c8cc;
+  --ref-neutral-11-rgb: 198 200 204;
+  --ref-neutral-12: #f0f1f2;
+  --ref-neutral-12-rgb: 240 241 242;
 
-  --ref-accent-5: #392e1c;
-  --ref-accent-5-rgb: 57 46 28;
-  --ref-accent-8: #7f6841;
-  --ref-accent-8-rgb: 127 104 65;
-  --ref-accent-9: #c19f66;
-  --ref-accent-9-rgb: 193 159 102;
-  --ref-accent-10: #cfaf79;
-  --ref-accent-10-rgb: 207 175 121;
-  --ref-accent-11: #e3c697;
-  --ref-accent-11-rgb: 227 198 151;
-  --ref-accent-12: #f6e9d5;
-  --ref-accent-12-rgb: 246 233 213;
+  --ref-accent-5: #3d362b;
+  --ref-accent-5-rgb: 61 54 43;
+  --ref-accent-8: #8a754c;
+  --ref-accent-8-rgb: 138 117 76;
+  --ref-accent-9: #d4c0a1;
+  --ref-accent-9-rgb: 212 192 161;
+  --ref-accent-10: #e3d4bb;
+  --ref-accent-10-rgb: 227 212 187;
+  --ref-accent-11: #f1e8db;
+  --ref-accent-11-rgb: 241 232 219;
+  --ref-accent-12: #fbf7f1;
+  --ref-accent-12-rgb: 251 247 241;
 
-  --ref-green-11: #57bd72;
-  --ref-green-11-rgb: 87 189 114;
-  --ref-red-11: #ed756e;
-  --ref-red-11-rgb: 237 117 110;
-  --ref-amber-11: #edb345;
-  --ref-amber-11-rgb: 237 179 69;
-  --ref-blue-11: #52b5f4;
-  --ref-blue-11-rgb: 82 181 244;
-  --ref-presence-online: #5ac576;
-  --ref-presence-online-rgb: 90 197 118;
-  --ref-presence-dnd: #ea6a64;
-  --ref-presence-dnd-rgb: 234 106 100;
+  --ref-green-11: #3dbe72;
+  --ref-green-11-rgb: 61 190 114;
+  --ref-green-light-11: #1f7a45;
+  --ref-green-light-11-rgb: 31 122 69;
+  --ref-red-11: #f06a73;
+  --ref-red-11-rgb: 240 106 115;
+  --ref-red-light-11: #b4232a;
+  --ref-red-light-11-rgb: 180 35 42;
+  --ref-amber-11: #f0b232;
+  --ref-amber-11-rgb: 240 178 50;
+  --ref-amber-light-11: #815900;
+  --ref-amber-light-11-rgb: 129 89 0;
+  --ref-blue-11: #6fafff;
+  --ref-blue-11-rgb: 111 175 255;
+  --ref-blue-light-11: #1f5fae;
+  --ref-blue-light-11-rgb: 31 95 174;
+  --ref-accent-light-11: #6b5636;
+  --ref-accent-light-11-rgb: 107 86 54;
+  --ref-presence-online: #3dbe72;
+  --ref-presence-online-rgb: 61 190 114;
+  --ref-presence-dnd: #d4444c;
+  --ref-presence-dnd-rgb: 212 68 76;
   --ref-black: #000000;
   --ref-black-rgb: 0 0 0;
   --ref-white: #ffffff;
@@ -108,8 +118,8 @@
   --ref-accent-rose-8: #97425d;
   --ref-accent-rose-8-rgb: 151 66 93;
 
-  --ref-avatar-sand: #c19f66;
-  --ref-avatar-sand-rgb: 193 159 102;
+  --ref-avatar-sand: #d4c0a1;
+  --ref-avatar-sand-rgb: 212 192 161;
   --ref-avatar-blue: #60a5fa;
   --ref-avatar-blue-rgb: 96 165 250;
   --ref-avatar-green: #4ade80;
@@ -168,16 +178,23 @@
   --content-disabled: var(--ref-neutral-10);
   --content-link-rgb: var(--ref-blue-11-rgb);
   --content-link: var(--ref-blue-11);
+  --content-accent-rgb: var(--accent-rgb);
+  --content-accent: var(--accent);
   --content-on-accent-rgb: var(--ref-neutral-1-rgb);
   --content-on-accent: var(--ref-neutral-1);
   --content-on-status-rgb: var(--ref-neutral-1-rgb);
   --content-on-status: var(--ref-neutral-1);
+  --content-on-avatar-rgb: var(--ref-neutral-1-rgb);
+  --content-on-avatar: var(--ref-neutral-1);
+  --content-on-media-overlay-rgb: var(--ref-white-rgb);
+  --content-on-media-overlay: var(--ref-white);
   --border-default-rgb: var(--ref-neutral-6-rgb);
   --border-default: var(--ref-neutral-6);
   --border-emphasis-rgb: var(--ref-neutral-7-rgb);
   --border-emphasis: var(--ref-neutral-7);
   --border-subtle: rgb(var(--ref-white-rgb) / 0.06);
   --border-strong: rgb(var(--ref-white-rgb) / 0.1);
+  --border-focus-rgb: var(--ref-accent-11-rgb);
   --border-focus: var(--ref-accent-11);
   --presence-offline-rgb: var(--ref-neutral-9-rgb);
   --presence-offline: var(--ref-neutral-9);
@@ -303,8 +320,8 @@
   --radius-xl: 16px;
   --radius-control: var(--radius-md);
   --radius-panel: var(--radius-lg);
-  --radius-community-rest: 24px;
-  --radius-community-active: 16px;
+  --radius-community-rest: 10px;
+  --radius-community-active: 8px;
   --border-width-status: 3px;
 
   /* Motion reference values */
@@ -334,17 +351,17 @@
   --animation-pulse-soft: pulseSoft 2s var(--motion-ease-move) infinite;
 
   /* Density and component geometry. */
-  --density-row-block: 6px;
+  --density-row-block: 4px;
   --density-control-sm: 32px;
   --density-control-md: 36px;
   --density-control-lg: 44px;
   --density-panel-gap: 16px;
   --density-line-height: var(--line-height-14);
-  --message-gutter: 72px;
-  --message-group-gap: 17px;
-  --empty-state-icon: 68px;
+  --message-gutter: 64px;
+  --message-group-gap: 12px;
+  --empty-state-icon: 56px;
   --community-marker: 4px;
-  --member-list-width: 280px;
+  --member-list-width: 264px;
   --settings-drawer-width: 420px;
   --attachment-name-width: 140px;
   --modal-content-height: 90vh;
@@ -353,10 +370,12 @@
   --context-action-width: calc(100% - 8px);
   --content-error-width: 224px;
   --user-panel-height: 52px;
+  --conversation-header-height: 52px;
   --onboarding-shell-height: calc(100vh - 3rem);
   --onboarding-shell-width: 1040px;
+  --privacy-table-width: 36rem;
   --voice-controls-label-width: 140px;
-  --voice-tile-min-height: 220px;
+  --voice-tile-min-height: 180px;
   --rail-separator-height: 2px;
 
   /* Layering */
@@ -377,35 +396,6 @@
     0 12px 32px -8px rgb(0 0 0 / 0.5);
 }
 
-@supports (color: oklch(50% 0.1 180)) {
-  :root {
-    --ref-neutral-1: oklch(17.5% 0.006 274);
-    --ref-neutral-2: oklch(21% 0.008 274);
-    --ref-neutral-3: oklch(25% 0.01 274);
-    --ref-neutral-4: oklch(28% 0.012 274);
-    --ref-neutral-5: oklch(31% 0.013 274);
-    --ref-neutral-6: oklch(34.5% 0.014 274);
-    --ref-neutral-7: oklch(40% 0.016 274);
-    --ref-neutral-8: oklch(49% 0.018 274);
-    --ref-neutral-9: oklch(54% 0.017 274);
-    --ref-neutral-10: oklch(58.5% 0.016 274);
-    --ref-neutral-11: oklch(77% 0.011 274);
-    --ref-neutral-12: oklch(95% 0.005 274);
-    --ref-accent-5: oklch(31% 0.034 80);
-    --ref-accent-8: oklch(53% 0.062 80);
-    --ref-accent-9: oklch(72% 0.085 80);
-    --ref-accent-10: oklch(77% 0.08 80);
-    --ref-accent-11: oklch(84% 0.07 80);
-    --ref-accent-12: oklch(94% 0.03 80);
-    --ref-green-11: oklch(72% 0.145 150);
-    --ref-red-11: oklch(70% 0.15 25);
-    --ref-amber-11: oklch(80% 0.14 80);
-    --ref-blue-11: oklch(74% 0.13 240);
-    --ref-presence-online: oklch(74% 0.15 150);
-    --ref-presence-dnd: oklch(68% 0.16 25);
-  }
-}
-
 :root[data-theme='dark'],
 [data-theme='dark'] {
   color-scheme: dark;
@@ -414,6 +404,10 @@
 :root[data-theme='light'],
 [data-theme='light'] {
   color-scheme: light;
+  --surface-canvas-rgb: var(--ref-light-canvas-rgb);
+  --surface-canvas: var(--ref-light-canvas);
+  --surface-rail-rgb: var(--ref-light-rail-rgb);
+  --surface-rail: var(--ref-light-rail);
   --surface-sunken-rgb: var(--ref-light-rail-rgb);
   --surface-sunken: var(--ref-light-rail);
   --surface-sidebar-rgb: var(--ref-light-rail-rgb);
@@ -428,6 +422,8 @@
   --surface-hover: var(--ref-light-hover);
   --surface-active-rgb: var(--ref-light-active-rgb);
   --surface-active: var(--ref-light-active);
+  --surface-selected-rgb: var(--ref-light-hover-rgb);
+  --surface-selected: var(--ref-light-hover);
   --content-normal-rgb: var(--ref-neutral-2-rgb);
   --content-normal: var(--ref-neutral-2);
   --content-primary-rgb: var(--ref-neutral-2-rgb);
@@ -436,12 +432,32 @@
   --content-secondary: var(--ref-neutral-7);
   --content-muted-rgb: var(--ref-neutral-8-rgb);
   --content-muted: var(--ref-neutral-8);
+  --content-link-rgb: var(--ref-blue-light-11-rgb);
+  --content-link: var(--ref-blue-light-11);
   --border-default-rgb: var(--ref-neutral-11-rgb);
   --border-default: var(--ref-neutral-11);
   --border-emphasis-rgb: var(--ref-neutral-8-rgb);
   --border-emphasis: var(--ref-neutral-8);
+  --border-subtle: rgb(var(--ref-neutral-2-rgb) / 0.12);
+  --border-strong: rgb(var(--ref-neutral-2-rgb) / 0.18);
   --content-on-status-rgb: var(--ref-white-rgb);
   --content-on-status: var(--ref-white);
+  --content-accent-rgb: var(--ref-accent-light-11-rgb);
+  --content-accent: var(--ref-accent-light-11);
+  --border-focus-rgb: var(--ref-accent-light-11-rgb);
+  --border-focus: var(--ref-accent-light-11);
+  --status-success-rgb: var(--ref-green-light-11-rgb);
+  --status-success: var(--ref-green-light-11);
+  --status-danger-rgb: var(--ref-red-light-11-rgb);
+  --status-danger: var(--ref-red-light-11);
+  --status-warning-rgb: var(--ref-amber-light-11-rgb);
+  --status-warning: var(--ref-amber-light-11);
+  --status-info-rgb: var(--ref-blue-light-11-rgb);
+  --status-info: var(--ref-blue-light-11);
+  --elev-overlay:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.8),
+    0 0 0 1px rgb(var(--ref-neutral-2-rgb) / 0.06),
+    0 12px 32px -8px rgb(var(--ref-neutral-2-rgb) / 0.18);
 }
 
 :root[data-theme='high-contrast'],
@@ -475,6 +491,8 @@
   --border-default: var(--ref-white);
   --border-emphasis-rgb: var(--ref-white-rgb);
   --border-emphasis: var(--ref-white);
+  --border-subtle: rgb(var(--ref-white-rgb) / 0.42);
+  --border-strong: rgb(var(--ref-white-rgb) / 0.72);
   --content-on-accent-rgb: var(--ref-black-rgb);
   --content-on-accent: var(--ref-black);
   /* Keep initials readable when high contrast switches avatar text to black. */
@@ -561,13 +579,13 @@
 }
 
 :root[data-density='default'] {
-  --density-row-block: 6px;
+  --density-row-block: 4px;
   --density-control-sm: 32px;
   --density-control-md: 36px;
   --density-control-lg: 44px;
   --density-panel-gap: 16px;
   --density-line-height: var(--line-height-14);
-  --message-group-gap: 17px;
+  --message-group-gap: 12px;
 }
 
 :root[data-density='comfortable'] {
@@ -679,7 +697,13 @@ textarea {
 
 :focus-visible {
   outline: 2px solid var(--border-focus);
+  outline-color: var(--border-focus) !important;
   outline-offset: 2px;
+}
+
+/* Text uses a contrast-safe semantic foreground while action fills retain the selected accent. */
+.text-accent {
+  color: rgb(var(--content-accent-rgb) / var(--tw-text-opacity, 1)) !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -719,11 +743,11 @@ textarea {
 }
 
 .mesh-community-rail {
-  width: 64px;
+  width: 56px;
 }
 
 .mesh-context-sidebar {
-  width: 240px;
+  width: 220px;
 }
 
 .mesh-compact-header,
@@ -733,7 +757,8 @@ textarea {
 }
 
 .mesh-conversation-header {
-  min-height: 60px;
+  min-height: 52px;
+  background: var(--surface-canvas);
 }
 
 .mesh-channel-active {
@@ -744,8 +769,55 @@ textarea {
   width: min(24rem, calc(100vw - 4rem));
 }
 
+.mesh-reaction-picker {
+  max-width: min(32rem, calc(100vw - 1rem));
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.mesh-voice-controls {
+  max-height: min(22rem, 45vh);
+  overflow-y: auto;
+}
+
+.mesh-voice-peer-grid {
+  container-type: inline-size;
+}
+
 .mesh-dm-trust-popover {
   width: min(20rem, calc(100vw - 1rem));
+}
+
+.mesh-command-combobox {
+  position: static;
+}
+
+.mesh-command-combobox > label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.mesh-command-combobox > input {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 14px 16px;
+}
+
+.mesh-command-combobox > [role='listbox'] {
+  position: static;
+  max-height: 20rem;
+  margin-top: 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 @media (max-width: 1100px) {
@@ -765,7 +837,7 @@ textarea {
 
   .mesh-room-context-backdrop {
     position: fixed;
-    inset: 0 0 0 64px;
+    inset: 0 0 0 56px;
     z-index: 43;
     display: block;
     border: 0;
@@ -776,11 +848,11 @@ textarea {
 
 @media (max-width: 999px) {
   .mesh-community-rail {
-    width: 60px;
+    width: 56px;
   }
 
   .mesh-context-sidebar {
-    width: 220px;
+    width: 216px;
   }
 
   .mesh-room-context-panel {
@@ -788,7 +860,7 @@ textarea {
   }
 
   .mesh-room-context-backdrop {
-    left: 60px;
+    left: 56px;
   }
 }
 
@@ -796,21 +868,28 @@ textarea {
   .mesh-context-sidebar {
     position: fixed;
     inset-block: 0;
-    left: 60px;
+    left: 56px;
     z-index: 45;
-    width: min(280px, calc(100vw - 60px));
+    width: min(280px, calc(100vw - 56px));
     box-shadow: var(--elev-overlay);
     transform: translateX(-110%);
     transition: transform var(--transition-normal);
   }
 
+  .mesh-context-sidebar[data-open='false'] {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
   .mesh-context-sidebar[data-open='true'] {
+    visibility: visible;
+    pointer-events: auto;
     transform: translateX(0);
   }
 
   .mesh-nav-backdrop {
     position: fixed;
-    inset: 0 0 0 60px;
+    inset: 0;
     z-index: 40;
     display: block;
     border: 0;
@@ -829,6 +908,31 @@ textarea {
     padding: 0 10px;
     background: var(--bg-primary);
   }
+
+  .mesh-network-label {
+    display: none;
+  }
+}
+
+@media (max-width: 639px) {
+  .mesh-voice-peer-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 12px;
+    padding: 12px;
+  }
+}
+
+@media (hover: none) {
+  .mesh-participant-volume {
+    opacity: 1;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .mesh-message-actions {
+    pointer-events: auto;
+    opacity: 1;
+  }
 }
 
 @media (max-width: 420px) {
@@ -842,7 +946,7 @@ textarea {
   }
 
   .mesh-nav-backdrop {
-    left: 56px;
+    left: 0;
   }
 
   .mesh-room-context-panel {

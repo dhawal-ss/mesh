@@ -41,12 +41,12 @@ export function RoomTrustSummary({
     >
       <button
         type="button"
-        className={`mesh-trust-summary flex min-h-8 max-w-full items-center gap-1.5 rounded-md px-2 text-caption font-medium transition-colors ${
+        className={`mesh-trust-summary flex min-h-8 max-w-full items-center gap-1.5 rounded-control px-2 text-caption font-medium transition-colors ${
           trust.protection === 'protected'
             ? 'bg-status-success/10 text-status-success hover:bg-status-success/20'
             : trust.protection === 'blocked'
               ? 'bg-status-warning/10 text-status-warning hover:bg-status-warning/20'
-              : 'bg-bg-modifier-hover text-muted hover:bg-bg-modifier-active hover:text-secondary'
+              : 'bg-surface-hover text-muted hover:bg-surface-active hover:text-secondary'
         }`}
         aria-label={`${parts.join(', ')}. Open room ledger.`}
         onClick={() => onOpenContext('ledger')}

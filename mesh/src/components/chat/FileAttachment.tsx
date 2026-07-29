@@ -43,62 +43,68 @@ export function FileAttachmentPreview({
             const transfer = file.transferId ? transfers[file.transferId] : undefined
             const transferActive = transfer && !['completed', 'cancelled', 'failed'].includes(transfer.state)
             const transferCancellable = transfer && ['queued', 'encrypting', 'uploading'].includes(transfer.state)
+            const transferFailed = transfer?.state === 'failed'
             const progressPercent = transfer?.totalBytes
               ? Math.min(100, Math.round((transfer.transferredBytes / transfer.totalBytes) * 100))
               : 0
             return (
-            <motion.div
-              key={`${file.grant}-${i}`}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="group relative flex items-center gap-2 rounded-control border border-border-subtle bg-surface-hover px-3 py-2 pr-8"
-            >
-              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-surface-active text-muted">
-                <FileIcon filename={file.name} />
-              </div>
-              <div className="min-w-0">
-                <p className="max-w-attachment-name truncate text-xs font-medium text-primary">
-                  {file.name}
-                </p>
-                <p className="file-size text-caption text-muted">
-                  {transfer
-                    ? transfer.state === 'failed' || transfer.state === 'cancelled'
-                      ? `${transfer.error ?? 'Transfer stopped'} Retry restarts from zero.`
-                      : `${transfer.state} · ${progressPercent}%`
-                    : file.size === null
-                      ? 'Size checked securely when sent'
-                      : formatSize(file.size)}
-                </p>
-                {transferActive && (
-                  <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-active">
-                    <div
-                      className="h-full rounded-full bg-accent transition-[width] duration-normal"
-                      data-design-token-exception="data-driven-transfer-progress-width"
-                      style={{ width: `${progressPercent}%` }}
-                    />
-                  </div>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (transferCancellable && file.transferId) onCancelTransfer?.(file.transferId)
-                  else onRemove(i)
-                }}
-                disabled={Boolean(transferActive && !transferCancellable)}
-                aria-label={
-                  transferCancellable
-                    ? `Cancel upload of ${file.name}`
-                    : transferActive
-                      ? `Publishing ${file.name}`
-                      : `Remove ${file.name}`
-                }
-                className="absolute right-1.5 top-1.5 flex h-8 w-8 items-center justify-center rounded-full bg-surface-hover text-muted transition-colors hover:bg-surface-active hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              <motion.div
+                key={`${file.grant}-${i}`}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className="group relative flex items-center gap-2 rounded-control border border-border-subtle bg-surface-hover px-3 py-2 pr-8"
               >
-                <Icon name="x" size="xs" />
-              </button>
-            </motion.div>
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-control bg-surface-active text-muted">
+                  <FileIcon filename={file.name} />
+                </div>
+                <div className="min-w-0">
+                  <p className="max-w-attachment-name truncate text-xs font-medium text-primary">{file.name}</p>
+                  {transferFailed ? (
+                    <p role="alert" className="file-size flex items-start gap-1 text-caption text-status-danger">
+                      <Icon name="triangleAlert" size="xs" className="mt-px flex-shrink-0" />
+                      <span>{transfer.error ?? 'Upload failed'} Retry restarts from zero.</span>
+                    </p>
+                  ) : (
+                    <p className="file-size text-caption text-muted">
+                      {transfer
+                        ? transfer.state === 'cancelled'
+                          ? `${transfer.error ?? 'Transfer cancelled'} Retry restarts from zero.`
+                          : `${transfer.state} · ${progressPercent}%`
+                        : file.size === null
+                          ? 'Size checked securely when sent'
+                          : formatSize(file.size)}
+                    </p>
+                  )}
+                  {transferActive && (
+                    <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-active">
+                      <div
+                        className="h-full rounded-full bg-accent transition-[width] duration-normal"
+                        data-design-token-exception="data-driven-transfer-progress-width"
+                        style={{ width: `${progressPercent}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (transferCancellable && file.transferId) onCancelTransfer?.(file.transferId)
+                    else onRemove(i)
+                  }}
+                  disabled={Boolean(transferActive && !transferCancellable)}
+                  aria-label={
+                    transferCancellable
+                      ? `Cancel upload of ${file.name}`
+                      : transferActive
+                        ? `Publishing ${file.name}`
+                        : `Remove ${file.name}`
+                  }
+                  className="absolute right-1.5 top-1.5 flex h-8 w-8 items-center justify-center rounded-control bg-surface-hover text-muted transition-colors hover:bg-surface-active hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  <Icon name="x" size="xs" />
+                </button>
+              </motion.div>
             )
           })}
         </AnimatePresence>

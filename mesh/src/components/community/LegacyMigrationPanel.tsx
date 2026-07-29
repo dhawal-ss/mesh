@@ -174,7 +174,7 @@ export function LegacyMigrationPanel({
       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
         Legacy archive migration
       </h3>
-      <div className="space-y-3 rounded-lg bg-bg-primary p-4">
+      <div className="space-y-4">
         {!matrixMode ? (
           <>
             <p className="text-xs text-muted">
@@ -220,7 +220,7 @@ export function LegacyMigrationPanel({
                 <select
                   value={legacyCommunityId}
                   onChange={(event) => setLegacyCommunityId(event.target.value)}
-                  className="w-full rounded-md bg-bg-tertiary px-3 py-2.5 text-sm text-primary focus:outline-none"
+                  className="w-full rounded-control border border-border bg-surface-sunken px-3 py-2.5 text-sm text-primary focus:border-accent focus:outline-none"
                 >
                   {archivedCommunities.map((community) => (
                     <option key={community.id} value={community.id}>
@@ -245,7 +245,7 @@ export function LegacyMigrationPanel({
                     }))
                     setReport(null)
                   }}
-                  className="w-full rounded-md bg-bg-tertiary px-3 py-2.5 text-sm text-primary focus:outline-none"
+                  className="w-full rounded-control border border-border bg-surface-sunken px-3 py-2.5 text-sm text-primary focus:border-accent focus:outline-none"
                 >
                   <option value="">Choose a Matrix room…</option>
                   {targetChannels.map((channel) => (
@@ -262,19 +262,19 @@ export function LegacyMigrationPanel({
             )}
 
             {report && (
-              <div className="space-y-3 rounded-md bg-bg-tertiary p-3">
+              <div className="space-y-3 rounded-panel border border-border-subtle bg-surface-raised p-3">
                 <p className="text-xs text-secondary">
                   {report.peerCount} peer{report.peerCount === 1 ? '' : 's'} · {report.recordGroupCount} records · {report.variantCount} variants
                 </p>
                 {report.errors.map((message) => (
-                  <p key={message} className="text-xs text-red">{message}</p>
+                  <p key={message} className="text-xs text-status-danger">{message}</p>
                 ))}
                 {report.warnings.map((message) => (
-                  <p key={message} className="text-xs text-yellow">{message}</p>
+                  <p key={message} className="text-xs text-status-warning">{message}</p>
                 ))}
 
                 {report.conflicts.map((conflict) => (
-                  <fieldset key={conflict.conflictKey} className="rounded border border-border-subtle p-2">
+                  <fieldset key={conflict.conflictKey} className="rounded-panel border border-border-subtle p-2">
                     <legend className="px-1 text-xs font-semibold text-primary">
                       {conflict.kind} · {conflict.entityId}
                     </legend>
@@ -330,7 +330,7 @@ export function LegacyMigrationPanel({
         )}
 
         {status && <p className="break-words text-xs text-secondary">{status}</p>}
-        {error && <p className="text-xs text-red">{error}</p>}
+        {error && <p className="text-xs text-status-danger">{error}</p>}
       </div>
     </div>
   )

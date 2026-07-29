@@ -368,6 +368,29 @@ describe('ChatView channel switching', () => {
     expect(container.textContent).toContain('Second')
   })
 
+  it('uses the shared accessible empty state for a new room', async () => {
+    const activeChannel = channel('channel-a', 'alpha')
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(false)
+    vi.spyOn(bridge, 'getMessages').mockResolvedValue([])
+    vi.spyOn(bridge, 'requestMessageHistory').mockResolvedValue(undefined)
+    vi.spyOn(bridge, 'markChannelRead').mockResolvedValue(undefined)
+    vi.spyOn(bridge, 'onMessageReceived').mockResolvedValue(() => {})
+
+    await act(async () => {
+      root.render(<ChatView channel={activeChannel} />)
+      await flushAsyncWork()
+    })
+
+    const emptyState = container.querySelector('section')
+    const title = emptyState?.querySelector('h3')
+    const description = emptyState?.querySelector('p')
+    expect(title?.textContent).toBe('Welcome to #alpha')
+    expect(description?.textContent).toBe('This is the start of the #alpha channel.')
+    expect(emptyState?.getAttribute('aria-labelledby')).toBe(title?.id)
+    expect(emptyState?.getAttribute('aria-describedby')).toBe(description?.id)
+    expect(emptyState?.querySelector('.border-dashed')).toBeNull()
+  })
+
   it('accepts one durable Matrix echo and retries or cancels it in place', async () => {
     const activeChannel = channel('!channel:example.org', 'private')
     const send = deferred<Message>()

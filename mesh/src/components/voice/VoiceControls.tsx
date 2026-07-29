@@ -6,6 +6,8 @@ import { Tooltip } from '../ui/Tooltip'
 import { transitions } from '../../lib/motion'
 import { Icon } from '../ui/Icon'
 import { voiceConnectionLabel } from '../../lib/voice-runtime'
+import { Popover } from '../ui/InteractivePrimitives'
+import { IconButton } from '../ui/IconButton'
 
 interface VoiceControlsProps {
   devices: VoiceDevice[]
@@ -94,32 +96,15 @@ export function VoiceControls({
       initial={{ y: 20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={transitions.move}
-      className="flex max-w-5xl flex-col gap-3 rounded-lg bg-bg-secondary px-4 py-3 shadow-overlay"
+      className="mesh-voice-controls flex max-w-full flex-col items-center gap-2"
       aria-label="Voice controls"
     >
-      <div className="flex items-center gap-3">
-        <div className="flex min-w-voice-label flex-col">
-          <span className="text-meta uppercase tracking-control text-muted">{connectionLabel}</span>
-          <span className="text-xs text-secondary">
-            {connectionState}
-            {lastReconnectReason ? ` · ${lastReconnectReason}` : ''}
-          </span>
-        </div>
+      <span className="sr-only" role="status">
+        {connectionLabel}
+        {lastReconnectReason ? `. ${lastReconnectReason}` : ''}
+      </span>
 
-        <label className="flex flex-col gap-1 text-meta text-muted">
-          Talk mode
-          <select
-            value={inputMode}
-            onChange={(event) =>
-              setInputMode(event.target.value as 'voice-activity' | 'push-to-talk')
-            }
-            className="h-9 rounded-md border border-border bg-bg-primary px-2 text-xs text-primary"
-          >
-            <option value="voice-activity">Voice activity</option>
-            <option value="push-to-talk">Push to talk</option>
-          </select>
-        </label>
-
+      <div className="flex max-w-full items-center gap-1.5 rounded-full border border-border-subtle bg-surface-sidebar p-1.5">
         <Tooltip
           content={
             inputMode === 'push-to-talk'
@@ -166,7 +151,7 @@ export function VoiceControls({
             className={`flex h-11 w-11 items-center justify-center rounded-full transition-colors ${
               isMuted && !isPushToTalking
                 ? 'bg-status-warning text-content-on-status'
-                : 'bg-bg-modifier-hover text-primary hover:bg-bg-modifier-active'
+                : 'bg-surface-hover text-primary hover:bg-surface-active'
             }`}
           >
             <Icon name={isMuted && !isPushToTalking ? 'micOff' : 'mic'} />
@@ -182,7 +167,7 @@ export function VoiceControls({
             className={`flex h-11 w-11 items-center justify-center rounded-full transition-colors ${
               isDeafened
                 ? 'bg-status-warning text-content-on-status'
-                : 'bg-bg-modifier-hover text-primary hover:bg-bg-modifier-active'
+                : 'bg-surface-hover text-primary hover:bg-surface-active'
             }`}
           >
             <Icon name={isDeafened ? 'headphoneOff' : 'headphones'} />
@@ -198,7 +183,7 @@ export function VoiceControls({
             className={`flex h-11 w-11 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
               isCameraEnabled
                 ? 'bg-accent text-content-on-accent'
-                : 'bg-bg-modifier-hover text-primary hover:bg-bg-modifier-active'
+                : 'bg-surface-hover text-primary hover:bg-surface-active'
             }`}
           >
             <Icon name="image" />
@@ -214,14 +199,86 @@ export function VoiceControls({
             className={`flex h-11 w-11 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
               isScreenSharing
                 ? 'bg-accent text-content-on-accent'
-                : 'bg-bg-modifier-hover text-primary hover:bg-bg-modifier-active'
+                : 'bg-surface-hover text-primary hover:bg-surface-active'
             }`}
           >
             <Icon name="upload" />
           </button>
         </Tooltip>
 
-        <div className="mx-1 h-6 w-px bg-border" />
+        <Popover
+          trigger={
+            <IconButton
+              size="lg"
+              aria-label="Open voice settings"
+              className="h-11 w-11 rounded-full bg-surface-hover text-primary hover:bg-surface-active"
+            >
+              <Icon name="settings" />
+            </IconButton>
+          }
+          label="Voice settings"
+          description="Choose how Mesh captures and plays call audio."
+          side="top"
+          align="center"
+          className="w-72 p-3"
+        >
+          <div className="space-y-3">
+            <label className="flex flex-col gap-1 text-meta text-muted">
+              Talk mode
+              <select
+                value={inputMode}
+                onChange={(event) =>
+                  setInputMode(event.target.value as 'voice-activity' | 'push-to-talk')
+                }
+                className="h-control-md rounded-control border border-border bg-surface-sunken px-2 text-xs text-primary outline-none focus:border-accent"
+              >
+                <option value="voice-activity">Voice activity</option>
+                <option value="push-to-talk">Push to talk</option>
+              </select>
+            </label>
+
+            <div className="h-px bg-border-subtle" aria-hidden="true" />
+
+            <DeviceSelect
+              label="Microphone"
+              value={inputDeviceId}
+              devices={inputs}
+              unavailableLabel="No microphone found"
+              onChange={(deviceId) => void changeDevice('input', deviceId)}
+            />
+            <DeviceSelect
+              label="Speaker"
+              value={outputDeviceId}
+              devices={outputs}
+              unavailableLabel="System default output"
+              onChange={(deviceId) => void changeDevice('output', deviceId)}
+            />
+
+            <div className="space-y-1">
+              <span className="text-meta text-muted">Input level</span>
+              <div
+                className="h-1.5 overflow-hidden rounded-full bg-surface-sunken"
+                role="meter"
+                aria-label="Microphone input level"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(localAudioLevel * 100)}
+              >
+                <div
+                  className="h-full rounded-full bg-accent transition-[width] duration-100"
+                  data-design-token-exception="Live microphone level determines meter width."
+                  style={{ width: `${Math.max(2, localAudioLevel * 100)}%` }}
+                />
+              </div>
+            </div>
+
+            {inputMode === 'push-to-talk' && (
+              <p className="text-meta text-muted">Hold Space while this view is focused to talk.</p>
+            )}
+          </div>
+        </Popover>
+
+        <div className="mx-0.5 h-6 w-px bg-border-subtle" aria-hidden="true" />
 
         <Tooltip content="Disconnect" side="top">
           <motion.button
@@ -236,43 +293,6 @@ export function VoiceControls({
         </Tooltip>
       </div>
 
-      <div className="grid grid-cols-[minmax(10rem,1fr)_minmax(10rem,1fr)_7rem] items-end gap-3">
-        <DeviceSelect
-          label="Microphone"
-          value={inputDeviceId}
-          devices={inputs}
-          unavailableLabel="No microphone found"
-          onChange={(deviceId) => void changeDevice('input', deviceId)}
-        />
-        <DeviceSelect
-          label="Speaker"
-          value={outputDeviceId}
-          devices={outputs}
-          unavailableLabel="System default output"
-          onChange={(deviceId) => void changeDevice('output', deviceId)}
-        />
-        <div className="space-y-1">
-          <span className="text-meta text-muted">Input level</span>
-          <div
-            className="h-2 overflow-hidden rounded-full bg-bg-primary"
-            role="meter"
-            aria-label="Microphone input level"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(localAudioLevel * 100)}
-          >
-            <div
-              className="h-full rounded-full bg-accent transition-[width] duration-100"
-              data-design-token-exception="Live microphone level determines meter width."
-              style={{ width: `${Math.max(2, localAudioLevel * 100)}%` }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {inputMode === 'push-to-talk' && (
-        <p className="text-meta text-muted">Hold Space while this view is focused to talk.</p>
-      )}
       {controlError && (
         <p className="text-meta text-status-danger" role="alert">
           {controlError}
@@ -302,7 +322,7 @@ function DeviceSelect({
         value={value ?? ''}
         disabled={devices.length === 0}
         onChange={(event) => onChange(event.target.value)}
-        className="h-9 min-w-0 rounded-md border border-border bg-bg-primary px-2 text-xs text-primary disabled:opacity-60"
+        className="h-control-md min-w-0 rounded-control border border-border bg-surface-sunken px-2 text-xs text-primary outline-none focus:border-accent disabled:opacity-60"
       >
         <option value="">{devices.length === 0 ? unavailableLabel : `Default ${label.toLowerCase()}`}</option>
         {devices.map((device) => (

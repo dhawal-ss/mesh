@@ -15,6 +15,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     const generatedId = useId()
     const inputId = id ?? generatedId
     const supportingTextId = `${inputId}-supporting`
+    const descriptionIds = [describedBy, error || hint ? supportingTextId : undefined]
+      .filter(Boolean)
+      .join(' ') || undefined
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       if (!onChange) return
       if (onChange.length <= 1) {
@@ -40,7 +43,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           id={inputId}
           onChange={handleChange}
           aria-invalid={error ? true : undefined}
-          aria-describedby={error || hint ? supportingTextId : describedBy}
+          aria-describedby={descriptionIds}
           className={clsx(
             'w-full rounded-md border border-border bg-surface-sunken text-content placeholder:text-content-muted',
             'transition-colors duration-fast focus:border-accent focus:outline-none',

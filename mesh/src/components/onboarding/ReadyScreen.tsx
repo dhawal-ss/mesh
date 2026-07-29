@@ -103,7 +103,7 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
       </div>
 
       <motion.div
-        className="space-y-5 rounded-lg bg-bg-primary p-5"
+        className="space-y-5 rounded-panel border border-border-subtle bg-surface-sunken p-5"
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={transitions.enter}
@@ -121,7 +121,7 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
           </div>
         </div>
 
-        <div className="h-1 overflow-hidden rounded-full bg-bg-modifier-hover">
+        <div className="h-1 overflow-hidden rounded-full bg-surface-hover">
           <motion.div
             className="h-full w-full origin-left rounded-full bg-accent"
             animate={{ scaleX: Math.max(12, state.progress) / 100 }}
@@ -136,7 +136,7 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
           ).map((item, index) => (
             <motion.div
               key={item}
-              className="flex items-center justify-between rounded-md bg-bg-modifier-hover px-3 py-2"
+              className="flex items-center justify-between rounded-control bg-surface-hover px-3 py-2"
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ ...transitions.enter, delay: index * motionDurations.staggerFast }}

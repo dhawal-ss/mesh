@@ -58,6 +58,7 @@ export function CreateCommunityModal({
   const [communityIcon, setCommunityIcon] = useState<(typeof SERVER_ICONS)[number]>('🌟')
   const [serverTemplate, setServerTemplate] = useState<ServerTemplate>('friends')
   const [createStep, setCreateStep] = useState<1 | 2>(1)
+  const [createError, setCreateError] = useState<unknown | null>(null)
 
   const [inviteLink, setInviteLink] = useState('')
   const [joinError, setJoinError] = useState<unknown | null>(null)
@@ -84,6 +85,7 @@ export function CreateCommunityModal({
     setCommunityIcon('🌟')
     setServerTemplate('friends')
     setCreateStep(1)
+    setCreateError(null)
     setInviteLink('')
     setJoinError(null)
     setDirectoryQuery('')
@@ -103,6 +105,7 @@ export function CreateCommunityModal({
   const handleCreate = async () => {
     if (!communityName.trim()) return
     setIsLoading(true)
+    setCreateError(null)
     try {
       const community = await bridge.createCommunity(
         `${communityIcon} ${communityName.trim()}`,
@@ -122,6 +125,7 @@ export function CreateCommunityModal({
       setChannels(channels)
       handleClose()
     } catch (err) {
+      setCreateError(err)
       console.error('Failed to create community:', err)
     }
     setIsLoading(false)
@@ -202,11 +206,29 @@ export function CreateCommunityModal({
     }
   }
 
+  const modalTitle = tab === 'create'
+    ? 'Create a community'
+    : tab === 'join'
+      ? 'Join a community'
+      : 'Discover communities'
+  const modalDescription = tab === 'create'
+    ? 'Start a focused space for the people you talk with.'
+    : tab === 'join'
+      ? matrixMode
+        ? 'Paste the invite you received.'
+        : 'Paste the invite link you received.'
+      : 'Search the public community directory. New members may need approval.'
+
   return (
-    <Modal open={isOpen} onClose={handleClose}>
+    <Modal
+      open={isOpen}
+      onClose={handleClose}
+      title={modalTitle}
+      description={modalDescription}
+    >
       <div>
         {/* Tab switcher */}
-        <div className="mb-5 flex rounded-md bg-bg-tertiary p-1">
+        <div className="mb-5 flex rounded-control bg-surface-hover p-1">
           {tabs.map((t) => (
             <button
               key={t}
@@ -218,7 +240,7 @@ export function CreateCommunityModal({
               {tab === t && (
                 <motion.div
                   layoutId="tab-indicator"
-                  className="absolute inset-0 rounded-md bg-bg-modifier-active"
+                  className="absolute inset-0 rounded-control bg-surface-active"
                   transition={transitions.enter}
                 />
               )}
@@ -238,7 +260,6 @@ export function CreateCommunityModal({
               exit={{ opacity: 0, x: 8 }}
               transition={transitions.enter}
             >
-              <h2 className="mb-1 text-base font-semibold text-primary">Create a Community</h2>
               <p className="mb-4 text-xs text-muted">
                 Step {createStep} of 2 · {createStep === 1 ? 'Name and icon' : 'Choose a starting layout'}
               </p>
@@ -248,7 +269,10 @@ export function CreateCommunityModal({
                   <Input
                     label="Community Name"
                     value={communityName}
-                    onChange={setCommunityName}
+                    onChange={(value: string) => {
+                      setCommunityName(value)
+                      setCreateError(null)
+                    }}
                     onKeyDown={handleKeyDown}
                     placeholder="e.g. Design Club"
                     autoFocus
@@ -265,7 +289,7 @@ export function CreateCommunityModal({
                           className={`flex h-10 w-10 items-center justify-center rounded-md text-lg ${
                             communityIcon === icon
                               ? 'bg-accent ring-2 ring-accent'
-                              : 'bg-bg-tertiary hover:bg-bg-modifier-hover'
+                               : 'bg-surface-hover hover:bg-surface-active'
                           }`}
                           aria-label={`Use ${icon} as the community icon`}
                           aria-pressed={communityIcon === icon}
@@ -286,7 +310,7 @@ export function CreateCommunityModal({
                       onKeyDown={handleKeyDown}
                       placeholder="What's this community about?"
                       rows={2}
-                      className="w-full resize-none rounded-md bg-bg-tertiary px-3 py-2 text-sm text-primary placeholder:text-muted focus:outline-none"
+                      className="w-full resize-none rounded-control border border-border bg-surface-sunken px-3 py-2 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                     />
                   </div>
                 </div>
@@ -299,10 +323,10 @@ export function CreateCommunityModal({
                     <button
                       key={value}
                       type="button"
-                      className={`w-full rounded-lg border p-3 text-left ${
+                      className={`w-full rounded-panel border p-3 text-left ${
                         serverTemplate === value
                           ? 'border-accent bg-accent/10'
-                          : 'border-border-subtle bg-bg-tertiary hover:bg-bg-modifier-hover'
+                          : 'border-border-subtle bg-surface-hover hover:bg-surface-active'
                       }`}
                       aria-pressed={serverTemplate === value}
                       onClick={() => setServerTemplate(value)}
@@ -312,6 +336,16 @@ export function CreateCommunityModal({
                     </button>
                   ))}
                 </fieldset>
+              )}
+
+              {createError != null && (
+                <ErrorState
+                  error={createError}
+                  context={{ operation: 'create this community', resource: 'community' }}
+                  onAction={handleCreate}
+                  className="mt-3"
+                  compact
+                />
               )}
 
               <div className="mt-4 flex gap-2">
@@ -340,13 +374,6 @@ export function CreateCommunityModal({
               exit={{ opacity: 0, x: -8 }}
               transition={transitions.enter}
             >
-              <h2 className="mb-1 text-base font-semibold text-primary">Join a Community</h2>
-              <p className="mb-4 text-xs text-muted">
-                {matrixMode
-                  ? 'Paste the invite you received.'
-                  : 'Paste the invite link you received.'}
-              </p>
-
               <Input
                 label="Invite code or link"
                 value={inviteLink}
@@ -385,11 +412,6 @@ export function CreateCommunityModal({
               exit={{ opacity: 0, x: -8 }}
               transition={transitions.enter}
             >
-              <h2 className="mb-1 text-base font-semibold text-primary">Discover Communities</h2>
-              <p className="mb-4 text-xs text-muted">
-                Search the public community directory. New members may need approval to join.
-              </p>
-
               <div className="space-y-3">
                 <Input
                   label="Search"
@@ -414,7 +436,7 @@ export function CreateCommunityModal({
                     value={applicationReason}
                     onChange={(event) => setApplicationReason(event.target.value)}
                     rows={2}
-                    className="w-full resize-none rounded-md bg-bg-tertiary px-3 py-2 text-sm text-primary placeholder:text-muted focus:outline-none"
+                    className="w-full resize-none rounded-control border border-border bg-surface-sunken px-3 py-2 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                     placeholder="Why would you like to join?"
                   />
                 </div>
@@ -435,7 +457,7 @@ export function CreateCommunityModal({
 
               <div className="mt-4 max-h-64 space-y-2 overflow-y-auto">
                 {directoryResults.map((entry) => (
-                  <div key={entry.id} className="rounded-lg bg-bg-primary p-3">
+                  <div key={entry.id} className="rounded-panel bg-surface-sunken p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-primary">{entry.name}</p>

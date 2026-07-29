@@ -7,6 +7,7 @@ import { useChannelStore } from '../../store/channels'
 import { formatFederatedTimestamp } from '../../lib/federated-time'
 import { variants } from '../../lib/motion'
 import { Icon } from '../ui/Icon'
+import { EmptyState } from '../ui/Primitives'
 
 interface SearchBarProps {
   onNavigateToMessage: (message: Message) => void
@@ -21,6 +22,7 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
   const [activeResultIndex, setActiveResultIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const searchGenerationRef = useRef(0)
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
@@ -93,21 +95,30 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
     setSearchFailed(false)
   }
 
-  const closeSearch = (restoreFocus = true) => {
+  const closeSearch = useCallback((restoreFocus = true) => {
     setIsOpen(false)
     setQuery('')
     setResults([])
     setActiveResultIndex(0)
     setSearchFailed(false)
     if (restoreFocus) triggerRef.current?.focus()
-  }
+  }, [])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) closeSearch(false)
+    }
+    document.addEventListener('pointerdown', handleOutsidePointerDown)
+    return () => document.removeEventListener('pointerdown', handleOutsidePointerDown)
+  }, [closeSearch, isOpen])
 
   const getChannelName = (channelId: string) => {
     return channels.find((c) => c.id === channelId)?.name ?? 'unknown'
   }
 
   return (
-    <div className="relative">
+    <div ref={containerRef} className="relative">
       <button
         ref={triggerRef}
         type="button"
@@ -118,7 +129,7 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
             setIsOpen(true)
           }
         }}
-        className="flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary"
+        className="flex h-8 w-8 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
         title="Search messages"
         aria-label="Search messages"
         aria-expanded={isOpen}
@@ -135,10 +146,10 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
             initial="initial"
             animate="animate"
             exit="exit"
-            className="mesh-search-popover absolute right-0 top-full z-dropdown mt-1 overflow-hidden rounded-lg border border-border-subtle bg-bg-floating shadow-overlay"
+            className="mesh-search-popover absolute right-0 top-full z-popover mt-1 overflow-hidden rounded-panel border border-border-subtle bg-surface-overlay shadow-overlay"
           >
             {/* Search input */}
-            <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
+            <div className="flex items-center gap-2 border-b border-border-subtle px-3 py-2">
               <Icon name="search" size="sm" className="flex-shrink-0 text-muted" />
               <input
                 ref={inputRef}
@@ -149,8 +160,10 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
                 aria-label="Search messages"
                 aria-autocomplete="list"
                 aria-controls="search-results"
-                aria-activedescendant={results[activeResultIndex] ? `search-result-${results[activeResultIndex].id}` : undefined}
-                className="min-w-0 flex-1 bg-transparent text-sm text-primary outline-none placeholder:text-muted"
+                aria-activedescendant={
+                  results[activeResultIndex] ? `search-result-${results[activeResultIndex].id}` : undefined
+                }
+                className="min-w-0 flex-1 bg-transparent text-sm text-primary outline-none placeholder:text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                 onKeyDown={(e) => {
                   if (e.key === 'ArrowDown' && results.length > 0) {
                     e.preventDefault()
@@ -182,7 +195,7 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
               <button
                 type="button"
                 onClick={() => closeSearch()}
-                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted hover:bg-bg-modifier-hover hover:text-primary"
+                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-control text-muted hover:bg-surface-hover hover:text-primary"
                 aria-label="Close message search"
               >
                 <Icon name="x" size="sm" />
@@ -199,7 +212,7 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
                   <button
                     type="button"
                     onClick={() => void performSearch(query)}
-                    className="mt-3 min-h-8 rounded-md border border-border-subtle px-3 text-xs font-semibold text-secondary hover:bg-bg-modifier-hover hover:text-primary"
+                    className="mt-3 min-h-8 rounded-control border border-border-subtle px-3 text-xs font-semibold text-secondary hover:bg-surface-hover hover:text-primary"
                   >
                     Try again
                   </button>
@@ -207,9 +220,12 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
               )}
 
               {query.trim() && results.length === 0 && !isSearching && !searchFailed && (
-                <div className="px-4 py-6 text-center text-sm text-muted">
-                  No messages found
-                </div>
+                <EmptyState
+                  variant="compact"
+                  icon={<Icon name="search" size="lg" />}
+                  title="No messages found"
+                  description="Try another word or phrase."
+                />
               )}
 
               {results.map((message, index) => (
@@ -219,22 +235,16 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
                   role="option"
                   aria-selected={index === activeResultIndex}
                   onClick={() => handleResultClick(message)}
-                  className={`flex w-full flex-col gap-0.5 px-4 py-2.5 text-left transition-colors hover:bg-bg-modifier-hover ${index === activeResultIndex ? 'bg-bg-modifier-hover' : ''}`}
+                  className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors hover:bg-surface-hover ${index === activeResultIndex ? 'bg-surface-hover' : ''}`}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-primary">
-                      {message.authorDisplayName}
-                    </span>
-                    <span className="text-xs text-muted">
-                      in #{getChannelName(message.channelId)}
-                    </span>
+                    <span className="text-sm font-medium text-primary">{message.authorDisplayName}</span>
+                    <span className="text-xs text-muted">in #{getChannelName(message.channelId)}</span>
                     <span className="tnum ml-auto text-xs text-muted">
                       {formatFederatedTimestamp(message.timestamp, 'MMM d, HH:mm')}
                     </span>
                   </div>
-                  <p className="truncate text-sm text-secondary">
-                    {message.content.slice(0, 120)}
-                  </p>
+                  <p className="truncate text-sm text-secondary">{message.content.slice(0, 120)}</p>
                 </button>
               ))}
             </div>
