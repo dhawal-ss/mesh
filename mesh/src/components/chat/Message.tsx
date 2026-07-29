@@ -88,7 +88,13 @@ export const MessageComponent = memo(function MessageComponent({
     if (e.key === 'Escape' && showReactions) {
       setShowReactions(false)
       reactButtonRef.current?.focus()
+      return
     }
+    if (isQueued || (limitedActions && !isOwnMessage)) return
+    if (e.key !== 'ContextMenu' && !(e.key === 'F10' && e.shiftKey)) return
+    e.preventDefault()
+    setConfirmBan(false)
+    setContextMenuOpen(true)
   }
 
   // Tabbing focus away from the row entirely — e.g. past the last emoji
@@ -230,7 +236,7 @@ export const MessageComponent = memo(function MessageComponent({
   if (canPinMessage && !isDeleted) {
     contextMenuItems.push({
       id: 'pin',
-      label: isPinned ? 'Unpin Message' : 'Pin Message',
+      label: isPinned ? 'Unpin message' : 'Pin message',
       onSelect: () => void handlePin(),
     })
   }
@@ -238,12 +244,12 @@ export const MessageComponent = memo(function MessageComponent({
     contextMenuItems.push(
       {
         id: 'edit',
-        label: 'Edit Message',
+        label: 'Edit message',
         onSelect: handleStartEdit,
       },
       {
         id: 'delete',
-        label: 'Delete Message',
+        label: 'Delete message',
         tone: 'danger',
         onSelect: () => void handleDelete(),
       },
@@ -253,19 +259,19 @@ export const MessageComponent = memo(function MessageComponent({
     contextMenuItems.push(
       {
         id: 'remove',
-        label: 'Remove Message',
+        label: 'Remove message',
         onSelect: () => void handleDelete(),
       },
       {
         id: 'kick',
-        label: 'Kick User',
+        label: `Kick ${message.authorDisplayName}`,
         onSelect: () => void handleKick(),
       },
     )
     if (!matrixMode) {
       contextMenuItems.push({
         id: 'timeout',
-        label: 'Timeout (1hr)',
+        label: `Timeout ${message.authorDisplayName}`,
         onSelect: () => void handleTimeout(),
       })
     }
