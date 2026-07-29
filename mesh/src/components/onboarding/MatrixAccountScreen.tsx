@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import * as bridge from '../../lib/bridge'
+import type { MatrixCommunityAdmission } from '../../types/ipc'
 import type { OnboardingFlowProps } from './types'
 import {
   friendlyAccountCreationError,
@@ -12,12 +13,20 @@ import {
   usernameValidationError,
 } from './accountCreation'
 import {
+  normalizeCommunityService,
+  parseManagedCommunityInvite,
+} from '../../lib/community-invites'
+import {
   recommendedServiceConfigError,
   resolveServiceAddress,
 } from './matrixSignIn'
 
 type AccountMode = 'create' | 'sign-in' | 'advanced'
 type Availability = 'idle' | 'checking' | 'available' | 'taken' | 'error'
+type AdmissionResolution =
+  | { invitation: string; status: 'resolving' }
+  | { invitation: string; status: 'resolved'; admission: MatrixCommunityAdmission }
+  | { invitation: string; status: 'error'; message: string }
 export type MatrixAccountOutcome = 'registered' | 'signed-in'
 
 type MatrixAccountScreenProps = Pick<
@@ -29,6 +38,7 @@ type MatrixAccountScreenProps = Pick<
   | 'onMatrixSwitchAccount'
 > & {
   onNext: (outcome: MatrixAccountOutcome) => void
+  initialInvitation?: string
   recommendedService?: string
 }
 
@@ -44,6 +54,7 @@ export function MatrixAccountScreen({
   onMatrixOidcLogin,
   onMatrixSwitchAccount,
   onNext,
+  initialInvitation = '',
   recommendedService = DEFAULT_RECOMMENDED_SERVICE,
 }: MatrixAccountScreenProps) {
   const hasRecommendedService = recommendedServiceConfigError(recommendedService) === null
@@ -51,7 +62,9 @@ export function MatrixAccountScreen({
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [passwordConfirmation, setPasswordConfirmation] = useState('')
-  const [invitation, setInvitation] = useState('')
+  const [invitation, setInvitation] = useState(initialInvitation)
+  const [admissionResolution, setAdmissionResolution] =
+    useState<AdmissionResolution | null>(null)
   const [serviceAddress, setServiceAddress] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [availability, setAvailability] = useState<Availability>('idle')
@@ -69,11 +82,38 @@ export function MatrixAccountScreen({
   const usernameError = useMemo(() => usernameValidationError(username), [username])
   const strength = useMemo(() => passwordStrength(password), [password])
   const passwordsMatch = passwordConfirmation.length > 0 && password === passwordConfirmation
-  const invitationError = useMemo(
-    () => mode === 'create' ? invitationValidationError(invitation) : null,
-    [invitation, mode],
+  const managedInvitation = useMemo(
+    () => parseManagedCommunityInvite(invitation),
+    [invitation],
   )
-  const registrationToken = useMemo(() => invitationCodeFromInput(invitation), [invitation])
+  const matchingAdmission =
+    managedInvitation && admissionResolution?.invitation === managedInvitation.original
+      ? admissionResolution
+      : null
+  const resolvedAdmission =
+    matchingAdmission?.status === 'resolved' ? matchingAdmission.admission : null
+  const admissionResolving = matchingAdmission?.status === 'resolving'
+  const admissionError =
+    matchingAdmission?.status === 'error' ? matchingAdmission.message : null
+  const invitationError = useMemo(() => {
+    if (mode !== 'create') return null
+    const syntaxError = invitationValidationError(invitation)
+    if (syntaxError) return syntaxError
+    if (!managedInvitation) return null
+    if (admissionError) return admissionError
+    if (
+      resolvedAdmission
+      && normalizeCommunityService(resolvedAdmission.service)
+        !== normalizeCommunityService(recommendedService)
+    ) {
+      return 'This invitation is for a different Mesh service.'
+    }
+    return null
+  }, [admissionError, invitation, managedInvitation, mode, recommendedService, resolvedAdmission])
+  const registrationToken = useMemo(
+    () => invitationCodeFromInput(invitation) ?? resolvedAdmission?.registrationToken ?? null,
+    [invitation, resolvedAdmission],
+  )
   const resolvedService = useMemo(
     () => resolveServiceAddress(
       mode === 'advanced' ? 'advanced' : 'recommended',
@@ -83,6 +123,56 @@ export function MatrixAccountScreen({
     ),
     [mode, recommendedService, serviceAddress, username],
   )
+
+  useEffect(() => {
+    if (!initialInvitation) return
+    const timer = window.setTimeout(() => setInvitation(initialInvitation), 0)
+    return () => window.clearTimeout(timer)
+  }, [initialInvitation])
+
+  useEffect(() => {
+    if (mode !== 'create' || !managedInvitation) return
+    if (!bridge.isTauriRuntime()) {
+      const timer = window.setTimeout(() => {
+        setAdmissionResolution({
+          invitation: managedInvitation.original,
+          status: 'error',
+          message: 'Managed invitations can be opened in the installed Mesh app.',
+        })
+      }, 0)
+      return () => window.clearTimeout(timer)
+    }
+
+    let active = true
+    void Promise.resolve().then(async () => {
+      if (!active) return
+      setAdmissionResolution({
+        invitation: managedInvitation.original,
+        status: 'resolving',
+      })
+      try {
+        const admission = await bridge.resolveCommunityInvite(managedInvitation.original)
+        if (active) {
+          setAdmissionResolution({
+            invitation: managedInvitation.original,
+            status: 'resolved',
+            admission,
+          })
+        }
+      } catch {
+        if (active) {
+          setAdmissionResolution({
+            invitation: managedInvitation.original,
+            status: 'error',
+            message: 'This invitation is invalid, expired, or has already been used.',
+          })
+        }
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [managedInvitation, mode])
 
   useEffect(() => {
     if (!bridge.isTauriRuntime()) return
@@ -264,6 +354,7 @@ export function MatrixAccountScreen({
     || !strength.strongEnough
     || !passwordsMatch
     || Boolean(invitationError)
+    || admissionResolving
     || !registrationToken
   const signInDisabled =
     submitting
@@ -446,7 +537,9 @@ export function MatrixAccountScreen({
             required
             maxLength={512}
             error={invitation ? invitationError ?? undefined : undefined}
-            hint="One-use private beta invitation. No email needed."
+            hint={admissionResolving
+              ? 'Checking this one-use invitation…'
+              : 'One-use private beta invitation. No email needed.'}
           />
         ) : null}
 

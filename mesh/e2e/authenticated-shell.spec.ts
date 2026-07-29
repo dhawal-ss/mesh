@@ -21,8 +21,11 @@ test.afterEach(async ({ page }) => {
   expect(runtimeErrors.get(page) ?? [], 'authenticated shell emitted runtime errors').toEqual([])
 })
 
-async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
-  await page.addInitScript(() => {
+async function installAuthenticatedMatrixMock(
+  page: Page,
+  currentDeepLinks: string[] | null = null,
+): Promise<void> {
+  await page.addInitScript((deepLinks) => {
     const calls: IpcCall[] = []
     const callbacks = new Map<number, (...args: unknown[]) => void>()
     let nextCallbackId = 1
@@ -287,6 +290,8 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
         case 'matrix_clear_composer_draft':
         case 'plugin:event|unlisten':
           return null
+        case 'plugin:deep-link|get_current':
+          return deepLinks
         case 'matrix_wait_for_room_update':
           // The real command long-polls the SDK room-update stream. Keeping
           // this promise pending models that boundary without a CPU-heavy loop.
@@ -343,11 +348,14 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
     }).__TAURI_EVENT_PLUGIN_INTERNALS__ = {
       unregisterListener: () => {},
     }
-  })
+  }, currentDeepLinks)
 }
 
-async function openAuthenticatedShell(page: Page): Promise<void> {
-  await installAuthenticatedMatrixMock(page)
+async function openAuthenticatedShell(
+  page: Page,
+  currentDeepLinks: string[] | null = null,
+): Promise<void> {
+  await installAuthenticatedMatrixMock(page, currentDeepLinks)
   await page.goto('/')
   await expect(
     page.getByRole('navigation', { name: 'Communities and direct messages' }),
@@ -385,6 +393,17 @@ test.describe('authenticated desktop shell', () => {
     await expect(page.getByText('@alice:mesh.test', { exact: true })).toHaveCount(0)
     await expect(page.getByText('Alice Mesh', { exact: true })).toBeVisible()
     await expect(page.getByText('Anonymous', { exact: true })).toHaveCount(0)
+  })
+
+  test('routes a cold-start Mesh invitation into the prefilled join flow', async ({ page }) => {
+    const invite =
+      'mesh://join?v=3&kind=matrix&room=!invited:mesh.test&via=mesh.test&service=https%3A%2F%2Fmatrix.mesh.test'
+    await openAuthenticatedShell(page, [invite])
+
+    const dialog = page.getByRole('dialog', { name: 'Join a community' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByLabel('Invite code or link')).toHaveValue(invite)
+    await expect(dialog.getByRole('button', { name: 'Join Community' })).toBeEnabled()
   })
 
   test('@a11y has no automated WCAG A/AA violations in the shell and settings', async ({ page }) => {

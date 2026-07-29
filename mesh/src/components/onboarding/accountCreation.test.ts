@@ -32,6 +32,13 @@ describe('account creation helpers', () => {
     expect(invitationValidationError('')).toContain('invitation')
   })
 
+  it('never treats a managed admission capability as a registration token', () => {
+    const link =
+      'https://mesh.dhawal.org/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789'
+    expect(invitationValidationError(link)).toBeNull()
+    expect(invitationCodeFromInput(link)).toBeNull()
+  })
+
   it('turns registration failures into protocol-free guidance', () => {
     expect(friendlyAccountCreationError(new Error('M_USER_IN_USE'))).toContain('just taken')
     expect(friendlyAccountCreationError(new Error('network unavailable'))).toContain('connection')

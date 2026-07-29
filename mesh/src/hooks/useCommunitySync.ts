@@ -8,6 +8,7 @@ import type { Channel } from '../types/ipc'
 import type { ControlEventData } from '../lib/bridge'
 import type { MemberRecord } from '../store/membership'
 import { registerPoll } from '../lib/scheduler'
+import { useMessageStore } from '../store/messages'
 
 /**
  * Community sync hook for the authoritative signed control-log model.
@@ -28,6 +29,7 @@ export function useCommunitySync() {
   const removeCommunity = useCommunityStore((s) => s.removeCommunity)
   const addChannel = useChannelStore((s) => s.addChannel)
   const removeChannel = useChannelStore((s) => s.removeChannel)
+  const clearChannelMessages = useMessageStore((s) => s.clearChannel)
   const setRoster = useMembershipStore((s) => s.setRoster)
   const clearCommunity = useMembershipStore((s) => s.clearCommunity)
   const upsertMember = useMembershipStore((s) => s.upsertMember)
@@ -129,6 +131,7 @@ export function useCommunitySync() {
           handleControlEvent(event, {
             addChannel,
             removeChannel,
+            clearChannelMessages,
             upsertMember,
             removeMember,
             banMember,
@@ -164,6 +167,7 @@ export function useCommunitySync() {
     addChannel,
     banMember,
     clearCommunity,
+    clearChannelMessages,
     identityPublicKey,
     patchCommunity,
     removeChannel,
@@ -196,6 +200,7 @@ export function useCommunitySync() {
         handleControlEvent(event, {
           addChannel,
           removeChannel,
+          clearChannelMessages,
           upsertMember,
           removeMember,
           banMember,
@@ -217,6 +222,7 @@ export function useCommunitySync() {
     addChannel,
     banMember,
     clearCommunity,
+    clearChannelMessages,
     identityPublicKey,
     patchCommunity,
     removeChannel,
@@ -238,6 +244,7 @@ export function useCommunitySync() {
 interface ControlEventHandlers {
   addChannel: (channel: Channel) => void
   removeChannel: (channelId: string) => void
+  clearChannelMessages: (channelId: string) => void
   upsertMember: (communityId: string, member: MemberRecord) => void
   removeMember: (communityId: string, publicKey: string) => void
   banMember: (communityId: string, publicKey: string) => void
@@ -271,6 +278,7 @@ function handleControlEvent(
       const channelId = payload.channelId as string
       if (channelId) {
         handlers.removeChannel(channelId)
+        handlers.clearChannelMessages(channelId)
       }
       break
     }

@@ -7,6 +7,7 @@ import * as bridge from '../../lib/bridge'
 import { transitions } from '../../lib/motion'
 import { Icon } from '../ui/Icon'
 import { ErrorState } from '../ui/ErrorState'
+import { parseManagedCommunityInvite } from '../../lib/community-invites'
 
 interface InviteModalProps {
   isOpen: boolean
@@ -24,7 +25,7 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
   const [inviteSent, setInviteSent] = useState(false)
   const [operationError, setOperationError] = useState<unknown | null>(null)
 
-  const generateLegacyInvite = useCallback(async () => {
+  const generateInvite = useCallback(async () => {
     setIsLoading(true)
     setOperationError(null)
     setInviteLink('')
@@ -39,10 +40,10 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
   }, [communityId])
 
   useEffect(() => {
-    if (!isOpen || !communityId || matrixMode) return
-    const timer = window.setTimeout(() => void generateLegacyInvite(), 0)
+    if (!isOpen || !communityId) return
+    const timer = window.setTimeout(() => void generateInvite(), 0)
     return () => window.clearTimeout(timer)
-  }, [generateLegacyInvite, isOpen, communityId, matrixMode])
+  }, [generateInvite, isOpen, communityId])
 
   const handleMatrixInvite = async () => {
     if (!username.trim()) return
@@ -94,13 +95,71 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
       title={`Invite to ${communityName}`}
       description={
         matrixMode
-          ? 'Invite someone to this community and its current rooms.'
+          ? 'Share a private link, or invite someone who already has an account.'
           : 'Share this link to let others join your community.'
       }
     >
-      <div>
-        {matrixMode ? (
-          <div className="space-y-3">
+      <div className="space-y-4">
+        <section aria-label="Community invite link">
+          <div className="overflow-hidden rounded-control bg-surface-hover">
+            {isLoading && !inviteLink ? (
+              <div className="flex items-center justify-center px-4 py-4">
+                <span className="text-sm text-muted animate-pulse-soft">Preparing private link…</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-2.5">
+                <code className="flex-1 truncate font-mono text-sm text-secondary">
+                  {inviteLink}
+                </code>
+              </div>
+            )}
+          </div>
+
+          {operationError != null && !inviteLink && (
+            <ErrorState
+              error={operationError}
+              context={{ operation: 'create an invite link', resource: 'community' }}
+              onAction={generateInvite}
+              className="mt-3"
+              compact
+            />
+          )}
+
+          <Button onClick={handleCopy} disabled={isLoading || !inviteLink} className="mt-3 w-full">
+            <motion.span
+              key={copied ? 'copied' : 'copy'}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={transitions.fast}
+            >
+              {copied ? (
+                <span className="flex items-center justify-center gap-1.5">
+                  <Icon name="check" size="xs" />
+                  Copied!
+                </span>
+              ) : (
+                'Copy Invite Link'
+              )}
+            </motion.span>
+          </Button>
+
+          <p className="mt-2 text-center text-xs text-muted">
+            {parseManagedCommunityInvite(inviteLink)
+              ? 'One person can use this private link within seven days. They enter automatically after signing in.'
+              : matrixMode
+                ? 'This compatible service uses an administrator-approved access request.'
+              : 'If this link stops working, create a new one.'}
+          </p>
+        </section>
+
+        {matrixMode && (
+          <section
+            aria-label="Invite an existing account"
+            className="space-y-3 border-t border-border-subtle pt-4"
+          >
+            <p className="text-xs font-semibold uppercase tracking-section text-muted">
+              Already on Mesh
+            </p>
             <Input
               label="Username"
               value={username}
@@ -130,55 +189,7 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
                 compact
               />
             )}
-          </div>
-        ) : (
-          <>
-          <div className="overflow-hidden rounded-control bg-surface-hover">
-          {isLoading ? (
-            <div className="flex items-center justify-center px-4 py-4">
-              <span className="text-sm text-muted animate-pulse-soft">Generating link...</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 px-3 py-2.5">
-              <code className="flex-1 truncate font-mono text-sm text-secondary">
-                {inviteLink}
-              </code>
-            </div>
-          )}
-        </div>
-
-        {operationError != null && (
-          <ErrorState
-            error={operationError}
-            context={{ operation: 'create an invite link', resource: 'community' }}
-            onAction={generateLegacyInvite}
-            className="mt-3"
-            compact
-          />
-        )}
-
-        <Button onClick={handleCopy} disabled={isLoading || !inviteLink} className="mt-4 w-full">
-          <motion.span
-            key={copied ? 'copied' : 'copy'}
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={transitions.fast}
-          >
-            {copied ? (
-              <span className="flex items-center justify-center gap-1.5">
-                <Icon name="check" size="xs" />
-                Copied!
-              </span>
-            ) : (
-              'Copy Invite Link'
-            )}
-          </motion.span>
-        </Button>
-
-        <p className="mt-3 text-center text-xs text-muted">
-          If this link stops working, create a new one.
-        </p>
-          </>
+          </section>
         )}
       </div>
     </Modal>

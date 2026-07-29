@@ -63,4 +63,33 @@ describe('InviteModal', () => {
     expect(document.body.textContent).not.toContain('Failed to generate link')
     expect(copyButton?.disabled).toBe(true)
   })
+
+  it('makes a private link primary while retaining direct account invites in Matrix mode', async () => {
+    bridgeMocks.matrixMode = true
+    bridgeMocks.generateInviteLink.mockResolvedValueOnce(
+      'https://mesh.test/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789',
+    )
+
+    await act(async () => {
+      root.render(
+        <InviteModal
+          isOpen
+          onClose={() => {}}
+          communityId="!community:mesh.test"
+          communityName="Mesh Test"
+        />,
+      )
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+      await Promise.resolve()
+    })
+
+    expect(bridgeMocks.generateInviteLink).toHaveBeenCalledWith('!community:mesh.test')
+    expect(document.body.textContent).toContain('Copy Invite Link')
+    expect(document.body.textContent).toContain(
+      'They enter automatically after signing in.',
+    )
+    expect(document.body.textContent).toContain('Already on Mesh')
+  })
 })

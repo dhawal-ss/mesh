@@ -58,6 +58,7 @@ export function OnboardingFlow({
   onGenerateIdentity,
   onUpdateProfile,
   onBootstrap,
+  initialMatrixInvitation,
   initialProfile,
   avatarColors = DEFAULT_AVATAR_COLORS,
 }: OnboardingFlowProps) {
@@ -203,6 +204,7 @@ export function OnboardingFlow({
               {step === 'account' && (
                 <motion.div key="account" variants={variants.screen} initial="initial" animate="animate" exit="exit">
                   <MatrixAccountScreen
+                    initialInvitation={initialMatrixInvitation}
                     onMatrixCheckUsernameAvailable={onMatrixCheckUsernameAvailable}
                     onMatrixRegisterAccount={onMatrixRegisterAccount}
                     onMatrixLogin={onMatrixLogin}

@@ -23,6 +23,7 @@ describe('normalizeError', () => {
     'login_cancelled',
     'login_timed_out',
     'unexpected_error',
+    'community_invite_invalid',
   ] as const
 
   it('normalizes string rejections from Tauri into a real coded Error', () => {
@@ -43,6 +44,20 @@ describe('normalizeError', () => {
     expect(error.code).toBe('permission_denied')
     expect(error.detail).toBe(source.message)
     expect(error.retryable).toBe(false)
+  })
+
+  it('distinguishes operating-system media denial from Matrix account permissions', () => {
+    const source = new Error('Permission denied')
+    source.name = 'NotAllowedError'
+
+    const error = normalizeError(source)
+
+    expect(error.code).toBe('media_permission_denied')
+    expect(describeError(error, { operation: 'start voice' })).toEqual({
+      title: 'Microphone permission needed',
+      body: "Mesh couldn't start voice. Allow microphone access for Mesh in your system settings, then try again.",
+      action: 'Try again',
+    })
   })
 
   it('reads the planned serialized Rust error payload', () => {
