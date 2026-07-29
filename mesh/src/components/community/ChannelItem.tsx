@@ -113,12 +113,12 @@ export function ChannelItem({
         onClick={onClick}
         aria-label={`${channel.channelType === 'text' ? 'Text' : 'Voice'} room: ${channel.name}${hasUnread ? `, ${unreadLabel}` : ''}${isMuted ? ', muted' : ''}`}
         aria-current={active ? 'page' : undefined}
-        className={`group flex w-full items-center gap-1.5 rounded px-2 py-density-row text-left transition-colors duration-instant ${
+        className={`group flex w-full items-center gap-1.5 rounded-control px-2 py-density-row text-left transition-colors duration-instant ${
           active
-            ? 'mesh-channel-active bg-bg-modifier-selected text-primary'
+            ? 'mesh-channel-active bg-surface-selected text-primary'
             : hasUnread
-              ? 'text-primary hover:bg-bg-modifier-hover'
-              : 'text-muted hover:bg-bg-modifier-hover hover:text-secondary'
+              ? 'text-primary hover:bg-surface-hover'
+              : 'text-muted hover:bg-surface-hover hover:text-secondary'
         }`}
       >
         {/* Channel type icon */}
@@ -133,7 +133,7 @@ export function ChannelItem({
 
         {/* Unread badge */}
         {hasUnread && !active && (
-          <span className="badge-count ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-meta font-semibold text-content-on-accent">
+          <span className="badge-count ml-auto flex h-4 min-w-4 items-center justify-center rounded-control bg-accent px-1 text-meta font-semibold text-content-on-accent">
             {displayedUnreadCount > 99 ? '99+' : displayedUnreadCount}
           </span>
         )}

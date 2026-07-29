@@ -768,13 +768,13 @@ function MessageInputContent({
   return (
     <div
       ref={rootRef}
-      className="-mt-1 mx-4 mb-6"
+      className="-mt-1 mx-5 mb-4"
       onDragOver={disabled || disableAttachments ? undefined : handleDragOver}
       onDragLeave={disabled || disableAttachments ? undefined : handleDragLeave}
       onDrop={disabled || disableAttachments ? undefined : handleDrop}
     >
       <div
-        className={`rounded-lg transition-colors ${
+        className={`rounded-panel border border-border-subtle transition-colors ${
           isDragOver
             ? 'bg-accent/10 ring-2 ring-accent/40'
             : 'bg-surface-raised'
@@ -826,7 +826,7 @@ function MessageInputContent({
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => applyFormatting(format)}
               disabled={disabled || isUploading || isStaging}
-              className="flex h-7 min-w-7 items-center justify-center rounded px-1.5 text-xs font-semibold text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-7 min-w-7 items-center justify-center rounded-control px-1.5 text-xs font-semibold text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
               {glyph}
             </button>
@@ -840,7 +840,7 @@ function MessageInputContent({
               id={`slash-suggestions-${channelId}`}
               role="listbox"
               aria-label="Slash commands"
-              className="absolute bottom-full left-1 right-1 z-dropdown mb-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-raised shadow-lg"
+              className="absolute bottom-full left-1 right-1 z-dropdown mb-1 overflow-hidden rounded-panel border border-border-subtle bg-surface-overlay shadow-overlay"
             >
               {slashSuggestions.map((command, index) => (
                 <button
@@ -865,7 +865,7 @@ function MessageInputContent({
                     pendingSelectionRef.current = { start: nextCursor, end: nextCursor }
                   }}
                   className={`flex min-h-control-md w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                    index === activeSlashIndex ? 'bg-bg-modifier-hover text-primary' : 'text-secondary hover:bg-bg-modifier-hover'
+                    index === activeSlashIndex ? 'bg-surface-hover text-primary' : 'text-secondary hover:bg-surface-hover'
                   }`}
                 >
                   <span className="font-mono font-medium">{command.command}</span>
@@ -879,7 +879,7 @@ function MessageInputContent({
               id={`mention-suggestions-${channelId}`}
               role="listbox"
               aria-label="Mention suggestions"
-              className="absolute bottom-full left-1 right-1 z-dropdown mb-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-raised shadow-lg"
+              className="absolute bottom-full left-1 right-1 z-dropdown mb-1 overflow-hidden rounded-panel border border-border-subtle bg-surface-overlay shadow-overlay"
             >
               {mentionSuggestions.map((member, index) => (
                 <button
@@ -891,7 +891,7 @@ function MessageInputContent({
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => selectMention(member)}
                   className={`flex min-h-control-md w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                    index === activeMentionIndex ? 'bg-bg-modifier-hover text-primary' : 'text-secondary hover:bg-bg-modifier-hover'
+                    index === activeMentionIndex ? 'bg-surface-hover text-primary' : 'text-secondary hover:bg-surface-hover'
                   }`}
                 >
                   <span className="truncate font-medium">{member.displayName}</span>
@@ -905,7 +905,7 @@ function MessageInputContent({
               id={`emoji-suggestions-${channelId}`}
               role="listbox"
               aria-label="Community emoji"
-              className="absolute bottom-full left-1 right-1 z-dropdown mb-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-raised shadow-lg"
+              className="absolute bottom-full left-1 right-1 z-dropdown mb-1 overflow-hidden rounded-panel border border-border-subtle bg-surface-overlay shadow-overlay"
             >
               {emojiSuggestions.map((emoji, index) => (
                 <button
@@ -918,8 +918,8 @@ function MessageInputContent({
                   onClick={() => selectEmoji(emoji)}
                   className={`flex min-h-control-md w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
                     index === activeEmojiIndex
-                      ? 'bg-bg-modifier-hover text-primary'
-                      : 'text-secondary hover:bg-bg-modifier-hover'
+                      ? 'bg-surface-hover text-primary'
+                      : 'text-secondary hover:bg-surface-hover'
                   }`}
                 >
                   <img
@@ -1015,7 +1015,7 @@ function MessageInputContent({
             <button
               type="button"
               onClick={retryDraftSync}
-              className="min-h-control-sm rounded px-2 font-medium text-accent transition-colors hover:bg-bg-modifier-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              className="min-h-control-sm rounded-control px-2 font-medium text-accent transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             >
               Retry
             </button>

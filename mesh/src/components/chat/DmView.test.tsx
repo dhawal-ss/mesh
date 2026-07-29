@@ -117,4 +117,23 @@ describe('DmView message containment', () => {
     expect(container.textContent).toContain('Healthy event remains visible')
     expect(container.textContent).toContain('Message composer remains available')
   })
+
+  it('uses the shared accessible empty state at the start of a conversation', async () => {
+    vi.spyOn(bridge, 'getDmMessages').mockResolvedValue([])
+
+    await act(async () => {
+      root.render(<DmView />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const emptyState = container.querySelector('section')
+    const title = emptyState?.querySelector('h3')
+    const description = emptyState?.querySelector('p')
+    expect(title?.textContent).toBe('Start of conversation')
+    expect(description?.textContent).toBe('Send a message to Peer.')
+    expect(emptyState?.getAttribute('aria-labelledby')).toBe(title?.id)
+    expect(emptyState?.getAttribute('aria-describedby')).toBe(description?.id)
+    expect(emptyState?.querySelector('.border-dashed')).toBeNull()
+  })
 })

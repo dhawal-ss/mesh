@@ -20,7 +20,7 @@ export function Tooltip({ content, side = 'top', children, className }: TooltipP
             sideOffset={8}
             collisionPadding={8}
             className={clsx(
-              'z-tooltip max-w-xs rounded-md bg-surface-overlay px-3 py-1.5 text-xs font-medium text-content shadow-overlay',
+              'z-tooltip max-w-xs rounded-control border border-border-subtle bg-surface-overlay px-3 py-1.5 text-xs font-medium text-content shadow-overlay',
               'data-[state=delayed-open]:animate-in data-[state=closed]:animate-out',
               className,
             )}

@@ -273,6 +273,14 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
           }
         case 'matrix_typing_users':
           return []
+        case 'matrix_room_pins':
+          return {
+            roomId: String(args.roomId),
+            eventIds: [],
+            messages: [],
+            unavailableEventIds: [],
+            canManage: true,
+          }
         case 'matrix_mark_read':
         case 'matrix_set_typing':
         case 'matrix_save_composer_draft':
@@ -423,14 +431,38 @@ test.describe('authenticated desktop shell', () => {
 
     const context = page.getByRole('complementary', { name: 'Room context for general' })
     await expect(context).toBeVisible()
-    await expect(context.getByRole('tab', { name: 'Ledger' })).toHaveAttribute('aria-selected', 'true')
+    const peopleTab = context.getByRole('tab', { name: 'People' })
+    const ledgerTab = context.getByRole('tab', { name: 'Ledger' })
+    const filesTab = context.getByRole('tab', { name: 'Files' })
+    const pinsTab = context.getByRole('tab', { name: 'Pins' })
+    await expect(ledgerTab).toHaveAttribute('aria-selected', 'true')
+    await expect(ledgerTab).toHaveAttribute('tabindex', '0')
+    await expect(peopleTab).toHaveAttribute('tabindex', '-1')
+    await expect(filesTab).toHaveAttribute('tabindex', '-1')
+    await expect(pinsTab).toHaveAttribute('tabindex', '-1')
     await expect(context.getByText('Protected end to end')).toBeVisible()
     await expect(context.getByText('1 need review')).toBeVisible()
     await expect(context.getByText('Ready', { exact: true })).toBeVisible()
 
-    await context.getByRole('tab', { name: 'Pins' }).click()
+    await ledgerTab.focus()
+    await page.keyboard.press('ArrowRight')
+    await expect(filesTab).toBeFocused()
+    await expect(filesTab).toHaveAttribute('aria-selected', 'true')
+    await expect(context.getByRole('tabpanel')).toHaveAttribute(
+      'aria-labelledby',
+      await filesTab.getAttribute('id') ?? '',
+    )
+    await page.keyboard.press('End')
+    await expect(pinsTab).toBeFocused()
+    await expect(pinsTab).toHaveAttribute('aria-selected', 'true')
     await expect(context.getByText('Nothing pinned yet')).toBeVisible()
-    await context.getByRole('tab', { name: 'Files' }).click()
+    await page.keyboard.press('Home')
+    await expect(peopleTab).toBeFocused()
+    await expect(peopleTab).toHaveAttribute('aria-selected', 'true')
+    await page.keyboard.press('ArrowLeft')
+    await expect(pinsTab).toBeFocused()
+    await page.keyboard.press('ArrowLeft')
+    await expect(filesTab).toBeFocused()
     await expect(context.getByText('No files shared yet')).toBeVisible()
 
     await context.getByRole('button', { name: 'Close room context' }).click()
@@ -471,6 +503,27 @@ test.describe('authenticated desktop shell', () => {
       command: 'matrix_update_profile_display_name',
       args: { displayName: 'Alice Updated' },
     })
+  })
+
+  test('hands Security focus back to the persistent User Settings trigger', async ({ page }) => {
+    await openAuthenticatedShell(page)
+
+    const settingsButton = page.getByRole('button', { name: 'User settings' })
+    await settingsButton.click()
+    const settingsDialog = page.getByRole('dialog', { name: 'User Settings' })
+    await expect(settingsDialog).toBeVisible()
+
+    await settingsDialog.getByRole('button', { name: 'Open your devices' }).click()
+    const securityDialog = page.getByRole('dialog', { name: 'Your devices' })
+    await expect(settingsDialog).toHaveCount(0)
+    await expect(securityDialog).toBeVisible()
+    await expect(page.getByRole('dialog')).toHaveCount(1)
+
+    await page.keyboard.press('Escape')
+
+    await expect(securityDialog).toHaveCount(0)
+    await expect(settingsButton).toBeFocused()
+    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false)
   })
 
   test('opens community management as an accessible sheet and restores focus', async ({ page }) => {
@@ -567,14 +620,40 @@ test.describe('authenticated desktop shell', () => {
 })
 
 test.describe('authenticated narrow shell', () => {
-  test.use({ viewport: { width: 390, height: 844 } })
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 
   test('@a11y has no automated WCAG A/AA violations with navigation open', async ({ page }) => {
     await openAuthenticatedShell(page)
     await page.getByRole('button', { name: 'Open room navigation' }).click()
     await expect(page.getByRole('button', { name: 'Close room navigation' })).toBeVisible()
+    const navigationDrawer = page.locator('#mesh-context-sidebar')
+    await expect(navigationDrawer).toHaveAttribute('aria-modal', 'true')
+    expect(await navigationDrawer.evaluate((drawer) => drawer.contains(document.activeElement))).toBe(true)
+    for (let index = 0; index < 10; index += 1) await page.keyboard.press('Tab')
+    expect(await navigationDrawer.evaluate((drawer) => drawer.contains(document.activeElement))).toBe(true)
 
     await expectNoWcagViolations(page, 'Authenticated narrow shell with room navigation')
+  })
+
+  test('closes room navigation with Escape and restores its trigger', async ({ page }) => {
+    await openAuthenticatedShell(page)
+    const drawerButton = page.getByRole('button', { name: 'Open room navigation' })
+    await drawerButton.click()
+    await expect(page.locator('#mesh-context-sidebar')).toHaveAttribute('data-open', 'true')
+
+    await page.keyboard.press('Escape')
+
+    await expect(page.locator('#mesh-context-sidebar')).toHaveAttribute('data-open', 'false')
+    await expect(drawerButton).toBeFocused()
+  })
+
+  test('keeps message actions reachable on touch-only layouts', async ({ page }) => {
+    await openAuthenticatedShell(page)
+    const actions = page.locator('.mesh-message-actions').first()
+
+    await expect(actions).toHaveCSS('opacity', '1')
+    await expect(actions).toHaveCSS('pointer-events', 'auto')
+    await expect(actions.getByRole('button', { name: /React to message/ })).toBeVisible()
   })
 
   test('opens the room drawer, changes rooms, and sends a message without overflow', async ({ page }) => {
@@ -617,7 +696,20 @@ test.describe('authenticated narrow shell', () => {
     const context = page.getByRole('complementary', { name: 'Room context for general' })
     await expect(context).toBeVisible()
     await expect(page.locator('.mesh-room-context-backdrop')).toBeVisible()
-    await context.getByRole('tab', { name: 'Ledger' }).click()
+    expect(await context.evaluate((panel) => panel.contains(document.activeElement))).toBe(true)
+    for (let index = 0; index < 8; index += 1) await page.keyboard.press('Tab')
+    expect(await context.evaluate((panel) => panel.contains(document.activeElement))).toBe(true)
+    const ledgerTab = context.getByRole('tab', { name: 'Ledger' })
+    const peopleTab = context.getByRole('tab', { name: 'People' })
+    const pinsTab = context.getByRole('tab', { name: 'Pins' })
+    await ledgerTab.focus()
+    await page.keyboard.press('ArrowLeft')
+    await expect(peopleTab).toBeFocused()
+    await page.keyboard.press('ArrowLeft')
+    await expect(pinsTab).toBeFocused()
+    await page.keyboard.press('Home')
+    await expect(peopleTab).toBeFocused()
+    await ledgerTab.click()
     await expect(context.getByText('Protected end to end')).toBeVisible()
     await expectNoWcagViolations(page, 'Authenticated narrow room context drawer')
 
@@ -641,6 +733,28 @@ test.describe('authenticated narrow shell', () => {
 
     await page.keyboard.press('Escape')
     await expect(dialog).toHaveCount(0)
+  })
+
+  test('hands narrow Security focus back to the persistent User Settings trigger', async ({ page }) => {
+    await openAuthenticatedShell(page)
+
+    await page.getByRole('button', { name: 'Open room navigation' }).click()
+    const settingsButton = page.getByRole('button', { name: 'User settings' })
+    await settingsButton.click()
+    const settingsDialog = page.getByRole('dialog', { name: 'User Settings' })
+    await expect(settingsDialog).toBeVisible()
+
+    await settingsDialog.getByRole('button', { name: 'Open your devices' }).click()
+    const securityDialog = page.getByRole('dialog', { name: 'Your devices' })
+    await expect(settingsDialog).toHaveCount(0)
+    await expect(securityDialog).toBeVisible()
+    await expect(page.getByRole('dialog')).toHaveCount(1)
+
+    await page.keyboard.press('Escape')
+
+    await expect(securityDialog).toHaveCount(0)
+    await expect(settingsButton).toBeFocused()
+    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false)
   })
 
   test('fits community management to the viewport and restores its drawer trigger', async ({ page }) => {

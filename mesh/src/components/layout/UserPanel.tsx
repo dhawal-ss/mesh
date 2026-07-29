@@ -1,17 +1,17 @@
 import { lazy, Suspense, useRef, useState, type MouseEvent } from 'react'
 import { useIdentityStore } from '../../store/identity'
 import { Avatar } from '../ui/Avatar'
-import { Tooltip } from '../ui/Tooltip'
 import { matrixProfileIdentity, resolveSenderIdentity } from '../../lib/matrixIdentity'
 import * as bridge from '../../lib/bridge'
 import { DialogErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
 import { useShellStore } from '../../store/shell'
-import { Modal } from '../ui/Modal'
+import { Modal, setNextModalRestoreFocusTarget } from '../ui/Modal'
 import { useActiveCommunity } from '../../store/communities'
 import { useChannelStore } from '../../store/channels'
 import { isBackupReminderDue, useSettingsStore } from '../../store/settings'
 import { Spinner } from '../ui/Spinner'
+import { ModalLoadingFallback } from '../ui/ModalLoadingFallback'
 
 const DiagnosticsPanel = lazy(() =>
   import('../settings/DiagnosticsPanel').then((module) => ({ default: module.DiagnosticsPanel })),
@@ -54,6 +54,7 @@ export function UserPanel() {
   }
 
   const openSecurity = () => {
+    setNextModalRestoreFocusTarget(settingsTriggerRef.current)
     setShowSettings(false)
     setShowSecurity(true)
   }
@@ -72,9 +73,9 @@ export function UserPanel() {
       <div className="flex h-user-panel flex-shrink-0 items-center gap-2 bg-surface-sunken px-2">
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left transition-colors hover:bg-bg-modifier-hover"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-control px-1 py-1 text-left transition-colors hover:bg-surface-hover"
           onClick={openSettings}
-          aria-label={`Open settings for ${identity.displayName}`}
+          aria-label={`User settings for ${identity.displayName}`}
         >
           <Avatar color={identity.avatarColor} size={32} name={identity.displayName} />
           <span className="min-w-0 flex-1">
@@ -85,18 +86,8 @@ export function UserPanel() {
               {matrixAccountId ? 'Mesh account' : 'Local identity'}
             </span>
           </span>
+          <Icon name="settings" size="sm" className="flex-shrink-0 text-muted" />
         </button>
-
-        <Tooltip content="User Settings" side="top">
-          <button
-            type="button"
-            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded text-muted transition-colors hover:bg-bg-modifier-hover hover:text-secondary"
-            aria-label="User settings"
-            onClick={openSettings}
-          >
-            <Icon name="settings" size="sm" />
-          </button>
-        </Tooltip>
       </div>
 
       <DialogErrorBoundary
@@ -105,7 +96,7 @@ export function UserPanel() {
         title="User Settings"
       >
         {showSettings && (
-          <Suspense fallback={<Modal open onClose={closeSettings} title="User Settings"><div role="status" aria-label="Loading settings"><Spinner /></div></Modal>}>
+          <Suspense fallback={<ModalLoadingFallback title="User Settings" label="Loading settings" />}>
             <UserSettingsPanel
               open
               onClose={closeSettings}
@@ -137,7 +128,7 @@ export function UserPanel() {
         title="Security & Devices"
       >
         {showSecurity && (
-          <Suspense fallback={<Modal open onClose={() => setShowSecurity(false)} title="Security & Devices"><div role="status" aria-label="Loading security settings"><Spinner /></div></Modal>}>
+          <Suspense fallback={<ModalLoadingFallback title="Security & Devices" label="Loading security settings" />}>
             <SecurityDevicesPanel open onClose={() => setShowSecurity(false)} />
           </Suspense>
         )}
@@ -148,7 +139,7 @@ export function UserPanel() {
         title="System diagnostics"
       >
         {showDiagnostics && (
-          <Suspense fallback={<div role="status" aria-label="Loading diagnostics"><Spinner /></div>}>
+          <Suspense fallback={<ModalLoadingFallback title="System diagnostics" label="Loading diagnostics" />}>
             <DiagnosticsPanel
               open
               onClose={() => setShowDiagnostics(false)}
@@ -164,7 +155,7 @@ export function UserPanel() {
       >
         {showImport && (
           <Modal open onClose={() => setShowImport(false)} title="Import older Mesh data">
-            <Suspense fallback={<div role="status" aria-label="Loading import tools"><Spinner /></div>}>
+            <Suspense fallback={<div role="status" aria-label="Loading import tools" className="flex min-h-32 flex-col items-center justify-center gap-3 text-sm text-content-muted"><Spinner /><span>Loading import tools…</span></div>}>
               {activeCommunity ? (
                 <LegacyMigrationPanel
                   communityId={activeCommunity.id}

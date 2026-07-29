@@ -13,9 +13,10 @@ import { showToast } from '../ui/Toast'
 import type { Channel } from '../../types/ipc'
 import { useMatrixRtcMembershipSync } from '../../hooks/useMatrixRtcMembershipSync'
 import { canStartMatrixVoice, shouldActivateVoiceSession } from '../../lib/voice-runtime'
-import { Spinner } from '../ui/Spinner'
+import { ModalLoadingFallback } from '../ui/ModalLoadingFallback'
 import { useIdentityStore } from '../../store/identity'
 import { useNetworkStore } from '../../store/network'
+import { EmptyState } from '../ui/Primitives'
 
 const CommunitySettings = lazy(() =>
   import('../community/CommunitySettings').then((module) => ({ default: module.CommunitySettings })),
@@ -83,20 +84,20 @@ export function ChannelSidebar() {
   if (!activeCommunity) {
     return (
       <div className="flex flex-col h-full">
-        <div className="flex h-12 flex-shrink-0 items-center border-b border-border-subtle px-4">
+        <div className="flex h-conversation-header flex-shrink-0 items-center border-b border-border-subtle px-4">
           <h2 className="text-sm font-semibold text-primary">Your servers</h2>
         </div>
-        <div className="flex flex-1 items-center px-5 py-8 text-center">
-          <div>
-            <p className="text-sm font-medium text-primary">
-              {communityCount > 0 ? 'Choose a community' : 'Find your people'}
-            </p>
-            <p className="mt-2 text-xs leading-5 text-muted">
-              {communityCount > 0
+        <div className="flex flex-1 items-center justify-center">
+          <EmptyState
+            variant="compact"
+            icon={<Icon name={communityCount > 0 ? 'hash' : 'users'} size="lg" />}
+            title={communityCount > 0 ? 'Choose a community' : 'Find your people'}
+            description={
+              communityCount > 0
                 ? 'Select a community icon to view its rooms.'
-                : 'Use the plus button to create or join a community.'}
-            </p>
-          </div>
+                : 'Use the plus button to create or join a community.'
+            }
+          />
         </div>
         <ScopedErrorBoundary
           name="User controls"
@@ -113,7 +114,7 @@ export function ChannelSidebar() {
     <>
       <div className="flex flex-col h-full">
         <button
-          className="flex min-h-20 flex-shrink-0 items-start justify-between gap-2 border-b border-border-subtle px-3 py-3 text-left transition-colors hover:bg-bg-modifier-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          className="flex h-conversation-header flex-shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-3 text-left transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           onClick={() => setShowSettings(true)}
           aria-label={`Open settings for ${activeCommunity.name}`}
           data-tauri-drag-region
@@ -150,7 +151,7 @@ export function ChannelSidebar() {
         </button>
 
         {/* Channel list */}
-        <div className="flex-1 overflow-y-auto px-2 py-4">
+        <div className="flex-1 overflow-y-auto px-2 py-3">
           {/* Text Channels category */}
           {textChannels.length > 0 && (
             <div className="mb-1">
@@ -276,10 +277,10 @@ export function ChannelSidebar() {
                                 key={`${member.userId}:${member.deviceId}:${member.sessionId}`}
                                 type="button"
                                 onClick={joinChannel}
-                                className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs text-muted hover:bg-bg-modifier-hover hover:text-secondary"
+                                className="flex w-full items-center gap-1.5 rounded-control px-1 py-0.5 text-left text-xs text-muted hover:bg-surface-hover hover:text-secondary"
                               >
                                 <span
-                                  className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-bg-modifier-active text-meta font-semibold text-secondary"
+                                  className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-control bg-surface-active text-meta font-semibold text-secondary"
                                   aria-hidden="true"
                                 >
                                   {(member.displayName || member.userId).slice(0, 1).toUpperCase()}
@@ -321,7 +322,7 @@ export function ChannelSidebar() {
         title="Community Settings"
       >
         {showSettings && (
-          <Suspense fallback={<div role="status" aria-label="Loading community settings" className="flex items-center justify-center p-6"><Spinner /></div>}>
+          <Suspense fallback={<ModalLoadingFallback title="Community Settings" label="Loading community settings" />}>
             <CommunitySettings isOpen onClose={() => setShowSettings(false)} />
           </Suspense>
         )}

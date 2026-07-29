@@ -220,7 +220,7 @@ function MatrixDiagnosticsContent({ data }: { data: BackendStatus }) {
             warn={!data.voiceService.cspReady}
           />
         </Grid>
-        <details className="mt-3 rounded-md border border-border-subtle bg-bg-primary px-3">
+        <details className="mt-3 rounded-control border border-border-subtle bg-surface-sunken px-3">
           <summary className="flex min-h-8 cursor-pointer items-center text-xs font-medium text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
             Technical details
           </summary>
@@ -348,7 +348,7 @@ function DiagnosticsContent({
             stored locally and visible to you immediately. They'll automatically
             sync to other peers when someone joins the mesh — either via a local
             network (mDNS) or by configuring{' '}
-            <code className="rounded bg-bg-tertiary px-1">MESH_BOOTSTRAP_PEERS</code>.
+            <code className="rounded-control bg-surface-sunken px-1">MESH_BOOTSTRAP_PEERS</code>.
           </p>
         )}
       </Section>
@@ -391,9 +391,9 @@ function DiagnosticsContent({
         )}
 
         {/* Reachability probe */}
-        <div className="mt-3 border-t border-border pt-3">
+        <div className="mt-3 border-t border-border-subtle pt-3">
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-meta font-semibold uppercase tracking-wider text-muted">
+            <span className="text-meta font-semibold uppercase tracking-caption text-muted">
               Reachability probe
             </span>
             <Button
@@ -453,7 +453,7 @@ function Section({
   return (
     <div>
       <h3
-        className={`mb-2 text-meta font-semibold uppercase tracking-wider ${
+        className={`mb-2 text-meta font-semibold uppercase tracking-caption ${
           tone === 'warning' ? 'text-status-warning' : 'text-muted'
         }`}
       >
@@ -470,7 +470,7 @@ function Grid({ children }: { children: React.ReactNode }) {
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded bg-bg-primary px-3 py-2">
+    <div className="rounded-control bg-surface-sunken px-3 py-2">
       <div className="text-caption uppercase tracking-wide text-muted">{label}</div>
       <div className="mt-0.5 break-all font-mono text-xs text-primary">{value}</div>
     </div>
@@ -479,7 +479,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 
 function StatCell({ label, value, ok }: { label: string; value: string; ok?: boolean }) {
   return (
-    <div className="rounded bg-bg-primary px-3 py-2">
+    <div className="rounded-control bg-surface-sunken px-3 py-2">
       <div className="text-caption uppercase tracking-wide text-muted">{label}</div>
       <div
         className={`tnum mt-0.5 font-mono text-sm ${
@@ -506,7 +506,7 @@ function StatusCell({
   const color = warn ? 'text-status-warning' : ok ? 'text-status-success' : 'text-status-danger'
   const dotColor = warn ? 'bg-status-warning' : ok ? 'bg-status-success' : 'bg-status-danger'
   return (
-    <div className="rounded bg-bg-primary px-3 py-2">
+    <div className="rounded-control bg-surface-sunken px-3 py-2">
       <div className="text-caption uppercase tracking-wide text-muted">{label}</div>
       <div className="mt-0.5 flex items-center gap-1.5 text-sm">
         <span className={`inline-block h-2 w-2 rounded-full ${dotColor}`} aria-hidden />
@@ -533,14 +533,14 @@ function DownloadCard({ stats }: { stats: SchedulerStats }) {
         ? 'text-status-success'
         : 'text-accent'
   return (
-    <div className="rounded bg-bg-primary px-3 py-2">
+    <div className="rounded-control bg-surface-sunken px-3 py-2">
       <div className="mb-1 flex items-center justify-between text-xs">
         <span className="truncate font-mono text-muted" title={stats.fileHash}>
           {stats.fileHash.slice(0, 16)}…
         </span>
         <span className={statusColor}>{statusLabel}</span>
       </div>
-      <div className="mb-2 h-1 overflow-hidden rounded-full bg-bg-tertiary">
+      <div className="mb-2 h-1 overflow-hidden rounded-full bg-surface-active">
         <div
           className="h-full bg-accent transition-all"
           data-design-token-exception="data-driven-diagnostic-progress-width"
@@ -639,7 +639,7 @@ function ProbeRow({ result }: { result: IceServerProbeResult }) {
         : 'bg-status-warning'
   const label = probeOutcomeLabel(result.outcome)
   return (
-    <div className="rounded bg-bg-primary px-2 py-1.5 text-meta">
+    <div className="rounded-control bg-surface-sunken px-2 py-1.5 text-meta">
       <div className="flex items-center gap-1.5">
         <span className={`inline-block h-2 w-2 rounded-full ${dot}`} aria-hidden />
         <span className="truncate font-mono text-secondary" title={result.url}>
