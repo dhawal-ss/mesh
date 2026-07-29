@@ -1,0 +1,31 @@
+{
+	email {$ACME_EMAIL}
+	admin off
+}
+
+{$MESH_SERVER_NAME} {
+	@matrix_client path /.well-known/matrix/client
+	header @matrix_client Content-Type "application/json"
+	header @matrix_client Access-Control-Allow-Origin "*"
+	respond @matrix_client `{"m.homeserver":{"base_url":"https://{$MESH_HOMESERVER_HOST}"},"org.matrix.msc4143.rtc_foci":[{"type":"livekit","livekit_service_url":"https://{$MESH_RTC_HOST}/livekit/jwt"}]}` 200
+
+	@matrix_server path /.well-known/matrix/server
+	header @matrix_server Content-Type "application/json"
+	respond @matrix_server `{"m.server":"{$MESH_HOMESERVER_HOST}:443"}` 200
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+	respond "Mesh service is online." 200
+}
+
+{$MESH_HOMESERVER_HOST} {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+	reverse_proxy synapse:8008
+}

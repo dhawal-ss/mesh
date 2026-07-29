@@ -29,8 +29,10 @@ type MatrixAccountScreenProps = Pick<
   recommendedService?: string
 }
 
+export const DEFAULT_MESH_SERVICE = 'https://matrix.mesh.dhawal.org'
+
 const CONFIGURED_SERVICE = import.meta.env.VITE_MESH_HOMESERVER?.trim()
-const DEFAULT_RECOMMENDED_SERVICE = CONFIGURED_SERVICE || ''
+const DEFAULT_RECOMMENDED_SERVICE = CONFIGURED_SERVICE || DEFAULT_MESH_SERVICE
 
 export function MatrixAccountScreen({
   onMatrixCheckUsernameAvailable,
