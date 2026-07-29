@@ -43,6 +43,10 @@ fn map_error(error: BackendError) -> CommandError {
         BackendError::RegistrationAdditionalAuthRequired => {
             CommandError::RegistrationAdditionalAuthRequired
         }
+        BackendError::RegistrationInvitationRequired => {
+            CommandError::RegistrationInvitationRequired
+        }
+        BackendError::RegistrationInvitationInvalid => CommandError::RegistrationInvitationInvalid,
         BackendError::RegistrationTimedOut(_) => CommandError::RegistrationTimedOut,
         BackendError::Unsupported(_) => CommandError::Unsupported(error.to_string()),
         BackendError::Other(_) => CommandError::Other(error.to_string()),
@@ -139,13 +143,14 @@ pub async fn matrix_login(
 pub async fn register_account(
     username: String,
     password: String,
+    registration_token: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<BackendStatus, CommandError> {
     require_matrix(&state)?;
     state
         .backend
         .backend()
-        .register_account(username, password)
+        .register_account(username, password, registration_token)
         .await
         .map_err(map_error)
 }

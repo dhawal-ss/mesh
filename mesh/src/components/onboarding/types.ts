@@ -32,8 +32,13 @@ export interface OnboardingFlowProps {
     password: string
     deviceName?: string
   }) => Promise<void>
+  onMatrixOidcLogin?: (homeserver: string) => Promise<void>
   onMatrixCheckUsernameAvailable?: (username: string) => Promise<boolean>
-  onMatrixRegisterAccount?: (username: string, password: string) => Promise<void>
+  onMatrixRegisterAccount?: (
+    username: string,
+    password: string,
+    registrationToken: string,
+  ) => Promise<void>
   onMatrixSwitchAccount?: (profileId: string) => Promise<void>
   onCreateBackupCode?: () => Promise<string>
   onBackupConfigured?: () => void

@@ -434,8 +434,13 @@ export async function matrixLogin(request: MatrixLoginRequest): Promise<BackendS
 export async function matrixRegisterAccount(
   username: string,
   password: string,
+  registrationToken: string,
 ): Promise<BackendStatus> {
-  const status = await tauriInvoke<BackendStatus>('register_account', { username, password })
+  const status = await tauriInvoke<BackendStatus>('register_account', {
+    username,
+    password,
+    registrationToken,
+  })
   return cacheBackendStatus(status)
 }
 

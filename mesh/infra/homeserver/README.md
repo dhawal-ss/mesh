@@ -19,12 +19,14 @@ cd mesh/infra/homeserver
 ./backup.sh
 ```
 
-The local Synapse control port binds only to `127.0.0.1:8008`. Registration is
-closed by default. Create alpha accounts with `register_new_matrix_user` after
-the service is healthy.
+The local Synapse control port binds only to `127.0.0.1:8008`. Public account
+creation is enabled only through bounded registration invitations. Open,
+unverified registration remains disabled. The public reverse proxy returns
+`404` for Synapse's administrative API; invitation creation runs locally.
 
-The initial operator account is `@dhawal:mesh.dhawal.org`. Its generated
-password is stored in macOS Keychain and can be retrieved locally with:
+On first start, Mesh creates the operator account
+`@dhawal:mesh.dhawal.org` and stores its generated password in macOS Keychain.
+Retrieve it locally with:
 
 ```sh
 security find-generic-password \
@@ -32,6 +34,22 @@ security find-generic-password \
   -s 'Mesh Homeserver Admin' \
   -w
 ```
+
+Create a one-use invitation that expires after seven days:
+
+```sh
+sh ./create-registration-invite.sh
+```
+
+Optional arguments set expiry days and allowed uses:
+
+```sh
+sh ./create-registration-invite.sh 2 1
+```
+
+Give the resulting link to the invited person. In Mesh they choose
+**Create account** and paste the full link into **Invitation code**. Never use
+an unlimited or non-expiring token for public onboarding.
 
 The installed `org.mesh.homeserver` user LaunchAgent opens Docker after login.
 Docker's `unless-stopped` policy then restarts the Mesh services. The
@@ -72,8 +90,16 @@ curl https://mesh.dhawal.org/.well-known/matrix/client
 curl https://matrix.mesh.dhawal.org/_matrix/client/versions
 ```
 
+Both commands must succeed repeatedly, not just once. Intermittent TCP
+timeouts mean the router forwarding, Mac sleep/power state, Docker listener,
+or firewall is still unhealthy.
+
 The MatrixRTC stack under `../matrixrtc` is activated separately after the
-homeserver is publicly healthy.
+homeserver is publicly healthy. `MESH_RTC_ENABLED` must remain `0` until RTC
+DNS, TLS, authorization, SFU signalling, TURN allocation, and a real encrypted
+two-party call pass. After they pass, set it to `1`, rerun `./setup.sh`, and
+restart the public proxy. This prevents discovery from advertising a calling
+service that does not exist.
 
 ## Critical data
 

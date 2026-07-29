@@ -345,7 +345,7 @@ export default function App() {
                 }
                 return bridge.matrixCheckUsernameAvailable(username)
               }}
-              onMatrixRegisterAccount={async (username, password) => {
+              onMatrixRegisterAccount={async (username, password, registrationToken) => {
                 if (!isTauriRuntime) {
                   const status: bridge.BackendStatus = {
                     kind: 'matrix',
@@ -365,7 +365,11 @@ export default function App() {
                   if (registeredIdentity) setIdentity(registeredIdentity)
                   return
                 }
-                const status = await bridge.matrixRegisterAccount(username, password)
+                const status = await bridge.matrixRegisterAccount(
+                  username,
+                  password,
+                  registrationToken,
+                )
                 setBackendStatus(status)
                 const registeredIdentity = await loadMatrixIdentity(status.userId, true)
                 if (registeredIdentity) setIdentity(registeredIdentity)
@@ -391,6 +395,12 @@ export default function App() {
                   return
                 }
                 const status = await bridge.matrixLogin(request)
+                setBackendStatus(status)
+                const signedInIdentity = await loadMatrixIdentity(status.userId, true)
+                if (signedInIdentity) setIdentity(signedInIdentity)
+              }}
+              onMatrixOidcLogin={async (homeserver) => {
+                const status = await bridge.matrixStartOidcLogin(homeserver)
                 setBackendStatus(status)
                 const signedInIdentity = await loadMatrixIdentity(status.userId, true)
                 if (signedInIdentity) setIdentity(signedInIdentity)
