@@ -79,9 +79,31 @@ function Ensure-SynapseConfig {
     New-Item -ItemType Directory -Force -Path $dataPath | Out-Null
     $configPath = Join-Path $dataPath 'homeserver.yaml'
     if (-not (Test-Path -LiteralPath $configPath)) {
-        & docker run --rm -v "${dataPath}:/data" `
-            -e "SYNAPSE_SERVER_NAME=$ServerName" -e SYNAPSE_REPORT_STATS=no `
-            $synapseImage generate
+        $dockerRunArguments = @('run', '--rm')
+        if (-not [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+            [System.Runtime.InteropServices.OSPlatform]::Windows
+        )) {
+            $userId = (& id -u).Trim()
+            if ($LASTEXITCODE -ne 0 -or $userId -notmatch '^\d+$') {
+                throw 'Could not determine the Unix user ID for Matrix spike setup'
+            }
+            $groupId = (& id -g).Trim()
+            if ($LASTEXITCODE -ne 0 -or $groupId -notmatch '^\d+$') {
+                throw 'Could not determine the Unix group ID for Matrix spike setup'
+            }
+            $dockerRunArguments += @('--user', "${userId}:${groupId}")
+        }
+        $dockerRunArguments += @(
+            '-v',
+            "${dataPath}:/data",
+            '-e',
+            "SYNAPSE_SERVER_NAME=$ServerName",
+            '-e',
+            'SYNAPSE_REPORT_STATS=no',
+            $synapseImage,
+            'generate'
+        )
+        & docker @dockerRunArguments
         if ($LASTEXITCODE -ne 0) { throw "Failed to generate Synapse config for $ServerName" }
 
         Add-Content -LiteralPath $configPath -Value @"
