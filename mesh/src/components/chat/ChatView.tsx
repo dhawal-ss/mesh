@@ -212,17 +212,13 @@ export function ChatView({
     return () => {
       loadGenerationRef.current += 1
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channel.id])
+  }, [resetToLatestWindow])
 
   // Search can target another channel or a message outside the bounded hot
   // window. Wait for the channel-switch load first, then merge older context
   // around the search result so the latest load cannot evict the target.
   useEffect(() => {
-    if (!navigationRequest) {
-      setPreparedNavigationId(null)
-      return
-    }
+    if (!navigationRequest) return
 
     let active = true
     const prepareNavigation = async () => {
@@ -281,13 +277,20 @@ export function ChatView({
     if (!scrollToItem(target.id, 'center')) return
 
     clearTimeout(highlightTimerRef.current)
-    setHighlightedMessageId(target.id)
-    setJumpAnnouncement(`Jumped to message from ${target.authorDisplayName}`)
-    highlightTimerRef.current = setTimeout(() => {
-      setHighlightedMessageId(null)
-      setJumpAnnouncement('')
-    }, 2_000)
-    useMessageNavigationStore.getState().completeNavigation(navigationRequest.requestId)
+    let active = true
+    void Promise.resolve().then(() => {
+      if (!active) return
+      setHighlightedMessageId(target.id)
+      setJumpAnnouncement(`Jumped to message from ${target.authorDisplayName}`)
+      highlightTimerRef.current = setTimeout(() => {
+        setHighlightedMessageId(null)
+        setJumpAnnouncement('')
+      }, 2_000)
+      useMessageNavigationStore.getState().completeNavigation(navigationRequest.requestId)
+    })
+    return () => {
+      active = false
+    }
   }, [navigationRequest, preparedNavigationId, scrollToItem, virtualItems])
 
   useEffect(
@@ -362,7 +365,6 @@ export function ChatView({
 
   // Reset scroll state on channel switch
   useEffect(() => {
-    setShowNewMessages(false)
     resetLayout()
   }, [channel.id, resetLayout])
 

@@ -74,9 +74,14 @@ export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: 
 
   useEffect(() => {
     if (!open) return
-    refresh()
+    const initialRefresh = window.setTimeout(() => {
+      void refresh()
+    }, 0)
     const interval = setInterval(refresh, REFRESH_INTERVAL_MS)
-    return () => clearInterval(interval)
+    return () => {
+      window.clearTimeout(initialRefresh)
+      clearInterval(interval)
+    }
   }, [open, refresh])
 
   return (

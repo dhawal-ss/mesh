@@ -23,6 +23,10 @@ import {
 
 type AccountMode = 'create' | 'sign-in' | 'advanced'
 type Availability = 'idle' | 'checking' | 'available' | 'taken' | 'error'
+type AvailabilityCheck = {
+  username: string
+  status: Exclude<Availability, 'idle' | 'checking'>
+}
 type AdmissionResolution =
   | { invitation: string; status: 'resolving' }
   | { invitation: string; status: 'resolved'; admission: MatrixCommunityAdmission }
@@ -67,7 +71,7 @@ export function MatrixAccountScreen({
     useState<AdmissionResolution | null>(null)
   const [serviceAddress, setServiceAddress] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [availability, setAvailability] = useState<Availability>('idle')
+  const [availabilityCheck, setAvailabilityCheck] = useState<AvailabilityCheck | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [switchingProfile, setSwitchingProfile] = useState<string | null>(null)
@@ -123,6 +127,18 @@ export function MatrixAccountScreen({
     ),
     [mode, recommendedService, serviceAddress, username],
   )
+  const availabilityUsername =
+    mode === 'create'
+    && normalizedUsername
+    && !usernameError
+    && onMatrixCheckUsernameAvailable
+      ? normalizedUsername
+      : null
+  const availability: Availability = !availabilityUsername
+    ? 'idle'
+    : availabilityCheck?.username === availabilityUsername
+      ? availabilityCheck.status
+      : 'checking'
 
   useEffect(() => {
     if (!initialInvitation) return
@@ -188,24 +204,20 @@ export function MatrixAccountScreen({
   }, [])
 
   useEffect(() => {
-    if (
-      mode !== 'create'
-      || !normalizedUsername
-      || usernameError
-      || !onMatrixCheckUsernameAvailable
-    ) {
-      setAvailability('idle')
-      return
-    }
+    if (!availabilityUsername || !onMatrixCheckUsernameAvailable) return
 
     let active = true
-    setAvailability('checking')
     const timer = window.setTimeout(() => {
-      void onMatrixCheckUsernameAvailable(normalizedUsername).then((available) => {
-        if (active) setAvailability(available ? 'available' : 'taken')
+      void onMatrixCheckUsernameAvailable(availabilityUsername).then((available) => {
+        if (active) {
+          setAvailabilityCheck({
+            username: availabilityUsername,
+            status: available ? 'available' : 'taken',
+          })
+        }
       }).catch((cause) => {
         if (active) {
-          setAvailability('error')
+          setAvailabilityCheck({ username: availabilityUsername, status: 'error' })
           setError(friendlyAccountCreationError(cause))
         }
       })
@@ -215,7 +227,7 @@ export function MatrixAccountScreen({
       active = false
       window.clearTimeout(timer)
     }
-  }, [mode, normalizedUsername, onMatrixCheckUsernameAvailable, usernameError])
+  }, [availabilityUsername, onMatrixCheckUsernameAvailable])
 
   useEffect(() => {
     if (previousModeRef.current === mode) return

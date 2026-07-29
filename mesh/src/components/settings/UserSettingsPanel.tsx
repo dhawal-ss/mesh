@@ -84,14 +84,6 @@ export function UserSettingsPanel({
 
   useEffect(() => {
     if (!open) return
-    setDisplayName(identity.displayName)
-    setProfileError(null)
-    setProfileValidation(null)
-    setProfileSaved(false)
-  }, [identity.displayName, open])
-
-  useEffect(() => {
-    if (!open) return
     const unlockAdvanced = (event: KeyboardEvent) => {
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'd') {
         event.preventDefault()

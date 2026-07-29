@@ -34,6 +34,8 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
   const [deactivationPassword, setDeactivationPassword] = useState('')
   const [deactivationPhrase, setDeactivationPhrase] = useState('')
   const [deactivationAcknowledged, setDeactivationAcknowledged] = useState(false)
+  const verificationId = verification?.verificationId
+  const verificationPhase = verification?.phase
 
   const loadDevices = async () => {
     setLoadingDevices(true)
@@ -50,19 +52,6 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
 
   useEffect(() => {
     if (!open) return
-    setError(null)
-    setConfirmRemoval(false)
-    setRevokeTarget(null)
-    setAccountPassword('')
-    setLostDeviceOpen(false)
-    setLostDeviceId('')
-    setLostDeviceAcknowledged(false)
-    setVerification(null)
-    setExportResult(null)
-    setDeactivationOpen(false)
-    setDeactivationPassword('')
-    setDeactivationPhrase('')
-    setDeactivationAcknowledged(false)
     void bridge
       .getBackendStatus()
       .then(async (nextStatus) => {
@@ -79,10 +68,10 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
   }, [open])
 
   useEffect(() => {
-    if (!open || !verification || verification.phase === 'done' || verification.phase === 'cancelled') return
+    if (!open || !verificationId || verificationPhase === 'done' || verificationPhase === 'cancelled') return
     const interval = window.setInterval(() => {
       void bridge
-        .matrixDeviceVerificationStatus(verification.verificationId)
+        .matrixDeviceVerificationStatus(verificationId)
         .then((next) => {
           setVerification(next)
           if (next.phase === 'done') void loadDevices()
@@ -93,7 +82,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
         })
     }, 1_000)
     return () => window.clearInterval(interval)
-  }, [open, verification?.verificationId, verification?.phase])
+  }, [open, verificationId, verificationPhase])
 
   const enableRecovery = async () => {
     setBusy(true)

@@ -150,9 +150,9 @@ export const MessageComponent = memo(function MessageComponent({
   }, [message.content])
 
   useEffect(() => {
-    if (editRequestToken > 0 && isOwnMessage && !isDeleted && !isQueued) {
-      handleStartEdit()
-    }
+    if (editRequestToken <= 0 || !isOwnMessage || isDeleted || isQueued) return
+    const frame = window.requestAnimationFrame(handleStartEdit)
+    return () => window.cancelAnimationFrame(frame)
   }, [editRequestToken, handleStartEdit, isDeleted, isOwnMessage, isQueued])
 
   const handleSaveEdit = useCallback(async () => {

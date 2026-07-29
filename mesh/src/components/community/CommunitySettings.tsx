@@ -43,8 +43,10 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
   const [channelName, setChannelName] = useState('')
   const [channelType, setChannelType] = useState<'text' | 'voice'>('text')
   const [isCreatingChannel, setIsCreatingChannel] = useState(false)
-  const [communityName, setCommunityName] = useState('')
-  const [communityDescription, setCommunityDescription] = useState('')
+  const [communityName, setCommunityName] = useState(() => community?.name ?? '')
+  const [communityDescription, setCommunityDescription] = useState(
+    () => community?.description ?? '',
+  )
   const [isSavingMetadata, setIsSavingMetadata] = useState(false)
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
   const [communityAlias, setCommunityAlias] = useState('')
@@ -61,12 +63,6 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
   const emojiFileInputRef = useRef<HTMLInputElement>(null)
   const serverEmoji = useServerEmoji(activeCommunityId)
   const refreshServerEmoji = useServerEmojiStore((state) => state.load)
-
-  useEffect(() => {
-    if (!community) return
-    setCommunityName(community.name)
-    setCommunityDescription(community.description)
-  }, [community])
 
   useEffect(() => {
     if (!isOpen || !matrixMode || !community || !activeCommunityId) return
@@ -555,9 +551,9 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
               <AnimatePresence>
                 {showCreateChannel && (
                   <motion.div
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
+                    initial={{ y: -4 }}
+                    animate={{ y: 0 }}
+                    exit={{ y: -4 }}
                     transition={transitions.enter}
                     className="overflow-hidden"
                   >

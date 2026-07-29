@@ -110,11 +110,11 @@ export function OnboardingFlow({
   }
 
   return (
-    <main className="flex h-screen flex-col overflow-y-auto bg-surface-sunken p-4 sm:px-6">
+    <main className="h-screen overflow-y-auto bg-surface-sunken p-4 sm:px-6">
       <motion.section
         aria-label="Set up Mesh"
         data-onboarding-shell
-        className="m-auto grid w-full max-w-onboarding-shell overflow-hidden rounded-panel border border-border-subtle bg-surface-base shadow-overlay lg:min-h-onboarding-shell lg:grid-cols-[minmax(17rem,0.78fr)_minmax(28rem,1.22fr)]"
+        className="mx-auto grid w-full max-w-onboarding-shell rounded-panel border border-border-subtle bg-surface-base shadow-overlay lg:min-h-onboarding-shell lg:grid-cols-[minmax(17rem,0.78fr)_minmax(28rem,1.22fr)]"
         variants={variants.screen}
         initial="initial"
         animate="animate"
