@@ -8,7 +8,6 @@ vi.mock('../../lib/bridge', () => ({
   isTauriRuntime: vi.fn(() => false),
   matrixAccounts: vi.fn(async () => []),
   matrixOidcStatus: vi.fn(),
-  matrixStartOidcLogin: vi.fn(),
   matrixCancelLogin: vi.fn(async () => {}),
 }))
 
@@ -41,6 +40,7 @@ describe('MatrixAccountScreen', () => {
     expect(findButton('Sign in')).toBeTruthy()
     expect(container.querySelector('input[name="username"]')?.getAttribute('placeholder')).toBe('ashvin')
     expect(container.querySelectorAll('input[autocomplete="new-password"]')).toHaveLength(2)
+    expect(container.querySelector('input[name="invitation"]')).toBeTruthy()
     expect(container.textContent).not.toContain('Matrix')
     expect(container.textContent).not.toContain('Service address')
     expect(container.textContent).not.toMatch(/@[a-z0-9._-]+:/i)
@@ -72,7 +72,7 @@ describe('MatrixAccountScreen', () => {
     expect(container.textContent).toContain('ashvin_ is available')
   })
 
-  it('requires an available username, a strong password, and matching confirmation', async () => {
+  it('requires an available username, strong matching passwords, and an invitation', async () => {
     vi.useFakeTimers()
     const register = vi.fn(async () => {})
     const onNext = vi.fn()
@@ -88,6 +88,10 @@ describe('MatrixAccountScreen', () => {
       await Promise.resolve()
       setInputValue(findInput('password'), 'correct horse battery staple')
       setInputValue(findInput('password-confirmation'), 'not the same')
+      setInputValue(
+        findInput('invitation'),
+        'https://mesh.dhawal.org/invite?registration_token=aB3xK9',
+      )
     })
     expect(container.textContent).toContain('Strong password')
     expect(container.textContent).toContain('Passwords do not match')
@@ -102,7 +106,11 @@ describe('MatrixAccountScreen', () => {
       submitForm()
       await Promise.resolve()
     })
-    expect(register).toHaveBeenCalledWith('newfriend', 'correct horse battery staple')
+    expect(register).toHaveBeenCalledWith(
+      'newfriend',
+      'correct horse battery staple',
+      'aB3xK9',
+    )
     expect(onNext).toHaveBeenCalledWith('registered')
   })
 
@@ -194,6 +202,46 @@ describe('MatrixAccountScreen', () => {
     }))
   })
 
+  it('returns browser sign-in through the app authentication handler', async () => {
+    vi.mocked(bridge.isTauriRuntime).mockReturnValue(true)
+    vi.mocked(bridge.matrixOidcStatus).mockResolvedValue({
+      homeserver: 'https://friends.example',
+      availability: 'supported',
+      issuer: 'https://auth.friends.example',
+      ready: true,
+      authorizationCodePkce: true,
+      clientIdConfigured: true,
+      redirectUri: 'http://127.0.0.1:8418/oauth/callback',
+      authorizationEndpoint: 'https://auth.friends.example/authorize',
+      registrationMode: 'static',
+      nativeCallbackReady: true,
+      reason: '',
+    })
+    const oidcLogin = vi.fn(async () => {})
+    const onNext = vi.fn()
+    await renderScreen({ onMatrixOidcLogin: oidcLogin, onNext })
+
+    await act(async () => {
+      findButton('Sign in').click()
+    })
+    await act(async () => {
+      findButton('I have an account somewhere else').click()
+    })
+    await act(async () => {
+      setInputValue(findInput('homeserver'), 'friends.example')
+      findButton('Check browser sign-in').click()
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      findButton('Continue in browser').click()
+      await Promise.resolve()
+    })
+
+    expect(oidcLogin).toHaveBeenCalledWith('friends.example')
+    expect(onNext).toHaveBeenCalledWith('signed-in')
+  })
+
   it('never reveals the qualified identifier for a saved account', async () => {
     vi.mocked(bridge.isTauriRuntime).mockReturnValue(true)
     vi.mocked(bridge.matrixAccounts).mockResolvedValue([
@@ -219,13 +267,18 @@ describe('MatrixAccountScreen', () => {
 
   async function renderScreen(overrides: {
     onMatrixCheckUsernameAvailable?: (username: string) => Promise<boolean>
-    onMatrixRegisterAccount?: (username: string, password: string) => Promise<void>
+    onMatrixRegisterAccount?: (
+      username: string,
+      password: string,
+      registrationToken: string,
+    ) => Promise<void>
     onMatrixLogin?: (request: {
       homeserver: string
       username: string
       password: string
       deviceName?: string
     }) => Promise<void>
+    onMatrixOidcLogin?: (homeserver: string) => Promise<void>
     onNext?: () => void
   } = {}) {
     await act(async () => {
@@ -234,6 +287,7 @@ describe('MatrixAccountScreen', () => {
           onMatrixCheckUsernameAvailable={overrides.onMatrixCheckUsernameAvailable ?? vi.fn(async () => true)}
           onMatrixRegisterAccount={overrides.onMatrixRegisterAccount ?? vi.fn(async () => {})}
           onMatrixLogin={overrides.onMatrixLogin ?? vi.fn(async () => {})}
+          onMatrixOidcLogin={overrides.onMatrixOidcLogin ?? vi.fn(async () => {})}
           onNext={overrides.onNext ?? (() => {})}
           recommendedService="https://managed.mesh.test"
         />,

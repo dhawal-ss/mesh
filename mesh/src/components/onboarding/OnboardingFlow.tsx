@@ -50,6 +50,7 @@ export function OnboardingFlow({
   onMatrixCheckUsernameAvailable,
   onMatrixRegisterAccount,
   onMatrixLogin,
+  onMatrixOidcLogin,
   onMatrixSwitchAccount,
   onCreateBackupCode,
   onBackupConfigured,
@@ -205,6 +206,7 @@ export function OnboardingFlow({
                     onMatrixCheckUsernameAvailable={onMatrixCheckUsernameAvailable}
                     onMatrixRegisterAccount={onMatrixRegisterAccount}
                     onMatrixLogin={onMatrixLogin}
+                    onMatrixOidcLogin={onMatrixOidcLogin}
                     onMatrixSwitchAccount={onMatrixSwitchAccount}
                     onNext={handleMatrixAccount}
                   />

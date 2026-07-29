@@ -89,12 +89,27 @@ function Ensure-SynapseConfig {
 # Mesh architecture-spike overrides. Development only.
 public_baseurl: "http://localhost:$HostPort/"
 enable_registration: true
-enable_registration_without_verification: true
+enable_registration_without_verification: false
+registration_requires_token: true
 federation_custom_ca_list:
   - /data/test-ca.crt
 "@
     }
     $configText = Get-Content -LiteralPath $configPath -Raw
+    $updatedConfig = $configText -replace `
+        '(?m)^enable_registration_without_verification:\s*true\s*$', `
+        'enable_registration_without_verification: false'
+    if ($updatedConfig -notmatch '(?m)^registration_requires_token:\s*true\s*$') {
+        $updatedConfig += "`nregistration_requires_token: true`n"
+    }
+    if ($updatedConfig -ne $configText) {
+        [System.IO.File]::WriteAllText(
+            $configPath,
+            $updatedConfig,
+            [System.Text.UTF8Encoding]::new($false)
+        )
+        $configText = $updatedConfig
+    }
     if ($configText -notmatch 'Mesh local-federation networking') {
         Add-Content -LiteralPath $configPath -Value @"
 
@@ -157,13 +172,59 @@ try {
         http://localhost:8008 -u alice -p mesh-alice --no-admin 2>&1 | Out-Host
     & docker compose exec -T synapse1 register_new_matrix_user -c /data/homeserver.yaml `
         http://localhost:8008 -u charlie -p mesh-charlie --no-admin 2>&1 | Out-Host
+    & docker compose exec -T synapse1 register_new_matrix_user -c /data/homeserver.yaml `
+        http://localhost:8008 -u meshadmin -p mesh-admin --admin 2>&1 | Out-Host
     & docker compose exec -T synapse2 register_new_matrix_user -c /data/homeserver.yaml `
         http://localhost:8008 -u bob -p mesh-bob --no-admin 2>&1 | Out-Host
+
+    $adminLogin = Invoke-RestMethod `
+        -Uri 'http://localhost:8008/_matrix/client/v3/login' `
+        -Method Post `
+        -ContentType 'application/json' `
+        -Body (@{
+            type = 'm.login.password'
+            identifier = @{
+                type = 'm.id.user'
+                user = '@meshadmin:hs1.mesh.test'
+            }
+            password = 'mesh-admin'
+            initial_device_display_name = 'Mesh registration acceptance'
+        } | ConvertTo-Json -Depth 4)
+    $adminHeaders = @{ Authorization = "Bearer $($adminLogin.access_token)" }
+    $registrationTokenBody = @{
+        token = 'mesh-spike-registration'
+        uses_allowed = $null
+        expiry_time = $null
+    } | ConvertTo-Json
+    try {
+        Invoke-RestMethod `
+            -Uri 'http://localhost:8008/_synapse/admin/v1/registration_tokens/new' `
+            -Method Post `
+            -Headers $adminHeaders `
+            -ContentType 'application/json' `
+            -Body $registrationTokenBody | Out-Null
+    } catch {
+        if ($_.Exception.Response.StatusCode.value__ -ne 400) { throw }
+        Invoke-RestMethod `
+            -Uri 'http://localhost:8008/_synapse/admin/v1/registration_tokens/mesh-spike-registration' `
+            -Method Put `
+            -Headers $adminHeaders `
+            -ContentType 'application/json' `
+            -Body (@{ uses_allowed = $null; expiry_time = $null } | ConvertTo-Json) | Out-Null
+    } finally {
+        Invoke-RestMethod `
+            -Uri 'http://localhost:8008/_matrix/client/v3/logout' `
+            -Method Post `
+            -Headers $adminHeaders `
+            -ContentType 'application/json' `
+            -Body '{}' | Out-Null
+    }
 
     Write-Output 'Matrix spike homeservers are ready:'
     Write-Output '  Alice: @alice:hs1.mesh.test at http://localhost:8008 (password mesh-alice)'
     Write-Output '  Charlie: @charlie:hs1.mesh.test at http://localhost:8008 (password mesh-charlie)'
     Write-Output '  Bob:   @bob:hs2.mesh.test at http://localhost:8009 (password mesh-bob)'
+    Write-Output '  Registration: invitation token UI-auth is required'
     Write-Output 'Run: npm run test:matrix-spike'
 } finally {
     Pop-Location
