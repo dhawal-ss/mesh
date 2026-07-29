@@ -29,6 +29,11 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
   const [lostDeviceId, setLostDeviceId] = useState('')
   const [lostDeviceAcknowledged, setLostDeviceAcknowledged] = useState(false)
   const [confirmRemoval, setConfirmRemoval] = useState(false)
+  const [exportResult, setExportResult] = useState<bridge.MatrixPersonalDataExport | null>(null)
+  const [deactivationOpen, setDeactivationOpen] = useState(false)
+  const [deactivationPassword, setDeactivationPassword] = useState('')
+  const [deactivationPhrase, setDeactivationPhrase] = useState('')
+  const [deactivationAcknowledged, setDeactivationAcknowledged] = useState(false)
 
   const loadDevices = async () => {
     setLoadingDevices(true)
@@ -53,6 +58,11 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
     setLostDeviceId('')
     setLostDeviceAcknowledged(false)
     setVerification(null)
+    setExportResult(null)
+    setDeactivationOpen(false)
+    setDeactivationPassword('')
+    setDeactivationPhrase('')
+    setDeactivationAcknowledged(false)
     void bridge
       .getBackendStatus()
       .then(async (nextStatus) => {
@@ -217,6 +227,41 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
       onClose()
       window.location.reload()
     } catch (cause) {
+      setError(errorMessage(cause))
+      setBusy(false)
+    }
+  }
+
+  const exportPersonalData = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await bridge.matrixExportPersonalData()
+      if (result) setExportResult(result)
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const deactivateAccount = async () => {
+    if (
+      !deactivationPassword
+      || deactivationPhrase.trim().toUpperCase() !== 'DELETE MY ACCOUNT'
+      || !deactivationAcknowledged
+    ) {
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      await bridge.matrixDeactivateAccount(deactivationPassword)
+      setDeactivationPassword('')
+      onClose()
+      window.location.reload()
+    } catch (cause) {
+      setDeactivationPassword('')
       setError(errorMessage(cause))
       setBusy(false)
     }
@@ -691,6 +736,128 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
             {error}
           </p>
         )}
+
+        <section className="space-y-3 border-t border-border-subtle pt-4" aria-labelledby="personal-data-heading">
+          <div>
+            <p id="personal-data-heading" className="text-sm font-medium text-primary">Your personal data</p>
+            <p className="mt-1 text-xs leading-5 text-muted">
+              Save messages you authored and local copies of their already-downloaded attachments. The export excludes
+              other people's messages, account secrets, and service activity records.
+            </p>
+          </div>
+          <Button variant="secondary" size="sm" disabled={busy} onClick={exportPersonalData}>
+            {busy ? 'Workingâ€¦' : 'Export my data'}
+          </Button>
+          {exportResult && (
+            <div role="status" className="rounded-panel border border-status-success/40 bg-status-success/10 p-3">
+              <p className="text-xs font-medium text-primary">Your export is ready</p>
+              <p className="mt-1 break-all font-mono text-meta text-muted">{exportResult.path}</p>
+              <p className="mt-2 text-xs leading-5 text-muted">
+                {exportResult.messageCount} message{exportResult.messageCount === 1 ? '' : 's'} across{' '}
+                {exportResult.roomCount} conversation{exportResult.roomCount === 1 ? '' : 's'}, with{' '}
+                {exportResult.mediaFileCount} local media file{exportResult.mediaFileCount === 1 ? '' : 's'}.
+              </p>
+              {exportResult.warnings.length > 0 && (
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-status-warning">
+                  {exportResult.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                </ul>
+              )}
+              <p className="mt-2 text-xs leading-5 text-muted">
+                This folder contains readable conversation content. Store and share it carefully.
+              </p>
+            </div>
+          )}
+        </section>
+
+        <section className="space-y-3 border-t border-border-subtle pt-4" aria-labelledby="deactivate-account-heading">
+          <div>
+            <p id="deactivate-account-heading" className="text-sm font-medium text-primary">Delete your Mesh account</p>
+            <p className="mt-1 text-xs leading-5 text-muted">
+              This permanently disables the account and asks your service to erase its data where possible. Messages
+              already shared may remain in conversation history, backups, exports, screenshots, or other people's
+              downloaded files.
+            </p>
+          </div>
+          {!deactivationOpen ? (
+            <Button
+              variant="outline"
+              tone="danger"
+              size="sm"
+              disabled={busy}
+              onClick={() => {
+                setDeactivationOpen(true)
+                setDeactivationPassword('')
+                setDeactivationPhrase('')
+                setDeactivationAcknowledged(false)
+                setError(null)
+              }}
+            >
+              Start account deletion
+            </Button>
+          ) : (
+            <div className="space-y-3 rounded-panel border border-status-danger/40 bg-status-danger/5 p-3">
+              <p className="text-xs font-medium text-status-danger">This cannot be undone.</p>
+              <p className="text-xs leading-5 text-muted">
+                Export anything you want to keep first. Mesh will also remove this account's local store and saved
+                sign-in from this device after the service confirms deletion.
+              </p>
+              <Input
+                label="Account password"
+                type="password"
+                value={deactivationPassword}
+                onChange={setDeactivationPassword}
+                autoComplete="current-password"
+              />
+              <Input
+                label='Type "DELETE MY ACCOUNT" to confirm'
+                value={deactivationPhrase}
+                onChange={setDeactivationPhrase}
+                autoComplete="off"
+              />
+              <label className="flex cursor-pointer items-start gap-2 text-xs leading-5 text-muted">
+                <input
+                  type="checkbox"
+                  checked={deactivationAcknowledged}
+                  onChange={(event) => setDeactivationAcknowledged(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-accent"
+                />
+                I understand that shared copies may remain and that I will not be able to sign in again.
+              </label>
+              <p className="text-xs leading-5 text-muted">
+                If you normally sign in through a browser, complete deletion from your account website until browser
+                confirmation is available in Mesh.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  tone="danger"
+                  size="sm"
+                  disabled={
+                    busy
+                    || !deactivationPassword
+                    || deactivationPhrase.trim().toUpperCase() !== 'DELETE MY ACCOUNT'
+                    || !deactivationAcknowledged
+                  }
+                  onClick={deactivateAccount}
+                >
+                  Permanently delete my account
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => {
+                    setDeactivationOpen(false)
+                    setDeactivationPassword('')
+                    setDeactivationPhrase('')
+                    setDeactivationAcknowledged(false)
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </section>
 
         <section className="space-y-3 border-t border-border-subtle pt-4">
           <div>

@@ -7,6 +7,7 @@ export type AppErrorCode =
   | 'not_found'
   | 'rate_limited'
   | 'permission_denied'
+  | 'media_permission_denied'
   | 'room_not_found'
   | 'not_encrypted'
   | 'decryption_failed'
@@ -19,6 +20,7 @@ export type AppErrorCode =
   | 'registration_invitation_required'
   | 'registration_invitation_invalid'
   | 'registration_timed_out'
+  | 'community_invite_invalid'
   | 'banned'
   | 'unsupported_operation'
   | 'login_cancelled'
@@ -57,6 +59,7 @@ const KNOWN_CODES = new Set<AppErrorCode>([
   'not_found',
   'rate_limited',
   'permission_denied',
+  'media_permission_denied',
   'room_not_found',
   'not_encrypted',
   'decryption_failed',
@@ -69,6 +72,7 @@ const KNOWN_CODES = new Set<AppErrorCode>([
   'registration_invitation_required',
   'registration_invitation_invalid',
   'registration_timed_out',
+  'community_invite_invalid',
   'banned',
   'unsupported_operation',
   'login_cancelled',
@@ -241,6 +245,9 @@ export function normalizeError(cause: unknown): AppError {
   if (cause instanceof Error) {
     const { message, name } = cause
     const detail = message.trim() || name || 'Unknown error'
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+      return new AppError('media_permission_denied', detail, false)
+    }
     return new AppError(inferCode(detail), detail)
   }
 
@@ -322,6 +329,12 @@ export function describeError(
         title: 'Permission needed',
         body: `${operation} Your account does not have permission for this action.`,
         action: null,
+      }
+    case 'media_permission_denied':
+      return {
+        title: 'Microphone permission needed',
+        body: `${operation} Allow microphone access for Mesh in your system settings, then try again.`,
+        action: 'Try again',
       }
     case 'room_not_found':
     case 'not_found':
@@ -413,6 +426,12 @@ export function describeError(
         title: 'Account service did not respond',
         body: 'Account creation took too long. Check your connection and try again.',
         action: 'Try again',
+      }
+    case 'community_invite_invalid':
+      return {
+        title: 'Invitation unavailable',
+        body: `${operation} Ask a community administrator for a new invitation link.`,
+        action: null,
       }
     case 'banned':
       return {

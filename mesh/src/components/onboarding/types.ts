@@ -46,6 +46,7 @@ export interface OnboardingFlowProps {
   onGenerateIdentity?: () => Promise<void>
   onUpdateProfile?: (profile: OnboardingProfile) => Promise<void>
   onBootstrap?: (update: (state: BootstrapState) => void) => Promise<void>
+  initialMatrixInvitation?: string
   initialProfile?: Partial<OnboardingProfile>
   avatarColors?: readonly string[]
 }

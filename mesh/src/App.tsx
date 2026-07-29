@@ -1,7 +1,7 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { OnboardingFlow } from './components/onboarding/OnboardingFlow'
-import { ToastContainer } from './components/ui/Toast'
+import { showToast, ToastContainer } from './components/ui/Toast'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { useIdentityStore } from './store/identity'
 import { useCommunityStore } from './store/communities'
@@ -14,6 +14,8 @@ import { variants } from './lib/motion'
 import { matrixIdentity, matrixProfileIdentity } from './lib/matrixIdentity'
 import type { Identity } from './types/ipc'
 import { registerPoll } from './lib/scheduler'
+import { installDeepLinkHandler } from './lib/deep-links'
+import { useShellStore } from './store/shell'
 
 const AppLayout = lazy(() =>
   import('./components/layout/AppLayout').then((module) => ({ default: module.AppLayout })),
@@ -93,9 +95,31 @@ export default function App() {
   const setNetworkStatus = useNetworkStore((s) => s.setStatus)
   const setBackupConfigured = useSettingsStore((s) => s.setBackupConfigured)
   const scheduleBackupReminder = useSettingsStore((s) => s.scheduleBackupReminder)
+  const pendingInvite = useShellStore((state) => state.inviteDraft)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [backendStatus, setBackendStatus] = useState<bridge.BackendStatus | null>(null)
+  const attemptedInviteRef = useRef<string | null>(null)
   const isTauriRuntime = bridge.isTauriRuntime()
+
+  useEffect(() => {
+    if (!isTauriRuntime) return
+    let active = true
+    let unlisten: (() => void) | undefined
+    void installDeepLinkHandler((inviteLink) => {
+      if (!active) return
+      useShellStore.getState().openServerModal('join', inviteLink)
+      showToast('Community invitation opened. Sign in first if needed.', 'success')
+    }).then((cleanup) => {
+      if (active) unlisten = cleanup
+      else cleanup()
+    }).catch((error) => {
+      console.error('Could not listen for community invitation links:', error)
+    })
+    return () => {
+      active = false
+      unlisten?.()
+    }
+  }, [isTauriRuntime])
 
   useEffect(() => {
     if (!isTauriRuntime) {
@@ -199,6 +223,50 @@ export default function App() {
       unregisterPoll()
     }
   }, [backendStatus?.kind, isTauriRuntime, setNetworkStatus])
+
+  useEffect(() => {
+    if (
+      !isTauriRuntime
+      || showOnboarding
+      || backendStatus?.kind !== 'matrix'
+      || !backendStatus.authenticated
+      || !pendingInvite
+      || attemptedInviteRef.current === pendingInvite
+    ) {
+      return
+    }
+
+    let active = true
+    attemptedInviteRef.current = pendingInvite
+    void bridge.joinOrRequestCommunity(pendingInvite).then((result) => {
+      if (!active) return
+      if (result.status === 'joined' && result.community) {
+        upsertCommunity(result.community)
+        setActiveCommunity(result.community.id)
+        useShellStore.getState().closeServerModal()
+        showToast(`Joined ${result.community.name}.`, 'success')
+      } else {
+        useShellStore.getState().closeServerModal()
+        showToast('Your request was sent to the community administrators.', 'success')
+      }
+    }).catch((error) => {
+      if (!active) return
+      console.error('Could not open community invitation:', error)
+      showToast('Mesh could not open this invitation. You can retry from Join a community.', 'error')
+    })
+
+    return () => {
+      active = false
+    }
+  }, [
+    backendStatus?.authenticated,
+    backendStatus?.kind,
+    isTauriRuntime,
+    pendingInvite,
+    setActiveCommunity,
+    showOnboarding,
+    upsertCommunity,
+  ])
 
   useEffect(() => {
     if (!isTauriRuntime) {
@@ -337,6 +405,7 @@ export default function App() {
             className="h-full"
           >
             <OnboardingFlow
+              initialMatrixInvitation={pendingInvite}
               backendKind={backendStatus?.kind ?? 'matrix'}
               backendAuthenticated={backendStatus?.authenticated ?? false}
               onMatrixCheckUsernameAvailable={async (username) => {

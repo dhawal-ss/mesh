@@ -37,8 +37,10 @@ jobs:
           cache: npm
           cache-dependency-path: mesh/package-lock.json
 
-      - name: Install Rust 1.92
-        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc # 1.92.0
+      - name: Install Rust 1.93
+        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc
+        with:
+          toolchain: 1.93.0
 
       - name: Install Matrix test build dependencies
         run: |

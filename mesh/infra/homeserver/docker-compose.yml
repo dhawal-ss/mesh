@@ -40,9 +40,12 @@ services:
       - .env
     environment:
       SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+      UID: "${MESH_RUNTIME_UID:?Run setup.sh to record the host runtime UID}"
+      GID: "${MESH_RUNTIME_GID:?Run setup.sh to record the host runtime GID}"
     volumes:
       - ./runtime/synapse:/data
       - ./create_registration_invite.py:/mesh/create_registration_invite.py:ro
+      - ./bootstrap_admission_service.py:/mesh/bootstrap_admission_service.py:ro
     ports:
       - "${SYNAPSE_CONTROL_BIND:-127.0.0.1}:8008:8008/tcp"
     healthcheck:
@@ -68,12 +71,57 @@ services:
     networks:
       - backend
 
+  admission:
+    image: matrixdotorg/synapse:v1.157.0@sha256:53a686c52cdfca5fdb0adff5ef10b276b1d0971931b09815a9eb6b48d7188a1a
+    restart: unless-stopped
+    stop_grace_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      synapse:
+        condition: service_healthy
+    entrypoint: ["python", "/mesh/admission_service.py"]
+    user: "${MESH_RUNTIME_UID:?Run setup.sh to record the host runtime UID}:${MESH_RUNTIME_GID:?Run setup.sh to record the host runtime GID}"
+    env_file:
+      - .env
+    environment:
+      MESH_HOMESERVER_PUBLIC_URL: "https://${MESH_HOMESERVER_HOST}"
+      MESH_HOMESERVER_INTERNAL_URL: "http://synapse:8008"
+      MESH_PUBLIC_ORIGIN: "https://${MESH_SERVER_NAME}"
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./admission_service.py:/mesh/admission_service.py:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=3).read()",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    mem_limit: 256m
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+    networks:
+      - backend
+
   caddy:
     image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
     profiles: ["public"]
     restart: unless-stopped
     stop_grace_period: 30s
     depends_on:
+      admission:
+        condition: service_healthy
       synapse:
         condition: service_healthy
     env_file:

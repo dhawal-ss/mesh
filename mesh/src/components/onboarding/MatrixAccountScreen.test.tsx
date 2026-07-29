@@ -9,6 +9,7 @@ vi.mock('../../lib/bridge', () => ({
   matrixAccounts: vi.fn(async () => []),
   matrixOidcStatus: vi.fn(),
   matrixCancelLogin: vi.fn(async () => {}),
+  resolveCommunityInvite: vi.fn(),
 }))
 
 describe('MatrixAccountScreen', () => {
@@ -20,6 +21,7 @@ describe('MatrixAccountScreen', () => {
     vi.useRealTimers()
     vi.mocked(bridge.isTauriRuntime).mockReturnValue(false)
     vi.mocked(bridge.matrixAccounts).mockResolvedValue([])
+    vi.mocked(bridge.resolveCommunityInvite).mockReset()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -112,6 +114,48 @@ describe('MatrixAccountScreen', () => {
       'aB3xK9',
     )
     expect(onNext).toHaveBeenCalledWith('registered')
+  })
+
+  it('resolves an initial managed invitation and uses its bounded registration admission', async () => {
+    vi.useFakeTimers()
+    vi.mocked(bridge.isTauriRuntime).mockReturnValue(true)
+    vi.mocked(bridge.resolveCommunityInvite).mockResolvedValue({
+      registrationToken: 'derived-registration-token',
+      roomId: '!friends:mesh.test',
+      service: 'https://managed.mesh.test',
+      via: ['mesh.test'],
+      expiresAt: 1_785_283_200_000,
+    })
+    const register = vi.fn(async () => {})
+    const link =
+      'https://mesh.test/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789'
+    await renderScreen({
+      initialInvitation: link,
+      onMatrixCheckUsernameAvailable: vi.fn(async () => true),
+      onMatrixRegisterAccount: register,
+    })
+
+    await act(async () => {
+      await Promise.resolve()
+      setInputValue(findInput('username'), 'NewFriend')
+      vi.advanceTimersByTime(300)
+      await Promise.resolve()
+      setInputValue(findInput('password'), 'correct horse battery staple')
+      setInputValue(findInput('password-confirmation'), 'correct horse battery staple')
+    })
+    expect(bridge.resolveCommunityInvite).toHaveBeenCalledWith(link)
+    expect(findInput('invitation').value).toBe(link)
+    expect(findButton('Create account').disabled).toBe(false)
+
+    await act(async () => {
+      submitForm()
+      await Promise.resolve()
+    })
+    expect(register).toHaveBeenCalledWith(
+      'newfriend',
+      'correct horse battery staple',
+      'derived-registration-token',
+    )
   })
 
   it('keeps the managed sign-in path secondary and username-only', async () => {
@@ -279,6 +323,7 @@ describe('MatrixAccountScreen', () => {
       deviceName?: string
     }) => Promise<void>
     onMatrixOidcLogin?: (homeserver: string) => Promise<void>
+    initialInvitation?: string
     onNext?: () => void
   } = {}) {
     await act(async () => {
@@ -288,6 +333,7 @@ describe('MatrixAccountScreen', () => {
           onMatrixRegisterAccount={overrides.onMatrixRegisterAccount ?? vi.fn(async () => {})}
           onMatrixLogin={overrides.onMatrixLogin ?? vi.fn(async () => {})}
           onMatrixOidcLogin={overrides.onMatrixOidcLogin ?? vi.fn(async () => {})}
+          initialInvitation={overrides.initialInvitation}
           onNext={overrides.onNext ?? (() => {})}
           recommendedService="https://managed.mesh.test"
         />,

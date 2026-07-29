@@ -103,7 +103,7 @@ describe('VoiceControls', () => {
     const popover = document.querySelector<HTMLElement>('[data-radix-popper-content-wrapper]')
     await act(async () => {
       popover?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-      await Promise.resolve()
+      await new Promise((resolve) => window.setTimeout(resolve, 20))
     })
 
     expect(trigger.getAttribute('aria-expanded')).toBe('false')

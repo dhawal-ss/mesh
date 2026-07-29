@@ -236,7 +236,7 @@ describe('W2.3 primitive library', () => {
 
     await act(async () => {
       menu?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-      await Promise.resolve()
+      await new Promise((resolve) => window.setTimeout(resolve, 20))
     })
     expect(document.querySelector('[role="menu"][aria-label="Message actions"]')).toBeNull()
     expect(document.activeElement).toBe(trigger)

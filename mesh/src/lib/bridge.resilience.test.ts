@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import {
   getMatrixRoomNotificationMode,
+  matrixCreateCommunity,
   matrixGetProfile,
+  matrixListChannels,
   matrixLogout,
   matrixSendMessage,
   sendDm,
@@ -72,6 +74,59 @@ describe('bridge IPC resilience', () => {
       code: 'network_unavailable',
     })
     expect(invokeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps newly created room names while Matrix state finishes syncing', async () => {
+    invokeMock
+      .mockResolvedValueOnce({
+        community: {
+          id: '!community:mesh.test',
+          name: 'First Mesh',
+          description: '',
+          memberCount: 1,
+          role: 'owner',
+          joinedAt: null,
+        },
+        channel: {
+          id: '!general:mesh.test',
+          communityId: '!community:mesh.test',
+          name: 'general',
+          channelType: 'text',
+          unreadCount: 0,
+        },
+      })
+      .mockResolvedValueOnce([
+        {
+          id: '!general:mesh.test',
+          communityId: '!community:mesh.test',
+          name: 'unnamed',
+          channelType: 'text',
+          unreadCount: 4,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: '!general:mesh.test',
+          communityId: '!community:mesh.test',
+          name: 'announcements',
+          channelType: 'text',
+          unreadCount: 5,
+        },
+      ])
+
+    await matrixCreateCommunity('First Mesh', '')
+    await expect(matrixListChannels('!community:mesh.test')).resolves.toEqual([
+      expect.objectContaining({
+        name: 'general',
+        unreadCount: 4,
+      }),
+    ])
+    await expect(matrixListChannels('!community:mesh.test')).resolves.toEqual([
+      expect.objectContaining({
+        name: 'announcements',
+        unreadCount: 5,
+      }),
+    ])
   })
 
   it('carries stable delivery identifiers through message mutations', async () => {

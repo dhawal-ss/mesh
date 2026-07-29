@@ -6,7 +6,13 @@ import { invoke } from '@tauri-apps/api/core'
 import { isTauri } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { showToast } from '../components/ui/Toast'
-import { describeError, normalizeError } from './errors'
+import { AppError, describeError, normalizeError } from './errors'
+import {
+  isMeshJoinLink,
+  parseCommunityInvite,
+  parseManagedCommunityInvite,
+  parseMatrixCommunityInvite,
+} from './community-invites'
 import { canStartLegacyVoice } from './voice-runtime'
 import type {
   Identity,
@@ -22,6 +28,8 @@ import type {
   ModerationAuditEntry,
   MatrixUserPreferences,
   MatrixNotification,
+  MatrixPersonalDataExport,
+  MatrixCommunityAdmission,
   MatrixQueuedMessageUpdate,
   MatrixUnreadUpdate,
   MatrixRoomNotificationMode,
@@ -265,6 +273,7 @@ export type {
   BackendCapabilities,
   BackendKind,
   BackendStatus,
+  MatrixPersonalDataExport,
   VoiceProvider,
   VoiceServiceAvailability,
   VoiceServiceStatus,
@@ -489,6 +498,16 @@ export async function matrixRemoveLocalAccount(): Promise<void> {
   cachedBackendStatus = null
 }
 
+export async function matrixExportPersonalData(): Promise<MatrixPersonalDataExport | null> {
+  return tauriInvoke('matrix_export_personal_data')
+}
+
+export async function matrixDeactivateAccount(password: string): Promise<void> {
+  await tauriInvoke('matrix_deactivate_account', { password })
+  cachedBackendKind = 'matrix'
+  cachedBackendStatus = null
+}
+
 export async function matrixAccounts(): Promise<MatrixAccount[]> {
   return tauriInvoke('matrix_accounts', undefined, READ_IPC_OPTIONS)
 }
@@ -598,11 +617,30 @@ export async function matrixListCommunities(): Promise<Community[]> {
 export async function matrixListChannels(communityId: string): Promise<Channel[]> {
   const channels = await tauriInvoke<Channel[]>('matrix_list_channels', { communityId }, READ_IPC_OPTIONS)
   const merged = new Map<string, Channel>()
-  for (const channel of matrixCreatedChannels.get(communityId) ?? []) {
-    merged.set(channel.id, channel)
-  }
   for (const channel of channels) {
     merged.set(channel.id, channel)
+  }
+  const unresolvedCreated: Channel[] = []
+  for (const created of matrixCreatedChannels.get(communityId) ?? []) {
+    const synced = merged.get(created.id)
+    if (!synced) {
+      merged.set(created.id, created)
+      unresolvedCreated.push(created)
+      continue
+    }
+    if (synced.name.trim().toLocaleLowerCase() === 'unnamed') {
+      merged.set(created.id, {
+        ...synced,
+        name: created.name,
+        channelType: created.channelType,
+      })
+      unresolvedCreated.push(created)
+    }
+  }
+  if (unresolvedCreated.length > 0) {
+    matrixCreatedChannels.set(communityId, unresolvedCreated)
+  } else {
+    matrixCreatedChannels.delete(communityId)
   }
   return [...merged.values()]
 }
@@ -1007,9 +1045,69 @@ export async function getCommunities(): Promise<Community[]> {
 
 export async function joinCommunity(inviteLink: string): Promise<Community> {
   if (isMatrixBackend()) {
-    return tauriInvoke('matrix_join_community', { roomOrAlias: inviteLink })
+    if (parseManagedCommunityInvite(inviteLink)) {
+      return claimCommunityInvite(inviteLink)
+    }
+    const parsed = parseMatrixCommunityInvite(inviteLink)
+    if (isMeshJoinLink(inviteLink) && !parsed) {
+      throw new AppError(
+        'community_invite_invalid',
+        'This community invite is incomplete, invalid, or from an unsupported Mesh version.',
+        false,
+      )
+    }
+    return tauriInvoke('matrix_join_community', {
+      roomOrAlias: parsed?.roomOrAlias ?? inviteLink,
+      via: parsed?.via ?? [],
+    })
   }
   return tauriInvoke('join_community', { inviteLink })
+}
+
+export async function resolveCommunityInvite(
+  inviteLink: string,
+): Promise<MatrixCommunityAdmission> {
+  if (!parseManagedCommunityInvite(inviteLink)) {
+    throw new AppError(
+      'community_invite_invalid',
+      'This managed community invitation is incomplete or invalid.',
+      false,
+    )
+  }
+  return tauriInvoke('matrix_resolve_community_invite', { inviteUrl: inviteLink }, READ_IPC_OPTIONS)
+}
+
+export async function claimCommunityInvite(inviteLink: string): Promise<Community> {
+  if (!parseManagedCommunityInvite(inviteLink)) {
+    throw new AppError(
+      'community_invite_invalid',
+      'This managed community invitation is incomplete or invalid.',
+      false,
+    )
+  }
+  return tauriInvoke('matrix_claim_community_invite', { inviteUrl: inviteLink })
+}
+
+export async function joinOrRequestCommunity(
+  inviteLink: string,
+): Promise<CommunityAccessResult> {
+  try {
+    return {
+      status: 'joined',
+      community: await joinCommunity(inviteLink),
+    }
+  } catch (error) {
+    if (!isMatrixBackend() || normalizeError(error).code !== 'permission_denied') {
+      throw error
+    }
+    const parsed = parseMatrixCommunityInvite(inviteLink)
+    if (!parsed) throw error
+    return requestCommunityAccess(
+      parsed.roomOrAlias,
+      'Requested through a private Mesh community link.',
+      parsed.via,
+    )
+  }
 }
 
 export async function leaveCommunity(communityId: string): Promise<void> {
@@ -1063,10 +1161,12 @@ export async function searchCommunityDirectory(
 export async function requestCommunityAccess(
   roomOrAlias: string,
   reason?: string,
+  via: string[] = [],
 ): Promise<CommunityAccessResult> {
   return tauriInvoke('matrix_knock_community', {
     roomOrAlias,
     reason: reason?.trim() || null,
+    via,
   })
 }
 
@@ -1091,7 +1191,18 @@ export async function respondToCommunityApplication(
 }
 
 export async function generateInviteLink(communityId: string): Promise<string> {
-  return tauriInvoke('generate_invite_link', { communityId })
+  if (!isMatrixBackend()) {
+    return tauriInvoke('generate_invite_link', { communityId })
+  }
+  const invite = await tauriInvoke<string>('matrix_create_community_invite', { communityId })
+  if (!parseCommunityInvite(invite)) {
+    throw new AppError(
+      'community_invite_invalid',
+      'The service returned an invalid community invitation.',
+      false,
+    )
+  }
+  return invite
 }
 
 // ─── Channel Commands ───────────────────────────────
