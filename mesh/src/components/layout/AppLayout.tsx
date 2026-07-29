@@ -42,7 +42,9 @@ export function AppLayout() {
   const networkStatus = useNetworkStore((state) => state.status)
 
   const myPublicKey = useIdentityStore((state) => state.identity?.publicKey)
-  const [contextNavigationOpen, setContextNavigationOpen] = useState(false)
+  const navigationContextKey = `${activeCommunityId ?? ''}\u0000${activeChannelId ?? ''}\u0000${isDmMode}`
+  const [openNavigationContextKey, setOpenNavigationContextKey] = useState<string | null>(null)
+  const contextNavigationOpen = openNavigationContextKey === navigationContextKey
   const contextNavigationRef = useRef<HTMLElement>(null)
   const activeRoomId = isDmMode ? activeConversationId : activeChannelId
   useNotificationSync({ matrixMode, activeRoomId })
@@ -50,10 +52,6 @@ export function AppLayout() {
   useEffect(() => {
     if (!directMessagesAvailable && isDmMode) setDmMode(false)
   }, [directMessagesAvailable, isDmMode, setDmMode])
-
-  useEffect(() => {
-    setContextNavigationOpen(false)
-  }, [activeChannelId, activeCommunityId, isDmMode])
 
   useEffect(() => {
     if (!contextNavigationOpen) return
@@ -76,7 +74,7 @@ export function AppLayout() {
       const nestedDialogOpen = openDialog != null && openDialog !== contextNavigationRef.current
       if (event.key === 'Escape' && !event.defaultPrevented && !nestedDialogOpen) {
         event.preventDefault()
-        setContextNavigationOpen(false)
+        setOpenNavigationContextKey(null)
         window.requestAnimationFrame(() => {
           document.querySelector<HTMLButtonElement>('.mesh-compact-header button')?.focus()
         })
@@ -264,7 +262,7 @@ export function AppLayout() {
             type="button"
             className="mesh-nav-backdrop"
             aria-label="Dismiss room navigation"
-            onClick={() => setContextNavigationOpen(false)}
+            onClick={() => setOpenNavigationContextKey(null)}
           />
         )}
 
@@ -301,7 +299,9 @@ export function AppLayout() {
                     ? 'Open conversation navigation'
                     : 'Open room navigation'
               }
-              onClick={() => setContextNavigationOpen((open) => !open)}
+              onClick={() => setOpenNavigationContextKey((openKey) => (
+                openKey === navigationContextKey ? null : navigationContextKey
+              ))}
             >
               <Icon name={contextNavigationOpen ? 'x' : 'menu'} size="sm" />
               {contextNavigationOpen ? 'Close' : isDmMode ? 'Conversations' : 'Rooms'}

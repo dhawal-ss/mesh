@@ -30,6 +30,7 @@ async function installAuthenticatedMatrixMock(
     const callbacks = new Map<number, (...args: unknown[]) => void>()
     let nextCallbackId = 1
     let nextListenerId = 1
+    let invitationJoined = false
 
     const community = {
       id: '!mesh-e2e:mesh.test',
@@ -46,6 +47,14 @@ async function installAuthenticatedMatrixMock(
       memberCount: 3,
       role: 'member',
       joinedAt: '2026-07-24T00:00:00.000Z',
+    }
+    const invitedCommunity = {
+      id: '!invited:mesh.test',
+      name: 'Invited Mesh Community',
+      description: 'Joined from the cold-start invitation',
+      memberCount: 4,
+      role: 'member',
+      joinedAt: '2026-07-29T00:00:00.000Z',
     }
     const channels = [
       {
@@ -159,7 +168,20 @@ async function installAuthenticatedMatrixMock(
             warnings: [],
           }
         case 'matrix_list_communities':
-          return [community, secondCommunity]
+          return invitationJoined
+            ? [community, secondCommunity, invitedCommunity]
+            : [community, secondCommunity]
+        case 'matrix_join_community':
+          if (
+            args.roomOrAlias !== invitedCommunity.id
+            || !Array.isArray(args.via)
+            || args.via.length !== 1
+            || args.via[0] !== 'mesh.test'
+          ) {
+            throw new Error('Cold-start invitation was not forwarded to Matrix correctly')
+          }
+          invitationJoined = true
+          return invitedCommunity
         case 'matrix_room_is_encrypted':
           return true
         case 'matrix_devices':
@@ -217,7 +239,17 @@ async function installAuthenticatedMatrixMock(
           matrixProfile.displayName = String(args.displayName)
           return { ...matrixProfile }
         case 'matrix_list_channels':
-          return args.communityId === secondCommunity.id
+          return args.communityId === invitedCommunity.id
+            ? [
+                {
+                  id: '!invited-general:mesh.test',
+                  communityId: invitedCommunity.id,
+                  name: 'welcome',
+                  channelType: 'text',
+                  unreadCount: 0,
+                },
+              ]
+            : args.communityId === secondCommunity.id
             ? secondCommunityChannels
             : channels
         case 'matrix_list_members':
@@ -360,9 +392,11 @@ async function openAuthenticatedShell(
   await expect(
     page.getByRole('navigation', { name: 'Communities and direct messages' }),
   ).toBeVisible({ timeout: 10_000 })
-  await expect(page.getByRole('log', { name: 'Messages in #general' })).toBeVisible({
-    timeout: 10_000,
-  })
+  if (!currentDeepLinks?.length) {
+    await expect(page.getByRole('log', { name: 'Messages in #general' })).toBeVisible({
+      timeout: 10_000,
+    })
+  }
 }
 
 function ipcCalls(page: Page): Promise<IpcCall[]> {
@@ -395,15 +429,29 @@ test.describe('authenticated desktop shell', () => {
     await expect(page.getByText('Anonymous', { exact: true })).toHaveCount(0)
   })
 
-  test('routes a cold-start Mesh invitation into the prefilled join flow', async ({ page }) => {
+  test('joins a cold-start Mesh invitation through Matrix and opens the community', async ({ page }) => {
     const invite =
       'mesh://join?v=3&kind=matrix&room=!invited:mesh.test&via=mesh.test&service=https%3A%2F%2Fmatrix.mesh.test'
     await openAuthenticatedShell(page, [invite])
 
-    const dialog = page.getByRole('dialog', { name: 'Join a community' })
-    await expect(dialog).toBeVisible()
-    await expect(dialog.getByLabel('Invite code or link')).toHaveValue(invite)
-    await expect(dialog.getByRole('button', { name: 'Join Community' })).toBeEnabled()
+    await expect.poll(async () => (
+      (await ipcCalls(page)).filter((call) => call.command === 'matrix_join_community')
+    )).toEqual([{
+      command: 'matrix_join_community',
+      args: {
+        roomOrAlias: '!invited:mesh.test',
+        via: ['mesh.test'],
+      },
+    }])
+    await expect(
+      page.getByRole('button', { name: 'Invited Mesh Community', exact: true }),
+    ).toHaveAttribute('aria-current', 'true')
+    await expect(page.getByRole('button', { name: 'Text room: welcome' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    await expect(page.getByRole('dialog', { name: 'Join a community' })).toHaveCount(0)
+
   })
 
   test('@a11y has no automated WCAG A/AA violations in the shell and settings', async ({ page }) => {

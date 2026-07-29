@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
@@ -60,7 +60,7 @@ export function CreateCommunityModal({
   const [createStep, setCreateStep] = useState<1 | 2>(1)
   const [createError, setCreateError] = useState<unknown | null>(null)
 
-  const [inviteLink, setInviteLink] = useState('')
+  const [inviteLink, setInviteLink] = useState(initialInvite)
   const [joinError, setJoinError] = useState<unknown | null>(null)
   const [joinStatus, setJoinStatus] = useState('')
   const [directoryQuery, setDirectoryQuery] = useState('')
@@ -69,12 +69,6 @@ export function CreateCommunityModal({
   const [directoryError, setDirectoryError] = useState<unknown | null>(null)
   const [applicationReason, setApplicationReason] = useState('')
   const [directoryStatus, setDirectoryStatus] = useState<Record<string, string>>({})
-
-  useEffect(() => {
-    if (!isOpen) return
-    setTab(initialTab)
-    setInviteLink(initialInvite)
-  }, [initialInvite, initialTab, isOpen])
 
   const addCommunity = useCommunityStore((s) => s.addCommunity)
   const setActiveCommunity = useCommunityStore((s) => s.setActiveCommunity)

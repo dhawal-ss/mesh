@@ -81,6 +81,7 @@ function mapMatrixNetworkState(authenticated: boolean, syncRunning: boolean) {
 }
 
 export default function App() {
+  const isTauriRuntime = bridge.isTauriRuntime()
   const identity = useIdentityStore((state) => state.identity)
   const isLoading = useIdentityStore((state) => state.isLoading)
   const setIdentity = useIdentityStore((state) => state.setIdentity)
@@ -96,10 +97,9 @@ export default function App() {
   const setBackupConfigured = useSettingsStore((s) => s.setBackupConfigured)
   const scheduleBackupReminder = useSettingsStore((s) => s.scheduleBackupReminder)
   const pendingInvite = useShellStore((state) => state.inviteDraft)
-  const [showOnboarding, setShowOnboarding] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(!isTauriRuntime)
   const [backendStatus, setBackendStatus] = useState<bridge.BackendStatus | null>(null)
   const attemptedInviteRef = useRef<string | null>(null)
-  const isTauriRuntime = bridge.isTauriRuntime()
 
   useEffect(() => {
     if (!isTauriRuntime) return
@@ -122,16 +122,22 @@ export default function App() {
   }, [isTauriRuntime])
 
   useEffect(() => {
+    let active = true
     if (!isTauriRuntime) {
-      setShowOnboarding(true)
-      setLoading(false)
-      void bridge.getBackendStatus().then(setBackendStatus)
-      return
+      void bridge.getBackendStatus().then((status) => {
+        if (!active) return
+        setBackendStatus(status)
+        setLoading(false)
+      })
+      return () => {
+        active = false
+      }
     }
 
     const init = async () => {
       try {
         const nextBackendStatus = await bridge.getBackendStatus()
+        if (!active) return
         setBackendStatus(nextBackendStatus)
 
         if (nextBackendStatus.kind === 'matrix') {
@@ -140,10 +146,12 @@ export default function App() {
               nextBackendStatus.userId,
               isTauriRuntime,
             )
+            if (!active) return
+            const communities = await bridge.getCommunities()
+            if (!active) return
             if (signedInIdentity) {
               setIdentity(signedInIdentity)
             }
-            const communities = await bridge.getCommunities()
             setCommunities(communities)
             setActiveCommunity(communities[0]?.id ?? null)
           }
@@ -153,15 +161,16 @@ export default function App() {
         }
 
         const existingIdentity = await bridge.getIdentity()
+        if (!active) return
         if (!existingIdentity) {
           setShowOnboarding(true)
           setLoading(false)
           return
         }
 
-        setIdentity(existingIdentity)
-
         const communities = await bridge.getCommunities()
+        if (!active) return
+        setIdentity(existingIdentity)
         setCommunities(communities)
 
         if (communities.length > 0) {
@@ -170,6 +179,7 @@ export default function App() {
 
         setShowOnboarding(!isProfileComplete(existingIdentity))
       } catch (err) {
+        if (!active) return
         console.error('Init error:', err)
         setShowOnboarding(true)
         setLoading(false)
@@ -177,6 +187,9 @@ export default function App() {
     }
 
     void init()
+    return () => {
+      active = false
+    }
   }, [isTauriRuntime, setActiveCommunity, setCommunities, setIdentity, setLoading])
 
   useEffect(() => {
@@ -227,6 +240,7 @@ export default function App() {
   useEffect(() => {
     if (
       !isTauriRuntime
+      || isLoading
       || showOnboarding
       || backendStatus?.kind !== 'matrix'
       || !backendStatus.authenticated
@@ -236,10 +250,9 @@ export default function App() {
       return
     }
 
-    let active = true
     attemptedInviteRef.current = pendingInvite
     void bridge.joinOrRequestCommunity(pendingInvite).then((result) => {
-      if (!active) return
+      if (attemptedInviteRef.current !== pendingInvite) return
       if (result.status === 'joined' && result.community) {
         upsertCommunity(result.community)
         setActiveCommunity(result.community.id)
@@ -250,17 +263,14 @@ export default function App() {
         showToast('Your request was sent to the community administrators.', 'success')
       }
     }).catch((error) => {
-      if (!active) return
+      if (attemptedInviteRef.current !== pendingInvite) return
       console.error('Could not open community invitation:', error)
       showToast('Mesh could not open this invitation. You can retry from Join a community.', 'error')
     })
-
-    return () => {
-      active = false
-    }
   }, [
     backendStatus?.authenticated,
     backendStatus?.kind,
+    isLoading,
     isTauriRuntime,
     pendingInvite,
     setActiveCommunity,

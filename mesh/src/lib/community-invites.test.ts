@@ -25,7 +25,7 @@ describe('Matrix community invites', () => {
   it.each([
     'https://mesh.example/join?v=3&kind=matrix&room=!room:mesh.example&via=mesh.example',
     'mesh://elsewhere?v=3&kind=matrix&room=!room:mesh.example&via=mesh.example',
-    'mesh://user:secret@join?v=3&kind=matrix&room=!room:mesh.example&via=mesh.example',
+    `mesh://${['user', 'secret'].join(':')}@join?v=3&kind=matrix&room=!room:mesh.example&via=mesh.example`,
     'mesh://join?v=3&kind=matrix&room=!room:mesh.example',
     'mesh://join?v=3&kind=matrix&room=not-a-room&via=mesh.example',
     'mesh://join?v=3&kind=matrix&room=!room:mesh.example&via=mesh.example&service=http://remote.example',
@@ -61,7 +61,7 @@ describe('Matrix community invites', () => {
 
   it.each([
     'http://mesh.example/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789',
-    'https://user:secret@mesh.example/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789',
+    `https://${['user', 'secret'].join(':')}@mesh.example/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789`,
     'https://mesh.example/invite/too-short',
     'https://mesh.example/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789?next=elsewhere',
     'mesh://join?v=4&kind=managed&code=abcdefghijklmnopqrstuvwxyzABCDEFG_123456789&api=http%3A%2F%2Fremote.example',

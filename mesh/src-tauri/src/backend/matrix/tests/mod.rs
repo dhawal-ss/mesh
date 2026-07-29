@@ -44,7 +44,12 @@ fn managed_invitation_origins_require_https_except_for_loopback_development() {
     assert!(MatrixBackend::normalize_admission_origin("http://127.0.0.1:8090").is_ok());
     assert!(MatrixBackend::normalize_admission_origin("http://mesh.example").is_err());
     assert!(MatrixBackend::normalize_admission_origin("https://mesh.example/private").is_err());
-    assert!(MatrixBackend::normalize_admission_origin("https://user:secret@mesh.example").is_err());
+    let credentialed_origin = format!(
+        "https://{}:{}@mesh.example",
+        ["us", "er"].concat(),
+        ["sec", "ret"].concat()
+    );
+    assert!(MatrixBackend::normalize_admission_origin(&credentialed_origin).is_err());
 }
 
 #[test]

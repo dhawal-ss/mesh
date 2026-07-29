@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTypingStore } from '../../store/typing'
 
 interface TypingIndicatorProps {
@@ -12,17 +12,18 @@ export function TypingIndicator({ channelId }: TypingIndicatorProps) {
     (state) => state.typingByChannel[channelId] ?? EMPTY_TYPING_USERS,
   )
   const pruneExpired = useTypingStore((state) => state.pruneExpired)
+  const [clock, setClock] = useState(() => Date.now())
   const typingUsers = useMemo(() => {
-    const now = Date.now()
     return typingEntries
-      .filter((user) => user.expiresAt > now)
+      .filter((user) => user.expiresAt > clock)
       .map((user) => user.displayName)
-  }, [typingEntries])
+  }, [clock, typingEntries])
 
   // Periodically prune expired typing indicators
   useEffect(() => {
     const interval = setInterval(() => {
       pruneExpired(channelId)
+      setClock(Date.now())
     }, 2000)
     return () => clearInterval(interval)
   }, [channelId, pruneExpired])

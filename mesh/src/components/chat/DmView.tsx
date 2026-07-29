@@ -74,8 +74,10 @@ export function DmView() {
   const matrixMode = bridge.isMatrixBackend()
   const ownAuthorId = matrixMode ? bridge.getMatrixUserId() : identity?.publicKey
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [isBlocked, setIsBlocked] = useState(false)
+  const [loadingConversationId, setLoadingConversationId] = useState<string | null>(null)
+  const [blockState, setBlockState] = useState<{ peerPublicKey: string; blocked: boolean } | null>(
+    null,
+  )
   const [isBlockBusy, setIsBlockBusy] = useState(false)
   const [reactionTargetId, setReactionTargetId] = useState<string | null>(null)
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
@@ -88,16 +90,19 @@ export function DmView() {
     [conversation?.peerPublicKey, ownAuthorId],
   )
   const trust = useRoomTrust(activeConversationId, trustMembers)
+  const peerPublicKey = conversation?.peerPublicKey
+  const isLoading = loadingConversationId === activeConversationId
+  const isBlocked =
+    Boolean(peerPublicKey)
+    && blockState?.peerPublicKey === peerPublicKey
+    && Boolean(blockState?.blocked)
 
   useEffect(() => {
-    if (!matrixMode || !conversation) {
-      setIsBlocked(false)
-      return
-    }
+    if (!matrixMode || !peerPublicKey) return
     let active = true
-    void bridge.matrixDmBlocked(conversation.peerPublicKey)
+    void bridge.matrixDmBlocked(peerPublicKey)
       .then((blocked) => {
-        if (active) setIsBlocked(blocked)
+        if (active) setBlockState({ peerPublicKey, blocked })
       })
       .catch((error) => {
         if (active) console.error('Failed to load Matrix DM block state:', error)
@@ -105,20 +110,28 @@ export function DmView() {
     return () => {
       active = false
     }
-  }, [conversation?.peerPublicKey, matrixMode])
+  }, [matrixMode, peerPublicKey])
 
   useEffect(() => {
     if (!activeConversationId) return
     let active = true
-    setIsLoading(true)
-    loadMessages(activeConversationId).finally(() => {
+    const conversationId = activeConversationId
+    void Promise.resolve().then(async () => {
       if (!active) return
-      setIsLoading(false)
-      requestAnimationFrame(() => {
+      setLoadingConversationId(conversationId)
+      try {
+        await loadMessages(conversationId)
         if (!active) return
-        const el = scrollRef.current
-        if (el) el.scrollTop = el.scrollHeight
-      })
+        requestAnimationFrame(() => {
+          if (!active) return
+          const el = scrollRef.current
+          if (el) el.scrollTop = el.scrollHeight
+        })
+      } catch (error) {
+        if (active) console.error('Failed to load direct messages:', error)
+      } finally {
+        if (active) setLoadingConversationId(null)
+      }
     })
     return () => {
       active = false
@@ -269,7 +282,7 @@ export function DmView() {
     setIsBlockBusy(true)
     try {
       const blocked = await bridge.matrixSetDmBlocked(conversation.peerPublicKey, !isBlocked)
-      setIsBlocked(blocked)
+      setBlockState({ peerPublicKey: conversation.peerPublicKey, blocked })
     } catch (error) {
       console.error('Failed to update Matrix DM block state:', error)
     } finally {

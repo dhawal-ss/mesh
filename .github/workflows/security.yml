@@ -88,10 +88,14 @@ jobs:
       - name: Audit JavaScript dependencies
         working-directory: mesh
         run: npm audit --audit-level=high
-      - name: Scan repository history for secrets
+      - name: Scan repository history for non-URI secrets
         uses: trufflesecurity/trufflehog@18c7b1fc33e6c16b27ea66ff27cc7e642fb7cd0a # v3.90.6
         with:
-          extra_args: --results=verified,unknown
+          extra_args: --results=verified,unknown --exclude-detectors=URI
+      - name: Scan repository history for credential-bearing URIs
+        uses: trufflesecurity/trufflehog@18c7b1fc33e6c16b27ea66ff27cc7e642fb7cd0a # v3.90.6
+        with:
+          extra_args: --results=verified,unknown --include-detectors=URI --exclude-paths=.trufflehog-uri-excludes
 
   sbom:
     runs-on: ubuntu-latest
