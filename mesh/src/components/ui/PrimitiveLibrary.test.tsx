@@ -44,11 +44,13 @@ describe('W2.3 primitive library', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   })
 
   afterEach(() => {
     act(() => root.unmount())
     container.remove()
+    vi.unstubAllGlobals()
   })
 
   it('provides every primitive in the production-plan inventory', () => {
@@ -111,7 +113,14 @@ describe('W2.3 primitive library', () => {
     act(() => {
       root.render(
         <>
-          <Checkbox id="compact" label="Compact mode" description="Reduce message spacing." disabled />
+          <p id="shared-choice-help">Applies across this device.</p>
+          <Checkbox
+            id="compact"
+            label="Compact mode"
+            description="Reduce message spacing."
+            aria-describedby="shared-choice-help"
+            disabled
+          />
           <Slider id="scale" label="Message size" valueLabel="15 pixels" defaultValue={50} />
         </>,
       )
@@ -119,10 +128,24 @@ describe('W2.3 primitive library', () => {
 
     const checkbox = container.querySelector<HTMLInputElement>('#compact')
     const slider = container.querySelector<HTMLInputElement>('#scale')
-    expect(checkbox?.getAttribute('aria-describedby')).toBe('compact-description')
+    expect(checkbox?.getAttribute('aria-describedby')).toBe('shared-choice-help compact-description')
     expect(document.getElementById('compact-description')?.textContent).toBe('Reduce message spacing.')
     expect(checkbox?.disabled).toBe(true)
     expect(slider?.getAttribute('aria-valuetext')).toBe('15 pixels')
+  })
+
+  it('preserves external input help when it also renders local supporting text', () => {
+    act(() => {
+      root.render(
+        <>
+          <p id="account-policy">Account names are public.</p>
+          <Input id="account-name" label="Account name" hint="Use 3–32 characters." aria-describedby="account-policy" />
+        </>,
+      )
+    })
+
+    const input = container.querySelector<HTMLInputElement>('#account-name')
+    expect(input?.getAttribute('aria-describedby')).toBe('account-policy account-name-supporting')
   })
 
   it('clamps progress values and applies its size and tone contracts', () => {
@@ -135,6 +158,88 @@ describe('W2.3 primitive library', () => {
     expect(progress?.className).toContain('h-2')
     expect(progress?.firstElementChild?.className).toContain('bg-status-success')
     expect(container.textContent).toContain('100%')
+  })
+
+  it('renders a compact empty state with an optional centered icon', () => {
+    act(() => {
+      root.render(
+        <EmptyState
+          variant="compact"
+          icon={<span data-testid="empty-icon">icon</span>}
+          title="Nothing here"
+          description="New items will appear here."
+        />,
+      )
+    })
+
+    const section = container.querySelector('section')
+    const title = container.querySelector('h3')
+    const description = container.querySelector('p')
+    const icon = container.querySelector('[data-testid="empty-icon"]')
+
+    expect(section?.className).toContain('py-5')
+    expect(section?.className).not.toContain('py-10')
+    expect(title?.className).toContain('text-sm')
+    expect(description?.className).toContain('text-xs')
+    expect(icon?.parentElement?.className).toContain('h-6')
+    expect(section?.getAttribute('aria-labelledby')).toBe(title?.id)
+    expect(section?.getAttribute('aria-describedby')).toBe(description?.id)
+  })
+
+  it('keeps context-menu navigation collision-safe and keyboard complete', async () => {
+    const onSelect = vi.fn()
+    await act(async () => {
+      root.render(
+        <ContextMenu
+          label="Message actions"
+          items={[
+            { id: 'edit', label: 'Edit Message' },
+            { id: 'disabled', label: 'Unavailable', disabled: true },
+            { id: 'delete', label: 'Delete Message', tone: 'danger', onSelect },
+          ]}
+        >
+          <button type="button">Open actions</button>
+        </ContextMenu>,
+      )
+    })
+
+    const trigger = container.querySelector('button')!
+    trigger.focus()
+    await act(async () => {
+      trigger.dispatchEvent(
+        new MouseEvent('contextmenu', {
+          bubbles: true,
+          cancelable: true,
+          clientX: window.innerWidth - 1,
+          clientY: window.innerHeight - 1,
+        }),
+      )
+      await Promise.resolve()
+    })
+
+    const menu = document.querySelector<HTMLElement>('[role="menu"][aria-label="Message actions"]')
+    const items = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    expect(menu).not.toBeNull()
+    expect(items.map((item) => item.textContent)).toEqual(['Edit Message', 'Unavailable', 'Delete Message'])
+
+    await act(async () => {
+      menu?.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(document.activeElement).toBe(items[2])
+
+    await act(async () => {
+      menu?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(document.activeElement).toBe(items[0])
+
+    await act(async () => {
+      menu?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(document.querySelector('[role="menu"][aria-label="Message actions"]')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
   })
 
   it('opens the combobox on ArrowDown and activates the first enabled option', () => {

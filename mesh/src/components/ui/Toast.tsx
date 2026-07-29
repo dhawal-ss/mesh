@@ -37,7 +37,7 @@ export function ToastContainer() {
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-toast flex flex-col gap-2"
+      className="fixed bottom-4 left-4 right-4 z-toast flex flex-col items-end gap-2 sm:left-auto"
       role="status"
       aria-live="polite"
       aria-atomic="false"
@@ -51,14 +51,14 @@ export function ToastContainer() {
             initial="initial"
             animate="animate"
             exit="exit"
-            className={`rounded-lg border px-4 py-3 text-sm font-medium shadow-overlay ${
+            className={`w-fit max-w-full rounded-panel border border-border-subtle bg-surface-overlay px-3 py-2 text-sm font-medium shadow-overlay ${
               toast.tone === 'danger'
-                ? 'border-status-danger/30 bg-status-danger text-content-on-status'
+                ? 'border-l-2 border-l-status-danger text-status-danger'
                 : toast.tone === 'success'
-                  ? 'border-status-success/30 bg-status-success text-content-on-status'
+                  ? 'border-l-2 border-l-status-success text-status-success'
                   : toast.tone === 'warning'
-                    ? 'border-status-warning/30 bg-status-warning text-surface-sunken'
-                    : 'border-border bg-surface-overlay text-content'
+                    ? 'border-l-2 border-l-status-warning text-status-warning'
+                    : 'border-l-2 border-l-status-info text-content'
             }`}
           >
             {toast.message}

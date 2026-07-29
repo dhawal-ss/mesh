@@ -28,6 +28,15 @@ function selectValue(select: HTMLSelectElement, value: string) {
   select.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
+async function openVoiceSettings(container: HTMLElement) {
+  const trigger = container.querySelector<HTMLButtonElement>('button[aria-label="Open voice settings"]')
+  await act(async () => {
+    trigger?.click()
+    await Promise.resolve()
+  })
+  return trigger
+}
+
 describe('VoiceControls', () => {
   let container: HTMLDivElement
   let root: Root
@@ -36,6 +45,15 @@ describe('VoiceControls', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
     useVoiceStore.setState({
       currentCommunityId: 'community-1',
       currentChannelId: 'voice-1',
@@ -54,13 +72,50 @@ describe('VoiceControls', () => {
 
   afterEach(() => {
     act(() => root.unmount())
+    document.body.querySelectorAll('[data-radix-popper-content-wrapper]').forEach((element) => element.remove())
     container.remove()
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps advanced voice controls collapsed by default', async () => {
+    await act(async () => root.render(<VoiceControls {...props()} />))
+
+    expect(container.querySelector('button[aria-label="Open voice settings"]')).not.toBeNull()
+    expect(document.body.textContent).not.toContain('Talk mode')
+    expect(document.body.textContent).not.toContain('Desk microphone')
+    expect(document.querySelector('[role="meter"][aria-label="Microphone input level"]')).toBeNull()
+  })
+
+  it('opens voice settings from a keyboard-reachable disclosure and restores focus on Escape', async () => {
+    await act(async () => root.render(<VoiceControls {...props()} />))
+    const trigger = container.querySelector<HTMLButtonElement>('button[aria-label="Open voice settings"]')!
+
+    trigger.focus()
+    expect(document.activeElement).toBe(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+
+    await openVoiceSettings(container)
+
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(document.body.textContent).toContain('Voice settings')
+    expect(document.body.textContent).toContain('Talk mode')
+
+    const popover = document.querySelector<HTMLElement>('[data-radix-popper-content-wrapper]')
+    await act(async () => {
+      popover?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(document.body.textContent).not.toContain('Talk mode')
+    expect(document.activeElement).toBe(trigger)
   })
 
   it('switches audio devices only after the transport accepts them', async () => {
     const controls = props()
     await act(async () => root.render(<VoiceControls {...controls} />))
-    const selects = container.querySelectorAll('select')
+    await openVoiceSettings(container)
+    const selects = document.querySelectorAll('select')
 
     await act(async () => {
       selectValue(selects[1], 'mic-1')
@@ -78,7 +133,8 @@ describe('VoiceControls', () => {
 
   it('holds the microphone closed in push-to-talk mode until pressed', async () => {
     await act(async () => root.render(<VoiceControls {...props()} />))
-    const talkMode = container.querySelectorAll('select')[0]
+    await openVoiceSettings(container)
+    const talkMode = document.querySelectorAll('select')[0]
     await act(async () => selectValue(talkMode, 'push-to-talk'))
 
     expect(useVoiceStore.getState()).toMatchObject({
@@ -129,6 +185,40 @@ describe('VoiceControls', () => {
     })
 
     expect(controls.onScreenShareChange).toHaveBeenCalledWith(true)
+  })
+
+  it('keeps all five core call actions visible and wired to their existing boundaries', async () => {
+    const controls = props()
+    await act(async () => root.render(<VoiceControls {...controls} />))
+
+    const mute = container.querySelector<HTMLButtonElement>('button[aria-label="Mute microphone"]')!
+    const deafen = container.querySelector<HTMLButtonElement>('button[aria-label="Deafen audio"]')!
+    const camera = container.querySelector<HTMLButtonElement>('button[aria-label="Turn camera on"]')!
+    const share = container.querySelector<HTMLButtonElement>('button[aria-label="Share screen"]')!
+    const disconnect = container.querySelector<HTMLButtonElement>('button[aria-label="Disconnect from voice room"]')!
+
+    expect([mute, deafen, camera, share, disconnect].every(Boolean)).toBe(true)
+
+    await act(async () => {
+      mute.click()
+      deafen.click()
+      camera.click()
+      share.click()
+      await Promise.resolve()
+    })
+
+    expect(useVoiceStore.getState()).toMatchObject({
+      isMuted: true,
+      isDeafened: true,
+    })
+    expect(controls.onCameraChange).toHaveBeenCalledWith(true)
+    expect(controls.onScreenShareChange).toHaveBeenCalledWith(true)
+
+    await act(async () => disconnect.click())
+    expect(useVoiceStore.getState()).toMatchObject({
+      currentCommunityId: null,
+      currentChannelId: null,
+    })
   })
 
   it('uses attention for muted states, accent for active media, and danger only for disconnect', async () => {

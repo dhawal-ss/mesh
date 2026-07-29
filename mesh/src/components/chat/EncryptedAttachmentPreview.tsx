@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { AttachmentThumbnail } from '../../types/ipc'
 import * as bridge from '../../lib/bridge'
+import { Button } from '../ui/Button'
+import { Icon } from '../ui/Icon'
+import { Spinner } from '../ui/Spinner'
 
 type PreviewState =
   | { status: 'idle' | 'loading' | 'failed'; url: null; attempt: number }
@@ -38,19 +41,20 @@ export function EncryptedAttachmentPreview({
     let active = true
     const requestPreview = () => {
       if (!active) return
-      setPreview((current) => (
-        current.status === 'idle'
-          ? { status: 'loading', url: null, attempt: current.attempt }
-          : current
-      ))
+      setPreview((current) =>
+        current.status === 'idle' ? { status: 'loading', url: null, attempt: current.attempt } : current,
+      )
     }
     if (typeof IntersectionObserver === 'undefined') return
 
-    const observer = new IntersectionObserver((entries) => {
-      if (!entries.some((entry) => entry.isIntersecting)) return
-      observer.disconnect()
-      requestPreview()
-    }, { rootMargin: '160px 0px' })
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return
+        observer.disconnect()
+        requestPreview()
+      },
+      { rootMargin: '160px 0px' },
+    )
     observer.observe(target)
     return () => {
       active = false
@@ -100,9 +104,12 @@ export function EncryptedAttachmentPreview({
     }
   }, [attachmentIndex, eventId, preview.attempt, preview.status, roomId, thumbnailHash])
 
-  useEffect(() => () => {
-    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
-  }, [])
+  useEffect(
+    () => () => {
+      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+    },
+    [],
+  )
 
   const retry = () => {
     setPreview((current) => ({
@@ -123,13 +130,13 @@ export function EncryptedAttachmentPreview({
   return (
     <div
       ref={previewRef}
-      className="relative flex w-full items-center justify-center overflow-hidden border-b border-border-subtle bg-bg-modifier-hover"
+      className="relative flex w-full items-center justify-center overflow-hidden border-b border-border-subtle bg-surface-hover"
       data-design-token-exception="data-driven-thumbnail-aspect-ratio"
       style={{ aspectRatio: `${thumbnail.width} / ${thumbnail.height}` }}
       aria-live="polite"
     >
-      {preview.status === 'ready' && (
-        onOpen ? (
+      {preview.status === 'ready' &&
+        (onOpen ? (
           <button
             type="button"
             onClick={onOpen}
@@ -172,10 +179,10 @@ export function EncryptedAttachmentPreview({
               }))
             }}
           />
-        )
-      )}
+        ))}
       {preview.status === 'loading' && (
-        <span role="status" className="text-xs text-muted">
+        <span role="status" className="inline-flex items-center gap-2 text-xs text-muted">
+          <Spinner size={14} />
           Loading protected preview…
         </span>
       )}
@@ -183,19 +190,21 @@ export function EncryptedAttachmentPreview({
         <button
           type="button"
           onClick={loadWithoutObserver}
-          className="min-h-control-sm rounded px-3 text-xs font-medium text-secondary transition-colors hover:bg-bg-modifier-active focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          className="min-h-control-sm rounded-control px-3 text-xs font-medium text-secondary transition-colors hover:bg-surface-active focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
         >
           Load preview
         </button>
       )}
       {preview.status === 'failed' && (
-        <button
-          type="button"
-          onClick={retry}
-          className="min-h-control-sm rounded px-3 text-xs font-medium text-secondary transition-colors hover:bg-bg-modifier-active focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-        >
-          Retry preview
-        </button>
+        <div className="flex flex-col items-center gap-2 px-3 text-center">
+          <div role="alert" className="inline-flex items-center gap-1.5 text-xs text-status-warning">
+            <Icon name="triangleAlert" size="xs" />
+            Protected preview unavailable.
+          </div>
+          <Button type="button" variant="secondary" size="sm" onClick={retry}>
+            Retry preview
+          </Button>
+        </div>
       )}
     </div>
   )

@@ -31,7 +31,7 @@ export function ConversationProtection({ roomId }: { roomId: string }) {
   if (state === 'checking') {
     return (
       <span
-        className="flex items-center gap-1 rounded-full bg-bg-tertiary px-2 py-1 text-meta text-muted"
+        className="flex items-center gap-1 font-mono text-meta text-content-muted"
         role="status"
         aria-live="polite"
       >
@@ -44,7 +44,7 @@ export function ConversationProtection({ roomId }: { roomId: string }) {
   if (state === 'protected') {
     return (
       <span
-        className="flex items-center gap-1 rounded-full bg-green/10 px-2 py-1 text-meta text-green"
+        className="flex items-center gap-1 font-mono text-meta text-status-success"
         role="status"
         aria-label="This conversation is protected end to end"
       >
@@ -56,7 +56,7 @@ export function ConversationProtection({ roomId }: { roomId: string }) {
 
   return (
     <span
-      className="flex items-center gap-1 rounded-full bg-status-warning/10 px-2 py-1 text-meta text-status-warning"
+      className="flex items-center gap-1 font-mono text-meta text-status-warning"
       role="alert"
     >
       <Icon name="triangleAlert" size="xs" />

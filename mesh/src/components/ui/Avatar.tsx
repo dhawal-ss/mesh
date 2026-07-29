@@ -18,7 +18,7 @@ export function Avatar({ color, size = 32, name, className, imageUrl }: AvatarPr
 
   return (
     <div
-      className={`no-select flex flex-shrink-0 items-center justify-center overflow-hidden rounded-full font-semibold text-surface-sunken ${className ?? ''}`}
+      className={`no-select flex flex-shrink-0 items-center justify-center overflow-hidden rounded-control font-semibold text-content-on-avatar ${className ?? ''}`}
       style={{
         width: size,
         height: size,

@@ -10,6 +10,7 @@ import { isQuietHoursActive, useSettingsStore } from '../../store/settings'
 import { Icon } from '../ui/Icon'
 import { useIdentityStore } from '../../store/identity'
 import { useNetworkStore } from '../../store/network'
+import { EmptyState } from '../ui/Primitives'
 
 export function DmSidebar() {
   const conversations = useDmStore((state) => state.conversations)
@@ -74,7 +75,7 @@ export function DmSidebar() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="min-h-20 flex-shrink-0 border-b border-border-subtle px-3 py-3" data-tauri-drag-region>
+      <div className="flex h-conversation-header flex-shrink-0 flex-col justify-center border-b border-border-subtle px-3" data-tauri-drag-region>
         <h2 className="truncate text-sm font-semibold text-primary">Direct messages</h2>
         <p className="mt-1 truncate text-caption text-muted">Private conversations</p>
         <p className="mt-0.5 truncate text-caption text-secondary">Identity · {identityLabel}</p>
@@ -106,24 +107,23 @@ export function DmSidebar() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Find a conversation"
-          className="min-h-8 w-full rounded-md border border-border-subtle bg-bg-tertiary px-2 text-xs text-primary outline-none placeholder:text-muted focus:border-border-strong"
+          className="min-h-8 w-full rounded-control border border-border bg-surface-sunken px-2 text-xs text-primary outline-none placeholder:text-muted focus:border-accent"
         />
       </div>
 
       {/* Conversation list */}
       <div className="flex-1 overflow-y-auto px-2">
         {filteredConversations.length === 0 ? (
-          <div className="flex flex-col items-center justify-center px-3 py-10 text-center">
-            <Icon name={conversations.length === 0 ? 'messageCircle' : 'search'} size="lg" className="mb-3 text-muted" />
-            <p className="text-xs font-medium text-secondary">
-              {conversations.length === 0 ? 'No conversations yet' : 'No conversations found'}
-            </p>
-            {conversations.length === 0 && (
-              <p className="mt-1 text-xs leading-5 text-muted">
-                Open People in any room to start a private conversation.
-              </p>
-            )}
-          </div>
+          <EmptyState
+            variant="compact"
+            icon={<Icon name={conversations.length === 0 ? 'messageCircle' : 'search'} size="lg" />}
+            title={conversations.length === 0 ? 'No conversations yet' : 'No conversations found'}
+            description={
+              conversations.length === 0
+                ? 'Open People in any room to start a private conversation.'
+                : 'Try another name or Matrix ID.'
+            }
+          />
         ) : (
           <div className="space-y-0.5">
             {filteredConversations.map((conv) => {
@@ -136,8 +136,8 @@ export function DmSidebar() {
                   onClick={() => void handleSelect(conv.id)}
                   className={`group flex w-full items-center gap-3 rounded px-2 py-density-row text-left transition-colors ${
                     isActive
-                      ? 'mesh-channel-active bg-bg-modifier-selected text-primary'
-                      : 'text-muted hover:bg-bg-modifier-hover hover:text-secondary'
+                      ? 'mesh-channel-active bg-surface-selected text-primary'
+                      : 'text-muted hover:bg-surface-hover hover:text-secondary'
                   }`}
                   aria-label={`Direct message with ${shortName}`}
                 >

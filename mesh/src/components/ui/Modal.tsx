@@ -22,6 +22,37 @@ const sizeClasses = {
   lg: 'max-w-2xl',
 } as const
 
+let nextRestoreFocusTarget: HTMLElement | null = null
+
+function isPersistentFocusTarget(target: HTMLElement | null): target is HTMLElement {
+  return Boolean(
+    target
+    && target !== document.body
+    && target.isConnected,
+  )
+}
+
+/**
+ * Registers a persistent focus target for the next Modal that opens.
+ *
+ * Use this when one overlay opens a dialog while unmounting itself. The active
+ * element inside the outgoing overlay is not a safe restoration target.
+ */
+export function setNextModalRestoreFocusTarget(target: HTMLElement | null) {
+  nextRestoreFocusTarget = isPersistentFocusTarget(target) ? target : null
+}
+
+function takeNextModalRestoreFocusTarget() {
+  const target = nextRestoreFocusTarget
+  nextRestoreFocusTarget = null
+  return isPersistentFocusTarget(target) ? target : null
+}
+
+function focusPersistentTarget(target: HTMLElement | null) {
+  if (!isPersistentFocusTarget(target)) return
+  target.focus()
+}
+
 /**
  * Product dialog abstraction. Radix owns focus trapping, Escape handling,
  * background inertness, announcements, and focus restoration.
@@ -44,8 +75,9 @@ export function Modal({
     [open],
   )
   useLayoutEffect(() => {
-    if (open && !openerRef.current && openingFocusTarget) {
-      openerRef.current = openingFocusTarget
+    if (open && !openerRef.current) {
+      openerRef.current = takeNextModalRestoreFocusTarget()
+        ?? (isPersistentFocusTarget(openingFocusTarget) ? openingFocusTarget : null)
     }
   }, [open, openingFocusTarget])
 
@@ -54,10 +86,11 @@ export function Modal({
       open={open}
       onOpenChange={(nextOpen) => {
         if (nextOpen) return
+        const restoreTarget = openerRef.current
         onClose()
         window.setTimeout(() => {
-          openerRef.current?.focus()
-          openerRef.current = null
+          focusPersistentTarget(restoreTarget)
+          if (openerRef.current === restoreTarget) openerRef.current = null
         }, 0)
       }}
     >
@@ -74,17 +107,18 @@ export function Modal({
         <DialogPrimitive.Content
           aria-modal="true"
           className={clsx(
-            'fixed left-1/2 top-1/2 z-modal max-h-screen w-11/12 -translate-x-1/2 -translate-y-1/2 overflow-auto focus:outline-none',
+            'fixed left-1/2 top-1/2 z-modal max-h-modal w-11/12 -translate-x-1/2 -translate-y-1/2 overflow-auto focus:outline-none',
             sizeClasses[size],
             className,
           )}
           onCloseAutoFocus={(event) => {
             event.preventDefault()
-            openerRef.current?.focus()
+            focusPersistentTarget(openerRef.current)
+            openerRef.current = null
           }}
         >
           <motion.div
-            className="relative rounded-lg bg-surface-raised p-4 text-content shadow-overlay"
+            className="relative rounded-panel border border-border-subtle bg-surface-raised p-4 text-content shadow-overlay"
             variants={variants.modal}
             initial="initial"
             animate="animate"
