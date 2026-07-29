@@ -1355,19 +1355,64 @@ fn production_managed_defaults_preserve_the_stable_mesh_identity() {
 }
 
 #[test]
-fn registration_uiaa_only_auto_completes_dummy_and_classifies_terms() {
+fn registration_tokens_are_normalized_without_accepting_arbitrary_input() {
+    assert_eq!(
+        MatrixBackend::normalize_registration_token(Some("  aB3xK9._~-  ".into())).unwrap(),
+        Some("aB3xK9._~-".into())
+    );
+    assert_eq!(
+        MatrixBackend::normalize_registration_token(Some("   ".into())).unwrap(),
+        None
+    );
+    assert!(MatrixBackend::normalize_registration_token(Some("contains spaces".into())).is_err());
+    assert!(MatrixBackend::normalize_registration_token(Some("a".repeat(65))).is_err());
+}
+
+#[test]
+fn registration_uiaa_only_auto_completes_the_selected_single_stage() {
     let dummy = UiaaInfo::new(vec![uiaa::AuthFlow::new(vec![AuthType::Dummy])]);
-    assert!(MatrixBackend::uiaa_can_complete_with_dummy(&dummy));
+    assert!(MatrixBackend::uiaa_can_complete_with_stage(
+        &dummy,
+        AuthType::Dummy
+    ));
+    assert!(!MatrixBackend::uiaa_can_complete_with_stage(
+        &dummy,
+        AuthType::RegistrationToken
+    ));
+
+    let invite = UiaaInfo::new(vec![uiaa::AuthFlow::new(vec![AuthType::RegistrationToken])]);
+    assert!(MatrixBackend::uiaa_can_complete_with_stage(
+        &invite,
+        AuthType::RegistrationToken
+    ));
+    let invite_then_dummy = UiaaInfo::new(vec![uiaa::AuthFlow::new(vec![
+        AuthType::RegistrationToken,
+        AuthType::Dummy,
+    ])]);
+    assert!(MatrixBackend::uiaa_has_supported_registration_flow(
+        &invite_then_dummy,
+        true
+    ));
+    assert!(!MatrixBackend::uiaa_has_supported_registration_flow(
+        &invite_then_dummy,
+        false
+    ));
 
     let terms = UiaaInfo::new(vec![uiaa::AuthFlow::new(vec![AuthType::Terms])]);
-    assert!(!MatrixBackend::uiaa_can_complete_with_dummy(&terms));
+    assert!(!MatrixBackend::uiaa_can_complete_with_stage(
+        &terms,
+        AuthType::Dummy
+    ));
     assert!(MatrixBackend::uiaa_has_incomplete_stage(
         &terms,
         AuthType::Terms
     ));
 
     let recaptcha = UiaaInfo::new(vec![uiaa::AuthFlow::new(vec![AuthType::ReCaptcha])]);
-    assert!(!MatrixBackend::uiaa_can_complete_with_dummy(&recaptcha));
+    assert!(!MatrixBackend::uiaa_can_complete_with_stage(
+        &recaptcha,
+        AuthType::Dummy
+    ));
 }
 
 #[test]

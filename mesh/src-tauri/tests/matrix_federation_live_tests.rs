@@ -1,6 +1,7 @@
 #![cfg(feature = "matrix-backend")]
 
 use std::{
+    ffi::{OsStr, OsString},
     io::{Cursor, Read, Write},
     net::{SocketAddr, TcpStream},
     path::PathBuf,
@@ -23,6 +24,29 @@ use matrix_sdk::{
 use mesh_lib::backend::{
     MatrixBackend, MatrixLogin, MatrixRoomNotificationMode, MeshBackend, UserPreferences,
 };
+
+struct EnvironmentOverride {
+    name: &'static str,
+    previous: Option<OsString>,
+}
+
+impl EnvironmentOverride {
+    fn new(name: &'static str, value: impl AsRef<OsStr>) -> Self {
+        let previous = std::env::var_os(name);
+        std::env::set_var(name, value);
+        Self { name, previous }
+    }
+}
+
+impl Drop for EnvironmentOverride {
+    fn drop(&mut self) {
+        if let Some(previous) = self.previous.as_ref() {
+            std::env::set_var(self.name, previous);
+        } else {
+            std::env::remove_var(self.name);
+        }
+    }
+}
 
 struct PausedSynapse {
     compose_root: PathBuf,
@@ -157,6 +181,76 @@ async fn wait_for_member_presence(
     false
 }
 
+async fn erase_live_test_account(label: &str, backend: &MatrixBackend) {
+    if let Err(error) = backend.remove_local_account().await {
+        let detail = error.to_string();
+        assert!(
+            detail.contains("account store") && !detail.contains("keychain"),
+            "{label} secure-store cleanup failed: {detail}"
+        );
+        eprintln!(
+            "[matrix-spike] {label} secure keys erased; temporary SDK store cleanup deferred: {detail}"
+        );
+    }
+}
+
+/// A fresh consumer account must be creatable through Mesh itself, not only
+/// through the Synapse operator CLI used to prepare the federation fixture.
+#[tokio::test]
+#[ignore = "requires infra/matrix-spike"]
+async fn matrix_backend_registers_a_fresh_managed_account() {
+    let _homeserver = EnvironmentOverride::new("MESH_MANAGED_HOMESERVER", "http://localhost:8008");
+    let _server_name = EnvironmentOverride::new("MESH_MANAGED_SERVER_NAME", "hs1.mesh.test");
+    let store = tempfile::tempdir().unwrap();
+    let nonce = uuid::Uuid::new_v4().simple().to_string();
+    let username = format!("meshreg{}", &nonce[..12]);
+    let backend = MatrixBackend::with_profile(store.path().to_owned(), "matrix-spike-registration");
+
+    let status = backend
+        .register_account(
+            username.clone(),
+            "mesh-registration-passphrase".into(),
+            Some("mesh-spike-registration".into()),
+        )
+        .await
+        .expect("Mesh account registration must succeed on the managed local service");
+    assert!(status.authenticated);
+    assert_eq!(
+        status.user_id.as_deref(),
+        Some(format!("@{username}:hs1.mesh.test").as_str())
+    );
+    assert!(status.durable_history);
+    assert!(status.end_to_end_encryption);
+
+    let mut background_sync_started = false;
+    for _ in 0..20 {
+        if backend.status().await.sync_running {
+            background_sync_started = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    assert!(
+        background_sync_started,
+        "the newly registered account never started continuous sync"
+    );
+
+    let community = backend
+        .create_community(
+            format!("Fresh account {nonce}"),
+            "Registration acceptance".into(),
+        )
+        .await
+        .expect("a newly registered account must be able to create an encrypted community");
+    assert!(!community.space_id.is_empty());
+    assert!(!community.channel_id.is_empty());
+
+    backend
+        .remove_local_account()
+        .await
+        .expect("the registration verification account must be erased locally");
+}
+
 /// Two real Synapse homeservers, real federation, E2EE, offline catch-up, and
 /// same-device session restoration. Run through `npm run test:matrix-spike`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -173,16 +267,16 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
     let bob_store = tempfile::tempdir().unwrap();
     let bob_stale_store = tempfile::tempdir().unwrap();
     let charlie_store = tempfile::tempdir().unwrap();
-    let alice_profile = format!("matrix-spike-alice-{nonce}");
-    let bob_profile = format!("matrix-spike-bob-{nonce}");
-    let bob_stale_profile = format!("matrix-spike-bob-stale-{nonce}");
-    let charlie_profile = format!("matrix-spike-charlie-{nonce}");
+    let alice_profile = "matrix-spike-alice";
+    let bob_profile = "matrix-spike-bob";
+    let bob_stale_profile = "matrix-spike-bob-stale";
+    let charlie_profile = "matrix-spike-charlie";
 
-    let alice = MatrixBackend::with_profile(alice_store.path().to_owned(), &alice_profile);
-    let bob = MatrixBackend::with_profile(bob_store.path().to_owned(), &bob_profile);
+    let alice = MatrixBackend::with_profile(alice_store.path().to_owned(), alice_profile);
+    let bob = MatrixBackend::with_profile(bob_store.path().to_owned(), bob_profile);
     let bob_stale =
-        MatrixBackend::with_profile(bob_stale_store.path().to_owned(), &bob_stale_profile);
-    let charlie = MatrixBackend::with_profile(charlie_store.path().to_owned(), &charlie_profile);
+        MatrixBackend::with_profile(bob_stale_store.path().to_owned(), bob_stale_profile);
+    let charlie = MatrixBackend::with_profile(charlie_store.path().to_owned(), charlie_profile);
 
     alice
         .login(MatrixLogin {
@@ -201,6 +295,10 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
     })
     .await
     .unwrap();
+    alice
+        .update_user_preferences(privacy_preferences(false, false, false, false))
+        .await
+        .unwrap();
     checkpoint!("both users authenticated");
 
     let alice_user = "@alice:hs1.mesh.test".to_owned();
@@ -1133,7 +1231,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
 
     alice.shutdown_for_test().await;
     drop(alice);
-    let alice = MatrixBackend::with_profile(alice_store.path().to_owned(), &alice_profile);
+    let alice = MatrixBackend::with_profile(alice_store.path().to_owned(), alice_profile);
     tokio::time::timeout(Duration::from_secs(20), alice.restore_session())
         .await
         .expect("offline encrypted session restoration exceeded its bounded window")
@@ -1233,7 +1331,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
     let bob_second_store = tempfile::tempdir().unwrap();
     let bob_second = MatrixBackend::with_profile(
         bob_second_store.path().to_owned(),
-        format!("matrix-spike-bob-second-{nonce}"),
+        "matrix-spike-bob-second",
     );
     bob_second
         .login(MatrixLogin {
@@ -1354,7 +1452,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
 
     bob.pause_sync().await;
     drop(bob);
-    let restored = MatrixBackend::with_profile(bob_store.path().to_owned(), &bob_profile);
+    let restored = MatrixBackend::with_profile(bob_store.path().to_owned(), bob_profile);
     restored.restore_session().await.unwrap();
     let after_restore = restored
         .recent_texts(community.channel_id.clone(), 50)
@@ -1428,9 +1526,9 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
     }
     checkpoint!("server-wide ban and protected moderation audit verified");
 
-    alice.logout().await.unwrap();
-    restored.logout().await.unwrap();
-    bob_stale.logout().await.unwrap();
-    charlie.logout().await.unwrap();
-    bob_second.logout().await.unwrap();
+    erase_live_test_account("Alice", &alice).await;
+    erase_live_test_account("Bob", &restored).await;
+    erase_live_test_account("Bob stale device", &bob_stale).await;
+    erase_live_test_account("Charlie", &charlie).await;
+    erase_live_test_account("Bob recovered device", &bob_second).await;
 }

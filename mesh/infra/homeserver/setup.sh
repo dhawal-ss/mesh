@@ -26,6 +26,7 @@ if [ ! -f .env ]; then
       'MESH_SERVER_NAME=mesh.dhawal.org' \
       'MESH_HOMESERVER_HOST=matrix.mesh.dhawal.org' \
       'MESH_RTC_HOST=rtc.mesh.dhawal.org' \
+      'MESH_RTC_ENABLED=0' \
       'MESH_PUBLIC_ENABLED=0' \
       'SYNAPSE_CONTROL_BIND=127.0.0.1' \
       'SYNAPSE_CACHE_FACTOR=0.25' \
@@ -48,6 +49,7 @@ set +a
 
 : "${MESH_SERVER_NAME:?MESH_SERVER_NAME is required}"
 : "${MESH_HOMESERVER_HOST:?MESH_HOMESERVER_HOST is required}"
+: "${MESH_RTC_ENABLED:=0}"
 : "${POSTGRES_USER:?POSTGRES_USER is required}"
 : "${POSTGRES_DB:?POSTGRES_DB is required}"
 : "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
@@ -79,6 +81,19 @@ docker run --rm \
   -v "$script_dir/configure_synapse.py:/configure_synapse.py:ro" \
   "$synapse_image" \
   /configure_synapse.py /data/homeserver.yaml
+
+mkdir -p runtime/well-known
+if [ "$MESH_RTC_ENABLED" = "1" ]; then
+  : "${MESH_RTC_HOST:?MESH_RTC_HOST is required when MESH_RTC_ENABLED=1}"
+  printf '%s\n' \
+    "{\"m.homeserver\":{\"base_url\":\"https://$MESH_HOMESERVER_HOST\"},\"org.matrix.msc4143.rtc_foci\":[{\"type\":\"livekit\",\"livekit_service_url\":\"https://$MESH_RTC_HOST/livekit/jwt\"}]}" \
+    > runtime/well-known/matrix-client.json
+else
+  printf '%s\n' \
+    "{\"m.homeserver\":{\"base_url\":\"https://$MESH_HOMESERVER_HOST\"}}" \
+    > runtime/well-known/matrix-client.json
+fi
+chmod 644 runtime/well-known/matrix-client.json
 
 docker compose config --quiet
 echo "Homeserver configuration is ready."

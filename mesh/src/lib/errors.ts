@@ -16,6 +16,8 @@ export type AppErrorCode =
   | 'username_unavailable'
   | 'registration_terms_required'
   | 'registration_additional_auth_required'
+  | 'registration_invitation_required'
+  | 'registration_invitation_invalid'
   | 'registration_timed_out'
   | 'banned'
   | 'unsupported_operation'
@@ -64,6 +66,8 @@ const KNOWN_CODES = new Set<AppErrorCode>([
   'username_unavailable',
   'registration_terms_required',
   'registration_additional_auth_required',
+  'registration_invitation_required',
+  'registration_invitation_invalid',
   'registration_timed_out',
   'banned',
   'unsupported_operation',
@@ -391,6 +395,18 @@ export function describeError(
         title: 'Additional verification required',
         body: 'The account service requires a verification step this version of Mesh cannot complete.',
         action: null,
+      }
+    case 'registration_invitation_required':
+      return {
+        title: 'Invitation required',
+        body: 'Enter the invitation code you received, then try again.',
+        action: 'Check invitation',
+      }
+    case 'registration_invitation_invalid':
+      return {
+        title: 'Invitation unavailable',
+        body: 'This invitation is invalid, expired, or has already been used. Ask for a new invitation.',
+        action: 'Check invitation',
       }
     case 'registration_timed_out':
       return {

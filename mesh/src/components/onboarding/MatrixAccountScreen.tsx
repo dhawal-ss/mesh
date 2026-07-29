@@ -5,6 +5,8 @@ import * as bridge from '../../lib/bridge'
 import type { OnboardingFlowProps } from './types'
 import {
   friendlyAccountCreationError,
+  invitationCodeFromInput,
+  invitationValidationError,
   normalizeUsername,
   passwordStrength,
   usernameValidationError,
@@ -23,6 +25,7 @@ type MatrixAccountScreenProps = Pick<
   | 'onMatrixCheckUsernameAvailable'
   | 'onMatrixRegisterAccount'
   | 'onMatrixLogin'
+  | 'onMatrixOidcLogin'
   | 'onMatrixSwitchAccount'
 > & {
   onNext: (outcome: MatrixAccountOutcome) => void
@@ -38,6 +41,7 @@ export function MatrixAccountScreen({
   onMatrixCheckUsernameAvailable,
   onMatrixRegisterAccount,
   onMatrixLogin,
+  onMatrixOidcLogin,
   onMatrixSwitchAccount,
   onNext,
   recommendedService = DEFAULT_RECOMMENDED_SERVICE,
@@ -47,6 +51,7 @@ export function MatrixAccountScreen({
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [passwordConfirmation, setPasswordConfirmation] = useState('')
+  const [invitation, setInvitation] = useState('')
   const [serviceAddress, setServiceAddress] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [availability, setAvailability] = useState<Availability>('idle')
@@ -64,6 +69,11 @@ export function MatrixAccountScreen({
   const usernameError = useMemo(() => usernameValidationError(username), [username])
   const strength = useMemo(() => passwordStrength(password), [password])
   const passwordsMatch = passwordConfirmation.length > 0 && password === passwordConfirmation
+  const invitationError = useMemo(
+    () => mode === 'create' ? invitationValidationError(invitation) : null,
+    [invitation, mode],
+  )
+  const registrationToken = useMemo(() => invitationCodeFromInput(invitation), [invitation])
   const resolvedService = useMemo(
     () => resolveServiceAddress(
       mode === 'advanced' ? 'advanced' : 'recommended',
@@ -133,6 +143,7 @@ export function MatrixAccountScreen({
     setMode(nextMode)
     setPassword('')
     setPasswordConfirmation('')
+    setInvitation('')
     setShowPassword(false)
     resetFeedback()
   }
@@ -151,6 +162,8 @@ export function MatrixAccountScreen({
         || availability !== 'available'
         || !strength.strongEnough
         || !passwordsMatch
+        || invitationError
+        || !registrationToken
       ) {
         setError('Finish the highlighted fields before creating your account.')
         return
@@ -158,9 +171,10 @@ export function MatrixAccountScreen({
 
       setSubmitting(true)
       try {
-        await onMatrixRegisterAccount(normalizedUsername, password)
+        await onMatrixRegisterAccount(normalizedUsername, password, registrationToken)
         setPassword('')
         setPasswordConfirmation('')
+        setInvitation('')
         onNext('registered')
       } catch (cause) {
         setError(friendlyAccountCreationError(cause))
@@ -227,11 +241,11 @@ export function MatrixAccountScreen({
   }
 
   const startBrowserSignIn = async () => {
-    if (!resolvedService || !browserReady) return
+    if (!resolvedService || !browserReady || !onMatrixOidcLogin) return
     setBrowserSigningIn(true)
     setError(null)
     try {
-      await bridge.matrixStartOidcLogin(resolvedService)
+      await onMatrixOidcLogin(resolvedService)
       onNext('signed-in')
     } catch (cause) {
       setError(friendlyAccountSignInError(cause))
@@ -249,6 +263,8 @@ export function MatrixAccountScreen({
     || Boolean(usernameError)
     || !strength.strongEnough
     || !passwordsMatch
+    || Boolean(invitationError)
+    || !registrationToken
   const signInDisabled =
     submitting
     || switchingProfile !== null
@@ -257,7 +273,7 @@ export function MatrixAccountScreen({
     || !password
 
   return (
-    <form className="space-y-3" onSubmit={submit}>
+    <form className={isCreate ? 'space-y-2' : 'space-y-3'} onSubmit={submit}>
       <header className="space-y-1.5">
         <p className="text-2xs uppercase tracking-eyebrow text-muted">Mesh</p>
         <h1 ref={modeHeadingRef} tabIndex={-1} className="text-lg font-semibold tracking-tight text-primary">
@@ -298,7 +314,11 @@ export function MatrixAccountScreen({
         </section>
       ) : null}
 
-      <div className="space-y-3 rounded-panel border border-border-subtle bg-surface-sunken p-3">
+      <div
+        className={`rounded-panel border border-border-subtle bg-surface-sunken p-3 ${
+          isCreate ? 'space-y-2' : 'space-y-3'
+        }`}
+      >
         <Input
           label="Username"
           name="username"
@@ -411,9 +431,23 @@ export function MatrixAccountScreen({
         </div>
 
         {isCreate ? (
-          <p className="rounded-control bg-surface-hover px-3 py-2 text-xs text-secondary">
-            No email needed.
-          </p>
+          <Input
+            label="Invitation code"
+            name="invitation"
+            value={invitation}
+            onChange={(value: string) => {
+              setInvitation(value)
+              setError(null)
+            }}
+            placeholder="Paste your invitation link or code"
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            required
+            maxLength={512}
+            error={invitation ? invitationError ?? undefined : undefined}
+            hint="One-use private beta invitation. No email needed."
+          />
         ) : null}
 
         {isAdvanced ? (
@@ -447,7 +481,7 @@ export function MatrixAccountScreen({
                   type="button"
                   size="sm"
                   variant="secondary"
-                  disabled={browserSigningIn}
+                  disabled={browserSigningIn || !onMatrixOidcLogin}
                   onClick={() => void startBrowserSignIn()}
                 >
                   {browserSigningIn ? 'Waiting for browser…' : 'Continue in browser'}

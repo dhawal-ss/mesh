@@ -920,6 +920,10 @@ pub enum BackendError {
     RegistrationTermsRequired,
     #[error("the managed account service requires an additional verification step")]
     RegistrationAdditionalAuthRequired,
+    #[error("a valid Mesh invitation is required to create an account")]
+    RegistrationInvitationRequired,
+    #[error("the Mesh invitation is invalid, expired, or has already been used")]
+    RegistrationInvitationInvalid,
     #[error("managed account creation timed out after {0} seconds")]
     RegistrationTimedOut(u64),
     #[error("backend error: {0}")]
@@ -1042,6 +1046,7 @@ pub trait MeshBackend: Send + Sync {
         &self,
         _username: String,
         _password: String,
+        _registration_token: Option<String>,
     ) -> BackendResult<BackendStatus> {
         Err(BackendError::Unsupported("managed account registration"))
     }

@@ -24,7 +24,7 @@
     "test:all": "vitest run --configLoader runner && npm run test:rust:matrix && npm run test:rust:legacy",
     "test:rust:matrix": "cd src-tauri && cargo test --no-default-features --features matrix-backend --locked --jobs 1",
     "test:rust:legacy": "cd src-tauri && cargo test --no-default-features --features legacy-p2p --locked --jobs 1",
-    "test:matrix-spike": "cd src-tauri && cargo test --no-default-features --features matrix-backend --locked --jobs 1 --test matrix_federation_live_tests -- --ignored --nocapture",
+    "test:matrix-spike": "cd src-tauri && cargo test --no-default-features --features matrix-backend --locked --jobs 1 --test matrix_federation_live_tests -- --ignored --nocapture --test-threads=1",
     "setup:matrix-spike:reset": "powershell -ExecutionPolicy Bypass -File ./infra/matrix-spike/setup.ps1 -Reset",
     "matrixrtc:preflight": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/matrixrtc-preflight.ps1",
     "operator:smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/operator-smoke.ps1",
