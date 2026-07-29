@@ -186,6 +186,14 @@ async function installKeyboardActionsMock(page: Page): Promise<void> {
           }
         case 'matrix_typing_users':
           return []
+        case 'matrix_room_pins':
+          return {
+            roomId: String(args.roomId),
+            eventIds: [],
+            messages: [],
+            unavailableEventIds: [],
+            canManage: true,
+          }
         case 'matrix_mark_read':
         case 'matrix_set_typing':
         case 'matrix_save_composer_draft':

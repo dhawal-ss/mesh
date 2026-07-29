@@ -36,7 +36,7 @@ test('@a11y has no automated WCAG A/AA violations on account creation', async ({
 
 test('@a11y has no automated WCAG A/AA violations on sign in', async ({ page }) => {
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
-  const signInHeading = page.getByRole('heading', { name: 'Sign in somewhere else' })
+  const signInHeading = page.getByRole('heading', { name: 'Welcome back' })
   await expect(signInHeading).toBeVisible()
   await waitForAccountScreenMotion(page)
   await expect(signInHeading).toBeFocused()
