@@ -8,6 +8,9 @@ $spikeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $runtimeRoot = Join-Path $spikeRoot 'runtime'
 $certRoot = Join-Path $runtimeRoot 'certs'
 $synapseImage = 'matrixdotorg/synapse:v1.157.0@sha256:53a686c52cdfca5fdb0adff5ef10b276b1d0971931b09815a9eb6b48d7188a1a'
+$isWindows = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+    [System.Runtime.InteropServices.OSPlatform]::Windows
+)
 
 if ($Reset) {
     Push-Location $spikeRoot
@@ -80,9 +83,7 @@ function Ensure-SynapseConfig {
     $configPath = Join-Path $dataPath 'homeserver.yaml'
     if (-not (Test-Path -LiteralPath $configPath)) {
         $dockerRunArguments = @('run', '--rm')
-        if (-not [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
-            [System.Runtime.InteropServices.OSPlatform]::Windows
-        )) {
+        if (-not $isWindows) {
             $userId = (& id -u).Trim()
             if ($LASTEXITCODE -ne 0 -or $userId -notmatch '^\d+$') {
                 throw 'Could not determine the Unix user ID for Matrix spike setup'
@@ -163,6 +164,22 @@ allow_public_rooms_over_federation: true
 "@
     }
     Copy-Item -LiteralPath $caCert -Destination (Join-Path $dataPath 'test-ca.crt') -Force
+    if (-not $isWindows) {
+        # Disposable CI only: the host runner owns setup files while Synapse
+        # runs as UID 991. Keep the gitignored runtime mutually accessible so
+        # reset can rewrite it and the container can create its SQLite/media
+        # state. Production homeserver permissions are configured elsewhere.
+        & chmod 0777 $dataPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not grant Synapse write access to $dataPath"
+        }
+        foreach ($runtimeFile in Get-ChildItem -LiteralPath $dataPath -File) {
+            & chmod 0644 $runtimeFile.FullName
+            if ($LASTEXITCODE -ne 0) {
+                throw "Could not grant Synapse read access to $($runtimeFile.FullName)"
+            }
+        }
+    }
 }
 
 Ensure-SynapseConfig -DirectoryName 'hs1' -ServerName 'hs1.mesh.test' -HostPort 8008
