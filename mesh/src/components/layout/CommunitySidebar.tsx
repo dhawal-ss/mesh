@@ -11,7 +11,7 @@ import {
   useSettingsStore,
 } from '../../store/settings'
 import { useChannelStore } from '../../store/channels'
-import { copyText, matrixRoomPermalink } from '../../lib/notifications'
+import { copyText } from '../../lib/notifications'
 import { showToast } from '../ui/Toast'
 import { lazy, Suspense } from 'react'
 import { ModalLoadingFallback } from '../ui/ModalLoadingFallback'
@@ -40,9 +40,7 @@ export function CommunitySidebar() {
 
   const copyCommunityLink = async (communityId: string) => {
     try {
-      const link = bridge.isMatrixBackend()
-        ? matrixRoomPermalink(communityId)
-        : await bridge.generateInviteLink(communityId)
+      const link = await bridge.generateInviteLink(communityId)
       await copyText(link)
       showToast('Community link copied.', 'success')
     } catch {

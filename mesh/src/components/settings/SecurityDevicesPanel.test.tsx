@@ -30,11 +30,15 @@ vi.mock('../../lib/bridge', () => ({
   matrixRevokeDevice: vi.fn(),
   matrixLogout: vi.fn(),
   matrixRemoveLocalAccount: vi.fn(),
+  matrixExportPersonalData: vi.fn(),
+  matrixDeactivateAccount: vi.fn(),
 }))
 
 import {
   getBackendStatus,
+  matrixDeactivateAccount,
   matrixDevices,
+  matrixExportPersonalData,
   matrixRevokeDevice,
   matrixSelectDeviceVerificationMethod,
   matrixStartDeviceVerification,
@@ -244,6 +248,65 @@ describe('SecurityDevicesPanel', () => {
     expect(document.body.textContent).toContain('Permanently remove local account')
   })
 
+  it('exports authored messages and explains the privacy boundary', async () => {
+    vi.mocked(matrixExportPersonalData).mockResolvedValue({
+      path: 'C:\\Users\\Alice\\Documents\\Mesh personal data 2026-07-29',
+      exportedAt: '2026-07-29T12:00:00Z',
+      roomCount: 2,
+      messageCount: 14,
+      mediaFileCount: 3,
+      warnings: ['1 attachment had no downloaded local copy.'],
+    })
+    await act(async () => {
+      root.render(<SecurityDevicesPanel open onClose={() => {}} />)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await act(async () => {
+      findButton(document.body, 'Export my data').click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(matrixExportPersonalData).toHaveBeenCalledOnce()
+    expect(document.body.textContent).toContain('Your export is ready')
+    expect(document.body.textContent).toContain('14 messages across 2 conversations')
+    expect(document.body.textContent).toContain('other people')
+    expect(document.body.textContent).toContain('readable conversation content')
+  })
+
+  it('requires a password, typed phrase, and acknowledgement before remote account deletion', async () => {
+    vi.mocked(matrixDeactivateAccount).mockResolvedValue()
+    await act(async () => {
+      root.render(<SecurityDevicesPanel open onClose={() => {}} />)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await act(async () => findButton(document.body, 'Start account deletion').click())
+
+    const deleteButton = findButton(document.body, 'Permanently delete my account')
+    expect(deleteButton.disabled).toBe(true)
+    expect(document.body.textContent).toContain('Messages already shared may remain')
+    expect(document.body.textContent).toContain('account website')
+
+    const password = inputForLabel(document.body, 'Account password')
+    const phrase = inputForLabel(document.body, 'Type "DELETE MY ACCOUNT" to confirm')
+    const acknowledgement = [...document.body.querySelectorAll<HTMLLabelElement>('label')]
+      .find((label) => label.textContent?.includes('I understand that shared copies may remain'))
+      ?.querySelector<HTMLInputElement>('input[type="checkbox"]')
+    expect(acknowledgement).not.toBeNull()
+
+    await act(async () => setInputValue(password, 'one-use-password'))
+    await act(async () => setInputValue(phrase, 'DELETE MY ACCOUNT'))
+    expect(deleteButton.disabled).toBe(true)
+    await act(async () => acknowledgement?.click())
+    expect(deleteButton.disabled).toBe(false)
+
+    await act(async () => {
+      deleteButton.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(matrixDeactivateAccount).toHaveBeenCalledWith('one-use-password')
+    expect(document.body.textContent).not.toContain('one-use-password')
+  })
+
   it('exposes an explicit accessible close control', async () => {
     const onClose = vi.fn()
     await act(async () => {
@@ -354,6 +417,15 @@ function findButton(container: HTMLElement, label: string): HTMLButtonElement {
     .find((candidate) => candidate.textContent?.includes(label))
   if (!button) throw new Error(`Button not found: ${label}`)
   return button
+}
+
+function inputForLabel(container: HTMLElement, labelText: string): HTMLInputElement {
+  const label = [...container.querySelectorAll<HTMLLabelElement>('label')]
+    .find((candidate) => candidate.textContent === labelText)
+  const id = label?.htmlFor
+  const input = id ? container.ownerDocument.getElementById(id) as HTMLInputElement | null : null
+  if (!input) throw new Error(`Input not found: ${labelText}`)
+  return input
 }
 
 function setInputValue(input: HTMLInputElement, value: string) {

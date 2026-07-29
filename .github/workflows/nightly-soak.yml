@@ -7,6 +7,7 @@ name: Nightly Soak
 #   1. All 13 live libp2p tests (~70s)
 #   2. 60-second leak-detection soak (Phase A baseline + Phase B churn)
 #   3. 45-second topology churn soak
+#   4. A real PostgreSQL dump and isolated Synapse restore drill
 #
 # Total runtime: ~4 minutes per run.
 #
@@ -35,6 +36,19 @@ env:
   RUST_LOG: warn
 
 jobs:
+  homeserver-restore-drill:
+    name: Homeserver restore drill
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Restore a real Synapse backup into isolated services
+        working-directory: mesh
+        env:
+          MESH_RUN_RESTORE_INTEGRATION: "1"
+        run: sh infra/homeserver/tests/restore-drill.integration.sh
+
   soak:
     name: Long-duration soak
     runs-on: ubuntu-latest
@@ -43,7 +57,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc # 1.92.0
+        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc
+        with:
+          toolchain: 1.93.0
 
       - name: Install system dependencies
         run: |
@@ -108,7 +124,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc # 1.92.0
+        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc
+        with:
+          toolchain: 1.93.0
 
       - name: Install system dependencies
         run: |

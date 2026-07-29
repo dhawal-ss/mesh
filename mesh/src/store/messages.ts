@@ -38,6 +38,7 @@ interface MessagesStore {
   editMessage: (channelId: string, messageId: string, content: string, editedAt: string) => void
   deleteMessage: (channelId: string, messageId: string) => void
   removeMessage: (channelId: string, messageId: string) => void
+  clearChannel: (channelId: string) => void
   setDeliveryStatus: (channelId: string, messageId: string, status: 'pending' | 'sent' | 'failed') => void
   acceptQueuedMessage: (message: Message) => void
   hydrateQueuedMessages: (messages: Message[]) => void
@@ -454,6 +455,32 @@ export const useMessageStore = create<MessagesStore>((set, get) => ({
         (message) => message.id !== messageId,
       )
       return normalizedChannel(state, channelId, remaining)
+    }),
+
+  clearChannel: (channelId) =>
+    set((state) => {
+      const cached =
+        channelId in state.messageEntities
+        || channelId in state.messageOrder
+        || channelId in state.messages
+        || channelId in state.loadingOlder
+        || channelId in state.hasMoreOlder
+        || channelId in state.browsingOlder
+        || channelId in state.newerGapCount
+        || channelId in state.matrixQueueStates
+        || state.channelRecency.includes(channelId)
+      if (!cached) return state
+      return {
+        messageEntities: withoutChannels(state.messageEntities, [channelId]),
+        messageOrder: withoutChannels(state.messageOrder, [channelId]),
+        messages: withoutChannels(state.messages, [channelId]),
+        loadingOlder: withoutChannels(state.loadingOlder, [channelId]),
+        hasMoreOlder: withoutChannels(state.hasMoreOlder, [channelId]),
+        browsingOlder: withoutChannels(state.browsingOlder, [channelId]),
+        newerGapCount: withoutChannels(state.newerGapCount, [channelId]),
+        matrixQueueStates: withoutChannels(state.matrixQueueStates, [channelId]),
+        channelRecency: state.channelRecency.filter((cachedId) => cachedId !== channelId),
+      }
     }),
 
   setDeliveryStatus: (channelId, messageId, status) =>

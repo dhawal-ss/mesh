@@ -293,6 +293,8 @@ async function installAuthenticatedMatrixMessagingMock(page: Page): Promise<void
         case 'matrix_clear_composer_draft':
         case 'plugin:event|unlisten':
           return null
+        case 'plugin:deep-link|get_current':
+          return null
         case 'matrix_user_preferences':
           return null
         case 'matrix_update_user_preferences':

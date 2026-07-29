@@ -129,14 +129,14 @@ use super::{
     CommunityAccessSettings, CommunityApplication, CommunityDirectoryEntry, CommunityMember,
     CreatedCommunity, CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest, MatrixBackendEvent,
     MatrixBackendEventCallback, MatrixDevice, MatrixLogin, MatrixNotification,
-    MatrixOidcAvailability, MatrixOidcStatus, MatrixProfile, MatrixQueuedMessageState,
-    MatrixQueuedMessageUpdate, MatrixRecoveryHealth, MatrixRoomNotificationMode, MatrixRoomPins,
-    MatrixRoomPinsUpdate, MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyFailure,
-    MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember, MatrixRtcMembershipUpdate,
-    MatrixTransferDirection, MatrixTransferObserver, MatrixTransferProgress,
-    MatrixTransferProgressCallback, MatrixTransferResult, MatrixTransferRetryMode,
-    MatrixTransferState, MatrixUnreadUpdate, MatrixVerificationSession, MeshBackend,
-    ModerationAuditEntry, SentMessage, TypingUser, UserPreferences, VerificationEmoji,
+    MatrixOidcAvailability, MatrixOidcStatus, MatrixPersonalDataExport, MatrixProfile,
+    MatrixQueuedMessageState, MatrixQueuedMessageUpdate, MatrixRecoveryHealth,
+    MatrixRoomNotificationMode, MatrixRoomPins, MatrixRoomPinsUpdate, MatrixRtcJoinResult,
+    MatrixRtcMediaKey, MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause,
+    MatrixRtcMember, MatrixRtcMembershipUpdate, MatrixTransferDirection, MatrixTransferObserver,
+    MatrixTransferProgress, MatrixTransferProgressCallback, MatrixTransferResult,
+    MatrixTransferRetryMode, MatrixTransferState, MatrixUnreadUpdate, MatrixVerificationSession,
+    MeshBackend, ModerationAuditEntry, SentMessage, TypingUser, UserPreferences, VerificationEmoji,
     VoiceServiceAvailability, VoiceServiceStatus,
 };
 
@@ -726,9 +726,11 @@ include!("matrix/messages.rs");
 include!("matrix/rtc.rs");
 include!("matrix/encryption.rs");
 include!("matrix/attachments.rs");
+include!("matrix/admission.rs");
 include!("matrix/rooms.rs");
 include!("matrix/dm.rs");
 include!("matrix/emoji.rs");
+include!("matrix/personal_data.rs");
 
 impl MatrixBackend {
     pub fn new(store_root: PathBuf) -> Self {
@@ -3343,6 +3345,90 @@ impl MeshBackend for MatrixBackend {
         Self::remove_account_from_registry(&mut registry, &plan.profile_id);
         self.persist_registry(&registry)?;
         Ok(())
+    }
+
+    async fn export_personal_data(
+        &self,
+        destination_root: PathBuf,
+    ) -> BackendResult<MatrixPersonalDataExport> {
+        self.write_personal_data_export(destination_root).await
+    }
+
+    async fn deactivate_account(
+        &self,
+        mut password: String,
+        erase_data: bool,
+    ) -> BackendResult<()> {
+        if password.is_empty() {
+            return Err(BackendError::InvalidConfiguration(
+                "account password is required".into(),
+            ));
+        }
+
+        let remote_result: BackendResult<()> = async {
+            // Validate every local deletion target before making the
+            // irreversible remote request. A malformed registry must never
+            // leave the account deactivated while Mesh still retains an
+            // unvalidated local store.
+            let profile_id = self
+                .runtime
+                .read()
+                .await
+                .profile_id
+                .clone()
+                .ok_or(BackendError::NotAuthenticated)?;
+            let storage = self.storage_for_profile(&profile_id);
+            self.local_account_removal_plan(&storage)?;
+
+            let client = self.client().await?;
+            let user_id = client
+                .user_id()
+                .ok_or(BackendError::NotAuthenticated)?
+                .to_string();
+            match client.account().deactivate(None, None, erase_data).await {
+                Ok(_) => Ok(()),
+                Err(error) => {
+                    let Some(info) = error.as_uiaa_response() else {
+                        return Err(Self::map_error(error));
+                    };
+                    let supports_password = info
+                        .flows
+                        .iter()
+                        .any(|flow| flow.stages.iter().any(|stage| stage == &AuthType::Password));
+                    if !supports_password {
+                        return Err(BackendError::PermissionDenied(
+                            "This account uses browser sign-in. Delete it from the account website until browser confirmation is available in Mesh.".into(),
+                        ));
+                    }
+                    let mut password_auth = uiaa::Password::new(
+                        uiaa::UserIdentifier::Matrix(uiaa::MatrixUserIdentifier::new(user_id)),
+                        password.clone(),
+                    );
+                    password_auth.session = info.session.clone();
+                    client
+                        .account()
+                        .deactivate(
+                            None,
+                            Some(uiaa::AuthData::Password(password_auth)),
+                            erase_data,
+                        )
+                        .await
+                        .map(|_| ())
+                        .map_err(Self::map_error)
+                }
+            }
+        }
+        .await;
+        password.zeroize();
+        remote_result?;
+
+        <Self as MeshBackend>::remove_local_account(self)
+            .await
+            .map_err(|error| {
+                BackendError::Other(format!(
+                    "Your account was deactivated, but Mesh could not finish removing its local data: {error}"
+                ))
+            })
     }
 
     async fn list_accounts(&self) -> BackendResult<Vec<MatrixAccount>> {
@@ -6061,6 +6147,107 @@ impl MeshBackend for MatrixBackend {
         Ok(())
     }
 
+    async fn create_community_invite(&self, community_id: String) -> BackendResult<String> {
+        let client = self.client().await?;
+        let space_id = matrix_sdk::ruma::RoomId::parse(community_id).map_err(Self::map_error)?;
+        let space =
+            Self::protected_joined_room(&client, &space_id, "creating a community invite").await?;
+        if !space.is_space() {
+            return Err(BackendError::InvalidConfiguration(
+                "community invites require a joined Matrix Space".into(),
+            ));
+        }
+
+        let user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
+        let managed = Self::managed_homeserver_config()?;
+        if client.homeserver().as_str().trim_end_matches('/')
+            == managed.homeserver.trim_end_matches('/')
+        {
+            let access_token = client
+                .access_token()
+                .ok_or(BackendError::NotAuthenticated)?;
+            let origin = Self::managed_admission_origin()?;
+            let endpoint = origin
+                .join("/_mesh/admission/v1/invitations")
+                .map_err(|_| {
+                    BackendError::InvalidConfiguration(
+                        "the invitation service address could not be prepared".into(),
+                    )
+                })?;
+            let response = Self::admission_http_client()?
+                .post(endpoint)
+                .bearer_auth(access_token)
+                .json(&serde_json::json!({ "room_id": space.room_id().as_str() }))
+                .send()
+                .await
+                .map_err(BackendError::from_sdk_error)?;
+            let payload = Self::admission_response_bytes(response).await?;
+            let created: AdmissionCreateResponse =
+                serde_json::from_slice(&payload).map_err(|error| {
+                    BackendError::Serialization(format!(
+                        "the invitation service returned invalid JSON: {error}"
+                    ))
+                })?;
+            Self::parse_managed_invitation(&created.invite_url, &origin)?;
+            return Ok(created.invite_url);
+        }
+
+        // Custom compatible services keep the interoperable access-request
+        // fallback until they expose Mesh's bounded admission API.
+        space
+            .privacy_settings()
+            .update_join_rule(JoinRule::Knock)
+            .await
+            .map_err(Self::map_error)?;
+        let mut invite = url::Url::parse("mesh://join").map_err(|error| {
+            BackendError::InvalidConfiguration(format!(
+                "could not prepare the community invite URL: {error}"
+            ))
+        })?;
+        invite
+            .query_pairs_mut()
+            .append_pair("v", "3")
+            .append_pair("kind", "matrix")
+            .append_pair("room", space.room_id().as_str())
+            .append_pair("via", user_id.server_name().as_str())
+            .append_pair("service", client.homeserver().as_str());
+        Ok(invite.into())
+    }
+
+    async fn resolve_community_invite(
+        &self,
+        invite_url: String,
+    ) -> BackendResult<super::MatrixCommunityAdmission> {
+        self.resolve_managed_invitation(&invite_url, true).await
+    }
+
+    async fn claim_community_invite(&self, invite_url: String) -> BackendResult<CommunityDto> {
+        let client = self.client().await?;
+        let access_token = client
+            .access_token()
+            .ok_or(BackendError::NotAuthenticated)?;
+        let origin = Self::managed_admission_origin()?;
+        let target = Self::parse_managed_invitation(&invite_url, &origin)?;
+        let endpoint = Self::admission_endpoint(&target, "/claim")?;
+        let response = Self::admission_http_client()?
+            .post(endpoint)
+            .bearer_auth(access_token)
+            .json(&serde_json::json!({}))
+            .send()
+            .await
+            .map_err(BackendError::from_sdk_error)?;
+        let payload = Self::admission_response_bytes(response).await?;
+        let claimed: AdmissionServiceResponse =
+            serde_json::from_slice(&payload).map_err(|error| {
+                BackendError::Serialization(format!(
+                    "the invitation service returned invalid JSON: {error}"
+                ))
+            })?;
+        let managed = Self::managed_homeserver_config()?;
+        let admission = Self::validate_admission_response(claimed, &managed, false)?;
+        self.join_community(admission.room_id, admission.via).await
+    }
+
     async fn community_access_settings(
         &self,
         community_id: String,
@@ -6242,30 +6429,43 @@ impl MeshBackend for MatrixBackend {
         &self,
         room_or_alias: String,
         reason: Option<String>,
+        via: Vec<String>,
     ) -> BackendResult<CommunityAccessResult> {
         let client = self.client().await?;
         let value = room_or_alias.trim();
         let identifier = RoomOrAliasId::parse(value).map_err(Self::map_error)?;
-        let (room_id, via) = if value.starts_with('#') {
+        let mut via = via
+            .into_iter()
+            .take(3)
+            .map(ServerName::parse)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Self::map_error)?;
+        let room_id = if value.starts_with('#') {
             let alias = RoomAliasId::parse(value).map_err(Self::map_error)?;
             let room_id = client
                 .resolve_room_alias(&alias)
                 .await
                 .map_err(Self::map_error)?
                 .room_id;
-            (room_id, vec![alias.server_name().to_owned()])
+            if !via.iter().any(|server| server == alias.server_name()) {
+                via.push(alias.server_name().to_owned());
+            }
+            room_id
         } else {
-            (
-                matrix_sdk::ruma::RoomId::parse(value).map_err(Self::map_error)?,
-                Vec::new(),
-            )
+            matrix_sdk::ruma::RoomId::parse(value).map_err(Self::map_error)?
         };
 
         if let Some(room) = client.get_room(&room_id) {
             if room.state() == RoomState::Invited {
                 return Ok(CommunityAccessResult {
                     status: "joined".into(),
-                    community: Some(self.join_community(room_or_alias).await?),
+                    community: Some(
+                        self.join_community(
+                            room_or_alias,
+                            via.iter().map(ToString::to_string).collect(),
+                        )
+                        .await?,
+                    ),
                 });
             }
             if room.state() == RoomState::Joined {
@@ -6368,11 +6568,21 @@ impl MeshBackend for MatrixBackend {
         }
     }
 
-    async fn join_community(&self, room_or_alias: String) -> BackendResult<CommunityDto> {
+    async fn join_community(
+        &self,
+        room_or_alias: String,
+        via: Vec<String>,
+    ) -> BackendResult<CommunityDto> {
         let client = self.client().await?;
         let identifier = RoomOrAliasId::parse(room_or_alias.trim()).map_err(Self::map_error)?;
+        let via = via
+            .into_iter()
+            .take(3)
+            .map(ServerName::parse)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Self::map_error)?;
         let space = client
-            .join_room_by_id_or_alias(&identifier, &[])
+            .join_room_by_id_or_alias(&identifier, &via)
             .await
             .map_err(Self::map_error)?;
         let presence = self.matrix_sync_control.lock().await.presence.clone();

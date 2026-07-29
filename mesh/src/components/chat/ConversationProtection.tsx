@@ -22,7 +22,9 @@ export function ConversationProtection({ roomId }: { roomId: string }) {
   }, [roomId])
 
   useEffect(() => {
-    void checkProtection()
+    void Promise.resolve().then(() => {
+      void checkProtection()
+    })
     return () => {
       requestId.current += 1
     }

@@ -14,14 +14,18 @@ replication.
 
 ## Non-negotiable UX rules
 
-- Ship safe, working defaults for the recommended Mesh service in release
-  builds.
+- Ship a simple, explicit account-service choice in release builds: Matrix.org
+  as a prominent public option, a community-hosted service when an invitation
+  offers one, additional reviewed public options, and "use another service".
+- Do not silently select an account service or imply that an independently
+  operated public service is owned, endorsed, or guaranteed by Mesh.
 - Invitation links must carry or resolve everything needed to reach the
-  service and community.
+  community, but must not force the invitee's account to live on the
+  community's homeserver. Account hosting and community hosting are separate.
 - Use plain product language such as "service", "community", and "voice";
   reserve protocol terminology for diagnostics and advanced settings.
-- Keep "sign in somewhere else" and custom homeserver support available as an
-  advanced path so decentralization does not become lock-in.
+- Keep "use another service" and custom homeserver support as a first-class
+  path so decentralization does not become lock-in.
 - Detect service capabilities and network conditions automatically. Do not ask
   users to make infrastructure decisions that Mesh can make safely.
 - Errors must explain what the user can do next without exposing raw protocol
@@ -34,8 +38,15 @@ replication.
 
 ## Architecture guardrails
 
-- The managed Mesh homeserver is the zero-configuration default, not the only
-  compatible service.
+- Mesh must not require a paid Mesh-operated homeserver. Matrix.org is a
+  prominent independently operated public option; the Mac mini is an optional
+  community-hosted/bring-your-own service with no uptime SLA; and arbitrary
+  compatible homeservers remain supported.
+- Keep the selected account service, community room-routing servers, and any
+  optional community admission/registration service separate in configuration
+  and code.
+- A user whose account is hosted on one compatible service must be able to join
+  a community hosted on another through federation when room policy permits.
 - Keep identity, membership, permissions, text history, encryption state, and
   synchronization on the Matrix-compatible control plane.
 - Treat peer-assisted storage as an optional encrypted data plane with durable

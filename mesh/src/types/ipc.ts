@@ -34,6 +34,8 @@ export type {
   ModerationAuditEntry,
   ModerationRoomOutcome,
   MatrixNotification,
+  MatrixCommunityAdmission,
+  MatrixPersonalDataExport,
   MatrixQueuedMessageState,
   MatrixQueuedMessageUpdate,
   MatrixRoomNotificationMode,

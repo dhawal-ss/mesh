@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
@@ -60,20 +60,15 @@ export function CreateCommunityModal({
   const [createStep, setCreateStep] = useState<1 | 2>(1)
   const [createError, setCreateError] = useState<unknown | null>(null)
 
-  const [inviteLink, setInviteLink] = useState('')
+  const [inviteLink, setInviteLink] = useState(initialInvite)
   const [joinError, setJoinError] = useState<unknown | null>(null)
+  const [joinStatus, setJoinStatus] = useState('')
   const [directoryQuery, setDirectoryQuery] = useState('')
   const [directoryServer, setDirectoryServer] = useState('')
   const [directoryResults, setDirectoryResults] = useState<CommunityDirectoryEntry[]>([])
   const [directoryError, setDirectoryError] = useState<unknown | null>(null)
   const [applicationReason, setApplicationReason] = useState('')
   const [directoryStatus, setDirectoryStatus] = useState<Record<string, string>>({})
-
-  useEffect(() => {
-    if (!isOpen) return
-    setTab(initialTab)
-    setInviteLink(initialInvite)
-  }, [initialInvite, initialTab, isOpen])
 
   const addCommunity = useCommunityStore((s) => s.addCommunity)
   const setActiveCommunity = useCommunityStore((s) => s.setActiveCommunity)
@@ -88,6 +83,7 @@ export function CreateCommunityModal({
     setCreateError(null)
     setInviteLink('')
     setJoinError(null)
+    setJoinStatus('')
     setDirectoryQuery('')
     setDirectoryServer('')
     setDirectoryResults([])
@@ -135,8 +131,17 @@ export function CreateCommunityModal({
     if (!inviteLink.trim()) return
     setIsLoading(true)
     setJoinError(null)
+    setJoinStatus('')
     try {
-      const community = await bridge.joinCommunity(inviteLink.trim())
+      const outcome = await bridge.joinOrRequestCommunity(inviteLink.trim())
+      if (outcome.status === 'knocked' || !outcome.community) {
+        setJoinStatus(
+          'Access requested. An administrator will approve you before the community appears here.',
+        )
+        setIsLoading(false)
+        return
+      }
+      const community = outcome.community
       addCommunity(community)
       setActiveCommunity(community.id)
       const channels = await bridge.getChannels(community.id)
@@ -380,6 +385,7 @@ export function CreateCommunityModal({
                 onChange={(v: string) => {
                   setInviteLink(v)
                   setJoinError(null)
+                  setJoinStatus('')
                 }}
                 onKeyDown={handleKeyDown}
                 placeholder={matrixMode ? 'mesh.app/i/aB3xK9' : 'Paste your invite link'}
@@ -394,6 +400,15 @@ export function CreateCommunityModal({
                   className="mt-2"
                   compact
                 />
+              )}
+
+              {joinStatus && (
+                <p
+                  role="status"
+                  className="mt-2 rounded-control border border-status-success/30 bg-status-success/10 px-3 py-2 text-sm text-status-success"
+                >
+                  {joinStatus}
+                </p>
               )}
 
               <Button

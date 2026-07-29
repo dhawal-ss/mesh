@@ -2,6 +2,91 @@ use super::*;
 use matrix_sdk::{authentication::SessionTokens, SessionMeta};
 use serde_json::json;
 
+#[test]
+fn managed_invitation_parser_accepts_only_the_configured_service_origin() {
+    let expected = MatrixBackend::normalize_admission_origin("https://mesh.example").unwrap();
+    let code = "abcdefghijklmnopqrstuvwxyzABCDEFG_123456789";
+
+    let public = MatrixBackend::parse_managed_invitation(
+        &format!("https://mesh.example/invite/{code}"),
+        &expected,
+    )
+    .unwrap();
+    assert_eq!(public.code, code);
+    assert_eq!(public.api_origin.as_str(), "https://mesh.example/");
+
+    let deep_link = MatrixBackend::parse_managed_invitation(
+        &format!("mesh://join?v=4&kind=managed&code={code}&api=https%3A%2F%2Fmesh.example"),
+        &expected,
+    )
+    .unwrap();
+    assert_eq!(deep_link, public);
+
+    assert!(matches!(
+        MatrixBackend::parse_managed_invitation(
+            &format!("https://other.example/invite/{code}"),
+            &expected,
+        ),
+        Err(BackendError::PermissionDenied(_))
+    ));
+    assert!(MatrixBackend::parse_managed_invitation(
+        &format!(
+            "mesh://join?v=4&kind=managed&code={code}&code={code}&api=https%3A%2F%2Fmesh.example"
+        ),
+        &expected,
+    )
+    .is_err());
+}
+
+#[test]
+fn managed_invitation_origins_require_https_except_for_loopback_development() {
+    assert!(MatrixBackend::normalize_admission_origin("https://mesh.example").is_ok());
+    assert!(MatrixBackend::normalize_admission_origin("http://127.0.0.1:8090").is_ok());
+    assert!(MatrixBackend::normalize_admission_origin("http://mesh.example").is_err());
+    assert!(MatrixBackend::normalize_admission_origin("https://mesh.example/private").is_err());
+    let credentialed_origin = format!(
+        "https://{}:{}@mesh.example",
+        ["us", "er"].concat(),
+        ["sec", "ret"].concat()
+    );
+    assert!(MatrixBackend::normalize_admission_origin(&credentialed_origin).is_err());
+}
+
+#[test]
+fn managed_invitation_response_is_bound_to_the_managed_account_service() {
+    let managed = MatrixBackend::managed_homeserver_config_from(
+        Some("https://matrix.mesh.example"),
+        Some("mesh.example"),
+    )
+    .unwrap();
+    let response = AdmissionServiceResponse {
+        version: 4,
+        registration_token: Some("registration-token".into()),
+        room_id: "!community:mesh.example".into(),
+        service: "https://matrix.mesh.example".into(),
+        via: vec!["mesh.example".into()],
+        expires_at: Some(1_800_000_000_000),
+    };
+    let admission = MatrixBackend::validate_admission_response(response, &managed, true).unwrap();
+    assert_eq!(
+        admission.registration_token.as_deref(),
+        Some("registration-token")
+    );
+
+    let wrong_service = AdmissionServiceResponse {
+        version: 4,
+        registration_token: Some("registration-token".into()),
+        room_id: "!community:mesh.example".into(),
+        service: "https://matrix.other.example".into(),
+        via: vec!["mesh.example".into()],
+        expires_at: Some(1_800_000_000_000),
+    };
+    assert!(matches!(
+        MatrixBackend::validate_admission_response(wrong_service, &managed, true),
+        Err(BackendError::PermissionDenied(_))
+    ));
+}
+
 const MATRIX_PRODUCTION_SOURCES: &[(&str, &str)] = &[
     ("matrix.rs", include_str!("../../matrix.rs")),
     ("attachments.rs", include_str!("../attachments.rs")),
@@ -11,9 +96,98 @@ const MATRIX_PRODUCTION_SOURCES: &[(&str, &str)] = &[
     ("messages.rs", include_str!("../messages.rs")),
     ("moderation.rs", include_str!("../moderation.rs")),
     ("oidc.rs", include_str!("../oidc.rs")),
+    ("personal_data.rs", include_str!("../personal_data.rs")),
     ("rooms.rs", include_str!("../rooms.rs")),
     ("rtc.rs", include_str!("../rtc.rs")),
 ];
+
+#[test]
+fn personal_data_export_keeps_only_authored_content_and_redaction_state() {
+    let own_message = json!({
+        "type": "m.room.message",
+        "sender": "@alice:example.org",
+        "content": {"msgtype": "m.text", "body": "mine"}
+    });
+    let other_message = json!({
+        "type": "m.room.message",
+        "sender": "@bob:example.org",
+        "content": {"msgtype": "m.text", "body": "not mine"}
+    });
+    let own_edit = json!({
+        "type": "m.room.message",
+        "sender": "@alice:example.org",
+        "content": {"m.relates_to": {"rel_type": "m.replace"}}
+    });
+    let moderator_redaction = json!({
+        "type": "m.room.redaction",
+        "sender": "@moderator:example.org",
+        "redacts": "$mine:example.org",
+        "content": {}
+    });
+
+    assert!(MatrixBackend::personal_export_event_is_relevant(
+        &own_message,
+        "@alice:example.org"
+    ));
+    assert!(MatrixBackend::personal_export_event_is_relevant(
+        &own_edit,
+        "@alice:example.org"
+    ));
+    assert!(MatrixBackend::personal_export_event_is_relevant(
+        &moderator_redaction,
+        "@alice:example.org"
+    ));
+    assert!(!MatrixBackend::personal_export_event_is_relevant(
+        &other_message,
+        "@alice:example.org"
+    ));
+}
+
+#[test]
+fn personal_data_export_cache_prefix_matches_the_private_media_cache_contract() {
+    assert_eq!(
+        MatrixBackend::personal_export_cache_prefix("matrix-sha256:ab+/="),
+        "matrix_sha256_ab___-"
+    );
+}
+
+#[tokio::test]
+async fn personal_data_export_copies_only_matching_private_media() {
+    let root = tempfile::tempdir().unwrap();
+    let cache = root.path().join("media-cache");
+    let export = root.path().join("export");
+    tokio::fs::create_dir_all(&cache).await.unwrap();
+    tokio::fs::create_dir_all(&export).await.unwrap();
+    tokio::fs::write(cache.join("matrix_sha256_abc-photo.png"), b"owned media")
+        .await
+        .unwrap();
+    tokio::fs::write(cache.join("matrix_sha256_other-photo.png"), b"other media")
+        .await
+        .unwrap();
+
+    let mut warnings = Vec::new();
+    let copied = MatrixBackend::copy_personal_export_media(
+        &cache,
+        &export,
+        &HashSet::from(["matrix-sha256:abc".to_owned()]),
+        &mut warnings,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(copied, 1);
+    assert!(warnings.is_empty());
+    assert_eq!(
+        tokio::fs::read(export.join("media").join("matrix_sha256_abc-photo.png"))
+            .await
+            .unwrap(),
+        b"owned media"
+    );
+    assert!(!export
+        .join("media")
+        .join("matrix_sha256_other-photo.png")
+        .exists());
+}
 
 #[test]
 fn native_room_pins_are_unique_bounded_and_removable_at_capacity() {

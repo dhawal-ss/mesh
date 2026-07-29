@@ -76,10 +76,13 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
   useEffect(() => {
     clearTimeout(debounceRef.current)
     searchGenerationRef.current += 1
-    setResults([])
-    setActiveResultIndex(0)
-    setIsSearching(false)
-    setSearchFailed(false)
+    const frame = window.requestAnimationFrame(() => {
+      setResults([])
+      setActiveResultIndex(0)
+      setIsSearching(false)
+      setSearchFailed(false)
+    })
+    return () => window.cancelAnimationFrame(frame)
   }, [activeCommunityId])
 
   useEffect(() => {
