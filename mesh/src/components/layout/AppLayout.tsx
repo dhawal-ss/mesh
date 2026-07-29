@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { CommunitySidebar } from './CommunitySidebar'
 import { ChannelSidebar } from './ChannelSidebar'
 import { ContentArea } from './ContentArea'
@@ -43,6 +43,7 @@ export function AppLayout() {
 
   const myPublicKey = useIdentityStore((state) => state.identity?.publicKey)
   const [contextNavigationOpen, setContextNavigationOpen] = useState(false)
+  const contextNavigationRef = useRef<HTMLElement>(null)
   const activeRoomId = isDmMode ? activeConversationId : activeChannelId
   useNotificationSync({ matrixMode, activeRoomId })
 
@@ -53,6 +54,54 @@ export function AppLayout() {
   useEffect(() => {
     setContextNavigationOpen(false)
   }, [activeChannelId, activeCommunityId, isDmMode])
+
+  useEffect(() => {
+    if (!contextNavigationOpen) return
+    const compact = typeof window.matchMedia === 'function'
+      && window.matchMedia('(max-width: 799px)').matches
+    if (!compact) return
+    const focusableSelector = [
+      'button:not([disabled])',
+      'a[href]',
+      'input:not([disabled])',
+      'select:not([disabled])',
+      'textarea:not([disabled])',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(',')
+    const focusFirst = window.requestAnimationFrame(() => {
+      contextNavigationRef.current?.querySelector<HTMLElement>(focusableSelector)?.focus()
+    })
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const openDialog = document.querySelector('[role="dialog"]')
+      const nestedDialogOpen = openDialog != null && openDialog !== contextNavigationRef.current
+      if (event.key === 'Escape' && !event.defaultPrevented && !nestedDialogOpen) {
+        event.preventDefault()
+        setContextNavigationOpen(false)
+        window.requestAnimationFrame(() => {
+          document.querySelector<HTMLButtonElement>('.mesh-compact-header button')?.focus()
+        })
+        return
+      }
+      if (event.key !== 'Tab') return
+      const focusable = [...(contextNavigationRef.current?.querySelectorAll<HTMLElement>(focusableSelector) ?? [])]
+        .filter((element) => !element.hidden && element.getClientRects().length > 0)
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.cancelAnimationFrame(focusFirst)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [contextNavigationOpen])
 
   useEffect(() => {
     const unlisten = matrixMode
@@ -106,9 +155,35 @@ export function AppLayout() {
     && networkStatus.state !== 'connecting'
     && networkStatus.state !== 'disconnected'
     && remotePeerCount === 0
+  const networkLabel = matrixMode
+    ? networkStatus.state === 'connected'
+      ? 'Online'
+      : networkStatus.state === 'connecting'
+        ? 'Connecting'
+        : 'Offline'
+    : networkStatus.state === 'connecting'
+      ? 'Starting'
+      : networkStatus.state === 'disconnected'
+        ? 'Offline'
+        : isRunningSolo
+          ? 'Solo (you)'
+          : `You + ${remotePeerCount}`
+  const networkDescription = matrixMode
+    ? networkStatus.state === 'connected'
+      ? 'Connected to Mesh'
+      : networkStatus.state === 'connecting'
+        ? 'Connecting to Mesh'
+        : 'Mesh is offline. It will retry automatically.'
+    : networkStatus.state === 'connecting'
+      ? 'Starting Mesh'
+      : isRunningSolo
+        ? 'You are running as a solo peer. Messages are stored locally and will sync when other peers join.'
+        : networkStatus.state === 'disconnected'
+          ? 'Mesh is offline. It will retry automatically.'
+          : `Connected to ${remotePeerCount} other peer${remotePeerCount === 1 ? '' : 's'}`
 
   return (
-    <div className="relative flex h-screen flex-col overflow-hidden">
+    <div className="relative flex h-screen flex-col overflow-hidden bg-surface-base text-content">
       <Suspense fallback={null}>
         <CommandPalette />
       </Suspense>
@@ -145,7 +220,7 @@ export function AppLayout() {
       )}
       <div className="flex flex-1 overflow-hidden">
         <nav
-          className="mesh-community-rail flex flex-shrink-0 flex-col items-center overflow-y-auto border-r border-border-subtle bg-bg-tertiary pt-3"
+          className="mesh-community-rail flex flex-shrink-0 flex-col items-center overflow-y-auto border-r border-border-subtle bg-surface-sunken pt-2"
           aria-label="Communities and direct messages"
         >
           <ScopedErrorBoundary
@@ -156,22 +231,11 @@ export function AppLayout() {
             <CommunitySidebar />
           </ScopedErrorBoundary>
           <div className="mt-auto pb-3 flex flex-col items-center">
-            <div className="flex items-center gap-1.5 px-1 text-center text-caption text-muted"
-              title={
-                matrixMode
-                  ? networkStatus.state === 'connected'
-                    ? 'Connected to Mesh'
-                    : networkStatus.state === 'connecting'
-                      ? 'Connecting to Mesh'
-                      : 'Mesh is offline. It will retry automatically.'
-                  : networkStatus.state === 'connecting'
-                    ? 'Starting Mesh'
-                    : isRunningSolo
-                      ? 'You are running as a solo peer. Messages are stored locally and will sync when other peers join.'
-                      : networkStatus.state === 'disconnected'
-                        ? 'Mesh is offline. It will retry automatically.'
-                        : `Connected to ${remotePeerCount} other peer${remotePeerCount === 1 ? '' : 's'}`
-              }
+            <div
+              className="flex max-w-full items-center justify-center gap-1.5 px-1 text-center text-caption text-muted"
+              role="status"
+              aria-label={networkDescription}
+              title={networkDescription}
             >
               <span
                 className={`w-2 h-2 rounded-full flex-shrink-0 ${
@@ -190,21 +254,7 @@ export function AppLayout() {
                 }`}
                 aria-hidden
               />
-              <span>
-                {matrixMode
-                  ? networkStatus.state === 'connected'
-                    ? 'Online'
-                    : networkStatus.state === 'connecting'
-                      ? 'Connecting'
-                      : 'Offline'
-                  : networkStatus.state === 'connecting'
-                    ? 'Starting'
-                    : networkStatus.state === 'disconnected'
-                      ? 'Offline'
-                      : isRunningSolo
-                        ? 'Solo (you)'
-                        : `You + ${remotePeerCount}`}
-              </span>
+              <span className="mesh-network-label min-w-0 truncate">{networkLabel}</span>
             </div>
           </div>
         </nav>
@@ -219,10 +269,13 @@ export function AppLayout() {
         )}
 
         <aside
+          ref={contextNavigationRef}
           id="mesh-context-sidebar"
           data-open={contextNavigationOpen ? 'true' : 'false'}
-          className="mesh-context-sidebar flex flex-shrink-0 flex-col border-r border-border-subtle bg-bg-secondary"
+          className="mesh-context-sidebar flex flex-shrink-0 flex-col border-r border-border-subtle bg-surface-sidebar"
           aria-label={isDmMode && directMessagesAvailable ? 'Direct message conversations' : 'Room list'}
+          role={contextNavigationOpen ? 'dialog' : undefined}
+          aria-modal={contextNavigationOpen || undefined}
         >
           <ScopedErrorBoundary
             name={isDmMode && directMessagesAvailable ? 'Conversation list' : 'Room list'}
@@ -234,11 +287,11 @@ export function AppLayout() {
           </ScopedErrorBoundary>
         </aside>
 
-        <main className="flex min-w-0 flex-1 flex-col bg-bg-primary" aria-label="Content area">
+        <main className="flex min-w-0 flex-1 flex-col bg-surface-base" aria-label="Content area">
           <div className="mesh-compact-header">
             <button
               type="button"
-              className="flex h-8 items-center gap-2 rounded px-2 text-sm font-medium text-secondary hover:bg-bg-modifier-hover hover:text-primary"
+              className="flex h-8 items-center gap-2 rounded-control px-2 text-sm font-medium text-secondary hover:bg-surface-hover hover:text-primary"
               aria-controls="mesh-context-sidebar"
               aria-expanded={contextNavigationOpen}
               aria-label={

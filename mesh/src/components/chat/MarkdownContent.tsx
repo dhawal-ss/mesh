@@ -68,7 +68,7 @@ function parseMarkdown(text: string, mentionOptions: MentionRenderOptions): Reac
       elements.push(
         <pre
           key={`code-${i}`}
-          className="my-1 overflow-x-auto rounded border border-border bg-bg-secondary p-3 font-mono text-code text-secondary"
+          className="my-1 overflow-x-auto rounded-panel border border-border bg-surface-sunken p-3 font-mono text-code text-secondary"
         >
           <code data-lang={lang || undefined}>{codeLines.join('\n')}</code>
         </pre>,
@@ -122,7 +122,7 @@ function parseInline(
     if (match[1]) {
       const code = match[1].slice(1, -1)
       nodes.push(
-        <code key={key} className="rounded-sm bg-bg-secondary px-1 py-0.5 font-mono text-code">
+        <code key={key} className="rounded-control bg-surface-sunken px-1 py-0.5 font-mono text-code">
           {code}
         </code>,
       )

@@ -52,35 +52,29 @@ interface FieldControlProps {
   'aria-required'?: boolean | 'true' | 'false'
 }
 
-export function Field({
-  label,
-  htmlFor,
-  hint,
-  error,
-  required,
-  children,
-  className,
-}: FieldProps) {
+export function Field({ label, htmlFor, hint, error, required, children, className }: FieldProps) {
   const generatedId = useId()
   const supportingTextId = `${generatedId}-supporting`
   const control = isValidElement<FieldControlProps>(children)
-    ? cloneElement(
-        children,
-        {
-          'aria-describedby': error || hint
+    ? cloneElement(children, {
+        'aria-describedby':
+          error || hint
             ? [children.props['aria-describedby'], supportingTextId].filter(Boolean).join(' ')
             : children.props['aria-describedby'],
-          'aria-invalid': error ? true : children.props['aria-invalid'],
-          'aria-required': required ? true : children.props['aria-required'],
-        },
-      )
+        'aria-invalid': error ? true : children.props['aria-invalid'],
+        'aria-required': required ? true : children.props['aria-required'],
+      })
     : children
 
   return (
     <div className={clsx('flex flex-col gap-1.5', className)}>
       <label htmlFor={htmlFor} className="text-xs font-medium text-content-secondary">
         {label}
-        {required && <span className="ml-1 text-status-danger" aria-hidden="true">*</span>}
+        {required && (
+          <span className="ml-1 text-status-danger" aria-hidden="true">
+            *
+          </span>
+        )}
       </label>
       {control}
       {(error || hint) && (
@@ -122,13 +116,19 @@ export const Checkbox = forwardRef<HTMLInputElement, ChoiceProps>(
           id={inputId}
           type="checkbox"
           disabled={disabled}
-          aria-describedby={description ? descriptionId : describedBy}
+          aria-describedby={
+            [describedBy, description ? descriptionId : undefined].filter(Boolean).join(' ') || undefined
+          }
           className="mt-0.5 h-4 w-4 rounded border-border accent-accent"
           {...props}
         />
         <span>
           <span className="block">{label}</span>
-          {description && <span id={descriptionId} className="block text-xs text-content-muted">{description}</span>}
+          {description && (
+            <span id={descriptionId} className="block text-xs text-content-muted">
+              {description}
+            </span>
+          )}
         </span>
       </label>
     )
@@ -156,13 +156,19 @@ export const Radio = forwardRef<HTMLInputElement, ChoiceProps>(
           id={inputId}
           type="radio"
           disabled={disabled}
-          aria-describedby={description ? descriptionId : describedBy}
+          aria-describedby={
+            [describedBy, description ? descriptionId : undefined].filter(Boolean).join(' ') || undefined
+          }
           className="mt-0.5 h-4 w-4 border-border accent-accent"
           {...props}
         />
         <span>
           <span className="block">{label}</span>
-          {description && <span id={descriptionId} className="block text-xs text-content-muted">{description}</span>}
+          {description && (
+            <span id={descriptionId} className="block text-xs text-content-muted">
+              {description}
+            </span>
+          )}
         </span>
       </label>
     )
@@ -183,7 +189,9 @@ export const Slider = forwardRef<HTMLInputElement, SliderProps>(
     return (
       <div className={clsx('space-y-1.5', className)}>
         <div className="flex items-center justify-between gap-3 text-xs">
-          <label htmlFor={inputId} className="font-medium text-content-secondary">{label}</label>
+          <label htmlFor={inputId} className="font-medium text-content-secondary">
+            {label}
+          </label>
           {valueLabel && <span className="text-content-muted">{valueLabel}</span>}
         </div>
         <input
@@ -306,13 +314,7 @@ export interface ScrollAreaProps extends HTMLAttributes<HTMLDivElement> {
   label?: string
 }
 
-export function ScrollArea({
-  label,
-  className,
-  tabIndex = 0,
-  role,
-  ...props
-}: ScrollAreaProps) {
+export function ScrollArea({ label, className, tabIndex = 0, role, ...props }: ScrollAreaProps) {
   return (
     <div
       role={role ?? (label ? 'region' : undefined)}
@@ -327,17 +329,16 @@ export function ScrollArea({
   )
 }
 
-export function EmptyState({
-  title,
-  description,
-  action,
-  className,
-}: {
+export interface EmptyStateProps {
   title: string
   description: string
+  icon?: ReactNode
   action?: ReactNode
+  variant?: 'default' | 'compact'
   className?: string
-}) {
+}
+
+export function EmptyState({ title, description, icon, action, variant = 'default', className }: EmptyStateProps) {
   const generatedId = useId()
   const titleId = `${generatedId}-title`
   const descriptionId = `${generatedId}-description`
@@ -345,11 +346,39 @@ export function EmptyState({
     <section
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
-      className={clsx('flex flex-col items-center justify-center gap-2 px-6 py-10 text-center', className)}
+      className={clsx(
+        'flex flex-col items-center justify-center text-center',
+        variant === 'default' && 'gap-2 px-6 py-10',
+        variant === 'compact' && 'gap-1.5 px-3 py-5',
+        className,
+      )}
     >
-      <h3 id={titleId} className="text-base font-semibold text-content">{title}</h3>
-      <p id={descriptionId} className="max-w-md text-sm text-content-secondary">{description}</p>
-      {action && <div className="mt-2">{action}</div>}
+      {icon && (
+        <div aria-hidden="true" className="mb-0.5 flex h-6 w-6 items-center justify-center text-content-muted">
+          {icon}
+        </div>
+      )}
+      <h3
+        id={titleId}
+        className={clsx(
+          'text-content',
+          variant === 'default' && 'text-base font-semibold',
+          variant === 'compact' && 'text-sm font-medium',
+        )}
+      >
+        {title}
+      </h3>
+      <p
+        id={descriptionId}
+        className={clsx(
+          'text-content-secondary',
+          variant === 'default' && 'max-w-md text-sm',
+          variant === 'compact' && 'max-w-xs text-xs leading-5',
+        )}
+      >
+        {description}
+      </p>
+      {action && <div className={variant === 'compact' ? 'mt-1' : 'mt-2'}>{action}</div>}
     </section>
   )
 }
@@ -357,7 +386,10 @@ export function EmptyState({
 export function Kbd({ className, ...props }: HTMLAttributes<HTMLElement>) {
   return (
     <kbd
-      className={clsx('rounded border border-border bg-surface-sunken px-1.5 py-0.5 font-mono text-xs text-content-secondary', className)}
+      className={clsx(
+        'rounded border border-border bg-surface-sunken px-1.5 py-0.5 font-mono text-xs text-content-secondary',
+        className,
+      )}
       {...props}
     />
   )
@@ -367,7 +399,9 @@ export function Card({
   variant = 'raised',
   className,
   ...props
-}: HTMLAttributes<HTMLDivElement> & { variant?: 'base' | 'raised' | 'outline' }) {
+}: HTMLAttributes<HTMLDivElement> & {
+  variant?: 'base' | 'raised' | 'outline'
+}) {
   return (
     <div
       className={clsx(

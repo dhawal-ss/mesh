@@ -108,19 +108,19 @@ export function OnboardingFlow({
   }
 
   return (
-    <main className="min-h-screen bg-surface-sunken p-4 sm:p-6 lg:p-8">
+    <main className="flex h-screen flex-col overflow-y-auto bg-surface-sunken p-4 sm:px-6">
       <motion.section
         aria-label="Set up Mesh"
         data-onboarding-shell
-        className="mx-auto grid min-h-onboarding-shell w-full max-w-onboarding-shell overflow-hidden rounded-xl border border-border-subtle bg-surface-base shadow-overlay lg:grid-cols-[minmax(17rem,0.78fr)_minmax(28rem,1.22fr)]"
+        className="m-auto grid w-full max-w-onboarding-shell overflow-hidden rounded-panel border border-border-subtle bg-surface-base shadow-overlay lg:min-h-onboarding-shell lg:grid-cols-[minmax(17rem,0.78fr)_minmax(28rem,1.22fr)]"
         variants={variants.screen}
         initial="initial"
         animate="animate"
         exit="exit"
       >
-        <aside className="flex flex-col border-b border-border-subtle bg-surface-base px-5 py-5 sm:px-8 sm:py-6 lg:border-b-0 lg:border-r lg:px-10 lg:py-8">
+        <aside className="flex flex-col border-b border-border-subtle bg-surface-base px-5 py-5 sm:grid sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-8 sm:px-8 sm:py-6 lg:flex lg:flex-col lg:items-stretch lg:gap-0 lg:border-b-0 lg:border-r lg:px-10 lg:py-8">
           <div className="flex items-center gap-3" aria-label="Mesh">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-content-on-accent">
+            <span className="flex h-9 w-9 items-center justify-center rounded-control bg-accent text-content-on-accent">
               <Icon name="shieldCheck" size="md" />
             </span>
             <span>
@@ -131,7 +131,7 @@ export function OnboardingFlow({
             </span>
           </div>
 
-          <div className="mt-6 lg:mt-12">
+          <div className="mt-6 sm:mt-0 lg:mt-12">
             <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">
               Your account, your trust
             </p>
@@ -155,13 +155,13 @@ export function OnboardingFlow({
           </p>
         </aside>
 
-        <div className="flex min-w-0 flex-col bg-surface-raised px-5 py-6 sm:px-8 sm:py-8 lg:px-12">
-          <div className="mb-6">
+        <div className="flex min-w-0 flex-col bg-surface-raised px-5 py-4 sm:px-8 sm:py-5 lg:px-12">
+          <div className="mb-4">
             <div className="flex items-center justify-between gap-4">
               <p className="text-caption font-semibold uppercase tracking-section text-content-muted">
                 Setup progress
               </p>
-              <p className="text-caption text-content-secondary">
+              <p className="text-caption text-content-secondary" aria-live="polite">
                 Step {Math.max(currentIndex + 1, 1)} of {steps.length}
               </p>
             </div>
@@ -302,7 +302,7 @@ function TrustCue({
 }) {
   return (
     <div className="flex gap-3">
-      <span className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-md bg-accent/10 text-accent">
+      <span className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-control bg-accent/10 text-accent">
         <Icon name={icon} size="sm" />
       </span>
       <span>

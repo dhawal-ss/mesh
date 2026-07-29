@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { AttachmentThumbnail } from '../../types/ipc'
 import * as bridge from '../../lib/bridge'
+import { Button } from '../ui/Button'
+import { Icon } from '../ui/Icon'
 import { Modal } from '../ui/Modal'
+import { Spinner } from '../ui/Spinner'
 
 type ImageState =
   | { status: 'loading'; url: null; attempt: number }
@@ -52,9 +55,7 @@ export function ProtectedImageLightbox({
       .matrixLoadAttachmentImage(roomId, eventId, attachmentIndex)
       .then((result) => {
         if (!active || !result) return
-        const objectUrl = URL.createObjectURL(
-          new Blob([result.bytes], { type: result.contentType }),
-        )
+        const objectUrl = URL.createObjectURL(new Blob([result.bytes], { type: result.contentType }))
         if (!active) {
           URL.revokeObjectURL(objectUrl)
           return
@@ -120,35 +121,30 @@ export function ProtectedImageLightbox({
   }
 
   return (
-    <Modal
-      open
-      onClose={onClose}
-      title={filename}
-      description="Protected image"
-    >
+    <Modal open onClose={onClose} title={filename} description="Protected image">
       <div className="space-y-3">
         <div
-          className="relative flex min-h-64 w-full items-center justify-center overflow-hidden rounded-control border border-border-subtle bg-bg-modifier-hover"
+          className="relative flex min-h-64 w-full items-center justify-center overflow-hidden rounded-control border border-border-subtle bg-surface-hover"
           data-design-token-exception="data-driven-thumbnail-aspect-ratio"
           style={viewStyle}
         >
           {image.status === 'loading' && (
-            <span role="status" className="text-sm text-muted">
+            <span role="status" className="inline-flex items-center gap-2 text-sm text-muted">
+              <Spinner size={16} />
               Loading protected image…
             </span>
           )}
           {image.status === 'failed' && (
-            <div className="flex flex-col items-center gap-2 text-center">
-              <p role="alert" className="text-sm text-muted">
+            <div className="flex flex-col items-center gap-2 px-4 text-center">
+              <div className="flex h-8 w-8 items-center justify-center rounded-control bg-status-danger/10 text-status-danger">
+                <Icon name="triangleAlert" size="sm" />
+              </div>
+              <p role="alert" className="text-sm font-medium text-status-danger">
                 The full image could not be loaded.
               </p>
-              <button
-                type="button"
-                onClick={retry}
-                className="min-h-control-sm rounded px-3 text-sm font-medium text-secondary transition-colors hover:bg-bg-modifier-active focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-              >
+              <Button type="button" variant="secondary" size="sm" onClick={retry}>
                 Retry image
-              </button>
+              </Button>
             </div>
           )}
           {image.status === 'ready' && (
@@ -179,7 +175,7 @@ export function ProtectedImageLightbox({
               type="button"
               onClick={onPrevious}
               disabled={imageCount < 2}
-              className="min-h-control-sm rounded px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-control-sm rounded-control px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
             >
               Previous image
             </button>
@@ -190,7 +186,7 @@ export function ProtectedImageLightbox({
               type="button"
               onClick={onNext}
               disabled={imageCount < 2}
-              className="min-h-control-sm rounded px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-control-sm rounded-control px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
             >
               Next image
             </button>
@@ -198,19 +194,15 @@ export function ProtectedImageLightbox({
           <div className="flex flex-wrap items-center gap-1">
             <button
               type="button"
-              onClick={() =>
-                setZoom((current) => Math.max(MIN_ZOOM, current - ZOOM_STEP))
-              }
+              onClick={() => setZoom((current) => Math.max(MIN_ZOOM, current - ZOOM_STEP))}
               disabled={zoom <= MIN_ZOOM}
-              className="min-h-control-sm rounded px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-control-sm rounded-control px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
             >
               Zoom out
             </button>
             <button
               type="button"
-              onClick={() =>
-                setZoom((current) => Math.min(MAX_ZOOM, current + ZOOM_STEP))
-              }
+              onClick={() => setZoom((current) => Math.min(MAX_ZOOM, current + ZOOM_STEP))}
               disabled={zoom >= MAX_ZOOM}
               className="min-h-control-sm rounded px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -219,35 +211,35 @@ export function ProtectedImageLightbox({
             <button
               type="button"
               onClick={() => pan(-PAN_STEP, 0)}
-              className="min-h-control-sm rounded px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              className="min-h-control-sm rounded-control px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             >
               Pan left
             </button>
             <button
               type="button"
               onClick={() => pan(PAN_STEP, 0)}
-              className="min-h-control-sm rounded px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              className="min-h-control-sm rounded-control px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             >
               Pan right
             </button>
             <button
               type="button"
               onClick={() => pan(0, -PAN_STEP)}
-              className="min-h-control-sm rounded px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              className="min-h-control-sm rounded-control px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             >
               Pan up
             </button>
             <button
               type="button"
               onClick={() => pan(0, PAN_STEP)}
-              className="min-h-control-sm rounded px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              className="min-h-control-sm rounded-control px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             >
               Pan down
             </button>
             <button
               type="button"
               onClick={resetView}
-              className="min-h-control-sm rounded px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              className="min-h-control-sm rounded-control px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             >
               Reset view
             </button>

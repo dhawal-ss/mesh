@@ -25,8 +25,11 @@ export default {
           secondary: withAlpha('--content-secondary-rgb'),
           muted: withAlpha('--content-muted-rgb'),
           link: withAlpha('--content-link-rgb'),
+          accent: withAlpha('--content-accent-rgb'),
           'on-accent': withAlpha('--content-on-accent-rgb'),
           'on-status': withAlpha('--content-on-status-rgb'),
+          'on-avatar': withAlpha('--content-on-avatar-rgb'),
+          'on-media-overlay': withAlpha('--content-on-media-overlay-rgb'),
         },
         accent: {
           DEFAULT: withAlpha('--accent-rgb'),
@@ -45,6 +48,7 @@ export default {
         'pane-tint': 'var(--surface-pane-tint)',
         'border-subtle': 'var(--border-subtle)',
         'border-strong': 'var(--border-strong)',
+        focus: withAlpha('--border-focus-rgb'),
 
         // Compatibility names. Values live in globals.css.
         'bg-tertiary': withAlpha('--bg-tertiary-rgb'),
@@ -133,6 +137,7 @@ export default {
         'empty-icon': 'var(--empty-state-icon)',
         'community-marker': 'var(--community-marker)',
         'user-panel': 'var(--user-panel-height)',
+        'conversation-header': 'var(--conversation-header-height)',
         'rail-separator': 'var(--rail-separator-height)',
       },
       width: {
@@ -151,6 +156,9 @@ export default {
         modal: 'var(--modal-content-height)',
         settings: 'var(--settings-content-height)',
         composer: 'var(--composer-content-height)',
+      },
+      minWidth: {
+        'privacy-table': 'var(--privacy-table-width)',
       },
       minHeight: {
         'onboarding-shell': 'var(--onboarding-shell-height)',

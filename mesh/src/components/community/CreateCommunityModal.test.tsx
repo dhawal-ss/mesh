@@ -58,6 +58,13 @@ describe('CreateCommunityModal', () => {
       root.render(<CreateCommunityModal isOpen onClose={() => {}} />)
     })
 
+    expect(
+      document.body.querySelector('[role="dialog"]')?.getAttribute('aria-labelledby'),
+    ).toBeTruthy()
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain(
+      'Create a community',
+    )
+
     const nameInput = document.body.querySelector<HTMLInputElement>('input[placeholder="e.g. Design Club"]')
     await act(async () => {
       const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
@@ -88,5 +95,40 @@ describe('CreateCommunityModal', () => {
     expect(bridgeMocks.createCommunity).toHaveBeenCalledWith('🎮 Design Club', '')
     expect(bridgeMocks.createChannel).toHaveBeenCalledWith('!server:example.org', 'squad-up', 'text')
     expect(bridgeMocks.createChannel).toHaveBeenCalledWith('!server:example.org', 'clips', 'text')
+  })
+
+  it('keeps the dialog open and exposes a retryable error when creation fails', async () => {
+    bridgeMocks.createCommunity.mockRejectedValueOnce(new Error('Homeserver unavailable'))
+
+    await act(async () => {
+      root.render(<CreateCommunityModal isOpen onClose={() => {}} />)
+    })
+
+    const nameInput = document.body.querySelector<HTMLInputElement>(
+      'input[placeholder="e.g. Design Club"]',
+    )
+    await act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set
+      setValue?.call(nameInput, 'Design Club')
+      nameInput?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    const next = Array.from(document.body.querySelectorAll('button'))
+      .find((button) => button.textContent === 'Next')
+    await act(async () => next?.click())
+
+    const create = Array.from(document.body.querySelectorAll('button'))
+      .find((button) => button.textContent === 'Create Community')
+    await act(async () => {
+      create?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(document.body.querySelector('[role="alert"]')).not.toBeNull()
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
   })
 })

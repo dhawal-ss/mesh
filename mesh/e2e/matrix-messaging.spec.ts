@@ -456,8 +456,15 @@ test.describe('Matrix direct messaging and encrypted attachments', () => {
     await expect(page.getByText('Message backup')).toBeVisible()
 
     await page.getByRole('button', { name: 'Review devices and backup' }).click()
-    await expect(page.getByRole('dialog', { name: 'Your devices' })).toBeVisible()
+    const securityDialog = page.getByRole('dialog', { name: 'Your devices' })
+    await expect(securityDialog).toBeVisible()
+    await expect(page.getByRole('dialog')).toHaveCount(1)
     await expect(page.getByText('Message backup is ready')).toBeVisible()
+
+    await page.keyboard.press('Escape')
+    await expect(securityDialog).toHaveCount(0)
+    await expect(trustSummary).toBeFocused()
+    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false)
   })
 
   test('sends DM text through the dedicated Matrix direct-message command', async ({ page }) => {

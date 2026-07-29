@@ -26,6 +26,7 @@ import { useCommunityStore } from '../../store/communities'
 import type { RoomTrustSnapshot } from '../../hooks/useRoomTrust'
 import type { RoomContextTab } from '../community/RoomContextPanel'
 import { RoomTrustSummary } from './RoomTrustSummary'
+import { EmptyState } from '../ui/Primitives'
 
 interface ChatViewProps {
   channel: Channel
@@ -776,10 +777,10 @@ export function ChatView({
                 aria-label={isContextOpen ? 'Hide room context' : 'Show room context'}
                 aria-controls="mesh-room-context-panel"
                 aria-expanded={isContextOpen}
-                className={`flex h-8 w-8 items-center justify-center rounded transition-colors ${
+                className={`flex h-8 w-8 items-center justify-center rounded-control transition-colors ${
                   isContextOpen
-                    ? 'text-primary'
-                    : 'text-muted hover:text-secondary'
+                    ? 'bg-surface-selected text-primary'
+                    : 'text-muted hover:bg-surface-hover hover:text-secondary'
                 }`}
               >
                 <Icon name={activeContextTab === 'ledger' ? 'shieldCheck' : 'panelRight'} size="sm" />
@@ -825,13 +826,11 @@ export function ChatView({
             </div>
           ) : channelMessages.length === 0 ? (
             <div className="flex h-full items-center justify-center">
-              <div className="text-center px-4">
-                <div className="mx-auto mb-4 flex h-empty-icon w-empty-icon items-center justify-center rounded-full bg-bg-modifier-hover">
-                  <Icon name="hash" size="lg" className="text-muted" />
-                </div>
-                <h3 className="mb-1 text-lg font-semibold text-primary">Welcome to #{channel.name}!</h3>
-                <p className="text-sm text-muted">This is the start of the #{channel.name} channel.</p>
-              </div>
+              <EmptyState
+                icon={<Icon name="hash" size="lg" />}
+                title={`Welcome to #${channel.name}`}
+                description={`This is the start of the #${channel.name} channel.`}
+              />
             </div>
           ) : (
             <div className="relative">
@@ -903,7 +902,7 @@ export function ChatView({
 
       {/* Reply bar */}
       {replyingTo && (
-        <div className="flex items-center gap-2 bg-bg-secondary px-4 py-2">
+        <div className="flex items-center gap-2 border-t border-border-subtle bg-surface-sunken px-4 py-2">
           <Icon name="reply" size="sm" className="shrink-0 text-secondary" />
           <span className="text-sm text-secondary">
             Replying to <span className="font-medium text-primary">{replyingTo.authorDisplayName}</span>
@@ -1009,7 +1008,7 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
       tabIndex={isHighlighted ? -1 : undefined}
       className={
         isHighlighted
-          ? 'animate-[pulse_2s_ease-in-out_1] rounded-md bg-accent/10 ring-2 ring-inset ring-accent'
+          ? 'animate-[pulse_2s_ease-in-out_1] rounded-panel bg-accent/10 ring-2 ring-inset ring-accent'
           : undefined
       }
     >
@@ -1017,14 +1016,14 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
         scope="feature"
         fallback={(resetError) => (
           <div
-            className="mx-4 my-1 flex min-w-0 items-center justify-between gap-3 rounded bg-bg-secondary px-4 py-3"
+            className="mx-4 my-1 flex min-w-0 items-center justify-between gap-3 rounded-panel border border-border-subtle bg-surface-sunken px-4 py-3"
             role="alert"
           >
             <p className="text-xs text-muted">This message couldn't be displayed.</p>
             <button
               type="button"
               onClick={resetError}
-              className="min-h-8 shrink-0 rounded-md px-2 text-xs font-medium text-text-link transition-colors hover:bg-bg-modifier-hover hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              className="min-h-8 shrink-0 rounded-control px-2 text-xs font-medium text-text-link transition-colors hover:bg-surface-hover hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             >
               Try again
             </button>
@@ -1079,7 +1078,7 @@ function HistoryGapRow({
 
   return (
     <div ref={rowRef} className="px-4 py-2">
-      <div className="flex items-center justify-between rounded bg-bg-modifier-hover px-4 py-2">
+      <div className="flex items-center justify-between rounded-panel border border-border-subtle bg-surface-sunken px-4 py-2">
         <div>
           <p className="text-sm font-medium text-primary">
             {hiddenCount} newer message{hiddenCount === 1 ? '' : 's'} hidden

@@ -23,7 +23,7 @@ export function ScopedErrorBoundary({
       scope="feature"
       fallback={(resetError) => (
         <div
-          className={`flex min-w-0 flex-col items-start gap-2 rounded bg-bg-secondary px-4 py-3 ${className}`}
+          className={`flex min-w-0 flex-col items-start gap-2 rounded-control border border-border-subtle bg-surface-sunken px-4 py-3 ${className}`}
           role="alert"
           aria-live="assertive"
         >
@@ -32,7 +32,7 @@ export function ScopedErrorBoundary({
           <button
             type="button"
             onClick={resetError}
-            className="inline-flex min-h-8 items-center rounded-md px-2 text-xs font-medium text-text-link transition-colors hover:bg-bg-modifier-hover hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            className="inline-flex min-h-8 items-center rounded-control px-2 text-xs font-medium text-text-link transition-colors hover:bg-surface-hover hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           >
             Try again
           </button>
@@ -74,14 +74,14 @@ export function DialogErrorBoundary({
               <button
                 type="button"
                 onClick={resetError}
-                className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-content-on-accent hover:bg-accent-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                className="rounded-control bg-accent px-3 py-1.5 text-xs font-medium text-content-on-accent hover:bg-accent-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               >
                 Try again
               </button>
               <button
                 type="button"
                 onClick={onClose}
-                className="min-h-8 rounded-md bg-bg-modifier-hover px-3 text-xs font-medium text-primary hover:bg-bg-modifier-active focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                className="min-h-8 rounded-control bg-surface-hover px-3 text-xs font-medium text-primary hover:bg-surface-active focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               >
                 Close
               </button>
