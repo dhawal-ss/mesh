@@ -58,7 +58,7 @@ use matrix_sdk::{
                 },
                 rtc::{transports::v1::Request as MatrixRtcTransportsRequest, RtcTransport},
                 state::{get_state_events, send_state_event},
-                uiaa::{self, AuthData, AuthType, Dummy, UiaaInfo},
+                uiaa::{self, AuthData, AuthType, Dummy, RegistrationToken, UiaaInfo},
             },
             error::ErrorKind,
             Metadata, OutgoingRequest, SupportedVersions,
@@ -1131,6 +1131,26 @@ impl MatrixBackend {
         Ok(username)
     }
 
+    fn normalize_registration_token(input: Option<String>) -> BackendResult<Option<String>> {
+        let Some(input) = input else {
+            return Ok(None);
+        };
+        let token = input.trim();
+        if token.is_empty() {
+            return Ok(None);
+        }
+        if token.len() > 64
+            || !token.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'~' | b'-')
+            })
+        {
+            return Err(BackendError::InvalidConfiguration(
+                "the Mesh invitation code has an invalid format".into(),
+            ));
+        }
+        Ok(Some(token.to_owned()))
+    }
+
     fn normalize_public_link_slug(input: &str) -> BackendResult<String> {
         let slug = input.trim().to_ascii_lowercase();
         if slug.starts_with('#') || slug.contains(':') {
@@ -1199,10 +1219,34 @@ impl MatrixBackend {
         })
     }
 
-    fn uiaa_can_complete_with_dummy(info: &UiaaInfo) -> bool {
+    #[cfg(test)]
+    fn uiaa_can_complete_with_stage(info: &UiaaInfo, required_stage: AuthType) -> bool {
         info.flows.iter().any(|flow| {
             let mut incomplete_count = 0_u8;
-            let only_dummy = flow
+            let only_required_stage = flow
+                .stages
+                .iter()
+                .filter(|stage| {
+                    !info
+                        .completed
+                        .iter()
+                        .any(|completed| completed.as_str() == stage.as_str())
+                })
+                .all(|stage| {
+                    incomplete_count = incomplete_count.saturating_add(1);
+                    stage.as_str() == required_stage.as_str()
+                });
+            incomplete_count > 0 && only_required_stage
+        })
+    }
+
+    fn uiaa_has_supported_registration_flow(
+        info: &UiaaInfo,
+        registration_token_available: bool,
+    ) -> bool {
+        info.flows.iter().any(|flow| {
+            let mut incomplete_count = 0_u8;
+            let supported = flow
                 .stages
                 .iter()
                 .filter(|stage| {
@@ -1214,15 +1258,27 @@ impl MatrixBackend {
                 .all(|stage| {
                     incomplete_count = incomplete_count.saturating_add(1);
                     matches!(stage, AuthType::Dummy)
+                        || (registration_token_available
+                            && matches!(stage, AuthType::RegistrationToken))
                 });
-            incomplete_count > 0 && only_dummy
+            incomplete_count > 0 && supported
         })
     }
 
-    fn map_registration_error(error: matrix_sdk::Error) -> BackendError {
+    fn map_registration_error(
+        error: matrix_sdk::Error,
+        registration_token_supplied: bool,
+    ) -> BackendError {
         if let Some(info) = error.as_uiaa_response() {
             if Self::uiaa_has_incomplete_stage(info, AuthType::Terms) {
                 return BackendError::RegistrationTermsRequired;
+            }
+            if Self::uiaa_has_incomplete_stage(info, AuthType::RegistrationToken) {
+                return if registration_token_supplied {
+                    BackendError::RegistrationInvitationInvalid
+                } else {
+                    BackendError::RegistrationInvitationRequired
+                };
             }
             return BackendError::RegistrationAdditionalAuthRequired;
         }
@@ -2648,16 +2704,30 @@ impl MeshBackend for MatrixBackend {
         &self,
         username: String,
         mut password: String,
+        registration_token: Option<String>,
     ) -> BackendResult<BackendStatus> {
-        let username = match Self::normalize_product_username(&username) {
-            Ok(username) => username,
+        let mut registration_token = match Self::normalize_registration_token(registration_token) {
+            Ok(token) => token,
             Err(error) => {
                 password.zeroize();
                 return Err(error);
             }
         };
+        let username = match Self::normalize_product_username(&username) {
+            Ok(username) => username,
+            Err(error) => {
+                password.zeroize();
+                if let Some(token) = &mut registration_token {
+                    token.zeroize();
+                }
+                return Err(error);
+            }
+        };
         if password.len() < 8 {
             password.zeroize();
+            if let Some(token) = &mut registration_token {
+                token.zeroize();
+            }
             return Err(BackendError::InvalidConfiguration(
                 "password must be at least 8 characters".into(),
             ));
@@ -2666,6 +2736,9 @@ impl MeshBackend for MatrixBackend {
             Ok(managed) => managed,
             Err(error) => {
                 password.zeroize();
+                if let Some(token) = &mut registration_token {
+                    token.zeroize();
+                }
                 return Err(error);
             }
         };
@@ -2689,29 +2762,66 @@ impl MeshBackend for MatrixBackend {
                     request
                 };
 
-                let first_result = client
+                let mut registration_result = client
                     .matrix_auth()
                     .register(registration_request(None))
                     .await;
-                match first_result {
-                    Ok(_) => {}
-                    Err(error) => {
-                        let dummy_session = error
-                            .as_uiaa_response()
-                            .filter(|info| Self::uiaa_can_complete_with_dummy(info))
-                            .map(|info| info.session.clone());
-                        if let Some(session) = dummy_session {
-                            let mut dummy = Dummy::new();
-                            dummy.session = session;
-                            client
-                                .matrix_auth()
-                                .register(registration_request(Some(AuthData::Dummy(dummy))))
-                                .await
-                                .map_err(Self::map_registration_error)?;
-                        } else {
-                            return Err(Self::map_registration_error(error));
+                let mut registration_complete = false;
+                for attempt in 0..4 {
+                    let error = match registration_result {
+                        Ok(_) => {
+                            registration_complete = true;
+                            break;
                         }
+                        Err(error) => error,
+                    };
+                    if attempt == 3 {
+                        return Err(Self::map_registration_error(
+                            error,
+                            registration_token.is_some(),
+                        ));
                     }
+                    let Some(info) = error.as_uiaa_response() else {
+                        return Err(Self::map_registration_error(
+                            error,
+                            registration_token.is_some(),
+                        ));
+                    };
+                    if !Self::uiaa_has_supported_registration_flow(
+                        info,
+                        registration_token.is_some(),
+                    ) {
+                        return Err(Self::map_registration_error(
+                            error,
+                            registration_token.is_some(),
+                        ));
+                    }
+
+                    let auth = if Self::uiaa_has_incomplete_stage(info, AuthType::RegistrationToken)
+                    {
+                        let Some(token) = registration_token.as_ref() else {
+                            return Err(BackendError::RegistrationInvitationRequired);
+                        };
+                        let mut registration = RegistrationToken::new(token.clone());
+                        registration.session = info.session.clone();
+                        AuthData::RegistrationToken(registration)
+                    } else if Self::uiaa_has_incomplete_stage(info, AuthType::Dummy) {
+                        let mut dummy = Dummy::new();
+                        dummy.session = info.session.clone();
+                        AuthData::Dummy(dummy)
+                    } else {
+                        return Err(Self::map_registration_error(
+                            error,
+                            registration_token.is_some(),
+                        ));
+                    };
+                    registration_result = client
+                        .matrix_auth()
+                        .register(registration_request(Some(auth)))
+                        .await;
+                }
+                if !registration_complete {
+                    return Err(BackendError::RegistrationAdditionalAuthRequired);
                 }
 
                 let session = client.matrix_auth().session().ok_or_else(|| {
@@ -2736,6 +2846,9 @@ impl MeshBackend for MatrixBackend {
                 )),
             };
         password.zeroize();
+        if let Some(token) = &mut registration_token {
+            token.zeroize();
+        }
 
         let (client, resolved_homeserver, profile_id) = operation?;
         self.stop_runtime().await;

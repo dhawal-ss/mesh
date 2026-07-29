@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   friendlyAccountCreationError,
+  invitationCodeFromInput,
+  invitationValidationError,
   normalizeUsername,
   passwordStrength,
   usernameValidationError,
@@ -18,6 +20,16 @@ describe('account creation helpers', () => {
     expect(passwordStrength('short').strongEnough).toBe(false)
     expect(passwordStrength('Mesh-Account-2026').strongEnough).toBe(true)
     expect(passwordStrength('correct horse battery staple').strongEnough).toBe(true)
+  })
+
+  it('accepts one-use invitation codes and canonical invitation links', () => {
+    expect(invitationCodeFromInput('  aB3xK9._~-  ')).toBe('aB3xK9._~-')
+    expect(invitationCodeFromInput(
+      'https://mesh.dhawal.org/invite?registration_token=aB3xK9',
+    )).toBe('aB3xK9')
+    expect(invitationCodeFromInput('https://mesh.dhawal.org/invite/aB3xK9')).toBe('aB3xK9')
+    expect(invitationCodeFromInput('https://mesh.dhawal.org/invite?code=has%20spaces')).toBeNull()
+    expect(invitationValidationError('')).toContain('invitation')
   })
 
   it('turns registration failures into protocol-free guidance', () => {
@@ -42,5 +54,10 @@ describe('account creation helpers', () => {
       detail: 'more auth required',
       retryable: false,
     })).toContain('Additional verification required')
+    expect(friendlyAccountCreationError({
+      code: 'registration_invitation_invalid',
+      detail: 'invite already used',
+      retryable: false,
+    })).toContain('Invitation unavailable')
   })
 })

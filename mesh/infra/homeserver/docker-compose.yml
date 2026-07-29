@@ -42,6 +42,7 @@ services:
       SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
     volumes:
       - ./runtime/synapse:/data
+      - ./create_registration_invite.py:/mesh/create_registration_invite.py:ro
     ports:
       - "${SYNAPSE_CONTROL_BIND:-127.0.0.1}:8008:8008/tcp"
     healthcheck:
@@ -83,6 +84,7 @@ services:
       - "443:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./runtime/well-known:/srv/well-known:ro
       - ./runtime/caddy/data:/data
       - ./runtime/caddy/config:/config
     mem_limit: 256m

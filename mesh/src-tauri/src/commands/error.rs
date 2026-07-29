@@ -33,6 +33,10 @@ pub enum CommandError {
     RegistrationTermsRequired,
     #[error("account creation requires an additional verification step")]
     RegistrationAdditionalAuthRequired,
+    #[error("account creation requires a valid Mesh invitation")]
+    RegistrationInvitationRequired,
+    #[error("the Mesh invitation is invalid, expired, or already used")]
+    RegistrationInvitationInvalid,
     #[error("account creation timed out")]
     RegistrationTimedOut,
     #[error("rate limited")]
@@ -77,6 +81,8 @@ impl CommandError {
             Self::UsernameUnavailable => "username_unavailable",
             Self::RegistrationTermsRequired => "registration_terms_required",
             Self::RegistrationAdditionalAuthRequired => "registration_additional_auth_required",
+            Self::RegistrationInvitationRequired => "registration_invitation_required",
+            Self::RegistrationInvitationInvalid => "registration_invitation_invalid",
             Self::RegistrationTimedOut => "registration_timed_out",
             Self::RateLimited => "rate_limited",
             Self::Banned => "banned",
@@ -212,6 +218,16 @@ mod tests {
             (
                 CommandError::RegistrationAdditionalAuthRequired,
                 "registration_additional_auth_required",
+                false,
+            ),
+            (
+                CommandError::RegistrationInvitationRequired,
+                "registration_invitation_required",
+                false,
+            ),
+            (
+                CommandError::RegistrationInvitationInvalid,
+                "registration_invitation_invalid",
                 false,
             ),
             (

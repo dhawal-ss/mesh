@@ -5,9 +5,36 @@ export type PasswordStrength = {
 }
 
 const USERNAME_PATTERN = /^[a-z0-9][a-z0-9._-]{2,31}$/
+const INVITATION_CODE_PATTERN = /^[A-Za-z0-9._~-]{1,64}$/
 
 export function normalizeUsername(value: string): string {
   return value.trim().toLowerCase()
+}
+
+export function invitationCodeFromInput(value: string): string | null {
+  const input = value.trim()
+  if (!input) return null
+  if (INVITATION_CODE_PATTERN.test(input)) return input
+
+  try {
+    const url = new URL(input.replace(/^mesh:\/\//i, 'https://mesh.dhawal.org/'))
+    const queryCode = url.searchParams.get('registration_token')
+      ?? url.searchParams.get('code')
+    if (queryCode && INVITATION_CODE_PATTERN.test(queryCode)) return queryCode
+
+    const pathMatch = url.pathname.match(/\/invite\/([A-Za-z0-9._~-]{1,64})\/?$/)
+    return pathMatch?.[1] ?? null
+  } catch {
+    return null
+  }
+}
+
+export function invitationValidationError(value: string): string | null {
+  if (!value.trim()) return 'Enter the code from your Mesh invitation.'
+  if (!invitationCodeFromInput(value)) {
+    return 'Paste a valid Mesh invitation link or code.'
+  }
+  return null
 }
 
 export function usernameValidationError(value: string): string | null {
@@ -53,6 +80,8 @@ export function friendlyAccountCreationError(cause: unknown): string {
     'username_unavailable',
     'registration_terms_required',
     'registration_additional_auth_required',
+    'registration_invitation_required',
+    'registration_invitation_invalid',
     'rate_limited',
     'network_unavailable',
   ].includes(normalized.code)) {

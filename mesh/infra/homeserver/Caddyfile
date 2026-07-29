@@ -4,21 +4,33 @@
 }
 
 {$MESH_SERVER_NAME} {
-	@matrix_client path /.well-known/matrix/client
-	header @matrix_client Content-Type "application/json"
-	header @matrix_client Access-Control-Allow-Origin "*"
-	respond @matrix_client `{"m.homeserver":{"base_url":"https://{$MESH_HOMESERVER_HOST}"},"org.matrix.msc4143.rtc_foci":[{"type":"livekit","livekit_service_url":"https://{$MESH_RTC_HOST}/livekit/jwt"}]}` 200
-
-	@matrix_server path /.well-known/matrix/server
-	header @matrix_server Content-Type "application/json"
-	respond @matrix_server `{"m.server":"{$MESH_HOMESERVER_HOST}:443"}` 200
-
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"
 	}
-	respond "Mesh service is online." 200
+
+	handle /.well-known/matrix/client {
+		root * /srv/well-known
+		rewrite * /matrix-client.json
+		header Content-Type "application/json"
+		header Access-Control-Allow-Origin "*"
+		file_server
+	}
+
+	handle /.well-known/matrix/server {
+		header Content-Type "application/json"
+		respond `{"m.server":"{$MESH_HOMESERVER_HOST}:443"}` 200
+	}
+
+	handle /invite* {
+		header Content-Type "text/plain; charset=utf-8"
+		respond "Open Mesh, choose Create account, and paste this full invitation link into Invitation code." 200
+	}
+
+	handle {
+		respond "Mesh service is online." 200
+	}
 }
 
 {$MESH_HOMESERVER_HOST} {
@@ -27,5 +39,7 @@
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"
 	}
+	@admin_api path /_synapse/admin*
+	respond @admin_api 404
 	reverse_proxy synapse:8008
 }
