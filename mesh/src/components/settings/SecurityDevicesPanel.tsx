@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
+import { Icon } from '../ui/Icon'
+import { EmptyState } from '../ui/Primitives'
 import * as bridge from '../../lib/bridge'
 import { describeError } from '../../lib/errors'
 
@@ -69,7 +71,8 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
   useEffect(() => {
     if (!open || !verification || verification.phase === 'done' || verification.phase === 'cancelled') return
     const interval = window.setInterval(() => {
-      void bridge.matrixDeviceVerificationStatus(verification.verificationId)
+      void bridge
+        .matrixDeviceVerificationStatus(verification.verificationId)
         .then((next) => {
           setVerification(next)
           if (next.phase === 'done') void loadDevices()
@@ -154,9 +157,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
     setBusy(true)
     setError(null)
     try {
-      setVerification(
-        await bridge.matrixSelectDeviceVerificationMethod(verification.verificationId, method),
-      )
+      setVerification(await bridge.matrixSelectDeviceVerificationMethod(verification.verificationId, method))
     } catch (cause) {
       setError(errorMessage(cause))
     } finally {
@@ -228,23 +229,19 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
   return (
     <Modal open={open} onClose={onClose} title="Your devices">
       <div className="max-h-settings space-y-5 overflow-y-auto pr-1">
-        <section className="rounded-lg bg-bg-primary p-4">
+        <section className="rounded-panel border border-border-subtle bg-surface-sunken p-4">
           <p className="text-2xs uppercase tracking-signal text-muted">This device</p>
           <dl className="mt-3 space-y-2 text-sm">
-            <Row label="Account" value={status ? status.userId ?? 'Not signed in' : 'Loading…'} />
-            <Row label="Device code" value={status ? status.deviceId ?? 'Unavailable' : 'Loading…'} mono />
-            <Row
-              label="Private messages"
-              value={status?.endToEndEncryption ? 'Protected' : 'Unavailable'}
-            />
+            <Row label="Account" value={status ? (status.userId ?? 'Not signed in') : 'Loading…'} />
+            <Row label="Device code" value={status ? (status.deviceId ?? 'Unavailable') : 'Loading…'} mono />
+            <Row label="Private messages" value={status?.endToEndEncryption ? 'Protected' : 'Unavailable'} />
           </dl>
           <p className="mt-3 text-xs leading-5 text-muted">
-            Mesh protects message contents while they travel between your devices and the people
-            you talk with.
+            Mesh protects message contents while they travel between your devices and the people you talk with.
           </p>
         </section>
 
-        <section className="space-y-3 rounded-lg bg-bg-primary p-4">
+        <section className="space-y-3 rounded-panel border border-border-subtle bg-surface-sunken p-4">
           <div>
             <p className="text-sm font-medium text-primary">Message backup</p>
             <p className="mt-1 text-xs leading-5 text-muted">
@@ -252,7 +249,9 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
             </p>
           </div>
           {recoveryHealth && (
-            <div className={`rounded-md border p-3 ${recoveryHealth.healthy ? 'border-green/40 bg-green/10' : 'border-yellow/40 bg-yellow/10'}`}>
+            <div
+              className={`rounded-panel border p-3 ${recoveryHealth.healthy ? 'border-status-success/40 bg-status-success/10' : 'border-status-warning/40 bg-status-warning/10'}`}
+            >
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs font-medium text-primary">
                   {recoveryHealth.healthy ? 'Message backup is ready' : 'Message backup needs attention'}
@@ -267,25 +266,34 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                 <Row label="Saved online" value={recoveryHealth.backupExistsOnServer ? 'Confirmed' : 'Not confirmed'} />
                 <Row
                   label="Last tested"
-                  value={recoveryHealth.lastSuccessfulTestAt
-                    ? formatLastSeen(recoveryHealth.lastSuccessfulTestAt)
-                    : 'Never on this device'}
+                  value={
+                    recoveryHealth.lastSuccessfulTestAt
+                      ? formatLastSeen(recoveryHealth.lastSuccessfulTestAt)
+                      : 'Never on this device'
+                  }
                 />
               </dl>
               {recoveryHealth.warnings.length > 0 && (
                 <p className="mt-2 text-xs leading-5 text-muted">
-                  Mesh found a problem with this backup. Check again, or use your saved backup code
-                  before relying on a new device.
+                  Mesh found a problem with this backup. Check again, or use your saved backup code before relying on a
+                  new device.
                 </p>
               )}
             </div>
           )}
-          <Button variant="secondary" size="sm" disabled={busy || !status?.capabilities.recovery} onClick={enableRecovery}>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy || !status?.capabilities.recovery}
+            onClick={enableRecovery}
+          >
             Create backup code
           </Button>
           {newRecoveryKey && (
-            <div role="status" className="rounded-md border border-yellow/40 bg-yellow/10 p-3">
-              <p className="text-xs font-medium text-primary">Save this backup code somewhere private. It is shown here once.</p>
+            <div role="status" className="rounded-panel border border-status-warning/40 bg-status-warning/10 p-3">
+              <p className="text-xs font-medium text-primary">
+                Save this backup code somewhere private. It is shown here once.
+              </p>
               <p className="mt-2 break-all font-mono text-xs text-secondary">{newRecoveryKey}</p>
             </div>
           )}
@@ -300,7 +308,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
           <Button variant="secondary" size="sm" disabled={busy || !recoveryInput.trim()} onClick={recover}>
             Restore messages
           </Button>
-          <div className="space-y-2 border-t border-bg-modifier-active pt-3">
+          <div className="space-y-2 border-t border-border-subtle pt-3">
             <p className="text-xs leading-5 text-muted">
               Check that your backup code works before you need it on another device.
             </p>
@@ -312,18 +320,13 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
               onChange={setRecoveryTestInput}
               autoComplete="off"
             />
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={busy || !recoveryTestInput.trim()}
-              onClick={testRecovery}
-            >
+            <Button variant="secondary" size="sm" disabled={busy || !recoveryTestInput.trim()} onClick={testRecovery}>
               Check backup code
             </Button>
           </div>
         </section>
 
-        <section className="space-y-3 rounded-lg border border-bg-modifier-active p-4">
+        <section className="space-y-3 rounded-panel border border-border-subtle bg-surface-sunken p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm font-medium text-primary">Your devices</p>
@@ -331,7 +334,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                 Review the places where your Mesh account is signed in.
               </p>
             </div>
-            <span className="rounded-full bg-status-success/10 px-2 py-1 text-caption uppercase tracking-wide text-status-success">
+            <span className="font-mono text-meta text-content-muted">
               {devices.length} {devices.length === 1 ? 'device' : 'devices'}
             </span>
           </div>
@@ -360,34 +363,30 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
             <section
               id="lost-device-workflow"
               aria-labelledby="lost-device-title"
-              className="space-y-3 rounded-md border border-yellow/50 bg-yellow/5 p-3"
+              className="space-y-3 rounded-panel border border-status-warning/50 bg-status-warning/5 p-3"
             >
               <div>
                 <h3 id="lost-device-title" className="text-sm font-medium text-primary">
                   Sign out a lost device
                 </h3>
                 <p className="mt-1 text-xs leading-5 text-muted">
-                  This signs that device out. It cannot delete messages, screenshots, or downloaded
-                  files already saved on it.
+                  This signs that device out. It cannot delete messages, screenshots, or downloaded files already saved
+                  on it.
                 </p>
               </div>
 
               <ol className="list-decimal space-y-2 pl-5 text-xs leading-5 text-muted">
                 <li>Select the device you no longer control.</li>
-                <li>
-                  Make sure your message backup is ready before moving to a replacement device.
-                </li>
-                <li>
-                  Sign out the lost device. Only trust devices you still have and can compare directly.
-                </li>
+                <li>Make sure your message backup is ready before moving to a replacement device.</li>
+                <li>Sign out the lost device. Only trust devices you still have and can compare directly.</li>
               </ol>
 
               <div
                 role="status"
                 className={`rounded-md border p-3 text-xs leading-5 ${
                   recoveryHealth?.healthy
-                    ? 'border-green/40 bg-green/10 text-secondary'
-                    : 'border-yellow/50 bg-yellow/10 text-muted'
+                    ? 'border-status-success/40 bg-status-success/10 text-secondary'
+                    : 'border-status-warning/50 bg-status-warning/10 text-muted'
                 }`}
               >
                 {recoveryHealth?.healthy
@@ -401,7 +400,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                   {revocableDevices.map((device) => (
                     <label
                       key={device.deviceId}
-                      className="flex cursor-pointer items-start gap-2 rounded-md bg-bg-primary p-2 text-xs text-secondary"
+                      className="flex cursor-pointer items-start gap-2 rounded-control bg-surface-hover p-2 text-xs text-secondary"
                     >
                       <input
                         type="radio"
@@ -415,20 +414,16 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                         className="mt-0.5 h-4 w-4 accent-accent"
                       />
                       <span>
-                        <span className="block font-medium text-primary">
-                          {device.displayName || 'Unnamed device'}
-                        </span>
-                        <span className="block break-all font-mono text-meta text-muted">
-                          {device.deviceId}
-                        </span>
+                        <span className="block font-medium text-primary">{device.displayName || 'Unnamed device'}</span>
+                        <span className="block break-all font-mono text-meta text-muted">{device.deviceId}</span>
                       </span>
                     </label>
                   ))}
                 </fieldset>
               ) : (
                 <p className="text-xs leading-5 text-muted">
-                  No other device is available to sign out. Check your account website if the lost
-                  device is missing from this list.
+                  No other device is available to sign out. Check your account website if the lost device is missing
+                  from this list.
                 </p>
               )}
 
@@ -440,8 +435,8 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                     onChange={(event) => setLostDeviceAcknowledged(event.target.checked)}
                     className="mt-0.5 h-4 w-4 accent-accent"
                   />
-                  I understand that this signs the selected device out but cannot erase anything
-                  already saved on it or guarantee that older messages can be restored.
+                  I understand that this signs the selected device out but cannot erase anything already saved on it or
+                  guarantee that older messages can be restored.
                 </label>
               )}
 
@@ -476,21 +471,28 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
           )}
 
           {warningDevices.length > 0 && (
-            <div role="alert" className="rounded-md border border-yellow/50 bg-yellow/10 p-3">
-              <p className="text-xs font-medium text-primary">
-                Is this you?
-              </p>
+            <div role="alert" className="rounded-panel border border-status-warning/50 bg-status-warning/10 p-3">
+              <p className="text-xs font-medium text-primary">Is this you?</p>
               <p className="mt-1 text-xs leading-5 text-muted">
                 {warningDevices.length} new or changed sign-in
-                {warningDevices.length === 1 ? '' : 's'} need your attention. Trust the ones you
-                recognize and sign out anything you do not.
+                {warningDevices.length === 1 ? '' : 's'} need your attention. Trust the ones you recognize and sign out
+                anything you do not.
               </p>
             </div>
           )}
 
-          {loadingDevices && <p role="status" className="text-xs text-muted">Loading registered devices…</p>}
+          {loadingDevices && (
+            <p role="status" className="text-xs text-muted">
+              Loading registered devices…
+            </p>
+          )}
           {!loadingDevices && devices.length === 0 && (
-            <p className="text-xs text-muted">No registered devices were returned.</p>
+            <EmptyState
+              variant="compact"
+              icon={<Icon name="shieldCheck" size="lg" />}
+              title="No registered devices"
+              description="Devices linked to this account will appear here."
+            />
           )}
           <ul className="space-y-2">
             {devices.map((device) => (
@@ -498,16 +500,17 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                 key={device.deviceId}
                 className={`rounded-md border p-3 ${
                   device.identityChanged
-                    ? 'border-red/50 bg-red/5'
+                    ? 'border-status-danger/50 bg-status-danger/5'
                     : device.newDevice
-                      ? 'border-yellow/40 bg-yellow/5'
-                      : 'border-transparent bg-bg-primary'
+                      ? 'border-status-warning/40 bg-status-warning/5'
+                      : 'border-transparent bg-surface-sunken'
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-primary">
-                      {device.displayName || 'Unnamed device'} {device.current && <span className="text-accent">(this device)</span>}
+                      {device.displayName || 'Unnamed device'}{' '}
+                      {device.current && <span className="text-accent">(this device)</span>}
                     </p>
                     <p className="mt-1 break-all font-mono text-meta text-muted">{device.deviceId}</p>
                     <p className="mt-1 text-xs text-muted">
@@ -515,25 +518,26 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                       {device.lastSeenIp ? ` from ${device.lastSeenIp}` : ''}
                     </p>
                     {device.firstSeenAt && (
-                      <p className="mt-1 text-xs text-muted">
-                        First seen by Mesh {formatLastSeen(device.firstSeenAt)}
-                      </p>
+                      <p className="mt-1 text-xs text-muted">First seen by Mesh {formatLastSeen(device.firstSeenAt)}</p>
                     )}
                     {device.identityChanged && (
-                      <p className="mt-2 text-xs font-medium text-red">
+                      <p className="mt-2 text-xs font-medium text-status-danger">
                         This sign-in changed since you trusted it. Check it again or sign it out.
                       </p>
                     )}
                     {!device.identityChanged && device.newDevice && (
-                      <p className="mt-2 text-xs font-medium text-yellow">
-                        New sign-in. Is this you?
-                      </p>
+                      <p className="mt-2 text-xs font-medium text-status-warning">New sign-in. Is this you?</p>
                     )}
                   </div>
                   {!device.current && (
                     <div className="flex shrink-0 gap-1">
                       {!device.crossSigned && (
-                        <Button variant="secondary" size="sm" disabled={busy} onClick={() => void startVerification(device)}>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => void startVerification(device)}
+                        >
                           Check device
                         </Button>
                       )}
@@ -567,8 +571,13 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
               {verification.phase === 'compare' && verification.emojis.length > 0 && (
                 <ol aria-label="Emoji to compare" className="grid grid-cols-4 gap-2 sm:grid-cols-7">
                   {verification.emojis.map((emoji, index) => (
-                    <li key={`${emoji.description}-${index}`} className="rounded bg-bg-primary p-2 text-center">
-                      <span aria-hidden="true" className="block text-md">{emoji.symbol}</span>
+                    <li
+                      key={`${emoji.description}-${index}`}
+                      className="rounded-control bg-surface-sunken p-2 text-center"
+                    >
+                      <span aria-hidden="true" className="block text-md">
+                        {emoji.symbol}
+                      </span>
                       <span className="mt-1 block text-caption text-muted">{emoji.description}</span>
                     </li>
                   ))}
@@ -578,11 +587,11 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                 <p className="font-mono text-lg tracking-widest text-primary">{verification.decimals.join(' · ')}</p>
               )}
               {verification.phase === 'qr-show' && verification.qrSvg && (
-                <div className="mx-auto w-fit rounded-md bg-surface-qr p-3">
+                <div className="mx-auto w-full max-w-64 rounded-control bg-surface-qr p-3">
                   <img
                     src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(verification.qrSvg)}`}
                     alt="Code to scan with your other device"
-                    className="h-64 w-64"
+                    className="aspect-square h-auto w-full"
                   />
                 </div>
               )}
@@ -604,8 +613,17 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                 )}
                 {verification.phase === 'compare' && (
                   <>
-                    <Button size="sm" disabled={busy} onClick={() => void confirmVerification(true)}>Yes, that's me</Button>
-                    <Button variant="secondary" size="sm" disabled={busy} onClick={() => void confirmVerification(false)}>No, they do not match</Button>
+                    <Button size="sm" disabled={busy} onClick={() => void confirmVerification(true)}>
+                      Yes, that's me
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void confirmVerification(false)}
+                    >
+                      No, they do not match
+                    </Button>
                   </>
                 )}
                 {verification.phase === 'qr-scanned' && (
@@ -613,29 +631,40 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                     <Button size="sm" disabled={busy} onClick={() => void confirmVerification(true)}>
                       Confirm scan
                     </Button>
-                    <Button variant="secondary" size="sm" disabled={busy} onClick={() => void confirmVerification(false)}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void confirmVerification(false)}
+                    >
                       Reject scan
                     </Button>
                   </>
                 )}
                 {verification.phase !== 'done' && verification.phase !== 'cancelled' && (
-                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => void cancelVerification()}>Cancel check</Button>
+                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => void cancelVerification()}>
+                    Cancel check
+                  </Button>
                 )}
                 {(verification.phase === 'done' || verification.phase === 'cancelled') && (
-                  <Button variant="ghost" size="sm" onClick={() => setVerification(null)}>Close</Button>
+                  <Button variant="ghost" size="sm" onClick={() => setVerification(null)}>
+                    Close
+                  </Button>
                 )}
               </div>
             </div>
           )}
 
           {revokeTarget && (
-            <div className="space-y-3 rounded-md border border-red/40 bg-red/5 p-3">
+            <div className="space-y-3 rounded-panel border border-status-danger/40 bg-status-danger/5 p-3">
               <div>
-                <p className="text-sm font-medium text-primary">Sign out {revokeTarget.displayName || revokeTarget.deviceId}?</p>
+                <p className="text-sm font-medium text-primary">
+                  Sign out {revokeTarget.displayName || revokeTarget.deviceId}?
+                </p>
                 <p className="mt-1 text-xs leading-5 text-muted">
-                  This signs that device out. It cannot delete what is already saved on it. Confirm
-                  your account password to continue; Mesh does not save it. If you normally sign in
-                  through a browser, you can also use your account website.
+                  This signs that device out. It cannot delete what is already saved on it. Confirm your account
+                  password to continue; Mesh does not save it. If you normally sign in through a browser, you can also
+                  use your account website.
                 </p>
               </div>
               <Input
@@ -646,38 +675,52 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                 autoComplete="current-password"
               />
               <div className="flex gap-2">
-                <Button size="sm" disabled={busy || !accountPassword} onClick={revokeDevice}>Sign out device</Button>
-                <Button variant="ghost" size="sm" disabled={busy} onClick={() => setRevokeTarget(null)}>Cancel</Button>
+                <Button size="sm" disabled={busy || !accountPassword} onClick={revokeDevice}>
+                  Sign out device
+                </Button>
+                <Button variant="ghost" size="sm" disabled={busy} onClick={() => setRevokeTarget(null)}>
+                  Cancel
+                </Button>
               </div>
             </div>
           )}
         </section>
 
-        {error && <p role="alert" className="rounded-md bg-red/10 px-3 py-2 text-sm text-red">{error}</p>}
+        {error && (
+          <p role="alert" className="rounded-panel bg-status-danger/10 px-3 py-2 text-sm text-status-danger">
+            {error}
+          </p>
+        )}
 
-        <section className="space-y-3 border-t border-bg-modifier-active pt-4">
+        <section className="space-y-3 border-t border-border-subtle pt-4">
           <div>
             <p className="text-sm font-medium text-primary">Account on this device</p>
             <p className="mt-1 text-xs leading-5 text-muted">
-              Sign out removes this account from Mesh but keeps downloaded messages on this device.
-              Removing the account also deletes Mesh account data saved here.
+              Sign out removes this account from Mesh but keeps downloaded messages on this device. Removing the account
+              also deletes Mesh account data saved here.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" size="sm" disabled={busy} onClick={signOut}>Sign out</Button>
+            <Button variant="secondary" size="sm" disabled={busy} onClick={signOut}>
+              Sign out
+            </Button>
             {!confirmRemoval ? (
               <Button variant="ghost" size="sm" disabled={busy} onClick={() => setConfirmRemoval(true)}>
                 Remove account and local data
               </Button>
             ) : (
-              <div className="w-full space-y-3 rounded-md border border-red/40 bg-red/5 p-3">
+              <div className="w-full space-y-3 rounded-panel border border-status-danger/40 bg-status-danger/5 p-3">
                 <p className="text-xs leading-5 text-muted">
-                  This cannot be undone. Mesh will sign this device out and delete its saved account
-                  data. If that sign-out cannot finish, use another trusted device or your account website.
+                  This cannot be undone. Mesh will sign this device out and delete its saved account data. If that
+                  sign-out cannot finish, use another trusted device or your account website.
                 </p>
                 <div className="flex gap-2">
-                  <Button size="sm" disabled={busy} onClick={removeAccount}>Permanently remove local account</Button>
-                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => setConfirmRemoval(false)}>Cancel</Button>
+                  <Button size="sm" disabled={busy} onClick={removeAccount}>
+                    Permanently remove local account
+                  </Button>
+                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => setConfirmRemoval(false)}>
+                    Cancel
+                  </Button>
                 </div>
               </div>
             )}
@@ -730,7 +773,10 @@ function formatLastSeen(value: string | null): string {
   if (!value) return 'time unavailable'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'time unavailable'
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date)
 }
 
 function errorMessage(cause: unknown): string {

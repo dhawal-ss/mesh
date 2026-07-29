@@ -29,6 +29,8 @@ e2e-results/
 # Internal documents, prompts, chats, and design artifacts
 *.md
 *.mdx
+!AGENTS.md
+!mesh/infra/homeserver/README.md
 *.doc
 *.docx
 *.pages
@@ -78,6 +80,7 @@ claudereview/
 
 # Generated local integration-test state
 **/infra/matrix-spike/runtime/
+**/infra/homeserver/runtime/
 
 # Local configuration and secrets
 .env

@@ -5,6 +5,7 @@ license = "AGPL-3.0-only"
 description = "Matrix-native community communication with a Discord-shaped desktop experience"
 authors = ["Dhawal Ranka"]
 edition = "2021"
+default-run = "mesh"
 
 [features]
 # Matrix is the durable, federated production backend. The legacy libp2p

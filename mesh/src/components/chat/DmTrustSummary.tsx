@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { RoomTrustSnapshot } from '../../hooks/useRoomTrust'
 import { Icon } from '../ui/Icon'
 import { Popover } from '../ui/InteractivePrimitives'
+import { setNextModalRestoreFocusTarget } from '../ui/Modal'
 
 export function DmTrustSummary({
   trust,
@@ -13,6 +14,7 @@ export function DmTrustSummary({
   onReviewDevices: () => void
 }) {
   const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const protection = protectionLabel(trust)
   const needsReview = !trust.loadingAccountTrust && trust.devicesNeedReview > 0
   const description = trust.protection === 'protected'
@@ -40,13 +42,14 @@ export function DmTrustSummary({
       className="mesh-dm-trust-popover"
       trigger={(
         <button
+          ref={triggerRef}
           type="button"
-          className={`flex min-h-8 max-w-48 items-center gap-1.5 rounded-md px-2 text-caption font-medium transition-colors ${
+          className={`flex min-h-8 max-w-48 items-center gap-1.5 rounded-control px-2 text-caption font-medium transition-colors ${
             trust.protection === 'protected'
               ? 'bg-status-success/10 text-status-success hover:bg-status-success/20'
               : trust.protection === 'blocked'
                 ? 'bg-status-warning/10 text-status-warning hover:bg-status-warning/20'
-                : 'bg-bg-modifier-hover text-muted hover:bg-bg-modifier-active hover:text-secondary'
+                : 'bg-surface-hover text-muted hover:bg-surface-active hover:text-secondary'
           }`}
           aria-label={`${protection}. Open conversation trust details.`}
         >
@@ -67,12 +70,12 @@ export function DmTrustSummary({
     >
       <div className="space-y-4">
         <div
-          className={`rounded-md border px-3 py-2.5 ${
+          className={`rounded-panel border px-3 py-2.5 ${
             trust.protection === 'protected'
               ? 'border-status-success/30 bg-status-success/10'
               : trust.protection === 'blocked'
                 ? 'border-status-warning/30 bg-status-warning/10'
-                : 'border-border-subtle bg-bg-modifier-hover'
+                : 'border-border-subtle bg-surface-sunken'
           }`}
         >
           <p className="text-xs font-medium text-primary">{protection}</p>
@@ -109,12 +112,13 @@ export function DmTrustSummary({
 
         <button
           type="button"
-          className={`min-h-control-md w-full rounded-md px-3 text-xs font-semibold transition-colors ${
+          className={`min-h-control-md w-full rounded-control px-3 text-xs font-semibold transition-colors ${
             needsReview
               ? 'bg-accent text-content-on-accent hover:bg-accent-hover'
-              : 'border border-border-subtle text-secondary hover:border-border-strong hover:bg-bg-modifier-hover hover:text-primary'
+              : 'border border-border-subtle text-secondary hover:border-border-strong hover:bg-surface-hover hover:text-primary'
           }`}
           onClick={() => {
+            setNextModalRestoreFocusTarget(triggerRef.current)
             setOpen(false)
             onReviewDevices()
           }}

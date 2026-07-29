@@ -314,7 +314,7 @@ export default function App() {
 
   if (isLoading && !showOnboarding) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-bg-primary">
+      <div className="flex min-h-screen items-center justify-center bg-surface-canvas">
         <div className="flex flex-col items-center gap-3">
           <Spinner size={24} />
           <p className="text-sm text-muted">Loading...</p>

@@ -4,15 +4,24 @@ interface SkeletonProps {
   className?: string
   width?: string | number
   height?: string | number
-  rounded?: boolean
+  shape?: 'block' | 'avatar' | 'circle'
 }
 
-export function Skeleton({ className, width, height, rounded = false }: SkeletonProps) {
+export function Skeleton({
+  className,
+  width,
+  height,
+  shape = 'block',
+}: SkeletonProps) {
   return (
     <div
       className={clsx(
-        'animate-pulse bg-bg-tertiary',
-        rounded ? 'rounded-full' : 'rounded',
+        'animate-pulse bg-surface-active',
+        shape === 'avatar'
+          ? 'rounded-control'
+          : shape === 'circle'
+            ? 'rounded-full'
+            : 'rounded',
         className
       )}
       style={{ width, height }}
@@ -23,7 +32,7 @@ export function Skeleton({ className, width, height, rounded = false }: Skeleton
 export function MessageSkeleton() {
   return (
     <div className="flex gap-3 px-4 py-2">
-      <Skeleton width={40} height={40} rounded />
+      <Skeleton width={40} height={40} shape="avatar" />
       <div className="flex-1 space-y-2">
         <div className="flex items-center gap-2">
           <Skeleton width={120} height={14} />
@@ -56,7 +65,7 @@ export function MemberListSkeleton() {
     <div className="space-y-1 px-2">
       {Array.from({ length: 6 }).map((_, i) => (
         <div key={i} className="flex items-center gap-2 px-2 py-1.5">
-          <Skeleton width={32} height={32} rounded />
+          <Skeleton width={32} height={32} shape="avatar" />
           <Skeleton width={widths[i]} height={14} />
         </div>
       ))}

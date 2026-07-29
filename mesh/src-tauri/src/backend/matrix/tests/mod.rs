@@ -1343,6 +1343,18 @@ fn managed_configuration_fails_closed_and_qualifies_product_inputs_in_rust() {
 }
 
 #[test]
+fn production_managed_defaults_preserve_the_stable_mesh_identity() {
+    let managed = MatrixBackend::managed_homeserver_config_from(
+        Some(DEFAULT_MANAGED_HOMESERVER),
+        Some(DEFAULT_MANAGED_SERVER_NAME),
+    )
+    .unwrap();
+
+    assert_eq!(managed.homeserver, "https://matrix.mesh.dhawal.org");
+    assert_eq!(managed.server_name.as_str(), "mesh.dhawal.org");
+}
+
+#[test]
 fn registration_uiaa_only_auto_completes_dummy_and_classifies_terms() {
     let dummy = UiaaInfo::new(vec![uiaa::AuthFlow::new(vec![AuthType::Dummy])]);
     assert!(MatrixBackend::uiaa_can_complete_with_dummy(&dummy));

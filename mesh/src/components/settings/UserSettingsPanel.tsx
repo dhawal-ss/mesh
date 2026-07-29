@@ -135,8 +135,8 @@ export function UserSettingsPanel({
 
   return (
     <Modal open={open} onClose={onClose} title="User Settings">
-      <div className="max-h-settings space-y-4 overflow-y-auto pr-1">
-        <section className="rounded-lg bg-bg-primary p-4">
+      <div className="max-h-settings space-y-3 overflow-y-auto pr-1">
+        <section className="border-b border-border-subtle pb-5">
           <p className="text-2xs uppercase tracking-signal text-muted">Account</p>
           <div className="mt-3 min-w-0">
             <p className="truncate text-base font-semibold text-primary">{identity.displayName}</p>
@@ -180,7 +180,7 @@ export function UserSettingsPanel({
                 )}
               </div>
               {profileValidation && (
-                <p role="alert" className="rounded-md bg-red/10 px-3 py-2 text-xs text-red">
+                <p role="alert" className="rounded-panel bg-status-danger/10 px-3 py-2 text-xs text-status-danger">
                   {profileValidation}
                 </p>
               )}
@@ -201,7 +201,7 @@ export function UserSettingsPanel({
         </section>
 
         <section
-          className="space-y-3 rounded-lg bg-surface-base p-4"
+          className="space-y-3 border-b border-border-subtle pb-5"
           aria-labelledby="appearance-settings-heading"
         >
           <div>
@@ -256,7 +256,7 @@ export function UserSettingsPanel({
 
         {matrixMode && (
           <section
-            className="space-y-4 rounded-lg bg-bg-primary p-4"
+            className="space-y-4 border-b border-border-subtle pb-5"
             aria-labelledby="privacy-center-heading"
           >
             <div>
@@ -274,7 +274,7 @@ export function UserSettingsPanel({
                 <p
                   role="status"
                   aria-label="Privacy settings save status"
-                  className="rounded-md bg-bg-tertiary px-3 py-2 text-xs text-muted"
+                  className="rounded-control bg-surface-hover px-3 py-2 text-xs text-muted"
                 >
                   Applying privacy settings…
                 </p>
@@ -283,14 +283,14 @@ export function UserSettingsPanel({
                 <p
                   role="status"
                   aria-label="Privacy settings save status"
-                  className="rounded-md bg-bg-tertiary px-3 py-2 text-xs text-green"
+                  className="rounded-control bg-surface-hover px-3 py-2 text-xs text-green"
                 >
                   Privacy settings saved to your account.
                 </p>
               )}
               {matrixPreferenceSync.status === 'failed' && (
                 <>
-                  <p className="mb-2 rounded-md bg-bg-tertiary px-3 py-2 text-xs leading-5 text-muted">
+                  <p className="mb-2 rounded-control bg-surface-hover px-3 py-2 text-xs leading-5 text-muted">
                     Mesh is using these choices on this device, but could not confirm them on your
                     account. Other devices may still use the previous settings.
                   </p>
@@ -305,10 +305,15 @@ export function UserSettingsPanel({
               )}
             </div>
 
-            <div className="overflow-x-auto rounded-md border border-border-subtle">
+            <div
+              className="overflow-x-auto rounded-control border border-border-subtle"
+              role="region"
+              aria-label="Service visibility details"
+              tabIndex={0}
+            >
               <table className="w-full min-w-privacy-table text-left text-xs">
                 <caption className="sr-only">What your service can see</caption>
-                <thead className="bg-bg-tertiary text-muted">
+                <thead className="bg-surface-hover text-muted">
                   <tr>
                     <th scope="col" className="px-3 py-2 font-medium">Information</th>
                     <th scope="col" className="px-3 py-2 font-medium">Can the service see it?</th>
@@ -379,7 +384,7 @@ export function UserSettingsPanel({
               />
             </div>
 
-            <div className="rounded-md bg-bg-tertiary px-3 py-3 text-xs leading-5 text-muted">
+            <div className="rounded-control bg-surface-hover px-3 py-3 text-xs leading-5 text-muted">
               <p>
                 Each conversation header checks its current protection and shows
                 “Protected end to end” before you send.
@@ -393,7 +398,7 @@ export function UserSettingsPanel({
           </section>
         )}
 
-        <section className="space-y-3 rounded-lg bg-bg-primary p-4" aria-labelledby="notification-settings-heading">
+        <section className="space-y-3 border-b border-border-subtle pb-5" aria-labelledby="notification-settings-heading">
           <div>
             <p id="notification-settings-heading" className="text-sm font-medium text-primary">
               Notifications
@@ -418,7 +423,7 @@ export function UserSettingsPanel({
           />
           <label
             htmlFor="notification-sound"
-            className={`block rounded-md bg-bg-tertiary px-3 py-3 text-xs font-medium text-muted ${
+            className={`block rounded-control bg-surface-hover px-3 py-3 text-xs font-medium text-muted ${
               !notifications.enabled || !notifications.sound ? 'opacity-50' : ''
             }`}
           >
@@ -455,7 +460,7 @@ export function UserSettingsPanel({
 
           {notifications.quietHours.enabled && (
             <div
-              className="grid gap-3 rounded-md bg-bg-tertiary px-3 py-3 sm:grid-cols-2"
+              className="grid gap-3 rounded-control bg-surface-hover px-3 py-3 sm:grid-cols-2"
               aria-label="Quiet hours schedule"
             >
               <label htmlFor="quiet-hours-start" className="text-xs font-medium text-muted">
@@ -500,14 +505,14 @@ export function UserSettingsPanel({
               </span>
             )}
             {testNotificationStatus === 'failed' && (
-              <span role="alert" className="text-xs text-red">
+              <span role="alert" className="text-xs text-status-danger">
                 Mesh could not send the test notification.
               </span>
             )}
           </div>
 
           {(notifications.mutedChannels.length > 0 || notifications.mutedCommunities.length > 0) && (
-            <p className="rounded-md bg-bg-tertiary px-3 py-2 text-xs text-muted">
+            <p className="rounded-control bg-surface-hover px-3 py-2 text-xs text-muted">
               Muted: {notifications.mutedCommunities.length} communit
               {notifications.mutedCommunities.length === 1 ? 'y' : 'ies'} and{' '}
               {notifications.mutedChannels.length} channel
@@ -517,7 +522,7 @@ export function UserSettingsPanel({
         </section>
 
         {matrixMode && (
-          <section className="rounded-lg bg-bg-primary p-4">
+          <section className="border-b border-border-subtle pb-5">
             <div className="flex items-center gap-2">
               <p className="text-sm font-medium text-primary">Your devices</p>
               {backupReminderDue && (
@@ -540,7 +545,7 @@ export function UserSettingsPanel({
 
         {matrixMode && (
           <section
-            className="rounded-lg bg-bg-primary p-4"
+            className="border-b border-border-subtle pb-5"
             aria-labelledby="call-privacy-heading"
           >
             <p id="call-privacy-heading" className="text-sm font-medium text-primary">
@@ -561,7 +566,7 @@ export function UserSettingsPanel({
         )}
 
         {advancedUnlocked && (
-          <section className="rounded-lg bg-bg-primary p-4" aria-labelledby="advanced-settings-heading">
+          <section className="rounded-panel border border-border-subtle bg-surface-sunken p-4" aria-labelledby="advanced-settings-heading">
             <p id="advanced-settings-heading" className="text-sm font-medium text-primary">
               Advanced
             </p>
@@ -585,7 +590,7 @@ export function UserSettingsPanel({
 
         <button
           type="button"
-          className="mx-auto flex min-h-8 items-center rounded-md px-2 text-caption text-muted hover:bg-bg-modifier-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          className="mx-auto flex min-h-8 items-center rounded-control px-2 text-caption text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           aria-label="Mesh version 0.1.0"
           onClick={() => {
             versionTapCount.current += 1
@@ -667,7 +672,7 @@ function ToggleRow({
   onChange: (checked: boolean) => void
 }) {
   return (
-    <label className={`flex items-start justify-between gap-4 rounded-md bg-bg-tertiary px-3 py-3 ${disabled ? 'opacity-50' : 'cursor-pointer'}`}>
+    <label className={`flex items-start justify-between gap-4 rounded-control bg-surface-hover px-3 py-3 ${disabled ? 'opacity-50' : 'cursor-pointer'}`}>
       <span>
         <span className="block text-sm font-medium text-primary">{label}</span>
         <span className="mt-0.5 block text-xs leading-5 text-muted">{description}</span>

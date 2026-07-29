@@ -14,7 +14,7 @@ import { useChannelStore } from '../../store/channels'
 import { copyText, matrixRoomPermalink } from '../../lib/notifications'
 import { showToast } from '../ui/Toast'
 import { lazy, Suspense } from 'react'
-import { Spinner } from '../ui/Spinner'
+import { ModalLoadingFallback } from '../ui/ModalLoadingFallback'
 
 const CreateCommunityModal = lazy(() =>
   import('../community/CreateCommunityModal').then((module) => ({ default: module.CreateCommunityModal })),
@@ -88,7 +88,7 @@ export function CommunitySidebar() {
 
   return (
     <>
-      <div className="flex flex-col items-center gap-2 pb-3">
+      <div className="flex flex-col items-center gap-1.5 pb-2">
         {/* Server icons */}
         {communities.map((c) => (
           <Tooltip key={c.id} content={c.name} side="right">
@@ -116,28 +116,28 @@ export function CommunitySidebar() {
 
         {/* Separator */}
         {communities.length > 0 && (
-          <div className="mx-auto h-rail-separator w-8 rounded-full bg-bg-modifier-active" />
+          <div className="mx-auto h-rail-separator w-6 rounded-full bg-surface-active" />
         )}
 
         <Tooltip content="Add a community" side="right">
           <button
             onClick={() => openServerModal('create')}
-            className="group flex h-12 w-12 items-center justify-center rounded-community bg-bg-primary text-accent transition-all duration-normal hover:rounded-community-active hover:bg-accent hover:text-content-on-accent"
+            className="group flex h-10 w-10 items-center justify-center rounded-community bg-surface-sunken text-accent transition-all duration-normal hover:rounded-community-active hover:bg-accent hover:text-content-on-accent"
             aria-label="Add a community"
           >
             <Icon name="plus" />
           </button>
         </Tooltip>
 
-        <div className="mx-auto h-rail-separator w-8 rounded-full bg-bg-modifier-active" />
+        <div className="mx-auto h-rail-separator w-6 rounded-full bg-surface-active" />
 
         {directMessagesAvailable ? <Tooltip content="Direct Messages" side="right">
           <button
             onClick={handleDmClick}
-            className={`group relative flex h-12 w-12 items-center justify-center rounded-community transition-all duration-normal ${
+            className={`group relative flex h-10 w-10 items-center justify-center rounded-community transition-all duration-normal ${
               isDmMode
                 ? 'rounded-community-active bg-accent text-content-on-accent'
-                : 'bg-bg-primary text-muted hover:rounded-community-active hover:bg-accent hover:text-content-on-accent'
+                : 'bg-surface-sunken text-muted hover:rounded-community-active hover:bg-accent hover:text-content-on-accent'
             }`}
             aria-label="Direct Messages"
           >
@@ -151,7 +151,7 @@ export function CommunitySidebar() {
         <Tooltip content="Explore communities" side="right">
           <button
             onClick={() => openServerModal('discover')}
-            className="group relative flex h-12 w-12 items-center justify-center rounded-community bg-bg-primary text-muted transition-all duration-normal hover:rounded-community-active hover:bg-accent hover:text-content-on-accent"
+            className="group relative flex h-10 w-10 items-center justify-center rounded-community bg-surface-sunken text-muted transition-all duration-normal hover:rounded-community-active hover:bg-accent hover:text-content-on-accent"
             aria-label="Explore communities"
           >
             <Icon name="search" />
@@ -161,7 +161,7 @@ export function CommunitySidebar() {
         <Tooltip content="Profile" side="right">
           <button
             onClick={() => setProfileOpen(true)}
-            className="group relative flex h-12 w-12 items-center justify-center rounded-community bg-bg-primary text-muted transition-all duration-normal hover:rounded-community-active hover:bg-accent hover:text-content-on-accent"
+            className="group relative flex h-10 w-10 items-center justify-center rounded-community bg-surface-sunken text-muted transition-all duration-normal hover:rounded-community-active hover:bg-accent hover:text-content-on-accent"
             aria-label="Profile"
           >
             <Icon name="users" />
@@ -176,7 +176,7 @@ export function CommunitySidebar() {
       </div>
 
       {serverModalOpen && (
-        <Suspense fallback={<div role="status" aria-label="Loading community tools" className="flex items-center justify-center p-6"><Spinner /></div>}>
+        <Suspense fallback={<ModalLoadingFallback title="Communities" label="Loading community tools" />}>
           <CreateCommunityModal
             isOpen={serverModalOpen}
             onClose={closeServerModal}

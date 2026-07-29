@@ -42,7 +42,7 @@ export function AudioSettings() {
       <p className="text-xs text-muted mb-3">
         Add custom TURN servers if voice connections fail behind strict firewalls.
       </p>
-      <div className="space-y-3 rounded-lg bg-bg-primary p-4">
+      <div className="space-y-3 rounded-panel border border-border-subtle bg-surface-sunken p-4">
         <Input
           placeholder="turn:your-server.com:3478"
           value={customTurn}

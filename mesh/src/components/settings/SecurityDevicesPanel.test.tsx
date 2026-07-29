@@ -135,6 +135,24 @@ describe('SecurityDevicesPanel', () => {
     expect(document.body.textContent).toContain('2 devices')
   })
 
+  it('uses the compact empty state when no registered devices are returned', async () => {
+    vi.mocked(matrixDevices).mockResolvedValue([])
+
+    await act(async () => {
+      root.render(<SecurityDevicesPanel open onClose={() => {}} />)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(document.body.textContent).toContain('No registered devices')
+    expect(document.body.textContent).toContain('Devices linked to this account will appear here.')
+    const emptyTitle = [...document.body.querySelectorAll('h3')]
+      .find((heading) => heading.textContent === 'No registered devices')
+    expect(emptyTitle?.closest('section')?.className).toContain('py-5')
+  })
+
   it('guides lost-device response with an explicit accessible device choice', async () => {
     await act(async () => {
       root.render(<SecurityDevicesPanel open onClose={() => {}} />)

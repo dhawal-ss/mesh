@@ -114,4 +114,21 @@ describe('MemberList actions', () => {
     expect(document.body.textContent).toContain('Remove from community')
     expect(document.body.textContent).toContain('Ban from community')
   })
+
+  it('uses the compact empty state when the community has no members', async () => {
+    await act(async () => {
+      root.render(
+        <MemberList
+          isOpen
+          embedded
+          onClose={() => {}}
+          members={[]}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('No members yet')
+    expect(container.textContent).toContain('People who join will appear here.')
+    expect(container.querySelector('section')?.className).toContain('py-5')
+  })
 })

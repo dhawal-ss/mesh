@@ -23,17 +23,18 @@ export function ReactionPicker({
       initial="initial"
       animate="animate"
       exit="exit"
-      className="flex items-center gap-0.5 rounded-full border border-border-strong bg-surface-overlay/95 px-2 py-1.5 shadow-overlay backdrop-blur-2xl"
+      className="mesh-reaction-picker z-popover flex flex-wrap items-center gap-0.5 rounded-panel border border-border-subtle bg-surface-overlay px-1.5 py-1 shadow-overlay"
       onMouseLeave={onClose}
     >
       {REACTIONS.map((emoji) => (
         <button
           key={emoji}
+          type="button"
           onClick={() => {
             onSelect(emoji)
             onClose()
           }}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-base transition-colors hover:bg-surface-active active:scale-95"
+          className="flex h-7 w-7 items-center justify-center rounded-sm text-sm transition-colors hover:bg-surface-active active:scale-95"
         >
           {emoji}
         </button>
@@ -48,7 +49,7 @@ export function ReactionPicker({
             onSelect(`:${emoji.shortcode}:`)
             onClose()
           }}
-          className="flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-surface-active active:scale-95"
+          className="flex h-7 w-7 items-center justify-center rounded-sm transition-colors hover:bg-surface-active active:scale-95"
         >
           <img
             src={emoji.imageUrl}

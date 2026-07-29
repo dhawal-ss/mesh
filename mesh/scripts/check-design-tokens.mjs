@@ -69,6 +69,10 @@ const visualPatterns = [
     kind: 'box-shadow focus ring',
     expression: /\bfocus(?:-visible)?:ring(?:-[^\s'"]+)?/gi,
   },
+  {
+    kind: 'stock elevation class',
+    expression: /\bshadow-(?:sm|md|lg|xl|2xl)\b/gi,
+  },
 ]
 
 function visualViolations(source) {
@@ -95,11 +99,11 @@ function undersizedControlTokens(source) {
 
 // Keep self-tests here so weakening either detector cannot silently pass.
 const detectorFixture = "colors: { bad: '#fff', worse: 'rgb(1 2 3)', alsoBad: 'oklch(50% 0.1 240)' }"
-const componentFixture = 'bg-[#fff] text-[11px] border-white/10 bg-yellow-500/10 font-bold text-xl var(--ref-neutral-1) oklch(50% 0.1 240) focus-visible:ring-2'
+const componentFixture = 'bg-[#fff] text-[11px] border-white/10 bg-yellow-500/10 font-bold text-xl var(--ref-neutral-1) oklch(50% 0.1 240) focus-visible:ring-2 shadow-lg'
 const densityFixture = '--density-control-sm: 28px; --density-control-md: 32px;'
 if (
   literalColorViolations(detectorFixture).length !== 3
-  || visualViolations(componentFixture).length !== 10
+  || visualViolations(componentFixture).length !== 11
   || undersizedControlTokens(densityFixture).length !== 1
 ) {
   throw new Error('Design-token checker self-test failed')
@@ -120,25 +124,25 @@ for (const match of rootBlock.matchAll(/^\s*(--[\w-]+)\s*:\s*([^;]+);/gm)) {
 }
 
 const expectedReferenceColors = new Map([
-  ['--ref-neutral-1', '#101013'],
-  ['--ref-neutral-2', '#17181c'],
-  ['--ref-neutral-3', '#202127'],
-  ['--ref-neutral-4', '#27292f'],
-  ['--ref-neutral-5', '#2e3037'],
-  ['--ref-neutral-6', '#373941'],
-  ['--ref-neutral-7', '#454751'],
-  ['--ref-neutral-8', '#5d606b'],
-  ['--ref-neutral-9', '#6b6e79'],
-  ['--ref-neutral-10', '#797b86'],
-  ['--ref-neutral-11', '#b2b4bb'],
-  ['--ref-neutral-12', '#edeef2'],
-  ['--ref-accent-9', '#c19f66'],
-  ['--ref-accent-10', '#cfaf79'],
-  ['--ref-accent-11', '#e3c697'],
-  ['--ref-green-11', '#57bd72'],
-  ['--ref-red-11', '#ed756e'],
-  ['--ref-amber-11', '#edb345'],
-  ['--ref-blue-11', '#52b5f4'],
+  ['--ref-neutral-1', '#101113'],
+  ['--ref-neutral-2', '#1b1c1f'],
+  ['--ref-neutral-3', '#202125'],
+  ['--ref-neutral-4', '#27292e'],
+  ['--ref-neutral-5', '#2e3036'],
+  ['--ref-neutral-6', '#383a40'],
+  ['--ref-neutral-7', '#4a4d54'],
+  ['--ref-neutral-8', '#5a5e65'],
+  ['--ref-neutral-9', '#71757c'],
+  ['--ref-neutral-10', '#9fa3aa'],
+  ['--ref-neutral-11', '#c6c8cc'],
+  ['--ref-neutral-12', '#f0f1f2'],
+  ['--ref-accent-9', '#d4c0a1'],
+  ['--ref-accent-10', '#e3d4bb'],
+  ['--ref-accent-11', '#f1e8db'],
+  ['--ref-green-11', '#3dbe72'],
+  ['--ref-red-11', '#f06a73'],
+  ['--ref-amber-11', '#f0b232'],
+  ['--ref-blue-11', '#6fafff'],
 ])
 
 for (const [name, expected] of expectedReferenceColors) {

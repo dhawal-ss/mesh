@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
@@ -6,6 +6,7 @@ import { Input } from '../ui/Input'
 import * as bridge from '../../lib/bridge'
 import { transitions } from '../../lib/motion'
 import { Icon } from '../ui/Icon'
+import { ErrorState } from '../ui/ErrorState'
 
 interface InviteModalProps {
   isOpen: boolean
@@ -21,32 +22,39 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
   const [copied, setCopied] = useState(false)
   const [username, setUsername] = useState('')
   const [inviteSent, setInviteSent] = useState(false)
+  const [operationError, setOperationError] = useState<unknown | null>(null)
+
+  const generateLegacyInvite = useCallback(async () => {
+    setIsLoading(true)
+    setOperationError(null)
+    setInviteLink('')
+    try {
+      setInviteLink(await bridge.generateInviteLink(communityId))
+    } catch (err) {
+      console.error('Failed to generate invite link:', err)
+      setOperationError(err)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [communityId])
 
   useEffect(() => {
     if (!isOpen || !communityId || matrixMode) return
-    const generate = async () => {
-      setIsLoading(true)
-      try {
-        const link = await bridge.generateInviteLink(communityId)
-        setInviteLink(link)
-      } catch (err) {
-        console.error('Failed to generate invite link:', err)
-        setInviteLink('Failed to generate link')
-      }
-      setIsLoading(false)
-    }
-    generate()
-  }, [isOpen, communityId, matrixMode])
+    const timer = window.setTimeout(() => void generateLegacyInvite(), 0)
+    return () => window.clearTimeout(timer)
+  }, [generateLegacyInvite, isOpen, communityId, matrixMode])
 
   const handleMatrixInvite = async () => {
     if (!username.trim()) return
     setIsLoading(true)
     setInviteSent(false)
+    setOperationError(null)
     try {
       await bridge.inviteMatrixUser(communityId, username.trim())
       setInviteSent(true)
       setUsername('')
     } catch (err) {
+      setOperationError(err)
       console.error('Failed to invite Matrix user:', err)
     } finally {
       setIsLoading(false)
@@ -75,19 +83,22 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
     setInviteLink('')
     setUsername('')
     setInviteSent(false)
+    setOperationError(null)
     onClose()
   }
 
   return (
-    <Modal open={isOpen} onClose={handleClose}>
+    <Modal
+      open={isOpen}
+      onClose={handleClose}
+      title={`Invite to ${communityName}`}
+      description={
+        matrixMode
+          ? 'Invite someone to this community and its current rooms.'
+          : 'Share this link to let others join your community.'
+      }
+    >
       <div>
-        <h2 className="mb-1 text-base font-semibold text-primary">Invite to {communityName}</h2>
-        <p className="mb-4 text-xs text-muted">
-          {matrixMode
-            ? 'Invite someone to this community and its current rooms.'
-            : 'Share this link to let others join your community.'}
-        </p>
-
         {matrixMode ? (
           <div className="space-y-3">
             <Input
@@ -96,6 +107,7 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
               onChange={(value: string) => {
                 setUsername(value)
                 setInviteSent(false)
+                setOperationError(null)
               }}
               placeholder="ashvin"
               autoFocus
@@ -110,10 +122,18 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
             {inviteSent && (
               <p className="text-center text-xs text-green">Invite sent.</p>
             )}
+            {operationError != null && (
+              <ErrorState
+                error={operationError}
+                context={{ operation: 'invite this person', resource: 'community' }}
+                onAction={handleMatrixInvite}
+                compact
+              />
+            )}
           </div>
         ) : (
           <>
-          <div className="overflow-hidden rounded-md bg-bg-tertiary">
+          <div className="overflow-hidden rounded-control bg-surface-hover">
           {isLoading ? (
             <div className="flex items-center justify-center px-4 py-4">
               <span className="text-sm text-muted animate-pulse-soft">Generating link...</span>
@@ -126,6 +146,16 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
             </div>
           )}
         </div>
+
+        {operationError != null && (
+          <ErrorState
+            error={operationError}
+            context={{ operation: 'create an invite link', resource: 'community' }}
+            onAction={generateLegacyInvite}
+            className="mt-3"
+            compact
+          />
+        )}
 
         <Button onClick={handleCopy} disabled={isLoading || !inviteLink} className="mt-4 w-full">
           <motion.span

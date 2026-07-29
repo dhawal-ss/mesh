@@ -88,7 +88,7 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
       </div>
 
       <motion.div
-        className="overflow-hidden rounded-lg bg-bg-primary p-4"
+        className="overflow-hidden rounded-panel border border-border-subtle bg-surface-sunken p-4"
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={transitions.enter}
@@ -100,7 +100,7 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
           </span>
         </div>
 
-        <div className="h-1 overflow-hidden rounded-full bg-bg-modifier-hover">
+        <div className="h-1 overflow-hidden rounded-full bg-surface-hover">
           <motion.div
             className="h-full w-1/3 rounded-full bg-accent"
             animate={
@@ -125,9 +125,9 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
             <motion.span
               key={step}
               className={clsx(
-                'rounded-md px-2.5 py-1 text-2xs uppercase tracking-control',
+                'rounded-control px-2.5 py-1 text-2xs uppercase tracking-control',
                 index === 0
-                  ? 'bg-bg-modifier-hover text-secondary'
+                        ? 'bg-surface-hover text-secondary'
                   : 'text-muted'
               )}
               initial={{ opacity: 0, y: 4 }}
@@ -141,7 +141,7 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
 
         {phase === 'done' && (
           <motion.div
-            className="mt-5 rounded-lg bg-green/10 border border-green/20 p-4"
+            className="mt-5 rounded-panel border border-status-success/20 bg-status-success/10 p-4"
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={transitions.enter}
@@ -152,7 +152,7 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
                 ? 'This key stays on this device only. It does not affect your account or your messages.'
                 : 'This identity now lives on this device and will sign your peer activity locally.'}
             </p>
-            <div className="mt-3 flex items-center justify-between gap-3 rounded-md bg-bg-tertiary px-3 py-2">
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-control bg-surface-hover px-3 py-2">
               <span className="text-2xs uppercase tracking-section text-muted">Fingerprint</span>
               <span className="font-mono text-xs text-primary">{formatFingerprint(identity?.publicKey)}</span>
             </div>
@@ -174,7 +174,7 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
         <button
           type="button"
           onClick={() => setAttempt((value) => value + 1)}
-          className="min-h-8 rounded-md px-2 text-sm text-secondary transition-colors hover:bg-bg-modifier-hover hover:text-primary"
+          className="min-h-8 rounded-control px-2 text-sm text-secondary transition-colors hover:bg-surface-hover hover:text-primary"
         >
           Retry identity generation
         </button>

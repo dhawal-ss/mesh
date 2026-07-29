@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import * as bridge from '../../lib/bridge'
@@ -29,8 +29,10 @@ type MatrixAccountScreenProps = Pick<
   recommendedService?: string
 }
 
+export const DEFAULT_MESH_SERVICE = 'https://matrix.mesh.dhawal.org'
+
 const CONFIGURED_SERVICE = import.meta.env.VITE_MESH_HOMESERVER?.trim()
-const DEFAULT_RECOMMENDED_SERVICE = CONFIGURED_SERVICE || ''
+const DEFAULT_RECOMMENDED_SERVICE = CONFIGURED_SERVICE || DEFAULT_MESH_SERVICE
 
 export function MatrixAccountScreen({
   onMatrixCheckUsernameAvailable,
@@ -55,6 +57,8 @@ export function MatrixAccountScreen({
   const [checkingBrowser, setCheckingBrowser] = useState(false)
   const [browserReady, setBrowserReady] = useState(false)
   const [browserSigningIn, setBrowserSigningIn] = useState(false)
+  const modeHeadingRef = useRef<HTMLHeadingElement>(null)
+  const previousModeRef = useRef<AccountMode>(mode)
 
   const normalizedUsername = useMemo(() => normalizeUsername(username), [username])
   const usernameError = useMemo(() => usernameValidationError(username), [username])
@@ -112,6 +116,13 @@ export function MatrixAccountScreen({
       window.clearTimeout(timer)
     }
   }, [mode, normalizedUsername, onMatrixCheckUsernameAvailable, usernameError])
+
+  useEffect(() => {
+    if (previousModeRef.current === mode) return
+    previousModeRef.current = mode
+    const frame = window.requestAnimationFrame(() => modeHeadingRef.current?.focus())
+    return () => window.cancelAnimationFrame(frame)
+  }, [mode])
 
   const resetFeedback = () => {
     setError(null)
@@ -246,10 +257,10 @@ export function MatrixAccountScreen({
     || !password
 
   return (
-    <form className="space-y-5" onSubmit={submit}>
-      <header className="space-y-2">
+    <form className="space-y-3" onSubmit={submit}>
+      <header className="space-y-1.5">
         <p className="text-2xs uppercase tracking-eyebrow text-muted">Mesh</p>
-        <h1 className="text-lg font-semibold tracking-tight text-primary">
+        <h1 ref={modeHeadingRef} tabIndex={-1} className="text-lg font-semibold tracking-tight text-primary">
           {isCreate ? 'Create your account' : isAdvanced ? 'Sign in somewhere else' : 'Welcome back'}
         </h1>
         <p className="max-w-sm text-sm leading-6 text-secondary">
@@ -262,7 +273,7 @@ export function MatrixAccountScreen({
       {!isCreate && savedAccounts.length > 0 ? (
         <section
           aria-label="Saved accounts"
-          className="space-y-2 rounded-lg border border-border bg-surface-sunken p-3"
+          className="space-y-2 rounded-panel border border-border-subtle bg-surface-sunken p-3"
         >
           <p className="text-2xs uppercase tracking-signal text-muted">Saved on this device</p>
           {savedAccounts.map((account) => (
@@ -270,7 +281,7 @@ export function MatrixAccountScreen({
               key={account.profileId}
               type="button"
               disabled={submitting || switchingProfile !== null}
-              className="flex w-full items-center justify-between gap-3 rounded-md bg-surface-base px-3 py-2 text-left transition-colors hover:bg-surface-hover disabled:cursor-wait disabled:opacity-60"
+              className="flex w-full items-center justify-between gap-3 rounded-control bg-surface-base px-3 py-2 text-left transition-colors hover:bg-surface-hover disabled:cursor-wait disabled:opacity-60"
               onClick={() => void switchAccount(account.profileId)}
             >
               <span className="min-w-0">
@@ -287,7 +298,7 @@ export function MatrixAccountScreen({
         </section>
       ) : null}
 
-      <div className="space-y-3 rounded-lg bg-surface-sunken p-4">
+      <div className="space-y-3 rounded-panel border border-border-subtle bg-surface-sunken p-3">
         <Input
           label="Username"
           name="username"
@@ -400,7 +411,7 @@ export function MatrixAccountScreen({
         </div>
 
         {isCreate ? (
-          <p className="rounded-md bg-surface-hover px-3 py-2 text-xs text-secondary">
+          <p className="rounded-control bg-surface-hover px-3 py-2 text-xs text-secondary">
             No email needed.
           </p>
         ) : null}
@@ -460,7 +471,7 @@ export function MatrixAccountScreen({
       {error ? (
         <div
           role="alert"
-          className="rounded-md border border-status-danger/40 bg-status-danger/10 px-3 py-2 text-sm text-status-danger"
+          className="rounded-control border border-status-danger/40 bg-status-danger/10 px-3 py-2 text-sm text-status-danger"
         >
           {error}
         </div>
@@ -481,7 +492,7 @@ export function MatrixAccountScreen({
           Already have an account?{' '}
           <button
             type="button"
-            className="inline-flex min-h-8 items-center rounded-md px-1 text-accent transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            className="inline-flex min-h-8 items-center rounded-control px-1 text-accent transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             onClick={() => changeMode(hasRecommendedService ? 'sign-in' : 'advanced')}
           >
             Sign in
@@ -492,7 +503,7 @@ export function MatrixAccountScreen({
           {!isAdvanced ? (
             <button
               type="button"
-              className="flex min-h-8 w-full items-center justify-center rounded-md px-2 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              className="flex min-h-8 w-full items-center justify-center rounded-control px-2 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               onClick={() => changeMode('advanced')}
             >
               I have an account somewhere else
@@ -500,7 +511,7 @@ export function MatrixAccountScreen({
           ) : hasRecommendedService ? (
             <button
               type="button"
-              className="flex min-h-8 w-full items-center justify-center rounded-md px-2 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              className="flex min-h-8 w-full items-center justify-center rounded-control px-2 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               onClick={() => changeMode('sign-in')}
             >
               Back to Mesh sign in
@@ -508,7 +519,7 @@ export function MatrixAccountScreen({
           ) : null}
           <button
             type="button"
-            className="inline-flex min-h-8 items-center rounded-md px-2 text-sm text-accent transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            className="inline-flex min-h-8 items-center rounded-control px-2 text-sm text-accent transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             onClick={() => changeMode('create')}
           >
             Create a new account

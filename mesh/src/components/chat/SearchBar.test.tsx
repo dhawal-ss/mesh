@@ -228,6 +228,32 @@ describe('SearchBar', () => {
     expect(container.textContent).toContain(targetMessage.content)
   })
 
+  it('uses the compact empty state when a search has no results', async () => {
+    vi.spyOn(bridge, 'searchMessages').mockResolvedValue([])
+
+    await act(async () => {
+      root.render(<SearchBar onNavigateToMessage={vi.fn()} />)
+    })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[title="Search messages"]')?.click()
+    })
+    const input = container.querySelector<HTMLInputElement>('input[type="text"]')
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set
+    await act(async () => {
+      setValue?.call(input, 'missing')
+      input?.dispatchEvent(new Event('input', { bubbles: true }))
+      vi.advanceTimersByTime(300)
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('No messages found')
+    expect(container.textContent).toContain('Try another word or phrase.')
+    expect(container.querySelector('section')?.className).toContain('py-5')
+  })
+
   it('returns focus to the search trigger when Escape closes the popover', async () => {
     await act(async () => {
       root.render(<SearchBar onNavigateToMessage={vi.fn()} />)

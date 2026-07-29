@@ -1,12 +1,4 @@
-import {
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactNode,
-} from 'react'
+import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import {
   ContextMenu as ContextMenuPrimitive,
   Dialog as DialogPrimitive,
@@ -23,8 +15,9 @@ import type { UiSize, UiTone } from './Button'
 import { Icon } from './Icon'
 import { IconButton } from './IconButton'
 
-export interface SwitchProps
-  extends Omit<React.ComponentPropsWithoutRef<typeof SwitchPrimitive.Root>, 'asChild'> {
+const overlaySurfaceClass = 'rounded-panel border border-border-subtle bg-surface-overlay shadow-overlay'
+
+export interface SwitchProps extends Omit<React.ComponentPropsWithoutRef<typeof SwitchPrimitive.Root>, 'asChild'> {
   label: string
   description?: string
   size?: UiSize
@@ -57,7 +50,11 @@ export function Switch({
     <div className={clsx('flex items-start justify-between gap-4', disabled && 'opacity-50', className)}>
       <label htmlFor={switchId} className={clsx('cursor-pointer', disabled && 'cursor-not-allowed')}>
         <span className="block text-sm font-medium text-content">{label}</span>
-        {description && <span id={descriptionId} className="block text-xs text-content-muted">{description}</span>}
+        {description && (
+          <span id={descriptionId} className="block text-xs text-content-muted">
+            {description}
+          </span>
+        )}
       </label>
       <SwitchPrimitive.Root
         id={switchId}
@@ -119,13 +116,12 @@ export function Select({
   const labelId = useId()
   return (
     <div className={clsx('space-y-1.5', className)}>
-      {label && <div id={labelId} className="text-xs font-medium text-content-secondary">{label}</div>}
-      <SelectPrimitive.Root
-        value={value}
-        defaultValue={defaultValue}
-        onValueChange={onValueChange}
-        disabled={disabled}
-      >
+      {label && (
+        <div id={labelId} className="text-xs font-medium text-content-secondary">
+          {label}
+        </div>
+      )}
+      <SelectPrimitive.Root value={value} defaultValue={defaultValue} onValueChange={onValueChange} disabled={disabled}>
         <SelectPrimitive.Trigger
           aria-labelledby={label ? labelId : undefined}
           aria-label={!label ? (ariaLabel ?? placeholder) : undefined}
@@ -137,13 +133,15 @@ export function Select({
           )}
         >
           <SelectPrimitive.Value placeholder={placeholder} />
-          <SelectPrimitive.Icon><Icon name="chevronDown" size="xs" /></SelectPrimitive.Icon>
+          <SelectPrimitive.Icon>
+            <Icon name="chevronDown" size="xs" />
+          </SelectPrimitive.Icon>
         </SelectPrimitive.Trigger>
         <SelectPrimitive.Portal>
           <SelectPrimitive.Content
             position="popper"
             sideOffset={6}
-            className="z-popover min-w-40 overflow-hidden rounded-md border border-border bg-surface-overlay p-1 text-content shadow-overlay"
+            className={clsx('z-popover min-w-40 overflow-hidden p-1 text-content', overlaySurfaceClass)}
           >
             <SelectPrimitive.Viewport>
               {options.map((option) => (
@@ -168,7 +166,7 @@ export function Select({
 export interface MenuItem {
   id: string
   label: string
-  onSelect?: () => void
+  onSelect?: (event: Event) => void
   disabled?: boolean
   tone?: 'neutral' | 'danger'
 }
@@ -180,15 +178,7 @@ function menuItemClass(tone: MenuItem['tone']) {
   )
 }
 
-export function DropdownMenu({
-  trigger,
-  label,
-  items,
-}: {
-  trigger: ReactNode
-  label: string
-  items: MenuItem[]
-}) {
+export function DropdownMenu({ trigger, label, items }: { trigger: ReactNode; label: string; items: MenuItem[] }) {
   return (
     <DropdownMenuPrimitive.Root>
       <DropdownMenuPrimitive.Trigger asChild>{trigger}</DropdownMenuPrimitive.Trigger>
@@ -197,7 +187,7 @@ export function DropdownMenu({
           aria-label={label}
           sideOffset={6}
           collisionPadding={8}
-          className="z-dropdown min-w-40 rounded-md border border-border bg-surface-overlay p-1 shadow-overlay"
+          className={clsx('z-dropdown min-w-40 p-1', overlaySurfaceClass)}
         >
           {items.map((item) => (
             <DropdownMenuPrimitive.Item
@@ -219,19 +209,33 @@ export function ContextMenu({
   children,
   label,
   items,
+  disabled = false,
+  open,
+  onOpenChange,
 }: {
   children: ReactNode
   label: string
   items: MenuItem[]
+  disabled?: boolean
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
+  const triggerRef = useRef<HTMLSpanElement>(null)
+
   return (
-    <ContextMenuPrimitive.Root>
-      <ContextMenuPrimitive.Trigger asChild>{children}</ContextMenuPrimitive.Trigger>
+    <ContextMenuPrimitive.Root open={open} onOpenChange={onOpenChange}>
+      <ContextMenuPrimitive.Trigger ref={triggerRef} asChild disabled={disabled}>
+        {children}
+      </ContextMenuPrimitive.Trigger>
       <ContextMenuPrimitive.Portal>
         <ContextMenuPrimitive.Content
           aria-label={label}
           collisionPadding={8}
-          className="z-dropdown min-w-40 rounded-md border border-border bg-surface-overlay p-1 shadow-overlay"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            triggerRef.current?.focus()
+          }}
+          className={clsx('z-dropdown min-w-40 p-1', overlaySurfaceClass)}
         >
           {items.map((item) => (
             <ContextMenuPrimitive.Item
@@ -286,10 +290,18 @@ export function Popover({
           collisionPadding={8}
           aria-labelledby={label ? titleId : undefined}
           aria-describedby={description ? descriptionId : undefined}
-          className={clsx('z-popover w-72 rounded-lg border border-border bg-surface-overlay p-4 text-content shadow-overlay', className)}
+          className={clsx('z-popover w-72 p-4 text-content', overlaySurfaceClass, className)}
         >
-          {label && <div id={titleId} className="mb-1 text-sm font-semibold">{label}</div>}
-          {description && <div id={descriptionId} className="mb-3 text-xs text-content-secondary">{description}</div>}
+          {label && (
+            <div id={titleId} className="mb-1 text-sm font-semibold">
+              {label}
+            </div>
+          )}
+          {description && (
+            <div id={descriptionId} className="mb-3 text-xs text-content-secondary">
+              {description}
+            </div>
+          )}
           {children}
           <PopoverPrimitive.Arrow className="fill-surface-overlay" />
         </PopoverPrimitive.Content>
@@ -377,9 +389,10 @@ export function Sheet({
 }) {
   const openerRef = useRef<HTMLElement | null>(null)
   const openingFocusTarget = useMemo(
-    () => open && typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null,
+    () =>
+      open && typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null,
     [open],
   )
 
@@ -432,7 +445,7 @@ export function Sheet({
             exit={{ opacity: 0, x: side === 'right' ? '100%' : '-100%' }}
             transition={transitions.enter}
           >
-            <header className="flex min-h-16 flex-none items-start border-b border-border-subtle px-5 py-4">
+            <header className="flex min-h-14 flex-none items-start border-b border-border-subtle px-4 py-3">
               <div className="min-w-0 pr-10">
                 <DialogPrimitive.Title className="text-base font-semibold">{title}</DialogPrimitive.Title>
                 {description && (
@@ -447,9 +460,7 @@ export function Sheet({
                 </IconButton>
               </DialogPrimitive.Close>
             </header>
-            <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-5">
-              {children}
-            </div>
+            <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4">{children}</div>
           </motion.div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
@@ -522,10 +533,7 @@ export function Combobox({
   const listboxId = useId()
   const inputId = `${listboxId}-input`
   const supportingTextId = `${listboxId}-supporting`
-  const selectedLabel = useMemo(
-    () => options.find((option) => option.value === value)?.label ?? '',
-    [options, value],
-  )
+  const selectedLabel = useMemo(() => options.find((option) => option.value === value)?.label ?? '', [options, value])
   const [query, setQuery] = useState(selectedLabel)
   const [uncontrolledLabel, setUncontrolledLabel] = useState(selectedLabel)
   const [open, setOpen] = useState(false)
@@ -550,11 +558,8 @@ export function Combobox({
   }, [options, query])
 
   const currentLabel = value === undefined ? uncontrolledLabel : selectedLabel
-  const resolvedActiveIndex = (
-    activeIndex >= 0
-    && activeIndex < filtered.length
-    && !filtered[activeIndex]?.disabled
-  ) ? activeIndex : -1
+  const resolvedActiveIndex =
+    activeIndex >= 0 && activeIndex < filtered.length && !filtered[activeIndex]?.disabled ? activeIndex : -1
   const enabledIndices = filtered.reduce<number[]>((indices, option, index) => {
     if (!option.disabled) indices.push(index)
     return indices
@@ -607,7 +612,11 @@ export function Combobox({
     <div className={clsx('relative space-y-1.5', className)}>
       <label htmlFor={inputId} className="text-xs font-medium text-content-secondary">
         {label}
-        {required && <span className="ml-1 text-status-danger" aria-hidden="true">*</span>}
+        {required && (
+          <span className="ml-1 text-status-danger" aria-hidden="true">
+            *
+          </span>
+        )}
       </label>
       <input
         id={inputId}
@@ -616,7 +625,9 @@ export function Combobox({
         aria-controls={listboxId}
         aria-haspopup="listbox"
         aria-autocomplete="list"
-        aria-activedescendant={open && filtered[resolvedActiveIndex] ? `${listboxId}-${resolvedActiveIndex}` : undefined}
+        aria-activedescendant={
+          open && filtered[resolvedActiveIndex] ? `${listboxId}-${resolvedActiveIndex}` : undefined
+        }
         aria-describedby={error || description ? supportingTextId : undefined}
         aria-invalid={error ? true : undefined}
         aria-required={required || undefined}
@@ -660,32 +671,34 @@ export function Combobox({
         <div
           id={listboxId}
           role="listbox"
-          className="absolute top-full z-popover mt-1 max-h-56 w-full overflow-auto rounded-md border border-border bg-surface-overlay p-1 shadow-overlay"
+          className={clsx('absolute top-full z-popover mt-1 max-h-56 w-full overflow-auto p-1', overlaySurfaceClass)}
         >
           {filtered.length === 0 ? (
             <p className="px-2 py-3 text-sm text-content-muted">No results</p>
-          ) : filtered.map((option, index) => (
-            <button
-              key={option.value}
-              id={`${listboxId}-${index}`}
-              type="button"
-              role="option"
-              aria-selected={option.value === value}
-              aria-disabled={option.disabled || undefined}
-              disabled={option.disabled}
-              onMouseDown={(event) => event.preventDefault()}
-              onMouseMove={() => {
-                if (!option.disabled) setActiveIndex(index)
-              }}
-              onClick={() => choose(option)}
-              className={clsx(
-                'block w-full rounded px-2 py-1.5 text-left text-sm text-content disabled:opacity-40',
-                index === resolvedActiveIndex && 'bg-surface-hover',
-              )}
-            >
-              {option.label}
-            </button>
-          ))}
+          ) : (
+            filtered.map((option, index) => (
+              <button
+                key={option.value}
+                id={`${listboxId}-${index}`}
+                type="button"
+                role="option"
+                aria-selected={option.value === value}
+                aria-disabled={option.disabled || undefined}
+                disabled={option.disabled}
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseMove={() => {
+                  if (!option.disabled) setActiveIndex(index)
+                }}
+                onClick={() => choose(option)}
+                className={clsx(
+                  'block w-full rounded px-2 py-1.5 text-left text-sm text-content disabled:opacity-40',
+                  index === resolvedActiveIndex && 'bg-surface-hover',
+                )}
+              >
+                {option.label}
+              </button>
+            ))
+          )}
         </div>
       )}
     </div>
@@ -709,10 +722,11 @@ export function Command({
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-overlay bg-surface-scrim" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/4 z-modal w-11/12 max-w-lg -translate-x-1/2 rounded-lg bg-surface-raised p-4 shadow-overlay outline-none">
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/4 z-modal w-11/12 max-w-lg -translate-x-1/2 overflow-hidden rounded-panel border border-border-subtle bg-surface-raised shadow-overlay outline-none">
           <DialogPrimitive.Title className="sr-only">{title}</DialogPrimitive.Title>
           <Combobox
             label={title}
+            className="mesh-command-combobox"
             options={options}
             onValueChange={(value) => {
               onSelect(value)
