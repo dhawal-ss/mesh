@@ -19,8 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      VITE_MESH_HOMESERVER: ${{ vars.VITE_MESH_HOMESERVER }}
+      VITE_MESH_HOMESERVER: https://matrix.mesh.dhawal.org
       VITE_MESH_SERVICE_NAME: ${{ vars.VITE_MESH_SERVICE_NAME }}
+      MESH_MANAGED_HOMESERVER: https://matrix.mesh.dhawal.org
+      MESH_MANAGED_SERVER_NAME: mesh.dhawal.org
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -87,8 +89,10 @@ jobs:
     timeout-minutes: 90
     environment: matrix-beta
     env:
-      VITE_MESH_HOMESERVER: ${{ vars.VITE_MESH_HOMESERVER }}
+      VITE_MESH_HOMESERVER: https://matrix.mesh.dhawal.org
       VITE_MESH_SERVICE_NAME: ${{ vars.VITE_MESH_SERVICE_NAME }}
+      MESH_MANAGED_HOMESERVER: https://matrix.mesh.dhawal.org
+      MESH_MANAGED_SERVER_NAME: mesh.dhawal.org
     permissions:
       contents: write
     steps:

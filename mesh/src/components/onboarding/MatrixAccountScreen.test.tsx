@@ -1,7 +1,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MatrixAccountScreen } from './MatrixAccountScreen'
+import { DEFAULT_MESH_SERVICE, MatrixAccountScreen } from './MatrixAccountScreen'
 import * as bridge from '../../lib/bridge'
 
 vi.mock('../../lib/bridge', () => ({
@@ -132,6 +132,35 @@ describe('MatrixAccountScreen', () => {
       deviceName: 'Mesh Desktop',
     })
     expect(onNext).toHaveBeenCalledWith('signed-in')
+  })
+
+  it('uses the production Mesh service when the build has no environment override', async () => {
+    const login = vi.fn(async () => {})
+
+    await act(async () => {
+      root.render(
+        <MatrixAccountScreen
+          onMatrixCheckUsernameAvailable={vi.fn(async () => true)}
+          onMatrixRegisterAccount={vi.fn(async () => {})}
+          onMatrixLogin={login}
+          onNext={() => {}}
+        />,
+      )
+    })
+
+    await act(async () => {
+      findButton('Sign in').click()
+      setInputValue(findInput('username'), 'Dhawal')
+      setInputValue(findInput('password'), 'correct horse battery staple')
+      submitForm()
+      await Promise.resolve()
+    })
+
+    expect(DEFAULT_MESH_SERVICE).toBe('https://matrix.mesh.dhawal.org')
+    expect(login).toHaveBeenCalledWith(expect.objectContaining({
+      homeserver: 'https://matrix.mesh.dhawal.org',
+      username: 'dhawal',
+    }))
   })
 
   it('reveals infrastructure only in the tertiary advanced form', async () => {
