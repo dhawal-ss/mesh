@@ -200,6 +200,8 @@ async function installKeyboardActionsMock(page: Page): Promise<void> {
         case 'matrix_clear_composer_draft':
         case 'plugin:event|unlisten':
           return null
+        case 'plugin:deep-link|get_current':
+          return null
         case 'matrix_wait_for_room_update':
           return new Promise(() => {})
         case 'plugin:event|listen':

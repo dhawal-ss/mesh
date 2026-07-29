@@ -7,6 +7,7 @@ const bridgeMocks = vi.hoisted(() => ({
   createCommunity: vi.fn(),
   createChannel: vi.fn(),
   getChannels: vi.fn(),
+  joinOrRequestCommunity: vi.fn(),
 }))
 
 vi.mock('../../lib/bridge', () => ({
@@ -14,7 +15,7 @@ vi.mock('../../lib/bridge', () => ({
   createCommunity: bridgeMocks.createCommunity,
   createChannel: bridgeMocks.createChannel,
   getChannels: bridgeMocks.getChannels,
-  joinCommunity: vi.fn(),
+  joinOrRequestCommunity: bridgeMocks.joinOrRequestCommunity,
   searchCommunityDirectory: vi.fn(),
   requestCommunityAccess: vi.fn(),
 }))
@@ -45,6 +46,7 @@ describe('CreateCommunityModal', () => {
       }),
     )
     bridgeMocks.getChannels.mockReset().mockResolvedValue([])
+    bridgeMocks.joinOrRequestCommunity.mockReset()
   })
 
   afterEach(() => {
@@ -129,6 +131,39 @@ describe('CreateCommunityModal', () => {
     })
 
     expect(document.body.querySelector('[role="alert"]')).not.toBeNull()
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
+  })
+
+  it('keeps a private-link access request visible instead of claiming the user joined', async () => {
+    bridgeMocks.joinOrRequestCommunity.mockResolvedValueOnce({
+      status: 'knocked',
+      community: null,
+    })
+
+    await act(async () => {
+      root.render(
+        <CreateCommunityModal
+          isOpen
+          onClose={() => {}}
+          initialTab="join"
+          initialInvite="mesh://join?v=3&kind=matrix&room=!server:example.org&via=example.org"
+        />,
+      )
+    })
+    const join = Array.from(document.body.querySelectorAll('button'))
+      .find((button) => button.textContent === 'Join Community')
+    await act(async () => {
+      join?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(bridgeMocks.joinOrRequestCommunity).toHaveBeenCalledWith(
+      'mesh://join?v=3&kind=matrix&room=!server:example.org&via=example.org',
+    )
+    expect(document.body.querySelector('[role="status"]')?.textContent).toContain(
+      'Access requested',
+    )
     expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
   })
 })

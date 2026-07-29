@@ -221,10 +221,33 @@ export function ContextMenu({
   onOpenChange?: (open: boolean) => void
 }) {
   const triggerRef = useRef<HTMLSpanElement>(null)
+  const focusTargetRef = useRef<HTMLElement | null>(null)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const resolvedOpen = open ?? uncontrolledOpen
+  const previousOpen = useRef(resolvedOpen)
+  useLayoutEffect(() => {
+    if (previousOpen.current && !resolvedOpen) {
+      (focusTargetRef.current ?? triggerRef.current)?.focus()
+    }
+    previousOpen.current = resolvedOpen
+  }, [resolvedOpen])
 
   return (
-    <ContextMenuPrimitive.Root open={open} onOpenChange={onOpenChange}>
-      <ContextMenuPrimitive.Trigger ref={triggerRef} asChild disabled={disabled}>
+    <ContextMenuPrimitive.Root
+      open={resolvedOpen}
+      onOpenChange={(nextOpen) => {
+        if (open === undefined) setUncontrolledOpen(nextOpen)
+        onOpenChange?.(nextOpen)
+      }}
+    >
+      <ContextMenuPrimitive.Trigger
+        ref={triggerRef}
+        asChild
+        disabled={disabled}
+        onContextMenuCapture={(event) => {
+          focusTargetRef.current = event.currentTarget
+        }}
+      >
         {children}
       </ContextMenuPrimitive.Trigger>
       <ContextMenuPrimitive.Portal>
@@ -233,7 +256,10 @@ export function ContextMenu({
           collisionPadding={8}
           onCloseAutoFocus={(event) => {
             event.preventDefault()
-            triggerRef.current?.focus()
+            window.setTimeout(
+              () => (focusTargetRef.current ?? triggerRef.current)?.focus(),
+              0,
+            )
           }}
           className={clsx('z-dropdown min-w-40 p-1', overlaySurfaceClass)}
         >
@@ -279,15 +305,35 @@ export function Popover({
   const generatedId = useId()
   const titleId = `${generatedId}-title`
   const descriptionId = `${generatedId}-description`
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen ?? false)
+  const resolvedOpen = open ?? uncontrolledOpen
+  const previousOpen = useRef(resolvedOpen)
+  useLayoutEffect(() => {
+    if (previousOpen.current && !resolvedOpen) {
+      triggerRef.current?.focus()
+    }
+    previousOpen.current = resolvedOpen
+  }, [resolvedOpen])
   return (
-    <PopoverPrimitive.Root open={open} defaultOpen={defaultOpen} onOpenChange={onOpenChange}>
-      <PopoverPrimitive.Trigger asChild>{trigger}</PopoverPrimitive.Trigger>
+    <PopoverPrimitive.Root
+      open={resolvedOpen}
+      onOpenChange={(nextOpen) => {
+        if (open === undefined) setUncontrolledOpen(nextOpen)
+        onOpenChange?.(nextOpen)
+      }}
+    >
+      <PopoverPrimitive.Trigger ref={triggerRef} asChild>{trigger}</PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Content
           align={align}
           side={side}
           sideOffset={8}
           collisionPadding={8}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            window.setTimeout(() => triggerRef.current?.focus(), 0)
+          }}
           aria-labelledby={label ? titleId : undefined}
           aria-describedby={description ? descriptionId : undefined}
           className={clsx('z-popover w-72 p-4 text-content', overlaySurfaceClass, className)}

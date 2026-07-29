@@ -4,16 +4,17 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::backend::{
     BackendError, BackendKind, BackendStatus, CommunityAccessResult, CommunityAccessSettings,
     CommunityApplication, CommunityDirectoryEntry, CommunityMember, CommunityModerationResult,
-    CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest, MatrixDevice, MatrixLogin,
-    MatrixOidcStatus, MatrixProfile, MatrixRecoveryHealth, MatrixRoomNotificationMode,
-    MatrixRoomPins, MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyLease,
-    MatrixRtcMember, MatrixTransferObserver, MatrixTransferProgressCallback,
-    MatrixVerificationSession, ModerationAuditEntry, TypingUser, UserPreferences,
-    MATRIX_TRANSFER_PROGRESS_EVENT,
+    CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest, MatrixCommunityAdmission,
+    MatrixDevice, MatrixLogin, MatrixOidcStatus, MatrixPersonalDataExport, MatrixProfile,
+    MatrixRecoveryHealth, MatrixRoomNotificationMode, MatrixRoomPins, MatrixRtcJoinResult,
+    MatrixRtcMediaKey, MatrixRtcMediaKeyLease, MatrixRtcMember, MatrixTransferObserver,
+    MatrixTransferProgressCallback, MatrixVerificationSession, ModerationAuditEntry, TypingUser,
+    UserPreferences, MATRIX_TRANSFER_PROGRESS_EVENT,
 };
 use crate::state::AppState;
 use crate::types::{
@@ -260,6 +261,50 @@ pub async fn matrix_remove_local_account(state: State<'_, AppState>) -> Result<(
         .backend
         .backend()
         .remove_local_account()
+        .await
+        .map_err(map_error)
+}
+
+/// Export to a folder selected by the trusted native picker. The renderer
+/// never supplies or controls a filesystem path for this operation.
+#[tauri::command]
+pub async fn matrix_export_personal_data(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<MatrixPersonalDataExport>, CommandError> {
+    require_matrix(&state)?;
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.dialog().file().pick_folder(move |path| {
+        let _ = sender.send(path);
+    });
+    let selected = receiver
+        .await
+        .map_err(|_| CommandError::Other("Native folder picker closed unexpectedly".into()))?;
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
+    let destination_root = selected
+        .into_path()
+        .map_err(|_| CommandError::Validation("Choose a local export folder".into()))?;
+    state
+        .backend
+        .backend()
+        .export_personal_data(destination_root)
+        .await
+        .map(Some)
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_deactivate_account(
+    password: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .deactivate_account(password, true)
         .await
         .map_err(map_error)
 }
@@ -1273,6 +1318,48 @@ pub async fn matrix_invite_to_community(
 }
 
 #[tauri::command]
+pub async fn matrix_create_community_invite(
+    community_id: String,
+    state: State<'_, AppState>,
+) -> Result<String, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .create_community_invite(community_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_resolve_community_invite(
+    invite_url: String,
+    state: State<'_, AppState>,
+) -> Result<MatrixCommunityAdmission, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .resolve_community_invite(invite_url)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_claim_community_invite(
+    invite_url: String,
+    state: State<'_, AppState>,
+) -> Result<CommunityDto, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .claim_community_invite(invite_url)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
 pub async fn matrix_community_access_settings(
     community_id: String,
     state: State<'_, AppState>,
@@ -1322,13 +1409,14 @@ pub async fn matrix_search_community_directory(
 pub async fn matrix_knock_community(
     room_or_alias: String,
     reason: Option<String>,
+    via: Option<Vec<String>>,
     state: State<'_, AppState>,
 ) -> Result<CommunityAccessResult, CommandError> {
     require_matrix(&state)?;
     state
         .backend
         .backend()
-        .knock_community(room_or_alias, reason)
+        .knock_community(room_or_alias, reason, via.unwrap_or_default())
         .await
         .map_err(map_error)
 }
@@ -1367,13 +1455,14 @@ pub async fn matrix_respond_community_application(
 #[tauri::command]
 pub async fn matrix_join_community(
     room_or_alias: String,
+    via: Option<Vec<String>>,
     state: State<'_, AppState>,
 ) -> Result<CommunityDto, CommandError> {
     require_matrix(&state)?;
     state
         .backend
         .backend()
-        .join_community(room_or_alias)
+        .join_community(room_or_alias, via.unwrap_or_default())
         .await
         .map_err(map_error)
 }

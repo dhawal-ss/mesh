@@ -1,4 +1,5 @@
 use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::sync::Mutex;
@@ -37,9 +38,13 @@ impl RateLimitBucket {
     }
 }
 
+const STALE_ENTRY_AGE: Duration = Duration::from_secs(600);
+const REQUESTS_BETWEEN_SWEEPS: usize = 256;
+
 #[derive(Default)]
 pub struct RateLimitState {
     entries: Mutex<HashMap<String, VecDeque<Instant>>>,
+    requests_since_sweep: AtomicUsize,
 }
 
 impl RateLimitState {
@@ -54,6 +59,7 @@ impl RateLimitState {
         let key = format!("{}:{}:{}", bucket.key(), community_id, actor);
 
         let mut entries = self.entries.lock().await;
+        self.sweep_if_due(&mut entries, now);
         let queue = entries.entry(key).or_default();
         while queue.front().is_some_and(|timestamp| *timestamp < cutoff) {
             queue.pop_front();
@@ -84,6 +90,7 @@ impl RateLimitState {
         let key = format!("global:{}:{}", bucket.key(), actor);
 
         let mut entries = self.entries.lock().await;
+        self.sweep_if_due(&mut entries, now);
         let queue = entries.entry(key).or_default();
         while queue.front().is_some_and(|timestamp| *timestamp < cutoff) {
             queue.pop_front();
@@ -102,11 +109,64 @@ impl RateLimitState {
     pub async fn gc_stale_entries(&self) {
         let mut entries = self.entries.lock().await;
         let now = Instant::now();
-        let stale_threshold = Duration::from_secs(600); // 10 minutes
+        Self::retain_active_entries(&mut entries, now);
+        self.requests_since_sweep.store(0, Ordering::Relaxed);
+    }
+
+    fn sweep_if_due(&self, entries: &mut HashMap<String, VecDeque<Instant>>, now: Instant) {
+        let requests = self.requests_since_sweep.fetch_add(1, Ordering::Relaxed) + 1;
+        if requests < REQUESTS_BETWEEN_SWEEPS {
+            return;
+        }
+        self.requests_since_sweep.store(0, Ordering::Relaxed);
+        Self::retain_active_entries(entries, now);
+    }
+
+    fn retain_active_entries(entries: &mut HashMap<String, VecDeque<Instant>>, now: Instant) {
         entries.retain(|_key, queue| {
-            queue
-                .back()
-                .map_or(false, |last| now.duration_since(*last) < stale_threshold)
+            queue.back().is_some_and(|last| {
+                now.checked_duration_since(*last)
+                    .is_some_and(|age| age < STALE_ENTRY_AGE)
+            })
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn active_traffic_sweeps_stale_actor_keys_without_a_legacy_runtime_task() {
+        let state = RateLimitState::new();
+        let stale = Instant::now()
+            .checked_sub(STALE_ENTRY_AGE + Duration::from_secs(1))
+            .expect("test instant should support a ten minute offset");
+        {
+            let mut entries = state.entries.lock().await;
+            for index in 0..300 {
+                entries.insert(
+                    format!("message:community-{index}:actor-{index}"),
+                    VecDeque::from([stale]),
+                );
+            }
+        }
+        state
+            .requests_since_sweep
+            .store(REQUESTS_BETWEEN_SWEEPS - 1, Ordering::Relaxed);
+
+        assert!(
+            state
+                .allow(
+                    RateLimitBucket::Message,
+                    "current-community",
+                    "current-actor"
+                )
+                .await
+        );
+
+        let entries = state.entries.lock().await;
+        assert_eq!(entries.len(), 1);
+        assert!(entries.contains_key("message:current-community:current-actor"));
     }
 }

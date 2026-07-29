@@ -13,6 +13,8 @@ interface PresenceEntry {
   lastSeen?: string
 }
 
+const EMPTY_ONLINE_PEERS = new Set<string>()
+
 /**
  * Tracks online presence for members of the active community.
  * Subscribes to presence:update events from the Rust P2P layer.
@@ -26,7 +28,13 @@ export function usePresence() {
   // because it creates a new array reference on every call, causing infinite re-renders.
   const communityMembers = useCommunityMembers(activeCommunityId)
   const touchMember = useMembershipStore((s) => s.touchMember)
-  const [onlinePeers, setOnlinePeers] = useState<Set<string>>(new Set())
+  const [onlinePeerState, setOnlinePeerState] = useState<{
+    communityId: string | null
+    peers: Set<string>
+  }>(() => ({ communityId: activeCommunityId, peers: new Set() }))
+  const onlinePeers = onlinePeerState.communityId === activeCommunityId
+    ? onlinePeerState.peers
+    : EMPTY_ONLINE_PEERS
 
   // Derive active roster from raw state in useMemo (stable reference)
   const roster = useMemo(() => {
@@ -42,15 +50,17 @@ export function usePresence() {
     const unsub = bridge.onPresenceUpdate((data) => {
       if (data.communityId !== activeCommunityId) return
 
-      setOnlinePeers((prev) => {
-        const next = new Set(prev)
+      setOnlinePeerState((previous) => {
+        const next = previous.communityId === data.communityId
+          ? new Set(previous.peers)
+          : new Set<string>()
         if (data.status === 'offline') {
           next.delete(data.author)
         } else {
           next.add(data.author)
           touchMember(data.communityId, data.author)
         }
-        return next
+        return { communityId: data.communityId, peers: next }
       })
     })
 
@@ -58,10 +68,6 @@ export function usePresence() {
       unsub.then((fn) => fn())
     }
   }, [activeCommunityId, matrixMode, touchMember])
-
-  useEffect(() => {
-    setOnlinePeers(new Set())
-  }, [activeCommunityId])
 
   const members = useMemo<PresenceEntry[]>(() => {
     const byPublicKey = new Map<string, PresenceEntry>()

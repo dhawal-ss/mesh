@@ -20,6 +20,7 @@ if [ ! -f .env ]; then
   registration_secret="$(openssl rand -hex 32)"
   macaroon_secret="$(openssl rand -hex 32)"
   form_secret="$(openssl rand -hex 32)"
+  admission_signing_key="$(openssl rand -hex 32)"
 
   {
     printf '%s\n' \
@@ -28,6 +29,8 @@ if [ ! -f .env ]; then
       'MESH_RTC_HOST=rtc.mesh.dhawal.org' \
       'MESH_RTC_ENABLED=0' \
       'MESH_PUBLIC_ENABLED=0' \
+      "MESH_RUNTIME_UID=$(id -u)" \
+      "MESH_RUNTIME_GID=$(id -g)" \
       'SYNAPSE_CONTROL_BIND=127.0.0.1' \
       'SYNAPSE_CACHE_FACTOR=0.25' \
       'POSTGRES_USER=synapse' \
@@ -36,10 +39,59 @@ if [ ! -f .env ]; then
     printf 'REGISTRATION_SHARED_SECRET=%s\n' "$registration_secret"
     printf 'MACAROON_SECRET_KEY=%s\n' "$macaroon_secret"
     printf 'FORM_SECRET=%s\n' "$form_secret"
+    printf 'MESH_ADMISSION_SIGNING_KEY=%s\n' "$admission_signing_key"
+    printf '%s\n' 'MESH_ADMISSION_ADMIN_ACCESS_TOKEN=REPLACE_DURING_FIRST_START'
     printf 'ACME_EMAIL=%s\n' 'admin@dhawal.org'
   } > .env
   chmod 600 .env
   echo "Created untracked operator secrets in $script_dir/.env"
+fi
+
+# Bind-mounted recovery files must be readable by the same numeric identity
+# that Synapse uses inside its container. Normalize these host-specific values
+# on every setup, including after a restore onto a different Mac.
+runtime_uid="$(id -u)"
+runtime_gid="$(id -g)"
+next_env="$(mktemp "$script_dir/.env.runtime.XXXXXX")"
+awk \
+  -v runtime_uid="$runtime_uid" \
+  -v runtime_gid="$runtime_gid" \
+  '
+  /^MESH_RUNTIME_UID=/ {
+    if (!saw_uid) print "MESH_RUNTIME_UID=" runtime_uid
+    saw_uid = 1
+    next
+  }
+  /^MESH_RUNTIME_GID=/ {
+    if (!saw_gid) print "MESH_RUNTIME_GID=" runtime_gid
+    saw_gid = 1
+    next
+  }
+  { print }
+  END {
+    if (!saw_uid) print "MESH_RUNTIME_UID=" runtime_uid
+    if (!saw_gid) print "MESH_RUNTIME_GID=" runtime_gid
+  }
+  ' .env > "$next_env"
+chmod 600 "$next_env"
+mv "$next_env" .env
+
+admission_signing_key="$(
+  sed -n 's/^MESH_ADMISSION_SIGNING_KEY=//p' .env | tail -n 1
+)"
+case "$admission_signing_key" in
+  ""|REPLACE_*)
+    admission_signing_key="$(openssl rand -hex 32)"
+    next_env="$(mktemp "$script_dir/.env.admission.XXXXXX")"
+    grep -v '^MESH_ADMISSION_SIGNING_KEY=' .env > "$next_env" || true
+    printf 'MESH_ADMISSION_SIGNING_KEY=%s\n' "$admission_signing_key" >> "$next_env"
+    chmod 600 "$next_env"
+    mv "$next_env" .env
+    ;;
+esac
+if ! grep -q '^MESH_ADMISSION_ADMIN_ACCESS_TOKEN=' .env; then
+  printf '%s\n' 'MESH_ADMISSION_ADMIN_ACCESS_TOKEN=REPLACE_DURING_FIRST_START' >> .env
+  chmod 600 .env
 fi
 
 set -a
@@ -50,12 +102,15 @@ set +a
 : "${MESH_SERVER_NAME:?MESH_SERVER_NAME is required}"
 : "${MESH_HOMESERVER_HOST:?MESH_HOMESERVER_HOST is required}"
 : "${MESH_RTC_ENABLED:=0}"
+: "${MESH_RUNTIME_UID:?MESH_RUNTIME_UID is required}"
+: "${MESH_RUNTIME_GID:?MESH_RUNTIME_GID is required}"
 : "${POSTGRES_USER:?POSTGRES_USER is required}"
 : "${POSTGRES_DB:?POSTGRES_DB is required}"
 : "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
 : "${REGISTRATION_SHARED_SECRET:?REGISTRATION_SHARED_SECRET is required}"
 : "${MACAROON_SECRET_KEY:?MACAROON_SECRET_KEY is required}"
 : "${FORM_SECRET:?FORM_SECRET is required}"
+: "${MESH_ADMISSION_SIGNING_KEY:?MESH_ADMISSION_SIGNING_KEY is required}"
 
 if [ ! -f runtime/synapse/homeserver.yaml ]; then
   docker run --rm \
@@ -69,6 +124,7 @@ fi
 
 docker run --rm \
   --entrypoint python \
+  --user "$MESH_RUNTIME_UID:$MESH_RUNTIME_GID" \
   -e MESH_SERVER_NAME \
   -e MESH_HOMESERVER_HOST \
   -e POSTGRES_USER \
@@ -86,11 +142,11 @@ mkdir -p runtime/well-known
 if [ "$MESH_RTC_ENABLED" = "1" ]; then
   : "${MESH_RTC_HOST:?MESH_RTC_HOST is required when MESH_RTC_ENABLED=1}"
   printf '%s\n' \
-    "{\"m.homeserver\":{\"base_url\":\"https://$MESH_HOMESERVER_HOST\"},\"org.matrix.msc4143.rtc_foci\":[{\"type\":\"livekit\",\"livekit_service_url\":\"https://$MESH_RTC_HOST/livekit/jwt\"}]}" \
+    "{\"m.homeserver\":{\"base_url\":\"https://$MESH_HOMESERVER_HOST\"},\"org.mesh.admission\":{\"service_url\":\"https://$MESH_SERVER_NAME/_mesh/admission\"},\"org.matrix.msc4143.rtc_foci\":[{\"type\":\"livekit\",\"livekit_service_url\":\"https://$MESH_RTC_HOST/livekit/jwt\"}]}" \
     > runtime/well-known/matrix-client.json
 else
   printf '%s\n' \
-    "{\"m.homeserver\":{\"base_url\":\"https://$MESH_HOMESERVER_HOST\"}}" \
+    "{\"m.homeserver\":{\"base_url\":\"https://$MESH_HOMESERVER_HOST\"},\"org.mesh.admission\":{\"service_url\":\"https://$MESH_SERVER_NAME/_mesh/admission\"}}" \
     > runtime/well-known/matrix-client.json
 fi
 chmod 644 runtime/well-known/matrix-client.json

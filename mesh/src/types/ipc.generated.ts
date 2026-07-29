@@ -18,6 +18,8 @@ export type BackendStatus = { kind: BackendKind, capabilities: BackendCapabiliti
  */
 syncRunning: boolean, durableHistory: boolean, endToEndEncryption: boolean, warnings: Array<string>, };
 
+export type MatrixPersonalDataExport = { path: string, exportedAt: string, roomCount: number, messageCount: number, mediaFileCount: number, warnings: Array<string>, };
+
 export type MatrixNotification = { roomId: string, eventId: string, sender: string, displayName: string, preview: string, isMention: boolean, isDm: boolean, avatarUrl: string | null, };
 
 export type MatrixUnreadUpdate = { roomId: string, unreadMessages: number, unreadMentions: number, };
@@ -57,6 +59,8 @@ export type ModerationRoomOutcome = { roomId: string, roomName: string, succeede
 export type ModerationAuditEntry = { id: string, actorUserId: string, actorDisplayName: string, targetUserId: string, targetDisplayName: string, action: string, reason: string | null, occurredAt: string, roomOutcomes: Array<ModerationRoomOutcome>, };
 
 export type CommunityModerationResult = { audit: ModerationAuditEntry, auditRecorded: boolean, };
+
+export type MatrixCommunityAdmission = { registrationToken?: string | null, roomId: string, service: string, via: Array<string>, expiresAt?: number | null, };
 
 export type IdentityDto = { publicKey: string, displayName: string, avatarColor: string, };
 

@@ -46,7 +46,29 @@ pub fn run() {
 
     tracing::info!("Starting Mesh...");
 
-    let builder = tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    {
+        // Single-instance must be registered before deep-link so an invitation
+        // opened while Mesh is running is delivered to this process.
+        builder = builder.plugin(tauri_plugin_single_instance::init(
+            |app, _arguments, _working_directory| {
+                if let Some(window) = app.get_webview_window("main") {
+                    if let Err(error) = window.unminimize() {
+                        tracing::warn!("Could not restore Mesh for an invitation: {error}");
+                    }
+                    if let Err(error) = window.show() {
+                        tracing::warn!("Could not show Mesh for an invitation: {error}");
+                    }
+                    if let Err(error) = window.set_focus() {
+                        tracing::warn!("Could not focus Mesh for an invitation: {error}");
+                    }
+                }
+            },
+        ));
+    }
+    let builder = builder
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .on_webview_event(|webview, event| {
@@ -93,6 +115,12 @@ pub fn run() {
         });
     let builder = builder.plugin(tauri_plugin_notification::init());
     let builder = builder.setup(|app| {
+        #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
+        {
+            use tauri_plugin_deep_link::DeepLinkExt;
+            app.deep_link().register_all()?;
+        }
+
         // Initialize SQLite database
         let app_data_dir = app
             .path()
@@ -284,6 +312,8 @@ pub fn run() {
         commands::backend::matrix_devices,
         commands::backend::matrix_revoke_device,
         commands::backend::matrix_remove_local_account,
+        commands::backend::matrix_export_personal_data,
+        commands::backend::matrix_deactivate_account,
         commands::backend::matrix_accounts,
         commands::backend::matrix_get_profile,
         commands::backend::matrix_update_profile_display_name,
@@ -346,6 +376,9 @@ pub fn run() {
         commands::backend::matrix_wait_for_room_update,
         commands::backend::matrix_list_members,
         commands::backend::matrix_invite_to_community,
+        commands::backend::matrix_create_community_invite,
+        commands::backend::matrix_resolve_community_invite,
+        commands::backend::matrix_claim_community_invite,
         commands::backend::matrix_community_access_settings,
         commands::backend::matrix_update_community_access,
         commands::backend::matrix_search_community_directory,
@@ -390,6 +423,8 @@ pub fn run() {
         commands::backend::matrix_devices,
         commands::backend::matrix_revoke_device,
         commands::backend::matrix_remove_local_account,
+        commands::backend::matrix_export_personal_data,
+        commands::backend::matrix_deactivate_account,
         commands::backend::matrix_accounts,
         commands::backend::matrix_get_profile,
         commands::backend::matrix_update_profile_display_name,
@@ -452,6 +487,9 @@ pub fn run() {
         commands::backend::matrix_wait_for_room_update,
         commands::backend::matrix_list_members,
         commands::backend::matrix_invite_to_community,
+        commands::backend::matrix_create_community_invite,
+        commands::backend::matrix_resolve_community_invite,
+        commands::backend::matrix_claim_community_invite,
         commands::backend::matrix_community_access_settings,
         commands::backend::matrix_update_community_access,
         commands::backend::matrix_search_community_directory,

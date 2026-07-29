@@ -23,9 +23,12 @@
 		respond `{"m.server":"{$MESH_HOMESERVER_HOST}:443"}` 200
 	}
 
-	handle /invite* {
-		header Content-Type "text/plain; charset=utf-8"
-		respond "Open Mesh, choose Create account, and paste this full invitation link into Invitation code." 200
+	handle_path /_mesh/admission/* {
+		reverse_proxy admission:8090
+	}
+
+	handle /invite/* {
+		reverse_proxy admission:8090
 	}
 
 	handle {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import clsx from 'clsx'
 import { motionDurations, transitions } from '../../lib/motion'
@@ -31,11 +31,16 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
   const [attempt, setAttempt] = useState(0)
   const [phase, setPhase] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
   const [detail, setDetail] = useState('Preparing a local identity')
+  const generateIdentityRef = useRef(onGenerateIdentity)
 
   const steps = useMemo(
     () => ['Creating local keys', 'Locking identity to this device', 'Finishing'],
     []
   )
+
+  useEffect(() => {
+    generateIdentityRef.current = onGenerateIdentity
+  }, [onGenerateIdentity])
 
   useEffect(() => {
     let alive = true
@@ -52,7 +57,7 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
           return
         }
 
-        const work = onGenerateIdentity?.() ?? Promise.resolve()
+        const work = generateIdentityRef.current?.() ?? Promise.resolve()
         await Promise.all([work, wait(WAIT_MS)])
         if (!alive) return
         setDetail('Device key created')

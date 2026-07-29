@@ -21,12 +21,16 @@ test.afterEach(async ({ page }) => {
   expect(runtimeErrors.get(page) ?? [], 'authenticated shell emitted runtime errors').toEqual([])
 })
 
-async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
-  await page.addInitScript(() => {
+async function installAuthenticatedMatrixMock(
+  page: Page,
+  currentDeepLinks: string[] | null = null,
+): Promise<void> {
+  await page.addInitScript((deepLinks) => {
     const calls: IpcCall[] = []
     const callbacks = new Map<number, (...args: unknown[]) => void>()
     let nextCallbackId = 1
     let nextListenerId = 1
+    let invitationJoined = false
 
     const community = {
       id: '!mesh-e2e:mesh.test',
@@ -43,6 +47,14 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
       memberCount: 3,
       role: 'member',
       joinedAt: '2026-07-24T00:00:00.000Z',
+    }
+    const invitedCommunity = {
+      id: '!invited:mesh.test',
+      name: 'Invited Mesh Community',
+      description: 'Joined from the cold-start invitation',
+      memberCount: 4,
+      role: 'member',
+      joinedAt: '2026-07-29T00:00:00.000Z',
     }
     const channels = [
       {
@@ -156,7 +168,20 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
             warnings: [],
           }
         case 'matrix_list_communities':
-          return [community, secondCommunity]
+          return invitationJoined
+            ? [community, secondCommunity, invitedCommunity]
+            : [community, secondCommunity]
+        case 'matrix_join_community':
+          if (
+            args.roomOrAlias !== invitedCommunity.id
+            || !Array.isArray(args.via)
+            || args.via.length !== 1
+            || args.via[0] !== 'mesh.test'
+          ) {
+            throw new Error('Cold-start invitation was not forwarded to Matrix correctly')
+          }
+          invitationJoined = true
+          return invitedCommunity
         case 'matrix_room_is_encrypted':
           return true
         case 'matrix_devices':
@@ -214,7 +239,17 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
           matrixProfile.displayName = String(args.displayName)
           return { ...matrixProfile }
         case 'matrix_list_channels':
-          return args.communityId === secondCommunity.id
+          return args.communityId === invitedCommunity.id
+            ? [
+                {
+                  id: '!invited-general:mesh.test',
+                  communityId: invitedCommunity.id,
+                  name: 'welcome',
+                  channelType: 'text',
+                  unreadCount: 0,
+                },
+              ]
+            : args.communityId === secondCommunity.id
             ? secondCommunityChannels
             : channels
         case 'matrix_list_members':
@@ -287,6 +322,8 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
         case 'matrix_clear_composer_draft':
         case 'plugin:event|unlisten':
           return null
+        case 'plugin:deep-link|get_current':
+          return deepLinks
         case 'matrix_wait_for_room_update':
           // The real command long-polls the SDK room-update stream. Keeping
           // this promise pending models that boundary without a CPU-heavy loop.
@@ -343,18 +380,23 @@ async function installAuthenticatedMatrixMock(page: Page): Promise<void> {
     }).__TAURI_EVENT_PLUGIN_INTERNALS__ = {
       unregisterListener: () => {},
     }
-  })
+  }, currentDeepLinks)
 }
 
-async function openAuthenticatedShell(page: Page): Promise<void> {
-  await installAuthenticatedMatrixMock(page)
+async function openAuthenticatedShell(
+  page: Page,
+  currentDeepLinks: string[] | null = null,
+): Promise<void> {
+  await installAuthenticatedMatrixMock(page, currentDeepLinks)
   await page.goto('/')
   await expect(
     page.getByRole('navigation', { name: 'Communities and direct messages' }),
   ).toBeVisible({ timeout: 10_000 })
-  await expect(page.getByRole('log', { name: 'Messages in #general' })).toBeVisible({
-    timeout: 10_000,
-  })
+  if (!currentDeepLinks?.length) {
+    await expect(page.getByRole('log', { name: 'Messages in #general' })).toBeVisible({
+      timeout: 10_000,
+    })
+  }
 }
 
 function ipcCalls(page: Page): Promise<IpcCall[]> {
@@ -385,6 +427,31 @@ test.describe('authenticated desktop shell', () => {
     await expect(page.getByText('@alice:mesh.test', { exact: true })).toHaveCount(0)
     await expect(page.getByText('Alice Mesh', { exact: true })).toBeVisible()
     await expect(page.getByText('Anonymous', { exact: true })).toHaveCount(0)
+  })
+
+  test('joins a cold-start Mesh invitation through Matrix and opens the community', async ({ page }) => {
+    const invite =
+      'mesh://join?v=3&kind=matrix&room=!invited:mesh.test&via=mesh.test&service=https%3A%2F%2Fmatrix.mesh.test'
+    await openAuthenticatedShell(page, [invite])
+
+    await expect.poll(async () => (
+      (await ipcCalls(page)).filter((call) => call.command === 'matrix_join_community')
+    )).toEqual([{
+      command: 'matrix_join_community',
+      args: {
+        roomOrAlias: '!invited:mesh.test',
+        via: ['mesh.test'],
+      },
+    }])
+    await expect(
+      page.getByRole('button', { name: 'Invited Mesh Community', exact: true }),
+    ).toHaveAttribute('aria-current', 'true')
+    await expect(page.getByRole('button', { name: 'Text room: welcome' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    await expect(page.getByRole('dialog', { name: 'Join a community' })).toHaveCount(0)
+
   })
 
   test('@a11y has no automated WCAG A/AA violations in the shell and settings', async ({ page }) => {

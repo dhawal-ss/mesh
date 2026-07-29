@@ -140,6 +140,37 @@ describe('durable Matrix queue reconciliation', () => {
   })
 })
 
+describe('channel cache lifecycle', () => {
+  it('removes every message and delivery cache when a channel is deleted', () => {
+    const store = useMessageStore.getState()
+    store.acceptQueuedMessage(msg({
+      id: 'txn-deleted',
+      channelId: 'ch-1',
+      transactionId: 'txn-deleted',
+      deliveryStatus: 'pending',
+    }))
+    useMessageStore.setState((state) => ({
+      loadingOlder: { ...state.loadingOlder, 'ch-1': true },
+      hasMoreOlder: { ...state.hasMoreOlder, 'ch-1': true },
+      browsingOlder: { ...state.browsingOlder, 'ch-1': true },
+      newerGapCount: { ...state.newerGapCount, 'ch-1': 4 },
+    }))
+
+    store.clearChannel('ch-1')
+
+    const next = useMessageStore.getState()
+    expect(next.messageEntities['ch-1']).toBeUndefined()
+    expect(next.messageOrder['ch-1']).toBeUndefined()
+    expect(next.messages['ch-1']).toBeUndefined()
+    expect(next.loadingOlder['ch-1']).toBeUndefined()
+    expect(next.hasMoreOlder['ch-1']).toBeUndefined()
+    expect(next.browsingOlder['ch-1']).toBeUndefined()
+    expect(next.newerGapCount['ch-1']).toBeUndefined()
+    expect(next.matrixQueueStates['ch-1']).toBeUndefined()
+    expect(next.channelRecency).not.toContain('ch-1')
+  })
+})
+
 // ─── mergeMessages (tested indirectly through setMessages) ───
 
 describe('mergeMessages via setMessages', () => {

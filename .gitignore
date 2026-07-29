@@ -5,6 +5,8 @@ node_modules/
 dist/
 dist-ssr/
 target/
+__pycache__/
+*.py[cod]
 
 # Logs & temp output
 *.log

@@ -634,6 +634,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         .knock_community(
             community_alias.clone(),
             Some("Live federation application".into()),
+            Vec::new(),
         )
         .await
         .unwrap();
@@ -666,7 +667,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
     bob.sync_once().await.unwrap();
 
     let joined = bob
-        .knock_community(community_alias.clone(), None)
+        .knock_community(community_alias.clone(), None, Vec::new())
         .await
         .unwrap();
     checkpoint!("directory discovery, knock approval, and coordinated join completed");

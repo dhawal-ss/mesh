@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
@@ -45,15 +45,14 @@ export function LegacyMigrationPanel({
     return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name))
   }, [summaries])
 
-  const selectedLegacyCommunity = archivedCommunities.find(
-    (community) => community.id === legacyCommunityId,
-  )
   const targetChannels = channels.filter((channel) => channel.communityId === communityId)
 
-  useEffect(() => {
-    if (!selectedLegacyCommunity) return
+  const selectLegacyCommunity = (
+    selected: LegacyArchiveSummary['communities'][number] | undefined,
+  ) => {
+    setLegacyCommunityId(selected?.id ?? '')
     const inferred: Record<string, string> = {}
-    for (const legacyChannel of selectedLegacyCommunity.channels) {
+    for (const legacyChannel of selected?.channels ?? []) {
       const matches = targetChannels.filter(
         (channel) => channel.name.toLowerCase() === legacyChannel.name.toLowerCase(),
       )
@@ -63,7 +62,10 @@ export function LegacyMigrationPanel({
     setResolutions({})
     setReport(null)
     setApprovalPhrase('')
-  }, [legacyCommunityId]) // Target channels are stable while this settings panel is open.
+  }
+  const selectedLegacyCommunity = archivedCommunities.find(
+    (community) => community.id === legacyCommunityId,
+  )
 
   if (!canManage) return null
 
@@ -94,10 +96,7 @@ export function LegacyMigrationPanel({
       setArchivePaths(paths)
       setSummaries(inspected)
       const firstCommunity = inspected.flatMap((summary) => summary.communities)[0]
-      setLegacyCommunityId(firstCommunity?.id ?? '')
-      setReport(null)
-      setResolutions({})
-      setApprovalPhrase('')
+      selectLegacyCommunity(firstCommunity)
       setStatus(`Loaded ${inspected.length} independently hashed peer archive${inspected.length === 1 ? '' : 's'}.`)
     } catch (cause) {
       console.error('Could not inspect the selected archives:', cause)
@@ -219,7 +218,9 @@ export function LegacyMigrationPanel({
                 </label>
                 <select
                   value={legacyCommunityId}
-                  onChange={(event) => setLegacyCommunityId(event.target.value)}
+                  onChange={(event) => selectLegacyCommunity(
+                    archivedCommunities.find((community) => community.id === event.target.value),
+                  )}
                   className="w-full rounded-control border border-border bg-surface-sunken px-3 py-2.5 text-sm text-primary focus:border-accent focus:outline-none"
                 >
                   {archivedCommunities.map((community) => (

@@ -670,6 +670,20 @@ pub struct MatrixAccount {
     pub current: bool,
 }
 
+/// Summary of a user-initiated personal-data export written to a folder chosen
+/// through the trusted native directory picker.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixPersonalDataExport {
+    pub path: String,
+    pub exported_at: String,
+    pub room_count: u32,
+    #[ts(type = "number")]
+    pub message_count: u64,
+    pub media_file_count: u32,
+    pub warnings: Vec<String>,
+}
+
 /// Public profile metadata owned by the authenticated Matrix account.
 ///
 /// `avatar_url` is an MXC URI. Matrix profile avatars are not end-to-end
@@ -814,6 +828,19 @@ pub struct CommunityApplication {
 pub struct CommunityAccessResult {
     pub status: String,
     pub community: Option<CommunityDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixCommunityAdmission {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registration_token: Option<String>,
+    pub room_id: String,
+    pub service: String,
+    pub via: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "number | null")]
+    pub expires_at: Option<u64>,
 }
 
 /// A server-scoped custom emoji published through a room image pack.
@@ -1074,6 +1101,15 @@ pub trait MeshBackend: Send + Sync {
     }
     async fn remove_local_account(&self) -> BackendResult<()> {
         Err(BackendError::Unsupported("local Matrix account removal"))
+    }
+    async fn export_personal_data(
+        &self,
+        _destination_root: PathBuf,
+    ) -> BackendResult<MatrixPersonalDataExport> {
+        Err(BackendError::Unsupported("personal data export"))
+    }
+    async fn deactivate_account(&self, _password: String, _erase_data: bool) -> BackendResult<()> {
+        Err(BackendError::Unsupported("Matrix account deactivation"))
     }
     async fn list_accounts(&self) -> BackendResult<Vec<MatrixAccount>> {
         Err(BackendError::Unsupported("saved Matrix accounts"))
@@ -1422,6 +1458,22 @@ pub trait MeshBackend: Send + Sync {
     ) -> BackendResult<()> {
         Err(BackendError::Unsupported("community invitations"))
     }
+    async fn create_community_invite(&self, _community_id: String) -> BackendResult<String> {
+        Err(BackendError::Unsupported("community invite links"))
+    }
+    async fn resolve_community_invite(
+        &self,
+        _invite_url: String,
+    ) -> BackendResult<MatrixCommunityAdmission> {
+        Err(BackendError::Unsupported(
+            "managed community invitation resolution",
+        ))
+    }
+    async fn claim_community_invite(&self, _invite_url: String) -> BackendResult<CommunityDto> {
+        Err(BackendError::Unsupported(
+            "managed community invitation admission",
+        ))
+    }
     async fn community_access_settings(
         &self,
         _community_id: String,
@@ -1448,6 +1500,7 @@ pub trait MeshBackend: Send + Sync {
         &self,
         _room_or_alias: String,
         _reason: Option<String>,
+        _via: Vec<String>,
     ) -> BackendResult<CommunityAccessResult> {
         Err(BackendError::Unsupported("community knock requests"))
     }
@@ -1466,7 +1519,11 @@ pub trait MeshBackend: Send + Sync {
     ) -> BackendResult<()> {
         Err(BackendError::Unsupported("community applications"))
     }
-    async fn join_community(&self, _room_or_alias: String) -> BackendResult<CommunityDto> {
+    async fn join_community(
+        &self,
+        _room_or_alias: String,
+        _via: Vec<String>,
+    ) -> BackendResult<CommunityDto> {
         Err(BackendError::Unsupported("community join"))
     }
     async fn leave_community(&self, _community_id: String) -> BackendResult<()> {

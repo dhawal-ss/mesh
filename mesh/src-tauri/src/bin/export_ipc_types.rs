@@ -2,12 +2,13 @@ use std::{fs, path::PathBuf};
 
 use mesh_lib::backend::{
     BackendCapabilities, BackendKind, BackendStatus, CommunityModerationResult, CustomEmoji,
-    MatrixNotification, MatrixQueuedMessageState, MatrixQueuedMessageUpdate,
-    MatrixRoomNotificationMode, MatrixRoomPins, MatrixRoomPinsUpdate, MatrixRtcJoinResult,
-    MatrixRtcMediaKey, MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause,
-    MatrixRtcMember, MatrixRtcMembershipUpdate, MatrixUnreadUpdate, ModerationAuditEntry,
-    ModerationRoomOutcome, NotificationPresentationContext, UserPreferences, VoiceProvider,
-    VoiceServiceAvailability, VoiceServiceStatus,
+    MatrixCommunityAdmission, MatrixNotification, MatrixPersonalDataExport,
+    MatrixQueuedMessageState, MatrixQueuedMessageUpdate, MatrixRoomNotificationMode,
+    MatrixRoomPins, MatrixRoomPinsUpdate, MatrixRtcJoinResult, MatrixRtcMediaKey,
+    MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember,
+    MatrixRtcMembershipUpdate, MatrixUnreadUpdate, ModerationAuditEntry, ModerationRoomOutcome,
+    NotificationPresentationContext, UserPreferences, VoiceProvider, VoiceServiceAvailability,
+    VoiceServiceStatus,
 };
 use mesh_lib::types::{
     community::{ChannelDto, CommunityDto},
@@ -40,6 +41,7 @@ fn generated_contract() -> String {
     output.push_str(&declaration::<VoiceServiceStatus>());
     output.push_str(&declaration::<BackendCapabilities>());
     output.push_str(&declaration::<BackendStatus>());
+    output.push_str(&declaration::<MatrixPersonalDataExport>());
     output.push_str(&declaration::<MatrixNotification>());
     output.push_str(&declaration::<MatrixUnreadUpdate>());
     output.push_str(&declaration::<MatrixQueuedMessageState>());
@@ -60,6 +62,7 @@ fn generated_contract() -> String {
     output.push_str(&declaration::<ModerationRoomOutcome>());
     output.push_str(&declaration::<ModerationAuditEntry>());
     output.push_str(&declaration::<CommunityModerationResult>());
+    output.push_str(&declaration::<MatrixCommunityAdmission>());
     output.push_str(&declaration::<IdentityDto>());
     output.push_str(&declaration::<CommunityDto>());
     output.push_str(&declaration::<ChannelDto>());

@@ -36,15 +36,17 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
 
   useEffect(() => {
     let alive = true
-    setFailure(null)
-    setIsDone(false)
-    setState({
-      phase: 'connecting',
-      label: backendKind === 'matrix' ? 'Connecting to Mesh' : 'Finding nearby peers',
-      progress: 24,
-    })
 
     const run = async () => {
+      await Promise.resolve()
+      if (!alive) return
+      setFailure(null)
+      setIsDone(false)
+      setState({
+        phase: 'connecting',
+        label: backendKind === 'matrix' ? 'Connecting to Mesh' : 'Finding nearby peers',
+        progress: 24,
+      })
       try {
         if (onBootstrap) {
           await onBootstrap((nextState) => {
@@ -78,7 +80,7 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
     return () => {
       alive = false
     }
-  }, [attempt, onBootstrap, timeline])
+  }, [attempt, backendKind, onBootstrap, timeline])
 
   const handleContinue = useCallback(() => {
     if (isDone && !failure) {
