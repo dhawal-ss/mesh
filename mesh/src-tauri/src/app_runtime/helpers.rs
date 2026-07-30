@@ -42,6 +42,7 @@ pub fn signed_file_announcement_to_message(
         transaction_id: None,
         client_request_id: None,
         delivery_status: None,
+        undecryptable: None,
     })
 }
 

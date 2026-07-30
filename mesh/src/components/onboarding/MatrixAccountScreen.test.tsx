@@ -1,12 +1,14 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_MESH_SERVICE, MatrixAccountScreen } from './MatrixAccountScreen'
+import { MatrixAccountScreen } from './MatrixAccountScreen'
 import * as bridge from '../../lib/bridge'
+import type { MatrixCommunityAdmission, PendingInvitationMetadata } from '../../types/ipc'
 
 vi.mock('../../lib/bridge', () => ({
   isTauriRuntime: vi.fn(() => false),
   matrixAccounts: vi.fn(async () => []),
+  matrixServiceCapabilities: vi.fn(),
   matrixOidcStatus: vi.fn(),
   matrixCancelLogin: vi.fn(async () => {}),
   resolveCommunityInvite: vi.fn(),
@@ -21,7 +23,6 @@ describe('MatrixAccountScreen', () => {
     vi.useRealTimers()
     vi.mocked(bridge.isTauriRuntime).mockReturnValue(false)
     vi.mocked(bridge.matrixAccounts).mockResolvedValue([])
-    vi.mocked(bridge.resolveCommunityInvite).mockReset()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -33,223 +34,264 @@ describe('MatrixAccountScreen', () => {
     vi.useRealTimers()
   })
 
-  it('opens on a zero-jargon account creation form', async () => {
+  it('requires an explicit account-service choice', async () => {
     await renderScreen()
 
-    expect(container.textContent).toContain('Create your account')
-    expect(container.textContent).toContain('No email needed.')
-    expect(findButton('Create account').disabled).toBe(true)
-    expect(findButton('Sign in')).toBeTruthy()
-    expect(container.querySelector('input[name="username"]')?.getAttribute('placeholder')).toBe('ashvin')
-    expect(container.querySelectorAll('input[autocomplete="new-password"]')).toHaveLength(2)
-    expect(container.querySelector('input[name="invitation"]')).toBeTruthy()
-    expect(container.textContent).not.toContain('Matrix')
-    expect(container.textContent).not.toContain('Service address')
-    expect(container.textContent).not.toMatch(/@[a-z0-9._-]+:/i)
+    expect(container.textContent).toContain('Choose your account service')
+    expect(container.textContent).toContain('Matrix.org')
+    expect(container.textContent).toContain('independently')
+    expect(findButton('Choose Matrix.org')).toBeTruthy()
+    expect(findButton('More public services')).toBeTruthy()
+    expect(findButton('Use another service')).toBeTruthy()
+    expect(container.querySelector('form')).toBeNull()
   })
 
-  it('checks username availability only after a 300ms debounce', async () => {
-    vi.useFakeTimers()
-    const checkUsername = vi.fn(async () => true)
-    await renderScreen({ onMatrixCheckUsernameAvailable: checkUsername })
+  it('shows only the reviewed public-service catalog and its disclosures', async () => {
+    await renderScreen()
 
-    await act(async () => {
-      setInputValue(findInput('username'), 'Ashvin_')
-    })
-    expect(checkUsername).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Checking availability')
+    await act(async () => findButton('More public services').click())
 
-    await act(async () => {
-      vi.advanceTimersByTime(299)
-      await Promise.resolve()
-    })
-    expect(checkUsername).not.toHaveBeenCalled()
-
-    await act(async () => {
-      vi.advanceTimersByTime(1)
-      await Promise.resolve()
-    })
-    expect(checkUsername).toHaveBeenCalledOnce()
-    expect(checkUsername).toHaveBeenCalledWith('ashvin_')
-    expect(container.textContent).toContain('ashvin_ is available')
+    expect(container.textContent).toContain('manually reviewed')
+    expect(container.textContent).toContain('tchncs.de')
+    expect(container.textContent).toContain('quassel.io')
+    expect(findLink('Terms').getAttribute('href')).toMatch(/^https:\/\//)
+    expect(container.textContent).not.toContain('server directory')
   })
 
-  it('requires an available username, strong matching passwords, and an invitation', async () => {
-    vi.useFakeTimers()
-    const register = vi.fn(async () => {})
-    const onNext = vi.fn()
-    await renderScreen({
-      onMatrixCheckUsernameAvailable: vi.fn(async () => true),
-      onMatrixRegisterAccount: register,
-      onNext,
-    })
-
-    await act(async () => {
-      setInputValue(findInput('username'), 'NewFriend')
-      vi.advanceTimersByTime(300)
-      await Promise.resolve()
-      setInputValue(findInput('password'), 'correct horse battery staple')
-      setInputValue(findInput('password-confirmation'), 'not the same')
-      setInputValue(
-        findInput('invitation'),
-        'https://mesh.dhawal.org/invite?registration_token=aB3xK9',
-      )
-    })
-    expect(container.textContent).toContain('Strong password')
-    expect(container.textContent).toContain('Passwords do not match')
-    expect(findButton('Create account').disabled).toBe(true)
-
-    await act(async () => {
-      setInputValue(findInput('password-confirmation'), 'correct horse battery staple')
-    })
-    expect(findButton('Create account').disabled).toBe(false)
-
-    await act(async () => {
-      submitForm()
-      await Promise.resolve()
-    })
-    expect(register).toHaveBeenCalledWith(
-      'newfriend',
-      'correct horse battery staple',
-      'aB3xK9',
-    )
-    expect(onNext).toHaveBeenCalledWith('registered')
-  })
-
-  it('resolves an initial managed invitation and uses its bounded registration admission', async () => {
-    vi.useFakeTimers()
-    vi.mocked(bridge.isTauriRuntime).mockReturnValue(true)
-    vi.mocked(bridge.resolveCommunityInvite).mockResolvedValue({
-      registrationToken: 'derived-registration-token',
-      roomId: '!friends:mesh.test',
-      service: 'https://managed.mesh.test',
-      via: ['mesh.test'],
-      expiresAt: 1_785_283_200_000,
-    })
-    const register = vi.fn(async () => {})
-    const link =
-      'https://mesh.test/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789'
-    await renderScreen({
-      initialInvitation: link,
-      onMatrixCheckUsernameAvailable: vi.fn(async () => true),
-      onMatrixRegisterAccount: register,
-    })
-
-    await act(async () => {
-      await Promise.resolve()
-      setInputValue(findInput('username'), 'NewFriend')
-      vi.advanceTimersByTime(300)
-      await Promise.resolve()
-      setInputValue(findInput('password'), 'correct horse battery staple')
-      setInputValue(findInput('password-confirmation'), 'correct horse battery staple')
-    })
-    expect(bridge.resolveCommunityInvite).toHaveBeenCalledWith(link)
-    expect(findInput('invitation').value).toBe(link)
-    expect(findButton('Create account').disabled).toBe(false)
-
-    await act(async () => {
-      submitForm()
-      await Promise.resolve()
-    })
-    expect(register).toHaveBeenCalledWith(
-      'newfriend',
-      'correct horse battery staple',
-      'derived-registration-token',
-    )
-  })
-
-  it('keeps the managed sign-in path secondary and username-only', async () => {
+  it('uses the explicitly selected Matrix.org service without coupling it to a community', async () => {
     const login = vi.fn(async () => {})
     const onNext = vi.fn()
     await renderScreen({ onMatrixLogin: login, onNext })
 
-    await act(async () => {
-      findButton('Sign in').click()
-    })
-    expect(container.textContent).toContain('Welcome back')
-    expect(container.textContent).toContain('I have an account somewhere else')
-    expect(container.textContent).not.toContain('Service address')
+    await act(async () => findButton('Choose Matrix.org').click())
+    expect(container.textContent).toContain('Sign in to Matrix.org')
+    expect(container.textContent).toContain('10 MB')
+    expect(container.textContent).toContain('100 MB')
 
     await act(async () => {
-      setInputValue(findInput('username'), 'Alice')
-      setInputValue(findInput('password'), 'correct horse battery staple')
-      submitForm()
-      await Promise.resolve()
-    })
-
-    expect(login).toHaveBeenCalledWith({
-      homeserver: 'https://managed.mesh.test',
-      username: 'alice',
-      password: 'correct horse battery staple',
-      deviceName: 'Mesh Desktop',
-    })
-    expect(onNext).toHaveBeenCalledWith('signed-in')
-  })
-
-  it('uses the production Mesh service when the build has no environment override', async () => {
-    const login = vi.fn(async () => {})
-
-    await act(async () => {
-      root.render(
-        <MatrixAccountScreen
-          onMatrixCheckUsernameAvailable={vi.fn(async () => true)}
-          onMatrixRegisterAccount={vi.fn(async () => {})}
-          onMatrixLogin={login}
-          onNext={() => {}}
-        />,
-      )
-    })
-
-    await act(async () => {
-      findButton('Sign in').click()
       setInputValue(findInput('username'), 'Dhawal')
       setInputValue(findInput('password'), 'correct horse battery staple')
       submitForm()
       await Promise.resolve()
     })
 
-    expect(DEFAULT_MESH_SERVICE).toBe('https://matrix.mesh.dhawal.org')
-    expect(login).toHaveBeenCalledWith(expect.objectContaining({
-      homeserver: 'https://matrix.mesh.dhawal.org',
+    expect(login).toHaveBeenCalledWith({
+      homeserver: 'matrix.org',
       username: 'dhawal',
-    }))
+      password: 'correct horse battery staple',
+      deviceName: 'Mesh Desktop',
+    })
+    expect(onNext).toHaveBeenCalledWith('signed-in')
   })
 
-  it('reveals infrastructure only in the tertiary advanced form', async () => {
+  it('checks a custom service before signing in with a full Matrix ID', async () => {
     const login = vi.fn(async () => {})
     await renderScreen({ onMatrixLogin: login })
 
+    await act(async () => findButton('Use another service').click())
     await act(async () => {
-      findButton('Sign in').click()
+      setInputValue(findInput('username'), '@alice:friends.example')
+      findButton('Check service').click()
+      await Promise.resolve()
     })
-    await act(async () => {
-      findButton('I have an account somewhere else').click()
-    })
-
-    expect(container.textContent).toContain('Sign in somewhere else')
-    expect(container.textContent?.match(/service/gi)).toHaveLength(1)
-    expect(container.textContent).toContain('Service address')
-    expect(findInput('username').getAttribute('placeholder')).toBe('ashvin')
-    expect(container.textContent).not.toMatch(/@[a-z0-9._-]+:/i)
+    expect(container.textContent).toContain('Service reached')
 
     await act(async () => {
-      setInputValue(findInput('username'), 'alice')
       setInputValue(findInput('password'), 'correct horse battery staple')
-      setInputValue(findInput('homeserver'), 'friends.example')
       submitForm()
       await Promise.resolve()
     })
 
     expect(login).toHaveBeenCalledWith(expect.objectContaining({
       homeserver: 'friends.example',
-      username: 'alice',
+      username: '@alice:friends.example',
     }))
   })
 
-  it('returns browser sign-in through the app authentication handler', async () => {
+  it('rejects credential-bearing and insecure custom-service addresses before probing', async () => {
+    await renderScreen()
+    await act(async () => findButton('Use another service').click())
+
+    await act(async () => {
+      setInputValue(
+        findInput('homeserver'),
+        ['https', '://', 'alice', ':', 'secret', '@', 'friends.example'].join(''),
+      )
+      findButton('Check service').click()
+    })
+    expect(container.textContent).toContain('must not contain credentials')
+
+    await act(async () => {
+      setInputValue(findInput('homeserver'), 'http://friends.example')
+      findButton('Check service').click()
+    })
+    expect(container.textContent).toContain('must use HTTPS')
+    expect(bridge.matrixServiceCapabilities).not.toHaveBeenCalled()
+  })
+
+  it('explains when the selected service is offline', async () => {
     vi.mocked(bridge.isTauriRuntime).mockReturnValue(true)
+    vi.mocked(bridge.matrixServiceCapabilities).mockRejectedValue(new Error('offline'))
+    await renderScreen()
+
+    await act(async () => {
+      findButton('Choose Matrix.org').click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain(
+      'Mesh could not reach that account service. Check its status or choose another service.',
+    )
+    expect(findButton('Back to service choices')).toBeTruthy()
+  })
+
+  it('keeps external registration visible when direct registration is closed', async () => {
+    vi.mocked(bridge.isTauriRuntime).mockReturnValue(true)
+    vi.mocked(bridge.matrixServiceCapabilities).mockResolvedValue(capabilities({
+      homeserver: 'matrix.org',
+      registration: 'closed',
+    }))
+    await renderScreen()
+
+    await act(async () => {
+      findButton('Choose Matrix.org').click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Direct account creation is closed')
+    expect(findLink('Create a Matrix.org account in your browser')).toBeTruthy()
+  })
+
+  it('clears the prior provider before checking a custom service', async () => {
+    await renderScreen()
+    await act(async () => {
+      findButton('Choose Matrix.org').click()
+      await Promise.resolve()
+    })
+    expect(container.querySelector('[aria-label="Matrix.org service details"]')).not.toBeNull()
+
+    await act(async () => findButton('Back to service choices').click())
+    await act(async () => findButton('Use another service').click())
+
+    expect(container.querySelector('[aria-label="Matrix.org service details"]')).toBeNull()
+    expect(findButton('Check service')).toBeTruthy()
+  })
+
+  it('keeps community-hosted account creation optional and bound to its invitation', async () => {
+    vi.useFakeTimers()
+    vi.mocked(bridge.isTauriRuntime).mockReturnValue(true)
+    vi.mocked(bridge.resolveCommunityInvite).mockResolvedValue({
+      registrationToken: 'derived-registration-token',
+      roomId: '!friends:community.example',
+      service: 'community.example',
+      via: ['community.example'],
+      expiresAt: 1_785_283_200_000,
+    })
+    vi.mocked(bridge.matrixServiceCapabilities).mockResolvedValue(capabilities({
+      homeserver: 'community.example',
+      registration: 'open',
+    }))
+    const checkUsername = vi.fn(async () => true)
+    const register = vi.fn(async () => {})
+    const link = 'https://mesh.test/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789'
+    await renderScreen({
+      initialInvitation: link,
+      onMatrixCheckUsernameAvailable: checkUsername,
+      onMatrixRegisterAccount: register,
+    })
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(findButton('Choose Matrix.org')).toBeTruthy()
+    expect(findButton('Choose community-hosted service')).toBeTruthy()
+
+    await act(async () => findButton('Choose community-hosted service').click())
+    await act(async () => {
+      setInputValue(findInput('username'), 'NewFriend')
+      setInputValue(findInput('password'), 'correct horse battery staple')
+      setInputValue(findInput('password-confirmation'), 'correct horse battery staple')
+      vi.advanceTimersByTime(300)
+      await Promise.resolve()
+    })
+
+    expect(checkUsername).toHaveBeenCalledWith('community.example', 'newfriend')
+    expect(findButton('Create account').disabled).toBe(false)
+
+    await act(async () => {
+      submitForm()
+      await Promise.resolve()
+    })
+    expect(register).toHaveBeenCalledWith({
+      homeserver: 'community.example',
+      username: 'newfriend',
+      password: 'correct horse battery staple',
+      registrationToken: 'derived-registration-token',
+      deviceName: 'Mesh Desktop',
+    })
+  })
+
+  it('resolves native pending-invitation metadata and discards it explicitly', async () => {
+    vi.mocked(bridge.isTauriRuntime).mockReturnValue(true)
+    vi.mocked(bridge.matrixServiceCapabilities).mockResolvedValue(capabilities({
+      homeserver: 'community.example',
+      registration: 'open',
+    }))
+    const pendingInvitation: PendingInvitationMetadata = {
+      handle: 'd283967b-e094-460c-bf06-fbe068c21d5b',
+      roomOrAlias: '!garden:community.example',
+      via: ['community.example'],
+      service: 'community.example',
+      admissionService: 'https://invites.community.example',
+      storedAt: 1_752_000_000_000,
+      expiresAt: 1_754_592_000_000,
+    }
+    const resolvePending = vi.fn(async (): Promise<MatrixCommunityAdmission> => ({
+      registrationToken: 'native-only-registration-token',
+      roomId: '!garden:community.example',
+      service: 'community.example',
+      via: ['community.example'],
+      expiresAt: 1_754_592_000_000,
+    }))
+    const discardPending = vi.fn(async () => {})
+
+    await renderScreen({
+      initialPendingInvitation: pendingInvitation,
+      onResolvePendingInvitation: resolvePending,
+      onDiscardPendingInvitation: discardPending,
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(resolvePending).toHaveBeenCalledTimes(1)
+    expect(findButton('Choose community-hosted service')).toBeTruthy()
+
+    await act(async () => findButton('Choose community-hosted service').click())
+    expect(container.textContent).toContain('Invitation saved securely on this device')
+    expect(container.textContent).toContain('!garden:community.example')
+    expect(container.textContent).not.toContain('native-only-registration-token')
+
+    await act(async () => {
+      findButton('Discard invitation').click()
+      await Promise.resolve()
+    })
+    expect(discardPending).toHaveBeenCalledTimes(1)
+    expect(container.textContent).not.toContain('Invitation saved securely on this device')
+  })
+
+  it('offers browser sign-in only after the selected custom service advertises it', async () => {
+    vi.mocked(bridge.isTauriRuntime).mockReturnValue(true)
+    vi.mocked(bridge.matrixServiceCapabilities).mockResolvedValue(capabilities({
+      homeserver: 'friends.example',
+      browserLogin: true,
+    }))
     vi.mocked(bridge.matrixOidcStatus).mockResolvedValue({
-      homeserver: 'https://friends.example',
+      homeserver: 'friends.example',
       availability: 'supported',
       issuer: 'https://auth.friends.example',
       ready: true,
@@ -262,28 +304,25 @@ describe('MatrixAccountScreen', () => {
       reason: '',
     })
     const oidcLogin = vi.fn(async () => {})
-    const onNext = vi.fn()
-    await renderScreen({ onMatrixOidcLogin: oidcLogin, onNext })
+    await renderScreen({ onMatrixOidcLogin: oidcLogin })
 
-    await act(async () => {
-      findButton('Sign in').click()
-    })
-    await act(async () => {
-      findButton('I have an account somewhere else').click()
-    })
+    await act(async () => findButton('Use another service').click())
     await act(async () => {
       setInputValue(findInput('homeserver'), 'friends.example')
-      findButton('Check browser sign-in').click()
+      findButton('Check service').click()
       await Promise.resolve()
     })
-
+    await act(async () => {
+      findButton('Use browser sign-in').click()
+      await Promise.resolve()
+    })
     await act(async () => {
       findButton('Continue in browser').click()
       await Promise.resolve()
     })
 
+    expect(bridge.matrixOidcStatus).toHaveBeenCalledWith('friends.example')
     expect(oidcLogin).toHaveBeenCalledWith('friends.example')
-    expect(onNext).toHaveBeenCalledWith('signed-in')
   })
 
   it('never reveals the qualified identifier for a saved account', async () => {
@@ -301,7 +340,6 @@ describe('MatrixAccountScreen', () => {
     await renderScreen()
     await act(async () => {
       await Promise.resolve()
-      findButton('Sign in').click()
     })
 
     expect(container.textContent).toContain('alice')
@@ -310,12 +348,14 @@ describe('MatrixAccountScreen', () => {
   })
 
   async function renderScreen(overrides: {
-    onMatrixCheckUsernameAvailable?: (username: string) => Promise<boolean>
-    onMatrixRegisterAccount?: (
-      username: string,
-      password: string,
-      registrationToken: string,
-    ) => Promise<void>
+    onMatrixCheckUsernameAvailable?: (homeserver: string, username: string) => Promise<boolean>
+    onMatrixRegisterAccount?: (request: {
+      homeserver: string
+      username: string
+      password: string
+      registrationToken?: string
+      deviceName?: string
+    }) => Promise<void>
     onMatrixLogin?: (request: {
       homeserver: string
       username: string
@@ -324,18 +364,27 @@ describe('MatrixAccountScreen', () => {
     }) => Promise<void>
     onMatrixOidcLogin?: (homeserver: string) => Promise<void>
     initialInvitation?: string
-    onNext?: () => void
+    initialPendingInvitation?: PendingInvitationMetadata
+    onResolvePendingInvitation?: () => Promise<MatrixCommunityAdmission | null>
+    onDiscardPendingInvitation?: () => Promise<void>
+    onNext?: (outcome: 'registered' | 'signed-in') => void
   } = {}) {
     await act(async () => {
       root.render(
         <MatrixAccountScreen
-          onMatrixCheckUsernameAvailable={overrides.onMatrixCheckUsernameAvailable ?? vi.fn(async () => true)}
-          onMatrixRegisterAccount={overrides.onMatrixRegisterAccount ?? vi.fn(async () => {})}
+          onMatrixCheckUsernameAvailable={
+            overrides.onMatrixCheckUsernameAvailable ?? vi.fn(async () => true)
+          }
+          onMatrixRegisterAccount={
+            overrides.onMatrixRegisterAccount ?? vi.fn(async () => {})
+          }
           onMatrixLogin={overrides.onMatrixLogin ?? vi.fn(async () => {})}
           onMatrixOidcLogin={overrides.onMatrixOidcLogin ?? vi.fn(async () => {})}
           initialInvitation={overrides.initialInvitation}
+          initialPendingInvitation={overrides.initialPendingInvitation}
+          onResolvePendingInvitation={overrides.onResolvePendingInvitation}
+          onDiscardPendingInvitation={overrides.onDiscardPendingInvitation}
           onNext={overrides.onNext ?? (() => {})}
-          recommendedService="https://managed.mesh.test"
         />,
       )
     })
@@ -346,6 +395,13 @@ describe('MatrixAccountScreen', () => {
       .find((candidate) => candidate.textContent?.trim() === label)
     if (!button) throw new Error(`Button not found: ${label}`)
     return button
+  }
+
+  function findLink(label: string): HTMLAnchorElement {
+    const link = [...container.querySelectorAll<HTMLAnchorElement>('a')]
+      .find((candidate) => candidate.textContent?.trim() === label)
+    if (!link) throw new Error(`Link not found: ${label}`)
+    return link
   }
 
   function findInput(name: string): HTMLInputElement {
@@ -360,6 +416,20 @@ describe('MatrixAccountScreen', () => {
     )
   }
 })
+
+function capabilities(
+  overrides: Partial<bridge.MatrixServiceCapabilities> = {},
+): bridge.MatrixServiceCapabilities {
+  return {
+    homeserver: 'matrix.example',
+    serverVersions: ['v1.11'],
+    passwordLogin: true,
+    browserLogin: false,
+    registration: 'unknown',
+    maxUploadBytes: null,
+    ...overrides,
+  }
+}
 
 function setInputValue(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set

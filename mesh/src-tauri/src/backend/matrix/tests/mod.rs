@@ -3,43 +3,60 @@ use matrix_sdk::{authentication::SessionTokens, SessionMeta};
 use serde_json::json;
 
 #[test]
-fn managed_invitation_parser_accepts_only_the_configured_service_origin() {
+fn admission_invitation_parser_can_bind_local_links_without_restricting_received_issuers() {
     let expected = MatrixBackend::normalize_admission_origin("https://mesh.example").unwrap();
     let code = "abcdefghijklmnopqrstuvwxyzABCDEFG_123456789";
 
-    let public = MatrixBackend::parse_managed_invitation(
+    let public = MatrixBackend::parse_admission_invitation(
         &format!("https://mesh.example/invite/{code}"),
-        &expected,
+        Some(&expected),
     )
     .unwrap();
     assert_eq!(public.code, code);
     assert_eq!(public.api_origin.as_str(), "https://mesh.example/");
 
-    let deep_link = MatrixBackend::parse_managed_invitation(
+    let deep_link = MatrixBackend::parse_admission_invitation(
         &format!("mesh://join?v=4&kind=managed&code={code}&api=https%3A%2F%2Fmesh.example"),
-        &expected,
+        Some(&expected),
     )
     .unwrap();
     assert_eq!(deep_link, public);
 
+    let versioned = MatrixBackend::parse_admission_invitation(
+        &format!(
+            "mesh://join?v=5&kind=community&room=!garden%3Amesh.example&via=mesh.example\
+             &community_service=https%3A%2F%2Fmatrix.mesh.example\
+             &admission=https%3A%2F%2Fmesh.example&code={code}\
+             &resume=https%3A%2F%2Fmesh.example%2Finvite%2F{code}"
+        ),
+        Some(&expected),
+    )
+    .unwrap();
+    assert_eq!(versioned, public);
+
     assert!(matches!(
-        MatrixBackend::parse_managed_invitation(
+        MatrixBackend::parse_admission_invitation(
             &format!("https://other.example/invite/{code}"),
-            &expected,
+            Some(&expected),
         ),
         Err(BackendError::PermissionDenied(_))
     ));
-    assert!(MatrixBackend::parse_managed_invitation(
+    assert!(MatrixBackend::parse_admission_invitation(
         &format!(
             "mesh://join?v=4&kind=managed&code={code}&code={code}&api=https%3A%2F%2Fmesh.example"
         ),
-        &expected,
+        Some(&expected),
     )
     .is_err());
+    assert!(MatrixBackend::parse_admission_invitation(
+        &format!("https://other.example/invite/{code}"),
+        None,
+    )
+    .is_ok());
 }
 
 #[test]
-fn managed_invitation_origins_require_https_except_for_loopback_development() {
+fn admission_invitation_origins_require_https_except_for_loopback_development() {
     assert!(MatrixBackend::normalize_admission_origin("https://mesh.example").is_ok());
     assert!(MatrixBackend::normalize_admission_origin("http://127.0.0.1:8090").is_ok());
     assert!(MatrixBackend::normalize_admission_origin("http://mesh.example").is_err());
@@ -53,12 +70,62 @@ fn managed_invitation_origins_require_https_except_for_loopback_development() {
 }
 
 #[test]
-fn managed_invitation_response_is_bound_to_the_managed_account_service() {
-    let managed = MatrixBackend::managed_homeserver_config_from(
-        Some("https://matrix.mesh.example"),
-        Some("mesh.example"),
-    )
-    .unwrap();
+fn pending_invitation_metadata_is_bounded_opaque_and_secret_free() {
+    let invite = "mesh://join?v=5&kind=community\
+        &room=%21garden%3Acommunity.example\
+        &via=community.example%2Cbackup.example%2Ccommunity.example%2Cthird.example%2Cignored.example\
+        &community_service=https%3A%2F%2Fmatrix.community.example\
+        &admission=https%3A%2F%2Finvites.community.example\
+        &code=do-not-expose-this-code\
+        &resume=https%3A%2F%2Finvites.community.example%2Finvite%2Fdo-not-expose-this-code";
+    let metadata = MatrixBackend::pending_invitation_metadata(invite, 42);
+    let another = MatrixBackend::pending_invitation_metadata(invite, 42);
+
+    assert!(uuid::Uuid::parse_str(&metadata.handle).is_ok());
+    assert_ne!(metadata.handle, another.handle);
+    assert_eq!(
+        metadata.room_or_alias.as_deref(),
+        Some("!garden:community.example")
+    );
+    assert_eq!(
+        metadata.via,
+        vec!["community.example", "backup.example", "third.example"]
+    );
+    assert_eq!(
+        metadata.service.as_deref(),
+        Some("https://matrix.community.example")
+    );
+    assert_eq!(
+        metadata.admission_service.as_deref(),
+        Some("https://invites.community.example")
+    );
+    assert_eq!(metadata.stored_at, 42);
+    assert_eq!(metadata.expires_at, 42 + PENDING_INVITATION_MAX_AGE_MS);
+
+    let renderer_metadata = serde_json::to_string(&metadata).unwrap();
+    assert!(!renderer_metadata.contains("do-not-expose-this-code"));
+    assert!(!renderer_metadata.contains("resume"));
+}
+
+#[test]
+fn pending_invitation_expiration_is_fail_closed_at_the_boundary() {
+    let metadata = MatrixBackend::pending_invitation_metadata(
+        "mesh://join?v=5&room=%21garden%3Acommunity.example",
+        1_000,
+    );
+
+    assert!(!MatrixBackend::pending_invitation_expired(
+        &metadata,
+        metadata.expires_at.saturating_sub(1)
+    ));
+    assert!(MatrixBackend::pending_invitation_expired(
+        &metadata,
+        metadata.expires_at
+    ));
+}
+
+#[test]
+fn community_invitation_response_does_not_select_the_users_account_service() {
     let response = AdmissionServiceResponse {
         version: 4,
         registration_token: Some("registration-token".into()),
@@ -67,24 +134,22 @@ fn managed_invitation_response_is_bound_to_the_managed_account_service() {
         via: vec!["mesh.example".into()],
         expires_at: Some(1_800_000_000_000),
     };
-    let admission = MatrixBackend::validate_admission_response(response, &managed, true).unwrap();
+    let admission = MatrixBackend::validate_admission_response(response, true).unwrap();
     assert_eq!(
         admission.registration_token.as_deref(),
         Some("registration-token")
     );
+    assert_eq!(admission.service, "https://matrix.mesh.example");
 
-    let wrong_service = AdmissionServiceResponse {
+    let unsafe_service = AdmissionServiceResponse {
         version: 4,
         registration_token: Some("registration-token".into()),
         room_id: "!community:mesh.example".into(),
-        service: "https://matrix.other.example".into(),
+        service: "http://matrix.other.example".into(),
         via: vec!["mesh.example".into()],
         expires_at: Some(1_800_000_000_000),
     };
-    assert!(matches!(
-        MatrixBackend::validate_admission_response(wrong_service, &managed, true),
-        Err(BackendError::PermissionDenied(_))
-    ));
+    assert!(MatrixBackend::validate_admission_response(unsafe_service, true).is_err());
 }
 
 const MATRIX_PRODUCTION_SOURCES: &[(&str, &str)] = &[
@@ -1318,7 +1383,21 @@ fn matrix_display_names_are_trimmed_and_bounded() {
 }
 
 #[test]
-fn encrypted_room_guard_allows_encrypted_rooms() {
+fn security_boundary_message_report_reason_is_visible_bounded_text() {
+    assert_eq!(
+        MatrixBackend::normalize_report_reason("  Spam or abusive content  ".into()).unwrap(),
+        "Spam or abusive content",
+    );
+    assert!(MatrixBackend::normalize_report_reason(" \t ".into()).is_err());
+    assert_eq!(
+        MatrixBackend::normalize_report_reason("line one\nline two".into()).unwrap(),
+        "line one line two",
+    );
+    assert!(MatrixBackend::normalize_report_reason("x".repeat(501)).is_err());
+}
+
+#[test]
+fn security_boundary_encrypted_room_guard_allows_encrypted_rooms() {
     assert!(MatrixBackend::ensure_room_is_encrypted(
         "!safe:example.org",
         "sending a message",
@@ -1336,7 +1415,7 @@ fn secure_store_failures_use_the_typed_crypto_boundary() {
 }
 
 #[test]
-fn every_room_creation_uses_the_canonical_encryption_initial_state() {
+fn security_boundary_every_room_creation_uses_the_canonical_encryption_initial_state() {
     let encryption = MatrixBackend::encrypted_room_initial_state();
     assert_eq!(
         encryption.get_field::<String>("type").unwrap().as_deref(),
@@ -1367,7 +1446,7 @@ fn every_room_creation_uses_the_canonical_encryption_initial_state() {
 }
 
 #[test]
-fn encrypted_room_guard_fails_closed_with_actionable_room_context() {
+fn security_boundary_encrypted_room_guard_fails_closed_with_actionable_room_context() {
     let protected_actions = [
         "reading unread message counts",
         "processing MatrixRTC media keys",
@@ -1422,7 +1501,7 @@ fn encrypted_room_guard_fails_closed_with_actionable_room_context() {
 }
 
 #[test]
-fn protected_room_guard_requires_joined_membership() {
+fn security_boundary_protected_room_guard_requires_joined_membership() {
     let error =
         MatrixBackend::ensure_room_is_joined("!invited:example.org", "reading messages", false)
             .expect_err("non-joined rooms must be rejected");
@@ -1478,38 +1557,39 @@ fn managed_usernames_are_normalized_and_protocol_addresses_are_rejected() {
 }
 
 #[test]
-fn managed_configuration_fails_closed_and_qualifies_product_inputs_in_rust() {
+fn community_configuration_is_optional_and_separate_from_account_input() {
     assert!(matches!(
-        MatrixBackend::managed_homeserver_config_from(None, None),
-        Err(BackendError::ManagedHomeserverUnconfigured)
+        MatrixBackend::community_homeserver_config_from(None, None),
+        Err(BackendError::CommunityHomeserverUnconfigured)
     ));
-    let managed = MatrixBackend::managed_homeserver_config_from(
+    let community = MatrixBackend::community_homeserver_config_from(
         Some("https://matrix.example.org"),
         Some("example.org"),
     )
     .unwrap();
-    assert_eq!(managed.homeserver, "https://matrix.example.org");
-    assert_eq!(managed.server_name.as_str(), "example.org");
+    assert_eq!(community.homeserver, "https://matrix.example.org");
+    assert_eq!(community.server_name.as_str(), "example.org");
+    let account_server = ServerName::parse("accounts.elsewhere.org").unwrap();
     assert_eq!(
-        MatrixBackend::qualify_user_input("Alice", &managed)
+        MatrixBackend::qualify_user_input("Alice", &account_server)
             .unwrap()
             .as_str(),
-        "@alice:example.org"
+        "@alice:accounts.elsewhere.org"
     );
     assert_eq!(
-        MatrixBackend::qualify_user_input("@expert:elsewhere.org", &managed)
+        MatrixBackend::qualify_user_input("@expert:elsewhere.org", &account_server)
             .unwrap()
             .as_str(),
         "@expert:elsewhere.org"
     );
     assert_eq!(
-        MatrixBackend::qualify_public_link_input("Garden-Club", &managed)
+        MatrixBackend::qualify_public_link_input("Garden-Club", &account_server)
             .unwrap()
             .as_str(),
-        "#garden-club:example.org"
+        "#garden-club:accounts.elsewhere.org"
     );
     assert_eq!(
-        MatrixBackend::qualify_public_link_input("#raw:elsewhere.org", &managed)
+        MatrixBackend::qualify_public_link_input("#raw:elsewhere.org", &account_server)
             .unwrap()
             .as_str(),
         "#raw:elsewhere.org"
@@ -1517,15 +1597,10 @@ fn managed_configuration_fails_closed_and_qualifies_product_inputs_in_rust() {
 }
 
 #[test]
-fn production_managed_defaults_preserve_the_stable_mesh_identity() {
-    let managed = MatrixBackend::managed_homeserver_config_from(
-        Some(DEFAULT_MANAGED_HOMESERVER),
-        Some(DEFAULT_MANAGED_SERVER_NAME),
-    )
-    .unwrap();
-
-    assert_eq!(managed.homeserver, "https://matrix.mesh.dhawal.org");
-    assert_eq!(managed.server_name.as_str(), "mesh.dhawal.org");
+fn community_configuration_has_no_compiled_account_service_default() {
+    assert_eq!(COMMUNITY_HOMESERVER_ENV, "MESH_COMMUNITY_HOMESERVER");
+    assert_eq!(COMMUNITY_SERVER_NAME_ENV, "MESH_COMMUNITY_SERVER_NAME");
+    assert!(MatrixBackend::community_homeserver_config_from(None, None).is_err());
 }
 
 #[test]
@@ -1689,7 +1764,7 @@ async fn active_account_storage_root_uses_only_the_authenticated_profile() {
 }
 
 #[test]
-fn local_account_removal_erases_every_account_artifact_and_preserves_other_accounts() {
+fn security_boundary_local_account_removal_erases_every_artifact_and_preserves_other_accounts() {
     use std::cell::RefCell;
 
     let root = tempfile::tempdir().unwrap();
@@ -1786,7 +1861,7 @@ fn local_account_removal_erases_every_account_artifact_and_preserves_other_accou
 }
 
 #[test]
-fn local_account_removal_fails_closed_when_keychain_erasure_cannot_be_verified() {
+fn security_boundary_local_account_removal_fails_closed_when_keychain_erasure_is_unverified() {
     let root = tempfile::tempdir().unwrap();
     let backend = MatrixBackend::new(root.path().join("matrix"));
     let storage = backend.storage_for_profile("verification-failure");
@@ -1905,6 +1980,54 @@ fn ignores_replacements_from_a_different_sender() {
     let projected = MatrixBackend::project_timeline("!room:example.org", &members, events);
     assert_eq!(projected[0].content, "original");
     assert!(projected[0].edited_at.is_none());
+}
+
+#[test]
+fn keeps_undecryptable_events_in_timeline_order_with_their_reason() {
+    let events = vec![
+        json!({
+            "type": "m.room.message",
+            "event_id": "$one",
+            "sender": "@alice:example.org",
+            "origin_server_ts": 1,
+            "content": { "msgtype": "m.text", "body": "original" }
+        }),
+        json!({
+            "type": "m.room.encrypted",
+            "event_id": "$missing",
+            "sender": "@bob:example.org",
+            "origin_server_ts": 2,
+            "org.mesh.undecryptable_reason": "keys-not-shared",
+            "content": { "algorithm": "m.megolm.v1.aes-sha2" }
+        }),
+        json!({
+            "type": "m.room.message",
+            "event_id": "$edit",
+            "sender": "@alice:example.org",
+            "origin_server_ts": 3,
+            "content": {
+                "msgtype": "m.text",
+                "body": "* edited",
+                "m.new_content": { "msgtype": "m.text", "body": "edited" },
+                "m.relates_to": { "rel_type": "m.replace", "event_id": "$one" }
+            }
+        }),
+    ];
+
+    let projected = MatrixBackend::project_timeline("!room:example.org", &HashMap::new(), events);
+    assert_eq!(projected.len(), 2);
+    assert_eq!(projected[0].id, "$one");
+    assert_eq!(projected[0].content, "edited");
+    assert_eq!(projected[1].id, "$missing");
+    assert!(projected[1].content.is_empty());
+    let undecryptable = projected[1].undecryptable.as_ref().unwrap();
+    assert_eq!(undecryptable.event_id, "$missing");
+    assert_eq!(undecryptable.sender, "@bob:example.org");
+    assert_eq!(undecryptable.origin_server_ts, 2);
+    assert_eq!(
+        undecryptable.reason,
+        UndecryptableMessageReason::KeysNotShared
+    );
 }
 
 #[test]
@@ -2178,6 +2301,7 @@ fn direct_message_projection_reuses_matrix_message_and_attachment_fields() {
         transaction_id: None,
         client_request_id: None,
         delivery_status: Some("sent".into()),
+        undecryptable: None,
     };
     let projected = MatrixBackend::direct_message_from_message(message);
     assert_eq!(projected.conversation_id, "!dm:example.org");

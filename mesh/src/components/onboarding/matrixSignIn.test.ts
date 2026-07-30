@@ -3,7 +3,7 @@ import {
   displayServiceAddress,
   friendlySignInError,
   normalizeServiceAddress,
-  recommendedServiceConfigError,
+  serviceAddressConfigError,
   resolveServiceAddress,
   serviceFromUsername,
 } from './matrixSignIn'
@@ -44,12 +44,12 @@ describe('consumer Matrix sign-in helpers', () => {
   it('fails closed when the recommended build service is absent or unsafe', () => {
     const credentialedService = ['https://alice:', 'secret', '@remote.example'].join('')
 
-    expect(recommendedServiceConfigError('')).toContain('configured')
-    expect(recommendedServiceConfigError('http://remote.example')).toContain('HTTPS')
-    expect(recommendedServiceConfigError(credentialedService)).toContain('credentials')
-    expect(recommendedServiceConfigError('mesh.example')).toBeNull()
-    expect(recommendedServiceConfigError('https://matrix.mesh.example')).toBeNull()
-    expect(recommendedServiceConfigError('localhost:8008')).toBeNull()
+    expect(serviceAddressConfigError('')).toContain('configured')
+    expect(serviceAddressConfigError('http://remote.example')).toContain('HTTPS')
+    expect(serviceAddressConfigError(credentialedService)).toContain('credentials')
+    expect(serviceAddressConfigError('mesh.example')).toBeNull()
+    expect(serviceAddressConfigError('https://matrix.mesh.example')).toBeNull()
+    expect(serviceAddressConfigError('localhost:8008')).toBeNull()
   })
 
   it('keeps protocol errors away from nontechnical users', () => {

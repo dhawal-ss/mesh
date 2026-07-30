@@ -52,6 +52,8 @@ export function OnboardingFlow({
   onMatrixLogin,
   onMatrixOidcLogin,
   onMatrixSwitchAccount,
+  onResolvePendingInvitation,
+  onDiscardPendingInvitation,
   onCreateBackupCode,
   onBackupConfigured,
   onBackupSkipped,
@@ -59,6 +61,7 @@ export function OnboardingFlow({
   onUpdateProfile,
   onBootstrap,
   initialMatrixInvitation,
+  initialPendingInvitation,
   initialProfile,
   avatarColors = DEFAULT_AVATAR_COLORS,
 }: OnboardingFlowProps) {
@@ -205,6 +208,9 @@ export function OnboardingFlow({
                 <motion.div key="account" variants={variants.screen} initial="initial" animate="animate" exit="exit">
                   <MatrixAccountScreen
                     initialInvitation={initialMatrixInvitation}
+                    initialPendingInvitation={initialPendingInvitation}
+                    onResolvePendingInvitation={onResolvePendingInvitation}
+                    onDiscardPendingInvitation={onDiscardPendingInvitation}
                     onMatrixCheckUsernameAvailable={onMatrixCheckUsernameAvailable}
                     onMatrixRegisterAccount={onMatrixRegisterAccount}
                     onMatrixLogin={onMatrixLogin}

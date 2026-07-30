@@ -27,8 +27,10 @@ vi.mock('framer-motion', () => ({
 }))
 
 import type { Message } from '../../types/ipc'
+import type { RoomTrustSnapshot } from '../../hooks/useRoomTrust'
 import * as bridge from '../../lib/bridge'
 import { useRoomPinStore } from '../../store/room-pins'
+import { useShellStore } from '../../store/shell'
 import { FileAttachmentCard, MessageComponent } from './Message'
 
 function malformedMessage(): Message {
@@ -62,6 +64,47 @@ function previewAttachment(): Message['attachments'][number] {
       contentType: 'image/png',
     },
   }
+}
+
+function undecryptableMessage(reason: NonNullable<Message['undecryptable']>['reason']): Message {
+  return {
+    ...malformedMessage(),
+    id: '$encrypted-1:example.org',
+    authorPublicKey: '@bob:example.org',
+    authorDisplayName: 'Bob',
+    content: '',
+    timestamp: '2026-07-29T12:00:00.000Z',
+    undecryptable: {
+      eventId: '$encrypted-1:example.org',
+      sender: '@bob:example.org',
+      originServerTs: 1_725_000_000_000,
+      reason,
+    },
+  }
+}
+
+const securityAttentionTrust: RoomTrustSnapshot = {
+  matrixMode: true,
+  protection: 'protected',
+  communityMemberCount: 1,
+  services: [],
+  devices: [],
+  devicesNeedReview: 1,
+  verifiedDevices: 0,
+  backup: {
+    recoveryState: 'disabled',
+    backupState: 'unknown',
+    backupExistsOnServer: false,
+    backupEnabled: false,
+    healthy: false,
+    checkedAt: '2026-07-29T00:00:00Z',
+    lastSuccessfulTestAt: null,
+    warnings: ['Recovery is not set up'],
+  },
+  accountId: '@alice:example.org',
+  homeService: 'example.org',
+  syncRunning: true,
+  loadingAccountTrust: false,
 }
 
 describe('MessageComponent federated timestamps', () => {
@@ -109,6 +152,49 @@ describe('MessageComponent federated timestamps', () => {
       expect(container.textContent).not.toContain('Invalid Date')
     },
   )
+
+  it.each([
+    ['sent-before-device', 'before this device could receive it'],
+    ['keys-not-shared', 'message keys were not shared'],
+    ['waiting-for-keys', 'Waiting for the message keys'],
+    ['could-not-decrypt', "couldn't decrypt this message"],
+  ] as const)('renders a visible placeholder for %s events', async (reason, copy) => {
+    await act(async () => {
+      root.render(
+        <MessageComponent
+          message={undecryptableMessage(reason)}
+          isGrouped={false}
+        />,
+      )
+    })
+
+    expect(container.querySelector('[data-undecryptable-message="true"]')).not.toBeNull()
+    expect(container.textContent).toContain(copy)
+    expect(container.querySelector('p')?.textContent).not.toBe('')
+    expect(container.querySelector('[aria-label^="React to message"]')).toBeNull()
+    expect(container.textContent).not.toContain('Time unavailable')
+  })
+
+  it('links an actionable decryption gap to Security & Devices', async () => {
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
+    useShellStore.setState({ securityOpen: false })
+
+    await act(async () => {
+      root.render(
+        <MessageComponent
+          message={undecryptableMessage('waiting-for-keys')}
+          isGrouped={false}
+          trust={securityAttentionTrust}
+        />,
+      )
+    })
+
+    const review = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.includes('Review message security'))
+    expect(review).toBeDefined()
+    await act(async () => review?.click())
+    expect(useShellStore.getState().securityOpen).toBe(true)
+  })
 
   it.each([false, true])(
     'shows protected saved state for %s-group queued messages',
@@ -204,6 +290,48 @@ describe('MessageComponent federated timestamps', () => {
 
     expect(togglePin).toHaveBeenCalledWith(message.channelId, message.id)
     expect(container.querySelector('[aria-label="Unpin message"]')).not.toBeNull()
+  })
+
+  it('reports Matrix messages to the selected account service from limited-action views', async () => {
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@me:matrix.org')
+    const report = vi.spyOn(bridge, 'reportMessage').mockResolvedValue()
+    const message = {
+      ...malformedMessage(),
+      id: '$message-1:example.org',
+      timestamp: '2026-07-28T09:41:00.000Z',
+    }
+    await act(async () => {
+      root.render(<MessageComponent message={message} isGrouped={false} limitedActions />)
+    })
+
+    const row = container.querySelector<HTMLElement>('[role="group"]')
+    await act(async () => {
+      row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+    })
+    const reportAction = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .find((item) => item.textContent?.includes('Report message'))
+    expect(reportAction).toBeDefined()
+    await act(async () => reportAction?.click())
+
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')
+    expect(dialog?.textContent).toContain('not end-to-end encrypted')
+    expect(
+      dialog?.querySelector<HTMLAnchorElement>('a[href="https://matrix.org/contact/"]'),
+    ).not.toBeNull()
+    expect(dialog?.textContent).toContain('Mesh does not operate this service')
+    const send = [...dialog!.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.includes('Send report'))
+    await act(async () => {
+      send?.click()
+      await Promise.resolve()
+    })
+
+    expect(report).toHaveBeenCalledWith(
+      '$message-1:example.org',
+      'channel-1',
+      'Spam or abusive content',
+    )
   })
 
   it('loads an encrypted thumbnail only near the viewport and revokes its Blob URL', async () => {

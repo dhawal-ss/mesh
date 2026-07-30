@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded community invitations for the managed Mesh service.
+"""Bounded invitations for an optional community-hosted Mesh service.
 
 The public invitation is an opaque bearer capability. Only its SHA-256 digest
 is stored. A separate deterministic Synapse registration token is derived with
@@ -728,9 +728,14 @@ class AdmissionApplication:
             "expires_at": values["expires_at"],
         }
 
-    def claim_invitation(self, admission_token: str, claimant_token: str) -> dict[str, Any]:
+    def claim_invitation(self, admission_token: str, claimant: str) -> dict[str, Any]:
         validate_admission_token(admission_token)
-        claimant = self.whoami(claimant_token)
+        if not USER_ID_PATTERN.fullmatch(claimant):
+            raise AdmissionError(
+                HTTPStatus.BAD_REQUEST,
+                "user_id_invalid",
+                "Choose a valid signed-in account.",
+            )
         now_ms = int(time.time() * 1000)
         digest = token_digest(admission_token)
         values = self.store.begin_claim(digest, claimant, now_ms)
@@ -860,15 +865,21 @@ class AdmissionApplication:
 
     def invitation_html(self, admission_token: str) -> bytes:
         resolved = self.resolve_invitation(admission_token)
+        resume_url = f"{self.config.public_origin}/invite/{admission_token}"
         deep_link = (
             "mesh://join?"
             + urllib.parse.urlencode(
                 {
-                    "v": "4",
-                    "kind": "managed",
+                    "v": "5",
+                    "kind": "community",
+                    "room": resolved["room_id"],
+                    "via": resolved["via"],
+                    "community_service": resolved["service"],
+                    "admission": self.config.public_origin,
                     "code": admission_token,
-                    "api": self.config.public_origin,
-                }
+                    "resume": resume_url,
+                },
+                doseq=True,
             )
         )
         escaped_link = html.escape(deep_link, quote=True)
@@ -1034,11 +1045,16 @@ class AdmissionHandler(BaseHTTPRequestHandler):
             )
             if match:
                 self.limiter.require(self.client_key(), "claim", 20)
-                access_token = bearer_token(self.headers.get("Authorization"))
-                self.read_json_body(require_empty=True)
+                body = self.read_json_body()
+                claimant = str(body.get("user_id", ""))
+                if not claimant:
+                    # Compatibility for v4 clients. New clients never disclose
+                    # an account access token to a community admission service.
+                    access_token = bearer_token(self.headers.get("Authorization"))
+                    claimant = self.application.whoami(access_token)
                 self.send_json(
                     HTTPStatus.OK,
-                    self.application.claim_invitation(match.group(1), access_token),
+                    self.application.claim_invitation(match.group(1), claimant),
                 )
                 return
             raise AdmissionError(HTTPStatus.NOT_FOUND, "not_found", "Not found.")

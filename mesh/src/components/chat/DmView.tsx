@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect, type ReactNode } from 'react'
 import { useDmConversation, useDmStore } from '../../store/dms'
 import { useIdentityStore } from '../../store/identity'
 import { MessageInput } from './MessageInput'
@@ -19,6 +19,8 @@ import { DmTrustSummary } from './DmTrustSummary'
 import { Icon } from '../ui/Icon'
 import { MessageSkeleton } from '../ui/Skeleton'
 import { EmptyState } from '../ui/Primitives'
+import { MessageReportDialog } from './MessageReportDialog'
+import { useVirtualScroll, type VirtualItem } from '../../hooks/useVirtualScroll'
 
 const EMPTY_DIRECT_MESSAGES: DirectMessage[] = []
 
@@ -57,6 +59,30 @@ function DmMessageRenderer({ render }: { render: () => ReactNode }) {
   return render()
 }
 
+function DmVirtualMessageRow({
+  rowKey,
+  onHeightChange,
+  children,
+}: {
+  rowKey: string
+  onHeightChange: (rowKey: string, height: number) => void
+  children: ReactNode
+}) {
+  const rowRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    const element = rowRef.current
+    if (!element) return
+    const reportHeight = () => onHeightChange(rowKey, element.offsetHeight)
+    reportHeight()
+    const observer = new ResizeObserver(reportHeight)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [onHeightChange, rowKey])
+
+  return <div ref={rowRef}>{children}</div>
+}
+
 export function DmView() {
   const activeConversationId = useDmStore((state) => state.activeConversationId)
   const conversation = useDmConversation(activeConversationId)
@@ -73,7 +99,6 @@ export function DmView() {
   const setSecurityOpen = useShellStore((state) => state.setSecurityOpen)
   const matrixMode = bridge.isMatrixBackend()
   const ownAuthorId = matrixMode ? bridge.getMatrixUserId() : identity?.publicKey
-  const scrollRef = useRef<HTMLDivElement>(null)
   const [loadingConversationId, setLoadingConversationId] = useState<string | null>(null)
   const [blockState, setBlockState] = useState<{ peerPublicKey: string; blocked: boolean } | null>(
     null,
@@ -81,6 +106,7 @@ export function DmView() {
   const [isBlockBusy, setIsBlockBusy] = useState(false)
   const [reactionTargetId, setReactionTargetId] = useState<string | null>(null)
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
+  const [reportMessageId, setReportMessageId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [replyingTo, setReplyingTo] = useState<DirectMessage | null>(null)
   const trustMembers = useMemo(
@@ -96,6 +122,41 @@ export function DmView() {
     Boolean(peerPublicKey)
     && blockState?.peerPublicKey === peerPublicKey
     && Boolean(blockState?.blocked)
+  const virtualItems = useMemo<VirtualItem[]>(() => channelMessages.map((message) => ({
+    key: message.id,
+    type: 'message',
+    height:
+      52
+      + Math.min(160, Math.max(1, Math.ceil(message.content.length / 80)) * 20)
+      + ((message.attachments?.length ?? 0) > 0 ? 96 : 0),
+  })), [channelMessages])
+  const messageIndexById = useMemo(
+    () => new Map(channelMessages.map((message, index) => [message.id, index] as const)),
+    [channelMessages],
+  )
+  const {
+    scrollContainerRef,
+    topSpacerHeight,
+    bottomSpacerHeight,
+    visibleRange,
+    handleMeasuredHeight,
+    handleScroll,
+    resetLayout,
+  } = useVirtualScroll(virtualItems, {
+    estimatedMessageHeight: 76,
+    overscanPx: 500,
+  })
+  const visibleMessages = useMemo(() => (
+    virtualItems.length === 0
+      ? []
+      : virtualItems
+          .slice(visibleRange.start, visibleRange.end + 1)
+          .map((item) => {
+            const index = messageIndexById.get(item.key) ?? -1
+            return index >= 0 ? { message: channelMessages[index], index } : null
+          })
+          .filter((entry): entry is { message: DirectMessage; index: number } => entry !== null)
+  ), [channelMessages, messageIndexById, virtualItems, visibleRange.end, visibleRange.start])
 
   useEffect(() => {
     if (!matrixMode || !peerPublicKey) return
@@ -121,12 +182,6 @@ export function DmView() {
       setLoadingConversationId(conversationId)
       try {
         await loadMessages(conversationId)
-        if (!active) return
-        requestAnimationFrame(() => {
-          if (!active) return
-          const el = scrollRef.current
-          if (el) el.scrollTop = el.scrollHeight
-        })
       } catch (error) {
         if (active) console.error('Failed to load direct messages:', error)
       } finally {
@@ -139,14 +194,14 @@ export function DmView() {
   }, [activeConversationId, loadMessages])
 
   useEffect(() => {
+    resetLayout()
+  }, [activeConversationId, resetLayout])
+
+  useEffect(() => {
     if (matrixMode) return
     const unsub = bridge.onDmReceived((msg) => {
       if (msg.conversationId === activeConversationId) {
         addMessage(msg)
-        requestAnimationFrame(() => {
-          const el = scrollRef.current
-          if (el) el.scrollTop = el.scrollHeight
-        })
       }
     })
     return () => { unsub.then((fn) => fn()) }
@@ -216,10 +271,6 @@ export function DmView() {
       )
       addMessage(msg)
       setReplyingTo(null)
-      requestAnimationFrame(() => {
-        const el = scrollRef.current
-        if (el) el.scrollTop = el.scrollHeight
-      })
     } catch (err) {
       console.error('Failed to send DM:', err)
       throw err
@@ -365,7 +416,14 @@ export function DmView() {
       )}
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto py-4">
+      <div
+        ref={scrollContainerRef}
+        onScroll={() => void handleScroll()}
+        className="flex-1 overflow-y-auto py-4"
+        role="log"
+        aria-live="polite"
+        aria-label={`Messages with ${peerName}`}
+      >
         {isLoading ? (
           <div aria-label="Loading messages" role="status">
             {Array.from({ length: 8 }).map((_, index) => (
@@ -381,12 +439,20 @@ export function DmView() {
             />
           </div>
         ) : (
-          <div className="space-y-0.5">
-            {channelMessages.map((msg, index) => (
-              <DmMessageBoundary
+          <div
+            data-design-token-exception="data-driven-virtual-spacer-geometry"
+            style={{
+              paddingTop: `${topSpacerHeight}px`,
+              paddingBottom: `${bottomSpacerHeight}px`,
+            }}
+          >
+            {visibleMessages.map(({ message: msg, index }) => (
+              <DmVirtualMessageRow
                 key={msg?.id ?? `malformed-message-${index}`}
-                messageId={msg?.id ?? `malformed-message-${index}`}
+                rowKey={msg?.id ?? `malformed-message-${index}`}
+                onHeightChange={handleMeasuredHeight}
               >
+                <DmMessageBoundary messageId={msg?.id ?? `malformed-message-${index}`}>
                 {() => {
                   const prev = channelMessages[index - 1]
                   const timestamp = federatedTimestampMilliseconds(msg.timestamp)
@@ -529,6 +595,14 @@ export function DmView() {
                           aria-label="Edit message"
                         ><Icon name="squarePen" size="sm" /></button>
                       )}
+                      {!isOwnMessage && msg.id.startsWith('$') && (
+                        <button
+                          type="button"
+                          onClick={() => setReportMessageId(msg.id)}
+                          className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                          aria-label="Report message"
+                        ><Icon name="triangleAlert" size="sm" /></button>
+                      )}
                     </div>
                   )}
                   {matrixMode && reactionTargetId === msg.id && (
@@ -539,11 +613,19 @@ export function DmView() {
                 </div>
                   )
                 }}
-              </DmMessageBoundary>
+                </DmMessageBoundary>
+              </DmVirtualMessageRow>
             ))}
           </div>
         )}
       </div>
+
+      <MessageReportDialog
+        open={reportMessageId !== null}
+        roomId={activeConversationId}
+        eventId={reportMessageId ?? ''}
+        onClose={() => setReportMessageId(null)}
+      />
 
       {isBlocked && (
         <div className="mx-4 mb-2 rounded-panel border border-status-danger/20 bg-status-danger/5 px-3 py-2 text-xs text-status-danger">

@@ -13,7 +13,7 @@ export type AppErrorCode =
   | 'decryption_failed'
   | 'serialization_error'
   | 'validation_error'
-  | 'managed_homeserver_unconfigured'
+  | 'community_homeserver_unconfigured'
   | 'username_unavailable'
   | 'registration_terms_required'
   | 'registration_additional_auth_required'
@@ -65,7 +65,7 @@ const KNOWN_CODES = new Set<AppErrorCode>([
   'decryption_failed',
   'serialization_error',
   'validation_error',
-  'managed_homeserver_unconfigured',
+  'community_homeserver_unconfigured',
   'username_unavailable',
   'registration_terms_required',
   'registration_additional_auth_required',
@@ -385,10 +385,10 @@ export function describeError(
         body: `${operation} Review the entered information and try again.`,
         action: 'Try again',
       }
-    case 'managed_homeserver_unconfigured':
+    case 'community_homeserver_unconfigured':
       return {
-        title: 'Account creation unavailable',
-        body: 'This Mesh build does not have a managed account service configured.',
+        title: 'Community service unavailable',
+        body: 'This community does not have an optional account service configured.',
         action: null,
       }
     case 'username_unavailable':

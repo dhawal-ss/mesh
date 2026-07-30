@@ -16,6 +16,11 @@ mkdir -p \
   runtime/synapse
 
 if [ ! -f .env ]; then
+  : "${MESH_SERVER_NAME:?Set the permanent community Matrix server name before first setup}"
+  : "${MESH_HOMESERVER_HOST:?Set the public homeserver host before first setup}"
+  : "${MESH_ABUSE_EMAIL:?Set the community abuse contact before first setup}"
+  : "${ACME_EMAIL:?Set the ACME contact before first setup}"
+  mesh_rtc_host="${MESH_RTC_HOST:-rtc.$MESH_SERVER_NAME}"
   postgres_password="$(openssl rand -hex 32)"
   registration_secret="$(openssl rand -hex 32)"
   macaroon_secret="$(openssl rand -hex 32)"
@@ -24,11 +29,14 @@ if [ ! -f .env ]; then
 
   {
     printf '%s\n' \
-      'MESH_SERVER_NAME=mesh.dhawal.org' \
-      'MESH_HOMESERVER_HOST=matrix.mesh.dhawal.org' \
-      'MESH_RTC_HOST=rtc.mesh.dhawal.org' \
+      "MESH_SERVER_NAME=$MESH_SERVER_NAME" \
+      "MESH_HOMESERVER_HOST=$MESH_HOMESERVER_HOST" \
+      "MESH_RTC_HOST=$mesh_rtc_host" \
       'MESH_RTC_ENABLED=0' \
       'MESH_PUBLIC_ENABLED=0' \
+      'MESH_REGISTRATION_ENABLED=1' \
+      "MESH_ABUSE_EMAIL=$MESH_ABUSE_EMAIL" \
+      'MESH_OPERATOR_LOCALPART=operator' \
       "MESH_RUNTIME_UID=$(id -u)" \
       "MESH_RUNTIME_GID=$(id -g)" \
       'SYNAPSE_CONTROL_BIND=127.0.0.1' \
@@ -41,7 +49,7 @@ if [ ! -f .env ]; then
     printf 'FORM_SECRET=%s\n' "$form_secret"
     printf 'MESH_ADMISSION_SIGNING_KEY=%s\n' "$admission_signing_key"
     printf '%s\n' 'MESH_ADMISSION_ADMIN_ACCESS_TOKEN=REPLACE_DURING_FIRST_START'
-    printf 'ACME_EMAIL=%s\n' 'admin@dhawal.org'
+    printf 'ACME_EMAIL=%s\n' "$ACME_EMAIL"
   } > .env
   chmod 600 .env
   echo "Created untracked operator secrets in $script_dir/.env"
@@ -102,6 +110,9 @@ set +a
 : "${MESH_SERVER_NAME:?MESH_SERVER_NAME is required}"
 : "${MESH_HOMESERVER_HOST:?MESH_HOMESERVER_HOST is required}"
 : "${MESH_RTC_ENABLED:=0}"
+: "${MESH_REGISTRATION_ENABLED:=1}"
+: "${MESH_ABUSE_EMAIL:?MESH_ABUSE_EMAIL is required}"
+: "${MESH_OPERATOR_LOCALPART:?MESH_OPERATOR_LOCALPART is required}"
 : "${MESH_RUNTIME_UID:?MESH_RUNTIME_UID is required}"
 : "${MESH_RUNTIME_GID:?MESH_RUNTIME_GID is required}"
 : "${POSTGRES_USER:?POSTGRES_USER is required}"
@@ -127,6 +138,8 @@ docker run --rm \
   --user "$MESH_RUNTIME_UID:$MESH_RUNTIME_GID" \
   -e MESH_SERVER_NAME \
   -e MESH_HOMESERVER_HOST \
+  -e MESH_REGISTRATION_ENABLED \
+  -e MESH_ABUSE_EMAIL \
   -e POSTGRES_USER \
   -e POSTGRES_DB \
   -e POSTGRES_PASSWORD \

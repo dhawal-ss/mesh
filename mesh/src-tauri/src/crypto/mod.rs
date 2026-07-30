@@ -2,7 +2,7 @@
 
 #[cfg(feature = "legacy-p2p")]
 pub mod community_key;
-#[cfg(feature = "legacy-p2p")]
+#[cfg(any(feature = "legacy-p2p", feature = "matrix-backend"))]
 pub mod encryption;
 #[cfg(feature = "legacy-p2p")]
 pub mod identity;

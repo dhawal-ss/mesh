@@ -675,7 +675,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn clipboard_validation_accepts_regular_images() {
+    fn security_boundary_attachment_validation_accepts_regular_images() {
         assert!(validate_attachment_payload(
             "screen.png",
             12,
@@ -686,14 +686,14 @@ mod tests {
     }
 
     #[test]
-    fn clipboard_validation_rejects_extension_and_disguised_executables() {
+    fn security_boundary_attachment_validation_rejects_extension_and_disguised_executables() {
         assert!(validate_attachment_payload("payload.ps1", 4, b"text", 10).is_err());
         assert!(validate_attachment_payload("holiday.gif", 6, b"MZfake", 10).is_err());
         assert!(validate_attachment_payload("notes.txt", 8, b"#!/bin/sh", 10).is_err());
     }
 
     #[test]
-    fn clipboard_validation_rejects_unsafe_windows_filenames() {
+    fn security_boundary_attachment_validation_rejects_unsafe_windows_filenames() {
         for filename in [
             r"C:payload.png",
             "file.txt:stream",
@@ -718,13 +718,14 @@ mod tests {
     }
 
     #[test]
-    fn clipboard_validation_is_bounded_and_non_empty() {
+    fn security_boundary_attachment_validation_is_bounded_and_non_empty() {
         assert!(validate_attachment_payload("empty.png", 0, b"", 10).is_err());
         assert!(validate_attachment_payload("large.png", 11, b"safe", 10).is_err());
     }
 
     #[tokio::test]
-    async fn grants_are_one_use_and_explicitly_restorable_after_failure() {
+    async fn security_boundary_attachment_grants_are_one_use_and_explicitly_restorable_after_failure(
+    ) {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("report.txt");
         tokio::fs::write(&path, b"safe report").await.unwrap();
@@ -749,7 +750,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn grant_claim_rejects_a_file_changed_after_selection() {
+    async fn security_boundary_attachment_grant_rejects_a_file_changed_after_selection() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("report.txt");
         tokio::fs::write(&path, b"safe report").await.unwrap();

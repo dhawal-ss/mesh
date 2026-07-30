@@ -338,6 +338,7 @@ impl MatrixBackend {
             transaction_id: Some(transaction_id.to_string()),
             client_request_id: None,
             delivery_status: Some("sent".into()),
+            undecryptable: None,
         })
     }
 }

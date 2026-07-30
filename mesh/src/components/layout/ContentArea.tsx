@@ -16,6 +16,7 @@ import { useDmStore } from '../../store/dms'
 import { useRoomTrust } from '../../hooks/useRoomTrust'
 import { useRoomPinStore } from '../../store/room-pins'
 import { isMatrixBackend, onMatrixRoomPinsUpdate } from '../../lib/bridge'
+import { setVolatileInviteLink } from '../../lib/pending-invitation-runtime'
 
 export function ContentArea() {
   const activeChannel = useActiveChannel()
@@ -162,7 +163,10 @@ export function ContentArea() {
                 className="mx-auto max-w-sm text-left"
                 onSubmit={(event) => {
                   event.preventDefault()
-                  if (inviteDraft.trim()) openServerModal('join', inviteDraft.trim())
+                  if (inviteDraft.trim()) {
+                    setVolatileInviteLink(inviteDraft.trim())
+                    openServerModal('join')
+                  }
                 }}
               >
                 <label htmlFor="first-run-invite" className="text-xs font-medium text-secondary">

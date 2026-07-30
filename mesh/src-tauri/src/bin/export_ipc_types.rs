@@ -7,14 +7,17 @@ use mesh_lib::backend::{
     MatrixRoomPins, MatrixRoomPinsUpdate, MatrixRtcJoinResult, MatrixRtcMediaKey,
     MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember,
     MatrixRtcMembershipUpdate, MatrixUnreadUpdate, ModerationAuditEntry, ModerationRoomOutcome,
-    NotificationPresentationContext, UserPreferences, VoiceProvider, VoiceServiceAvailability,
-    VoiceServiceStatus,
+    NotificationPresentationContext, PendingInvitationMetadata, UserPreferences, VoiceProvider,
+    VoiceServiceAvailability, VoiceServiceStatus,
 };
 use mesh_lib::types::{
     community::{ChannelDto, CommunityDto},
     dm::{DirectMessageDto, DmConversationDto},
     identity::IdentityDto,
-    message::{AttachmentDto, AttachmentThumbnailDto, MessageDto},
+    message::{
+        AttachmentDto, AttachmentThumbnailDto, MessageDto, UndecryptableMessageDto,
+        UndecryptableMessageReason,
+    },
     peer::{NetworkStatusDto, PeerDto},
 };
 use ts_rs::TS;
@@ -63,11 +66,14 @@ fn generated_contract() -> String {
     output.push_str(&declaration::<ModerationAuditEntry>());
     output.push_str(&declaration::<CommunityModerationResult>());
     output.push_str(&declaration::<MatrixCommunityAdmission>());
+    output.push_str(&declaration::<PendingInvitationMetadata>());
     output.push_str(&declaration::<IdentityDto>());
     output.push_str(&declaration::<CommunityDto>());
     output.push_str(&declaration::<ChannelDto>());
     output.push_str(&declaration::<AttachmentThumbnailDto>());
     output.push_str(&declaration::<AttachmentDto>());
+    output.push_str(&declaration::<UndecryptableMessageReason>());
+    output.push_str(&declaration::<UndecryptableMessageDto>());
     output.push_str(&declaration::<MessageDto>());
     output.push_str(&declaration::<DmConversationDto>());
     output.push_str(&declaration::<DirectMessageDto>());

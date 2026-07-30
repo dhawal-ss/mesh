@@ -19,7 +19,8 @@ uses="${2:-1}"
 case "$days" in *[!0-9]*|'') echo "Days must be a number." >&2; exit 1;; esac
 case "$uses" in *[!0-9]*|'') echo "Uses must be a number." >&2; exit 1;; esac
 
-admin_user="@dhawal:${MESH_SERVER_NAME}"
+: "${MESH_OPERATOR_LOCALPART:?MESH_OPERATOR_LOCALPART is required}"
+admin_user="@${MESH_OPERATOR_LOCALPART}:${MESH_SERVER_NAME}"
 MESH_ADMIN_PASSWORD="$(security find-generic-password \
   -a "$admin_user" \
   -s 'Mesh Homeserver Admin' \
@@ -32,6 +33,7 @@ export MESH_ADMIN_PASSWORD
 docker compose exec -T \
   -e MESH_ADMIN_PASSWORD \
   -e MESH_SERVER_NAME \
+  -e MESH_OPERATOR_LOCALPART \
   synapse python /mesh/create_registration_invite.py \
   --days "$days" \
   --uses "$uses"

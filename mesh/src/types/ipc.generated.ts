@@ -62,6 +62,8 @@ export type CommunityModerationResult = { audit: ModerationAuditEntry, auditReco
 
 export type MatrixCommunityAdmission = { registrationToken?: string | null, roomId: string, service: string, via: Array<string>, expiresAt?: number | null, };
 
+export type PendingInvitationMetadata = { handle: string, roomOrAlias: string | null, via: Array<string>, service: string | null, admissionService: string | null, storedAt: number, expiresAt: number, };
+
 export type IdentityDto = { publicKey: string, displayName: string, avatarColor: string, };
 
 export type CommunityDto = { id: string, name: string, description: string, memberCount: number, role: "owner" | "admin" | "member", joinedAt: string | null, };
@@ -77,6 +79,10 @@ export type AttachmentDto = { fileHash: string, filename: string, size: number, 
  */
 thumbnail?: AttachmentThumbnailDto | null, };
 
+export type UndecryptableMessageReason = "sent-before-device" | "keys-not-shared" | "waiting-for-keys" | "could-not-decrypt";
+
+export type UndecryptableMessageDto = { eventId: string, sender: string, originServerTs: number, reason: UndecryptableMessageReason, };
+
 export type MessageDto = { id: string, channelId: string, authorPublicKey: string, authorDisplayName: string, authorAvatarColor: string, content: string, attachments: Array<AttachmentDto>, reactions: Record<string, string[]>, timestamp: string, signature: string, editedAt?: string | null, deletedAt?: string | null, replyToId?: string | null,
 /**
  * SDK transaction ID used to reconcile a durable local echo with the
@@ -91,7 +97,12 @@ clientRequestId?: string | null,
 /**
  * Delivery status: "sent", "pending", or "failed". None = sent.
  */
-deliveryStatus?: "sent" | "pending" | "failed" | null, };
+deliveryStatus?: "sent" | "pending" | "failed" | null,
+/**
+ * Present only when Matrix received an event but the SDK could not
+ * decrypt its message content.
+ */
+undecryptable?: UndecryptableMessageDto | null, };
 
 export type DmConversationDto = { id: string, peerPublicKey: string, peerDisplayName: string, peerAvatarColor: string, lastMessageAt: string | null, unreadCount: number, createdAt: string, };
 

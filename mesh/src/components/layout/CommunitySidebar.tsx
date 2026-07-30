@@ -15,6 +15,10 @@ import { copyText } from '../../lib/notifications'
 import { showToast } from '../ui/Toast'
 import { lazy, Suspense } from 'react'
 import { ModalLoadingFallback } from '../ui/ModalLoadingFallback'
+import {
+  clearVolatileInviteLink,
+  getVolatileInviteLink,
+} from '../../lib/pending-invitation-runtime'
 
 const CreateCommunityModal = lazy(() =>
   import('../community/CreateCommunityModal').then((module) => ({ default: module.CreateCommunityModal })),
@@ -31,7 +35,6 @@ export function CommunitySidebar() {
   const setDmMode = useDmStore((state) => state.setDmMode)
   const serverModalOpen = useShellStore((state) => state.serverModalOpen)
   const serverModalTab = useShellStore((state) => state.serverModalTab)
-  const inviteDraft = useShellStore((state) => state.inviteDraft)
   const openServerModal = useShellStore((state) => state.openServerModal)
   const closeServerModal = useShellStore((state) => state.closeServerModal)
   const setProfileOpen = useShellStore((state) => state.setProfileOpen)
@@ -46,6 +49,11 @@ export function CommunitySidebar() {
     } catch {
       showToast('Could not copy this community link.', 'error')
     }
+  }
+
+  const handleServerModalClose = () => {
+    clearVolatileInviteLink()
+    closeServerModal()
   }
 
   const markCommunityRead = async (communityId: string) => {
@@ -177,9 +185,9 @@ export function CommunitySidebar() {
         <Suspense fallback={<ModalLoadingFallback title="Communities" label="Loading community tools" />}>
           <CreateCommunityModal
             isOpen={serverModalOpen}
-            onClose={closeServerModal}
+            onClose={handleServerModalClose}
             initialTab={serverModalTab}
-            initialInvite={inviteDraft}
+            initialInvite={getVolatileInviteLink()}
           />
         </Suspense>
       )}

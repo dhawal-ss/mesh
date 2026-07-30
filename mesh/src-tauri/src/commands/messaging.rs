@@ -102,6 +102,7 @@ pub async fn send_message(
         transaction_id: None,
         client_request_id: None,
         delivery_status: None,
+        undecryptable: None,
     };
 
     let msg_dto_c = msg_dto.clone();

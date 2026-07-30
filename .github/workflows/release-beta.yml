@@ -18,11 +18,6 @@ jobs:
     name: Matrix beta quality gate
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    env:
-      VITE_MESH_HOMESERVER: https://matrix.mesh.dhawal.org
-      VITE_MESH_SERVICE_NAME: ${{ vars.VITE_MESH_SERVICE_NAME }}
-      MESH_MANAGED_HOMESERVER: https://matrix.mesh.dhawal.org
-      MESH_MANAGED_SERVER_NAME: mesh.dhawal.org
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -54,8 +49,10 @@ jobs:
         working-directory: mesh
         run: |
           npm audit --audit-level=high
-          pwsh -NoProfile -File ./scripts/beta-release-preflight.ps1 -RequireManagedService
-          npm test
+          pwsh -NoProfile -File ./scripts/beta-release-preflight.ps1
+          npm run check:public-services
+          npm run check:public-site
+          npm test -- --maxWorkers=4
           npm run build
           npm run check:bundle-size
           pwsh -NoProfile -File ./scripts/beta-release-preflight.ps1 -VerifyFrontendBundle
@@ -89,13 +86,10 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 90
     environment: matrix-beta
-    env:
-      VITE_MESH_HOMESERVER: https://matrix.mesh.dhawal.org
-      VITE_MESH_SERVICE_NAME: ${{ vars.VITE_MESH_SERVICE_NAME }}
-      MESH_MANAGED_HOMESERVER: https://matrix.mesh.dhawal.org
-      MESH_MANAGED_SERVER_NAME: mesh.dhawal.org
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -128,7 +122,6 @@ jobs:
 
           & ./mesh/scripts/beta-release-preflight.ps1 `
             -Tag $env:GITHUB_REF_NAME `
-            -RequireManagedService `
             -RequireSigningEnvironment
 
       - name: Setup Node.js
@@ -242,6 +235,15 @@ jobs:
             Sort-Object |
             Out-File $checksumPath -Encoding ascii
           "MESH_CHECKSUM_PATH=$checksumPath" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Attest signed release provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: |
+            mesh/src-tauri/target/release/bundle/**/*.msi
+            mesh/src-tauri/target/release/bundle/**/*.exe
+            mesh/mesh-node.cdx.json
+            mesh/src-tauri/mesh.cdx.json
 
       - name: Create reviewed draft prerelease
         shell: pwsh

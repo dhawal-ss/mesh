@@ -25,8 +25,8 @@ pub enum CommandError {
     Serialization(String),
     #[error("validation error: {0}")]
     Validation(String),
-    #[error("managed account service is not configured")]
-    ManagedHomeserverUnconfigured,
+    #[error("community-hosted service is not configured")]
+    CommunityHomeserverUnconfigured,
     #[error("that username is not available")]
     UsernameUnavailable,
     #[error("account creation requires accepting the service terms")]
@@ -77,7 +77,7 @@ impl CommandError {
             Self::DecryptionFailed(_) => "decryption_failed",
             Self::Serialization(_) => "serialization_error",
             Self::Validation(_) => "validation_error",
-            Self::ManagedHomeserverUnconfigured => "managed_homeserver_unconfigured",
+            Self::CommunityHomeserverUnconfigured => "community_homeserver_unconfigured",
             Self::UsernameUnavailable => "username_unavailable",
             Self::RegistrationTermsRequired => "registration_terms_required",
             Self::RegistrationAdditionalAuthRequired => "registration_additional_auth_required",
@@ -201,8 +201,8 @@ mod tests {
     fn registration_errors_keep_distinct_actionable_codes() {
         let cases = [
             (
-                CommandError::ManagedHomeserverUnconfigured,
-                "managed_homeserver_unconfigured",
+                CommandError::CommunityHomeserverUnconfigured,
+                "community_homeserver_unconfigured",
                 false,
             ),
             (

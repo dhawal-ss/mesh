@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -50,8 +51,13 @@ def main() -> None:
         raise SystemExit("--uses must be between 1 and 25")
 
     server_name = os.environ.get("MESH_SERVER_NAME", "").strip()
+    operator_localpart = os.environ.get("MESH_OPERATOR_LOCALPART", "").strip()
     admin_password = os.environ.get("MESH_ADMIN_PASSWORD", "")
-    if not server_name or not admin_password:
+    if (
+        not server_name
+        or not re.fullmatch(r"[a-z0-9._=-]{1,64}", operator_localpart)
+        or not admin_password
+    ):
         raise SystemExit("operator identity is not available")
 
     login = request_json(
@@ -61,7 +67,7 @@ def main() -> None:
             "type": "m.login.password",
             "identifier": {
                 "type": "m.id.user",
-                "user": f"@dhawal:{server_name}",
+                "user": f"@{operator_localpart}:{server_name}",
             },
             "password": admin_password,
             "initial_device_display_name": "Mesh invitation operator",
