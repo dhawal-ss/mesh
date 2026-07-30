@@ -55,7 +55,7 @@ export type ReadReceiptMode = "public" | "private" | "off";
 export type UserPreferences = { schemaVersion: number, notificationsEnabled: boolean, notificationSound: boolean, notificationSoundId?: string | null, doNotDisturb: boolean, quietHoursEnabled: boolean, quietHoursStart?: string | null, quietHoursEnd?: string | null, mutedChannels: Array<string>, mutedCommunities: Array<string>, mutedChannelUntil: { [key in string]?: string | null }, mutedCommunityUntil: { [key in string]?: string | null }, channelNotificationLevels: { [key in string]?: MatrixRoomNotificationMode }, sendReadReceipts: boolean,
 /**
  * Explicit receipt visibility. Missing values are migrated from the
- * legacy boolean: true meant private-only, false now means public.
+ * legacy boolean: true meant private-only and false meant off.
  */
 readReceiptMode?: ReadReceiptMode | null, sendTypingIndicators: boolean, sharePresence: boolean, invisibleMode: boolean, updatedAt: string, };
 
