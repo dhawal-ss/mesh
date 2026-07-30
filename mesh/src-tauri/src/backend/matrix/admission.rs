@@ -341,25 +341,55 @@ impl MatrixBackend {
             return Ok(bytes.to_vec());
         }
 
-        let error = serde_json::from_slice::<AdmissionErrorResponse>(&bytes).unwrap_or(
-            AdmissionErrorResponse {
-                code: String::new(),
-                message: String::new(),
-            },
-        );
+        Err(Self::admission_error_response(status, &bytes))
+    }
+
+    fn admission_error_response(status: reqwest::StatusCode, bytes: &[u8]) -> BackendError {
+        let error = match serde_json::from_slice::<AdmissionErrorResponse>(bytes) {
+            Ok(error) => error,
+            Err(parse_error) => {
+                let excerpt: String = String::from_utf8_lossy(bytes)
+                    .chars()
+                    .filter(|character| !character.is_control() || character.is_whitespace())
+                    .take(512)
+                    .collect();
+                let excerpt = excerpt.trim();
+                let body = if excerpt.is_empty() {
+                    "<empty>"
+                } else {
+                    excerpt
+                };
+                let detail = format!(
+                    "the invitation service returned malformed HTTP {} error data: {parse_error}; body={body}",
+                    status.as_u16(),
+                );
+                return if status.is_client_error() {
+                    BackendError::InvalidConfiguration(detail)
+                } else {
+                    BackendError::Network(detail)
+                };
+            }
+        };
         let detail = if error.message.trim().is_empty() {
-            "The invitation service could not complete this request.".to_owned()
+            format!(
+                "the invitation service rejected the request with HTTP status {}",
+                status.as_u16()
+            )
         } else {
-            error.message
+            format!(
+                "the invitation service returned HTTP status {}: {}",
+                status.as_u16(),
+                error.message.trim()
+            )
         };
         match status.as_u16() {
-            401 => Err(BackendError::NotAuthenticated),
-            403 => Err(BackendError::PermissionDenied(detail)),
-            404 | 410 => Err(BackendError::RegistrationInvitationInvalid),
-            409 if error.code == "invitation_claiming" => Err(BackendError::RateLimited(detail)),
-            429 => Err(BackendError::RateLimited(detail)),
-            400..=499 => Err(BackendError::InvalidConfiguration(detail)),
-            _ => Err(BackendError::Network(detail)),
+            401 => BackendError::NotAuthenticated,
+            403 => BackendError::PermissionDenied(detail),
+            404 | 410 => BackendError::RegistrationInvitationInvalid,
+            409 if error.code == "invitation_claiming" => BackendError::RateLimited(detail),
+            429 => BackendError::RateLimited(detail),
+            400..=499 => BackendError::InvalidConfiguration(detail),
+            _ => BackendError::Network(detail),
         }
     }
 

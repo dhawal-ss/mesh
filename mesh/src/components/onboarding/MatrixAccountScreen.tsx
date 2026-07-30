@@ -28,8 +28,11 @@ import {
 import { parseAdmissionCommunityInvite } from '../../lib/community-invites'
 import {
   normalizeServiceAddress,
+  friendlyServiceError,
   resolveServiceAddress,
   serviceAddressConfigError,
+  technicalSignInError,
+  friendlySignInError,
 } from './matrixSignIn'
 
 type AccountMode = 'select' | 'public-services' | 'create' | 'sign-in' | 'advanced'
@@ -107,7 +110,8 @@ export function MatrixAccountScreen({
   const [serviceAddress, setServiceAddress] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [availabilityCheck, setAvailabilityCheck] = useState<AvailabilityCheck | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setErrorMessage] = useState<string | null>(null)
+  const [errorDetails, setErrorDetails] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [switchingProfile, setSwitchingProfile] = useState<string | null>(null)
   const [savedAccounts, setSavedAccounts] = useState<bridge.MatrixAccount[]>([])
@@ -118,6 +122,11 @@ export function MatrixAccountScreen({
   const [checkingCapabilities, setCheckingCapabilities] = useState(false)
   const modeHeadingRef = useRef<HTMLHeadingElement>(null)
   const previousModeRef = useRef<AccountMode>(mode)
+
+  const setError = (message: string | null, cause?: unknown) => {
+    setErrorMessage(message)
+    setErrorDetails(message && cause !== undefined ? technicalSignInError(cause) : null)
+  }
 
   const normalizedUsername = useMemo(() => normalizeUsername(username), [username])
   const createUsernameError = useMemo(
@@ -221,8 +230,9 @@ export function MatrixAccountScreen({
         } else {
           setPendingAdmissionResolution({ handle, status: 'resolved', admission })
         }
-      } catch {
+      } catch (cause) {
         if (active) {
+          setError('This saved invitation is invalid, expired, or has already been used.', cause)
           setPendingAdmissionResolution({
             handle,
             status: 'error',
@@ -265,8 +275,9 @@ export function MatrixAccountScreen({
             admission,
           })
         }
-      } catch {
+      } catch (cause) {
         if (active) {
+          setError('This invitation is invalid, expired, or has already been used.', cause)
           setAdmissionResolution({
             invitation: admissionInvitation.original,
             status: 'error',
@@ -328,9 +339,9 @@ export function MatrixAccountScreen({
       try {
         const nextCapabilities = await bridge.matrixServiceCapabilities(selectedServiceAddress)
         if (active) setCapabilities(nextCapabilities)
-      } catch {
+      } catch (cause) {
         if (!active) return
-        setError('Mesh could not reach that account service. Check its status or choose another service.')
+        setError(friendlyServiceError(cause, 'reach that account service'), cause)
       } finally {
         if (active) setCheckingCapabilities(false)
       }
@@ -355,7 +366,7 @@ export function MatrixAccountScreen({
       }).catch((cause) => {
         if (active) {
           setAvailabilityCheck({ username: availabilityUsername, status: 'error' })
-          setError(friendlyAccountCreationError(cause))
+          setError(friendlyAccountCreationError(cause), cause)
         }
       })
     }, 300)
@@ -415,8 +426,8 @@ export function MatrixAccountScreen({
       await onDiscardPendingInvitation?.()
       setPendingInvitationDismissed(true)
       setPendingAdmissionResolution(null)
-    } catch {
-      setError('Mesh could not discard the saved invitation. Try again.')
+    } catch (cause) {
+      setError('Mesh could not discard the saved invitation. Try again.', cause)
     }
   }
 
@@ -445,8 +456,8 @@ export function MatrixAccountScreen({
             maxUploadBytes: null,
           }
       setCapabilities(nextCapabilities)
-    } catch {
-      setError('Mesh could not reach that account service. Check the address and try again.')
+    } catch (cause) {
+      setError(friendlyServiceError(cause, 'reach that account service'), cause)
     } finally {
       setCheckingCapabilities(false)
     }
@@ -491,7 +502,7 @@ export function MatrixAccountScreen({
         setInvitation('')
         onNext('registered')
       } catch (cause) {
-        setError(friendlyAccountCreationError(cause))
+        setError(friendlyAccountCreationError(cause), cause)
       } finally {
         setSubmitting(false)
       }
@@ -523,7 +534,7 @@ export function MatrixAccountScreen({
       setPassword('')
       onNext('signed-in')
     } catch (cause) {
-      setError(friendlyAccountSignInError(cause))
+      setError(friendlySignInError(cause), cause)
     } finally {
       setSubmitting(false)
     }
@@ -537,7 +548,7 @@ export function MatrixAccountScreen({
       await onMatrixSwitchAccount(profileId)
       onNext('signed-in')
     } catch (cause) {
-      setError(friendlyAccountSignInError(cause))
+      setError(friendlySignInError(cause), cause)
     } finally {
       setSwitchingProfile(null)
     }
@@ -557,8 +568,8 @@ export function MatrixAccountScreen({
       const status = await bridge.matrixOidcStatus(resolvedService)
       setBrowserReady(status.ready)
       if (!status.ready) setError('Browser sign-in is not available for this account.')
-    } catch {
-      setError('Mesh could not prepare browser sign-in. Try your password instead.')
+    } catch (cause) {
+      setError(friendlyServiceError(cause, 'prepare browser sign-in'), cause)
     } finally {
       setCheckingBrowser(false)
     }
@@ -572,7 +583,7 @@ export function MatrixAccountScreen({
       await onMatrixOidcLogin(resolvedService)
       onNext('signed-in')
     } catch (cause) {
-      setError(friendlyAccountSignInError(cause))
+      setError(friendlySignInError(cause), cause)
     } finally {
       setBrowserSigningIn(false)
     }
@@ -1027,7 +1038,17 @@ export function MatrixAccountScreen({
           role="alert"
           className="rounded-control border border-status-danger/40 bg-status-danger/10 px-3 py-2 text-sm text-status-danger"
         >
-          {error}
+          <p>{error}</p>
+          {errorDetails ? (
+            <details className="mt-2 text-xs text-muted">
+              <summary className="cursor-pointer underline-offset-2 hover:underline">
+                Technical details
+              </summary>
+              <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-control bg-surface-sunken p-2 font-mono text-meta text-secondary">
+                {errorDetails}
+              </pre>
+            </details>
+          ) : null}
         </div>
       ) : null}
 
@@ -1219,21 +1240,4 @@ function availabilityMessage(
 function friendlyAccountName(userId: string): string {
   const localName = userId.replace(/^@/, '').split(':')[0]?.trim()
   return localName || 'Saved account'
-}
-
-function friendlyAccountSignInError(cause: unknown): string {
-  const message = cause instanceof Error ? cause.message.toLowerCase() : String(cause).toLowerCase()
-  if (
-    message.includes('forbidden')
-    || message.includes('invalid username')
-    || message.includes('invalid password')
-    || message.includes('403')
-  ) {
-    return 'That username or password did not work. Check both and try again.'
-  }
-  if (message.includes('cancel')) return 'Sign-in was cancelled. Nothing was changed.'
-  if (message.includes('network') || message.includes('offline') || message.includes('connect')) {
-    return 'Mesh could not connect. Check your internet connection and try again.'
-  }
-  return 'Mesh could not sign you in. Check your details and try again.'
 }
