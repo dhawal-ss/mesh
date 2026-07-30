@@ -16,6 +16,7 @@ import type { Identity } from './types/ipc'
 import { registerPoll } from './lib/scheduler'
 import { installDeepLinkHandler } from './lib/deep-links'
 import { useShellStore } from './store/shell'
+import { describeError } from './lib/errors'
 
 const AppLayout = lazy(() =>
   import('./components/layout/AppLayout').then((module) => ({ default: module.AppLayout })),
@@ -96,7 +97,8 @@ export default function App() {
   const setNetworkStatus = useNetworkStore((s) => s.setStatus)
   const setBackupConfigured = useSettingsStore((s) => s.setBackupConfigured)
   const scheduleBackupReminder = useSettingsStore((s) => s.scheduleBackupReminder)
-  const pendingInvite = useShellStore((state) => state.inviteDraft)
+  const pendingInvitation = useShellStore((state) => state.pendingInvitation)
+  const setPendingInvitation = useShellStore((state) => state.setPendingInvitation)
   const [showOnboarding, setShowOnboarding] = useState(!isTauriRuntime)
   const [backendStatus, setBackendStatus] = useState<bridge.BackendStatus | null>(null)
   const attemptedInviteRef = useRef<string | null>(null)
@@ -104,11 +106,33 @@ export default function App() {
   useEffect(() => {
     if (!isTauriRuntime) return
     let active = true
+    void bridge.peekPendingInvitation().then((pending) => {
+      if (active) setPendingInvitation(pending)
+    }).catch((error) => {
+      if (active) console.warn('Could not inspect the pending invitation:', error)
+    })
+    return () => {
+      active = false
+    }
+  }, [isTauriRuntime, setPendingInvitation])
+
+  useEffect(() => {
+    if (!isTauriRuntime) return
+    let active = true
     let unlisten: (() => void) | undefined
     void installDeepLinkHandler((inviteLink) => {
       if (!active) return
-      useShellStore.getState().openServerModal('join', inviteLink)
-      showToast('Community invitation opened. Sign in first if needed.', 'success')
+      void bridge.storePendingInvitation(inviteLink).then((pending) => {
+        if (!active) return
+        setPendingInvitation(pending)
+        useShellStore.getState().openServerModal('join')
+        showToast('Community invitation saved securely. Sign in first if needed.', 'success')
+      }).catch((error) => {
+        if (active) {
+          console.error('Could not save community invitation:', error)
+          showToast('Mesh could not save this invitation securely. Try opening it again.', 'error')
+        }
+      })
     }).then((cleanup) => {
       if (active) unlisten = cleanup
       else cleanup()
@@ -119,7 +143,7 @@ export default function App() {
       active = false
       unlisten?.()
     }
-  }, [isTauriRuntime])
+  }, [isTauriRuntime, setPendingInvitation])
 
   useEffect(() => {
     let active = true
@@ -244,36 +268,60 @@ export default function App() {
       || showOnboarding
       || backendStatus?.kind !== 'matrix'
       || !backendStatus.authenticated
-      || !pendingInvite
-      || attemptedInviteRef.current === pendingInvite
+      || !pendingInvitation
+      || attemptedInviteRef.current === pendingInvitation.handle
     ) {
       return
     }
 
-    attemptedInviteRef.current = pendingInvite
-    void bridge.joinOrRequestCommunity(pendingInvite).then((result) => {
-      if (attemptedInviteRef.current !== pendingInvite) return
-      if (result.status === 'joined' && result.community) {
-        upsertCommunity(result.community)
-        setActiveCommunity(result.community.id)
-        useShellStore.getState().closeServerModal()
-        showToast(`Joined ${result.community.name}.`, 'success')
-      } else {
-        useShellStore.getState().closeServerModal()
-        showToast('Your request was sent to the community administrators.', 'success')
+    const pendingHandle = pendingInvitation.handle
+    attemptedInviteRef.current = pendingHandle
+    void (async () => {
+      const inviteLink = await bridge.readPendingInvitation()
+      if (!inviteLink) {
+        if (attemptedInviteRef.current === pendingHandle) setPendingInvitation(null)
+        return
       }
-    }).catch((error) => {
-      if (attemptedInviteRef.current !== pendingInvite) return
-      console.error('Could not open community invitation:', error)
-      showToast('Mesh could not open this invitation. You can retry from Join a community.', 'error')
-    })
+
+      try {
+        const result = await bridge.joinOrRequestCommunity(inviteLink)
+        if (attemptedInviteRef.current !== pendingHandle) return
+        try {
+          await bridge.clearPendingInvitation()
+        } catch (clearError) {
+          console.warn(
+            'The community was opened, but its completed invitation could not be cleared:',
+            clearError,
+          )
+        }
+        setPendingInvitation(null)
+        if (result.status === 'joined' && result.community) {
+          upsertCommunity(result.community)
+          setActiveCommunity(result.community.id)
+          useShellStore.getState().closeServerModal()
+          showToast(`Joined ${result.community.name}.`, 'success')
+        } else {
+          useShellStore.getState().closeServerModal()
+          showToast('Your request was sent to the community administrators.', 'success')
+        }
+      } catch (error) {
+        if (attemptedInviteRef.current !== pendingHandle) return
+        console.error('Could not open community invitation:', error)
+        const description = describeError(error, {
+          operation: 'open this invitation',
+          resource: 'community',
+        })
+        showToast(`${description.title}: ${description.body}`, 'error')
+      }
+    })()
   }, [
     backendStatus?.authenticated,
     backendStatus?.kind,
     isLoading,
     isTauriRuntime,
-    pendingInvite,
+    pendingInvitation,
     setActiveCommunity,
+    setPendingInvitation,
     showOnboarding,
     upsertCommunity,
   ])
@@ -415,23 +463,31 @@ export default function App() {
             className="h-full"
           >
             <OnboardingFlow
-              initialMatrixInvitation={pendingInvite}
+              initialPendingInvitation={pendingInvitation}
+              onResolvePendingInvitation={async () => {
+                if (!isTauriRuntime) return null
+                return bridge.resolvePendingInvitation()
+              }}
+              onDiscardPendingInvitation={async () => {
+                if (isTauriRuntime) await bridge.clearPendingInvitation()
+                setPendingInvitation(null)
+              }}
               backendKind={backendStatus?.kind ?? 'matrix'}
               backendAuthenticated={backendStatus?.authenticated ?? false}
-              onMatrixCheckUsernameAvailable={async (username) => {
+              onMatrixCheckUsernameAvailable={async (homeserver, username) => {
                 if (!isTauriRuntime) {
                   return !['admin', 'support', 'taken'].includes(username)
                 }
-                return bridge.matrixCheckUsernameAvailable(username)
+                return bridge.matrixCheckUsernameAvailable(homeserver, username)
               }}
-              onMatrixRegisterAccount={async (username, password, registrationToken) => {
+              onMatrixRegisterAccount={async (request) => {
                 if (!isTauriRuntime) {
                   const status: bridge.BackendStatus = {
                     kind: 'matrix',
                     capabilities: bridge.getBackendCapabilities(),
                     voiceService: bridge.getVoiceServiceStatus(),
                     authenticated: true,
-                    userId: `@${username}:preview.mesh`,
+                    userId: `@${request.username}:preview.mesh`,
                     deviceId: 'PREVIEW',
                     homeserver: 'https://preview.mesh',
                     syncRunning: true,
@@ -444,11 +500,7 @@ export default function App() {
                   if (registeredIdentity) setIdentity(registeredIdentity)
                   return
                 }
-                const status = await bridge.matrixRegisterAccount(
-                  username,
-                  password,
-                  registrationToken,
-                )
+                const status = await bridge.matrixRegisterAccount(request)
                 setBackendStatus(status)
                 const registeredIdentity = await loadMatrixIdentity(status.userId, true)
                 if (registeredIdentity) setIdentity(registeredIdentity)

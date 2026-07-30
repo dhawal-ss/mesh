@@ -12,9 +12,27 @@ if [ ! -d "$backup_dir" ] || [ -L "$backup_dir" ]; then
   exit 1
 fi
 
+for secret_file in "$backup_dir/.env" "$backup_dir/operator.env"; do
+  if [ -e "$secret_file" ] || [ -L "$secret_file" ]; then
+    echo "Backup contains plaintext operator secrets: $(basename "$secret_file")" >&2
+    exit 1
+  fi
+done
+for env_file in "$backup_dir"/*.env; do
+  if [ -e "$env_file" ] || [ -L "$env_file" ]; then
+    case "$(basename "$env_file")" in
+      backup-metadata.env) ;;
+      *)
+        echo "Backup contains an unexpected plaintext environment file: $(basename "$env_file")" >&2
+        exit 1
+        ;;
+    esac
+  fi
+done
+
 for required_file in \
   manifest.sha256 \
-  operator.env \
+  backup-metadata.env \
   postgres.dump \
   synapse-critical.tar.gz
 do
@@ -33,7 +51,7 @@ fi
 
 manifest="$backup_dir/manifest.sha256"
 manifest_entries=0
-seen_operator=0
+seen_metadata=0
 seen_postgres=0
 seen_critical=0
 seen_media=0
@@ -50,12 +68,12 @@ while IFS= read -r raw_line || [ -n "$raw_line" ]; do
   fi
 
   case "$file" in
-    operator.env)
-      [ "$seen_operator" -eq 0 ] || {
-        echo "Backup manifest lists operator.env more than once." >&2
+    backup-metadata.env)
+      [ "$seen_metadata" -eq 0 ] || {
+        echo "Backup manifest lists backup-metadata.env more than once." >&2
         exit 1
       }
-      seen_operator=1
+      seen_metadata=1
       ;;
     postgres.dump)
       [ "$seen_postgres" -eq 0 ] || {
@@ -86,7 +104,7 @@ while IFS= read -r raw_line || [ -n "$raw_line" ]; do
   manifest_entries=$((manifest_entries + 1))
 done < "$manifest"
 
-if [ "$seen_operator" -ne 1 ] ||
+if [ "$seen_metadata" -ne 1 ] ||
    [ "$seen_postgres" -ne 1 ] ||
    [ "$seen_critical" -ne 1 ]
 then
@@ -125,32 +143,34 @@ fi
 for required_setting in \
   MESH_SERVER_NAME \
   POSTGRES_USER \
-  POSTGRES_DB \
-  POSTGRES_PASSWORD \
-  REGISTRATION_SHARED_SECRET \
-  MACAROON_SECRET_KEY \
-  FORM_SECRET
+  POSTGRES_DB
 do
   setting_count="$(
     awk -F= -v key="$required_setting" '$1 == key { count += 1 } END { print count + 0 }' \
-      "$backup_dir/operator.env"
+      "$backup_dir/backup-metadata.env"
   )"
   if [ "$setting_count" -ne 1 ]; then
-    echo "operator.env must contain exactly one $required_setting setting." >&2
+    echo "backup-metadata.env must contain exactly one $required_setting setting." >&2
     exit 1
   fi
   setting_value="$(
     awk -F= -v key="$required_setting" \
       '$1 == key { sub(/^[^=]*=/, ""); print; exit }' \
-      "$backup_dir/operator.env"
+      "$backup_dir/backup-metadata.env"
   )"
   case "$setting_value" in
     ""|REPLACE_*)
-      echo "operator.env contains an unusable $required_setting setting." >&2
+      echo "backup-metadata.env contains an unusable $required_setting setting." >&2
       exit 1
       ;;
   esac
 done
+if grep -Eq '^(POSTGRES_PASSWORD|REGISTRATION_SHARED_SECRET|MACAROON_SECRET_KEY|FORM_SECRET|MESH_ADMISSION_SIGNING_KEY|MESH_ADMISSION_ADMIN_ACCESS_TOKEN)=' \
+  "$backup_dir/backup-metadata.env"
+then
+  echo "backup-metadata.env contains a runtime secret." >&2
+  exit 1
+fi
 
 validate_archive_paths() {
   archive="$1"
@@ -189,7 +209,7 @@ validate_archive_paths "$backup_dir/synapse-critical.tar.gz" ""
 critical_entries="$(tar -tzf "$backup_dir/synapse-critical.tar.gz")"
 server_name="$(
   awk -F= '$1 == "MESH_SERVER_NAME" { sub(/^[^=]*=/, ""); print; exit }' \
-    "$backup_dir/operator.env"
+    "$backup_dir/backup-metadata.env"
 )"
 for critical_file in \
   homeserver.yaml \

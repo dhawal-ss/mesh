@@ -50,9 +50,9 @@ export function displayServiceAddress(value: string): string {
   }
 }
 
-export function recommendedServiceConfigError(value: string): string | null {
+export function serviceAddressConfigError(value: string): string | null {
   const normalized = normalizeServiceAddress(value)
-  if (!normalized) return 'No recommended service is configured for this build.'
+  if (!normalized) return 'No account service is configured for this build.'
 
   try {
     const url = new URL(normalized.includes('://') ? normalized : `https://${normalized}`)

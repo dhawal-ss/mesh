@@ -2,6 +2,30 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use ts_rs::TS;
 
+/// A Matrix timeline event that was received but could not be decrypted.
+///
+/// The event identity is kept separately from the display message so the
+/// renderer can explain the gap without exposing encrypted payload data.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct UndecryptableMessageDto {
+    pub event_id: String,
+    pub sender: String,
+    #[ts(type = "number")]
+    pub origin_server_ts: u64,
+    pub reason: UndecryptableMessageReason,
+}
+
+/// Stable, product-facing categories for Matrix decryption failures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum UndecryptableMessageReason {
+    SentBeforeDevice,
+    KeysNotShared,
+    WaitingForKeys,
+    CouldNotDecrypt,
+}
+
 /// Message DTO sent over IPC.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -40,6 +64,11 @@ pub struct MessageDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "\"sent\" | \"pending\" | \"failed\" | null")]
     pub delivery_status: Option<String>,
+    /// Present only when Matrix received an event but the SDK could not
+    /// decrypt its message content.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "UndecryptableMessageDto | null")]
+    pub undecryptable: Option<UndecryptableMessageDto>,
 }
 
 /// File attachment metadata.

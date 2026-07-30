@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
@@ -7,7 +7,7 @@ import * as bridge from '../../lib/bridge'
 import { transitions } from '../../lib/motion'
 import { Icon } from '../ui/Icon'
 import { ErrorState } from '../ui/ErrorState'
-import { parseManagedCommunityInvite } from '../../lib/community-invites'
+import { parseAdmissionCommunityInvite } from '../../lib/community-invites'
 
 interface InviteModalProps {
   isOpen: boolean
@@ -24,6 +24,7 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
   const [username, setUsername] = useState('')
   const [inviteSent, setInviteSent] = useState(false)
   const [operationError, setOperationError] = useState<unknown | null>(null)
+  const copiedResetTimer = useRef<number | null>(null)
 
   const generateInvite = useCallback(async () => {
     setIsLoading(true)
@@ -40,10 +41,13 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
   }, [communityId])
 
   useEffect(() => {
-    if (!isOpen || !communityId) return
-    const timer = window.setTimeout(() => void generateInvite(), 0)
-    return () => window.clearTimeout(timer)
-  }, [generateInvite, isOpen, communityId])
+    return () => {
+      if (copiedResetTimer.current !== null) {
+        window.clearTimeout(copiedResetTimer.current)
+        copiedResetTimer.current = null
+      }
+    }
+  }, [])
 
   const handleMatrixInvite = async () => {
     if (!username.trim()) return
@@ -65,8 +69,6 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(inviteLink)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
     } catch {
       const textarea = document.createElement('textarea')
       textarea.value = inviteLink
@@ -74,9 +76,15 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
       textarea.select()
       document.execCommand('copy')
       document.body.removeChild(textarea)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
     }
+    setCopied(true)
+    if (copiedResetTimer.current !== null) {
+      window.clearTimeout(copiedResetTimer.current)
+    }
+    copiedResetTimer.current = window.setTimeout(() => {
+      setCopied(false)
+      copiedResetTimer.current = null
+    }, 2000)
   }
 
   const handleClose = () => {
@@ -106,6 +114,10 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
               <div className="flex items-center justify-center px-4 py-4">
                 <span className="text-sm text-muted animate-pulse-soft">Preparing private link…</span>
               </div>
+            ) : !inviteLink ? (
+              <p className="px-4 py-4 text-center text-sm text-muted">
+                Create a private link when you are ready to share an invitation.
+              </p>
             ) : (
               <div className="flex items-center gap-2 px-3 py-2.5">
                 <code className="flex-1 truncate font-mono text-sm text-secondary">
@@ -123,6 +135,16 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
               className="mt-3"
               compact
             />
+          )}
+
+          {!inviteLink && (
+            <Button
+              onClick={() => void generateInvite()}
+              disabled={isLoading || !communityId}
+              className="mt-3 w-full"
+            >
+              Create invite link
+            </Button>
           )}
 
           <Button onClick={handleCopy} disabled={isLoading || !inviteLink} className="mt-3 w-full">
@@ -144,7 +166,7 @@ export function InviteModal({ isOpen, onClose, communityId, communityName }: Inv
           </Button>
 
           <p className="mt-2 text-center text-xs text-muted">
-            {parseManagedCommunityInvite(inviteLink)
+            {parseAdmissionCommunityInvite(inviteLink)
               ? 'One person can use this private link within seven days. They enter automatically after signing in.'
               : matrixMode
                 ? 'This compatible service uses an administrator-approved access request.'

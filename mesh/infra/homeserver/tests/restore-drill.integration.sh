@@ -125,6 +125,7 @@ docker exec "$postgres_container" \
     --username "$postgres_user" \
     --dbname "$postgres_db" \
     --format=custom \
+    --exclude-table-data e2e_one_time_keys_json \
   > "$test_root/backup/postgres.dump"
 tar -czf "$test_root/backup/synapse-critical.tar.gz" \
   -C "$test_root/synapse" \
@@ -137,27 +138,14 @@ if [ -d "$test_root/synapse/media_store" ]; then
     media_store
 fi
 
-cat > "$test_root/backup/operator.env" <<EOF
+cat > "$test_root/backup/backup-metadata.env" <<EOF
 MESH_SERVER_NAME=$server_name
-MESH_HOMESERVER_HOST=matrix.mesh.restore.test
-MESH_RTC_HOST=rtc.mesh.restore.test
-MESH_RTC_ENABLED=0
-MESH_PUBLIC_ENABLED=0
-MESH_RUNTIME_UID=991
-MESH_RUNTIME_GID=991
-SYNAPSE_CONTROL_BIND=127.0.0.1
-SYNAPSE_CACHE_FACTOR=0.25
 POSTGRES_USER=$postgres_user
 POSTGRES_DB=$postgres_db
-POSTGRES_PASSWORD=$postgres_password
-REGISTRATION_SHARED_SECRET=$registration_secret
-MACAROON_SECRET_KEY=$macaroon_secret
-FORM_SECRET=$form_secret
-ACME_EMAIL=operator@mesh.restore.test
 EOF
 {
   for file in \
-    operator.env \
+    backup-metadata.env \
     postgres.dump \
     synapse-critical.tar.gz \
     media-store.tar.gz
@@ -171,8 +159,23 @@ EOF
 } > "$test_root/backup/manifest.sha256"
 
 sh "$homeserver_dir/verify-backup.sh" "$test_root/backup" >/dev/null
+cp "$test_root/backup/manifest.sha256" "$test_root/backup/manifest.valid"
+printf 'tampered manifest entry\n' >> "$test_root/backup/manifest.sha256"
+if MESH_RESTORE_POSTGRES_PASSWORD="$postgres_password" \
+  sh "$homeserver_dir/restore-drill.sh" "$test_root/backup" \
+  > "$test_root/tampered-restore.log" 2>&1
+then
+  echo "restore-drill accepted a tampered manifest." >&2
+  exit 1
+fi
+if ! grep -qi 'manifest' "$test_root/tampered-restore.log"; then
+  echo "restore-drill did not explain the tampered manifest failure." >&2
+  exit 1
+fi
+mv "$test_root/backup/manifest.valid" "$test_root/backup/manifest.sha256"
 MESH_RESTORE_RUNTIME_UID=991 \
 MESH_RESTORE_RUNTIME_GID=991 \
+MESH_RESTORE_POSTGRES_PASSWORD="$postgres_password" \
   sh "$homeserver_dir/restore-drill.sh" "$test_root/backup"
 test -s "$homeserver_dir/runtime/status/restore-drill-status.json"
 

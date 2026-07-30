@@ -10,7 +10,7 @@ import { AppError, describeError, normalizeError } from './errors'
 import {
   isMeshJoinLink,
   parseCommunityInvite,
-  parseManagedCommunityInvite,
+  parseAdmissionCommunityInvite,
   parseMatrixCommunityInvite,
 } from './community-invites'
 import { canStartLegacyVoice } from './voice-runtime'
@@ -30,6 +30,7 @@ import type {
   MatrixNotification,
   MatrixPersonalDataExport,
   MatrixCommunityAdmission,
+  PendingInvitationMetadata,
   MatrixQueuedMessageUpdate,
   MatrixUnreadUpdate,
   MatrixRoomNotificationMode,
@@ -340,6 +341,14 @@ export interface MatrixLoginRequest {
   deviceName?: string
 }
 
+export interface MatrixRegistrationRequest {
+  homeserver: string
+  username: string
+  password: string
+  registrationToken?: string
+  deviceName?: string
+}
+
 export interface MatrixOidcStatus {
   homeserver: string
   availability: 'supported' | 'not-supported' | 'invalid-configuration'
@@ -352,6 +361,15 @@ export interface MatrixOidcStatus {
   nativeCallbackReady: boolean
   ready: boolean
   reason: string
+}
+
+export interface MatrixServiceCapabilities {
+  homeserver: string
+  serverVersions: string[]
+  passwordLogin: boolean
+  browserLogin: boolean
+  registration: 'open' | 'closed' | 'unknown'
+  maxUploadBytes: number | null
 }
 
 export interface MatrixDevice {
@@ -435,30 +453,73 @@ export async function getBackendStatus(): Promise<BackendStatus> {
   return cacheBackendStatus(status)
 }
 
+export async function storePendingInvitation(inviteLink: string): Promise<PendingInvitationMetadata> {
+  return tauriInvoke<PendingInvitationMetadata>('store_pending_invitation', { inviteLink })
+}
+
+export async function readPendingInvitation(): Promise<string | null> {
+  return tauriInvoke<string | null>('read_pending_invitation')
+}
+
+export async function takePendingInvitation(): Promise<string | null> {
+  return tauriInvoke<string | null>('take_pending_invitation')
+}
+
+export async function peekPendingInvitation(): Promise<PendingInvitationMetadata | null> {
+  return tauriInvoke<PendingInvitationMetadata | null>(
+    'peek_pending_invitation',
+    undefined,
+    READ_IPC_OPTIONS,
+  )
+}
+
+export async function resolvePendingInvitation(): Promise<MatrixCommunityAdmission | null> {
+  return tauriInvoke<MatrixCommunityAdmission | null>(
+    'resolve_pending_invitation',
+    undefined,
+    READ_IPC_OPTIONS,
+  )
+}
+
+export async function clearPendingInvitation(): Promise<void> {
+  return tauriInvoke('clear_pending_invitation')
+}
+
 export async function matrixLogin(request: MatrixLoginRequest): Promise<BackendStatus> {
   const status = await tauriInvoke<BackendStatus>('matrix_login', { request })
   return cacheBackendStatus(status)
 }
 
 export async function matrixRegisterAccount(
-  username: string,
-  password: string,
-  registrationToken: string,
+  request: MatrixRegistrationRequest,
 ): Promise<BackendStatus> {
-  const status = await tauriInvoke<BackendStatus>('register_account', {
-    username,
-    password,
-    registrationToken,
-  })
+  const status = await tauriInvoke<BackendStatus>('register_account', { request })
   return cacheBackendStatus(status)
 }
 
-export async function matrixCheckUsernameAvailable(username: string): Promise<boolean> {
-  return tauriInvoke<boolean>('check_username_available', { username }, READ_IPC_OPTIONS)
+export async function matrixCheckUsernameAvailable(
+  homeserver: string,
+  username: string,
+): Promise<boolean> {
+  return tauriInvoke<boolean>(
+    'check_username_available',
+    { homeserver, username },
+    READ_IPC_OPTIONS,
+  )
 }
 
 export const registerAccount = matrixRegisterAccount
 export const checkUsernameAvailable = matrixCheckUsernameAvailable
+
+export async function matrixServiceCapabilities(
+  homeserver: string,
+): Promise<MatrixServiceCapabilities> {
+  return tauriInvoke<MatrixServiceCapabilities>(
+    'matrix_service_capabilities',
+    { homeserver },
+    READ_IPC_OPTIONS,
+  )
+}
 
 export async function matrixOidcStatus(homeserver: string): Promise<MatrixOidcStatus> {
   return tauriInvoke<MatrixOidcStatus>('matrix_oidc_status', { homeserver }, READ_IPC_OPTIONS)
@@ -1045,7 +1106,7 @@ export async function getCommunities(): Promise<Community[]> {
 
 export async function joinCommunity(inviteLink: string): Promise<Community> {
   if (isMatrixBackend()) {
-    if (parseManagedCommunityInvite(inviteLink)) {
+    if (parseAdmissionCommunityInvite(inviteLink)) {
       return claimCommunityInvite(inviteLink)
     }
     const parsed = parseMatrixCommunityInvite(inviteLink)
@@ -1067,10 +1128,10 @@ export async function joinCommunity(inviteLink: string): Promise<Community> {
 export async function resolveCommunityInvite(
   inviteLink: string,
 ): Promise<MatrixCommunityAdmission> {
-  if (!parseManagedCommunityInvite(inviteLink)) {
+  if (!parseAdmissionCommunityInvite(inviteLink)) {
     throw new AppError(
       'community_invite_invalid',
-      'This managed community invitation is incomplete or invalid.',
+      'This community admission invitation is incomplete or invalid.',
       false,
     )
   }
@@ -1078,10 +1139,10 @@ export async function resolveCommunityInvite(
 }
 
 export async function claimCommunityInvite(inviteLink: string): Promise<Community> {
-  if (!parseManagedCommunityInvite(inviteLink)) {
+  if (!parseAdmissionCommunityInvite(inviteLink)) {
     throw new AppError(
       'community_invite_invalid',
-      'This managed community invitation is incomplete or invalid.',
+      'This community admission invitation is incomplete or invalid.',
       false,
     )
   }
@@ -1091,17 +1152,33 @@ export async function claimCommunityInvite(inviteLink: string): Promise<Communit
 export async function joinOrRequestCommunity(
   inviteLink: string,
 ): Promise<CommunityAccessResult> {
+  const parsed = isMatrixBackend() ? parseMatrixCommunityInvite(inviteLink) : null
   try {
     return {
       status: 'joined',
       community: await joinCommunity(inviteLink),
     }
   } catch (error) {
-    if (!isMatrixBackend() || normalizeError(error).code !== 'permission_denied') {
+    if (!isMatrixBackend() || !parsed) {
       throw error
     }
-    const parsed = parseMatrixCommunityInvite(inviteLink)
-    if (!parsed) throw error
+    if (parseAdmissionCommunityInvite(inviteLink)) {
+      try {
+        return {
+          status: 'joined',
+          community: await tauriInvoke('matrix_join_community', {
+            roomOrAlias: parsed.roomOrAlias,
+            via: parsed.via,
+          }),
+        }
+      } catch (directJoinError) {
+        if (normalizeError(directJoinError).code !== 'permission_denied') {
+          throw directJoinError
+        }
+      }
+    } else if (normalizeError(error).code !== 'permission_denied') {
+      throw error
+    }
     return requestCommunityAccess(
       parsed.roomOrAlias,
       'Requested through a private Mesh community link.',
@@ -1314,6 +1391,17 @@ export async function deleteMessage(messageId: string, channelId?: string): Prom
     return tauriInvoke('matrix_redact_message', { roomId: channelId, eventId: messageId })
   }
   return tauriInvoke('delete_message', { messageId })
+}
+
+export async function reportMessage(messageId: string, channelId: string, reason: string): Promise<void> {
+  if (!isMatrixBackend()) {
+    throw new Error('Message reporting is available only for Matrix-compatible services')
+  }
+  return tauriInvoke('matrix_report_message', {
+    roomId: channelId,
+    eventId: messageId,
+    reason,
+  })
 }
 
 export async function addReaction(messageId: string, emoji: string, channelId?: string): Promise<string | boolean> {

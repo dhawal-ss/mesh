@@ -71,7 +71,7 @@ describe('Matrix community invitation bridge', () => {
     })
   })
 
-  it('claims a managed admission directly without falling back to an approval request', async () => {
+  it('claims a community admission directly without falling back to an approval request', async () => {
     const link =
       'https://mesh.test/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789'
     const community = {
@@ -114,6 +114,42 @@ describe('Matrix community invitation bridge', () => {
       via: ['mesh.test'],
     })
     expect(invokeMock).toHaveBeenNthCalledWith(2, 'matrix_knock_community', {
+      roomOrAlias: '!community:mesh.test',
+      reason: 'Requested through a private Mesh community link.',
+      via: ['mesh.test'],
+    })
+  })
+
+  it('falls back to federated join and knock when a version 5 admission service is offline', async () => {
+    const code = 'abcdefghijklmnopqrstuvwxyzABCDEFG_123456789'
+    const link =
+      `mesh://join?v=5&kind=community&room=!community%3Amesh.test&via=mesh.test`
+      + `&admission=https%3A%2F%2Finvites.mesh.test&code=${code}`
+    invokeMock
+      .mockRejectedValueOnce({
+        code: 'network_unavailable',
+        detail: 'admission service offline',
+        retryable: true,
+      })
+      .mockRejectedValueOnce({
+        code: 'permission_denied',
+        detail: 'M_FORBIDDEN: invite required',
+        retryable: false,
+      })
+      .mockResolvedValueOnce({ status: 'knocked', community: null })
+
+    await expect(joinOrRequestCommunity(link)).resolves.toEqual({
+      status: 'knocked',
+      community: null,
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(1, 'matrix_claim_community_invite', {
+      inviteUrl: link,
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(2, 'matrix_join_community', {
+      roomOrAlias: '!community:mesh.test',
+      via: ['mesh.test'],
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(3, 'matrix_knock_community', {
       roomOrAlias: '!community:mesh.test',
       reason: 'Requested through a private Mesh community link.',
       via: ['mesh.test'],

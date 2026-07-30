@@ -4,6 +4,8 @@ set -eu
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 cd "$script_dir"
 umask 077
+# shellcheck source=infra/homeserver/backup-lib.sh
+. "$script_dir/backup-lib.sh"
 
 if [ ! -f .env ]; then
   echo "Missing .env. Run ./setup.sh first." >&2
@@ -18,6 +20,17 @@ set +a
 : "${MESH_SERVER_NAME:?MESH_SERVER_NAME is required}"
 : "${POSTGRES_USER:?POSTGRES_USER is required}"
 : "${POSTGRES_DB:?POSTGRES_DB is required}"
+
+local_keep_daily="${MESH_LOCAL_BACKUP_KEEP_DAILY:-7}"
+local_keep_weekly="${MESH_LOCAL_BACKUP_KEEP_WEEKLY:-4}"
+for value in "$local_keep_daily" "$local_keep_weekly"; do
+  case "$value" in
+    *[!0-9]*|"")
+      echo "MESH_LOCAL_BACKUP_KEEP_DAILY and MESH_LOCAL_BACKUP_KEEP_WEEKLY must be non-negative integers." >&2
+      exit 1
+      ;;
+  esac
+done
 
 backup_root="$script_dir/runtime/backups"
 status_root="$script_dir/runtime/status"
@@ -72,12 +85,16 @@ do
   fi
 done
 
+# Synapse backup guidance requires excluding already-used one-time keys. If
+# restored, e2e_one_time_keys_json rows can be re-issued and break federation
+# decryption. See https://element-hq.github.io/synapse/latest/usage/administration/howto-maintenance-and-tasks.html#database-backups.
 docker compose exec -T postgres \
   pg_dump --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --format=custom \
+  --exclude-table-data e2e_one_time_keys_json \
   > "$staging/postgres.dump"
 test -s "$staging/postgres.dump"
-docker compose exec -T postgres pg_restore --list \
-  < "$staging/postgres.dump" >/dev/null
+dump_listing="$(docker compose exec -T postgres pg_restore --list < "$staging/postgres.dump")"
+printf '%s\n' "$dump_listing" | assert_no_otk_table_data
 
 tar -czf "$staging/synapse-critical.tar.gz" \
   -C "$script_dir/runtime/synapse" \
@@ -91,15 +108,20 @@ if [ -d "$script_dir/runtime/synapse/media_store" ]; then
     media_store
 fi
 
-# A complete disaster recovery needs the stable server identity and the
-# matching runtime secrets. The local backup directory is mode 0700 and the
-# offsite path is required to use restic's authenticated encryption.
-cp .env "$staging/operator.env"
-chmod 600 "$staging/operator.env"
+# The standalone operator environment and admission credentials intentionally
+# do not enter the backup set. The Synapse configuration and stable signing
+# key remain sensitive, so local FileVault and encrypted offsite storage are
+# still required.
+{
+  printf 'MESH_SERVER_NAME=%s\n' "$MESH_SERVER_NAME"
+  printf 'POSTGRES_USER=%s\n' "$POSTGRES_USER"
+  printf 'POSTGRES_DB=%s\n' "$POSTGRES_DB"
+} > "$staging/backup-metadata.env"
+chmod 600 "$staging/backup-metadata.env"
 
 {
   for backup_file in \
-    operator.env \
+    backup-metadata.env \
     postgres.dump \
     synapse-critical.tar.gz \
     media-store.tar.gz
@@ -117,6 +139,11 @@ sh "$script_dir/verify-backup.sh" "$staging" >&2
 mv "$staging" "$destination"
 staging=""
 chmod 700 "$destination"
+prune_local_backups \
+  "$backup_root" \
+  "$destination" \
+  "$local_keep_daily" \
+  "$local_keep_weekly"
 
 completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 status_tmp="$status_root/.local-backup-status.$$"

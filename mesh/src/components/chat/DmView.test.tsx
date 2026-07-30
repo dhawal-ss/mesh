@@ -48,6 +48,11 @@ describe('DmView message containment', () => {
       callback(0)
       return 1
     })
+    vi.stubGlobal('ResizeObserver', class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    })
 
     useIdentityStore.setState({
       identity: {
@@ -135,5 +140,63 @@ describe('DmView message containment', () => {
     expect(emptyState?.getAttribute('aria-labelledby')).toBe(title?.id)
     expect(emptyState?.getAttribute('aria-describedby')).toBe(description?.id)
     expect(emptyState?.querySelector('.border-dashed')).toBeNull()
+  })
+
+  it('offers account-service reporting for a received Matrix DM', async () => {
+    vi.mocked(bridge.isMatrixBackend).mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@me:example.org')
+    vi.spyOn(bridge, 'getDmMessages').mockResolvedValue([
+      {
+        ...directMessage('$peer-event:example.org', 'Reportable message'),
+        authorPublicKey: '@peer:example.org',
+      },
+    ])
+    vi.spyOn(bridge, 'matrixDmBlocked').mockResolvedValue(false)
+    vi.spyOn(bridge, 'matrixRoomIsEncrypted').mockResolvedValue(true)
+    vi.spyOn(bridge, 'matrixWaitForRoomUpdate').mockReturnValue(new Promise(() => {}))
+    const report = vi.spyOn(bridge, 'reportMessage').mockResolvedValue()
+
+    await act(async () => {
+      root.render(<DmView />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const reportButton = container.querySelector<HTMLButtonElement>('[aria-label="Report message"]')
+    expect(reportButton).not.toBeNull()
+    await act(async () => reportButton?.click())
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')
+    const send = [...dialog!.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.includes('Send report'))
+    await act(async () => {
+      send?.click()
+      await Promise.resolve()
+    })
+
+    expect(report).toHaveBeenCalledWith(
+      '$peer-event:example.org',
+      'conversation-1',
+      'Spam or abusive content',
+    )
+  })
+
+  it('keeps a five-thousand-message conversation DOM bounded', async () => {
+    const messages = Array.from({ length: 5_000 }, (_, index) => ({
+      ...directMessage(`event-${index}`, `Message ${index}`),
+      authorPublicKey: index % 2 === 0 ? '@peer:example.org' : '@me:example.org',
+    }))
+    vi.spyOn(bridge, 'getDmMessages').mockResolvedValue(messages)
+
+    await act(async () => {
+      root.render(<DmView />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const renderedMessages = container.querySelectorAll('[role="group"][aria-label^="Message from"]')
+    expect(renderedMessages.length).toBeGreaterThan(0)
+    expect(renderedMessages.length).toBeLessThan(100)
+    expect(container.textContent).toContain('Message 0')
+    expect(container.textContent).not.toContain('Message 4999')
   })
 })

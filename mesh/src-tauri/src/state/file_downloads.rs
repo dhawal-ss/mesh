@@ -331,7 +331,7 @@ fn compute_file_sha256(path: &Path) -> anyhow::Result<String> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::{DownloadManager, DownloadUpdate, CHUNK_SIZE_BYTES};
+    use super::{compute_file_sha256, DownloadManager, DownloadUpdate, CHUNK_SIZE_BYTES};
     use sha2::{Digest, Sha256};
     use std::fs;
     use std::path::PathBuf;
@@ -385,6 +385,47 @@ mod tests {
         assert_eq!(completed.progress.received_chunks, 2);
         assert_eq!(completed.progress.state, "completed");
         assert!(completed.local_path.exists());
+    }
+
+    #[test]
+    fn security_boundary_hash_mismatch_never_publishes_the_download() {
+        let dir = temp_downloads_dir("hash-mismatch");
+        let mut manager = DownloadManager::default();
+        let expected_hash = sha256_hex(&[b"expected"]);
+        manager
+            .start_download(expected_hash.clone(), "report.txt".into(), 7, 1, &dir, None)
+            .unwrap();
+
+        let update = manager
+            .record_chunk(&expected_hash, 0, b"changed")
+            .unwrap()
+            .expect("a completed corrupt download must produce a terminal update");
+
+        let DownloadUpdate::Failed(progress) = update else {
+            panic!("a mismatched digest must fail the download");
+        };
+        assert_eq!(progress.state, "failed");
+        assert!(!dir.join("report.txt").exists());
+        assert!(
+            fs::read_dir(&dir)
+                .unwrap()
+                .filter_map(Result::ok)
+                .next()
+                .is_none(),
+            "a failed digest must not publish a final file",
+        );
+    }
+
+    #[test]
+    fn security_boundary_file_hash_is_content_derived() {
+        let dir = temp_downloads_dir("content-hash");
+        let path = dir.join("payload.bin");
+        fs::write(&path, b"mesh integrity").unwrap();
+
+        assert_eq!(
+            compute_file_sha256(&path).unwrap(),
+            sha256_hex(&[b"mesh integrity"]),
+        );
     }
 
     #[test]

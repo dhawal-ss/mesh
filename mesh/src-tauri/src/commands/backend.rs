@@ -11,10 +11,11 @@ use crate::backend::{
     CommunityApplication, CommunityDirectoryEntry, CommunityMember, CommunityModerationResult,
     CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest, MatrixCommunityAdmission,
     MatrixDevice, MatrixLogin, MatrixOidcStatus, MatrixPersonalDataExport, MatrixProfile,
-    MatrixRecoveryHealth, MatrixRoomNotificationMode, MatrixRoomPins, MatrixRtcJoinResult,
-    MatrixRtcMediaKey, MatrixRtcMediaKeyLease, MatrixRtcMember, MatrixTransferObserver,
-    MatrixTransferProgressCallback, MatrixVerificationSession, ModerationAuditEntry, TypingUser,
-    UserPreferences, MATRIX_TRANSFER_PROGRESS_EVENT,
+    MatrixRecoveryHealth, MatrixRegistration, MatrixRoomNotificationMode, MatrixRoomPins,
+    MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyLease, MatrixRtcMember,
+    MatrixServiceCapabilities, MatrixTransferObserver, MatrixTransferProgressCallback,
+    MatrixVerificationSession, ModerationAuditEntry, TypingUser, UserPreferences,
+    MATRIX_TRANSFER_PROGRESS_EVENT,
 };
 use crate::state::AppState;
 use crate::types::{
@@ -25,7 +26,7 @@ use crate::types::{
 
 use super::{attachments::AttachmentGrantStore, error::CommandError};
 
-fn map_error(error: BackendError) -> CommandError {
+pub(super) fn map_error(error: BackendError) -> CommandError {
     match error {
         BackendError::NotAuthenticated => CommandError::NotAuthenticated,
         BackendError::Network(_) => CommandError::Network(error.to_string()),
@@ -38,7 +39,9 @@ fn map_error(error: BackendError) -> CommandError {
         BackendError::DecryptionFailed(_) => CommandError::DecryptionFailed(error.to_string()),
         BackendError::Cancelled(_) => CommandError::Cancelled(error.to_string()),
         BackendError::InvalidConfiguration(_) => CommandError::Validation(error.to_string()),
-        BackendError::ManagedHomeserverUnconfigured => CommandError::ManagedHomeserverUnconfigured,
+        BackendError::CommunityHomeserverUnconfigured => {
+            CommandError::CommunityHomeserverUnconfigured
+        }
         BackendError::UsernameUnavailable => CommandError::UsernameUnavailable,
         BackendError::RegistrationTermsRequired => CommandError::RegistrationTermsRequired,
         BackendError::RegistrationAdditionalAuthRequired => {
@@ -56,7 +59,7 @@ fn map_error(error: BackendError) -> CommandError {
     }
 }
 
-fn require_matrix(state: &State<'_, AppState>) -> Result<(), CommandError> {
+pub(super) fn require_matrix(state: &State<'_, AppState>) -> Result<(), CommandError> {
     if state.backend.kind() != BackendKind::Matrix {
         return Err(CommandError::Validation(
             "Matrix operation requested while MESH_BACKEND=legacy-p2p".into(),
@@ -142,22 +145,21 @@ pub async fn matrix_login(
 
 #[tauri::command]
 pub async fn register_account(
-    username: String,
-    password: String,
-    registration_token: Option<String>,
+    request: MatrixRegistration,
     state: State<'_, AppState>,
 ) -> Result<BackendStatus, CommandError> {
     require_matrix(&state)?;
     state
         .backend
         .backend()
-        .register_account(username, password, registration_token)
+        .register_account(request)
         .await
         .map_err(map_error)
 }
 
 #[tauri::command]
 pub async fn check_username_available(
+    homeserver: String,
     username: String,
     state: State<'_, AppState>,
 ) -> Result<bool, CommandError> {
@@ -165,7 +167,21 @@ pub async fn check_username_available(
     state
         .backend
         .backend()
-        .check_username_available(username)
+        .check_username_available(homeserver, username)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_service_capabilities(
+    homeserver: String,
+    state: State<'_, AppState>,
+) -> Result<MatrixServiceCapabilities, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .service_capabilities(homeserver)
         .await
         .map_err(map_error)
 }
@@ -1165,6 +1181,22 @@ pub async fn matrix_redact_message(
         .backend
         .backend()
         .redact_message(room_id, event_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_report_message(
+    room_id: String,
+    event_id: String,
+    reason: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .report_message(room_id, event_id, reason)
         .await
         .map_err(map_error)
 }

@@ -3,6 +3,8 @@ set -eu
 
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 cd "$script_dir"
+# shellcheck source=infra/homeserver/operational-health-lib.sh
+. "$script_dir/operational-health-lib.sh"
 
 local_max_seconds="${MESH_LOCAL_BACKUP_MAX_SECONDS:-93600}"
 offsite_max_seconds="${MESH_OFFSITE_BACKUP_MAX_SECONDS:-93600}"
@@ -23,10 +25,6 @@ do
   esac
 done
 
-file_mtime() {
-  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1"
-}
-
 check_fresh_status() {
   status_file="$1"
   maximum_age="$2"
@@ -37,6 +35,10 @@ check_fresh_status() {
   fi
   if ! grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' "$status_file"; then
     echo "$label status is not healthy." >&2
+    return 1
+  fi
+  if ! grep -Eq '"lastSuccessfulAt"[[:space:]]*:[[:space:]]*"[^"]+"' "$status_file"; then
+    echo "$label status has no last-success timestamp." >&2
     return 1
   fi
   now="$(date +%s)"

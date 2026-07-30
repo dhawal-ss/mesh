@@ -1,4 +1,4 @@
-import { parseManagedCommunityInvite } from '../../lib/community-invites'
+import { parseAdmissionCommunityInvite } from '../../lib/community-invites'
 import { describeError, normalizeError } from '../../lib/errors'
 
 export type PasswordStrength = {
@@ -17,14 +17,14 @@ export function normalizeUsername(value: string): string {
 export function invitationCodeFromInput(value: string): string | null {
   const input = value.trim()
   if (!input) return null
-  // Managed community links contain an admission capability, not a Synapse
+  // Community admission links contain a capability, not a Synapse
   // registration token. The native backend validates and resolves that
   // capability; this parser must never submit the public code directly.
-  if (parseManagedCommunityInvite(input)) return null
+  if (parseAdmissionCommunityInvite(input)) return null
   if (INVITATION_CODE_PATTERN.test(input)) return input
 
   try {
-    const url = new URL(input.replace(/^mesh:\/\//i, 'https://mesh.dhawal.org/'))
+    const url = new URL(input.replace(/^mesh:\/\//i, 'https://community.example/'))
     const queryCode = url.searchParams.get('registration_token')
       ?? url.searchParams.get('code')
     if (queryCode && INVITATION_CODE_PATTERN.test(queryCode)) return queryCode
@@ -38,7 +38,7 @@ export function invitationCodeFromInput(value: string): string | null {
 
 export function invitationValidationError(value: string): string | null {
   if (!value.trim()) return 'Enter the code from your Mesh invitation.'
-  if (!parseManagedCommunityInvite(value) && !invitationCodeFromInput(value)) {
+  if (!parseAdmissionCommunityInvite(value) && !invitationCodeFromInput(value)) {
     return 'Paste a valid Mesh invitation link or code.'
   }
   return null
@@ -83,7 +83,7 @@ export function passwordStrength(password: string): PasswordStrength {
 export function friendlyAccountCreationError(cause: unknown): string {
   const normalized = normalizeError(cause)
   if ([
-    'managed_homeserver_unconfigured',
+    'community_homeserver_unconfigured',
     'username_unavailable',
     'registration_terms_required',
     'registration_additional_auth_required',

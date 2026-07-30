@@ -11,6 +11,7 @@ import { Icon } from '../ui/Icon'
 import { useIdentityStore } from '../../store/identity'
 import { useNetworkStore } from '../../store/network'
 import { EmptyState } from '../ui/Primitives'
+import { useVirtualScroll, type VirtualItem } from '../../hooks/useVirtualScroll'
 
 export function DmSidebar() {
   const conversations = useDmStore((state) => state.conversations)
@@ -37,6 +38,32 @@ export function DmSidebar() {
       return name.toLocaleLowerCase().includes(normalizedQuery)
     })
   }, [conversations, query])
+  const virtualItems = useMemo<VirtualItem[]>(() => filteredConversations.map((conversation) => ({
+    key: conversation.id,
+    type: 'message',
+    height: 52,
+  })), [filteredConversations])
+  const {
+    scrollContainerRef,
+    topSpacerHeight,
+    bottomSpacerHeight,
+    visibleRange,
+    handleScroll,
+    resetLayout,
+  } = useVirtualScroll(virtualItems, {
+    estimatedMessageHeight: 52,
+    overscanPx: 500,
+  })
+  const visibleConversations = useMemo(
+    () => filteredConversations.length === 0
+      ? []
+      : filteredConversations.slice(visibleRange.start, visibleRange.end + 1),
+    [filteredConversations, visibleRange.end, visibleRange.start],
+  )
+
+  useEffect(() => {
+    resetLayout()
+  }, [query, resetLayout])
 
   useEffect(() => {
     if (bridge.isMatrixBackend()) {
@@ -112,7 +139,13 @@ export function DmSidebar() {
       </div>
 
       {/* Conversation list */}
-      <div className="flex-1 overflow-y-auto px-2">
+      <div
+        ref={scrollContainerRef}
+        onScroll={() => void handleScroll()}
+        className="flex-1 overflow-y-auto px-2"
+        role="list"
+        aria-label="Direct message conversations"
+      >
         {filteredConversations.length === 0 ? (
           <EmptyState
             variant="compact"
@@ -125,49 +158,57 @@ export function DmSidebar() {
             }
           />
         ) : (
-          <div className="space-y-0.5">
-            {filteredConversations.map((conv) => {
+          <div
+            className="space-y-0.5"
+            data-design-token-exception="data-driven-virtual-spacer-geometry"
+            style={{
+              paddingTop: `${topSpacerHeight}px`,
+              paddingBottom: `${bottomSpacerHeight}px`,
+            }}
+          >
+            {visibleConversations.map((conv) => {
               const isActive = conv.id === activeConversationId
               const shortName = conv.peerDisplayName || conv.peerPublicKey.slice(0, 8)
 
               return (
-                <button
-                  key={conv.id}
-                  onClick={() => void handleSelect(conv.id)}
-                  className={`group flex w-full items-center gap-3 rounded px-2 py-density-row text-left transition-colors ${
-                    isActive
-                      ? 'mesh-channel-active bg-surface-selected text-primary'
-                      : 'text-muted hover:bg-surface-hover hover:text-secondary'
-                  }`}
-                  aria-label={`Direct message with ${shortName}`}
-                >
-                  <Avatar
-                    color={conv.peerAvatarColor}
-                    size={32}
-                    name={shortName}
-                  />
+                <div key={conv.id} role="listitem">
+                  <button
+                    onClick={() => void handleSelect(conv.id)}
+                    className={`group flex w-full items-center gap-3 rounded px-2 py-density-row text-left transition-colors ${
+                      isActive
+                        ? 'mesh-channel-active bg-surface-selected text-primary'
+                        : 'text-muted hover:bg-surface-hover hover:text-secondary'
+                    }`}
+                    aria-label={`Direct message with ${shortName}`}
+                  >
+                    <Avatar
+                      color={conv.peerAvatarColor}
+                      size={32}
+                      name={shortName}
+                    />
 
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium">{shortName}</span>
-                      {conv.lastMessageAt && (
-                        <span className="tnum ml-auto flex-shrink-0 text-meta text-muted">
-                          {format(new Date(conv.lastMessageAt), 'MMM d')}
-                        </span>
-                      )}
-                      {showUnreadBadges && conv.unreadCount > 0 && (
-                        <span className="badge-count flex h-4 min-w-4 flex-shrink-0 items-center justify-center rounded-full bg-accent px-1 text-meta font-semibold text-content-on-accent">
-                          {conv.unreadCount > 99 ? '99+' : conv.unreadCount}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-medium">{shortName}</span>
+                        {conv.lastMessageAt && (
+                          <span className="tnum ml-auto flex-shrink-0 text-meta text-muted">
+                            {format(new Date(conv.lastMessageAt), 'MMM d')}
+                          </span>
+                        )}
+                        {showUnreadBadges && conv.unreadCount > 0 && (
+                          <span className="badge-count flex h-4 min-w-4 flex-shrink-0 items-center justify-center rounded-full bg-accent px-1 text-meta font-semibold text-content-on-accent">
+                            {conv.unreadCount > 99 ? '99+' : conv.unreadCount}
+                          </span>
+                        )}
+                      </div>
+                      {matrixMode && conv.peerPublicKey.startsWith('@') && (
+                        <span className="identifier block truncate font-mono text-caption text-muted">
+                          {conv.peerPublicKey}
                         </span>
                       )}
                     </div>
-                    {matrixMode && conv.peerPublicKey.startsWith('@') && (
-                      <span className="identifier block truncate font-mono text-caption text-muted">
-                        {conv.peerPublicKey}
-                      </span>
-                    )}
-                  </div>
-                </button>
+                  </button>
+                </div>
               )
             })}
           </div>

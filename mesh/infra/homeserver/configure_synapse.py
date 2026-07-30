@@ -17,6 +17,15 @@ def required(name: str) -> str:
     return value
 
 
+def boolean_environment(name: str, default: bool) -> bool:
+    value = os.environ.get(name, "1" if default else "0").strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise SystemExit(f"{name} must be 0/1 or true/false")
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         raise SystemExit("usage: configure_synapse.py /data/homeserver.yaml")
@@ -26,6 +35,8 @@ def main() -> None:
 
     server_name = required("MESH_SERVER_NAME")
     homeserver_host = required("MESH_HOMESERVER_HOST")
+    abuse_email = required("MESH_ABUSE_EMAIL")
+    registration_enabled = boolean_environment("MESH_REGISTRATION_ENABLED", True)
 
     config.update(
         {
@@ -67,8 +78,14 @@ def main() -> None:
             "media_retention": {
                 "remote_media_lifetime": "30d",
             },
+            # Community content has no automatic deletion policy by default.
+            # Operators must announce and review any future retention change
+            # before applying it to existing rooms.
+            "retention": {
+                "enabled": False,
+            },
             "url_preview_enabled": False,
-            "enable_registration": True,
+            "enable_registration": registration_enabled,
             "enable_registration_without_verification": False,
             "registration_requires_token": True,
             "allow_guest_access": False,
@@ -81,6 +98,29 @@ def main() -> None:
             },
             "allow_public_rooms_without_auth": False,
             "allow_public_rooms_over_federation": False,
+            "admin_contact": f"mailto:{abuse_email}",
+            "rc_login": {
+                "address": {"per_second": 0.17, "burst_count": 5},
+                "account": {"per_second": 0.17, "burst_count": 5},
+                "failed_attempts": {"per_second": 0.17, "burst_count": 5},
+            },
+            "rc_registration": {"per_second": 0.01, "burst_count": 2},
+            "rc_message": {"per_second": 0.5, "burst_count": 20},
+            "rc_joins": {
+                "local": {"per_second": 0.1, "burst_count": 10},
+                "remote": {"per_second": 0.01, "burst_count": 10},
+            },
+            "rc_invites": {
+                "per_room": {"per_second": 0.1, "burst_count": 10},
+                "per_user": {"per_second": 0.01, "burst_count": 10},
+            },
+            "rc_federation": {
+                "window_size": 1_000,
+                "sleep_limit": 10,
+                "sleep_delay": 500,
+                "reject_limit": 50,
+                "concurrent": 3,
+            },
             "serve_server_wellknown": False,
             "trusted_key_servers": [{"server_name": "matrix.org"}],
             "suppress_key_server_warning": True,

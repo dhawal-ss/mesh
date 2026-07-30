@@ -22,7 +22,8 @@ use matrix_sdk::{
     Client,
 };
 use mesh_lib::backend::{
-    MatrixBackend, MatrixLogin, MatrixRoomNotificationMode, MeshBackend, UserPreferences,
+    MatrixBackend, MatrixLogin, MatrixRegistration, MatrixRoomNotificationMode, MeshBackend,
+    UserPreferences,
 };
 
 struct EnvironmentOverride {
@@ -198,22 +199,25 @@ async fn erase_live_test_account(label: &str, backend: &MatrixBackend) {
 /// through the Synapse operator CLI used to prepare the federation fixture.
 #[tokio::test]
 #[ignore = "requires infra/matrix-spike"]
-async fn matrix_backend_registers_a_fresh_managed_account() {
-    let _homeserver = EnvironmentOverride::new("MESH_MANAGED_HOMESERVER", "http://localhost:8008");
-    let _server_name = EnvironmentOverride::new("MESH_MANAGED_SERVER_NAME", "hs1.mesh.test");
+async fn matrix_backend_registers_a_fresh_community_hosted_account() {
+    let _homeserver =
+        EnvironmentOverride::new("MESH_COMMUNITY_HOMESERVER", "http://localhost:8008");
+    let _server_name = EnvironmentOverride::new("MESH_COMMUNITY_SERVER_NAME", "hs1.mesh.test");
     let store = tempfile::tempdir().unwrap();
     let nonce = uuid::Uuid::new_v4().simple().to_string();
     let username = format!("meshreg{}", &nonce[..12]);
     let backend = MatrixBackend::with_profile(store.path().to_owned(), "matrix-spike-registration");
 
     let status = backend
-        .register_account(
-            username.clone(),
-            "mesh-registration-passphrase".into(),
-            Some("mesh-spike-registration".into()),
-        )
+        .register_account(MatrixRegistration {
+            homeserver: "http://localhost:8008".into(),
+            username: username.clone(),
+            password: "mesh-registration-passphrase".into(),
+            registration_token: None,
+            device_name: Some("mesh-spike-registration".into()),
+        })
         .await
-        .expect("Mesh account registration must succeed on the managed local service");
+        .expect("Mesh account registration must succeed on the community-hosted local service");
     assert!(status.authenticated);
     assert_eq!(
         status.user_id.as_deref(),

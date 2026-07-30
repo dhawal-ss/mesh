@@ -76,6 +76,7 @@ pub(super) async fn route_signed_message(app_handle: &AppHandle, envelope: &Sign
         transaction_id: None,
         client_request_id: None,
         delivery_status: None,
+        undecryptable: None,
     };
 
     if let Some(db) = app_handle.try_state::<Database>() {

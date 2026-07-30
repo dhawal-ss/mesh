@@ -879,6 +879,7 @@ export function ChatView({
                       onRetry={handleRetry}
                       onCancel={handleCancelQueued}
                       limitedActions={false}
+                      trust={trust}
                       isHighlighted={highlightedMessageId === message.id}
                       editRequestToken={
                         editRequest?.messageId === message.id ? editRequest.token : 0
@@ -958,6 +959,7 @@ interface VirtualMessageRowProps {
   onRetry?: (message: MessageType) => void
   onCancel?: (message: MessageType) => void
   limitedActions?: boolean
+  trust?: RoomTrustSnapshot
   isHighlighted: boolean
   editRequestToken: number
 }
@@ -972,6 +974,7 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
   onRetry,
   onCancel,
   limitedActions,
+  trust,
   isHighlighted,
   editRequestToken,
 }: VirtualMessageRowProps) {
@@ -1040,6 +1043,7 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
           onRetry={onRetry}
           onCancel={onCancel}
           limitedActions={limitedActions}
+          trust={trust}
           editRequestToken={editRequestToken}
         />
       </ErrorBoundary>
