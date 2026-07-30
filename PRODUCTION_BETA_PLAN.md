@@ -8,12 +8,16 @@
 
 ## Current verified readiness ledger
 
-**Evidence date:** 2026-07-29
+**Evidence date:** 2026-07-30
 **Branch:** `main`
 **Phase 0 implementation SHA:** `67b1ec80d90d9f1e4d016fea8984a14b06b2d37a`
 **Phase 0 main merge SHA:** `12f451dca133f4d7658e42a7930614691b27a299`
-**Implementation state:** Phase 0/Z0 is closed; the Z1-Z8 engineering tranche
-has complete local evidence and is awaiting protected same-SHA GitHub evidence.
+**Z1-Z8 implementation SHA:** `f5edcee861e6244efe2aeee4d13ee67ee38d1384`
+**Z1-Z8 main merge SHA:** `9fcc5c3aaefdca8923ec916b786a0134d5b2d5e9`
+**Implementation state:** Z0-Z8 engineering is complete and merged. All seven
+protected checks and two independently reset federation/recovery runs passed on
+the exact Z1-Z8 implementation SHA. Public beta publication remains gated on
+the owner-operated and external approvals listed below.
 
 This section is the current source of truth. The detailed workstream review below
 is retained as the original `2ca3dcc` audit baseline, so statements there that
@@ -66,20 +70,18 @@ branch was deleted after merge.
 
 ### Z1-Z8 engineering tranche
 
-The following implementation is complete in the current candidate worktree.
-Protected GitHub checks and two independently reset federation/recovery runs must
-still pass on its exact commit before this section can be promoted to same-SHA
-evidence.
+The following implementation is complete and merged into `main`. The evidence
+below was collected from the exact implementation SHA before merge.
 
 | Area | Implemented result | Current evidence |
 | --- | --- | --- |
 | Z1/Z3 service choice | Matrix.org is prominent but never automatic; tchncs.de and quassel.io are reviewed public options; invitation-provided and arbitrary compatible services remain first-class. Catalog data includes operator/policy/limit/review metadata and expires for re-review. Only the selected service is probed. | Catalog/schema, onboarding, stale-selection, custom-service, keyboard, zoom, and live discovery checks pass. Live discovery returned Matrix client versions and password/SSO/token login methods for all three entries on 2026-07-29. |
-| Z2 account-independent invitations | Version 5 invitations separate room routing, community metadata, admission, and resume state. Versions 3/4 remain compatible. Existing or separately hosted accounts join directly through federation and fall back to knock; community registration is optional and never receives an account access token. Pending links are encrypted in a native, keychain-backed, 30-day store; the renderer receives only opaque metadata until an immediate join attempt, and failed joins remain restart-safe. | Unit/browser/Python compatibility tests pass, including secret-free metadata, expiry, explicit discard, and cold-start join acceptance. Disposable two-homeserver live acceptance is required on the candidate SHA. |
+| Z2 account-independent invitations | Version 5 invitations separate room routing, community metadata, admission, and resume state. Versions 3/4 remain compatible. Existing or separately hosted accounts join directly through federation and fall back to knock; community registration is optional and never receives an account access token. Pending links are encrypted in a native, keychain-backed, 30-day store; the renderer receives only opaque metadata until an immediate join attempt, and failed joins remain restart-safe. | Unit/browser/Python compatibility tests pass, including secret-free metadata, expiry, explicit discard, and cold-start join acceptance. The disposable two-homeserver live suite passed twice from independent resets on the implementation SHA. |
 | Z4 optional community hosting | The reference homeserver is explicitly community-hosted/BYOH with no SLA, token-only registration by default, an emergency registration switch, rate/media/retention/abuse guidance, and registration-control tests. Backup source excludes restorable one-time-key rows, applies bounded local/offsite retention, omits the standalone operator environment, requires identity-matched mode-600 recovery input, and fails closed before a live federated rollback without explicit owner acknowledgment. | Local Python and shell validation pass, including integrity, retention, tamper, and secret-boundary tests. The launchd template is source-only. Stock Synapse's lack of per-user media quotas is documented honestly. Mac mini mutation, off-host restore, DNS/router, and live federation remain owner-operated gates. |
 | Z5 zero-cost distribution | A static public site, invitation fallback, service/privacy/terms/security/support/status pages, social asset, manual Pages workflow, and manual unsigned developer-preview workflow are source-complete. Release checks require signed Windows artifacts, SBOM, provenance, and public-boundary validation. | Public-site and source-release preflight pass. Pages is not deployed; privacy/terms remain drafts; the preview is explicitly unsigned and is not a beta release. Updater remains disabled without a signing key and public endpoint. |
 | Z6 identity/recovery | Saved service identity, browser/password session handling, secure local removal, personal-data export, device recovery, and service-specific limitations remain separated from community routing. Undecryptable encrypted events remain visible in timeline order with bounded product-facing reason categories and contextual device-security help. | Unit/Rust/browser gates pass. Real public-provider account creation, legal acceptance, OIDC lifecycle, and clean-device provider recovery require owner-controlled accounts. |
 | Z7 voice | MatrixRTC stays capability-gated and fails closed unless the advertised focus, SFU, membership freshness, and verified media-E2EE requirements are satisfied. Text/community use remains available without voice. | Rust and browser boundaries pass. Trusted MatrixRTC/LiveKit/TURN acceptance on physical devices and two networks remains a live external gate. |
-| Z8 wider-beta hardening | Symbol-name checks were replaced by 18 Matrix and 13 legacy behavior tests. All production assets have budgets. Room/member/DM lists are virtualized to 5,000 items with bounded DOM, keyboard focus, and screen-reader ordering. Standard Matrix event reporting includes provider-aware abuse routing and plaintext disclosure. | 538 Vitest tests, 64 Playwright scenarios, WCAG scans, Rust suites, bundle checks, and a runtime probe pass locally. Invited-beta metrics and operator incident/restore exercises remain external gates. |
+| Z8 wider-beta hardening | Symbol-name checks were replaced by 18 Matrix and 13 legacy behavior tests. All production assets have budgets. Room/member/DM lists are virtualized to 5,000 items with bounded DOM, keyboard focus, and screen-reader ordering. Standard Matrix event reporting includes provider-aware abuse routing and plaintext disclosure. | 555 Vitest tests, 64 Playwright scenarios, WCAG scans, Rust suites, bundle checks, and a runtime probe pass locally. Invited-beta metrics and operator incident/restore exercises remain external gates. |
 
 The 2026-07-29 release-time operator review reconfirmed Matrix.org's current
 plan limits and the current tchncs.de and quassel.io policies. quassel.io's
@@ -93,17 +95,38 @@ policy, registration, and capability review.
 Current local release-gate snapshot:
 
 - TypeScript and zero-warning ESLint passed.
-- 538/538 Vitest tests and 64/64 Playwright scenarios passed with bounded workers.
-- Runtime probe: 151 ms ready, 87 DOM nodes, 15.2 MB heap, 0 ms long
-  task, and 4,121,188 transferred bytes.
+- 555/555 Vitest tests and 64/64 Playwright scenarios passed with bounded workers.
+- Runtime probe: 281 ms ready, 87 DOM nodes, 15.2 MB heap, 64 ms long
+  task, and 4,066,081 transferred bytes.
 - Production budgets passed: 330.10 KiB entry, 462.23 KiB eager JavaScript,
   1,883.70 KiB all JavaScript, 67.64 KiB CSS, 332.28 KiB fonts, and
   2,283.63 KiB total assets.
-- Matrix clippy passed with warnings denied; 142 Matrix Rust tests and 220
+- Matrix clippy passed with warnings denied; 146 Matrix Rust tests and 221
   executable legacy Rust tests passed.
 - The 169-command IPC contract, generated IPC DTOs, design tokens, icon
   contract, public site, live public-service check, release source preflight,
   and high-severity npm audit all passed.
+
+### Z1-Z8 exit status
+
+**Closed.** Pull request
+[#8](https://github.com/dhawal-ss/mesh/pull/8) merged the exact implementation
+SHA `f5edcee861e6244efe2aeee4d13ee67ee38d1384` to `main` as
+`9fcc5c3aaefdca8923ec916b786a0134d5b2d5e9`.
+
+- [Protected CI](https://github.com/dhawal-ss/mesh/actions/runs/30516636447):
+  all four jobs passed, including Linux and Windows Matrix, frontend/browser,
+  and legacy Rust.
+- [Security and feature boundary](https://github.com/dhawal-ss/mesh/actions/runs/30516636419):
+  all three jobs passed, including dependency and two-pass history-secret scans.
+- [Federation/recovery run 1](https://github.com/dhawal-ss/mesh/actions/runs/30516637145):
+  2/2 live tests passed in 743.14 seconds.
+- [Federation/recovery run 2](https://github.com/dhawal-ss/mesh/actions/runs/30516638106):
+  2/2 live tests passed in 738.77 seconds from a separate reset.
+
+No Pages deployment, release tag, signed installer publication, updater
+activation, provider account creation, Mac mini mutation, DNS/router change, or
+production MatrixRTC activation was performed.
 
 ## Zero-cost service decision (authoritative)
 
@@ -155,12 +178,13 @@ homeserver. Use the following four concepts consistently:
 4. **Community home service** - the server(s) needed to locate and federate the
    invited room; this is not necessarily where the invitee's account lives.
 
-## Ordered remaining implementation plan
+## Completed implementation record and remaining owner gates
 
-Execute these phases in order. A phase is complete only when its exit criteria
-and verification evidence are recorded in this ledger. Preserve unrelated
-worktree changes, including `meshlogo.png`. Do not commit, push, publish,
-deploy, or mutate the Mac mini without explicit authorization.
+Z0-Z8 were executed in order and are closed in the readiness ledger above. The
+phase detail below is retained as an implementation and acceptance record, not
+as instructions to restart completed work. Preserve unrelated worktree changes,
+including `meshlogo.png`. Do not publish, deploy, rotate secrets, create
+provider accounts, or mutate the Mac mini without explicit authorization.
 
 ### Z0 - Close the existing Phase 0 worktree on one SHA
 
@@ -500,8 +524,6 @@ After each tranche, report:
 
 ### Production gates that remain blocked under this decision
 
-- Same-SHA protected GitHub and twice-reset federation/recovery evidence for the
-  current Z1-Z8 candidate commit.
 - Release-time re-review of every public-service catalog entry and low-volume
   login/registration acceptance using owner-controlled accounts.
 - Clean-machine invitation install/resume through a publicly available signed
