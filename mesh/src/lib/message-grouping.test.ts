@@ -19,11 +19,14 @@ describe('shouldGroupMessage', () => {
   })
 
   it('starts a new group for replies, delivery boundaries, and a new day', () => {
+    const beforeLocalMidnight = new Date(2026, 6, 30, 23, 59)
+    const afterLocalMidnight = new Date(2026, 6, 31, 0, 1)
+
     expect(shouldGroupMessage(message({ replyToId: '$root' }), message())).toBe(false)
     expect(shouldGroupMessage(message(), message({ deliveryStatus: 'failed' }))).toBe(false)
     expect(shouldGroupMessage(
-      message({ timestamp: '2026-07-31T05:01:00.000Z' }),
-      message({ timestamp: '2026-07-31T04:59:00.000Z' }),
+      message({ timestamp: afterLocalMidnight.toISOString() }),
+      message({ timestamp: beforeLocalMidnight.toISOString() }),
     )).toBe(false)
   })
 })
