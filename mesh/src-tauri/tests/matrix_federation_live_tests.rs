@@ -195,8 +195,9 @@ async fn erase_live_test_account(label: &str, backend: &MatrixBackend) {
     }
 }
 
-/// A fresh consumer account must be creatable through Mesh itself, not only
-/// through the Synapse operator CLI used to prepare the federation fixture.
+/// A fresh consumer account must be creatable through Mesh itself using the
+/// invitation token provisioned by the federation fixture, not only through
+/// the Synapse operator CLI used to prepare that fixture.
 #[tokio::test]
 #[ignore = "requires infra/matrix-spike"]
 async fn matrix_backend_registers_a_fresh_community_hosted_account() {
@@ -213,7 +214,7 @@ async fn matrix_backend_registers_a_fresh_community_hosted_account() {
             homeserver: "http://localhost:8008".into(),
             username: username.clone(),
             password: "mesh-registration-passphrase".into(),
-            registration_token: None,
+            registration_token: Some("mesh-spike-registration".into()),
             device_name: Some("mesh-spike-registration".into()),
         })
         .await

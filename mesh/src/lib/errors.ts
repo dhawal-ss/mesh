@@ -8,6 +8,9 @@ export type AppErrorCode =
   | 'rate_limited'
   | 'permission_denied'
   | 'media_permission_denied'
+  | 'media_device_not_found'
+  | 'media_device_not_readable'
+  | 'media_constraints_unmet'
   | 'room_not_found'
   | 'not_encrypted'
   | 'decryption_failed'
@@ -42,7 +45,10 @@ export interface BackendErrorPayload {
 export interface ErrorContext {
   operation?: string
   resource?: string
+  mediaKind?: MediaDeviceKind
 }
+
+export type MediaDeviceKind = 'microphone' | 'camera'
 
 export interface ErrorDescription {
   title: string
@@ -60,6 +66,9 @@ const KNOWN_CODES = new Set<AppErrorCode>([
   'rate_limited',
   'permission_denied',
   'media_permission_denied',
+  'media_device_not_found',
+  'media_device_not_readable',
+  'media_constraints_unmet',
   'room_not_found',
   'not_encrypted',
   'decryption_failed',
@@ -248,6 +257,15 @@ export function normalizeError(cause: unknown): AppError {
     if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
       return new AppError('media_permission_denied', detail, false)
     }
+    if (name === 'NotFoundError') {
+      return new AppError('media_device_not_found', detail, false)
+    }
+    if (name === 'NotReadableError') {
+      return new AppError('media_device_not_readable', detail, true)
+    }
+    if (name === 'OverconstrainedError') {
+      return new AppError('media_constraints_unmet', detail, false)
+    }
     return new AppError(inferCode(detail), detail)
   }
 
@@ -291,6 +309,14 @@ function operationBody(context: ErrorContext): string {
   return context.operation ? `Mesh couldn't ${context.operation}.` : 'Mesh could not finish that request.'
 }
 
+function mediaDeviceLabel(kind: MediaDeviceKind = 'microphone'): string {
+  return kind === 'camera' ? 'Camera' : 'Microphone'
+}
+
+function mediaDeviceName(kind: MediaDeviceKind = 'microphone'): string {
+  return kind === 'camera' ? 'camera' : 'microphone'
+}
+
 export function describeError(
   errorOrCode: unknown,
   context: ErrorContext = {},
@@ -332,8 +358,26 @@ export function describeError(
       }
     case 'media_permission_denied':
       return {
-        title: 'Microphone permission needed',
-        body: `${operation} Allow microphone access for Mesh in your system settings, then try again.`,
+        title: `${mediaDeviceLabel(context.mediaKind)} permission needed`,
+        body: `${operation} Allow ${mediaDeviceName(context.mediaKind)} access for Mesh in your system settings, then try again.`,
+        action: 'Try again',
+      }
+    case 'media_device_not_found':
+      return {
+        title: `${mediaDeviceLabel(context.mediaKind)} not found`,
+        body: `${operation} Connect a ${mediaDeviceName(context.mediaKind)} and make sure your system can see it, then try again.`,
+        action: 'Try again',
+      }
+    case 'media_device_not_readable':
+      return {
+        title: `${mediaDeviceLabel(context.mediaKind)} is in use`,
+        body: `${operation} Close other apps using your ${mediaDeviceName(context.mediaKind)}, then try again.`,
+        action: 'Try again',
+      }
+    case 'media_constraints_unmet':
+      return {
+        title: `${mediaDeviceLabel(context.mediaKind)} settings unavailable`,
+        body: `${operation} Choose another ${mediaDeviceName(context.mediaKind)} or check its system settings, then try again.`,
         action: 'Try again',
       }
     case 'room_not_found':

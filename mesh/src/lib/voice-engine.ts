@@ -132,6 +132,11 @@ export class VoiceEngine {
       this.handlers.onConnectionState?.('connecting')
     } catch (error) {
       this.localStream = null
+      const description = describeError(error, {
+        operation: 'start voice',
+        mediaKind: 'microphone',
+      })
+      this.handlers.onConnectionWarning?.(`${description.title}. ${description.body}`)
       this.handlers.onConnectionState?.('degraded', 'microphone unavailable')
       console.error('VoiceEngine: microphone access failed, continuing in receive-only mode', error)
     }

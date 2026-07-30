@@ -6,6 +6,23 @@ import {
   parseAdmissionCommunityInvite,
   parseMatrixCommunityInvite,
 } from './community-invites'
+import corpus from './community-invite-corpus.json'
+
+describe('shared community invite corpus', () => {
+  for (const fixture of corpus) {
+    it(`${fixture.accept ? 'accepts' : 'rejects'} ${fixture.name}`, () => {
+      const parsed = parseCommunityInviteV5(fixture.url)
+      if (!fixture.accept) {
+        expect(parsed).toBeNull()
+        return
+      }
+      expect(parsed).toMatchObject({
+        via: fixture.via,
+        viaTruncated: fixture.viaTruncated,
+      })
+    })
+  }
+})
 
 describe('Matrix community invites', () => {
   it('parses a room, federation route, and service without exposing credentials', () => {
