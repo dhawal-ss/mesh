@@ -711,7 +711,7 @@ function SelectRow({
       <select
         id={id}
         aria-label={label}
-        className="min-h-control-sm max-w-[15rem] rounded-control border border-border bg-surface-sunken px-2 text-xs text-primary outline-none focus:border-accent"
+        className="min-h-control-sm max-w-xs rounded-control border border-border bg-surface-sunken px-2 text-xs text-primary outline-none focus:border-accent"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
