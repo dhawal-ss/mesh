@@ -75,6 +75,73 @@ export function serviceAddressConfigError(value: string): string | null {
   }
 }
 
+export type ServiceFailureKind =
+  | 'dns'
+  | 'tls'
+  | 'http_status'
+  | 'malformed_well_known'
+  | 'timeout'
+  | 'other'
+
+export function classifyServiceFailure(cause: unknown): ServiceFailureKind {
+  const message = normalizeError(cause).detail.toLowerCase()
+  if (message.includes('timed out') || message.includes('timeout')) return 'timeout'
+  if (
+    message.includes('dns')
+    || message.includes('name resolution')
+    || message.includes('could not resolve')
+    || message.includes('no such host')
+    || message.includes('getaddrinfo')
+  ) {
+    return 'dns'
+  }
+  if (
+    message.includes('tls')
+    || message.includes('ssl')
+    || message.includes('certificate')
+    || message.includes('handshake')
+  ) {
+    return 'tls'
+  }
+  if (
+    message.includes('well-known')
+    || message.includes('well known')
+    || (
+      message.includes('discovery')
+      && (message.includes('json') || message.includes('invalid') || message.includes('malformed'))
+    )
+  ) {
+    return 'malformed_well_known'
+  }
+  if (
+    /\b(?:status|http(?:\s+status)?|response)\s*[:=]?\s*[45]\d{2}\b/.test(message)
+    || message.includes('m_forbidden')
+    || message.includes('m_not_found')
+    || message.includes('m_unauthorized')
+  ) {
+    return 'http_status'
+  }
+  return 'other'
+}
+
+export function friendlyServiceError(cause: unknown, operation: string): string {
+  const prefix = `Mesh couldn't ${operation}.`
+  switch (classifyServiceFailure(cause)) {
+    case 'dns':
+      return `${prefix} The account service could not be found. Check the address and your connection, then try again.`
+    case 'tls':
+      return `${prefix} The account service did not establish a secure HTTPS connection. Check its certificate or choose another service.`
+    case 'http_status':
+      return `${prefix} The account service returned an HTTP error. Check its status or choose another service.`
+    case 'malformed_well_known':
+      return `${prefix} The account service returned invalid discovery information. Choose another service or ask its operator to check its .well-known configuration.`
+    case 'timeout':
+      return `${prefix} The account service took too long to respond. Check your connection or try again.`
+    case 'other':
+      return `${prefix} Check your connection or choose another service, then try again.`
+  }
+}
+
 export function friendlySignInError(cause: unknown): string {
   const error = normalizeError(cause)
   if (error.code === 'login_cancelled' || error.code === 'cancelled') {
@@ -85,6 +152,9 @@ export function friendlySignInError(cause: unknown): string {
   }
   if (error.code === 'not_authenticated' || error.code === 'permission_denied') {
     return 'That username or password did not work. Check both and try again.'
+  }
+  if (classifyServiceFailure(cause) !== 'other') {
+    return friendlyServiceError(cause, 'sign you in')
   }
   if (error.code === 'network_unavailable') {
     return 'We could not reach your messaging service. Check your connection and try again.'

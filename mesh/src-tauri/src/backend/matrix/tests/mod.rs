@@ -45,6 +45,43 @@ fn community_invitation_parser_matches_shared_corpus() {
 }
 
 #[test]
+fn malformed_admission_error_bodies_preserve_http_diagnostics() {
+    let error = MatrixBackend::admission_error_response(
+        reqwest::StatusCode::BAD_REQUEST,
+        br#"<html>service unavailable</html>"#,
+    );
+    let BackendError::InvalidConfiguration(detail) = error else {
+        panic!("malformed client error should remain a validation error");
+    };
+    assert!(detail.contains("HTTP 400"));
+    assert!(detail.contains("malformed"));
+    assert!(detail.contains("service unavailable"));
+
+    let error = MatrixBackend::admission_error_response(
+        reqwest::StatusCode::SERVICE_UNAVAILABLE,
+        br#"not json"#,
+    );
+    let BackendError::Network(detail) = error else {
+        panic!("malformed server error should remain a network error");
+    };
+    assert!(detail.contains("HTTP 503"));
+    assert!(detail.contains("not json"));
+}
+
+#[test]
+fn structured_admission_errors_keep_status_and_action_code() {
+    let error = MatrixBackend::admission_error_response(
+        reqwest::StatusCode::TOO_MANY_REQUESTS,
+        br#"{"code":"invitation_claiming","message":"claim already in progress"}"#,
+    );
+    let BackendError::RateLimited(detail) = error else {
+        panic!("invitation claiming should remain rate limited");
+    };
+    assert!(detail.contains("HTTP status 429"));
+    assert!(detail.contains("claim already in progress"));
+}
+
+#[test]
 fn admission_invitation_parser_can_bind_local_links_without_restricting_received_issuers() {
     let expected = MatrixBackend::normalize_admission_origin("https://mesh.example").unwrap();
     let code = "abcdefghijklmnopqrstuvwxyzABCDEFG_123456789";

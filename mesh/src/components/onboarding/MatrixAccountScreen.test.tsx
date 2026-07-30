@@ -141,8 +141,11 @@ describe('MatrixAccountScreen', () => {
     })
 
     expect(container.textContent).toContain(
-      'Mesh could not reach that account service. Check its status or choose another service.',
+      "Mesh couldn't reach that account service. Check your connection or choose another service, then try again.",
     )
+    expect(container.textContent).toContain('Technical details')
+    expect(container.textContent).toContain('[network_unavailable] offline')
+    expect(container.querySelector('details[open]')).toBeNull()
     expect(findButton('Back to service choices')).toBeTruthy()
   })
 

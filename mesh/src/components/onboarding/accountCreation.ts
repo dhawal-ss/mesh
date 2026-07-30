@@ -1,5 +1,6 @@
 import { parseAdmissionCommunityInvite } from '../../lib/community-invites'
 import { describeError, normalizeError } from '../../lib/errors'
+import { classifyServiceFailure, friendlyServiceError } from './matrixSignIn'
 
 export type PasswordStrength = {
   score: number
@@ -92,6 +93,9 @@ export function friendlyAccountCreationError(cause: unknown): string {
     'rate_limited',
     'network_unavailable',
   ].includes(normalized.code)) {
+    if (classifyServiceFailure(cause) !== 'other') {
+      return friendlyServiceError(cause, 'create your account')
+    }
     const description = describeError(normalized, { operation: 'create your account' })
     return `${description.title}. ${description.body}`
   }
