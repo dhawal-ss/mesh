@@ -1,4 +1,12 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react'
 import { CommunitySidebar } from './CommunitySidebar'
 import { ChannelSidebar } from './ChannelSidebar'
 import { ContentArea } from './ContentArea'
@@ -18,7 +26,13 @@ import { Icon } from '../ui/Icon'
 import { useNotificationSync } from '../../hooks/useNotificationSync'
 import { getEffectiveChannelNotificationLevel } from '../../store/settings'
 import { useNetworkStore } from '../../store/network'
+import { COMPACT_VIEWPORT_QUERY, useMediaQuery } from '../../hooks/useMediaQuery'
 import { useQueuedMessageSync } from '../../hooks/useQueuedMessageSync'
+import { openCommandPalette } from '../../lib/command-palette'
+import { CONTEXT_SIDEBAR_WIDTH_KEY } from '../../lib/layout-preferences'
+import { usePersistentPanelWidth } from '../../hooks/usePersistentPanelWidth'
+import { PanelResizeHandle } from './PanelResizeHandle'
+import { NetworkStatus } from '../ui/NetworkStatus'
 
 const CommandPalette = lazy(() =>
   import('../navigation/CommandPalette').then((module) => ({ default: module.CommandPalette })),
@@ -40,6 +54,12 @@ export function AppLayout() {
   const setProfileOpen = useShellStore((state) => state.setProfileOpen)
   const backupReminderDue = isBackupReminderDue(backup)
   const networkStatus = useNetworkStore((state) => state.status)
+  const contextSidebarWidth = usePersistentPanelWidth({
+    storageKey: CONTEXT_SIDEBAR_WIDTH_KEY,
+    defaultWidth: 220,
+    minimum: 180,
+    maximum: 360,
+  })
 
   const myPublicKey = useIdentityStore((state) => state.identity?.publicKey)
   const navigationContextKey = `${activeCommunityId ?? ''}\u0000${activeChannelId ?? ''}\u0000${isDmMode}`
@@ -47,17 +67,33 @@ export function AppLayout() {
   const contextNavigationOpen = openNavigationContextKey === navigationContextKey
   const contextNavigationRef = useRef<HTMLElement>(null)
   const activeRoomId = isDmMode ? activeConversationId : activeChannelId
+  /*
+   * The navigation drawer only exists below 800px. Deriving "is the drawer
+   * actually a drawer right now" from the media query — rather than latching it
+   * when the drawer opened — fixes a keyboard trap: widening the window used to
+   * leave the Tab cycle and `aria-modal` installed on a sidebar that had
+   * reverted to a static column, with its only Close control display:none.
+   */
+  const isCompactViewport = useMediaQuery(COMPACT_VIEWPORT_QUERY)
+  const drawerActive = contextNavigationOpen && isCompactViewport
+  // Naming the main landmark after the open conversation is far more useful for
+  // landmark navigation than the previous static "Content area".
+  const activeChannelName = useChannelStore(
+    (state) => state.channels.find((channel) => channel.id === state.activeChannelId)?.name,
+  )
+  const activeConversationLabel = isDmMode
+    ? 'Direct message conversation'
+    : activeChannelName
+      ? `Conversation in ${activeChannelName}`
+      : 'Conversation'
   useNotificationSync({ matrixMode, activeRoomId })
 
   useEffect(() => {
     if (!directMessagesAvailable && isDmMode) setDmMode(false)
   }, [directMessagesAvailable, isDmMode, setDmMode])
 
-  useEffect(() => {
-    if (!contextNavigationOpen) return
-    const compact = typeof window.matchMedia === 'function'
-      && window.matchMedia('(max-width: 799px)').matches
-    if (!compact) return
+  useLayoutEffect(() => {
+    if (!drawerActive) return
     const focusableSelector = [
       'button:not([disabled])',
       'a[href]',
@@ -66,9 +102,16 @@ export function AppLayout() {
       'textarea:not([disabled])',
       '[tabindex]:not([tabindex="-1"])',
     ].join(',')
-    const focusFirst = window.requestAnimationFrame(() => {
-      contextNavigationRef.current?.querySelector<HTMLElement>(focusableSelector)?.focus()
-    })
+    const focusFirstElement = () => {
+      const drawer = contextNavigationRef.current
+      if (!drawer) return
+      const firstVisible = [...drawer.querySelectorAll<HTMLElement>(focusableSelector)]
+        .find((element) => !element.hidden && element.getClientRects().length > 0)
+      ;(firstVisible ?? drawer).focus()
+    }
+    contextNavigationRef.current?.focus()
+    focusFirstElement()
+    const focusFirst = window.requestAnimationFrame(focusFirstElement)
     const handleKeyDown = (event: KeyboardEvent) => {
       const openDialog = document.querySelector('[role="dialog"]')
       const nestedDialogOpen = openDialog != null && openDialog !== contextNavigationRef.current
@@ -99,7 +142,7 @@ export function AppLayout() {
       window.cancelAnimationFrame(focusFirst)
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [contextNavigationOpen])
+  }, [drawerActive, setOpenNavigationContextKey])
 
   useEffect(() => {
     const unlisten = matrixMode
@@ -147,41 +190,19 @@ export function AppLayout() {
   // Banner is NEVER shown for solo mode. If the swarm task hasn't started
   // at all (real failure), the user sees errors elsewhere. Solo is
   // advertised gently via the sidebar indicator instead.
-  const remotePeerCount = networkStatus.peerCount
-  const isRunningSolo =
-    !matrixMode
-    && networkStatus.state !== 'connecting'
-    && networkStatus.state !== 'disconnected'
-    && remotePeerCount === 0
-  const networkLabel = matrixMode
-    ? networkStatus.state === 'connected'
-      ? 'Online'
-      : networkStatus.state === 'connecting'
-        ? 'Connecting'
-        : 'Offline'
-    : networkStatus.state === 'connecting'
-      ? 'Starting'
-      : networkStatus.state === 'disconnected'
-        ? 'Offline'
-        : isRunningSolo
-          ? 'Solo (you)'
-          : `You + ${remotePeerCount}`
-  const networkDescription = matrixMode
-    ? networkStatus.state === 'connected'
-      ? 'Connected to Mesh'
-      : networkStatus.state === 'connecting'
-        ? 'Connecting to Mesh'
-        : 'Mesh is offline. It will retry automatically.'
-    : networkStatus.state === 'connecting'
-      ? 'Starting Mesh'
-      : isRunningSolo
-        ? 'You are running as a solo peer. Messages are stored locally and will sync when other peers join.'
-        : networkStatus.state === 'disconnected'
-          ? 'Mesh is offline. It will retry automatically.'
-          : `Connected to ${remotePeerCount} other peer${remotePeerCount === 1 ? '' : 's'}`
-
   return (
     <div className="relative flex h-screen flex-col overflow-hidden bg-surface-base text-content">
+      {/*
+        Skip link. The room list is a flat list of buttons, so in a community
+        with forty rooms it cost forty-plus Tab presses to reach the
+        conversation. This is the first thing in the tab order.
+      */}
+      <a
+        href="#mesh-conversation"
+        className="sr-only rounded-control bg-surface-overlay px-3 py-2 text-sm font-medium text-content shadow-overlay focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-tooltip"
+      >
+        Skip to conversation
+      </a>
       <Suspense fallback={null}>
         <CommandPalette />
       </Suspense>
@@ -229,35 +250,11 @@ export function AppLayout() {
             <CommunitySidebar />
           </ScopedErrorBoundary>
           <div className="mt-auto pb-3 flex flex-col items-center">
-            <div
-              className="flex max-w-full items-center justify-center gap-1.5 px-1 text-center text-caption text-muted"
-              role="status"
-              aria-label={networkDescription}
-              title={networkDescription}
-            >
-              <span
-                className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                  // Connected is verified green; every recoverable network state uses attention amber.
-                  matrixMode
-                    ? networkStatus.state === 'connected'
-                      ? 'bg-status-success'
-                      : 'bg-status-warning'
-                    : networkStatus.state === 'connecting'
-                      ? 'bg-status-warning'
-                      : isRunningSolo
-                        ? 'bg-status-warning'
-                        : networkStatus.state === 'connected'
-                          ? 'bg-status-success'
-                          : 'bg-status-warning'
-                }`}
-                aria-hidden
-              />
-              <span className="mesh-network-label min-w-0 truncate">{networkLabel}</span>
-            </div>
+            <NetworkStatus matrixMode={matrixMode} />
           </div>
         </nav>
 
-        {contextNavigationOpen && (
+        {drawerActive && (
           <button
             type="button"
             className="mesh-nav-backdrop"
@@ -270,11 +267,42 @@ export function AppLayout() {
           ref={contextNavigationRef}
           id="mesh-context-sidebar"
           data-open={contextNavigationOpen ? 'true' : 'false'}
-          className="mesh-context-sidebar flex flex-shrink-0 flex-col border-r border-border-subtle bg-surface-sidebar"
+          className="mesh-context-sidebar relative flex flex-shrink-0 flex-col border-r border-border-subtle bg-surface-sidebar"
+          data-design-token-exception="user-resizable-persisted-context-sidebar-width"
+          style={{
+            '--mesh-context-sidebar-width': `${contextSidebarWidth.width}px`,
+          } as CSSProperties}
           aria-label={isDmMode && directMessagesAvailable ? 'Direct message conversations' : 'Room list'}
-          role={contextNavigationOpen ? 'dialog' : undefined}
-          aria-modal={contextNavigationOpen || undefined}
+          tabIndex={drawerActive ? -1 : undefined}
+          /* Only a real drawer is a modal dialog. Above the compact breakpoint
+             this is an ordinary static column and must not claim aria-modal. */
+          data-state={drawerActive ? 'open' : undefined}
+          role={drawerActive ? 'dialog' : undefined}
+          aria-modal={drawerActive || undefined}
         >
+          <PanelResizeHandle
+            label="Resize room navigation"
+            side="right"
+            value={contextSidebarWidth.width}
+            minimum={180}
+            maximum={360}
+            onPointerDown={contextSidebarWidth.startResize}
+            onResizeBy={contextSidebarWidth.resizeBy}
+          />
+          <button
+            type="button"
+            className="mx-2 mt-2 flex min-h-9 flex-none items-center gap-2 rounded-control border border-border-subtle bg-surface-sunken px-2.5 text-left text-xs text-muted transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            onClick={openCommandPalette}
+          >
+            <Icon name="search" size="sm" />
+            <span className="min-w-0 flex-1 truncate">Search or jump to…</span>
+            <span
+              className="flex-none rounded bg-surface-active px-1.5 py-0.5 text-meta"
+              aria-hidden="true"
+            >
+              Ctrl/⌘ K
+            </span>
+          </button>
           <ScopedErrorBoundary
             name={isDmMode && directMessagesAvailable ? 'Conversation list' : 'Room list'}
             description="Navigation failed to render. The current conversation remains available."
@@ -285,7 +313,12 @@ export function AppLayout() {
           </ScopedErrorBoundary>
         </aside>
 
-        <main className="flex min-w-0 flex-1 flex-col bg-surface-base" aria-label="Content area">
+        <main
+          id="mesh-conversation"
+          tabIndex={-1}
+          className="flex min-w-0 flex-1 flex-col bg-surface-base outline-none"
+          aria-label={activeConversationLabel}
+        >
           <div className="mesh-compact-header">
             <button
               type="button"

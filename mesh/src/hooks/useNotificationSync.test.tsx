@@ -49,6 +49,7 @@ vi.mock('../components/ui/Toast', () => ({
 
 import { useNotificationSync } from './useNotificationSync'
 import { useChannelStore } from '../store/channels'
+import { useDmStore } from '../store/dms'
 import { useSettingsStore } from '../store/settings'
 
 const room = {
@@ -82,6 +83,7 @@ describe('useNotificationSync', () => {
     bridgeMocks.unreadHandler = undefined
     bridgeMocks.getMatrixRoomNotificationMode.mockResolvedValue('mentions')
     useChannelStore.getState().setChannels([room])
+    useDmStore.getState().setConversations([])
     useSettingsStore.setState((state) => ({
       notifications: {
         ...state.notifications,
@@ -160,5 +162,29 @@ describe('useNotificationSync', () => {
     act(() => window.dispatchEvent(new Event('focus')))
     await flushEffects()
     expect(useSettingsStore.getState().getChannelNotificationLevel(room.id)).toBe('all')
+  })
+
+  it('reconciles DM rooms through the same Matrix push-rule path', async () => {
+    useDmStore.getState().setConversations([{
+      id: '!dm:example.org',
+      peerPublicKey: 'peer-key',
+      peerDisplayName: 'Friend',
+      peerAvatarColor: '#123456',
+      lastMessageAt: null,
+      unreadCount: 0,
+      createdAt: '2026-07-27T00:00:00.000Z',
+    }])
+
+    await act(async () => {
+      root.render(<Harness />)
+    })
+    await flushEffects()
+
+    expect(bridgeMocks.getMatrixRoomNotificationMode).toHaveBeenCalledWith(
+      '!dm:example.org',
+    )
+    expect(useSettingsStore.getState().getChannelNotificationLevel('!dm:example.org')).toBe(
+      'mentions',
+    )
   })
 })

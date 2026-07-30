@@ -27,12 +27,13 @@ export function useNotificationSync({
   activeRoomId,
 }: UseNotificationSyncOptions) {
   const channels = useChannelStore((state) => state.channels)
+  const conversationOrder = useDmStore((state) => state.conversationOrder)
   const notifications = useSettingsStore((state) => state.notifications)
   const patchChannel = useChannelStore((state) => state.patchChannel)
   const patchConversation = useDmStore((state) => state.patchConversation)
   const [policyClock, setPolicyClock] = useState(() => Date.now())
   const [focusRevision, setFocusRevision] = useState(0)
-  const channelIdsKey = channels.map((channel) => channel.id).join('\u0000')
+  const roomIdsKey = [...channels.map((channel) => channel.id), ...conversationOrder].join('\u0000')
 
   useEffect(() => {
     const interval = window.setInterval(() => setPolicyClock(Date.now()), 30_000)
@@ -118,13 +119,13 @@ export function useNotificationSync({
   }, [matrixMode, patchChannel, patchConversation])
 
   useEffect(() => {
-    if (!matrixMode || !channelIdsKey) return
+    if (!matrixMode || !roomIdsKey) return
     let cancelled = false
     let unsubscribe: (() => void) | undefined
 
     const reconcilePushRules = async () => {
       const remoteModes = new Map<string, NotificationLevel>()
-      const roomIds = channelIdsKey ? channelIdsKey.split('\u0000') : []
+      const roomIds = [...new Set(roomIdsKey.split('\u0000'))]
       await Promise.all(
         roomIds.map(async (roomId) => {
           try {
@@ -180,5 +181,5 @@ export function useNotificationSync({
       cancelled = true
       unsubscribe?.()
     }
-  }, [channelIdsKey, focusRevision, matrixMode])
+  }, [focusRevision, matrixMode, roomIdsKey])
 }

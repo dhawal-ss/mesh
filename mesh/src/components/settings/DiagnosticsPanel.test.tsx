@@ -358,6 +358,10 @@ describe('DiagnosticsPanel', () => {
     expect(document.body.textContent).toContain('Reachability probe')
     expect(document.body.textContent).toContain('Run probe')
     const probeButton = document.body.querySelector('button[aria-label="Run ICE reachability probe"]')
+    expect(probeButton?.getAttribute('aria-describedby')).toBe('ice-probe-description')
+    expect(document.body.querySelector('#ice-probe-description')?.textContent).toContain(
+      'configured ICE servers',
+    )
     expect(probeButton).toBeTruthy()
   })
 

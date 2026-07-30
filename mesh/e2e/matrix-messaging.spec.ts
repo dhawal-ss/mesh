@@ -253,6 +253,17 @@ async function installAuthenticatedMatrixMessagingMock(page: Page): Promise<void
           dmTimeline.push(message)
           return message
         }
+        case 'matrix_send_message': {
+          // DM text now uses the same durable room queue as channels. Keep
+          // attachment sends on the dedicated protected-DM command below.
+          const message = directMessage(String(args.body))
+          dmTimeline.push(message)
+          return {
+            ...message,
+            channelId: conversation.id,
+            transactionId: String(args.transactionId),
+          }
+        }
         case 'matrix_send_dm_attachment': {
           const filename = args.attachmentGrant === 'grant-mesh-beta'
             ? 'mesh-beta.pdf'
@@ -469,7 +480,7 @@ test.describe('Matrix direct messaging and encrypted attachments', () => {
     expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false)
   })
 
-  test('sends DM text through the dedicated Matrix direct-message command', async ({ page }) => {
+  test('sends DM text through the durable Matrix room queue', async ({ page }) => {
     await openDirectMessage(page)
 
     const composer = page.getByRole('textbox', { name: 'Message Bob' })
@@ -483,13 +494,14 @@ test.describe('Matrix direct messaging and encrypted attachments', () => {
 
     const calls = await ipcCalls(page)
     expect(calls).toContainEqual({
-      command: 'matrix_send_dm',
+      command: 'matrix_send_message',
       args: expect.objectContaining({
-        recipientUserId: '@bob:mesh.test',
+        roomId: '!alice-bob-dm:mesh.test',
         body: 'A production-path encrypted DM',
+        transactionId: expect.any(String),
       }),
     })
-    expect(calls.some((call) => call.command === 'matrix_send_message')).toBe(false)
+    expect(calls.some((call) => call.command === 'matrix_send_dm')).toBe(false)
   })
 
   test('selects and sends a DM attachment through the native dialog and encrypted Matrix IPC', async ({ page }) => {
@@ -532,7 +544,12 @@ test.describe('Matrix direct messaging and encrypted attachments', () => {
     await openDirectMessage(page)
 
     await page.getByRole('button', { name: 'Download encrypted-plan.pdf' }).click()
-    const openButton = page.getByRole('button', { name: 'Open encrypted-plan.pdf' })
+    // The shared channel/DM row also exposes the protected preview button;
+    // exact matching selects the downloaded-file action.
+    const openButton = page.getByRole('button', {
+      name: 'Open encrypted-plan.pdf',
+      exact: true,
+    })
     await expect(openButton).toBeVisible()
     await openButton.click()
 

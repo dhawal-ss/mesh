@@ -107,7 +107,7 @@ function parseInline(
 ): InlineNode[] {
   const nodes: InlineNode[] = []
   const regex =
-    /(`[^`]+`)|(\*\*[^*]+\*\*)|(~~[^~]+~~)|(\*[^*]+\*|_[^_]+_)|(\[([^\]]+)\]\(([^)]+)\))|(@[A-Za-z0-9._=-]+:[^\s]+|@(everyone|here|room)\b|@\w[\w-]*)|(:([a-z0-9_]{2,32}):)/gi
+    /(`[^`]+`)|(\*\*[^*]+\*\*)|(~~[^~]+~~)|(\*[^*]+\*|_[^_]+_)|(\[([^\]]+)\]\(((?:[^()]|\([^()]*\))+)\))|(https?:\/\/[^\s<]+)|(@[A-Za-z0-9._=+/-]+:(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(?::\d{1,5})?|@(everyone|here|room)\b|@[A-Za-z0-9_][\w-]*)|(:([a-z0-9_]{2,32}):)/gi
 
   let lastIndex = 0
   let match: RegExpExecArray | null
@@ -160,32 +160,55 @@ function parseInline(
           </a>,
         )
       } else {
-        // Render unsafe URLs as plain text
-        nodes.push(
-          <span key={key} className="text-text-link">
-            {linkText}
-          </span>,
-        )
+        // Unsafe destinations must not retain link styling that promises an action.
+        nodes.push(linkText)
       }
     } else if (match[8]) {
-      const rawMention = match[8]
+      const rawUrl = match[8]
+      const url = trimTrailingUrlPunctuation(rawUrl)
+      const trailingPunctuation = rawUrl.slice(url.length)
+      if (isSafeUrl(url)) {
+        nodes.push(
+          <a
+            key={key}
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-text-link hover:underline"
+          >
+            {url}
+          </a>,
+        )
+      } else {
+        nodes.push(url)
+      }
+      if (trailingPunctuation) nodes.push(trailingPunctuation)
+    } else if (match[9]) {
+      const rawMention = match[9]
       const mention = trimMentionPunctuation(rawMention)
       const trailingPunctuation = rawMention.slice(mention.length)
       const isRoomWide = mention === '@everyone' || mention === '@here' || mention === '@room'
       if (isRoomWide && !mentionOptions.roomWideMentionsAllowed) {
         nodes.push(mention)
       } else {
-        const member = mentionOptions.members.find((candidate) => candidate.publicKey === mention)
+        const member = resolveMemberMention(mention, mentionOptions.members)
+        const isFullMatrixId = isMatrixUserId(mention)
+        if (!isRoomWide && !member && !isFullMatrixId) {
+          nodes.push(mention)
+          if (trailingPunctuation) nodes.push(trailingPunctuation)
+          lastIndex = regex.lastIndex
+          continue
+        }
         const displayName = member?.displayName.trim()
         const label = displayName ? `@${displayName}` : mention
-        const isSelf = !isRoomWide && mentionOptions.ownUserId === mention
+        const mentionId = member?.publicKey ?? mention
+        const isSelf = !isRoomWide && mentionOptions.ownUserId === mentionId
         nodes.push(
           <span
             key={key}
-            data-mention-id={!isRoomWide ? mention : undefined}
+            data-mention-id={!isRoomWide ? mentionId : undefined}
             data-mention-kind={isRoomWide ? 'room-wide' : 'user'}
-            title={displayName ? mention : undefined}
-            aria-label={`Mention ${mention}`}
+            title={displayName ? member?.publicKey : undefined}
             className={isSelf
               ? 'inline-flex rounded-full bg-accent/25 px-1.5 py-0.5 font-medium text-accent ring-1 ring-accent/40'
               : 'inline-flex rounded-full bg-accent/15 px-1.5 py-0.5 font-medium text-accent hover:bg-accent/25'}
@@ -195,8 +218,8 @@ function parseInline(
         )
       }
       if (trailingPunctuation) nodes.push(trailingPunctuation)
-    } else if (match[10]) {
-      const shortcode = match[11]
+    } else if (match[11]) {
+      const shortcode = match[12]
       const emoji = mentionOptions.customEmoji.find(
         (candidate) => (
           candidate.shortcode.toLocaleLowerCase() === shortcode.toLocaleLowerCase()
@@ -213,7 +236,7 @@ function parseInline(
           />,
         )
       } else {
-        nodes.push(match[10])
+        nodes.push(match[11])
       }
     }
 
@@ -232,4 +255,42 @@ function trimMentionPunctuation(token: string): string {
   if (mention.endsWith(')') && !mention.includes('(')) mention = mention.slice(0, -1)
   if (mention.endsWith(']') && !mention.includes('[')) mention = mention.slice(0, -1)
   return mention
+}
+
+function isMatrixUserId(value: string): boolean {
+  return /^@[A-Za-z0-9._=+/-]+:(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(?::\d{1,5})?$/.test(value)
+}
+
+function resolveMemberMention(
+  mention: string,
+  members: readonly Pick<MemberRecord, 'publicKey' | 'displayName'>[],
+) {
+  const exact = members.find((candidate) => candidate.publicKey === mention)
+  if (exact || isMatrixUserId(mention)) return exact
+
+  const name = mention.slice(1).toLocaleLowerCase()
+  const matches = members.filter((candidate) => {
+    const displayName = candidate.displayName.trim().toLocaleLowerCase()
+    const localName = candidate.publicKey
+      .replace(/^@/, '')
+      .split(':')[0]
+      ?.toLocaleLowerCase()
+    return displayName === name || localName === name
+  })
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+function trimTrailingUrlPunctuation(token: string): string {
+  let url = token.replace(/[.,!?;:]+$/, '')
+  if (url.endsWith(')') && countCharacter(url, '(') < countCharacter(url, ')')) {
+    url = url.slice(0, -1)
+  }
+  if (url.endsWith(']') && countCharacter(url, '[') < countCharacter(url, ']')) {
+    url = url.slice(0, -1)
+  }
+  return url
+}
+
+function countCharacter(value: string, character: string): number {
+  return [...value].filter((candidate) => candidate === character).length
 }

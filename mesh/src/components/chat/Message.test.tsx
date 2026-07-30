@@ -1,4 +1,4 @@
-import { act } from 'react'
+import { act, Profiler } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -153,6 +153,75 @@ describe('MessageComponent federated timestamps', () => {
     },
   )
 
+  it('keeps DM edit typing local to the edited shared row', async () => {
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@alice:example.org')
+    let firstRowUpdates = 0
+    let secondRowUpdates = 0
+
+    await act(async () => {
+      root.render(
+        <>
+          <Profiler
+            id="first"
+            onRender={(_id, phase) => {
+              if (phase === 'update') firstRowUpdates += 1
+            }}
+          >
+            <MessageComponent
+              message={{
+                ...malformedMessage(),
+                timestamp: '2026-07-30T12:00:00.000Z',
+              }}
+              isGrouped={false}
+              surface="dm"
+              onEdit={vi.fn()}
+            />
+          </Profiler>
+          <Profiler
+            id="second"
+            onRender={(_id, phase) => {
+              if (phase === 'update') secondRowUpdates += 1
+            }}
+          >
+            <MessageComponent
+              message={{
+                ...malformedMessage(),
+                id: 'message-2',
+                content: 'Second message',
+                timestamp: '2026-07-30T12:01:00.000Z',
+              }}
+              isGrouped={false}
+              surface="dm"
+              onEdit={vi.fn()}
+            />
+          </Profiler>
+        </>,
+      )
+    })
+
+    const editButtons = container.querySelectorAll<HTMLButtonElement>(
+      '[aria-label="Edit message"]',
+    )
+    await act(async () => editButtons[0]?.click())
+    firstRowUpdates = 0
+    secondRowUpdates = 0
+
+    const editor = container.querySelector<HTMLTextAreaElement>('textarea')
+    await act(async () => {
+      if (!editor) return
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        'value',
+      )?.set
+      valueSetter?.call(editor, 'Federated message updated')
+      editor.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    expect(firstRowUpdates).toBeGreaterThan(0)
+    expect(secondRowUpdates).toBe(0)
+  })
+
   it.each([
     ['sent-before-device', 'before this device could receive it'],
     ['keys-not-shared', 'message keys were not shared'],
@@ -173,6 +242,66 @@ describe('MessageComponent federated timestamps', () => {
     expect(container.querySelector('p')?.textContent).not.toBe('')
     expect(container.querySelector('[aria-label^="React to message"]')).toBeNull()
     expect(container.textContent).not.toContain('Time unavailable')
+  })
+
+  it('renders a redaction as a tombstone instead of an empty row', async () => {
+    await act(async () => {
+      root.render(
+        <MessageComponent
+          message={{
+            ...malformedMessage(),
+            timestamp: '2026-07-29T12:00:00.000Z',
+            content: '',
+            deletedAt: '2026-07-29T12:05:00.000Z',
+            reactions: { '👍': ['@bob:example.org'] },
+          }}
+          isGrouped={false}
+        />,
+      )
+    })
+
+    // A redaction clears the body; without a tombstone the row read as a
+    // rendering bug, and its reactions outlived the message they belonged to.
+    expect(container.textContent).toContain('Message deleted')
+    expect(container.querySelector('[aria-label*="reaction"]')).toBeNull()
+    expect(container.querySelector('[role="group"]')?.getAttribute('aria-label'))
+      .toContain('message deleted')
+  })
+
+  it('exposes reaction state without relying on colour', async () => {
+    await act(async () => {
+      root.render(
+        <MessageComponent
+          message={{
+            ...malformedMessage(),
+            timestamp: '2026-07-29T12:00:00.000Z',
+            reactions: { '👍': ['@bob:example.org', '@carol:example.org'] },
+          }}
+          isGrouped={false}
+        />,
+      )
+    })
+
+    const reaction = container.querySelector('[aria-label*="reaction"]')
+    expect(reaction).not.toBeNull()
+    expect(reaction?.getAttribute('aria-label')).toContain('2 reactions')
+    // aria-pressed carries "did I react" independently of the accent tint.
+    expect(reaction?.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('emits a machine-readable timestamp', async () => {
+    await act(async () => {
+      root.render(
+        <MessageComponent
+          message={{ ...malformedMessage(), timestamp: '2026-07-29T12:00:00.000Z' }}
+          isGrouped={false}
+        />,
+      )
+    })
+
+    const time = container.querySelector('time')
+    expect(time).not.toBeNull()
+    expect(time?.getAttribute('datetime')).toBe('2026-07-29T12:00:00.000Z')
   })
 
   it('links an actionable decryption gap to Security & Devices', async () => {
@@ -240,7 +369,12 @@ describe('MessageComponent federated timestamps', () => {
       )
     })
 
-    const alert = container.querySelector('[role="alert"]')
+    // Intentionally role="status", not role="alert": inside the virtualized
+    // timeline an assertive region re-announces every time the row scrolls back
+    // into view, interrupting the user repeatedly for an already-known failure.
+    const alert = [...container.querySelectorAll('[role="status"]')].find(
+      (node) => node.textContent?.includes('Delivery needs attention'),
+    )
     expect(alert?.textContent).toContain('Delivery needs attention')
     const [retry, cancel] = [...alert!.querySelectorAll('button')]
     await act(async () => {

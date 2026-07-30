@@ -21,22 +21,43 @@ export function TypingIndicator({ channelId }: TypingIndicatorProps) {
 
   // Periodically prune expired typing indicators
   useEffect(() => {
-    const interval = setInterval(() => {
+    let interval: number | null = null
+    const refresh = () => {
       pruneExpired(channelId)
       setClock(Date.now())
-    }, 2000)
-    return () => clearInterval(interval)
+    }
+    const pause = () => {
+      if (interval !== null) window.clearInterval(interval)
+      interval = null
+    }
+    const resume = () => {
+      pause()
+      if (document.hidden) return
+      refresh()
+      interval = window.setInterval(refresh, 2_000)
+    }
+    const handleVisibilityChange = () => {
+      if (document.hidden) pause()
+      else resume()
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    resume()
+    return () => {
+      pause()
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [channelId, pruneExpired])
 
-  if (typingUsers.length === 0) {
-    return <div className="h-6" />
-  }
-
-  const text = formatTypingText(typingUsers)
+  const text = typingUsers.length > 0 ? formatTypingText(typingUsers) : ''
 
   return (
-    <div className="flex h-6 items-center gap-1.5 px-4 text-xs text-muted">
-      <TypingDots />
+    <div
+      className="flex h-6 items-center gap-1.5 px-4 text-xs text-muted"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    >
+      {text && <TypingDots />}
       <span>{text}</span>
     </div>
   )
@@ -57,7 +78,7 @@ function formatTypingText(names: string[]): string {
 
 function TypingDots() {
   return (
-    <span className="inline-flex items-center gap-0.5">
+    <span className="inline-flex items-center gap-0.5" aria-hidden="true">
       <span className="h-1 w-1 animate-bounce rounded-full bg-muted [animation-delay:0ms]" />
       <span className="h-1 w-1 animate-bounce rounded-full bg-muted [animation-delay:150ms]" />
       <span className="h-1 w-1 animate-bounce rounded-full bg-muted [animation-delay:300ms]" />

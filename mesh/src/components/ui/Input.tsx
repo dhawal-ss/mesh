@@ -45,7 +45,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           aria-invalid={error ? true : undefined}
           aria-describedby={descriptionIds}
           className={clsx(
-            'w-full rounded-md border border-border bg-surface-sunken text-content placeholder:text-content-muted',
+            'w-full rounded-md border border-border-control bg-surface-sunken text-content placeholder:text-content-muted',
             'transition-colors duration-fast focus:border-accent focus:outline-none',
             error && 'border-status-danger focus:border-status-danger',
             size === 'sm' && 'px-2.5 py-1.5 text-xs',
@@ -58,6 +58,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         {(error || hint) && (
           <p
             id={supportingTextId}
+            role={error ? 'alert' : undefined}
             className={clsx('text-xs', error ? 'text-status-danger' : 'text-content-muted')}
           >
             {error ?? hint}

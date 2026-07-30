@@ -1,4 +1,9 @@
-import { useMemo, type KeyboardEvent } from 'react'
+import {
+  useMemo,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import type { Channel, Message } from '../../types/ipc'
 import type { RoomTrustSnapshot } from '../../hooks/useRoomTrust'
 import { useMessageStore } from '../../store/messages'
@@ -13,6 +18,8 @@ import { MemberList } from './MemberList'
 import { EmptyState } from '../ui/Primitives'
 import { Button } from '../ui/Button'
 import { Spinner } from '../ui/Spinner'
+import { StatusDot } from '../ui/StatusDot'
+import { PanelResizeHandle } from '../layout/PanelResizeHandle'
 
 export type RoomContextTab = 'people' | 'ledger' | 'files' | 'pins'
 
@@ -31,6 +38,11 @@ interface RoomContextPanelProps {
   activeTab: RoomContextTab
   onTabChange: (tab: RoomContextTab) => void
   onClose: () => void
+  panelWidth: number
+  panelWidthMinimum: number
+  panelWidthMaximum: number
+  onResizeStart: (event: ReactPointerEvent<HTMLElement>, direction: 1 | -1) => void
+  onResizeBy: (delta: number) => void
 }
 
 const EMPTY_MESSAGES: Message[] = []
@@ -42,6 +54,11 @@ export function RoomContextPanel({
   activeTab,
   onTabChange,
   onClose,
+  panelWidth,
+  panelWidthMinimum,
+  panelWidthMaximum,
+  onResizeStart,
+  onResizeBy,
 }: RoomContextPanelProps) {
   const messages = useMessageStore((state) => state.messages[channel.id] ?? EMPTY_MESSAGES)
   const pinnedMessages = useRoomPinStore((state) => (
@@ -116,9 +133,23 @@ export function RoomContextPanel({
   return (
     <aside
       id="mesh-room-context-panel"
-      className="mesh-room-context-panel flex w-member-list flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-sidebar"
+      className="mesh-room-context-panel relative flex flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-sidebar"
+      data-design-token-exception="user-resizable-persisted-room-context-width"
+      style={{
+        '--mesh-room-context-width': `${panelWidth}px`,
+      } as CSSProperties}
       aria-label={`Room context for ${channel.name}`}
+      tabIndex={-1}
     >
+      <PanelResizeHandle
+        label="Resize room context"
+        side="left"
+        value={panelWidth}
+        minimum={panelWidthMinimum}
+        maximum={panelWidthMaximum}
+        onPointerDown={onResizeStart}
+        onResizeBy={onResizeBy}
+      />
       <div className="flex h-conversation-header flex-shrink-0 items-center gap-1 border-b border-border-subtle px-2">
         <button
           type="button"
@@ -196,7 +227,7 @@ export function RoomContextPanel({
             className={`rounded-lg border p-3 ${
               trust.protection === 'protected'
                 ? 'border-status-success/30 bg-status-success/10'
-                : trust.protection === 'blocked'
+                : trust.protection === 'unencrypted'
                   ? 'border-status-warning/30 bg-status-warning/10'
                   : 'border-border-subtle bg-surface-sunken'
             }`}
@@ -208,7 +239,7 @@ export function RoomContextPanel({
                 className={
                   trust.protection === 'protected'
                     ? 'text-status-success'
-                    : trust.protection === 'blocked'
+                    : trust.protection === 'unencrypted'
                       ? 'text-status-warning'
                       : 'text-muted'
                 }
@@ -296,12 +327,10 @@ export function RoomContextPanel({
                 {trust.devices.map((device) => {
                   const needsReview = !device.verified || device.newDevice || device.identityChanged
                   return (
-                    <span
+                    <StatusDot
                       key={device.deviceId}
-                      className={`h-3 w-3 rounded-sm ${
-                        needsReview ? 'bg-status-warning' : 'bg-status-success'
-                      }`}
-                      title={`${device.displayName || 'Unnamed device'}: ${needsReview ? 'needs review' : 'approved'}`}
+                      state={needsReview ? 'degraded' : 'connected'}
+                      label={`${device.displayName || 'Unnamed device'}: ${needsReview ? 'needs review' : 'approved'}`}
                     />
                   )
                 })}
@@ -523,7 +552,7 @@ function LedgerRow({
 
 function protectionLabel(state: RoomTrustSnapshot['protection']) {
   if (state === 'protected') return 'Protected end to end'
-  if (state === 'blocked') return 'Sending is blocked until protection is restored'
+  if (state === 'unencrypted') return 'Messages in this room are not end-to-end encrypted'
   if (state === 'checking') return 'Checking room protection'
   return 'Protection details are temporarily unavailable'
 }

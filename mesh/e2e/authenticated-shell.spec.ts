@@ -43,6 +43,11 @@ async function installAuthenticatedMatrixMock(
         service: parsed.searchParams.get('community_service')
           ?? parsed.searchParams.get('service'),
         admissionService: parsed.searchParams.get('admission'),
+        communityName: 'Invited Mesh Community',
+        inviterDisplayName: 'Bob',
+        inviterUserId: '@bob:mesh.test',
+        joinRule: 'public',
+        communityServiceDisplayName: 'Matrix Test Service',
         storedAt: 1_752_000_000_000,
         expiresAt: 1_754_592_000_000,
       }
@@ -415,14 +420,18 @@ async function openAuthenticatedShell(
 ): Promise<void> {
   await installAuthenticatedMatrixMock(page, currentDeepLinks)
   await page.goto('/')
+  if (currentDeepLinks?.length) {
+    await expect(
+      page.getByRole('dialog', { name: 'Review community invitation' }),
+    ).toBeVisible({ timeout: 10_000 })
+    return
+  }
   await expect(
     page.getByRole('navigation', { name: 'Communities and direct messages' }),
   ).toBeVisible({ timeout: 10_000 })
-  if (!currentDeepLinks?.length) {
-    await expect(page.getByRole('log', { name: 'Messages in #general' })).toBeVisible({
-      timeout: 10_000,
-    })
-  }
+  await expect(page.getByRole('log', { name: 'Messages in #general' })).toBeVisible({
+    timeout: 10_000,
+  })
 }
 
 function ipcCalls(page: Page): Promise<IpcCall[]> {
@@ -460,6 +469,16 @@ test.describe('authenticated desktop shell', () => {
       'mesh://join?v=3&kind=matrix&room=!invited:mesh.test&via=mesh.test&service=https%3A%2F%2Fmatrix.mesh.test'
     await openAuthenticatedShell(page, [invite])
 
+    const review = page.getByRole('dialog', { name: 'Review community invitation' })
+    await expect(review).toBeVisible()
+    await expect(review.getByText('Invited Mesh Community', { exact: true })).toBeVisible()
+    await expect(review.getByText('Invited by Bob', { exact: true })).toBeVisible()
+    await expect(review.getByText('Matrix Test Service', { exact: true })).toBeVisible()
+    await expect.poll(async () => (
+      (await ipcCalls(page)).filter((call) => call.command === 'matrix_join_community')
+    )).toEqual([])
+
+    await review.getByRole('button', { name: 'Confirm and continue' }).click()
     await expect.poll(async () => (
       (await ipcCalls(page)).filter((call) => call.command === 'matrix_join_community')
     )).toEqual([{
@@ -469,6 +488,9 @@ test.describe('authenticated desktop shell', () => {
         via: ['mesh.test'],
       },
     }])
+    await expect(
+      page.getByRole('navigation', { name: 'Communities and direct messages' }),
+    ).toBeVisible()
     await expect.poll(async () => (
       (await ipcCalls(page))
         .filter((call) => [
@@ -489,7 +511,7 @@ test.describe('authenticated desktop shell', () => {
       'aria-current',
       'page',
     )
-    await expect(page.getByRole('dialog', { name: 'Join a community' })).toHaveCount(0)
+    await expect(review).toHaveCount(0)
 
   })
 
@@ -672,11 +694,21 @@ test.describe('authenticated desktop shell', () => {
     await openAuthenticatedShell(page)
 
     const randomChannel = page.getByRole('button', {
-      name: 'Text room: random, 1 unread',
+      name: /^Text room: random/,
     })
     await randomChannel.click({ button: 'right' })
     const menu = page.getByRole('menu', { name: 'Actions for random' })
-    await expect(menu.getByRole('menuitem', { name: 'Mute for 15 minutes' })).toBeVisible()
+    await menu.getByRole('menuitem', { name: 'Mute notifications' }).click()
+
+    await expect.poll(async () => ipcCalls(page)).toContainEqual({
+      command: 'matrix_set_room_notification_mode',
+      args: {
+        roomId: '!random:mesh.test',
+        mode: 'nothing',
+      },
+    })
+
+    await randomChannel.click({ button: 'right' })
     await menu
       .getByRole('menuitem', { name: 'Notifications: Only @mentions' })
       .click()

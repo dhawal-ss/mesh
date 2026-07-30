@@ -29,6 +29,22 @@ export function canStartMatrixVoice(status: BackendStatus | null): boolean {
   )
 }
 
+/**
+ * Distinguish "the user (or policy) blocked the microphone" from every other
+ * device failure. `getUserMedia` reports this as NotAllowedError, and Chromium
+ * additionally uses SecurityError when a permissions policy blocks it.
+ */
+export function isPermissionDeniedError(error: unknown): boolean {
+  if (typeof DOMException !== 'undefined' && error instanceof DOMException) {
+    return error.name === 'NotAllowedError' || error.name === 'SecurityError'
+  }
+  if (error && typeof error === 'object' && 'name' in error) {
+    const name = (error as { name?: unknown }).name
+    return name === 'NotAllowedError' || name === 'SecurityError'
+  }
+  return false
+}
+
 const PUSH_TO_TALK_INTERACTIVE_SELECTOR = [
   'button',
   'a[href]',

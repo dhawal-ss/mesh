@@ -249,11 +249,35 @@ impl MatrixBackend {
         let child_ids = self.space_child_ids(&space).await?;
         let mut rooms = Vec::with_capacity(child_ids.len() + 1);
         let mut room_outcomes = Vec::with_capacity(child_ids.len() + 1);
+        let mut visited_room_ids = BTreeSet::new();
         for child_id in child_ids {
             match Self::protected_joined_room(&client, &child_id, "moderating a server channel")
                 .await
             {
-                Ok(room) => rooms.push(room),
+                Ok(room) => {
+                    match self
+                        .joined_room_upgrade_chain(
+                            &client,
+                            room,
+                            "moderating an upgraded server channel",
+                        )
+                        .await
+                    {
+                        Ok(upgrade_chain) => {
+                            rooms.extend(
+                                upgrade_chain.into_iter().filter(|room| {
+                                    visited_room_ids.insert(room.room_id().to_owned())
+                                }),
+                            );
+                        }
+                        Err(error) => room_outcomes.push(ModerationRoomOutcome {
+                            room_id: child_id.to_string(),
+                            room_name: "Unavailable upgraded channel".into(),
+                            succeeded: false,
+                            failure_reason: Some(Self::moderation_failure_reason(&error)),
+                        }),
+                    }
+                }
                 Err(error) => room_outcomes.push(ModerationRoomOutcome {
                     room_id: child_id.to_string(),
                     room_name: "Unavailable channel".into(),

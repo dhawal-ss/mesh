@@ -300,7 +300,7 @@ test.describe('message action bar keyboard access (V-25)', () => {
 
     // --- React ---
     await page.keyboard.press('Enter')
-    const thumbsUp = page.getByRole('button', { name: '👍', exact: true })
+    const thumbsUp = page.getByRole('button', { name: 'React with thumbs up', exact: true })
     await tabUntilFocused(page, thumbsUp, 'forward')
     await page.keyboard.press('Enter')
 
@@ -308,7 +308,9 @@ test.describe('message action bar keyboard access (V-25)', () => {
       command: 'matrix_toggle_reaction',
       args: { roomId: '!general:mesh.test', eventId: '$bob-message', key: '👍' },
     })
-    await expect(page.getByRole('button', { name: '👍 1' })).toBeVisible()
+    // Reaction buttons now expose count and ownership as a complete accessible
+    // name instead of relying on their abbreviated visible text.
+    await expect(page.getByRole('button', { name: /👍, 1 reaction, you reacted/ })).toBeVisible()
 
     // --- Reply ---
     await tabUntilFocused(page, replyButton, 'forward')
@@ -344,7 +346,7 @@ test.describe('message action bar keyboard access (V-25)', () => {
     // --- Reaction picker: Escape closes it and returns focus to the trigger ---
     await expect(reactButton).toHaveAttribute('aria-expanded', 'false')
     await page.keyboard.press('Enter')
-    const thumbsUp = page.getByRole('button', { name: '👍', exact: true })
+    const thumbsUp = page.getByRole('button', { name: 'React with thumbs up', exact: true })
     await expect(thumbsUp).toBeVisible()
     await expect(reactButton).toHaveAttribute('aria-expanded', 'true')
 
@@ -353,7 +355,7 @@ test.describe('message action bar keyboard access (V-25)', () => {
     await expect(reactButton).toBeFocused()
     await expect(reactButton).toHaveAttribute('aria-expanded', 'false')
     // No emoji was picked — the picker was dismissed, not activated.
-    await expect(page.getByRole('button', { name: '👍 1' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /👍, 1 reaction, you reacted/ })).toHaveCount(0)
 
     // --- Context menu: Shift+F10 moves focus into the first menu item ---
     await page.keyboard.press('Shift+F10')

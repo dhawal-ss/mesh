@@ -1,5 +1,25 @@
+struct TimelineValuesPage {
+    values: Vec<serde_json::Value>,
+    anchor_seen: bool,
+    reached_start: bool,
+    qualifying_messages: usize,
+}
+
 impl MatrixBackend {
     const UNDECRYPTABLE_REASON_KEY: &'static str = "org.mesh.undecryptable_reason";
+    const MAX_ROOM_UPGRADE_HOPS: usize = 16;
+
+    fn receipt_thread_for_message(is_thread_event: bool) -> ReceiptThread {
+        if is_thread_event {
+            ReceiptThread::Main
+        } else {
+            ReceiptThread::Unthreaded
+        }
+    }
+
+    fn can_follow_upgrade_predecessor(predecessor_rooms_visited: usize) -> bool {
+        predecessor_rooms_visited < Self::MAX_ROOM_UPGRADE_HOPS
+    }
 
     fn dispatch_backend_event(
         callback: &Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
@@ -208,11 +228,11 @@ impl MatrixBackend {
             .unwrap_or(UndecryptableMessageReason::CouldNotDecrypt)
     }
 
-    async fn timeline_values(
+    async fn timeline_values_page(
         room: &Room,
         minimum_base_messages: usize,
         before_id: Option<&str>,
-    ) -> BackendResult<Vec<serde_json::Value>> {
+    ) -> BackendResult<TimelineValuesPage> {
         const PAGE_SIZE: u32 = 100;
         const MAX_EVENTS: usize = 10_000;
 
@@ -220,6 +240,7 @@ impl MatrixBackend {
         let mut from = None;
         let mut anchor_seen = before_id.is_none();
         let mut qualifying_messages = 0_usize;
+        let mut reached_start = false;
         let crypto_context = room.crypto_context_info().await;
 
         loop {
@@ -228,6 +249,7 @@ impl MatrixBackend {
             options.from = from;
             let response = room.messages(options).await.map_err(Self::map_error)?;
             if response.chunk.is_empty() {
+                reached_start = true;
                 break;
             }
 
@@ -273,9 +295,107 @@ impl MatrixBackend {
                 break;
             }
             let Some(next) = response.end else {
+                reached_start = true;
                 break;
             };
             from = Some(next);
+        }
+
+        Ok(TimelineValuesPage {
+            values,
+            anchor_seen,
+            reached_start,
+            qualifying_messages,
+        })
+    }
+
+    async fn timeline_values(
+        room: &Room,
+        minimum_base_messages: usize,
+        before_id: Option<&str>,
+    ) -> BackendResult<Vec<serde_json::Value>> {
+        Ok(Self::timeline_values_page(room, minimum_base_messages, before_id)
+            .await?
+            .values)
+    }
+
+    async fn timeline_values_with_predecessors(
+        &self,
+        client: &Client,
+        room: &Room,
+        minimum_base_messages: usize,
+        before_id: Option<&str>,
+    ) -> BackendResult<Vec<serde_json::Value>> {
+        let mut current = room.clone();
+        let mut values = Vec::new();
+        let mut remaining = minimum_base_messages;
+        let mut seeking_anchor = before_id.is_some();
+        let mut anchor = before_id;
+        let mut visited = BTreeSet::new();
+        let mut predecessor_rooms_visited = 0_usize;
+
+        loop {
+            if !visited.insert(current.room_id().to_string()) {
+                break;
+            }
+
+            let page = Self::timeline_values_page(&current, remaining.max(1), anchor).await?;
+            if !seeking_anchor || page.anchor_seen {
+                remaining = remaining.saturating_sub(page.qualifying_messages);
+                values.extend(page.values);
+                if remaining == 0 || !page.reached_start {
+                    break;
+                }
+                seeking_anchor = false;
+                anchor = None;
+            }
+
+            if !Self::can_follow_upgrade_predecessor(predecessor_rooms_visited) {
+                break;
+            }
+            let mut predecessor_room_id =
+                current.predecessor_room().map(|room| room.room_id);
+            if predecessor_room_id.is_none() {
+                predecessor_room_id =
+                    self.verified_room_upgrades
+                        .read()
+                        .await
+                        .iter()
+                        .find_map(|(predecessor, replacement)| {
+                            (replacement == current.room_id()).then(|| predecessor.clone())
+                        });
+            }
+            if predecessor_room_id.is_none() {
+                predecessor_room_id = self
+                    .cache_verified_room_upgrade(
+                        client,
+                        &current,
+                        "reading room upgrade predecessor history",
+                    )
+                    .await?;
+            }
+            let Some(predecessor_room_id) = predecessor_room_id else {
+                break;
+            };
+            let predecessor = match Self::protected_joined_room(
+                client,
+                &predecessor_room_id,
+                "reading room upgrade predecessor history",
+            )
+            .await
+            {
+                Ok(room) => room,
+                Err(error) => {
+                    tracing::debug!(
+                        target: "mesh::matrix",
+                        room_id = %predecessor_room_id,
+                        "Room upgrade predecessor is not available through the protected room guard: {error}"
+                    );
+                    break;
+                }
+            };
+            current = predecessor;
+            predecessor_rooms_visited += 1;
         }
 
         Ok(values)
@@ -293,6 +413,15 @@ impl MatrixBackend {
             }
         }
         Some(body.to_owned())
+    }
+
+    fn thread_root_id(content: &serde_json::Value) -> Option<String> {
+        let relation = content.get("m.relates_to")?;
+        (relation.get("rel_type").and_then(serde_json::Value::as_str) == Some("m.thread"))
+            .then(|| relation.get("event_id"))
+            .flatten()
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
     }
 
     fn queued_event_content(echo: &LocalEcho) -> Option<(&serde_json::value::RawValue, u64, bool)> {
@@ -382,6 +511,7 @@ impl MatrixBackend {
             .and_then(|reply| reply.get("event_id"))
             .and_then(serde_json::Value::as_str)
             .map(str::to_owned);
+        let thread_root_id = Self::thread_root_id(&content);
 
         Ok(Some(MessageDto {
             id: echo.transaction_id.to_string(),
@@ -397,6 +527,7 @@ impl MatrixBackend {
             edited_at: None,
             deleted_at: None,
             reply_to_id,
+            thread_root_id,
             transaction_id: Some(echo.transaction_id.to_string()),
             client_request_id: Some(client_request_id),
             delivery_status: Some(if failed { "failed" } else { "pending" }.into()),
@@ -831,6 +962,7 @@ impl MatrixBackend {
                 .get("replyToId")
                 .and_then(serde_json::Value::as_str)
                 .map(|reply| format!("legacy-reply:{reply}")),
+            thread_root_id: None,
             transaction_id: None,
             client_request_id: None,
             delivery_status: Some("imported".into()),
@@ -882,6 +1014,7 @@ impl MatrixBackend {
             edited_at: None,
             deleted_at: None,
             reply_to_id: None,
+            thread_root_id: None,
             transaction_id: None,
             client_request_id: None,
             delivery_status: Some("sent".into()),
@@ -984,6 +1117,7 @@ impl MatrixBackend {
                 .and_then(|reply| reply.get("event_id"))
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_owned);
+            let thread_root_id = Self::thread_root_id(content);
             let transaction_id = value
                 .get("unsigned")
                 .and_then(|unsigned| unsigned.get("transaction_id"))
@@ -1020,6 +1154,7 @@ impl MatrixBackend {
                     edited_at: None,
                     deleted_at: redacted.then_some(timestamp),
                     reply_to_id,
+                    thread_root_id,
                     transaction_id,
                     client_request_id,
                     delivery_status: Some("sent".into()),

@@ -7,6 +7,7 @@ const bridgeMocks = vi.hoisted(() => ({
   createCommunity: vi.fn(),
   createChannel: vi.fn(),
   getChannels: vi.fn(),
+  storePendingInvitation: vi.fn(),
   joinOrRequestCommunity: vi.fn(),
 }))
 
@@ -15,6 +16,7 @@ vi.mock('../../lib/bridge', () => ({
   createCommunity: bridgeMocks.createCommunity,
   createChannel: bridgeMocks.createChannel,
   getChannels: bridgeMocks.getChannels,
+  storePendingInvitation: bridgeMocks.storePendingInvitation,
   joinOrRequestCommunity: bridgeMocks.joinOrRequestCommunity,
   searchCommunityDirectory: vi.fn(),
   requestCommunityAccess: vi.fn(),
@@ -46,6 +48,15 @@ describe('CreateCommunityModal', () => {
       }),
     )
     bridgeMocks.getChannels.mockReset().mockResolvedValue([])
+    bridgeMocks.storePendingInvitation.mockReset().mockResolvedValue({
+      handle: 'pending-1',
+      roomOrAlias: '!server:example.org',
+      via: ['example.org'],
+      service: null,
+      admissionService: null,
+      storedAt: 1_752_000_000_000,
+      expiresAt: 1_754_592_000_000,
+    })
     bridgeMocks.joinOrRequestCommunity.mockReset()
   })
 
@@ -134,17 +145,14 @@ describe('CreateCommunityModal', () => {
     expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
   })
 
-  it('keeps a private-link access request visible instead of claiming the user joined', async () => {
-    bridgeMocks.joinOrRequestCommunity.mockResolvedValueOnce({
-      status: 'knocked',
-      community: null,
-    })
+  it('stores a Matrix invitation for review instead of joining immediately', async () => {
+    const onClose = vi.fn()
 
     await act(async () => {
       root.render(
         <CreateCommunityModal
           isOpen
-          onClose={() => {}}
+          onClose={onClose}
           initialTab="join"
           initialInvite="mesh://join?v=3&kind=matrix&room=!server:example.org&via=example.org"
         />,
@@ -158,12 +166,10 @@ describe('CreateCommunityModal', () => {
       await Promise.resolve()
     })
 
-    expect(bridgeMocks.joinOrRequestCommunity).toHaveBeenCalledWith(
+    expect(bridgeMocks.storePendingInvitation).toHaveBeenCalledWith(
       'mesh://join?v=3&kind=matrix&room=!server:example.org&via=example.org',
     )
-    expect(document.body.querySelector('[role="status"]')?.textContent).toContain(
-      'Access requested',
-    )
-    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(bridgeMocks.joinOrRequestCommunity).not.toHaveBeenCalled()
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 })

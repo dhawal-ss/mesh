@@ -18,6 +18,16 @@ struct AdmissionServiceResponse {
     via: Vec<String>,
     #[serde(default)]
     expires_at: Option<u64>,
+    #[serde(default)]
+    community_name: Option<String>,
+    #[serde(default)]
+    inviter_display_name: Option<String>,
+    #[serde(default)]
+    inviter_user_id: Option<String>,
+    #[serde(default)]
+    join_rule: Option<String>,
+    #[serde(default)]
+    community_service_display_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -434,12 +444,63 @@ impl MatrixBackend {
                 "the invitation service returned no valid account admission".into(),
             ));
         }
+        let clean_label = |value: Option<String>, field: &str| -> BackendResult<Option<String>> {
+            value
+                .map(|value| {
+                    let value = value.trim();
+                    if value.is_empty()
+                        || value.chars().count() > 255
+                        || value.chars().any(char::is_control)
+                    {
+                        return Err(BackendError::Serialization(format!(
+                            "the invitation service returned an invalid {field}"
+                        )));
+                    }
+                    Ok(value.to_owned())
+                })
+                .transpose()
+        };
+        let community_name = clean_label(response.community_name, "community name")?;
+        let inviter_display_name =
+            clean_label(response.inviter_display_name, "inviter display name")?;
+        let community_service_display_name = clean_label(
+            response.community_service_display_name,
+            "community service name",
+        )?;
+        let inviter_user_id = response
+            .inviter_user_id
+            .map(|value| {
+                matrix_sdk::ruma::UserId::parse(value.trim())
+                    .map(|user_id| user_id.to_string())
+                    .map_err(|_| {
+                        BackendError::Serialization(
+                            "the invitation service returned an invalid inviter".into(),
+                        )
+                    })
+            })
+            .transpose()?;
+        let join_rule = response
+            .join_rule
+            .map(|value| match value.trim() {
+                "public" | "knock" | "invite" | "restricted" | "knock_restricted" => {
+                    Ok(value.trim().to_owned())
+                }
+                _ => Err(BackendError::Serialization(
+                    "the invitation service returned an invalid access policy".into(),
+                )),
+            })
+            .transpose()?;
         Ok(super::MatrixCommunityAdmission {
             registration_token: response.registration_token,
             room_id: response.room_id,
             service: response_service,
             via: response.via,
             expires_at: response.expires_at,
+            community_name,
+            inviter_display_name,
+            inviter_user_id,
+            join_rule,
+            community_service_display_name,
         })
     }
 

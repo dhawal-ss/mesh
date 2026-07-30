@@ -69,7 +69,9 @@ export function BackupCodeScreen({
   }
 
   return (
-    <main aria-labelledby={titleId} className="space-y-6">
+    /* Was <main>, nested inside the shell's own <main> — two main landmarks is
+       invalid and broke landmark navigation on the most safety-critical screen. */
+    <section aria-labelledby={titleId} className="space-y-6">
       <header className="space-y-2">
         <p className="text-caption uppercase tracking-eyebrow text-content-muted">Protect your messages</p>
         <h1 id={titleId} className="text-lg font-semibold tracking-tight text-content">
@@ -186,7 +188,7 @@ export function BackupCodeScreen({
           </div>
         </form>
       )}
-    </main>
+    </section>
   )
 }
 

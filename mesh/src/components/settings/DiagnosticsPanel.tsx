@@ -14,6 +14,7 @@ import { ErrorState } from '../ui/ErrorState'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 import { Modal } from '../ui/Modal'
+import { StatusDot } from '../ui/StatusDot'
 
 interface DiagnosticsPanelProps {
   open: boolean
@@ -391,7 +392,7 @@ function DiagnosticsContent({
         {!data.iceServerStatus.turnConfigured && (
           <p className="mt-2 text-xs text-status-warning">
             No TURN server configured. Voice calls may fail for users behind symmetric NATs.
-            Configure one in Settings → Voice & Audio.
+            Ask the community operator to check the call service configuration.
           </p>
         )}
 
@@ -408,13 +409,19 @@ function DiagnosticsContent({
               size="sm"
               className="min-h-8"
               aria-label="Run ICE reachability probe"
+              aria-describedby="ice-probe-description"
             >
               {probeLoading ? 'Probing…' : 'Run probe'}
             </Button>
           </div>
           {probeResults === null && !probeLoading && (
-            <p className="text-xs text-muted">
+            <p id="ice-probe-description" className="text-xs text-muted">
               Click "Run probe" to test whether configured ICE servers are reachable.
+            </p>
+          )}
+          {(probeResults !== null || probeLoading) && (
+            <p id="ice-probe-description" className="sr-only">
+              Test whether the configured voice connection services are reachable.
             </p>
           )}
           {probeResults !== null && probeResults.length === 0 && (
@@ -509,12 +516,12 @@ function StatusCell({
   warn?: boolean
 }) {
   const color = warn ? 'text-status-warning' : ok ? 'text-status-success' : 'text-status-danger'
-  const dotColor = warn ? 'bg-status-warning' : ok ? 'bg-status-success' : 'bg-status-danger'
+  const state = warn ? 'degraded' : ok ? 'connected' : 'disconnected'
   return (
     <div className="rounded-control bg-surface-sunken px-3 py-2">
       <div className="text-caption uppercase tracking-wide text-muted">{label}</div>
       <div className="mt-0.5 flex items-center gap-1.5 text-sm">
-        <span className={`inline-block h-2 w-2 rounded-full ${dotColor}`} aria-hidden />
+        <StatusDot state={state} label={`${label}: ${value}`} />
         <span className={color}>{value}</span>
       </div>
     </div>
@@ -636,17 +643,16 @@ function ProbeRow({ result }: { result: IceServerProbeResult }) {
       : severity === 'error'
         ? 'text-status-danger'
         : 'text-status-warning'
-  const dot =
-    severity === 'success'
-      ? 'bg-status-success'
-      : severity === 'error'
-        ? 'bg-status-danger'
-        : 'bg-status-warning'
   const label = probeOutcomeLabel(result.outcome)
+  const state = severity === 'success'
+    ? 'connected'
+    : severity === 'error'
+      ? 'disconnected'
+      : 'degraded'
   return (
     <div className="rounded-control bg-surface-sunken px-2 py-1.5 text-meta">
       <div className="flex items-center gap-1.5">
-        <span className={`inline-block h-2 w-2 rounded-full ${dot}`} aria-hidden />
+        <StatusDot state={state} label={`${result.url}: ${label}`} />
         <span className="truncate font-mono text-secondary" title={result.url}>
           {result.url}
         </span>

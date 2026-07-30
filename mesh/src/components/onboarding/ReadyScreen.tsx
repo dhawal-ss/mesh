@@ -23,6 +23,14 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
   })
   const [failure, setFailure] = useState<unknown | null>(null)
   const [isDone, setIsDone] = useState(false)
+  const completedSteps =
+    state.phase === 'ready'
+      ? 3
+      : state.phase === 'finalizing'
+        ? 2
+        : state.phase === 'syncing'
+          ? 1
+          : 0
 
   const timeline = useMemo(
     () => [
@@ -131,6 +139,7 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
           />
         </div>
 
+        {/* Bootstrap phases map one-to-one onto the three checklist rows. */}
         <div className="grid gap-2 text-2xs uppercase tracking-section text-muted">
           {(backendKind === 'matrix'
             ? ['Signed in', 'Service connected', 'Conversations ready']
@@ -144,8 +153,18 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
               transition={{ ...transitions.enter, delay: index * motionDurations.staggerFast }}
             >
               <span>{item}</span>
-              <span className={index < 2 || state.phase === 'ready' ? 'text-primary' : 'text-muted'}>
-                {index < 2 || state.phase === 'ready' ? 'Done' : 'Queued'}
+              {/*
+                These rows previously read "Done" unconditionally for the first
+                two entries, from the very first frame and before any bootstrap
+                work had run. On a product whose whole pitch is trust, that is
+                fabricated reassurance. Each row now reflects real progress.
+              */}
+              <span className={index < completedSteps ? 'text-primary' : 'text-muted'}>
+                {index < completedSteps
+                  ? 'Done'
+                  : index === completedSteps && !failure
+                    ? 'Working'
+                    : 'Queued'}
               </span>
             </motion.div>
           ))}

@@ -2,12 +2,23 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('./MessageInput', () => ({
-  MessageInput: () => <div>Message composer remains available</div>,
+const composerHarness = vi.hoisted(() => ({
+  onSend: null as null | ((content: string) => Promise<void>),
+  onEditLastMessage: null as null | (() => void),
 }))
 
-vi.mock('./Message', () => ({
-  FileAttachmentCard: () => null,
+vi.mock('./MessageInput', () => ({
+  MessageInput: ({
+    onSend,
+    onEditLastMessage,
+  }: {
+    onSend: (content: string) => Promise<void>
+    onEditLastMessage?: () => void
+  }) => {
+    composerHarness.onSend = onSend
+    composerHarness.onEditLastMessage = onEditLastMessage ?? null
+    return <div>Message composer remains available</div>
+  },
 }))
 
 vi.mock('./ReactionPicker', () => ({
@@ -17,6 +28,7 @@ vi.mock('./ReactionPicker', () => ({
 import * as bridge from '../../lib/bridge'
 import { useDmStore } from '../../store/dms'
 import { useIdentityStore } from '../../store/identity'
+import { useMessageStore } from '../../store/messages'
 import type { DirectMessage } from '../../types/ipc'
 import { DmView } from './DmView'
 
@@ -90,9 +102,23 @@ describe('DmView message containment', () => {
       messages: {},
       isDmMode: true,
     })
+    useMessageStore.setState({
+      messageEntities: {},
+      messageOrder: {},
+      messages: {},
+      loadingOlder: {},
+      hasMoreOlder: {},
+      browsingOlder: {},
+      newerGapCount: {},
+      channelRecency: [],
+      matrixQueueStates: {},
+    })
+    composerHarness.onSend = null
+    composerHarness.onEditLastMessage = null
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(false)
     vi.spyOn(bridge, 'onDmReceived').mockResolvedValue(() => {})
+    vi.spyOn(bridge, 'markDmRead').mockResolvedValue()
   })
 
   afterEach(async () => {
@@ -105,7 +131,7 @@ describe('DmView message containment', () => {
   it('replaces only a malformed message while rendering the rest of the conversation', async () => {
     const malformed = {
       ...directMessage('malformed', 'Broken event'),
-      authorDisplayName: null as unknown as string,
+      content: { length: 12 } as unknown as string,
     }
     const valid = directMessage('valid', 'Healthy event remains visible')
     vi.spyOn(bridge, 'getDmMessages').mockResolvedValue([malformed, valid])
@@ -162,8 +188,13 @@ describe('DmView message containment', () => {
       await Promise.resolve()
     })
 
-    const reportButton = container.querySelector<HTMLButtonElement>('[aria-label="Report message"]')
-    expect(reportButton).not.toBeNull()
+    const row = container.querySelector<HTMLElement>('[role="group"]')
+    await act(async () => {
+      row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+    })
+    const reportButton = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .find((item) => item.textContent?.includes('Report message'))
+    expect(reportButton).toBeDefined()
     await act(async () => reportButton?.click())
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]')
     const send = [...dialog!.querySelectorAll<HTMLButtonElement>('button')]
@@ -180,7 +211,7 @@ describe('DmView message containment', () => {
     )
   })
 
-  it('shows public read receipts on messages sent by the local user', async () => {
+  it('uses the same no-read-receipt presentation as channel rows', async () => {
     vi.mocked(bridge.isMatrixBackend).mockReturnValue(true)
     vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@me:example.org')
     vi.spyOn(bridge, 'getDmMessages').mockResolvedValue([
@@ -200,8 +231,55 @@ describe('DmView message containment', () => {
       await Promise.resolve()
     })
 
-    expect(container.textContent).toContain('Seen by Peer')
-    expect(container.querySelector('[aria-label="Seen by Peer"]')).not.toBeNull()
+    expect(container.textContent).not.toContain('Seen by Peer')
+    expect(container.querySelector('[aria-label="Seen by Peer"]')).toBeNull()
+  })
+
+  it('renders a failed Matrix DM as the shared retryable delivery bubble', async () => {
+    vi.mocked(bridge.isMatrixBackend).mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@me:example.org')
+    vi.spyOn(bridge, 'getDmMessages').mockResolvedValue([])
+    vi.spyOn(bridge, 'matrixDmBlocked').mockResolvedValue(false)
+    vi.spyOn(bridge, 'matrixRoomIsEncrypted').mockResolvedValue(true)
+    vi.spyOn(bridge, 'matrixWaitForRoomUpdate').mockReturnValue(new Promise(() => {}))
+    vi.spyOn(bridge, 'createMatrixTransactionId').mockReturnValue('request-1')
+    const sendMessage = vi.spyOn(bridge, 'sendMessage')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({
+        id: 'request-1',
+        channelId: 'conversation-1',
+        authorPublicKey: '@me:example.org',
+        authorDisplayName: 'Me',
+        authorAvatarColor: '#3ba55d',
+        content: 'Saved for delivery',
+        attachments: [],
+        reactions: {},
+        timestamp: '2026-07-30T12:00:00.000Z',
+        signature: '',
+        clientRequestId: 'request-1',
+        deliveryStatus: 'pending',
+      })
+
+    await act(async () => {
+      root.render(<DmView />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      await composerHarness.onSend?.('Saved for delivery')
+    })
+
+    expect(container.textContent).toContain('Delivery needs attention.')
+    const retry = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Retry')
+    expect(retry).toBeDefined()
+
+    await act(async () => {
+      retry?.click()
+      await Promise.resolve()
+    })
+    expect(sendMessage).toHaveBeenCalledTimes(2)
+    expect(container.textContent).toContain('Waiting to send')
   })
 
   it('keeps a five-thousand-message conversation DOM bounded', async () => {

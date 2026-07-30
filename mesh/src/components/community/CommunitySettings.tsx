@@ -43,12 +43,16 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
   const [channelName, setChannelName] = useState('')
   const [channelType, setChannelType] = useState<'text' | 'voice'>('text')
   const [isCreatingChannel, setIsCreatingChannel] = useState(false)
+  const [channelError, setChannelError] = useState<unknown | null>(null)
   const [communityName, setCommunityName] = useState(() => community?.name ?? '')
   const [communityDescription, setCommunityDescription] = useState(
     () => community?.description ?? '',
   )
   const [isSavingMetadata, setIsSavingMetadata] = useState(false)
+  const [metadataError, setMetadataError] = useState<unknown | null>(null)
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
+  const [dangerBusy, setDangerBusy] = useState(false)
+  const [dangerError, setDangerError] = useState<unknown | null>(null)
   const [communityAlias, setCommunityAlias] = useState('')
   const [isDiscoverable, setIsDiscoverable] = useState(false)
   const [isSavingAccess, setIsSavingAccess] = useState(false)
@@ -119,18 +123,22 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
   const handleCreateChannel = async () => {
     if (!channelName.trim()) return
     setIsCreatingChannel(true)
+    setChannelError(null)
     try {
       const channel = await bridge.createChannel(activeCommunityId, channelName.trim(), channelType)
       addChannel(channel)
       setChannelName('')
       setShowCreateChannel(false)
-    } catch (err) {
-      console.error('Failed to create channel:', err)
+    } catch (error) {
+      setChannelError(error)
+    } finally {
+      setIsCreatingChannel(false)
     }
-    setIsCreatingChannel(false)
   }
 
   const handleLeave = async () => {
+    setDangerBusy(true)
+    setDangerError(null)
     try {
       await bridge.leaveCommunity(activeCommunityId)
       clearCommunityMembership(activeCommunityId)
@@ -138,12 +146,16 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
       const remaining = communityOrder.filter((id) => id !== activeCommunityId)
       setActiveCommunity(remaining[0] ?? null)
       onClose()
-    } catch (err) {
-      console.error('Failed to leave community:', err)
+    } catch (error) {
+      setDangerError(error)
+    } finally {
+      setDangerBusy(false)
     }
   }
 
   const handleDelete = async () => {
+    setDangerBusy(true)
+    setDangerError(null)
     try {
       await bridge.deleteCommunity(activeCommunityId)
       clearCommunityMembership(activeCommunityId)
@@ -151,14 +163,17 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
       const remaining = communityOrder.filter((id) => id !== activeCommunityId)
       setActiveCommunity(remaining[0] ?? null)
       onClose()
-    } catch (err) {
-      console.error('Failed to delete community:', err)
+    } catch (error) {
+      setDangerError(error)
+    } finally {
+      setDangerBusy(false)
     }
   }
 
   const handleSaveMetadata = async () => {
     if (!communityName.trim()) return
     setIsSavingMetadata(true)
+    setMetadataError(null)
     try {
       await bridge.updateCommunityMetadata(
         activeCommunityId,
@@ -169,10 +184,11 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
         name: communityName.trim(),
         description: communityDescription.trim(),
       })
-    } catch (err) {
-      console.error('Failed to update community metadata:', err)
+    } catch (error) {
+      setMetadataError(error)
+    } finally {
+      setIsSavingMetadata(false)
     }
-    setIsSavingMetadata(false)
   }
 
   const handleSaveAccess = async () => {
@@ -307,6 +323,13 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                 >
                   {isSavingMetadata ? 'Saving…' : 'Save Changes'}
                 </Button>
+                {metadataError != null ? (
+                  <ErrorState
+                    error={metadataError}
+                    context={{ operation: 'save the community details', resource: 'community' }}
+                    compact
+                  />
+                ) : null}
               </div>
             </div>
           )}
@@ -316,12 +339,15 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Access & Discovery</h3>
               <div className="space-y-3 border-b border-border-subtle pb-5">
                 <Input
+                  id="community-public-link"
                   label="Public link"
                   value={communityAlias}
                   onChange={setCommunityAlias}
                   placeholder="design-club"
+                  aria-describedby="community-public-link-description"
+                  aria-invalid={isDiscoverable && !communityAlias.trim() ? true : undefined}
                 />
-                <p className="text-xs text-muted">
+                <p id="community-public-link-description" className="text-xs text-muted">
                   Choose a short name people can use to find this community.
                 </p>
                 <Switch
@@ -387,27 +413,34 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                 Custom Emoji
               </h3>
               <div className="space-y-3 border-b border-border-subtle pb-5">
-                <p className="text-xs text-muted">
+                <p id="community-emoji-description" className="text-xs text-muted">
                   Emoji images and names are shared community settings. They are not protected
                   like message text.
                 </p>
                 <Input
+                  id="community-emoji-name"
                   label="Emoji name"
                   value={emojiShortcode}
                   onChange={setEmojiShortcode}
                   placeholder="party_parrot"
+                  aria-describedby="community-emoji-description community-emoji-file-description"
                 />
-                <label className="block text-xs font-semibold uppercase text-muted">
+                <label
+                  htmlFor="community-emoji-file"
+                  className="block text-xs font-semibold uppercase text-muted"
+                >
                   Image
                   <input
+                    id="community-emoji-file"
                     ref={emojiFileInputRef}
                     type="file"
                     accept="image/png,image/jpeg,image/webp"
+                    aria-describedby="community-emoji-description community-emoji-file-description"
                     onChange={(event) => setEmojiFile(event.target.files?.[0] ?? null)}
                     className="mt-1.5 block min-h-control-md w-full cursor-pointer rounded-md border border-border bg-surface-hover px-3 py-2 text-sm font-normal normal-case text-secondary file:mr-3 file:rounded file:border-0 file:bg-surface-active file:px-3 file:py-1 file:text-xs file:font-semibold file:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                   />
                 </label>
-                <p className="text-xs text-muted">
+                <p id="community-emoji-file-description" className="text-xs text-muted">
                   PNG, JPEG, or WebP · up to 512 KB. Images are resized for emoji use.
                 </p>
                 {emojiError != null && (
@@ -602,6 +635,13 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                       >
                         {isCreatingChannel ? 'Creating…' : 'Create Room'}
                       </Button>
+                      {channelError != null ? (
+                        <ErrorState
+                          error={channelError}
+                          context={{ operation: 'create the room', resource: 'community' }}
+                          compact
+                        />
+                      ) : null}
                     </div>
                   </motion.div>
                 )}
@@ -614,7 +654,10 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-status-danger">Danger zone</h3>
             {!showLeaveConfirm ? (
               <Button
-                onClick={() => setShowLeaveConfirm(true)}
+                onClick={() => {
+                  setDangerError(null)
+                  setShowLeaveConfirm(true)
+                }}
                 variant="outline"
                 tone="danger"
                 className="w-full justify-start"
@@ -638,16 +681,37 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                     </>
                   )}
                 </p>
+                {dangerError != null ? (
+                  <ErrorState
+                    error={dangerError}
+                    context={{
+                      operation: !matrixMode && isOwner
+                        ? `delete ${community.name}`
+                        : `leave ${community.name}`,
+                      resource: 'community',
+                    }}
+                    compact
+                  />
+                ) : null}
                 <div className="flex gap-2">
-                  <Button onClick={() => setShowLeaveConfirm(false)} variant="secondary" className="flex-1">
+                  <Button
+                    onClick={() => {
+                      setShowLeaveConfirm(false)
+                      setDangerError(null)
+                    }}
+                    variant="secondary"
+                    className="flex-1"
+                    disabled={dangerBusy}
+                  >
                     Cancel
                   </Button>
                   <Button
                     onClick={matrixMode ? handleLeave : isOwner ? handleDelete : handleLeave}
                     tone="danger"
                     className="flex-1"
+                    disabled={dangerBusy}
                   >
-                    {!matrixMode && isOwner ? 'Delete' : 'Leave'}
+                    {dangerBusy ? 'Working…' : !matrixMode && isOwner ? 'Delete' : 'Leave'}
                   </Button>
                 </div>
               </motion.div>

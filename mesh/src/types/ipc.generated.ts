@@ -30,6 +30,8 @@ export type MatrixQueuedMessageUpdate = { roomId: string, transactionId: string,
 
 export type MatrixRoomNotificationMode = "all" | "mentions" | "nothing";
 
+export type MatrixRoomUpgrade = { roomId: string, replacementRoomId: string | null, predecessorRoomId: string | null, reason: string | null, };
+
 export type MatrixRoomPins = { roomId: string, eventIds: Array<string>, messages: Array<MessageDto>, unavailableEventIds: Array<string>, canManage: boolean, };
 
 export type MatrixRoomPinsUpdate = { roomId: string, eventIds: Array<string>, };
@@ -67,9 +69,9 @@ export type ModerationAuditEntry = { id: string, actorUserId: string, actorDispl
 
 export type CommunityModerationResult = { audit: ModerationAuditEntry, auditRecorded: boolean, };
 
-export type MatrixCommunityAdmission = { registrationToken?: string | null, roomId: string, service: string, via: Array<string>, expiresAt?: number | null, };
+export type MatrixCommunityAdmission = { registrationToken?: string | null, roomId: string, service: string, via: Array<string>, expiresAt?: number | null, communityName?: string | null, inviterDisplayName?: string | null, inviterUserId?: string | null, joinRule?: string | null, communityServiceDisplayName?: string | null, };
 
-export type PendingInvitationMetadata = { handle: string, roomOrAlias: string | null, via: Array<string>, service: string | null, admissionService: string | null, storedAt: number, expiresAt: number, };
+export type PendingInvitationMetadata = { handle: string, roomOrAlias: string | null, via: Array<string>, service: string | null, admissionService: string | null, communityName?: string | null, inviterDisplayName?: string | null, inviterUserId?: string | null, joinRule?: string | null, communityServiceDisplayName?: string | null, storedAt: number, expiresAt: number, };
 
 export type IdentityDto = { publicKey: string, displayName: string, avatarColor: string, };
 
@@ -91,6 +93,11 @@ export type UndecryptableMessageReason = "sent-before-device" | "keys-not-shared
 export type UndecryptableMessageDto = { eventId: string, sender: string, originServerTs: number, reason: UndecryptableMessageReason, };
 
 export type MessageDto = { id: string, channelId: string, authorPublicKey: string, authorDisplayName: string, authorAvatarColor: string, content: string, attachments: Array<AttachmentDto>, reactions: Record<string, string[]>, timestamp: string, signature: string, editedAt?: string | null, deletedAt?: string | null, replyToId?: string | null,
+/**
+ * Matrix thread root event for replies sent with `rel_type: m.thread`.
+ * Ordinary replies leave this empty and continue using `reply_to_id`.
+ */
+threadRootId?: string | null,
 /**
  * SDK transaction ID used to reconcile a durable local echo with the
  * eventual server event. This is internal delivery metadata.
@@ -115,7 +122,7 @@ export type DmConversationDto = { id: string, peerPublicKey: string, peerDisplay
 
 export type ReadReceiptDto = { userId: string, displayName: string, };
 
-export type DirectMessageDto = { id: string, conversationId: string, authorPublicKey: string, authorDisplayName: string, authorAvatarColor: string, content: string, timestamp: string, signature: string, attachments: Array<AttachmentDto>, reactions: Record<string, string[]>, seenBy?: Array<ReadReceiptDto> | null, editedAt?: string | null, deletedAt?: string | null, replyToId?: string | null, deliveryStatus?: "sent" | "pending" | "failed" | null, };
+export type DirectMessageDto = { id: string, conversationId: string, authorPublicKey: string, authorDisplayName: string, authorAvatarColor: string, content: string, timestamp: string, signature: string, attachments: Array<AttachmentDto>, reactions: Record<string, string[]>, seenBy?: Array<ReadReceiptDto> | null, editedAt?: string | null, deletedAt?: string | null, replyToId?: string | null, threadRootId?: string | null, deliveryStatus?: "sent" | "pending" | "failed" | null, };
 
 export type PeerDto = { publicKey: string, displayName: string, avatarColor: string, peerId: string, latency: number, };
 

@@ -1,17 +1,8 @@
 import type { Community } from '../../types/ipc'
-import { useSettingsStore } from '../../store/settings'
+import { NOTIFICATION_MUTE_DURATIONS, useSettingsStore } from '../../store/settings'
 import { Avatar } from '../ui/Avatar'
-import { ContextMenu, type MenuItem } from '../ui/InteractivePrimitives'
-
-const HOUR_MS = 60 * 60 * 1000
-
-const MUTE_DURATIONS = [
-  { id: 'mute-15m', label: 'Mute for 15 minutes', durationMs: 15 * 60 * 1000 },
-  { id: 'mute-1h', label: 'Mute for 1 hour', durationMs: HOUR_MS },
-  { id: 'mute-8h', label: 'Mute for 8 hours', durationMs: 8 * HOUR_MS },
-  { id: 'mute-24h', label: 'Mute for 24 hours', durationMs: 24 * HOUR_MS },
-  { id: 'mute-until-enabled', label: 'Mute until turned back on', durationMs: null },
-] as const
+import { Icon } from '../ui/Icon'
+import { ContextMenu, DropdownMenu, type MenuItem } from '../ui/InteractivePrimitives'
 
 export interface CommunityIconProps {
   community: Community
@@ -42,7 +33,7 @@ export function CommunityIcon({
         label: 'Turn notifications back on',
         onSelect: () => unmuteCommunity(community.id),
       }]
-    : MUTE_DURATIONS.map(({ id, label, durationMs }) => ({
+    : NOTIFICATION_MUTE_DURATIONS.map(({ id, label, durationMs }) => ({
         id,
         label,
         onSelect: () => muteCommunityFor(community.id, durationMs),
@@ -68,15 +59,7 @@ export function CommunityIcon({
   ]
 
   return (
-    <div className="relative flex items-center justify-center">
-      {/* Left pill indicator */}
-      <div
-        className={`absolute -left-community-marker w-community-marker rounded-r-full bg-primary transition-all duration-normal ${
-          active
-            ? 'h-10'
-            : 'h-0 group-hover:h-5'
-        }`}
-      />
+    <div className="group relative flex items-center justify-center">
       <ContextMenu
         label={`Actions for ${community.name}`}
         items={menuItems}
@@ -110,6 +93,19 @@ export function CommunityIcon({
           className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-bg-tertiary bg-accent"
         />
       )}
+      <DropdownMenu
+        label={`Actions for ${community.name}`}
+        items={menuItems}
+        trigger={(
+          <button
+            type="button"
+            className="absolute -right-1 -top-1 z-sticky flex h-6 w-6 items-center justify-center rounded-full border border-border bg-surface-overlay text-content-muted opacity-0 transition-opacity hover:text-content group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            aria-label={`More actions for ${community.name}`}
+          >
+            <Icon name="ellipsis" size="xs" />
+          </button>
+        )}
+      />
     </div>
   )
 }

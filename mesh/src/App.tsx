@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { OnboardingFlow } from './components/onboarding/OnboardingFlow'
 import { showToast, ToastContainer } from './components/ui/Toast'
@@ -12,7 +12,7 @@ import * as bridge from './lib/bridge'
 import { Spinner } from './components/ui/Spinner'
 import { variants } from './lib/motion'
 import { matrixIdentity, matrixProfileIdentity } from './lib/matrixIdentity'
-import type { Identity } from './types/ipc'
+import type { Identity, MatrixCommunityAdmission } from './types/ipc'
 import { registerPoll } from './lib/scheduler'
 import { installDeepLinkHandler } from './lib/deep-links'
 import { useShellStore } from './store/shell'
@@ -20,6 +20,10 @@ import { describeError } from './lib/errors'
 
 const AppLayout = lazy(() =>
   import('./components/layout/AppLayout').then((module) => ({ default: module.AppLayout })),
+)
+const InvitationConfirmation = lazy(() =>
+  import('./components/onboarding/InvitationConfirmation')
+    .then((module) => ({ default: module.InvitationConfirmation })),
 )
 
 const BOOTSTRAP_STEPS = {
@@ -37,6 +41,13 @@ const MATRIX_BOOTSTRAP_STEPS = {
 } as const
 
 const MATRIX_STATUS_POLL_INTERVAL_MS = 5_000
+
+type PendingAdmissionResolution = {
+  handle: string
+  admission: MatrixCommunityAdmission | null
+  resolving: boolean
+  error: unknown
+}
 
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms))
 
@@ -101,7 +112,11 @@ export default function App() {
   const setPendingInvitation = useShellStore((state) => state.setPendingInvitation)
   const [showOnboarding, setShowOnboarding] = useState(!isTauriRuntime)
   const [backendStatus, setBackendStatus] = useState<bridge.BackendStatus | null>(null)
-  const attemptedInviteRef = useRef<string | null>(null)
+  const [pendingAdmissionResolution, setPendingAdmissionResolution] =
+    useState<PendingAdmissionResolution | null>(null)
+  const [invitationConfirming, setInvitationConfirming] = useState(false)
+  const [invitationConfirmationError, setInvitationConfirmationError] = useState<unknown>(null)
+  const [invitationResolutionAttempt, setInvitationResolutionAttempt] = useState(0)
 
   useEffect(() => {
     if (!isTauriRuntime) return
@@ -122,11 +137,14 @@ export default function App() {
     let unlisten: (() => void) | undefined
     void installDeepLinkHandler((inviteLink) => {
       if (!active) return
-      void bridge.storePendingInvitation(inviteLink).then((pending) => {
+      void bridge.storePendingInvitation(inviteLink).then(async (pending) => {
         if (!active) return
-        setPendingInvitation(pending)
-        useShellStore.getState().openServerModal('join')
-        showToast('Community invitation saved securely. Sign in first if needed.', 'success')
+        const describedPending = await bridge.peekPendingInvitation().catch(() => pending)
+        if (!active) return
+        setPendingInvitation(describedPending ?? pending)
+        setPendingAdmissionResolution(null)
+        setInvitationConfirmationError(null)
+        showToast('Community invitation saved securely and ready to review.', 'success')
       }).catch((error) => {
         if (active) {
           console.error('Could not save community invitation:', error)
@@ -262,69 +280,152 @@ export default function App() {
   }, [backendStatus?.kind, isTauriRuntime, setNetworkStatus])
 
   useEffect(() => {
+    const pendingHandle = pendingInvitation?.handle
     if (
       !isTauriRuntime
-      || isLoading
       || showOnboarding
       || backendStatus?.kind !== 'matrix'
       || !backendStatus.authenticated
-      || !pendingInvitation
-      || attemptedInviteRef.current === pendingInvitation.handle
+      || !pendingHandle
+    ) {
+      return
+    }
+    let active = true
+    void bridge.peekPendingInvitation().then((describedPending) => {
+      if (active && describedPending?.handle === pendingHandle) {
+        setPendingInvitation(describedPending)
+      }
+    }).catch((error) => {
+      if (active) console.warn('Could not refresh community invitation details:', error)
+    })
+    return () => {
+      active = false
+    }
+  }, [
+    backendStatus?.authenticated,
+    backendStatus?.kind,
+    isTauriRuntime,
+    pendingInvitation?.handle,
+    setPendingInvitation,
+    showOnboarding,
+  ])
+
+  useEffect(() => {
+    const pendingHandle = pendingInvitation?.handle
+    const admissionService = pendingInvitation?.admissionService
+    if (
+      !isTauriRuntime
+      || showOnboarding
+      || backendStatus?.kind !== 'matrix'
+      || !backendStatus.authenticated
+      || !pendingHandle
+      || !admissionService
     ) {
       return
     }
 
-    const pendingHandle = pendingInvitation.handle
-    attemptedInviteRef.current = pendingHandle
-    void (async () => {
-      const inviteLink = await bridge.readPendingInvitation()
-      if (!inviteLink) {
-        if (attemptedInviteRef.current === pendingHandle) setPendingInvitation(null)
-        return
-      }
-
+    let active = true
+    void Promise.resolve().then(async () => {
+      if (!active) return
+      setPendingAdmissionResolution({
+        handle: pendingHandle,
+        admission: null,
+        resolving: true,
+        error: null,
+      })
       try {
-        const result = await bridge.joinOrRequestCommunity(inviteLink)
-        if (attemptedInviteRef.current !== pendingHandle) return
-        try {
-          await bridge.clearPendingInvitation()
-        } catch (clearError) {
-          console.warn(
-            'The community was opened, but its completed invitation could not be cleared:',
-            clearError,
-          )
-        }
-        setPendingInvitation(null)
-        if (result.status === 'joined' && result.community) {
-          upsertCommunity(result.community)
-          setActiveCommunity(result.community.id)
-          useShellStore.getState().closeServerModal()
-          showToast(`Joined ${result.community.name}.`, 'success')
-        } else {
-          useShellStore.getState().closeServerModal()
-          showToast('Your request was sent to the community administrators.', 'success')
-        }
-      } catch (error) {
-        if (attemptedInviteRef.current !== pendingHandle) return
-        console.error('Could not open community invitation:', error)
-        const description = describeError(error, {
-          operation: 'open this invitation',
-          resource: 'community',
+        const admission = await bridge.resolvePendingInvitation()
+        if (!active || useShellStore.getState().pendingInvitation?.handle !== pendingHandle) return
+        setPendingAdmissionResolution({
+          handle: pendingHandle,
+          admission,
+          resolving: false,
+          error: admission
+            ? null
+            : new Error('This invitation is no longer available. Discard it and ask for a new one.'),
         })
-        showToast(`${description.title}: ${description.body}`, 'error')
+      } catch (error) {
+        if (active) {
+          setPendingAdmissionResolution({
+            handle: pendingHandle,
+            admission: null,
+            resolving: false,
+            error,
+          })
+        }
       }
-    })()
+    })
+    return () => {
+      active = false
+    }
   }, [
     backendStatus?.authenticated,
     backendStatus?.kind,
-    isLoading,
+    invitationResolutionAttempt,
     isTauriRuntime,
-    pendingInvitation,
-    setActiveCommunity,
-    setPendingInvitation,
+    pendingInvitation?.admissionService,
+    pendingInvitation?.handle,
     showOnboarding,
-    upsertCommunity,
   ])
+
+  const confirmPendingInvitation = async () => {
+    if (!pendingInvitation || invitationConfirming) return
+    const handle = pendingInvitation.handle
+    setInvitationConfirming(true)
+    setInvitationConfirmationError(null)
+    try {
+      const inviteLink = await bridge.readPendingInvitation()
+      if (!inviteLink) {
+        setPendingInvitation(null)
+        throw new Error('This saved invitation is no longer available. Open the invitation again.')
+      }
+      const result = await bridge.joinOrRequestCommunity(inviteLink)
+      if (useShellStore.getState().pendingInvitation?.handle !== handle) return
+      try {
+        await bridge.clearPendingInvitation()
+      } catch (clearError) {
+        console.warn(
+          'The community was opened, but its completed invitation could not be cleared:',
+          clearError,
+        )
+      }
+      setPendingInvitation(null)
+      setPendingAdmissionResolution(null)
+      if (result.status === 'joined' && result.community) {
+        upsertCommunity(result.community)
+        setActiveCommunity(result.community.id)
+        showToast(`Joined ${result.community.name}.`, 'success')
+      } else {
+        showToast('Your request was sent to the community administrators.', 'success')
+      }
+    } catch (error) {
+      console.error('Could not open community invitation:', error)
+      setInvitationConfirmationError(error)
+      const description = describeError(error, {
+        operation: 'open this invitation',
+        resource: 'community',
+      })
+      showToast(`${description.title}: ${description.body}`, 'error')
+    } finally {
+      setInvitationConfirming(false)
+    }
+  }
+
+  const discardPendingInvitation = async () => {
+    try {
+      if (isTauriRuntime) await bridge.clearPendingInvitation()
+      setPendingInvitation(null)
+      setPendingAdmissionResolution(null)
+      setInvitationConfirmationError(null)
+    } catch (error) {
+      setInvitationConfirmationError(error)
+    }
+  }
+
+  const activePendingAdmission = pendingInvitation
+    && pendingAdmissionResolution?.handle === pendingInvitation.handle
+      ? pendingAdmissionResolution
+      : null
 
   useEffect(() => {
     if (!isTauriRuntime) {
@@ -685,6 +786,21 @@ export default function App() {
             <Suspense fallback={<div className="flex h-full items-center justify-center" role="status" aria-label="Loading Mesh"><Spinner /></div>}>
               <AppLayout />
             </Suspense>
+            {pendingInvitation && backendStatus?.kind === 'matrix' && backendStatus.authenticated ? (
+              <Suspense fallback={null}>
+                <InvitationConfirmation
+                  pending={pendingInvitation}
+                  admission={activePendingAdmission?.admission}
+                  resolving={activePendingAdmission?.resolving}
+                  resolutionError={activePendingAdmission?.error}
+                  confirming={invitationConfirming}
+                  confirmationError={invitationConfirmationError}
+                  onConfirm={() => void confirmPendingInvitation()}
+                  onRetryResolution={() => setInvitationResolutionAttempt((attempt) => attempt + 1)}
+                  onDiscard={() => void discardPendingInvitation()}
+                />
+              </Suspense>
+            ) : null}
           </motion.div>
           </ErrorBoundary>
         )}

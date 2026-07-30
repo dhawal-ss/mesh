@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import { useActiveChannel } from '../../store/channels'
 import { useCommunityStore } from '../../store/communities'
 import { usePresence } from '../../hooks/usePresence'
@@ -17,6 +17,13 @@ import { useRoomTrust } from '../../hooks/useRoomTrust'
 import { useRoomPinStore } from '../../store/room-pins'
 import { isMatrixBackend, onMatrixRoomPinsUpdate } from '../../lib/bridge'
 import { setVolatileInviteLink } from '../../lib/pending-invitation-runtime'
+import {
+  readStoredBoolean,
+  ROOM_CONTEXT_OPEN_KEY,
+  ROOM_CONTEXT_WIDTH_KEY,
+  writeStoredBoolean,
+} from '../../lib/layout-preferences'
+import { usePersistentPanelWidth } from '../../hooks/usePersistentPanelWidth'
 
 export function ContentArea() {
   const activeChannel = useActiveChannel()
@@ -26,10 +33,14 @@ export function ContentArea() {
   const setDmMode = useDmStore((state) => state.setDmMode)
 
   const [showContext, setShowContext] = useState(() => (
-    typeof window === 'undefined'
-    || typeof window.matchMedia !== 'function'
-    || window.matchMedia('(min-width: 1101px)').matches
+    readStoredBoolean(ROOM_CONTEXT_OPEN_KEY, false)
   ))
+  const roomContextWidth = usePersistentPanelWidth({
+    storageKey: ROOM_CONTEXT_WIDTH_KEY,
+    defaultWidth: 264,
+    minimum: 240,
+    maximum: 420,
+  })
   const [contextTab, setContextTab] = useState<RoomContextTab>('people')
   const [inviteDraft, setInviteDraft] = useState('')
   const { members } = usePresence()
@@ -47,6 +58,10 @@ export function ContentArea() {
   }, [])
 
   useEffect(() => {
+    writeStoredBoolean(ROOM_CONTEXT_OPEN_KEY, showContext)
+  }, [showContext])
+
+  useLayoutEffect(() => {
     if (!showContext) return
     const compact = typeof window.matchMedia === 'function'
       && window.matchMedia('(max-width: 1100px)').matches
@@ -60,9 +75,15 @@ export function ContentArea() {
       '[tabindex]:not([tabindex="-1"])',
     ].join(',')
     const contextPanel = document.getElementById('mesh-room-context-panel')
-    const focusFirst = window.requestAnimationFrame(() => {
-      contextPanel?.querySelector<HTMLElement>(focusableSelector)?.focus()
-    })
+    const focusFirstElement = () => {
+      if (!contextPanel) return
+      const firstVisible = [...contextPanel.querySelectorAll<HTMLElement>(focusableSelector)]
+        .find((element) => !element.hidden && element.getClientRects().length > 0)
+      ;(firstVisible ?? contextPanel).focus()
+    }
+    contextPanel?.focus()
+    focusFirstElement()
+    const focusFirst = window.requestAnimationFrame(focusFirstElement)
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !event.defaultPrevented) {
         event.preventDefault()
@@ -89,15 +110,6 @@ export function ContentArea() {
       document.removeEventListener('keydown', handleKeyDown)
     }
   }, [closeContext, showContext])
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return
-    const media = window.matchMedia('(min-width: 1101px)')
-    const syncToViewport = () => setShowContext(media.matches)
-    syncToViewport()
-    media.addEventListener('change', syncToViewport)
-    return () => media.removeEventListener('change', syncToViewport)
-  }, [])
 
   useEffect(() => {
     if (!activeTextRoomId || !isMatrixBackend()) {
@@ -239,6 +251,11 @@ export function ContentArea() {
               activeTab={contextTab}
               onTabChange={setContextTab}
               onClose={() => closeContext()}
+              panelWidth={roomContextWidth.width}
+              panelWidthMinimum={240}
+              panelWidthMaximum={420}
+              onResizeStart={roomContextWidth.startResize}
+              onResizeBy={roomContextWidth.resizeBy}
             />
           </ScopedErrorBoundary>
         </>

@@ -136,6 +136,68 @@ describe('MemberList actions', () => {
     expect(container.querySelector('section')?.className).toContain('py-5')
   })
 
+  it('confirms a named moderation action and keeps failures visible', async () => {
+    const kickUser = vi.spyOn(bridge, 'kickUser').mockRejectedValue(new Error('offline'))
+    await act(async () => {
+      root.render(
+        <MemberList
+          isOpen
+          embedded
+          onClose={() => {}}
+          members={[
+            {
+              publicKey: '@me:mesh.im',
+              displayName: 'Ana',
+              avatarColor: '#6c8f76',
+              role: 'owner',
+              online: true,
+            },
+            {
+              publicKey: '@bob:example.org',
+              displayName: 'Bob',
+              avatarColor: '#8f765f',
+              role: 'member',
+              online: true,
+            },
+          ]}
+        />,
+      )
+    })
+
+    await act(async () => {
+      const trigger = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="More actions for Bob"]',
+      )
+      trigger?.focus()
+      trigger?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+      await Promise.resolve()
+    })
+    const removeItem = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      .find((item) => item.textContent === 'Remove from community')
+    expect(removeItem).toBeDefined()
+    await act(async () => {
+      removeItem?.focus()
+      removeItem?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await Promise.resolve()
+    })
+
+    // Removal is intentionally delayed until the named confirmation is accepted.
+    expect(kickUser).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('Remove Bob?')
+    expect(document.body.textContent).toContain('may be able to rejoin later')
+
+    await act(async () => {
+      [...document.body.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'Remove member')
+        ?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(kickUser).toHaveBeenCalledWith('community-1', '@bob:example.org')
+    expect(document.body.textContent).toContain('Connection interrupted')
+  })
+
   it('keeps a five-thousand-member community DOM bounded with ordered list metadata', async () => {
     const members = Array.from({ length: 5_000 }, (_, index) => ({
       publicKey: `@member-${index}:example.org`,

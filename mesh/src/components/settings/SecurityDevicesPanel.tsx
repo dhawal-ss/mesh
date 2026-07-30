@@ -4,6 +4,7 @@ import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Icon } from '../ui/Icon'
 import { EmptyState } from '../ui/Primitives'
+import { StatusDot } from '../ui/StatusDot'
 import * as bridge from '../../lib/bridge'
 import { describeError } from '../../lib/errors'
 
@@ -18,6 +19,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
   const [loadingDevices, setLoadingDevices] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [recoveryInput, setRecoveryInput] = useState('')
   const [recoveryTestInput, setRecoveryTestInput] = useState('')
   const [newRecoveryKey, setNewRecoveryKey] = useState<string | null>(null)
@@ -29,6 +31,8 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
   const [lostDeviceId, setLostDeviceId] = useState('')
   const [lostDeviceAcknowledged, setLostDeviceAcknowledged] = useState(false)
   const [confirmRemoval, setConfirmRemoval] = useState(false)
+  const [localRemovalPhrase, setLocalRemovalPhrase] = useState('')
+  const [localRemovalAcknowledged, setLocalRemovalAcknowledged] = useState(false)
   const [exportResult, setExportResult] = useState<bridge.MatrixPersonalDataExport | null>(null)
   const [deactivationOpen, setDeactivationOpen] = useState(false)
   const [deactivationPassword, setDeactivationPassword] = useState('')
@@ -209,10 +213,18 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
   }
 
   const removeAccount = async () => {
+    if (
+      localRemovalPhrase.trim().toUpperCase() !== 'REMOVE LOCAL DATA'
+      || !localRemovalAcknowledged
+    ) {
+      return
+    }
     setBusy(true)
     setError(null)
     try {
       await bridge.matrixRemoveLocalAccount()
+      setLocalRemovalPhrase('')
+      setLocalRemovalAcknowledged(false)
       onClose()
       window.location.reload()
     } catch (cause) {
@@ -222,7 +234,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
   }
 
   const exportPersonalData = async () => {
-    setBusy(true)
+    setExporting(true)
     setError(null)
     try {
       const result = await bridge.matrixExportPersonalData()
@@ -230,7 +242,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
     } catch (cause) {
       setError(errorMessage(cause))
     } finally {
-      setBusy(false)
+      setExporting(false)
     }
   }
 
@@ -367,6 +379,10 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
               <p className="mt-1 text-xs leading-5 text-muted">
                 Review the places where your Mesh account is signed in.
               </p>
+              <p className="mt-2 text-xs leading-5 text-muted">
+                Mesh shares new private-message keys only with trusted devices. A device marked “Not verified yet”
+                needs a check before it can receive new encrypted messages.
+              </p>
             </div>
             <span className="font-mono text-meta text-content-muted">
               {devices.length} {devices.length === 1 ? 'device' : 'devices'}
@@ -403,7 +419,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                 <h3 id="lost-device-title" className="text-sm font-medium text-primary">
                   Sign out a lost device
                 </h3>
-                <p className="mt-1 text-xs leading-5 text-muted">
+                <p id="revoke-device-description" className="mt-1 text-xs leading-5 text-muted">
                   This signs that device out. It cannot delete messages, screenshots, or downloaded files already saved
                   on it.
                 </p>
@@ -542,10 +558,22 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-primary">
-                      {device.displayName || 'Unnamed device'}{' '}
-                      {device.current && <span className="text-accent">(this device)</span>}
-                    </p>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <StatusDot
+                        state={
+                          device.identityChanged
+                            ? 'disconnected'
+                            : device.newDevice || !device.verified
+                              ? 'degraded'
+                              : 'connected'
+                        }
+                        label={`${device.displayName || 'Unnamed device'}: ${trustLabel(device)}`}
+                      />
+                      <p className="truncate text-sm font-medium text-primary">
+                        {device.displayName || 'Unnamed device'}{' '}
+                        {device.current && <span className="text-accent">(this device)</span>}
+                      </p>
+                    </div>
                     <p className="mt-1 break-all font-mono text-meta text-muted">{device.deviceId}</p>
                     <p className="mt-1 text-xs text-muted">
                       {trustLabel(device)} · Last seen {formatLastSeen(device.lastSeenAt)}
@@ -703,13 +731,15 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
               </div>
               <Input
                 label="Account password"
+                id="revoke-device-password"
+                aria-describedby="revoke-device-description"
                 type="password"
                 value={accountPassword}
                 onChange={setAccountPassword}
                 autoComplete="current-password"
               />
               <div className="flex gap-2">
-                <Button size="sm" disabled={busy || !accountPassword} onClick={revokeDevice}>
+                <Button tone="danger" size="sm" disabled={busy || !accountPassword} onClick={revokeDevice}>
                   Sign out device
                 </Button>
                 <Button variant="ghost" size="sm" disabled={busy} onClick={() => setRevokeTarget(null)}>
@@ -734,8 +764,13 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
               other people's messages, account secrets, and service activity records.
             </p>
           </div>
-          <Button variant="secondary" size="sm" disabled={busy} onClick={exportPersonalData}>
-            {busy ? 'Workingâ€¦' : 'Export my data'}
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy || exporting}
+            onClick={exportPersonalData}
+          >
+            {exporting ? 'Working…' : 'Export my data'}
           </Button>
           {exportResult && (
             <div role="status" className="rounded-panel border border-status-success/40 bg-status-success/10 p-3">
@@ -786,12 +821,14 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
           ) : (
             <div className="space-y-3 rounded-panel border border-status-danger/40 bg-status-danger/5 p-3">
               <p className="text-xs font-medium text-status-danger">This cannot be undone.</p>
-              <p className="text-xs leading-5 text-muted">
+              <p id="deactivation-description" className="text-xs leading-5 text-muted">
                 Export anything you want to keep first. Mesh will also remove this account's local store and saved
                 sign-in from this device after the service confirms deletion.
               </p>
               <Input
                 label="Account password"
+                id="deactivation-password"
+                aria-describedby="deactivation-description"
                 type="password"
                 value={deactivationPassword}
                 onChange={setDeactivationPassword}
@@ -799,6 +836,12 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
               />
               <Input
                 label='Type "DELETE MY ACCOUNT" to confirm'
+                id="deactivation-confirmation"
+                aria-describedby="deactivation-description"
+                aria-invalid={
+                  deactivationPhrase.length > 0
+                  && deactivationPhrase.trim().toUpperCase() !== 'DELETE MY ACCOUNT'
+                }
                 value={deactivationPhrase}
                 onChange={setDeactivationPhrase}
                 autoComplete="off"
@@ -861,20 +904,70 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
               Sign out
             </Button>
             {!confirmRemoval ? (
-              <Button variant="ghost" size="sm" disabled={busy} onClick={() => setConfirmRemoval(true)}>
+              <Button
+                variant="outline"
+                tone="danger"
+                size="sm"
+                disabled={busy}
+                onClick={() => {
+                  setConfirmRemoval(true)
+                  setLocalRemovalPhrase('')
+                  setLocalRemovalAcknowledged(false)
+                  setError(null)
+                }}
+              >
                 Remove account and local data
               </Button>
             ) : (
               <div className="w-full space-y-3 rounded-panel border border-status-danger/40 bg-status-danger/5 p-3">
-                <p className="text-xs leading-5 text-muted">
+                <p id="local-removal-description" className="text-xs leading-5 text-muted">
                   This cannot be undone. Mesh will sign this device out and delete its saved account data. If that
                   sign-out cannot finish, use another trusted device or your account website.
                 </p>
+                <Input
+                  label='Type "REMOVE LOCAL DATA" to confirm'
+                  id="local-removal-confirmation"
+                  aria-describedby="local-removal-description"
+                  aria-invalid={
+                    localRemovalPhrase.length > 0
+                    && localRemovalPhrase.trim().toUpperCase() !== 'REMOVE LOCAL DATA'
+                  }
+                  value={localRemovalPhrase}
+                  onChange={setLocalRemovalPhrase}
+                  autoComplete="off"
+                />
+                <label className="flex cursor-pointer items-start gap-2 text-xs leading-5 text-muted">
+                  <input
+                    type="checkbox"
+                    checked={localRemovalAcknowledged}
+                    onChange={(event) => setLocalRemovalAcknowledged(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-accent"
+                  />
+                  I understand that this permanently deletes this account's messages and settings saved on this device.
+                </label>
                 <div className="flex gap-2">
-                  <Button size="sm" disabled={busy} onClick={removeAccount}>
+                  <Button
+                    tone="danger"
+                    size="sm"
+                    disabled={
+                      busy
+                      || localRemovalPhrase.trim().toUpperCase() !== 'REMOVE LOCAL DATA'
+                      || !localRemovalAcknowledged
+                    }
+                    onClick={removeAccount}
+                  >
                     Permanently remove local account
                   </Button>
-                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => setConfirmRemoval(false)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      setConfirmRemoval(false)
+                      setLocalRemovalPhrase('')
+                      setLocalRemovalAcknowledged(false)
+                    }}
+                  >
                     Cancel
                   </Button>
                 </div>

@@ -52,13 +52,15 @@ use matrix_sdk::{
                     AuthorizationServerMetadata, CodeChallengeMethod, GrantType, ResponseMode,
                     ResponseType,
                 },
+                push::{delete_pushrule, get_pushrules_all, set_pushrule},
+                receipt::create_receipt::v3::ReceiptType as MatrixReceiptType,
                 room::{
                     create_room::v3::{CreationContent, Request as CreateRoomRequest, RoomPreset},
                     Visibility,
                 },
                 rtc::{transports::v1::Request as MatrixRtcTransportsRequest, RtcTransport},
                 session::get_login_types::v3::LoginType,
-                state::{get_state_events, send_state_event},
+                state::{get_state_event_for_key, get_state_events, send_state_event},
                 uiaa::{self, AuthData, AuthType, Dummy, RegistrationToken, UiaaInfo},
             },
             error::ErrorKind,
@@ -75,14 +77,16 @@ use matrix_sdk::{
             receipt::{ReceiptThread, ReceiptType},
             relation::Annotation,
             room::{
+                create::RoomCreateEventContent,
                 encryption::RoomEncryptionEventContent,
-                join_rules::JoinRule,
+                join_rules::{AllowRule, JoinRule, RoomJoinRulesEventContent},
                 message::{
                     AddMentions, FileInfo, FileMessageEventContent, MessageType,
-                    OriginalSyncRoomMessageEvent, ReplacementMetadata, RoomMessageEventContent,
-                    RoomMessageEventContentWithoutRelation,
+                    OriginalSyncRoomMessageEvent, ReplacementMetadata, ReplyWithinThread,
+                    RoomMessageEventContent, RoomMessageEventContentWithoutRelation,
                 },
                 pinned_events::{OriginalSyncRoomPinnedEventsEvent, RoomPinnedEventsEventContent},
+                tombstone::RoomTombstoneEventContent,
                 EncryptedFile, EncryptedFileHash, EncryptedFileHashAlgorithm, ImageInfo,
                 MediaSource, ThumbnailInfo,
             },
@@ -94,7 +98,11 @@ use matrix_sdk::{
         },
         int,
         presence::PresenceState,
-        push::Action,
+        push::{
+            Action, EventMatchConditionData, NewConditionalPushRule, NewPushRule,
+            NewSimplePushRule, PredefinedUnderrideRuleId, PushCondition, RuleKind, Ruleset,
+            SoundTweakValue, Tweak,
+        },
         room::RoomType,
         serde::Raw,
         EventEncryptionAlgorithm, MxcUri, OwnedDeviceId, OwnedRoomAliasId, OwnedRoomId,
@@ -137,13 +145,14 @@ use super::{
     MatrixOidcAvailability, MatrixOidcStatus, MatrixPersonalDataExport, MatrixProfile,
     MatrixQueuedMessageState, MatrixQueuedMessageUpdate, MatrixRecoveryHealth, MatrixRegistration,
     MatrixRegistrationAvailability, MatrixRoomNotificationMode, MatrixRoomPins,
-    MatrixRoomPinsUpdate, MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyFailure,
-    MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember, MatrixRtcMembershipUpdate,
-    MatrixServiceCapabilities, MatrixTransferDirection, MatrixTransferObserver,
-    MatrixTransferProgress, MatrixTransferProgressCallback, MatrixTransferResult,
-    MatrixTransferRetryMode, MatrixTransferState, MatrixUnreadUpdate, MatrixVerificationSession,
-    MeshBackend, ModerationAuditEntry, PendingInvitationMetadata, ReadReceiptMode, SentMessage,
-    TypingUser, UserPreferences, VerificationEmoji, VoiceServiceAvailability, VoiceServiceStatus,
+    MatrixRoomPinsUpdate, MatrixRoomUpgrade, MatrixRtcJoinResult, MatrixRtcMediaKey,
+    MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember,
+    MatrixRtcMembershipUpdate, MatrixServiceCapabilities, MatrixTransferDirection,
+    MatrixTransferObserver, MatrixTransferProgress, MatrixTransferProgressCallback,
+    MatrixTransferResult, MatrixTransferRetryMode, MatrixTransferState, MatrixUnreadUpdate,
+    MatrixVerificationSession, MeshBackend, ModerationAuditEntry, PendingInvitationMetadata,
+    ReadReceiptMode, SentMessage, TypingUser, UserPreferences, VerificationEmoji,
+    VoiceServiceAvailability, VoiceServiceStatus,
 };
 
 mod moderation;
@@ -589,6 +598,9 @@ struct LoginAttempt {
     cancellation: CancellationToken,
 }
 
+// The SDK owns the room-key sharing decision. This registry is only the
+// keychain-backed identity-change signal shown in the device UI; it must not
+// become a second, weaker crypto trust policy.
 #[derive(Default, Serialize, Deserialize)]
 struct TrustedDeviceRegistry {
     fingerprints: HashMap<String, String>,
@@ -719,6 +731,7 @@ pub struct MatrixBackend {
     media_uploads: Mutex<HashMap<String, CancellationToken>>,
     media_downloads: Mutex<HashMap<String, CancellationToken>>,
     custom_emoji_writes: Mutex<()>,
+    verified_room_upgrades: RwLock<HashMap<OwnedRoomId, OwnedRoomId>>,
     send_queue_gate: Arc<Mutex<()>>,
     send_queue_reconcile: Arc<Notify>,
     send_queue_known: Arc<Mutex<HashMap<String, HashSet<String>>>>,
@@ -760,6 +773,7 @@ impl MatrixBackend {
             media_uploads: Mutex::new(HashMap::new()),
             media_downloads: Mutex::new(HashMap::new()),
             custom_emoji_writes: Mutex::new(()),
+            verified_room_upgrades: RwLock::new(HashMap::new()),
             send_queue_gate: Arc::new(Mutex::new(())),
             send_queue_reconcile: Arc::new(Notify::new()),
             send_queue_known: Arc::new(Mutex::new(HashMap::new())),
@@ -804,6 +818,7 @@ impl MatrixBackend {
             media_uploads: Mutex::new(HashMap::new()),
             media_downloads: Mutex::new(HashMap::new()),
             custom_emoji_writes: Mutex::new(()),
+            verified_room_upgrades: RwLock::new(HashMap::new()),
             send_queue_gate: Arc::new(Mutex::new(())),
             send_queue_reconcile: Arc::new(Notify::new()),
             send_queue_known: Arc::new(Mutex::new(HashMap::new())),
@@ -919,11 +934,106 @@ impl MatrixBackend {
             handle: uuid::Uuid::new_v4().to_string(),
             room_or_alias,
             via,
+            community_service_display_name: service
+                .as_deref()
+                .and_then(Self::invitation_service_display_name),
             service,
             admission_service,
+            community_name: None,
+            inviter_display_name: None,
+            inviter_user_id: None,
+            join_rule: None,
             stored_at,
             expires_at: stored_at.saturating_add(PENDING_INVITATION_MAX_AGE_MS),
         }
+    }
+
+    fn invitation_service_display_name(service: &str) -> Option<String> {
+        let service = service.trim().trim_end_matches('/');
+        if service.is_empty() {
+            return None;
+        }
+        if let Ok(url) = url::Url::parse(service) {
+            return url.host_str().map(str::to_owned);
+        }
+        Some(service.to_owned())
+    }
+
+    async fn enrich_pending_invitation_metadata(
+        &self,
+        mut metadata: PendingInvitationMetadata,
+    ) -> PendingInvitationMetadata {
+        if metadata.community_service_display_name.is_none() {
+            metadata.community_service_display_name = metadata
+                .service
+                .as_deref()
+                .and_then(Self::invitation_service_display_name);
+        }
+        let Some(room_id) = metadata
+            .room_or_alias
+            .as_deref()
+            .and_then(|value| matrix_sdk::ruma::RoomId::parse(value).ok())
+        else {
+            return metadata;
+        };
+        let Ok(client) = self.client().await else {
+            return metadata;
+        };
+        let Some(room) = Self::prejoin_invited_room_if_available(&client, &room_id) else {
+            return metadata;
+        };
+
+        if metadata.community_name.is_none() {
+            metadata.community_name = room
+                .display_name()
+                .await
+                .ok()
+                .map(|name| name.to_string())
+                .filter(|name| !name.trim().is_empty());
+        }
+        if metadata.join_rule.is_none() {
+            metadata.join_rule = room.join_rule().map(|rule| rule.as_str().to_owned());
+        }
+        if metadata.inviter_user_id.is_none() || metadata.inviter_display_name.is_none() {
+            if let Ok(invite) = room.invite_details().await {
+                if metadata.inviter_user_id.is_none() {
+                    metadata.inviter_user_id = Some(invite.inviter_id.to_string());
+                }
+                if metadata.inviter_display_name.is_none() {
+                    metadata.inviter_display_name =
+                        invite.inviter.map(|member| member.name().to_owned());
+                }
+            }
+        }
+        metadata
+    }
+
+    async fn enrich_community_admission(
+        &self,
+        mut admission: super::MatrixCommunityAdmission,
+    ) -> super::MatrixCommunityAdmission {
+        let metadata = self
+            .enrich_pending_invitation_metadata(PendingInvitationMetadata {
+                handle: String::new(),
+                room_or_alias: Some(admission.room_id.clone()),
+                via: admission.via.clone(),
+                service: Some(admission.service.clone()),
+                admission_service: None,
+                community_name: admission.community_name.take(),
+                inviter_display_name: admission.inviter_display_name.take(),
+                inviter_user_id: admission.inviter_user_id.take(),
+                join_rule: admission.join_rule.take(),
+                community_service_display_name: admission.community_service_display_name.take(),
+                stored_at: 0,
+                expires_at: admission.expires_at.unwrap_or_default(),
+            })
+            .await;
+        admission.community_name = metadata.community_name;
+        admission.inviter_display_name = metadata.inviter_display_name;
+        admission.inviter_user_id = metadata.inviter_user_id;
+        admission.join_rule = metadata.join_rule;
+        admission.community_service_display_name = metadata.community_service_display_name;
+        admission
     }
 
     fn load_or_create_pending_invitation_key(storage: &AccountStorage) -> BackendResult<[u8; 32]> {
@@ -1728,6 +1838,11 @@ impl MatrixBackend {
         let client = builder
             .sqlite_store(&storage.store_root, Some(&passphrase))
             .handle_refresh_tokens()
+            // Follow the SDK's MSC4153 identity-based policy: distribute new
+            // room keys only to devices signed by their owner's cross-signing
+            // identity, without requiring users to interactively verify every
+            // person before ordinary encrypted conversations can work.
+            .with_room_key_recipient_strategy(CollectStrategy::IdentityBasedStrategy)
             .with_encryption_settings(EncryptionSettings {
                 auto_enable_cross_signing: true,
                 auto_enable_backups: true,
@@ -1763,6 +1878,9 @@ impl MatrixBackend {
         builder
             .sqlite_store(store.path(), Some(&encoded_passphrase))
             .handle_refresh_tokens()
+            // Keep the short-lived OAuth client on the same identity-based
+            // sharing policy as the durable client.
+            .with_room_key_recipient_strategy(CollectStrategy::IdentityBasedStrategy)
             .with_encryption_settings(EncryptionSettings {
                 auto_enable_cross_signing: true,
                 auto_enable_backups: true,
@@ -2726,6 +2844,162 @@ impl MatrixBackend {
         drop(sessions);
         Ok(())
     }
+
+    fn room_notification_mode_from_ruleset(
+        ruleset: &Ruleset,
+        room_id: &RoomId,
+        is_encrypted: bool,
+        is_direct: bool,
+    ) -> RoomNotificationMode {
+        let muted = ruleset.override_.iter().any(|rule| {
+            rule.enabled
+                && rule.conditions.iter().any(|condition| {
+                    matches!(
+                        condition,
+                        PushCondition::EventMatch(data)
+                            if data.key == "room_id" && data.pattern == *room_id
+                    )
+                })
+                && !rule.actions.iter().any(Action::should_notify)
+        });
+        if muted {
+            return RoomNotificationMode::Mute;
+        }
+
+        if let Some(rule) = ruleset.get(RuleKind::Room, room_id) {
+            return if rule.triggers_notification() {
+                RoomNotificationMode::AllMessages
+            } else {
+                RoomNotificationMode::MentionsAndKeywordsOnly
+            };
+        }
+
+        let default_rule = match (is_encrypted, is_direct) {
+            (true, true) => PredefinedUnderrideRuleId::EncryptedRoomOneToOne,
+            (false, true) => PredefinedUnderrideRuleId::RoomOneToOne,
+            (true, false) => PredefinedUnderrideRuleId::Encrypted,
+            (false, false) => PredefinedUnderrideRuleId::Message,
+        };
+        if ruleset
+            .get(RuleKind::Underride, default_rule.as_str())
+            .is_some_and(|rule| rule.enabled() && rule.triggers_notification())
+        {
+            RoomNotificationMode::AllMessages
+        } else {
+            RoomNotificationMode::MentionsAndKeywordsOnly
+        }
+    }
+
+    fn custom_notification_rules_for_room(
+        ruleset: &Ruleset,
+        room_id: &RoomId,
+    ) -> Vec<(RuleKind, String)> {
+        let mut rules = Vec::new();
+        for rule in &ruleset.override_ {
+            if rule.conditions.iter().any(|condition| {
+                matches!(
+                    condition,
+                    PushCondition::EventMatch(data)
+                        if data.key == "room_id" && data.pattern == *room_id
+                )
+            }) {
+                rules.push((RuleKind::Override, rule.rule_id.clone()));
+            }
+        }
+        if let Some(rule) = ruleset.get(RuleKind::Room, room_id) {
+            rules.push((RuleKind::Room, rule.rule_id().to_owned()));
+        }
+        for rule in &ruleset.underride {
+            if rule.conditions.iter().any(|condition| {
+                matches!(
+                    condition,
+                    PushCondition::EventMatch(data)
+                        if data.key == "room_id" && data.pattern == *room_id
+                )
+            }) {
+                rules.push((RuleKind::Underride, rule.rule_id.clone()));
+            }
+        }
+        rules
+    }
+
+    async fn set_room_notification_mode_server_authoritative(
+        client: &Client,
+        room_id: &RoomId,
+        mode: RoomNotificationMode,
+    ) -> BackendResult<()> {
+        for _ in 0..3 {
+            let response = client
+                .send(get_pushrules_all::v3::Request::new())
+                .await
+                .map_err(Self::map_error)?;
+            let (target_kind, target_rule) = match mode {
+                RoomNotificationMode::AllMessages => (
+                    RuleKind::Room,
+                    NewPushRule::Room(NewSimplePushRule::new(
+                        room_id.to_owned(),
+                        vec![
+                            Action::Notify,
+                            Action::SetTweak(Tweak::Sound(SoundTweakValue::Default)),
+                        ],
+                    )),
+                ),
+                RoomNotificationMode::MentionsAndKeywordsOnly => (
+                    RuleKind::Room,
+                    NewPushRule::Room(NewSimplePushRule::new(room_id.to_owned(), Vec::new())),
+                ),
+                RoomNotificationMode::Mute => (
+                    RuleKind::Override,
+                    NewPushRule::Override(NewConditionalPushRule::new(
+                        room_id.to_string(),
+                        vec![PushCondition::EventMatch(EventMatchConditionData::new(
+                            "room_id".into(),
+                            room_id.to_string(),
+                        ))],
+                        Vec::new(),
+                    )),
+                ),
+            };
+
+            client
+                .send(set_pushrule::v3::Request::new(target_rule))
+                .await
+                .map_err(Self::map_error)?;
+
+            for (kind, rule_id) in
+                Self::custom_notification_rules_for_room(&response.global, room_id)
+            {
+                if kind == target_kind && rule_id == room_id.as_str() {
+                    continue;
+                }
+                if let Err(error) = client
+                    .send(delete_pushrule::v3::Request::new(kind, rule_id.clone()))
+                    .await
+                {
+                    tracing::debug!(
+                        target: "mesh::matrix",
+                        room_id = %room_id,
+                        rule_id,
+                        "A concurrent notification-rule cleanup will be verified and retried: {error}"
+                    );
+                }
+            }
+
+            let refreshed = client
+                .send(get_pushrules_all::v3::Request::new())
+                .await
+                .map_err(Self::map_error)?;
+            if Self::room_notification_mode_from_ruleset(&refreshed.global, room_id, true, false)
+                == mode
+            {
+                return Ok(());
+            }
+        }
+
+        Err(BackendError::Other(
+            "the account service did not converge the room notification setting".into(),
+        ))
+    }
 }
 
 #[async_trait]
@@ -2791,15 +3065,21 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn peek_pending_invitation(&self) -> BackendResult<Option<PendingInvitationMetadata>> {
-        let _gate = self.pending_invitation_gate.lock().await;
-        let Some((storage, record)) = self.find_pending_invitation_record().await? else {
-            return Ok(None);
+        let metadata = {
+            let _gate = self.pending_invitation_gate.lock().await;
+            let Some((storage, record)) = self.find_pending_invitation_record().await? else {
+                return Ok(None);
+            };
+            if Self::pending_invitation_expired(&record.metadata, Self::pending_invitation_now_ms())
+            {
+                Self::remove_pending_invitation_record(&storage).await?;
+                return Ok(None);
+            }
+            record.metadata
         };
-        if Self::pending_invitation_expired(&record.metadata, Self::pending_invitation_now_ms()) {
-            Self::remove_pending_invitation_record(&storage).await?;
-            return Ok(None);
-        }
-        Ok(Some(record.metadata))
+        Ok(Some(
+            self.enrich_pending_invitation_metadata(metadata).await,
+        ))
     }
 
     async fn resolve_pending_invitation(
@@ -2818,9 +3098,8 @@ impl MeshBackend for MatrixBackend {
             record
         };
 
-        self.resolve_community_invite(record.invite_link)
-            .await
-            .map(Some)
+        let admission = self.resolve_community_invite(record.invite_link).await?;
+        Ok(Some(self.enrich_community_admission(admission).await))
     }
 
     async fn clear_pending_invitation(&self) -> BackendResult<()> {
@@ -2937,6 +3216,69 @@ impl MeshBackend for MatrixBackend {
             })
     }
 
+    async fn matrix_room_upgrade(
+        &self,
+        room_id: String,
+    ) -> BackendResult<Option<MatrixRoomUpgrade>> {
+        let client = self.client().await?;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let room =
+            Self::protected_joined_room(&client, &room_id, "reading room upgrade status").await?;
+        let (replacement_room_id, reason) = match client
+            .send(get_state_event_for_key::v3::Request::new(
+                room.room_id().to_owned(),
+                StateEventType::RoomTombstone,
+                String::new(),
+            ))
+            .await
+        {
+            Ok(response) => {
+                let content = response
+                    .into_content()
+                    .deserialize_as_unchecked::<RoomTombstoneEventContent>()
+                    .map_err(Self::map_error)?;
+                (
+                    Some(content.replacement_room.to_string()),
+                    Some(content.body.chars().take(240).collect()),
+                )
+            }
+            Err(_) => match room.successor_room() {
+                Some(successor) => (
+                    Some(successor.room_id.to_string()),
+                    successor
+                        .reason
+                        .map(|reason| reason.chars().take(240).collect()),
+                ),
+                None => (None, None),
+            },
+        };
+        let mut predecessor_room_id = room
+            .predecessor_room()
+            .map(|predecessor| predecessor.room_id.to_string());
+        if predecessor_room_id.is_none() {
+            predecessor_room_id = self.verified_room_upgrades.read().await.iter().find_map(
+                |(predecessor, replacement)| {
+                    (replacement == room.room_id()).then(|| predecessor.to_string())
+                },
+            );
+        }
+        if predecessor_room_id.is_none() {
+            predecessor_room_id = self
+                .cache_verified_room_upgrade(&client, &room, "reading room upgrade status")
+                .await?
+                .map(|predecessor| predecessor.to_string());
+        }
+        if replacement_room_id.is_none() && predecessor_room_id.is_none() {
+            return Ok(None);
+        }
+        Ok(Some(MatrixRoomUpgrade {
+            room_id: room.room_id().to_string(),
+            replacement_room_id,
+            predecessor_room_id,
+            reason,
+        }))
+    }
+
     async fn matrix_room_notification_mode(
         &self,
         room_id: String,
@@ -2945,9 +3287,29 @@ impl MeshBackend for MatrixBackend {
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let room =
             Self::protected_joined_room(&client, &room_id, "reading notification settings").await?;
-        let mode = room.notification_mode().await.ok_or_else(|| {
-            BackendError::Other("Matrix notification mode is not available for this room".into())
-        })?;
+        let mode = match client.send(get_pushrules_all::v3::Request::new()).await {
+            Ok(response) => Self::room_notification_mode_from_ruleset(
+                &response.global,
+                &room_id,
+                room.latest_encryption_state()
+                    .await
+                    .map_err(Self::map_error)?
+                    .is_encrypted(),
+                !room.direct_targets().is_empty(),
+            ),
+            Err(error) => {
+                tracing::warn!(
+                    target: "mesh::matrix",
+                    room_id = %room_id,
+                    "Could not refresh notification settings from the account service; using the cached mode: {error}"
+                );
+                room.notification_mode().await.ok_or_else(|| {
+                    BackendError::Other(
+                        "Matrix notification mode is not available for this room".into(),
+                    )
+                })?
+            }
+        };
         Ok(match mode {
             RoomNotificationMode::AllMessages => MatrixRoomNotificationMode::All,
             RoomNotificationMode::MentionsAndKeywordsOnly => MatrixRoomNotificationMode::Mentions,
@@ -2970,12 +3332,7 @@ impl MeshBackend for MatrixBackend {
             MatrixRoomNotificationMode::Mentions => RoomNotificationMode::MentionsAndKeywordsOnly,
             MatrixRoomNotificationMode::Nothing => RoomNotificationMode::Mute,
         };
-        client
-            .notification_settings()
-            .await
-            .set_room_notification_mode(&room_id, mode)
-            .await
-            .map_err(Self::map_error)
+        Self::set_room_notification_mode_server_authoritative(&client, &room_id, mode).await
     }
 
     async fn login(&self, request: MatrixLogin) -> BackendResult<BackendStatus> {
@@ -4277,6 +4634,7 @@ impl MeshBackend for MatrixBackend {
         channel_request.preset = Some(RoomPreset::PrivateChat);
         channel_request.initial_state = vec![
             Self::encrypted_room_initial_state(),
+            Self::community_channel_join_rule_initial_state(space.room_id()),
             InitialStateEvent::new(space.room_id().to_owned(), parent).to_raw_any(),
         ];
         let channel = client
@@ -4308,6 +4666,9 @@ impl MeshBackend for MatrixBackend {
             .into_iter()
             .filter(|room| room.is_space())
         {
+            if room.successor_room().is_some() {
+                continue;
+            }
             Self::require_protected_room(&room, "listing communities").await?;
             let role = if room
                 .creators()
@@ -4358,6 +4719,7 @@ impl MeshBackend for MatrixBackend {
         }
 
         let mut channels = Vec::new();
+        let mut listed_room_ids = BTreeSet::new();
         for child_id in self.space_child_ids(&space).await? {
             let room = match Self::protected_joined_room(
                 &client,
@@ -4371,6 +4733,14 @@ impl MeshBackend for MatrixBackend {
                 Err(error) => return Err(error),
             };
             if room.is_space() {
+                continue;
+            }
+            let room = self
+                .joined_room_upgrade_chain(&client, room, "opening this community channel")
+                .await?
+                .pop()
+                .expect("the room upgrade chain always contains its starting room");
+            if !listed_room_ids.insert(room.room_id().to_owned()) {
                 continue;
             }
 
@@ -4443,6 +4813,7 @@ impl MeshBackend for MatrixBackend {
         }
         request.initial_state = vec![
             Self::encrypted_room_initial_state(),
+            Self::community_channel_join_rule_initial_state(space.room_id()),
             InitialStateEvent::new(space.room_id().to_owned(), parent).to_raw_any(),
         ];
         let channel = client.create_room(request).await.map_err(Self::map_error)?;
@@ -5042,6 +5413,7 @@ impl MeshBackend for MatrixBackend {
         room_id: String,
         body: String,
         reply_to_id: Option<String>,
+        thread_root_id: Option<String>,
         transaction_id: String,
     ) -> BackendResult<MessageDto> {
         if body.trim().is_empty() {
@@ -5066,11 +5438,18 @@ impl MeshBackend for MatrixBackend {
             Some(event_id) => {
                 let event_id =
                     matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
+                let is_thread_root_reply = thread_root_id.as_deref() == Some(event_id.as_str());
                 room.make_reply_event(
                     base_content,
                     Reply {
                         event_id,
-                        enforce_thread: EnforceThread::Unthreaded,
+                        enforce_thread: if is_thread_root_reply {
+                            EnforceThread::Threaded(ReplyWithinThread::No)
+                        } else if thread_root_id.is_some() {
+                            EnforceThread::Threaded(ReplyWithinThread::Yes)
+                        } else {
+                            EnforceThread::Unthreaded
+                        },
                         add_mentions: AddMentions::Yes,
                     },
                 )
@@ -5290,6 +5669,7 @@ impl MeshBackend for MatrixBackend {
             content_type,
             body,
             reply_to_id,
+            thread_root_id,
         } = request;
         let MatrixTransferObserver {
             transfer_id,
@@ -5498,11 +5878,18 @@ impl MeshBackend for MatrixBackend {
                 Some(event_id) => {
                     let event_id =
                         matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
+                    let is_thread_root_reply = thread_root_id.as_deref() == Some(event_id.as_str());
                     room.make_reply_event(
                         base_content,
                         Reply {
                             event_id,
-                            enforce_thread: EnforceThread::Unthreaded,
+                            enforce_thread: if is_thread_root_reply {
+                                EnforceThread::Threaded(ReplyWithinThread::No)
+                            } else if thread_root_id.is_some() {
+                                EnforceThread::Threaded(ReplyWithinThread::Yes)
+                            } else {
+                                EnforceThread::Unthreaded
+                            },
                             add_mentions: AddMentions::Yes,
                         },
                     )
@@ -5563,6 +5950,7 @@ impl MeshBackend for MatrixBackend {
                 edited_at: None,
                 deleted_at: None,
                 reply_to_id,
+                thread_root_id,
                 transaction_id: None,
                 client_request_id: None,
                 delivery_status: Some("sent".into()),
@@ -6047,8 +6435,9 @@ impl MeshBackend for MatrixBackend {
             let Ok(event_id) = matrix_sdk::ruma::EventId::parse(&message.id) else {
                 continue;
             };
+            let receipt_thread = Self::receipt_thread_for_message(message.thread_root_id.is_some());
             let receipts = room
-                .load_event_receipts(ReceiptType::Read, ReceiptThread::Unthreaded, &event_id)
+                .load_event_receipts(ReceiptType::Read, receipt_thread, &event_id)
                 .await
                 .map_err(Self::map_error)?;
             for (user_id, _) in receipts {
@@ -6079,6 +6468,7 @@ impl MeshBackend for MatrixBackend {
         recipient_user_id: String,
         body: String,
         reply_to_id: Option<String>,
+        thread_root_id: Option<String>,
         transaction_id: String,
     ) -> BackendResult<DirectMessageDto> {
         if body.trim().is_empty() {
@@ -6105,6 +6495,7 @@ impl MeshBackend for MatrixBackend {
             &room,
             body,
             reply_to_id,
+            thread_root_id,
             transaction_id,
         )
         .await?;
@@ -6209,9 +6600,13 @@ impl MeshBackend for MatrixBackend {
             .into_iter()
             .map(|member| (member.user_id().to_string(), member.name().to_owned()))
             .collect();
-        let values =
-            Self::timeline_values(&room, limit.clamp(1, 5_000) as usize, before_id.as_deref())
-                .await?;
+        let requested = limit.clamp(1, 5_000) as usize;
+        let values = if before_id.is_some() || before_timestamp.is_some() {
+            self.timeline_values_with_predecessors(&client, &room, requested, before_id.as_deref())
+                .await?
+        } else {
+            Self::timeline_values(&room, requested, None).await?
+        };
         let mut result = Self::project_timeline(room.room_id().as_str(), &members, values);
         if let Some(before_timestamp) = before_timestamp.as_deref() {
             result.retain(|message| {
@@ -6240,11 +6635,17 @@ impl MeshBackend for MatrixBackend {
             ));
         }
         let client = self.client().await?;
+        let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
         let room = Self::protected_joined_room(&client, &room_id, "editing a message").await?;
-        let replacement = RoomMessageEventContent::text_plain(body)
-            .make_replacement(ReplacementMetadata::new(event_id, None));
+        let mentions = Self::mentions_for_body(body.as_str(), Some(own_user_id));
+        let replacement = RoomMessageEventContentWithoutRelation::text_plain(body.clone())
+            .add_mentions(mentions.clone())
+            .make_replacement(ReplacementMetadata::new(event_id, None))
+            // Keep the top-level m.mentions present as well as the m.new_content
+            // copy produced by the replacement relation.
+            .add_mentions(mentions);
         room.send(replacement).await.map_err(Self::map_error)?;
         Ok(())
     }
@@ -6426,7 +6827,31 @@ impl MeshBackend for MatrixBackend {
         else {
             return Ok(());
         };
+        let is_thread_event = values.iter().any(|value| {
+            value.get("event_id").and_then(serde_json::Value::as_str) == Some(event_id)
+                && value
+                    .get("content")
+                    .and_then(Self::thread_root_id)
+                    .is_some()
+        });
+        let receipt_thread = Self::receipt_thread_for_message(is_thread_event);
         let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
+        if is_thread_event {
+            room.send_multiple_receipts(Receipts::new().fully_read_marker(event_id.clone()))
+                .await
+                .map_err(Self::map_error)?;
+            let receipt_type = match read_receipt_mode {
+                ReadReceiptMode::Public => Some(MatrixReceiptType::Read),
+                ReadReceiptMode::Private => Some(MatrixReceiptType::ReadPrivate),
+                ReadReceiptMode::Off => None,
+            };
+            if let Some(receipt_type) = receipt_type {
+                room.send_single_receipt(receipt_type, receipt_thread, event_id)
+                    .await
+                    .map_err(Self::map_error)?;
+            }
+            return Ok(());
+        }
         let mut receipts = Receipts::new().fully_read_marker(event_id.clone());
         receipts = match read_receipt_mode {
             ReadReceiptMode::Public => receipts.public_read_receipt(event_id),
@@ -7255,12 +7680,20 @@ impl MeshBackend for MatrixBackend {
 
     async fn join_room(&self, room_id: String) -> BackendResult<()> {
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        self.client()
-            .await?
-            .join_room_by_id(&room_id)
+        let via = room_id
+            .server_name()
+            .map(ToOwned::to_owned)
+            .into_iter()
+            .collect::<Vec<_>>();
+        let client = self.client().await?;
+        let room = client
+            .join_room_by_id_or_alias((&*room_id).into(), &via)
             .await
-            .map(|_| ())
-            .map_err(Self::map_error)
+            .map_err(Self::map_error)?;
+        let _ = self
+            .cache_verified_room_upgrade(&client, &room, "following a room upgrade")
+            .await;
+        Ok(())
     }
 
     async fn recent_texts(&self, room_id: String, limit: u32) -> BackendResult<Vec<String>> {

@@ -19,8 +19,8 @@ export function ScopedErrorBoundary({
 }: ScopedErrorBoundaryProps) {
   return (
     <ErrorBoundary
-      key={resetKey ?? name}
       scope="feature"
+      resetKey={resetKey}
       fallback={(resetError) => (
         <div
           className={`flex min-w-0 flex-col items-start gap-2 rounded-control border border-border-subtle bg-surface-sunken px-4 py-3 ${className}`}

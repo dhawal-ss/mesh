@@ -135,6 +135,33 @@ describe('MessageInput attachment UX', () => {
     })
   }
 
+  it('clears a text send immediately and stays editable while it is in flight', async () => {
+    let finishSend: (() => void) | undefined
+    const onSend = vi.fn(() => new Promise<void>((resolve) => {
+      finishSend = resolve
+    }))
+    const textarea = await render(onSend)
+    await setComposerValue(textarea, 'First message')
+
+    await act(async () => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(onSend).toHaveBeenCalledWith('First message')
+    expect(textarea.value).toBe('')
+    expect(textarea.disabled).toBe(false)
+
+    await setComposerValue(textarea, 'Next message')
+    expect(textarea.value).toBe('Next message')
+
+    await act(async () => {
+      finishSend?.()
+      await flushAsyncWork()
+    })
+    expect(textarea.value).toBe('Next message')
+  })
+
   it('shows a private pending preview and removes its native staging file accessibly', async () => {
     const textarea = await render()
     await paste(textarea, [clipboardFile('cat.gif', 'image/gif', [1, 2, 3])])
@@ -481,6 +508,29 @@ describe('MessageInput attachment UX', () => {
 
     expect(container.textContent).not.toContain('room-a.png')
     expect(bridge.discardStagedAttachment).toHaveBeenCalledWith('stale-token')
+  })
+
+  it('does not steal focus from room navigation when the active room changes', async () => {
+    const textarea = await render()
+    expect(document.activeElement).toBe(textarea)
+    const roomButton = document.createElement('button')
+    roomButton.textContent = 'Another room'
+    document.body.appendChild(roomButton)
+    roomButton.focus()
+
+    await act(async () => {
+      root.render(
+        <MessageInput
+          channelId="!other:mesh.test"
+          channelName="other"
+          onSend={vi.fn()}
+        />,
+      )
+      await flushAsyncWork()
+    })
+
+    expect(document.activeElement).toBe(roomButton)
+    roomButton.remove()
   })
 
   it('caps a bulk paste before bytes are copied across IPC', async () => {

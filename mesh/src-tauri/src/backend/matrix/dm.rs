@@ -277,6 +277,7 @@ impl MatrixBackend {
             edited_at: message.edited_at,
             deleted_at: message.deleted_at,
             reply_to_id: message.reply_to_id,
+            thread_root_id: message.thread_root_id,
             delivery_status: message.delivery_status,
         }
     }
@@ -286,6 +287,7 @@ impl MatrixBackend {
         room: &Room,
         body: String,
         reply_to_id: Option<String>,
+        thread_root_id: Option<String>,
         transaction_id: String,
     ) -> BackendResult<MessageDto> {
         Self::require_protected_room(room, "sending a direct message").await?;
@@ -296,11 +298,18 @@ impl MatrixBackend {
             Some(event_id) => {
                 let event_id =
                     matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
+                let is_thread_root_reply = thread_root_id.as_deref() == Some(event_id.as_str());
                 room.make_reply_event(
                     base_content,
                     Reply {
                         event_id,
-                        enforce_thread: EnforceThread::Unthreaded,
+                        enforce_thread: if is_thread_root_reply {
+                            EnforceThread::Threaded(ReplyWithinThread::No)
+                        } else if thread_root_id.is_some() {
+                            EnforceThread::Threaded(ReplyWithinThread::Yes)
+                        } else {
+                            EnforceThread::Unthreaded
+                        },
                         add_mentions: AddMentions::Yes,
                     },
                 )
@@ -336,6 +345,7 @@ impl MatrixBackend {
             edited_at: None,
             deleted_at: None,
             reply_to_id,
+            thread_root_id,
             transaction_id: Some(transaction_id.to_string()),
             client_request_id: None,
             delivery_status: Some("sent".into()),

@@ -3,8 +3,25 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../community/ChannelItem', () => ({
-  ChannelItem: ({ channel }: { channel: { name: string; channelType: string } }) => (
-    <button type="button" aria-label={`${channel.channelType} room: ${channel.name}`}>
+  ChannelItem: ({
+    channel,
+    active,
+    tabIndex,
+    onFocus,
+  }: {
+    channel: { id: string; name: string; channelType: string }
+    active: boolean
+    tabIndex: number
+    onFocus: () => void
+  }) => (
+    <button
+      type="button"
+      data-room-id={channel.id}
+      aria-current={active ? 'page' : undefined}
+      tabIndex={tabIndex}
+      onFocus={onFocus}
+      aria-label={`${channel.channelType} room: ${channel.name}`}
+    >
       {channel.name}
     </button>
   ),
@@ -99,12 +116,13 @@ describe('ChannelSidebar room containment', () => {
       await Promise.resolve()
     })
 
-    const list = container.querySelector('[role="list"][aria-label="Community rooms"]')
+    // The virtualized room navigation is now one keyboard stop with roving room buttons.
+    const list = container.querySelector('[role="navigation"][aria-label="Community rooms"]')
     expect(list).not.toBeNull()
-    expect(list?.querySelectorAll('[role="listitem"]').length).toBeGreaterThan(0)
-    expect(list?.querySelectorAll('[role="listitem"]').length).toBeLessThan(100)
+    expect(list?.querySelectorAll('button[data-room-id]').length).toBeGreaterThan(0)
+    expect(list?.querySelectorAll('button[data-room-id]').length).toBeLessThan(100)
     expect(list?.querySelector('button[aria-label="text room: Room 0"]')).not.toBeNull()
-    expect(list?.querySelector('[role="heading"]')?.textContent).toContain('Rooms')
+    expect(list?.querySelector('h3')?.textContent).toContain('Rooms')
 
     await act(async () => {
       if (list instanceof HTMLElement) list.scrollTop = 180_032
@@ -117,5 +135,45 @@ describe('ChannelSidebar room containment', () => {
     expect(finalRoom).not.toBeNull()
     finalRoom?.focus()
     expect(document.activeElement).toBe(finalRoom)
+  })
+
+  it('uses roving focus, arrow keys, Home/End, and type-ahead', async () => {
+    useChannelStore.getState().setChannels([
+      { ...room(1), name: 'Alpha' },
+      { ...room(2), name: 'Beta' },
+      { ...room(3), name: 'Gamma' },
+    ])
+    await act(async () => {
+      root.render(<ChannelSidebar />)
+      await Promise.resolve()
+    })
+
+    const options = [...container.querySelectorAll<HTMLButtonElement>('button[data-room-id]')]
+    expect(options.filter((option) => option.tabIndex === 0)).toHaveLength(1)
+    options[0]?.focus()
+    await act(async () => {
+      options[0]?.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'ArrowDown',
+        bubbles: true,
+        cancelable: true,
+      }))
+    })
+    expect(document.activeElement?.textContent).toBe('Beta')
+    await act(async () => {
+      document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'End',
+        bubbles: true,
+        cancelable: true,
+      }))
+    })
+    expect(document.activeElement?.textContent).toBe('Gamma')
+    await act(async () => {
+      document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'a',
+        bubbles: true,
+        cancelable: true,
+      }))
+    })
+    expect(document.activeElement?.textContent).toBe('Alpha')
   })
 })

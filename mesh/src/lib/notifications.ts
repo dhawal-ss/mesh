@@ -1,3 +1,12 @@
+import type { Identity } from '../types/ipc'
+
+export function identityLabel(
+  identity: Pick<Identity, 'displayName'> | null | undefined,
+  matrixMode: boolean,
+): string {
+  return identity?.displayName || (matrixMode ? 'Mesh account' : 'Local identity')
+}
+
 export interface QuietHours {
   enabled: boolean
   start: string

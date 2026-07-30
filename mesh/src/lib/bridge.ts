@@ -34,6 +34,7 @@ import type {
   MatrixQueuedMessageUpdate,
   MatrixUnreadUpdate,
   MatrixRoomNotificationMode,
+  MatrixRoomUpgrade,
   MatrixRoomPins,
   MatrixRoomPinsUpdate,
   NotificationPresentationContext,
@@ -549,8 +550,23 @@ export async function matrixDevices(): Promise<MatrixDevice[]> {
   return tauriInvoke('matrix_devices', undefined, READ_IPC_OPTIONS)
 }
 
+export const MATRIX_TRUST_CHANGED_EVENT = 'mesh:matrix-trust-changed'
+
+function emitMatrixTrustChanged() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(MATRIX_TRUST_CHANGED_EVENT))
+  }
+}
+
+export function onMatrixTrustChanged(listener: () => void): () => void {
+  if (typeof window === 'undefined') return () => {}
+  window.addEventListener(MATRIX_TRUST_CHANGED_EVENT, listener)
+  return () => window.removeEventListener(MATRIX_TRUST_CHANGED_EVENT, listener)
+}
+
 export async function matrixRevokeDevice(deviceId: string, password: string): Promise<void> {
-  return tauriInvoke('matrix_revoke_device', { deviceId, password })
+  await tauriInvoke('matrix_revoke_device', { deviceId, password })
+  emitMatrixTrustChanged()
 }
 
 export async function matrixRemoveLocalAccount(): Promise<void> {
@@ -591,7 +607,12 @@ export async function matrixRecoveryHealth(): Promise<MatrixRecoveryHealth> {
 }
 
 export async function matrixTestRecovery(recoveryKeyOrPassphrase: string): Promise<MatrixRecoveryHealth> {
-  return tauriInvoke('matrix_test_recovery', { recoveryKeyOrPassphrase })
+  const health = await tauriInvoke<MatrixRecoveryHealth>(
+    'matrix_test_recovery',
+    { recoveryKeyOrPassphrase },
+  )
+  emitMatrixTrustChanged()
+  return health
 }
 
 export async function matrixStartDeviceVerification(deviceId: string): Promise<MatrixVerificationSession> {
@@ -599,7 +620,13 @@ export async function matrixStartDeviceVerification(deviceId: string): Promise<M
 }
 
 export async function matrixDeviceVerificationStatus(verificationId: string): Promise<MatrixVerificationSession> {
-  return tauriInvoke('matrix_device_verification_status', { verificationId }, READ_IPC_OPTIONS)
+  const session = await tauriInvoke<MatrixVerificationSession>(
+    'matrix_device_verification_status',
+    { verificationId },
+    READ_IPC_OPTIONS,
+  )
+  if (session.phase === 'done') emitMatrixTrustChanged()
+  return session
 }
 
 export async function matrixSelectDeviceVerificationMethod(
@@ -613,7 +640,12 @@ export async function matrixConfirmDeviceVerification(
   verificationId: string,
   matches: boolean,
 ): Promise<MatrixVerificationSession> {
-  return tauriInvoke('matrix_confirm_device_verification', { verificationId, matches })
+  const session = await tauriInvoke<MatrixVerificationSession>(
+    'matrix_confirm_device_verification',
+    { verificationId, matches },
+  )
+  emitMatrixTrustChanged()
+  return session
 }
 
 export async function matrixCancelDeviceVerification(verificationId: string): Promise<void> {
@@ -644,6 +676,10 @@ export async function sendTestNotification(): Promise<void> {
 
 export async function matrixRoomIsEncrypted(roomId: string): Promise<boolean> {
   return tauriInvoke('matrix_room_is_encrypted', { roomId }, READ_IPC_OPTIONS)
+}
+
+export async function matrixRoomUpgrade(roomId: string): Promise<MatrixRoomUpgrade | null> {
+  return tauriInvoke('matrix_room_upgrade', { roomId }, READ_IPC_OPTIONS)
 }
 
 export async function getMatrixRoomNotificationMode(
@@ -785,11 +821,13 @@ export async function matrixSendMessage(
   body: string,
   replyToId?: string,
   clientRequestId = createMatrixTransactionId(),
+  threadRootId?: string,
 ): Promise<Message> {
   return tauriInvoke('matrix_send_message', {
     roomId,
     body,
     replyToId,
+    threadRootId,
     transactionId: clientRequestId,
   })
 }
@@ -836,6 +874,7 @@ export async function matrixSendAttachment(
   transferId: string,
   body: string,
   replyToId?: string,
+  threadRootId?: string,
 ): Promise<Message> {
   return tauriInvoke('matrix_send_attachment', {
     roomId,
@@ -843,6 +882,7 @@ export async function matrixSendAttachment(
     transferId,
     body,
     replyToId,
+    threadRootId,
   })
 }
 
@@ -1020,11 +1060,14 @@ export async function matrixSyncOnce(): Promise<void> {
 }
 
 export async function matrixEnableRecovery(passphrase?: string): Promise<string> {
-  return tauriInvoke('matrix_enable_recovery', { passphrase })
+  const recoveryKey = await tauriInvoke<string>('matrix_enable_recovery', { passphrase })
+  emitMatrixTrustChanged()
+  return recoveryKey
 }
 
 export async function matrixRecover(recoveryKeyOrPassphrase: string): Promise<void> {
-  return tauriInvoke('matrix_recover', { recoveryKeyOrPassphrase })
+  await tauriInvoke('matrix_recover', { recoveryKeyOrPassphrase })
+  emitMatrixTrustChanged()
 }
 
 export async function exportLegacyArchive(
@@ -1123,6 +1166,13 @@ export async function joinCommunity(inviteLink: string): Promise<Community> {
     })
   }
   return tauriInvoke('join_community', { inviteLink })
+}
+
+export async function matrixJoinRoom(roomId: string): Promise<void> {
+  if (!isMatrixBackend()) {
+    throw new Error('Joining a Matrix room is available only for Matrix-compatible services')
+  }
+  return tauriInvoke('matrix_join_room', { roomId })
 }
 
 export async function resolveCommunityInvite(
@@ -1329,12 +1379,13 @@ export async function sendMessage(
   attachments: Attachment[] = [],
   replyToId?: string,
   transactionId = createMatrixTransactionId(),
+  threadRootId?: string,
 ): Promise<Message> {
   if (isMatrixBackend()) {
     if (attachments.length > 0) {
       throw new Error('Use matrixSendAttachment for encrypted Matrix media')
     }
-    return matrixSendMessage(channelId, content, replyToId, transactionId)
+    return matrixSendMessage(channelId, content, replyToId, transactionId, threadRootId)
   }
   return tauriInvoke('send_message', { channelId, content, attachments, replyToId })
 }
@@ -1965,12 +2016,14 @@ export async function sendDm(
   content: string,
   replyToId?: string,
   transactionId = createMatrixTransactionId(),
+  threadRootId?: string,
 ): Promise<DirectMessage> {
   if (isMatrixBackend()) {
     return tauriInvoke('matrix_send_dm', {
       recipientUserId: recipientPublicKey,
       body: content,
       replyToId,
+      threadRootId,
       transactionId,
     })
   }
@@ -2030,6 +2083,7 @@ export async function matrixSendDmAttachment(
   transferId: string,
   body: string,
   replyToId?: string,
+  threadRootId?: string,
 ): Promise<DirectMessage> {
   return tauriInvoke('matrix_send_dm_attachment', {
     recipientUserId,
@@ -2037,6 +2091,7 @@ export async function matrixSendDmAttachment(
     transferId,
     body,
     replyToId,
+    threadRootId,
   })
 }
 

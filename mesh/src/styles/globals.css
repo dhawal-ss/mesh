@@ -69,6 +69,48 @@
   --ref-blue-light-11-rgb: 31 95 174;
   --ref-accent-light-11: #6b5636;
   --ref-accent-light-11-rgb: 107 86 54;
+  /*
+   * Light-theme accent ramps. The dark ramps are pale by design (they sit on
+   * near-black), which leaves them at ~1.7:1 on a light canvas — invisible as
+   * fills, rings, and the active-channel marker. Each light ramp is verified at
+   * >= 4.5:1 against white so it works for both text and non-text contrast.
+   */
+  --ref-accent-sand-light-9: #6b5636;
+  --ref-accent-sand-light-9-rgb: 107 86 54;
+  --ref-accent-sand-light-10: #524127;
+  --ref-accent-sand-light-10-rgb: 82 65 39;
+  --ref-accent-sand-light-8: #a08a63;
+  --ref-accent-sand-light-8-rgb: 160 138 99;
+  --ref-accent-ocean-light-9: #1f5fae;
+  --ref-accent-ocean-light-9-rgb: 31 95 174;
+  --ref-accent-ocean-light-10: #17487f;
+  --ref-accent-ocean-light-10-rgb: 23 72 127;
+  --ref-accent-ocean-light-8: #5b8fd0;
+  --ref-accent-ocean-light-8-rgb: 91 143 208;
+  --ref-accent-violet-light-9: #5b3fa8;
+  --ref-accent-violet-light-9-rgb: 91 63 168;
+  --ref-accent-violet-light-10: #452f7f;
+  --ref-accent-violet-light-10-rgb: 69 47 127;
+  --ref-accent-violet-light-8: #8d76cc;
+  --ref-accent-violet-light-8-rgb: 141 118 204;
+  --ref-accent-forest-light-9: #1f7a45;
+  --ref-accent-forest-light-9-rgb: 31 122 69;
+  --ref-accent-forest-light-10: #175c34;
+  --ref-accent-forest-light-10-rgb: 23 92 52;
+  --ref-accent-forest-light-8: #5aa77c;
+  --ref-accent-forest-light-8-rgb: 90 167 124;
+  --ref-accent-ember-light-9: #9a4a12;
+  --ref-accent-ember-light-9-rgb: 154 74 18;
+  --ref-accent-ember-light-10: #74380e;
+  --ref-accent-ember-light-10-rgb: 116 56 14;
+  --ref-accent-ember-light-8: #c0824f;
+  --ref-accent-ember-light-8-rgb: 192 130 79;
+  --ref-accent-rose-light-9: #a82f56;
+  --ref-accent-rose-light-9-rgb: 168 47 86;
+  --ref-accent-rose-light-10: #7f2341;
+  --ref-accent-rose-light-10-rgb: 127 35 65;
+  --ref-accent-rose-light-8: #c87f96;
+  --ref-accent-rose-light-8-rgb: 200 127 150;
   --ref-presence-online: #3dbe72;
   --ref-presence-online-rgb: 61 190 114;
   --ref-presence-dnd: #d4444c;
@@ -194,6 +236,14 @@
   --border-emphasis: var(--ref-neutral-7);
   --border-subtle: rgb(var(--ref-white-rgb) / 0.06);
   --border-strong: rgb(var(--ref-white-rgb) / 0.1);
+  /*
+   * --border-control is the boundary of an interactive control whose shape is
+   * not otherwise conveyed by a fill. WCAG 1.4.11 requires 3:1 there, which
+   * --border-default (1.50:1 dark / 1.68:1 light) does not meet. Decorative
+   * separators keep using --border-subtle; only controls use this.
+   */
+  --border-control-rgb: var(--ref-neutral-9-rgb);
+  --border-control: var(--ref-neutral-9);
   --border-focus-rgb: var(--ref-accent-11-rgb);
   --border-focus: var(--ref-accent-11);
   --presence-offline-rgb: var(--ref-neutral-9-rgb);
@@ -432,10 +482,27 @@
   --content-secondary: var(--ref-neutral-7);
   --content-muted-rgb: var(--ref-neutral-8-rgb);
   --content-muted: var(--ref-neutral-8);
+  /* The dark disabled tone lands at 2.37:1 here; neutral-8 restores 5.62:1. */
+  --content-disabled-rgb: var(--ref-neutral-8-rgb);
+  --content-disabled: var(--ref-neutral-8);
   --content-link-rgb: var(--ref-blue-light-11-rgb);
   --content-link: var(--ref-blue-light-11);
   --border-default-rgb: var(--ref-neutral-11-rgb);
   --border-default: var(--ref-neutral-11);
+  --border-control-rgb: var(--ref-neutral-9-rgb);
+  --border-control: var(--ref-neutral-9);
+  /*
+   * Light accent fills are dark, so accent-borne text flips to white. The dark
+   * theme keeps near-black on its pale accents.
+   */
+  --content-on-accent-rgb: var(--ref-white-rgb);
+  --content-on-accent: var(--ref-white);
+  --accent-rgb: var(--ref-accent-sand-light-9-rgb);
+  --accent: var(--ref-accent-sand-light-9);
+  --accent-hover-rgb: var(--ref-accent-sand-light-10-rgb);
+  --accent-hover: var(--ref-accent-sand-light-10);
+  --accent-muted-rgb: var(--ref-accent-sand-light-8-rgb);
+  --accent-muted: var(--ref-accent-sand-light-8);
   --border-emphasis-rgb: var(--ref-neutral-8-rgb);
   --border-emphasis: var(--ref-neutral-8);
   --border-subtle: rgb(var(--ref-neutral-2-rgb) / 0.12);
@@ -566,6 +633,81 @@
   --accent-hover: var(--ref-accent-rose-10);
   --accent-muted-rgb: var(--ref-accent-rose-8-rgb);
   --accent-muted: var(--ref-accent-rose-8);
+}
+
+/*
+ * Light-theme accent ramps. These selectors are deliberately more specific than
+ * the theme-agnostic [data-accent] blocks above so they win regardless of the
+ * order the two attributes are written in.
+ */
+:root[data-theme='light'][data-accent='sand'],
+[data-theme='light'] [data-accent='sand'] {
+  --accent-rgb: var(--ref-accent-sand-light-9-rgb);
+  --accent: var(--ref-accent-sand-light-9);
+  --accent-hover-rgb: var(--ref-accent-sand-light-10-rgb);
+  --accent-hover: var(--ref-accent-sand-light-10);
+  --accent-muted-rgb: var(--ref-accent-sand-light-8-rgb);
+  --accent-muted: var(--ref-accent-sand-light-8);
+}
+
+:root[data-theme='light'][data-accent='ocean'],
+[data-theme='light'] [data-accent='ocean'] {
+  --accent-rgb: var(--ref-accent-ocean-light-9-rgb);
+  --accent: var(--ref-accent-ocean-light-9);
+  --accent-hover-rgb: var(--ref-accent-ocean-light-10-rgb);
+  --accent-hover: var(--ref-accent-ocean-light-10);
+  --accent-muted-rgb: var(--ref-accent-ocean-light-8-rgb);
+  --accent-muted: var(--ref-accent-ocean-light-8);
+}
+
+:root[data-theme='light'][data-accent='violet'],
+[data-theme='light'] [data-accent='violet'] {
+  --accent-rgb: var(--ref-accent-violet-light-9-rgb);
+  --accent: var(--ref-accent-violet-light-9);
+  --accent-hover-rgb: var(--ref-accent-violet-light-10-rgb);
+  --accent-hover: var(--ref-accent-violet-light-10);
+  --accent-muted-rgb: var(--ref-accent-violet-light-8-rgb);
+  --accent-muted: var(--ref-accent-violet-light-8);
+}
+
+:root[data-theme='light'][data-accent='forest'],
+[data-theme='light'] [data-accent='forest'] {
+  --accent-rgb: var(--ref-accent-forest-light-9-rgb);
+  --accent: var(--ref-accent-forest-light-9);
+  --accent-hover-rgb: var(--ref-accent-forest-light-10-rgb);
+  --accent-hover: var(--ref-accent-forest-light-10);
+  --accent-muted-rgb: var(--ref-accent-forest-light-8-rgb);
+  --accent-muted: var(--ref-accent-forest-light-8);
+}
+
+:root[data-theme='light'][data-accent='ember'],
+[data-theme='light'] [data-accent='ember'] {
+  --accent-rgb: var(--ref-accent-ember-light-9-rgb);
+  --accent: var(--ref-accent-ember-light-9);
+  --accent-hover-rgb: var(--ref-accent-ember-light-10-rgb);
+  --accent-hover: var(--ref-accent-ember-light-10);
+  --accent-muted-rgb: var(--ref-accent-ember-light-8-rgb);
+  --accent-muted: var(--ref-accent-ember-light-8);
+}
+
+:root[data-theme='light'][data-accent='rose'],
+[data-theme='light'] [data-accent='rose'] {
+  --accent-rgb: var(--ref-accent-rose-light-9-rgb);
+  --accent: var(--ref-accent-rose-light-9);
+  --accent-hover-rgb: var(--ref-accent-rose-light-10-rgb);
+  --accent-hover: var(--ref-accent-rose-light-10);
+  --accent-muted-rgb: var(--ref-accent-rose-light-8-rgb);
+  --accent-muted: var(--ref-accent-rose-light-8);
+}
+
+/*
+ * The light accent is dark enough to read as body text, so the .text-accent
+ * override below can resolve to the accent itself rather than a separate brown.
+ */
+:root[data-theme='light'],
+[data-theme='light'] {
+  --content-accent-rgb: var(--accent-rgb);
+  --content-accent: var(--accent);
 }
 
 :root[data-density='compact'] {
@@ -747,7 +889,51 @@ textarea {
 }
 
 .mesh-context-sidebar {
-  width: 220px;
+  width: var(--mesh-context-sidebar-width, 220px);
+}
+
+.mesh-room-context-panel {
+  width: var(--mesh-room-context-width, var(--member-list-width));
+}
+
+.mesh-panel-resize-handle {
+  position: absolute;
+  inset-block: 0;
+  z-index: var(--z-sticky);
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.mesh-panel-resize-handle::after {
+  position: absolute;
+  inset-block: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  content: '';
+  transition: background-color var(--transition-fast);
+}
+
+.mesh-panel-resize-handle:hover::after,
+.mesh-panel-resize-handle:focus-visible::after {
+  background: var(--border-focus);
+}
+
+.mesh-panel-resize-handle:focus-visible {
+  outline: none;
+}
+
+.mesh-panel-resize-handle-left {
+  left: -4px;
+}
+
+.mesh-panel-resize-handle-right {
+  right: -4px;
+}
+
+.mesh-message-content {
+  max-width: 72ch;
 }
 
 .mesh-compact-header,
@@ -821,6 +1007,26 @@ textarea {
 }
 
 @media (max-width: 1100px) {
+  .mesh-panel-resize-handle {
+    display: none;
+  }
+
+  .mesh-context-sidebar[data-open='false'] {
+    display: none;
+  }
+
+  .mesh-compact-header {
+    display: flex;
+    height: 44px;
+    flex: 0 0 44px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    padding: 0 10px;
+    background: var(--bg-primary);
+  }
+
   .mesh-member-list {
     display: none;
   }
@@ -931,6 +1137,12 @@ textarea {
 @media (hover: none) and (pointer: coarse) {
   .mesh-message-actions {
     pointer-events: auto;
+    opacity: 1;
+  }
+
+  /* Without this, grouped-message clock readings are unreachable on a device
+     that cannot hover — the timestamp would simply never appear. */
+  .mesh-message-time {
     opacity: 1;
   }
 }

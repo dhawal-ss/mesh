@@ -78,7 +78,9 @@ describe('consumer Matrix sign-in helpers', () => {
       .toContain('secure HTTPS connection')
     expect(friendlyServiceError(new Error('HTTP status 503'), 'reach that account service'))
       .toContain('choose another service')
+    // The default path deliberately describes provider discovery as service setup;
+    // protocol terminology remains available only in technical details.
     expect(friendlyServiceError(new Error('invalid .well-known discovery JSON'), 'reach that account service'))
-      .toContain('invalid discovery information')
+      .toContain('setup information')
   })
 })

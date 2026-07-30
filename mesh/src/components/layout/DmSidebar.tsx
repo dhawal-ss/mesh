@@ -9,9 +9,9 @@ import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { isQuietHoursActive, useSettingsStore } from '../../store/settings'
 import { Icon } from '../ui/Icon'
 import { useIdentityStore } from '../../store/identity'
-import { useNetworkStore } from '../../store/network'
 import { EmptyState } from '../ui/Primitives'
 import { useVirtualScroll, type VirtualItem } from '../../hooks/useVirtualScroll'
+import { identityLabel } from '../../lib/notifications'
 
 export function DmSidebar() {
   const conversations = useDmStore((state) => state.conversations)
@@ -21,10 +21,9 @@ export function DmSidebar() {
   const setConversations = useDmStore((state) => state.setConversations)
   const patchConversation = useDmStore((state) => state.patchConversation)
   const storedIdentity = useIdentityStore((state) => state.identity)
-  const networkStatus = useNetworkStore((state) => state.status)
   const notifications = useSettingsStore((state) => state.notifications)
   const matrixMode = bridge.isMatrixBackend()
-  const identityLabel = storedIdentity?.displayName || (matrixMode ? 'Mesh account' : 'Local identity')
+  const currentIdentityLabel = identityLabel(storedIdentity, matrixMode)
   const showUnreadBadges =
     notifications.enabled &&
     !notifications.doNotDisturb &&
@@ -102,26 +101,10 @@ export function DmSidebar() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex h-conversation-header flex-shrink-0 flex-col justify-center border-b border-border-subtle px-3" data-tauri-drag-region>
+      <div className="flex min-h-conversation-header flex-shrink-0 flex-col justify-center border-b border-border-subtle px-3 py-2">
         <h2 className="truncate text-sm font-semibold text-primary">Direct messages</h2>
-        <p className="mt-1 truncate text-caption text-muted">Private conversations</p>
-        <p className="mt-0.5 truncate text-caption text-secondary">Identity · {identityLabel}</p>
-        <p className="mt-1 flex items-center gap-1.5 text-caption text-muted">
-          <span
-            className={`h-1.5 w-1.5 rounded-full ${
-              networkStatus.state === 'connected'
-                ? 'bg-status-success'
-                : networkStatus.state === 'connecting'
-                  ? 'bg-status-warning'
-                  : 'bg-status-warning'
-            }`}
-            aria-hidden="true"
-          />
-          {networkStatus.state === 'connected'
-            ? 'Synced'
-            : networkStatus.state === 'connecting'
-              ? 'Syncing'
-              : 'Offline'}
+        <p className="mt-1 truncate text-caption text-muted">
+          Private conversations · {currentIdentityLabel}
         </p>
       </div>
 
@@ -154,7 +137,7 @@ export function DmSidebar() {
             description={
               conversations.length === 0
                 ? 'Open People in any room to start a private conversation.'
-                : 'Try another name or Matrix ID.'
+                : 'Try another name, or a full address like @ashvin:example.org.'
             }
           />
         ) : (

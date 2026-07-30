@@ -137,6 +137,11 @@ describe('UserSettingsPanel', () => {
       )?.querySelector<HTMLInputElement>('input[type="checkbox"]')
 
     const readReceipts = document.querySelector<HTMLSelectElement>('#read-receipts')
+    expect(document.querySelector('label[for="read-receipts"]')?.textContent).toBe('Read receipts')
+    expect(readReceipts?.getAttribute('aria-describedby')).toBe('read-receipts-description')
+    expect(document.querySelector('#read-receipts-description')?.textContent).toContain(
+      'people in a conversation',
+    )
     await act(async () => {
       if (readReceipts) readReceipts.value = 'private'
       readReceipts?.dispatchEvent(new Event('change', { bubbles: true }))

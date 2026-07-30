@@ -19,7 +19,7 @@ export function DmTrustSummary({
   const needsReview = !trust.loadingAccountTrust && trust.devicesNeedReview > 0
   const description = trust.protection === 'protected'
     ? `Only you, ${peerName}, and approved devices can read these messages.`
-    : trust.protection === 'blocked'
+    : trust.protection === 'unencrypted'
       ? 'Sending is paused until this conversation is protected again.'
       : trust.protection === 'checking'
         ? 'Mesh is checking which devices can safely read these messages.'
@@ -47,7 +47,7 @@ export function DmTrustSummary({
           className={`flex min-h-8 max-w-48 items-center gap-1.5 rounded-control px-2 text-caption font-medium transition-colors ${
             trust.protection === 'protected'
               ? 'bg-status-success/10 text-status-success hover:bg-status-success/20'
-              : trust.protection === 'blocked'
+              : trust.protection === 'unencrypted'
                 ? 'bg-status-warning/10 text-status-warning hover:bg-status-warning/20'
                 : 'bg-surface-hover text-muted hover:bg-surface-active hover:text-secondary'
           }`}
@@ -73,7 +73,7 @@ export function DmTrustSummary({
           className={`rounded-panel border px-3 py-2.5 ${
             trust.protection === 'protected'
               ? 'border-status-success/30 bg-status-success/10'
-              : trust.protection === 'blocked'
+              : trust.protection === 'unencrypted'
                 ? 'border-status-warning/30 bg-status-warning/10'
                 : 'border-border-subtle bg-surface-sunken'
           }`}
@@ -157,7 +157,7 @@ function TrustRow({
 
 function protectionLabel(trust: RoomTrustSnapshot) {
   if (trust.protection === 'protected') return 'Encrypted'
-  if (trust.protection === 'blocked') return 'Sending blocked'
+  if (trust.protection === 'unencrypted') return 'Not encrypted'
   if (trust.protection === 'checking') return 'Checking protection'
   return 'Protection unavailable'
 }

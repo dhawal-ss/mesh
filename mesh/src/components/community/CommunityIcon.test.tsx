@@ -9,19 +9,23 @@ const settingsMocks = vi.hoisted(() => ({
   isMuted: false,
 }))
 
-vi.mock('../../store/settings', () => ({
-  useSettingsStore: (
-    selector: (state: {
-      muteCommunityFor: typeof settingsMocks.muteCommunityFor
-      unmuteCommunity: typeof settingsMocks.unmuteCommunity
-      isCommunityMuted: (communityId: string) => boolean
-    }) => unknown,
-  ) => selector({
-    muteCommunityFor: settingsMocks.muteCommunityFor,
-    unmuteCommunity: settingsMocks.unmuteCommunity,
-    isCommunityMuted: () => settingsMocks.isMuted,
-  }),
-}))
+vi.mock('../../store/settings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../store/settings')>()
+  return {
+    ...actual,
+    useSettingsStore: (
+      selector: (state: {
+        muteCommunityFor: typeof settingsMocks.muteCommunityFor
+        unmuteCommunity: typeof settingsMocks.unmuteCommunity
+        isCommunityMuted: (communityId: string) => boolean
+      }) => unknown,
+    ) => selector({
+      muteCommunityFor: settingsMocks.muteCommunityFor,
+      unmuteCommunity: settingsMocks.unmuteCommunity,
+      isCommunityMuted: () => settingsMocks.isMuted,
+    }),
+  }
+})
 
 import { CommunityIcon } from './CommunityIcon'
 
@@ -132,6 +136,25 @@ describe('CommunityIcon notification context menu', () => {
     await openContextMenu(button)
     await act(async () => findMenuItem('Mark community as read')?.click())
     expect(onMarkRead).toHaveBeenCalledOnce()
+  })
+
+  it('offers the same actions from the keyboard-discoverable more menu', async () => {
+    renderIcon()
+    const moreActions = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="More actions for Mesh Builders"]',
+    )
+    expect(moreActions).not.toBeNull()
+
+    await act(async () => {
+      moreActions?.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+      }))
+      await Promise.resolve()
+    })
+    await act(async () => findMenuItem('Copy community link')?.click())
+    expect(onCopyLink).toHaveBeenCalledOnce()
   })
 
   it('announces a muted community and offers to turn notifications back on', async () => {

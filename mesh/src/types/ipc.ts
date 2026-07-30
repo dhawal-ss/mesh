@@ -40,6 +40,7 @@ export type {
   MatrixQueuedMessageState,
   MatrixQueuedMessageUpdate,
   MatrixRoomNotificationMode,
+  MatrixRoomUpgrade,
   MatrixRoomPins,
   MatrixRoomPinsUpdate,
   MatrixUnreadUpdate,

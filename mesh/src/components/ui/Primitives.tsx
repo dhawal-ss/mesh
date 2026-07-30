@@ -3,6 +3,9 @@ import {
   forwardRef,
   isValidElement,
   useId,
+  useLayoutEffect,
+  useRef,
+  useState,
   type HTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
@@ -199,7 +202,8 @@ export const Slider = forwardRef<HTMLInputElement, SliderProps>(
           id={inputId}
           type="range"
           aria-valuetext={valueText ?? valueLabel}
-          className={clsx('w-full accent-accent', size === 'sm' ? 'h-1' : size === 'lg' ? 'h-2' : 'h-1.5')}
+          data-size={size}
+          className="h-6 w-full accent-accent"
           {...props}
         />
       </div>
@@ -314,12 +318,35 @@ export interface ScrollAreaProps extends HTMLAttributes<HTMLDivElement> {
   label?: string
 }
 
-export function ScrollArea({ label, className, tabIndex = 0, role, ...props }: ScrollAreaProps) {
+export function ScrollArea({ label, className, tabIndex, role, ...props }: ScrollAreaProps) {
+  const areaRef = useRef<HTMLDivElement>(null)
+  const [scrollable, setScrollable] = useState(false)
+
+  useLayoutEffect(() => {
+    const area = areaRef.current
+    if (!area) return
+    const update = () => {
+      setScrollable(area.scrollHeight > area.clientHeight || area.scrollWidth > area.clientWidth)
+    }
+    update()
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(update)
+    const mutationObserver = new MutationObserver(update)
+    resizeObserver?.observe(area)
+    mutationObserver.observe(area, { childList: true, subtree: true, characterData: true })
+    return () => {
+      resizeObserver?.disconnect()
+      mutationObserver.disconnect()
+    }
+  }, [])
+
   return (
     <div
+      ref={areaRef}
       role={role ?? (label ? 'region' : undefined)}
       aria-label={label}
-      tabIndex={tabIndex}
+      tabIndex={tabIndex ?? (scrollable ? 0 : undefined)}
       className={clsx(
         'overflow-auto overscroll-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent',
         className,

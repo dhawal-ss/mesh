@@ -28,6 +28,7 @@ import {
 import { parseAdmissionCommunityInvite } from '../../lib/community-invites'
 import {
   normalizeServiceAddress,
+  displayServiceAddress,
   friendlyServiceError,
   resolveServiceAddress,
   serviceAddressConfigError,
@@ -410,9 +411,10 @@ export function MatrixAccountScreen({
 
   const selectCommunityService = () => {
     if (!effectiveAdmission?.registrationToken) return
+    const address = displayServiceAddress(effectiveAdmission.service)
     setSelectedService({
       kind: 'community',
-      name: 'Community-hosted service',
+      name: effectiveAdmission.communityServiceDisplayName?.trim() || address,
       address: effectiveAdmission.service,
     })
     setServiceAddress('')
@@ -595,6 +597,9 @@ export function MatrixAccountScreen({
     ? selectedService.service
     : null
   const selectedServiceName = displayAccountService(selectedService)
+  const communityServiceName = effectiveAdmission?.communityServiceDisplayName?.trim()
+    || displayServiceAddress(effectiveAdmission?.service ?? '')
+  const prominentServiceExpired = publicServiceReviewExpired(MATRIX_ORG_SERVICE)
   const usernameHint = isCreate && !normalizedUsername ? '3–32 lowercase characters.' : undefined
   const createDisabled =
     submitting
@@ -637,22 +642,28 @@ export function MatrixAccountScreen({
           />
         ) : null}
 
-        {MATRIX_ORG_SERVICE && !publicServiceReviewExpired(MATRIX_ORG_SERVICE) ? (
+        {MATRIX_ORG_SERVICE ? (
           <ServiceChoiceCard
             title="Matrix.org"
-            eyebrow="Public service"
-            description="Operated independently by the Matrix.org Foundation. Free-plan limits currently include 10 MB per attachment and 100 MB of data per day."
-            actionLabel="Choose Matrix.org"
+            eyebrow={prominentServiceExpired ? 'Review expired' : 'Public service'}
+            description={prominentServiceExpired
+              ? 'This option is unavailable until its operator and policies are reviewed again.'
+              : 'Operated independently by the Matrix.org Foundation. Free-plan limits currently include 10 MB per attachment and 100 MB of data per day.'}
+            actionLabel="Sign in"
+            disabled={prominentServiceExpired}
+            registrationUrl={MATRIX_ORG_SERVICE.registration.url}
             onSelect={() => selectPublicService(MATRIX_ORG_SERVICE)}
+            termsUrl={MATRIX_ORG_SERVICE.termsUrl}
+            privacyUrl={MATRIX_ORG_SERVICE.privacyUrl}
           />
         ) : null}
 
         {effectiveAdmission?.registrationToken ? (
           <ServiceChoiceCard
-            title="Community-hosted service"
+            title={communityServiceName}
             eyebrow="Optional account offer"
-            description="This invitation offers account creation through the community operator. It has no Mesh uptime guarantee, and you may choose another service instead."
-            actionLabel="Choose community-hosted service"
+            description={`This invitation offers account creation at ${displayServiceAddress(effectiveAdmission.service)}. It has no Mesh uptime guarantee, and you may choose another service instead.`}
+            actionLabel="Create account"
             onSelect={selectCommunityService}
           />
         ) : admissionResolving ? (
@@ -713,10 +724,11 @@ export function MatrixAccountScreen({
               title={service.displayName}
               eyebrow={expired ? 'Review expired' : `Operated by ${service.operator}`}
               description={expired
-                ? 'This option is hidden from selection until its operator and policies are reviewed again.'
+                ? 'This option is unavailable until its operator and policies are reviewed again.'
                 : `${service.jurisdiction}. ${service.freeUseLimits.summary}`}
-              actionLabel={`Choose ${service.displayName}`}
+              actionLabel="Sign in"
               disabled={expired}
+              registrationUrl={service.registration.url}
               onSelect={() => selectPublicService(service)}
               termsUrl={service.termsUrl}
               privacyUrl={service.privacyUrl}
@@ -736,14 +748,14 @@ export function MatrixAccountScreen({
         <p className="text-2xs uppercase tracking-eyebrow text-muted">Mesh</p>
         <h1 ref={modeHeadingRef} tabIndex={-1} className="text-lg font-semibold tracking-tight text-primary">
           {isCreate
-            ? 'Create your community-hosted account'
+            ? `Create your account with ${selectedServiceName}`
             : isAdvanced
               ? 'Use another service'
               : `Sign in to ${selectedServiceName}`}
         </h1>
         <p className="max-w-sm text-sm leading-6 text-secondary">
           {isCreate
-            ? 'This invitation offers an account from the community operator. You can go back and choose an independent service instead.'
+            ? `This invitation offers an account at ${displayServiceAddress(selectedServiceAddress)}. You can go back and choose an independent service instead.`
             : isAdvanced
               ? 'Enter your full Matrix ID or the address of the service that stores your account.'
               : 'Enter your account details to continue. This choice does not control which communities you can join.'}
@@ -768,10 +780,15 @@ export function MatrixAccountScreen({
           </div>
         </section>
       ) : selectedService?.kind === 'community' ? (
-        <p className="rounded-panel border border-border-subtle bg-surface-sunken p-3 text-xs leading-5 text-secondary">
-          This account is hosted by the community operator, has no Mesh uptime guarantee, and
-          remains separate from the community itself.
-        </p>
+        <section
+          aria-label={`${selectedService.name} service details`}
+          className="rounded-panel border border-border-subtle bg-surface-sunken p-3 text-xs leading-5 text-secondary"
+        >
+          <p>
+            Your account will be stored at {displayServiceAddress(selectedService.address)}. This
+            service has no Mesh uptime guarantee and remains separate from the community itself.
+          </p>
+        </section>
       ) : null}
 
       {checkingCapabilities ? (
@@ -1143,6 +1160,7 @@ function ServiceChoiceCard({
   actionLabel,
   onSelect,
   disabled = false,
+  registrationUrl,
   termsUrl,
   privacyUrl,
 }: {
@@ -1152,6 +1170,7 @@ function ServiceChoiceCard({
   actionLabel: string
   onSelect: () => void
   disabled?: boolean
+  registrationUrl?: string
   termsUrl?: string
   privacyUrl?: string
 }) {
@@ -1168,15 +1187,45 @@ function ServiceChoiceCard({
           {privacyUrl ? <ExternalLink href={privacyUrl}>Privacy</ExternalLink> : null}
         </div>
       ) : null}
-      <Button
-        type="button"
-        variant="secondary"
-        className="w-full"
-        disabled={disabled}
-        onClick={onSelect}
-      >
-        {actionLabel}
-      </Button>
+      {registrationUrl ? (
+        <div className="grid grid-cols-2 gap-2">
+          {disabled ? (
+            <Button type="button" variant="secondary" disabled>
+              Create account
+            </Button>
+          ) : (
+            <a
+              href={registrationUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              aria-label={`Create account with ${title}`}
+              className="no-select inline-flex items-center justify-center rounded-md bg-surface-hover px-4 py-2 text-sm font-medium text-content transition-colors duration-fast hover:bg-surface-active focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              Create account
+            </a>
+          )}
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={disabled}
+            aria-label={`${actionLabel} with ${title}`}
+            onClick={onSelect}
+          >
+            {actionLabel}
+          </Button>
+        </div>
+      ) : (
+        <Button
+          type="button"
+          variant="secondary"
+          className="w-full"
+          disabled={disabled}
+          aria-label={`${actionLabel} with ${title}`}
+          onClick={onSelect}
+        >
+          {actionLabel}
+        </Button>
+      )}
     </article>
   )
 }
