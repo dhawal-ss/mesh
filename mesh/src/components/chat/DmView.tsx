@@ -1,28 +1,90 @@
-import { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
+
+import { getBackoffDelay, waitForDelay } from '../../lib/scheduler'
+import { federatedTimestampMilliseconds } from '../../lib/federated-time'
+import { shouldGroupMessage } from '../../lib/message-grouping'
+import { resolveSenderIdentity } from '../../lib/matrixIdentity'
+import { groupThreadReplies } from '../../lib/threads'
+import * as bridge from '../../lib/bridge'
+import { useRoomTrust } from '../../hooks/useRoomTrust'
+import { useVirtualScroll, type VirtualItem } from '../../hooks/useVirtualScroll'
 import { useDmConversation, useDmStore } from '../../store/dms'
 import { useIdentityStore } from '../../store/identity'
-import { MessageInput } from './MessageInput'
-import { FileAttachmentCard } from './Message'
-import { ReactionPicker } from './ReactionPicker'
-import type { StagedFile } from './FileAttachment'
-import type { DirectMessage } from '../../types/ipc'
-import * as bridge from '../../lib/bridge'
-import {
-  federatedTimestampMilliseconds,
-  formatFederatedTimestamp,
-} from '../../lib/federated-time'
-import { getBackoffDelay, waitForDelay } from '../../lib/scheduler'
-import { ErrorBoundary } from '../ui/ErrorBoundary'
-import { useRoomTrust } from '../../hooks/useRoomTrust'
+import { useMessageStore } from '../../store/messages'
 import { useShellStore } from '../../store/shell'
-import { DmTrustSummary } from './DmTrustSummary'
+import type { DirectMessage, Message as MessageType } from '../../types/ipc'
+import { EmptyState } from '../ui/Primitives'
+import { ErrorBoundary } from '../ui/ErrorBoundary'
 import { Icon } from '../ui/Icon'
 import { MessageSkeleton } from '../ui/Skeleton'
-import { EmptyState } from '../ui/Primitives'
-import { MessageReportDialog } from './MessageReportDialog'
-import { useVirtualScroll, type VirtualItem } from '../../hooks/useVirtualScroll'
+import { DmTrustSummary } from './DmTrustSummary'
+import type { StagedFile } from './FileAttachment'
+import { MessageComponent } from './Message'
+import { MessageInput } from './MessageInput'
 
 const EMPTY_DIRECT_MESSAGES: DirectMessage[] = []
+const EMPTY_MESSAGES: MessageType[] = []
+
+function directMessageToTimelineMessage(message: DirectMessage): MessageType {
+  return {
+    id: message.id,
+    channelId: message.conversationId,
+    authorPublicKey: message.authorPublicKey,
+    authorDisplayName: message.authorDisplayName,
+    authorAvatarColor: message.authorAvatarColor,
+    content: message.content,
+    attachments: message.attachments ?? [],
+    reactions: message.reactions ?? {},
+    timestamp: message.timestamp,
+    signature: message.signature,
+    editedAt: message.editedAt,
+    deletedAt: message.deletedAt,
+    replyToId: message.replyToId,
+    threadRootId: message.threadRootId,
+    deliveryStatus: message.deliveryStatus,
+  }
+}
+
+function deliveryAliases(message: MessageType): string[] {
+  return [
+    `event:${message.id}`,
+    message.transactionId ? `transaction:${message.transactionId}` : '',
+    message.clientRequestId ? `request:${message.clientRequestId}` : '',
+  ].filter(Boolean)
+}
+
+function messagesShareDeliveryIdentity(left: MessageType, right: MessageType): boolean {
+  const aliases = new Set(deliveryAliases(left))
+  return deliveryAliases(right).some((alias) => aliases.has(alias))
+}
+
+function mergeDirectMessageTimeline(
+  directMessages: readonly DirectMessage[],
+  deliveryMessages: readonly MessageType[],
+): MessageType[] {
+  const merged = directMessages.map(directMessageToTimelineMessage)
+  for (const deliveryMessage of deliveryMessages) {
+    const index = merged.findIndex((message) =>
+      messagesShareDeliveryIdentity(message, deliveryMessage),
+    )
+    if (index < 0) merged.push(deliveryMessage)
+    else merged[index] = { ...merged[index], ...deliveryMessage }
+  }
+  return merged.sort((left, right) => {
+    const timeDifference =
+      (federatedTimestampMilliseconds(left.timestamp) ?? 0)
+      - (federatedTimestampMilliseconds(right.timestamp) ?? 0)
+    return timeDifference || left.id.localeCompare(right.id)
+  })
+}
 
 function DmMessageBoundary({
   messageId,
@@ -35,7 +97,10 @@ function DmMessageBoundary({
     <ErrorBoundary
       scope="feature"
       fallback={(resetError) => (
-        <div className="mx-4 my-1 flex items-center gap-2 rounded-panel bg-status-danger/5 px-3 py-2" role="alert">
+        <div
+          className="mx-4 my-1 flex items-center gap-2 rounded-panel bg-status-danger/5 px-3 py-2"
+          role="alert"
+        >
           <p className="min-w-0 flex-1 text-xs text-muted">
             One message could not be displayed.
           </p>
@@ -80,59 +145,77 @@ function DmVirtualMessageRow({
     return () => observer.disconnect()
   }, [onHeightChange, rowKey])
 
-  return <div ref={rowRef}>{children}</div>
+  return (
+    <div ref={rowRef} data-message-id={rowKey}>
+      {children}
+    </div>
+  )
 }
 
 export function DmView() {
   const activeConversationId = useDmStore((state) => state.activeConversationId)
   const conversation = useDmConversation(activeConversationId)
-  const channelMessages = useDmStore((state) =>
+  const directMessages = useDmStore((state) =>
     state.activeConversationId
       ? (state.messages[state.activeConversationId] ?? EMPTY_DIRECT_MESSAGES)
       : EMPTY_DIRECT_MESSAGES,
   )
+  const deliveryMessages = useMessageStore((state) =>
+    activeConversationId
+      ? (state.messages[activeConversationId] ?? EMPTY_MESSAGES)
+      : EMPTY_MESSAGES,
+  )
   const loadMessages = useDmStore((state) => state.loadMessages)
-  const addMessage = useDmStore((state) => state.addMessage)
-  const patchMessage = useDmStore((state) => state.patchMessage)
-  const updateReaction = useDmStore((state) => state.updateReaction)
-  const identity = useIdentityStore((s) => s.identity)
+  const addDirectMessage = useDmStore((state) => state.addMessage)
+  const patchDirectMessage = useDmStore((state) => state.patchMessage)
+  const updateDirectReaction = useDmStore((state) => state.updateReaction)
+  const identity = useIdentityStore((state) => state.identity)
   const setSecurityOpen = useShellStore((state) => state.setSecurityOpen)
   const matrixMode = bridge.isMatrixBackend()
   const ownAuthorId = matrixMode ? bridge.getMatrixUserId() : identity?.publicKey
   const [loadingConversationId, setLoadingConversationId] = useState<string | null>(null)
-  const [blockState, setBlockState] = useState<{ peerPublicKey: string; blocked: boolean } | null>(
-    null,
-  )
+  const [blockState, setBlockState] = useState<{
+    peerPublicKey: string
+    blocked: boolean
+  } | null>(null)
   const [isBlockBusy, setIsBlockBusy] = useState(false)
-  const [reactionTargetId, setReactionTargetId] = useState<string | null>(null)
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
-  const [reportMessageId, setReportMessageId] = useState<string | null>(null)
-  const [editValue, setEditValue] = useState('')
-  const [replyingTo, setReplyingTo] = useState<DirectMessage | null>(null)
-  const trustMembers = useMemo(
-    () => [ownAuthorId, conversation?.peerPublicKey]
-      .filter((publicKey): publicKey is string => Boolean(publicKey))
-      .map((publicKey) => ({ publicKey })),
-    [conversation?.peerPublicKey, ownAuthorId],
+  const [replyingTo, setReplyingTo] = useState<MessageType | null>(null)
+  const [threadReplyRoot, setThreadReplyRoot] = useState<MessageType | null>(null)
+  const [openThreadId, setOpenThreadId] = useState<string | null>(null)
+  const [editRequest, setEditRequest] = useState<{
+    messageId: string
+    token: number
+  } | null>(null)
+  const previousConversationIdRef = useRef(activeConversationId)
+
+  const channelMessages = useMemo(
+    () => mergeDirectMessageTimeline(directMessages, deliveryMessages),
+    [deliveryMessages, directMessages],
   )
-  const trust = useRoomTrust(activeConversationId, trustMembers)
-  const peerPublicKey = conversation?.peerPublicKey
-  const isLoading = loadingConversationId === activeConversationId
-  const isBlocked =
-    Boolean(peerPublicKey)
-    && blockState?.peerPublicKey === peerPublicKey
-    && Boolean(blockState?.blocked)
-  const virtualItems = useMemo<VirtualItem[]>(() => channelMessages.map((message) => ({
-    key: message.id,
-    type: 'message',
-    height:
-      52
-      + Math.min(160, Math.max(1, Math.ceil(message.content.length / 80)) * 20)
-      + ((message.attachments?.length ?? 0) > 0 ? 96 : 0),
-  })), [channelMessages])
-  const messageIndexById = useMemo(
-    () => new Map(channelMessages.map((message, index) => [message.id, index] as const)),
+  const { visibleMessages: visibleChannelMessages, repliesByRoot } = useMemo(
+    () => groupThreadReplies(channelMessages),
     [channelMessages],
+  )
+  const messageIndexById = useMemo(
+    () => new Map(visibleChannelMessages.map((message, index) => [message.id, index] as const)),
+    [visibleChannelMessages],
+  )
+  const messageById = useMemo(
+    () => new Map(channelMessages.map((message) => [message.id, message] as const)),
+    [channelMessages],
+  )
+  const virtualItems = useMemo<VirtualItem[]>(
+    () => visibleChannelMessages.map((message) => ({
+      key: message.id,
+      type: 'message',
+      height:
+        52
+        + Math.min(160, Math.max(1, Math.ceil(message.content.length / 80)) * 20)
+        + ((message.attachments?.length ?? 0) > 0 ? 96 : 0)
+        + (repliesByRoot.get(message.id)?.length ?? 0) * 88
+        + (repliesByRoot.has(message.id) ? 36 : 0),
+    })),
+    [repliesByRoot, visibleChannelMessages],
   )
   const {
     scrollContainerRef,
@@ -146,17 +229,64 @@ export function DmView() {
     estimatedMessageHeight: 76,
     overscanPx: 500,
   })
-  const visibleMessages = useMemo(() => (
-    virtualItems.length === 0
+  const visibleMessages = useMemo(
+    () => virtualItems.length === 0
       ? []
       : virtualItems
           .slice(visibleRange.start, visibleRange.end + 1)
           .map((item) => {
             const index = messageIndexById.get(item.key) ?? -1
-            return index >= 0 ? { message: channelMessages[index], index } : null
+            return index >= 0 ? { message: visibleChannelMessages[index], index } : null
           })
-          .filter((entry): entry is { message: DirectMessage; index: number } => entry !== null)
-  ), [channelMessages, messageIndexById, virtualItems, visibleRange.end, visibleRange.start])
+          .filter(
+            (entry): entry is { message: MessageType; index: number } => entry !== null,
+          ),
+    [
+      messageIndexById,
+      virtualItems,
+      visibleChannelMessages,
+      visibleRange.end,
+      visibleRange.start,
+    ],
+  )
+  const trustMembers = useMemo(
+    () => [ownAuthorId, conversation?.peerPublicKey]
+      .filter((publicKey): publicKey is string => Boolean(publicKey))
+      .map((publicKey) => ({ publicKey })),
+    [conversation?.peerPublicKey, ownAuthorId],
+  )
+  const trust = useRoomTrust(activeConversationId, trustMembers)
+  const peerPublicKey = conversation?.peerPublicKey
+  const isLoading = loadingConversationId === activeConversationId
+  const isBlocked =
+    Boolean(peerPublicKey)
+    && blockState?.peerPublicKey === peerPublicKey
+    && Boolean(blockState?.blocked)
+
+  const beginThreadReply = useCallback(
+    (root: MessageType, target: MessageType = root) => {
+      setOpenThreadId(root.id)
+      setThreadReplyRoot(root)
+      setReplyingTo(target)
+    },
+    [],
+  )
+  const beginOrdinaryReply = useCallback((message: MessageType) => {
+    setThreadReplyRoot(null)
+    setReplyingTo(message)
+  }, [])
+  const toggleThread = useCallback((messageId: string) => {
+    setOpenThreadId((current) => current === messageId ? null : messageId)
+  }, [])
+
+  useEffect(() => {
+    if (previousConversationIdRef.current === activeConversationId) return
+    previousConversationIdRef.current = activeConversationId
+    setOpenThreadId(null)
+    setThreadReplyRoot(null)
+    setReplyingTo(null)
+    setEditRequest(null)
+  }, [activeConversationId])
 
   useEffect(() => {
     if (!matrixMode || !peerPublicKey) return
@@ -182,6 +312,7 @@ export function DmView() {
       setLoadingConversationId(conversationId)
       try {
         await loadMessages(conversationId)
+        await bridge.markDmRead(conversationId)
       } catch (error) {
         if (active) console.error('Failed to load direct messages:', error)
       } finally {
@@ -199,13 +330,15 @@ export function DmView() {
 
   useEffect(() => {
     if (matrixMode) return
-    const unsub = bridge.onDmReceived((msg) => {
-      if (msg.conversationId === activeConversationId) {
-        addMessage(msg)
+    const unsubscribe = bridge.onDmReceived((message) => {
+      if (message.conversationId === activeConversationId) {
+        addDirectMessage(message)
       }
     })
-    return () => { unsub.then((fn) => fn()) }
-  }, [activeConversationId, addMessage, matrixMode])
+    return () => {
+      unsubscribe.then((stopListening) => stopListening())
+    }
+  }, [activeConversationId, addDirectMessage, matrixMode])
 
   useEffect(() => {
     if (!matrixMode || !activeConversationId) return
@@ -217,9 +350,7 @@ export function DmView() {
         try {
           await bridge.matrixWaitForRoomUpdate(activeConversationId)
           retryAttempt = 0
-          if (active) {
-            await loadMessages(activeConversationId)
-          }
+          if (active) await loadMessages(activeConversationId)
         } catch (error) {
           if (!active) return
           console.error('Failed to watch Matrix direct-message updates:', error)
@@ -243,96 +374,202 @@ export function DmView() {
   const handleSend = useCallback(async (
     content: string,
     files: StagedFile[] = [],
-    onAttachmentSent?: (file: StagedFile, contentConsumed: boolean) => void | Promise<void>,
+    onAttachmentSent?: (
+      file: StagedFile,
+      contentConsumed: boolean,
+    ) => void | Promise<void>,
   ) => {
     if (!conversation) return
     const replyToId = replyingTo?.id
-    try {
-      if (matrixMode && files.length > 0) {
+    const threadRootId = threadReplyRoot?.id
+
+    if (matrixMode && files.length > 0) {
+      try {
         for (const [index, file] of files.entries()) {
-          const msg = await bridge.matrixSendDmAttachment(
+          const message = await bridge.matrixSendDmAttachment(
             conversation.peerPublicKey,
             file.grant,
             file.transferId ?? bridge.createMatrixTransferId(),
             index === 0 ? content : '',
             index === 0 ? replyToId : undefined,
+            index === 0 ? threadRootId : undefined,
           )
-          addMessage(msg)
-          if (index === 0) setReplyingTo(null)
+          addDirectMessage(message)
+          if (index === 0) {
+            setReplyingTo(null)
+            setThreadReplyRoot(null)
+          }
           await onAttachmentSent?.(file, index === 0 && content.length > 0)
         }
         return
+      } catch (error) {
+        console.error('Failed to send DM attachment:', error)
+        throw error
       }
-      const msg = await bridge.sendDm(
-        conversation.peerPublicKey,
-        content,
-        replyToId,
-        bridge.createMatrixTransactionId(),
-      )
-      addMessage(msg)
-      setReplyingTo(null)
-    } catch (err) {
-      console.error('Failed to send DM:', err)
-      throw err
     }
-  }, [conversation, addMessage, matrixMode, replyingTo])
 
-  const handleReaction = async (message: DirectMessage, emoji: string) => {
+    const clientRequestId = bridge.createMatrixTransactionId()
+    const sender = resolveSenderIdentity(
+      useIdentityStore.getState().identity,
+      matrixMode ? bridge.getMatrixUserId() : null,
+    )
+    const optimistic: MessageType = {
+      id: clientRequestId,
+      channelId: conversation.id,
+      authorPublicKey: sender.publicKey,
+      authorDisplayName: sender.displayName,
+      authorAvatarColor: sender.avatarColor,
+      content,
+      attachments: [],
+      reactions: {},
+      timestamp: new Date().toISOString(),
+      signature: '',
+      replyToId,
+      threadRootId,
+      clientRequestId,
+      deliveryStatus: 'pending',
+    }
+    useMessageStore.getState().addMessage(conversation.id, optimistic)
+    setReplyingTo(null)
+    setThreadReplyRoot(null)
+
+    try {
+      if (matrixMode) {
+        const sent = await bridge.sendMessage(
+          conversation.id,
+          content,
+          [],
+          replyToId ?? undefined,
+          clientRequestId,
+          threadRootId ?? undefined,
+        )
+        useMessageStore.getState().acceptQueuedMessage({
+          ...sent,
+          clientRequestId: sent.clientRequestId ?? clientRequestId,
+        })
+      } else {
+        const sent = await bridge.sendDm(
+          conversation.peerPublicKey,
+          content,
+          replyToId ?? undefined,
+          clientRequestId,
+          threadRootId ?? undefined,
+        )
+        useMessageStore.getState().removeMessage(conversation.id, clientRequestId)
+        addDirectMessage({ ...sent, deliveryStatus: 'sent' })
+      }
+    } catch (error) {
+      console.error('Failed to send DM:', error)
+      useMessageStore
+        .getState()
+        .setDeliveryStatus(conversation.id, clientRequestId, 'failed')
+    }
+  }, [addDirectMessage, conversation, matrixMode, replyingTo, threadReplyRoot])
+
+  const handleRetry = useCallback(async (message: MessageType) => {
+    if (!conversation) return
+    const deliveryStore = useMessageStore.getState()
+    deliveryStore.setDeliveryStatus(conversation.id, message.id, 'pending')
+    try {
+      if (matrixMode && message.transactionId) {
+        await bridge.matrixRetryQueuedMessage(conversation.id, message.transactionId)
+        return
+      }
+      if (matrixMode) {
+        const requestId = message.clientRequestId ?? message.id
+        const sent = await bridge.sendMessage(
+          conversation.id,
+          message.content,
+          [],
+          message.replyToId ?? undefined,
+          requestId,
+          message.threadRootId ?? undefined,
+        )
+        deliveryStore.acceptQueuedMessage({
+          ...sent,
+          clientRequestId: sent.clientRequestId ?? requestId,
+        })
+        return
+      }
+      const sent = await bridge.sendDm(
+        conversation.peerPublicKey,
+        message.content,
+        message.replyToId ?? undefined,
+      )
+      deliveryStore.removeMessage(conversation.id, message.id)
+      addDirectMessage({ ...sent, deliveryStatus: 'sent' })
+    } catch (error) {
+      console.error('Failed to retry DM:', error)
+      deliveryStore.setDeliveryStatus(conversation.id, message.id, 'failed')
+    }
+  }, [addDirectMessage, conversation, matrixMode])
+
+  const handleCancelQueued = useCallback(async (message: MessageType) => {
+    if (!conversation) return
+    try {
+      if (matrixMode && message.transactionId) {
+        await bridge.matrixCancelQueuedMessage(conversation.id, message.transactionId)
+      }
+      useMessageStore.getState().removeMessage(conversation.id, message.id)
+    } catch (error) {
+      console.error('Failed to cancel saved DM:', error)
+    }
+  }, [conversation, matrixMode])
+
+  const handleReaction = useCallback(async (message: MessageType, emoji: string) => {
     if (!matrixMode || !activeConversationId || !ownAuthorId) return
-    const currentUsers = message.reactions?.[emoji] ?? []
+    const currentUsers = message.reactions[emoji] ?? []
     const verb = currentUsers.includes(ownAuthorId) ? 'remove' : 'add'
-    updateReaction(activeConversationId, message.id, emoji, ownAuthorId, verb)
+    updateDirectReaction(activeConversationId, message.id, emoji, ownAuthorId, verb)
+    useMessageStore
+      .getState()
+      .updateReaction(activeConversationId, message.id, emoji, ownAuthorId, verb)
     try {
       await bridge.addReaction(message.id, emoji, activeConversationId)
     } catch (error) {
-      updateReaction(activeConversationId, message.id, emoji, ownAuthorId, verb === 'add' ? 'remove' : 'add')
+      const revertVerb = verb === 'add' ? 'remove' : 'add'
+      updateDirectReaction(
+        activeConversationId,
+        message.id,
+        emoji,
+        ownAuthorId,
+        revertVerb,
+      )
+      useMessageStore
+        .getState()
+        .updateReaction(activeConversationId, message.id, emoji, ownAuthorId, revertVerb)
       console.error('Failed to update DM reaction:', error)
     }
-  }
+  }, [activeConversationId, matrixMode, ownAuthorId, updateDirectReaction])
 
-  // Mirrors Message.tsx's handleRowKeyDown: the picker is rendered inside
-  // this same row, so its keydowns bubble here. DmView has no context menu,
-  // so (unlike Message.tsx) there's no ContextMenu/Shift+F10 branch to port.
-  const handleMessageRowKeyDown = (event: React.KeyboardEvent<HTMLDivElement>, messageId: string) => {
-    if (event.key !== 'Escape' || reactionTargetId !== messageId) return
-    setReactionTargetId(null)
-    event.currentTarget.querySelector<HTMLButtonElement>('[aria-label="Add reaction"]')?.focus()
-  }
+  const handleEdit = useCallback(async (message: MessageType, content: string) => {
+    if (!matrixMode || !activeConversationId) return
+    await bridge.editMessage(message.id, content, activeConversationId)
+    const editedAt = new Date().toISOString()
+    patchDirectMessage(activeConversationId, message.id, { content, editedAt })
+    useMessageStore
+      .getState()
+      .editMessage(activeConversationId, message.id, content, editedAt)
+  }, [activeConversationId, matrixMode, patchDirectMessage])
 
-  // Mirrors Message.tsx's handleRowBlur: Tabbing focus off the row entirely
-  // (e.g. past the last action-bar button) should close the picker too, not
-  // just Escape/mouseleave.
-  const handleMessageRowBlur = (event: React.FocusEvent<HTMLDivElement>, messageId: string) => {
-    if (reactionTargetId !== messageId) return
-    if (event.relatedTarget && event.currentTarget.contains(event.relatedTarget as Node)) return
-    setReactionTargetId(null)
-  }
-
-  const handleSaveEdit = async () => {
-    const trimmed = editValue.trim()
-    if (!matrixMode || !activeConversationId || !editingMessageId || !trimmed) {
-      setEditingMessageId(null)
-      return
-    }
-    try {
-      await bridge.editMessage(editingMessageId, trimmed, activeConversationId)
-      patchMessage(activeConversationId, editingMessageId, {
-        content: trimmed,
-        editedAt: new Date().toISOString(),
-      })
-    } catch (error) {
-      console.error('Failed to edit Matrix DM:', error)
-    } finally {
-      setEditingMessageId(null)
-      setEditValue('')
-    }
-  }
+  const handleDelete = useCallback(async (message: MessageType) => {
+    if (!matrixMode || !activeConversationId) return
+    await bridge.deleteMessage(message.id, activeConversationId)
+    patchDirectMessage(activeConversationId, message.id, {
+      content: '',
+      deletedAt: new Date().toISOString(),
+    })
+    useMessageStore.getState().deleteMessage(activeConversationId, message.id)
+  }, [activeConversationId, matrixMode, patchDirectMessage])
 
   const handleToggleBlocked = async () => {
     if (!matrixMode || !conversation || isBlockBusy) return
     setIsBlockBusy(true)
     try {
-      const blocked = await bridge.matrixSetDmBlocked(conversation.peerPublicKey, !isBlocked)
+      const blocked = await bridge.matrixSetDmBlocked(
+        conversation.peerPublicKey,
+        !isBlocked,
+      )
       setBlockState({ peerPublicKey: conversation.peerPublicKey, blocked })
     } catch (error) {
       console.error('Failed to update Matrix DM block state:', error)
@@ -353,11 +590,11 @@ export function DmView() {
     )
   }
 
-  const peerName = conversation.peerDisplayName || conversation.peerPublicKey.slice(0, 8)
+  const peerName =
+    conversation.peerDisplayName || conversation.peerPublicKey.slice(0, 8)
 
   return (
     <div className="flex h-full flex-1 flex-col">
-      {/* Header */}
       <div
         className="mesh-conversation-header flex h-conversation-header flex-shrink-0 items-center border-b border-border-subtle px-4 py-2"
         data-tauri-drag-region
@@ -370,7 +607,9 @@ export function DmView() {
           {peerName[0]?.toUpperCase() ?? '?'}
         </div>
         <span className="min-w-0">
-          <span className="block truncate text-sm font-medium text-primary">{peerName}</span>
+          <span className="block truncate text-sm font-medium text-primary">
+            {peerName}
+          </span>
           {conversation.peerPublicKey.startsWith('@') && (
             <span className="identifier block truncate font-mono text-caption text-muted">
               {conversation.peerPublicKey}
@@ -401,9 +640,15 @@ export function DmView() {
 
       {matrixMode && !trust.loadingAccountTrust && trust.devicesNeedReview > 0 && (
         <div className="flex min-h-10 items-center gap-2 border-b border-status-warning/20 bg-status-warning/5 px-4 py-1.5 text-xs text-secondary">
-          <Icon name="triangleAlert" size="sm" className="flex-shrink-0 text-status-warning" />
+          <Icon
+            name="triangleAlert"
+            size="sm"
+            className="flex-shrink-0 text-status-warning"
+          />
           <span className="min-w-0 flex-1">
-            {trust.devicesNeedReview} {trust.devicesNeedReview === 1 ? 'device needs' : 'devices need'} review before it can be fully trusted.
+            {trust.devicesNeedReview}{' '}
+            {trust.devicesNeedReview === 1 ? 'device needs' : 'devices need'} review
+            before it can be fully trusted.
           </span>
           <button
             type="button"
@@ -415,13 +660,12 @@ export function DmView() {
         </div>
       )}
 
-      {/* Messages */}
       <div
         ref={scrollContainerRef}
         onScroll={() => void handleScroll()}
         className="flex-1 overflow-y-auto py-4"
         role="log"
-        aria-live="polite"
+        aria-live="off"
         aria-label={`Messages with ${peerName}`}
       >
         {isLoading ? (
@@ -430,7 +674,7 @@ export function DmView() {
               <MessageSkeleton key={index} />
             ))}
           </div>
-        ) : channelMessages.length === 0 ? (
+        ) : visibleChannelMessages.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <EmptyState
               icon={<Icon name="messageCircle" size="lg" />}
@@ -446,206 +690,109 @@ export function DmView() {
               paddingBottom: `${bottomSpacerHeight}px`,
             }}
           >
-            {visibleMessages.map(({ message: msg, index }) => (
-              <DmVirtualMessageRow
-                key={msg?.id ?? `malformed-message-${index}`}
-                rowKey={msg?.id ?? `malformed-message-${index}`}
-                onHeightChange={handleMeasuredHeight}
-              >
-                <DmMessageBoundary messageId={msg?.id ?? `malformed-message-${index}`}>
-                {() => {
-                  const prev = channelMessages[index - 1]
-                  const timestamp = federatedTimestampMilliseconds(msg.timestamp)
-                  const previousTimestamp = federatedTimestampMilliseconds(prev?.timestamp)
-                  const isGrouped = prev &&
-                    prev.authorPublicKey === msg.authorPublicKey &&
-                    timestamp !== null &&
-                    previousTimestamp !== null &&
-                    timestamp - previousTimestamp < 5 * 60 * 1000
-
-                  const isOwnMessage = msg.authorPublicKey === ownAuthorId
-
-                  return (
-                <div
-                  role="group"
-                  aria-label={`Message from ${msg.authorDisplayName}, ${formatFederatedTimestamp(msg.timestamp, 'MM/dd/yyyy h:mm a')}`}
-                  tabIndex={-1}
-                  className={`group relative px-4 outline-none ${!isGrouped ? 'pt-2' : 'pt-0.5'}`}
-                  onMouseLeave={() => setReactionTargetId(null)}
-                  onKeyDown={(event) => handleMessageRowKeyDown(event, msg.id)}
-                  onBlur={(event) => handleMessageRowBlur(event, msg.id)}
+            {visibleMessages.map(({ message, index }) => {
+              const threadReplies = repliesByRoot.get(message.id) ?? EMPTY_MESSAGES
+              return (
+                <DmVirtualMessageRow
+                  key={message.id}
+                  rowKey={message.id}
+                  onHeightChange={handleMeasuredHeight}
                 >
-                  {!isGrouped && (
-                    <div className="mb-0.5 flex flex-wrap items-center gap-x-2 gap-y-0">
-                      <div
-                        className="flex h-6 w-6 items-center justify-center rounded-control text-micro font-semibold text-content-on-avatar/90"
-                        data-design-token-exception="data-driven-federated-avatar-color"
-                        style={{ backgroundColor: msg.authorAvatarColor }}
-                      >
-                        {msg.authorDisplayName[0]?.toUpperCase() ?? '?'}
-                      </div>
-                      <span className={`text-base font-semibold ${isOwnMessage ? 'text-accent' : 'text-primary'}`}>
-                        {isOwnMessage ? 'You' : msg.authorDisplayName}
-                      </span>
-                      {matrixMode && msg.authorPublicKey.startsWith('@') && (
-                        <span className="identifier max-w-full truncate font-mono text-caption text-muted">
-                          {msg.authorPublicKey}
-                        </span>
-                      )}
-                      <span className="tnum text-2xs text-muted">
-                        {formatFederatedTimestamp(msg.timestamp, 'HH:mm')}
-                      </span>
-                    </div>
-                  )}
-                  <div className={!isGrouped ? 'pl-8' : 'pl-8'}>
-                    {msg.replyToId && (
-                      <div className="mb-1 flex items-center gap-1.5 text-xs text-muted">
-                        <span aria-hidden>↪</span>
-                        <span>Replying to {channelMessages.find((candidate) => candidate.id === msg.replyToId)?.authorDisplayName ?? 'a message'}</span>
-                      </div>
-                    )}
-                    {editingMessageId === msg.id ? (
-                      <div className="space-y-1.5">
-                        <textarea
-                          value={editValue}
-                          onChange={(event) => setEditValue(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' && !event.shiftKey) {
-                              event.preventDefault()
-                              void handleSaveEdit()
-                            }
-                            if (event.key === 'Escape') setEditingMessageId(null)
-                          }}
-                          className="min-h-control-md w-full resize-none rounded-control border border-border bg-surface-sunken px-2 py-1.5 text-sm text-primary outline-none focus:border-accent"
-                          rows={Math.min(6, editValue.split('\n').length + 1)}
-                          autoFocus
+                  <DmMessageBoundary messageId={message.id}>
+                    {() => (
+                      <>
+                        <MessageComponent
+                          message={message}
+                          isGrouped={shouldGroupMessage(
+                            message,
+                            visibleChannelMessages[index - 1],
+                          )}
+                          surface="dm"
+                          disableMotion
+                          limitedActions
+                          trust={trust}
+                          replyPreview={
+                            message.replyToId
+                              ? messageById.get(message.replyToId) ?? null
+                              : null
+                          }
+                          onReply={beginOrdinaryReply}
+                          threadReplyCount={threadReplies.length}
+                          threadOpen={openThreadId === message.id}
+                          onToggleThread={() => toggleThread(message.id)}
+                          onRetry={handleRetry}
+                          onCancel={handleCancelQueued}
+                          onEdit={handleEdit}
+                          onDelete={handleDelete}
+                          onReact={handleReaction}
+                          editRequestToken={
+                            editRequest?.messageId === message.id
+                              ? editRequest.token
+                              : 0
+                          }
                         />
-                        <div className="flex gap-1.5 text-caption">
-                          <button
-                            type="button"
-                            onClick={() => void handleSaveEdit()}
-                            className="min-h-8 rounded-control bg-accent px-2 font-semibold text-content-on-accent hover:bg-accent-hover"
+                        {openThreadId === message.id && threadReplies.length > 0 && (
+                          <div
+                            className="ml-10 mr-4 border-l border-border-subtle pl-3"
+                            aria-label="Thread replies"
                           >
-                            Save
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEditingMessageId(null)}
-                            className="min-h-8 rounded-control px-2 text-muted hover:bg-surface-hover hover:text-primary"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-secondary whitespace-pre-wrap break-words">
-                        {msg.content}
-                        {msg.editedAt && <span className="ml-1 text-caption text-muted">(edited)</span>}
-                      </p>
+                            {threadReplies.map((reply) => (
+                              <MessageComponent
+                                key={reply.id}
+                                message={reply}
+                                isGrouped={false}
+                                surface="dm"
+                                disableMotion
+                                limitedActions
+                                trust={trust}
+                                onReply={() => beginThreadReply(message, reply)}
+                                onRetry={handleRetry}
+                                onCancel={handleCancelQueued}
+                                onEdit={handleEdit}
+                                onDelete={handleDelete}
+                                onReact={handleReaction}
+                              />
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() => beginThreadReply(message)}
+                              className="mb-2 mt-1 min-h-8 rounded-control px-2 text-xs font-medium text-text-link transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                            >
+                              Reply in thread
+                            </button>
+                          </div>
+                        )}
+                      </>
                     )}
-                    {(msg.attachments ?? []).map((attachment, attachmentIndex) => (
-                      <FileAttachmentCard
-                        key={attachment.fileHash}
-                        attachment={attachment}
-                        roomId={msg.conversationId}
-                        eventId={msg.id}
-                        attachmentIndex={attachmentIndex}
-                      />
-                    ))}
-                    {Object.keys(msg.reactions ?? {}).length > 0 && (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {Object.entries(msg.reactions ?? {}).map(([emoji, users]) => (
-                          <button
-                            key={emoji}
-                            onClick={() => void handleReaction(msg, emoji)}
-                            className={`min-h-8 rounded-control border px-2 text-xs ${ownAuthorId && users.includes(ownAuthorId) ? 'border-accent/40 bg-accent/10 text-accent' : 'border-border bg-surface-hover text-secondary'}`}
-                          >
-                            {emoji} {users.length}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {isOwnMessage && (msg.seenBy?.length ?? 0) > 0 && (
-                      <p
-                        className="mt-1 text-2xs text-muted"
-                        aria-label={`Seen by ${msg.seenBy?.map((receipt) => receipt.displayName).join(', ')}`}
-                      >
-                        Seen by {msg.seenBy?.map((receipt) => receipt.displayName).join(', ')}
-                      </p>
-                    )}
-                  </div>
-                  {/* Action bar — always mounted (not just on hover) so Tab can
-                      reach it; group-hover/group-focus-within reveal it
-                      visually, matching Message.tsx's pattern. */}
-                  {matrixMode && editingMessageId !== msg.id && (
-                    <div className="mesh-message-actions pointer-events-none absolute -top-4 right-4 z-sticky flex items-center rounded-panel border border-border-subtle bg-surface-overlay opacity-0 shadow-overlay transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
-                      <button
-                        type="button"
-                        onClick={() => setReplyingTo(msg)}
-                        className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                        aria-label="Reply to message"
-                      ><Icon name="reply" size="sm" /></button>
-                      <button
-                        type="button"
-                        onClick={() => setReactionTargetId(reactionTargetId === msg.id ? null : msg.id)}
-                        className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                        aria-label="Add reaction"
-                        aria-expanded={reactionTargetId === msg.id}
-                      ><Icon name="smile" size="sm" /></button>
-                      {isOwnMessage && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingMessageId(msg.id)
-                            setEditValue(msg.content)
-                          }}
-                          className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                          aria-label="Edit message"
-                        ><Icon name="squarePen" size="sm" /></button>
-                      )}
-                      {!isOwnMessage && msg.id.startsWith('$') && (
-                        <button
-                          type="button"
-                          onClick={() => setReportMessageId(msg.id)}
-                          className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                          aria-label="Report message"
-                        ><Icon name="triangleAlert" size="sm" /></button>
-                      )}
-                    </div>
-                  )}
-                  {matrixMode && reactionTargetId === msg.id && (
-                    <div className="absolute -top-10 right-4 z-popover">
-                      <ReactionPicker onSelect={(emoji) => void handleReaction(msg, emoji)} onClose={() => setReactionTargetId(null)} />
-                    </div>
-                  )}
-                </div>
-                  )
-                }}
-                </DmMessageBoundary>
-              </DmVirtualMessageRow>
-            ))}
+                  </DmMessageBoundary>
+                </DmVirtualMessageRow>
+              )
+            })}
           </div>
         )}
       </div>
 
-      <MessageReportDialog
-        open={reportMessageId !== null}
-        roomId={activeConversationId}
-        eventId={reportMessageId ?? ''}
-        onClose={() => setReportMessageId(null)}
-      />
-
       {isBlocked && (
         <div className="mx-4 mb-2 rounded-panel border border-status-danger/20 bg-status-danger/5 px-3 py-2 text-xs text-status-danger">
-          Messages from this user are blocked. Unblock them to resume this conversation.
+          Messages from this user are blocked. Unblock them to resume this
+          conversation.
         </div>
       )}
       {replyingTo && (
         <div className="flex items-center justify-between gap-2 border-t border-border-subtle bg-surface-sunken px-4 py-2 text-xs text-secondary">
-          <span>Replying to {replyingTo.authorDisplayName}: {replyingTo.content.slice(0, 80)}</span>
+          <span>
+            {threadReplyRoot && (
+              <span className="mr-1 font-semibold text-text-link">In thread ·</span>
+            )}
+            Replying to {replyingTo.authorDisplayName}:{' '}
+            {replyingTo.content.slice(0, 80)}
+          </span>
           <button
             type="button"
-            onClick={() => setReplyingTo(null)}
+            onClick={() => {
+              setReplyingTo(null)
+              setThreadReplyRoot(null)
+            }}
             className="min-h-8 rounded-control px-2 text-muted hover:bg-surface-hover hover:text-primary"
             aria-label="Cancel reply"
           >
@@ -662,10 +809,17 @@ export function DmView() {
         onEditLastMessage={() => {
           const ownMessage = [...channelMessages]
             .reverse()
-            .find((message) => message.authorPublicKey === ownAuthorId && !message.deletedAt)
+            .find((message) =>
+              message.authorPublicKey === ownAuthorId
+              && !message.deletedAt
+              && message.deliveryStatus !== 'pending'
+              && message.deliveryStatus !== 'failed',
+            )
           if (!ownMessage) return
-          setEditingMessageId(ownMessage.id)
-          setEditValue(ownMessage.content)
+          setEditRequest((current) => ({
+            messageId: ownMessage.id,
+            token: (current?.token ?? 0) + 1,
+          }))
         }}
       />
     </div>

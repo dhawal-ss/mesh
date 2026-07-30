@@ -17,7 +17,10 @@ import {
 import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
 import type { MemberRecord } from '../../store/membership'
-import { truncateDraft, useDraftStore } from '../../store/drafts'
+import { draftByteLength, MAX_DRAFT_BYTES, truncateDraft, useDraftStore } from '../../store/drafts'
+
+/** Start showing remaining space at 80% of the cap, not only at the cap. */
+const DRAFT_WARNING_BYTES = MAX_DRAFT_BYTES * 0.8
 import { useServerEmoji } from '../../store/custom-emoji'
 import { useDurableDraft } from '../../hooks/useDurableDraft'
 import {
@@ -157,8 +160,13 @@ function MessageInputContent({
   const pendingSelectionRef = useRef<{ start: number; end: number } | null>(null)
   const customEmoji = useServerEmoji(communityId)
 
+  // Focus the composer when it first appears, but do not steal focus back from
+  // the room list when a keyboard user switches rooms.
   useEffect(() => {
     inputRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
     return () => {
       bridge.setTyping(channelId, false).catch(() => {})
     }
@@ -377,6 +385,14 @@ function MessageInputContent({
     }
   }
 
+  const draftBytesUsed = draftByteLength(value)
+  const draftAtLimit = draftBytesUsed >= MAX_DRAFT_BYTES
+  const canSend =
+    !disabled
+    && !isUploading
+    && !isStaging
+    && (value.trim().length > 0 || stagedFiles.length > 0)
+
   const handleSubmit = async () => {
     if (disabled || isUploading || isStaging) return
     const content = expandSlashCommand(value.trim())
@@ -392,7 +408,7 @@ function MessageInputContent({
       setStagedFiles([...filesAtStart])
     }
     for (const file of filesAtStart) sendingFilesRef.current.add(file)
-    setIsUploading(true)
+    if (filesAtStart.length > 0) setIsUploading(true)
     setAttachmentError(null)
     try {
       if (stagedFiles.length > 0 && bridge.isMatrixBackend() && !disableAttachments) {
@@ -450,6 +466,18 @@ function MessageInputContent({
         }
       }
 
+      if (content && filesAtStart.length === 0) {
+        // Clear visually before awaiting a text-only send so the composer
+        // remains available, but keep the durable draft until delivery is
+        // acknowledged. A newer draft must never be erased by the old send.
+        setValue('')
+        bridge.setTyping(channelId, false).catch(() => {})
+        await onSend(content)
+        if (useDraftStore.getState().drafts[channelId] === value) {
+          clearCurrentDraft()
+        }
+        return
+      }
       if (content) await onSend(content)
       if (intakeGenerationRef.current === sendGeneration) {
         setValue('')
@@ -458,14 +486,23 @@ function MessageInputContent({
       }
     } catch (error) {
       console.error('Failed to send message or attachment:', error)
-      if (intakeGenerationRef.current === sendGeneration) {
+      if (
+        filesAtStart.length === 0
+        && content
+        && useDraftStore.getState().drafts[channelId] === value
+      ) {
+        setValue(value)
+      }
+      if (filesAtStart.length > 0 && intakeGenerationRef.current === sendGeneration) {
         setAttachmentError(error)
       } else {
         await Promise.allSettled(filesAtStart.map(discardStagedFile))
       }
     } finally {
       for (const file of filesAtStart) sendingFilesRef.current.delete(file)
-      if (intakeGenerationRef.current === sendGeneration) setIsUploading(false)
+      if (filesAtStart.length > 0 && intakeGenerationRef.current === sendGeneration) {
+        setIsUploading(false)
+      }
     }
   }
 
@@ -1004,7 +1041,46 @@ function MessageInputContent({
             disabled={disabled || isUploading || isStaging}
             className="min-h-control-lg max-h-composer w-full resize-none bg-transparent px-2 py-2.5 text-sm text-primary placeholder:text-muted focus:outline-none disabled:opacity-60"
           />
+
+          {/*
+            There was no Send button at all — sending was Enter-only, and the
+            Enter/Shift+Enter contract was documented nowhere in the UI. That is
+            fine for practised users and invisible to everyone else, especially
+            on touch.
+          */}
+          <Tooltip content="Send message (Enter)" side="top">
+            <button
+              type="button"
+              onClick={() => void handleSubmit()}
+              disabled={!canSend}
+              aria-label="Send message"
+              aria-keyshortcuts="Enter"
+              className="mb-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-control text-muted transition-colors enabled:hover:bg-surface-hover enabled:hover:text-accent disabled:opacity-40"
+            >
+              <Icon name={isUploading ? 'loader' : 'send'} className={isUploading ? 'animate-spin' : undefined} />
+            </button>
+          </Tooltip>
         </div>
+
+        {/*
+          The draft store silently discards anything past 16 KB — past the cap,
+          typing and pasting simply stopped having any effect with no counter,
+          no warning and no announcement.
+        */}
+        {draftBytesUsed > DRAFT_WARNING_BYTES && (
+          <div
+            className={`flex items-center justify-end gap-2 px-3 pb-1 text-caption ${
+              draftAtLimit ? 'text-status-warning' : 'text-content-muted'
+            }`}
+          >
+            {draftAtLimit && <Icon name="triangleAlert" size="xs" aria-hidden="true" />}
+            <span className="tnum">
+              {draftAtLimit
+                ? 'Message limit reached — shorten it to keep typing'
+                : `${Math.round((MAX_DRAFT_BYTES - draftBytesUsed) / 1024)} KB left`}
+            </span>
+          </div>
+        )}
         {draftSyncStatus === 'failed' && (
           <div
             className="flex min-h-control-sm items-center justify-between gap-3 border-t border-border-subtle px-3 py-1.5 text-xs text-secondary"
@@ -1027,6 +1103,9 @@ function MessageInputContent({
             : stagedFiles.length > 0
               ? `${stagedFiles.length} attachment${stagedFiles.length === 1 ? '' : 's'} pending. Press Escape with an empty message to remove the last attachment.`
               : 'No attachments pending.'}
+        </p>
+        <p className="sr-only" role="status" aria-live="polite">
+          {draftAtLimit ? 'Message length limit reached. Shorten the message to keep typing.' : ''}
         </p>
       </div>
     </div>

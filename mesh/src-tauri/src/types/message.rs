@@ -50,6 +50,11 @@ pub struct MessageDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "string | null")]
     pub reply_to_id: Option<String>,
+    /// Matrix thread root event for replies sent with `rel_type: m.thread`.
+    /// Ordinary replies leave this empty and continue using `reply_to_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "string | null")]
+    pub thread_root_id: Option<String>,
     /// SDK transaction ID used to reconcile a durable local echo with the
     /// eventual server event. This is internal delivery metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]

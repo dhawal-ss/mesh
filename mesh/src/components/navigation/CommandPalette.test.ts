@@ -7,6 +7,7 @@ import {
   nextCyclicIndex,
   sortCommandsByRecency,
 } from './CommandPalette'
+import { COMMAND_PALETTE_OPEN_EVENT } from '../../lib/command-palette'
 
 let mountedRoot: ReturnType<typeof createRoot> | null = null
 let mountedContainer: HTMLDivElement | null = null
@@ -17,6 +18,7 @@ afterEach(() => {
   mountedRoot = null
   mountedContainer = null
   document.querySelectorAll('[data-radix-portal]').forEach((portal) => portal.remove())
+  window.localStorage.clear()
 })
 
 describe('command palette helpers', () => {
@@ -63,5 +65,24 @@ describe('command palette helpers', () => {
 
     expect(document.querySelector('[role="dialog"]')).not.toBeNull()
     expect(document.querySelector('input[role="combobox"]')).not.toBeNull()
+  })
+
+  it('opens from the visible affordance event and renders taxonomy as section headings', () => {
+    window.localStorage.setItem(
+      'mesh-command-palette-recents',
+      JSON.stringify(['action:show-shortcuts']),
+    )
+    mountedContainer = document.createElement('div')
+    document.body.appendChild(mountedContainer)
+    mountedRoot = createRoot(mountedContainer)
+    act(() => mountedRoot?.render(createElement(CommandPalette)))
+
+    act(() => window.dispatchEvent(new Event(COMMAND_PALETTE_OPEN_EVENT)))
+
+    expect(document.body.textContent).toContain('Recent')
+    expect(document.body.textContent).toContain('Actions')
+    expect(document.body.textContent).toContain('Show keyboard shortcuts')
+    // Group names are headings, not prefixes that contaminate fuzzy matching.
+    expect(document.body.textContent).not.toContain('Action · Show keyboard shortcuts')
   })
 })

@@ -33,11 +33,13 @@ import {
 import {
   canStartLegacyVoice,
   canStartMatrixVoice,
+  isPermissionDeniedError,
   isPushToTalkInteractiveTarget,
   shouldReleasePushToTalk,
   shouldPublishInitialMicrophone,
 } from '../lib/voice-runtime'
 import { describeError } from '../lib/errors'
+import { showToast } from '../components/ui/Toast'
 import { useVoiceStore } from '../store/voice'
 
 const EMPTY_STATS: LiveKitVoiceStats = {
@@ -87,6 +89,7 @@ export function useVoiceEngine() {
   const inputDeviceId = useVoiceStore((state) => state.inputDeviceId)
   const setPushToTalking = useVoiceStore((state) => state.setPushToTalking)
   const setMuted = useVoiceStore((state) => state.setMuted)
+  const setDeafened = useVoiceStore((state) => state.setDeafened)
   const setSessionSnapshot = useVoiceStore((state) => state.setSessionSnapshot)
   const setConnectionState = useVoiceStore((state) => state.setConnectionState)
   const setPeers = useVoiceStore((state) => state.setPeers)
@@ -98,6 +101,7 @@ export function useVoiceEngine() {
   const removePeer = useVoiceStore((state) => state.removePeer)
   const resetVoiceState = useVoiceStore((state) => state.resetVoiceState)
   const [connectionWarning, setConnectionWarning] = useState<string | null>(null)
+  const [microphonePermission, setMicrophonePermission] = useState<'unknown' | 'granted' | 'denied'>('unknown')
   const [relayChanged, setRelayChanged] = useState(0)
   const [devices, setDevices] = useState<VoiceDevice[]>([])
   const [stats, setStats] = useState<LiveKitVoiceStats>(EMPTY_STATS)
@@ -105,6 +109,9 @@ export function useVoiceEngine() {
   const isMutedRef = useRef(isMuted)
   const inputModeRef = useRef(inputMode)
   const pttKeyboardActiveRef = useRef(false)
+  /** Last mute/deafen value the engine actually confirmed, for rollback. */
+  const confirmedMuteRef = useRef<boolean | null>(null)
+  const confirmedDeafenRef = useRef<boolean | null>(null)
 
   useEffect(() => {
     inputDeviceIdRef.current = inputDeviceId
@@ -123,7 +130,18 @@ export function useVoiceEngine() {
     if (!engine) return
     try {
       setDevices(await engine.getDevices(requestPermissions))
+      setMicrophonePermission((current) => (current === 'denied' ? 'granted' : current))
     } catch (error) {
+      /*
+       * A denied microphone permission is not a call-quality problem, but it
+       * was funnelled into the same generic warning banner ("Call quality needs
+       * attention"), which gave the user no idea that they had blocked the mic
+       * or how to unblock it. It gets its own state now.
+       */
+      if (isPermissionDeniedError(error)) {
+        setMicrophonePermission('denied')
+        return
+      }
       const description = describeError(error, { operation: 'list audio devices' })
       setConnectionWarning(`${description.title}. ${description.body}`)
     }
@@ -725,30 +743,88 @@ export function useVoiceEngine() {
     voiceService.reason,
   ])
 
+  /*
+   * Mute and deafen are safety indicators, so the UI must never claim a state
+   * the engine did not actually reach.
+   *
+   * Previously these effects wrote optimistically to the store and only
+   * console.error'd on failure, with no rollback — so a failed unmute could
+   * leave the pill reading "muted" while the track was still publishing, or
+   * vice versa. Now the last value the engine confirmed is tracked, and a
+   * failure reverts the store to it and tells the user.
+   *
+   * Reverting re-runs the effect with isMuted === confirmed, which re-applies a
+   * value the engine already holds. That converges without a guard flag: if it
+   * fails again, confirmed === isMuted so no further revert is attempted.
+   */
   useEffect(() => {
-    if (liveKitEngineRef.current) {
-      void liveKitEngineRef.current.setMuted(isMuted).catch((error) => {
-        console.error('Failed to update microphone state:', error)
-      })
-      return
+    const liveKitEngine = liveKitEngineRef.current
+    if (!liveKitEngine && !legacyVoiceReady) return
+
+    let cancelled = false
+
+    const applyMute = async () => {
+      if (liveKitEngine) {
+        await liveKitEngine.setMuted(isMuted)
+      } else {
+        legacyEngineRef.current?.setMuted(isMuted)
+        await bridgeSetMuted(isMuted)
+      }
+      confirmedMuteRef.current = isMuted
     }
-    if (!legacyVoiceReady) return
-    legacyEngineRef.current?.setMuted(isMuted)
-    void bridgeSetMuted(isMuted).catch((error) => {
-      console.error('Failed to sync mute state with backend:', error)
+
+    void applyMute().catch((error) => {
+      console.error('Failed to update microphone state:', error)
+      if (cancelled) return
+      const confirmed = confirmedMuteRef.current
+      if (confirmed === null || confirmed === isMuted) return
+      setMuted(confirmed)
+      showToast(
+        confirmed
+          ? 'Your microphone could not be turned on. It is still muted.'
+          : 'Your microphone could not be muted. It is still on.',
+        'error',
+      )
     })
-  }, [isMuted, legacyVoiceReady])
+
+    return () => {
+      cancelled = true
+    }
+  }, [isMuted, legacyVoiceReady, setMuted])
 
   useEffect(() => {
-    if (liveKitEngineRef.current) {
-      liveKitEngineRef.current.setDeafened(isDeafened)
-      return
+    const liveKitEngine = liveKitEngineRef.current
+    if (!liveKitEngine && !legacyVoiceReady) return
+
+    let cancelled = false
+
+    const applyDeafen = async () => {
+      if (liveKitEngine) {
+        liveKitEngine.setDeafened(isDeafened)
+      } else {
+        await bridgeSetDeafened(isDeafened)
+      }
+      confirmedDeafenRef.current = isDeafened
     }
-    if (!legacyVoiceReady) return
-    void bridgeSetDeafened(isDeafened).catch((error) => {
+
+    void applyDeafen().catch((error) => {
       console.error('Failed to sync deafen state with backend:', error)
+      if (cancelled) return
+      const confirmed = confirmedDeafenRef.current
+      if (confirmed === null || confirmed === isDeafened) return
+      setDeafened(confirmed)
+      showToast(
+        confirmed
+          ? 'Audio could not be turned back on. It is still deafened.'
+          : 'Audio could not be deafened. You can still hear the call.',
+        'error',
+      )
     })
-  }, [isDeafened, legacyVoiceReady])
+
+    return () => {
+      cancelled = true
+    }
+  }, [isDeafened, legacyVoiceReady, setDeafened])
 
   useEffect(() => {
     if (inputMode !== 'push-to-talk') return
@@ -837,6 +913,7 @@ export function useVoiceEngine() {
 
   return {
     connectionWarning,
+    microphonePermission,
     relayChanged,
     voiceService,
     matrixVoiceReady,

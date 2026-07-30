@@ -38,7 +38,9 @@ import {
   getBackendStatus,
   matrixDeactivateAccount,
   matrixDevices,
+  matrixEnableRecovery,
   matrixExportPersonalData,
+  matrixRemoveLocalAccount,
   matrixRevokeDevice,
   matrixSelectDeviceVerificationMethod,
   matrixStartDeviceVerification,
@@ -134,6 +136,7 @@ describe('SecurityDevicesPanel', () => {
     expect(document.body.textContent).toContain('Trusted')
     expect(document.body.textContent).toContain('Old phone')
     expect(document.body.textContent).toContain('Not verified yet')
+    expect(document.body.textContent).toContain('shares new private-message keys only with trusted devices')
     expect(document.body.textContent).toContain('Is this you?')
     expect(document.body.textContent).toContain('Your devices')
     expect(document.body.textContent).toContain('2 devices')
@@ -218,6 +221,7 @@ describe('SecurityDevicesPanel', () => {
     })
 
     const password = document.body.querySelector<HTMLInputElement>('input[type="password"][autocomplete="current-password"]')!
+    expect(password.getAttribute('aria-describedby')).toBe('revoke-device-description')
     await act(async () => setInputValue(password, 'one-use-password'))
     await act(async () => {
       findButton(document.body, 'Sign out device').click()
@@ -229,7 +233,8 @@ describe('SecurityDevicesPanel', () => {
     expect(document.body.textContent).not.toContain('Sign out Old phone?')
   })
 
-  it('requires a second confirmation before local account erasure', async () => {
+  it('requires a typed phrase and acknowledgement before local account erasure', async () => {
+    vi.mocked(matrixRemoveLocalAccount).mockRejectedValue(new Error('offline'))
     await act(async () => {
       root.render(<SecurityDevicesPanel open onClose={() => {}} />)
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -245,7 +250,32 @@ describe('SecurityDevicesPanel', () => {
     act(() => removeButton?.click())
 
     expect(document.body.textContent).toContain('This cannot be undone')
-    expect(document.body.textContent).toContain('Permanently remove local account')
+    const confirmButton = findButton(document.body, 'Permanently remove local account')
+    // Local data deletion now uses the same explicit danger confirmation bar as remote deletion.
+    expect(confirmButton.disabled).toBe(true)
+    expect(confirmButton.className).toContain('bg-status-danger')
+
+    const phrase = inputForLabel(document.body, 'Type "REMOVE LOCAL DATA" to confirm')
+    expect(phrase.getAttribute('aria-describedby')).toBe('local-removal-description')
+    expect(phrase.getAttribute('aria-invalid')).not.toBe('true')
+    const acknowledgement = [...document.body.querySelectorAll<HTMLLabelElement>('label')]
+      .find((label) => label.textContent?.includes('permanently deletes this account'))
+      ?.querySelector<HTMLInputElement>('input[type="checkbox"]')
+    expect(acknowledgement).not.toBeNull()
+
+    await act(async () => setInputValue(phrase, 'wrong phrase'))
+    expect(phrase.getAttribute('aria-invalid')).toBe('true')
+    await act(async () => setInputValue(phrase, 'REMOVE LOCAL DATA'))
+    expect(phrase.getAttribute('aria-invalid')).not.toBe('true')
+    expect(confirmButton.disabled).toBe(true)
+    await act(async () => acknowledgement?.click())
+    expect(confirmButton.disabled).toBe(false)
+    await act(async () => {
+      confirmButton.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(matrixRemoveLocalAccount).toHaveBeenCalledOnce()
+    expect(document.body.textContent).toContain('Connection interrupted')
   })
 
   it('exports authored messages and explains the privacy boundary', async () => {
@@ -271,6 +301,22 @@ describe('SecurityDevicesPanel', () => {
     expect(document.body.textContent).toContain('14 messages across 2 conversations')
     expect(document.body.textContent).toContain('other people')
     expect(document.body.textContent).toContain('readable conversation content')
+  })
+
+  it('keeps the export label truthful during an unrelated operation', async () => {
+    vi.mocked(matrixEnableRecovery).mockImplementation(() => new Promise(() => {}))
+    await act(async () => {
+      root.render(<SecurityDevicesPanel open onClose={() => {}} />)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await act(async () => {
+      findButton(document.body, 'Create backup code').click()
+      await Promise.resolve()
+    })
+
+    const exportButton = findButton(document.body, 'Export my data')
+    expect(exportButton.disabled).toBe(true)
+    expect(document.body.textContent).not.toContain('Working…')
   })
 
   it('requires a password, typed phrase, and acknowledgement before remote account deletion', async () => {

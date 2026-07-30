@@ -11,31 +11,35 @@ const settingsMocks = vi.hoisted(() => ({
   notificationLevel: 'all' as 'all' | 'mentions' | 'nothing',
 }))
 
-vi.mock('../../store/settings', () => ({
-  getEffectiveChannelNotificationLevel: () =>
-    settingsMocks.isMuted ? 'nothing' : settingsMocks.notificationLevel,
-  useSettingsStore: (
-    selector: (state: {
-      muteChannelFor: typeof settingsMocks.muteChannelFor
-      unmuteChannel: typeof settingsMocks.unmuteChannel
-      setChannelNotificationLevel: typeof settingsMocks.setChannelNotificationLevel
-      isChannelMuted: (channelId: string) => boolean
+vi.mock('../../store/settings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../store/settings')>()
+  return {
+    ...actual,
+    getEffectiveChannelNotificationLevel: () =>
+      settingsMocks.isMuted ? 'nothing' : settingsMocks.notificationLevel,
+    useSettingsStore: (
+      selector: (state: {
+        muteChannelFor: typeof settingsMocks.muteChannelFor
+        unmuteChannel: typeof settingsMocks.unmuteChannel
+        setChannelNotificationLevel: typeof settingsMocks.setChannelNotificationLevel
+        isChannelMuted: (channelId: string) => boolean
+        notifications: {
+          channelNotificationLevels: Record<string, 'all' | 'mentions' | 'nothing'>
+        }
+      }) => unknown,
+    ) => selector({
+      muteChannelFor: settingsMocks.muteChannelFor,
+      unmuteChannel: settingsMocks.unmuteChannel,
+      setChannelNotificationLevel: settingsMocks.setChannelNotificationLevel,
+      isChannelMuted: () => settingsMocks.isMuted,
       notifications: {
-        channelNotificationLevels: Record<string, 'all' | 'mentions' | 'nothing'>
-      }
-    }) => unknown,
-  ) => selector({
-    muteChannelFor: settingsMocks.muteChannelFor,
-    unmuteChannel: settingsMocks.unmuteChannel,
-    setChannelNotificationLevel: settingsMocks.setChannelNotificationLevel,
-    isChannelMuted: () => settingsMocks.isMuted,
-    notifications: {
-      channelNotificationLevels: {
-        [channel.id]: settingsMocks.notificationLevel,
+        channelNotificationLevels: {
+          [channel.id]: settingsMocks.notificationLevel,
+        },
       },
-    },
-  }),
-}))
+    }),
+  }
+})
 
 import { ChannelItem } from './ChannelItem'
 
@@ -88,11 +92,12 @@ describe('ChannelItem notification context menu', () => {
     container.remove()
   })
 
-  function renderItem(overrides: Partial<Channel> = {}) {
+  function renderItem(overrides: Partial<Channel> = {}, matrixMode = false) {
     act(() => {
       root.render(
         <ChannelItem
           channel={{ ...channel, ...overrides }}
+          matrixMode={matrixMode}
           active={false}
           onClick={onClick}
           onMarkRead={onMarkRead}
@@ -147,6 +152,25 @@ describe('ChannelItem notification context menu', () => {
     expect(onCopyLink).toHaveBeenCalledOnce()
   })
 
+  it('offers the same actions from the keyboard-discoverable more menu', async () => {
+    renderItem()
+    const moreActions = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="More actions for general"]',
+    )
+    expect(moreActions).not.toBeNull()
+
+    await act(async () => {
+      moreActions?.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+      }))
+      await Promise.resolve()
+    })
+    await act(async () => findMenuItem('Mark as read')?.click())
+    expect(onMarkRead).toHaveBeenCalledOnce()
+  })
+
   it('sets per-channel notification levels and marks the current choice', async () => {
     settingsMocks.notificationLevel = 'mentions'
     const button = renderItem()
@@ -183,5 +207,33 @@ describe('ChannelItem notification context menu', () => {
 
     expect(button.getAttribute('aria-label')).toContain('2 mentions')
     expect(button.textContent).toContain('2')
+  })
+
+  it('mutes an unmuted Matrix room through the push-rule path', async () => {
+    const button = renderItem({}, true)
+    await openContextMenu(button)
+
+    expect(document.body.textContent).not.toContain('Mute for 15 minutes')
+    await act(async () => findMenuItem('Mute notifications')?.click())
+    expect(settingsMocks.setChannelNotificationLevel).toHaveBeenCalledWith(
+      channel.id,
+      'nothing',
+    )
+    expect(settingsMocks.muteChannelFor).not.toHaveBeenCalled()
+  })
+
+  it('unmutes a muted Matrix room through the push-rule path', async () => {
+    settingsMocks.notificationLevel = 'nothing'
+    const button = renderItem({}, true)
+    await openContextMenu(button)
+
+    expect(document.body.textContent).not.toContain('Mute for 15 minutes')
+    expect(document.body.textContent).not.toContain('Mute notifications')
+    await act(async () => findMenuItem('Turn notifications back on')?.click())
+    expect(settingsMocks.setChannelNotificationLevel).toHaveBeenCalledWith(
+      channel.id,
+      'all',
+    )
+    expect(settingsMocks.unmuteChannel).not.toHaveBeenCalled()
   })
 })

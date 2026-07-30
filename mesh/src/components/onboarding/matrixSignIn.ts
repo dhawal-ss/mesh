@@ -134,7 +134,9 @@ export function friendlyServiceError(cause: unknown, operation: string): string 
     case 'http_status':
       return `${prefix} The account service returned an HTTP error. Check its status or choose another service.`
     case 'malformed_well_known':
-      return `${prefix} The account service returned invalid discovery information. Choose another service or ask its operator to check its .well-known configuration.`
+      // `.well-known` belongs in the Technical details block, not in the lead
+      // sentence of a default-path error.
+      return `${prefix} Mesh couldn’t read this service’s setup information. Choose another service, or ask whoever runs it to check its configuration.`
     case 'timeout':
       return `${prefix} The account service took too long to respond. Check your connection or try again.`
     case 'other':

@@ -84,6 +84,7 @@ pub async fn send_dm(
         edited_at: None,
         deleted_at: None,
         reply_to_id: None,
+        thread_root_id: None,
         delivery_status: Some("sent".into()),
     };
 

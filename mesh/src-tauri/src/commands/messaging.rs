@@ -99,6 +99,7 @@ pub async fn send_message(
         edited_at: None,
         deleted_at: None,
         reply_to_id,
+        thread_root_id: None,
         transaction_id: None,
         client_request_id: None,
         delivery_status: None,

@@ -6,9 +6,12 @@ import { Input } from '../ui/Input'
 import { ErrorState } from '../ui/ErrorState'
 import { useCommunityStore } from '../../store/communities'
 import { useChannelStore } from '../../store/channels'
+import { useShellStore } from '../../store/shell'
 import * as bridge from '../../lib/bridge'
+import { describeJoinRule } from '../../lib/community-access'
 import { transitions } from '../../lib/motion'
 import type { CommunityDirectoryEntry } from '../../types/ipc'
+import { showToast } from '../ui/Toast'
 
 export type CreateCommunityTab = 'create' | 'join' | 'discover'
 type ServerTemplate = 'gaming' | 'friends' | 'community'
@@ -133,6 +136,14 @@ export function CreateCommunityModal({
     setJoinError(null)
     setJoinStatus('')
     try {
+      if (matrixMode) {
+        const pending = await bridge.storePendingInvitation(inviteLink.trim())
+        useShellStore.getState().setPendingInvitation(pending)
+        showToast('Review the invitation details before Mesh continues.', 'success')
+        handleClose()
+        setIsLoading(false)
+        return
+      }
       const outcome = await bridge.joinOrRequestCommunity(inviteLink.trim())
       if (outcome.status === 'knocked' || !outcome.community) {
         setJoinStatus(
@@ -480,7 +491,7 @@ export function CreateCommunityModal({
                           <p className="mt-1 line-clamp-2 text-xs text-muted">{entry.description}</p>
                         )}
                         <p className="member-count mt-1 text-meta text-muted">
-                          {entry.memberCount} member{entry.memberCount === 1 ? '' : 's'} · {entry.joinRule}
+                          {entry.memberCount} member{entry.memberCount === 1 ? '' : 's'} · {describeJoinRule(entry.joinRule)}
                         </p>
                       </div>
                       <Button

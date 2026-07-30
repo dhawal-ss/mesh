@@ -33,7 +33,7 @@ describe('ConversationProtection', () => {
     expect(container.querySelector('[aria-label="This conversation is protected end to end"]')).not.toBeNull()
   })
 
-  it('warns when sending is blocked in an unprotected room', async () => {
+  it('states plainly that an unprotected room is not encrypted', async () => {
     vi.spyOn(bridge, 'matrixRoomIsEncrypted').mockResolvedValue(false)
 
     await act(async () => {
@@ -41,8 +41,11 @@ describe('ConversationProtection', () => {
       await Promise.resolve()
     })
 
+    // Sending was never actually gated on this state, so the old copy
+    // ("Sending blocked: not protected") claimed a restriction Mesh does not
+    // enforce. The label now describes the room, not an imaginary block.
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      'Sending blocked: not protected',
+      'Not end-to-end encrypted',
     )
   })
 

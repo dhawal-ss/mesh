@@ -1,5 +1,5 @@
 import { memo, useState, useEffect, useCallback, useRef } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { motion } from 'framer-motion'
 import type { Message as MessageType } from '../../types/ipc'
 import type { RoomTrustSnapshot } from '../../hooks/useRoomTrust'
 import { Avatar } from '../ui/Avatar'
@@ -14,7 +14,8 @@ import { useServerEmoji } from '../../store/custom-emoji'
 import * as bridge from '../../lib/bridge'
 import { useFileDownloadStore } from '../../store/file-downloads'
 import { useRoomPinStore } from '../../store/room-pins'
-import { formatFederatedTimestamp } from '../../lib/federated-time'
+import { formatFullTime } from '../../lib/message-time'
+import { MessageTime } from './MessageTime'
 import { describeError } from '../../lib/errors'
 import { summarizeModerationResult } from '../../lib/moderation'
 import { transitions } from '../../lib/motion'
@@ -22,35 +23,51 @@ import { Icon } from '../ui/Icon'
 import { showToast } from '../ui/Toast'
 import { EncryptedAttachmentPreview } from './EncryptedAttachmentPreview'
 import { ProtectedImageLightbox } from './ProtectedImageLightbox'
-import { ContextMenu, type MenuItem } from '../ui/InteractivePrimitives'
+import { ContextMenu, Popover, type MenuItem } from '../ui/InteractivePrimitives'
 import { MessageReportDialog } from './MessageReportDialog'
 import { useShellStore } from '../../store/shell'
 
 interface MessageProps {
   message: MessageType
   isGrouped: boolean
+  surface?: 'channel' | 'dm'
   disableMotion?: boolean
   onReply?: (message: MessageType) => void
+  threadReplyCount?: number
+  threadOpen?: boolean
+  onToggleThread?: () => void
   onRetry?: (message: MessageType) => void
   onCancel?: (message: MessageType) => void
   replyPreview?: MessageType | null
+  onJumpToReply?: (message: MessageType) => void
   limitedActions?: boolean
   editRequestToken?: number
   trust?: RoomTrustSnapshot
+  onEdit?: (message: MessageType, content: string) => void | Promise<void>
+  onDelete?: (message: MessageType) => void | Promise<void>
+  onReact?: (message: MessageType, emoji: string) => void | Promise<void>
 }
 
 export const MessageComponent = memo(function MessageComponent({
   message,
   isGrouped,
+  surface = 'channel',
+  disableMotion = false,
   onReply,
+  threadReplyCount = 0,
+  threadOpen = false,
+  onToggleThread,
   onRetry,
   onCancel,
   replyPreview,
+  onJumpToReply,
   limitedActions = false,
   editRequestToken = 0,
   trust,
+  onEdit,
+  onDelete,
+  onReact,
 }: MessageProps) {
-  const [hovered, setHovered] = useState(false)
   const [showReactions, setShowReactions] = useState(false)
   const [contextMenuOpen, setContextMenuOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -83,8 +100,14 @@ export const MessageComponent = memo(function MessageComponent({
   const isDeleted = !!message.deletedAt
   const undecryptable = message.undecryptable
   const isUndecryptable = !!undecryptable
-  const isQueued = !!message.transactionId && message.deliveryStatus !== 'sent'
-  const canPinMessage = matrixMode && canManagePins && message.id.startsWith('$') && !isUndecryptable
+  const isQueued =
+    message.deliveryStatus === 'pending' || message.deliveryStatus === 'failed'
+  const canPinMessage =
+    surface === 'channel'
+    && matrixMode
+    && canManagePins
+    && message.id.startsWith('$')
+    && !isUndecryptable
   const securityNeedsAttention = Boolean(
     isUndecryptable
       && trust
@@ -110,17 +133,6 @@ export const MessageComponent = memo(function MessageComponent({
     e.preventDefault()
     setConfirmBan(false)
     setContextMenuOpen(true)
-  }
-
-  // Tabbing focus away from the row entirely — e.g. past the last emoji
-  // button to the next message — should close the picker too, not just
-  // Escape/mouseleave. Only skip closing when we can prove focus landed on
-  // another descendant of this row; an absent relatedTarget (e.g. focus
-  // leaving the document) is treated as "left" rather than assumed safe.
-  const handleRowBlur = (e: React.FocusEvent) => {
-    if (!showReactions) return
-    if (e.relatedTarget && e.currentTarget.contains(e.relatedTarget as Node)) return
-    setShowReactions(false)
   }
 
   const handleBan = async () => {
@@ -177,6 +189,11 @@ export const MessageComponent = memo(function MessageComponent({
       return
     }
     try {
+      if (onEdit) {
+        await onEdit(message, trimmed)
+        setIsEditing(false)
+        return
+      }
       const channelId = activeChannelId ?? message.channelId
       await bridge.editMessage(message.id, trimmed, channelId)
       if (channelId) {
@@ -186,7 +203,7 @@ export const MessageComponent = memo(function MessageComponent({
       console.error('Failed to edit message:', e)
     }
     setIsEditing(false)
-  }, [editContent, message.content, message.id, message.channelId, activeChannelId, editMessage])
+  }, [activeChannelId, editContent, editMessage, message, onEdit])
 
   const handleCancelEdit = useCallback(() => {
     setIsEditing(false)
@@ -195,6 +212,11 @@ export const MessageComponent = memo(function MessageComponent({
 
   const handleDelete = useCallback(async () => {
     try {
+      if (onDelete) {
+        await onDelete(message)
+        setContextMenuOpen(false)
+        return
+      }
       const channelId = activeChannelId ?? message.channelId
       await bridge.deleteMessage(message.id, channelId)
       if (channelId) {
@@ -206,7 +228,7 @@ export const MessageComponent = memo(function MessageComponent({
     setContextMenuOpen(false)
     // No rowRef.current?.focus() here, unlike ban/kick/timeout: deleting
     // removes this row from the DOM, so there's nothing sensible to focus.
-  }, [message.id, message.channelId, activeChannelId, deleteMessage])
+  }, [activeChannelId, deleteMessage, message, onDelete])
 
   const handleEditKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -222,6 +244,10 @@ export const MessageComponent = memo(function MessageComponent({
 
   const handleReaction = async (emoji: string) => {
     if (isUndecryptable) return
+    if (onReact) {
+      await onReact(message, emoji)
+      return
+    }
     const channelId = activeChannelId ?? message.channelId
     if (!channelId) return
 
@@ -257,19 +283,19 @@ export const MessageComponent = memo(function MessageComponent({
     })
   }
   if (isOwnMessage && !isDeleted && !isUndecryptable) {
-    contextMenuItems.push(
-      {
-        id: 'edit',
-        label: 'Edit message',
-        onSelect: handleStartEdit,
-      },
-      {
+    contextMenuItems.push({
+      id: 'edit',
+      label: 'Edit message',
+      onSelect: handleStartEdit,
+    })
+    if (surface === 'channel' || onDelete) {
+      contextMenuItems.push({
         id: 'delete',
         label: 'Delete message',
         tone: 'danger',
         onSelect: () => void handleDelete(),
-      },
-    )
+      })
+    }
   }
   if (matrixMode && !isOwnMessage && !isDeleted && message.id.startsWith('$')) {
     contextMenuItems.push({
@@ -330,7 +356,9 @@ export const MessageComponent = memo(function MessageComponent({
         ? ', delivery needs attention'
         : ''
   const undecryptableLabel = isUndecryptable ? ', message content unavailable' : ''
-  const messageAriaLabel = `Message from ${message.authorDisplayName}, ${formatFederatedTimestamp(message.timestamp, 'MM/dd/yyyy h:mm a')}${deliveryLabel}${undecryptableLabel}`
+  const editedLabel = message.editedAt ? ', edited' : ''
+  const deletedLabel = isDeleted ? ', message deleted' : ''
+  const messageAriaLabel = `Message from ${message.authorDisplayName}, ${formatFullTime(message.timestamp)}${editedLabel}${deletedLabel}${deliveryLabel}${undecryptableLabel}`
 
   return (
     <>
@@ -352,31 +380,25 @@ export const MessageComponent = memo(function MessageComponent({
           className={`group relative flex gap-3 py-0.5 pl-message-gutter pr-12 outline-none transition-opacity duration-fast hover:bg-surface-hover ${
             message.deliveryStatus === 'pending' ? 'opacity-60' : 'opacity-100'
           } ${!isGrouped ? 'mt-message-group' : ''}`}
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => {
-            setHovered(false)
-            setShowReactions(false)
-          }}
+          onMouseLeave={() => setShowReactions(false)}
           onKeyDown={handleRowKeyDown}
-          onBlur={handleRowBlur}
         >
           {/* Avatar — absolute positioned in left gutter */}
           <div className="absolute left-4 top-0.5 w-8">
             {!isGrouped ? (
               <Avatar color={message.authorAvatarColor} size={32} name={message.authorDisplayName} />
             ) : (
-              <span
-                className={`tnum flex h-full items-center justify-end pr-1 text-meta text-muted transition-opacity ${
-                  hovered ? 'opacity-100' : 'opacity-0'
-                }`}
-              >
-                {formatFederatedTimestamp(message.timestamp, 'HH:mm')}
+              /* Revealed by CSS group state rather than the JS `hovered` flag so
+                 keyboard users (group-focus-within) and touch users (the
+                 coarse-pointer rule in globals.css) can read it too. */
+              <span className="mesh-message-time tnum flex h-full items-center justify-end pr-1 text-meta text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                <MessageTime value={message.timestamp} variant="clock" />
               </span>
             )}
           </div>
 
           {/* Content */}
-          <div className="min-w-0 flex-1">
+          <div className="mesh-message-content min-w-0 flex-1">
             {!isGrouped && (
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
                 <span className="text-sm font-semibold text-primary">{message.authorDisplayName}</span>
@@ -385,9 +407,11 @@ export const MessageComponent = memo(function MessageComponent({
                     {message.authorPublicKey}
                   </span>
                 )}
-                <span className="tnum text-meta text-muted">
-                  {formatFederatedTimestamp(message.timestamp, 'MM/dd/yyyy h:mm a')}
-                </span>
+                <MessageTime
+                  value={message.timestamp}
+                  variant="full"
+                  className="tnum text-meta text-muted"
+                />
               </div>
             )}
 
@@ -399,11 +423,15 @@ export const MessageComponent = memo(function MessageComponent({
             )}
 
             {message.deliveryStatus === 'failed' && (
+              /* `disableMotion` is set by the virtualized row: without honoring
+                 it, the shake replayed every time a failed message scrolled
+                 back into view, which reads as instability rather than as a
+                 one-time alert. */
               <motion.div
-                role="alert"
+                role="status"
                 className="mt-1 flex flex-wrap items-center gap-2 text-meta text-status-danger"
-                initial={{ x: 0 }}
-                animate={{ x: [0, -2, 2, 0] }}
+                initial={disableMotion ? false : { x: 0 }}
+                animate={disableMotion ? undefined : { x: [0, -2, 2, 0] }}
                 transition={transitions.failure}
               >
                 <span>Delivery needs attention.</span>
@@ -426,16 +454,36 @@ export const MessageComponent = memo(function MessageComponent({
               </motion.div>
             )}
 
-            {/* Reply preview */}
-            {replyPreview && !isUndecryptable && (
-              <div className="mb-1 flex items-center gap-1.5 text-sm">
-                <Icon name="reply" size="xs" className="text-muted" />
-                <span className="text-xs font-medium text-secondary">{replyPreview.authorDisplayName}</span>
-                <span className="truncate text-xs text-muted">{replyPreview.content.slice(0, 80)}</span>
-              </div>
+            {/* Reply preview — makes a reply readable as a reply. Clicking it
+                jumps to the message being answered, so a conversation can be
+                followed backwards without scrolling blind. */}
+            {replyPreview && !isUndecryptable && !isDeleted && (
+              <button
+                type="button"
+                onClick={onJumpToReply ? () => onJumpToReply(replyPreview) : undefined}
+                disabled={!onJumpToReply}
+                aria-label={`Replying to ${replyPreview.authorDisplayName}: ${replyPreview.content.slice(0, 80) || 'message unavailable'}. Go to that message.`}
+                className="mb-1 flex min-h-6 w-full min-w-0 items-center gap-1.5 rounded-control text-left text-sm transition-colors enabled:hover:bg-surface-hover disabled:cursor-default"
+              >
+                <Icon name="reply" size="xs" className="shrink-0 text-muted" aria-hidden="true" />
+                <span aria-hidden="true" className="shrink-0 text-xs font-medium text-secondary">
+                  {replyPreview.authorDisplayName}
+                </span>
+                <span aria-hidden="true" className="truncate text-xs text-muted">
+                  {replyPreview.deletedAt ? 'Message deleted' : replyPreview.content.slice(0, 80)}
+                </span>
+              </button>
             )}
 
-            {undecryptable ? (
+            {isDeleted ? (
+              /* A redaction clears `content`, so without this branch the row
+                 rendered as an empty gap that read as a rendering bug. A
+                 tombstone keeps the deletion legible and auditable. */
+              <p className="mt-0.5 inline-flex items-center gap-1.5 text-sm italic text-content-muted">
+                <Icon name="circleX" size="xs" aria-hidden="true" />
+                Message deleted
+              </p>
+            ) : undecryptable ? (
               <UndecryptableMessageNotice
                 reason={undecryptable.reason}
                 showSecurityHelp={securityNeedsAttention}
@@ -471,16 +519,24 @@ export const MessageComponent = memo(function MessageComponent({
               <>
                 <MarkdownContent
                   content={message.content}
-                  members={communityMembers}
-                  customEmoji={customEmoji}
+                  members={surface === 'dm' ? [] : communityMembers}
+                  customEmoji={surface === 'dm' ? [] : customEmoji}
                   ownUserId={myPublicKey ?? null}
                 />
-                {message.editedAt && <span className="ml-1 text-caption text-muted">(edited)</span>}
+                {message.editedAt && (
+                  <span
+                    className="ml-1 text-caption text-muted"
+                    title={`Edited ${formatFullTime(message.editedAt)}`}
+                  >
+                    (edited)
+                  </span>
+                )}
               </>
             )}
 
-            {/* File attachments */}
-            {message.attachments && message.attachments.length > 0 && (
+            {/* File attachments — a redaction removes the body, so the
+                attachments that came with it must not survive it. */}
+            {!isDeleted && message.attachments && message.attachments.length > 0 && (
               <div className="mt-2 flex flex-col gap-2">
                 {message.attachments.map((att, attachmentIndex) => (
                   <FileAttachmentCard
@@ -495,34 +551,66 @@ export const MessageComponent = memo(function MessageComponent({
               </div>
             )}
 
+            {threadReplyCount > 0 && onToggleThread && (
+              <button
+                type="button"
+                onClick={onToggleThread}
+                aria-expanded={threadOpen}
+                className="mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-control px-2 text-xs font-medium text-text-link transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                <Icon name="messageCircle" size="xs" />
+                {threadOpen ? 'Hide replies' : `${threadReplyCount} ${threadReplyCount === 1 ? 'reply' : 'replies'}`}
+              </button>
+            )}
+
             {/* Reactions */}
-            {Object.keys(message.reactions).length > 0 && (
+            {!isDeleted && Object.keys(message.reactions).length > 0 && (
               <div className="mt-1 flex flex-wrap gap-1">
                 {Object.entries(message.reactions).map(([emoji, users]) => {
-                  const custom = customEmoji.find((candidate) => `:${candidate.shortcode}:` === emoji)
+                  const custom = surface === 'dm'
+                    ? undefined
+                    : customEmoji.find((candidate) => `:${candidate.shortcode}:` === emoji)
+                  const mine = Boolean(myPublicKey && users.includes(myPublicKey))
+                  const emojiName = custom ? custom.body || custom.shortcode : emoji
+                  const glyph = custom ? (
+                    <img
+                      src={custom.imageUrl}
+                      alt=""
+                      aria-hidden="true"
+                      className="h-4 w-4 object-contain"
+                    />
+                  ) : (
+                    emoji
+                  )
                   return (
                     <button
                       key={emoji}
+                      type="button"
                       onClick={() => handleReaction(emoji)}
-                      className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs transition-colors ${
-                        myPublicKey && users.includes(myPublicKey)
-                          ? 'border-accent/40 bg-accent/10 text-accent'
+                      aria-pressed={mine}
+                      aria-label={`${emojiName}, ${users.length} ${users.length === 1 ? 'reaction' : 'reactions'}${mine ? ', you reacted' : ''}`}
+                      className={`inline-flex min-h-6 items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs transition-colors ${
+                        mine
+                          ? 'border-accent bg-accent/10 text-accent'
                           : 'border-border bg-surface-hover text-secondary hover:border-border-light'
                       }`}
                     >
-                      <motion.span initial={{ scale: 0.8 }} animate={{ scale: 1 }} transition={transitions.reaction}>
-                        {custom ? (
-                          <img
-                            src={custom.imageUrl}
-                            alt={emoji}
-                            title={custom.body}
-                            className="h-4 w-4 object-contain"
-                          />
-                        ) : (
-                          emoji
-                        )}
-                      </motion.span>
-                      <span className="badge-count text-meta">{users.length}</span>
+                      {/* A checkmark carries the "you reacted" state independently
+                          of the accent tint, which was previously the only signal. */}
+                      {mine && <Icon name="check" size="xs" aria-hidden="true" />}
+                      {disableMotion ? (
+                        <span aria-hidden="true">{glyph}</span>
+                      ) : (
+                        <motion.span
+                          aria-hidden="true"
+                          initial={{ scale: 0.8 }}
+                          animate={{ scale: 1 }}
+                          transition={transitions.reaction}
+                        >
+                          {glyph}
+                        </motion.span>
+                      )}
+                      <span aria-hidden="true" className="badge-count text-meta">{users.length}</span>
                     </button>
                   )
                 })}
@@ -537,15 +625,29 @@ export const MessageComponent = memo(function MessageComponent({
             the grouped message rendered underneath it (-top-4 overlap). */}
           {!contextMenuOpen && !isEditing && !isDeleted && !isQueued && !isUndecryptable && (
             <div className="mesh-message-actions pointer-events-none absolute -top-4 right-4 z-sticky flex items-center rounded-panel border border-border-subtle bg-surface-overlay opacity-0 shadow-overlay transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
-              <button
-                ref={reactButtonRef}
-                onClick={() => setShowReactions(!showReactions)}
-                className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                aria-label={`React to message from ${message.authorDisplayName}`}
-                aria-expanded={showReactions}
+              <Popover
+                open={showReactions}
+                onOpenChange={setShowReactions}
+                side="top"
+                align="end"
+                className="w-auto border-0 bg-transparent p-0 shadow-none"
+                trigger={(
+                  <button
+                    ref={reactButtonRef}
+                    className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                    aria-label={`React to message from ${message.authorDisplayName}`}
+                    aria-expanded={showReactions}
+                  >
+                    <Icon name="smile" size="sm" />
+                  </button>
+                )}
               >
-                <Icon name="smile" size="sm" />
-              </button>
+                <ReactionPicker
+                  onSelect={handleReaction}
+                  onClose={() => setShowReactions(false)}
+                  customEmoji={customEmoji}
+                />
+              </Popover>
               {isOwnMessage && (
                 <button
                   onClick={handleStartEdit}
@@ -578,18 +680,6 @@ export const MessageComponent = memo(function MessageComponent({
             </div>
           )}
 
-          {/* Reaction picker */}
-          <AnimatePresence>
-            {showReactions && (
-              <div className="absolute -top-10 right-4 z-popover">
-                <ReactionPicker
-                  onSelect={handleReaction}
-                  onClose={() => setShowReactions(false)}
-                  customEmoji={customEmoji}
-                />
-              </div>
-            )}
-          </AnimatePresence>
         </div>
       </ContextMenu>
 

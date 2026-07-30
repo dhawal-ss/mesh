@@ -2,7 +2,8 @@ import { useState, useRef, useCallback, useLayoutEffect, useMemo } from 'react'
 
 export interface VirtualItem {
   key: string
-  type: 'message' | 'gap'
+  /** Dividers are fixed-height landmarks between timeline messages. */
+  type: 'message' | 'gap' | 'divider' | 'unread-divider' | 'history-start'
   height?: number
 }
 

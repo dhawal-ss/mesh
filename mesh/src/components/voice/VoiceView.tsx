@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useVoiceEngine } from '../../hooks/useVoiceEngine'
 import { useVoiceStore } from '../../store/voice'
@@ -7,15 +7,18 @@ import { VoicePeerGrid } from './VoicePeerGrid'
 import { VoiceControls } from './VoiceControls'
 import { Icon } from '../ui/Icon'
 import { voiceConnectionLabel } from '../../lib/voice-runtime'
+import { StatusDot } from '../ui/StatusDot'
 
 export function VoiceView({ channelName }: { channelId: string; channelName: string }) {
   const {
     connectionWarning,
+    microphonePermission,
     relayChanged,
     voiceService,
     matrixVoiceReady,
     matrixUnavailableReason,
     devices,
+    refreshDevices,
     switchInputDevice,
     switchOutputDevice,
     setParticipantVolume,
@@ -25,6 +28,22 @@ export function VoiceView({ channelName }: { channelId: string; channelName: str
   const connectionState = useVoiceStore((state) => state.connectionState)
   const connectionLabel = voiceConnectionLabel(connectionState)
   const [showRelayToast, setShowRelayToast] = useState(false)
+
+  /*
+   * Retry re-enters the same voice session. This is the same mechanism the
+   * Leave control uses, run in reverse, so it does not need new engine surface.
+   */
+  const currentCommunityId = useVoiceStore((state) => state.currentCommunityId)
+  const currentChannelId = useVoiceStore((state) => state.currentChannelId)
+  const setCurrentVoiceSession = useVoiceStore((state) => state.setCurrentVoiceSession)
+  const retryJoin = useCallback(() => {
+    if (!currentChannelId) return
+    const communityId = currentCommunityId
+    const channelId = currentChannelId
+    setCurrentVoiceSession(null, null)
+    // Let the engine tear down before the join effect keys on the new session.
+    requestAnimationFrame(() => setCurrentVoiceSession(communityId, channelId))
+  }, [currentChannelId, currentCommunityId, setCurrentVoiceSession])
 
   useEffect(() => {
     if (!relayChanged) return
@@ -88,6 +107,30 @@ export function VoiceView({ channelName }: { channelId: string; channelName: str
 
   return (
       <div className="relative flex h-full w-full flex-col bg-surface-base">
+      {/*
+        A blocked microphone is a permissions problem with a specific remedy,
+        not a call-quality warning. It gets its own banner above the generic one.
+      */}
+      {microphonePermission === 'denied' && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-2 border-b border-status-danger/30 bg-status-danger/5 px-4 py-2 text-xs text-status-danger"
+        >
+          <Icon name="micOff" size="xs" className="flex-shrink-0" aria-hidden="true" />
+          <span className="min-w-0">
+            Mesh can’t reach your microphone. Allow microphone access for Mesh in your
+            system settings, then try again.
+          </span>
+          <button
+            type="button"
+            onClick={() => void refreshDevices(true)}
+            className="ml-auto min-h-8 rounded-control px-2 font-semibold underline underline-offset-2 transition-colors hover:bg-status-danger/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+          >
+            Check again
+          </button>
+        </div>
+      )}
+
       <AnimatePresence>
         {connectionWarning && (
           <motion.div
@@ -146,15 +189,15 @@ export function VoiceView({ channelName }: { channelId: string; channelName: str
                 : 'text-muted'
           }`}
         >
-          <span
-            aria-hidden="true"
-            className={`h-1.5 w-1.5 rounded-full ${
-              connectionState === 'connected'
-                ? 'bg-status-success'
-                : connectionState === 'disconnected' || connectionState === 'degraded'
-                  ? 'bg-status-warning'
-                  : 'bg-content-muted'
-            }`}
+          <StatusDot
+            state={
+              connectionState === 'reconnecting'
+                ? 'connecting'
+                : connectionState === 'idle'
+                  ? 'disconnected'
+                  : connectionState
+            }
+            label={`Voice: ${connectionLabel}`}
           />
           {connectionLabel}
         </span>
@@ -166,7 +209,7 @@ export function VoiceView({ channelName }: { channelId: string; channelName: str
         animate={{ opacity: 1, y: 0 }}
         transition={transitions.enter}
       >
-        <VoicePeerGrid onParticipantVolume={setParticipantVolume} />
+        <VoicePeerGrid onParticipantVolume={setParticipantVolume} onRetry={retryJoin} />
       </motion.div>
 
       <div className="z-sticky w-full flex-shrink-0 border-t border-border-subtle bg-surface-base p-2 sm:absolute sm:bottom-4 sm:left-1/2 sm:w-auto sm:-translate-x-1/2 sm:border-0 sm:bg-transparent sm:p-0 lg:bottom-8">

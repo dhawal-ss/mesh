@@ -417,6 +417,144 @@ describe('ChatView channel switching', () => {
     expect(container.textContent).toContain('Second')
   })
 
+  it('guards history re-entry and marks the true beginning of the conversation', async () => {
+    const activeChannel = channel('channel-a', 'alpha')
+    const initial = Array.from({ length: 50 }, (_, index) => ({
+      ...message(`message-${index}`, activeChannel.id, `Message ${index}`),
+      timestamp: `2026-07-25T12:${String(index).padStart(2, '0')}:00.000Z`,
+    }))
+    const older = deferred<Message[]>()
+
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(false)
+    const getMessages = vi.spyOn(bridge, 'getMessages').mockImplementation(
+      async (_channelId, _limit, before) => before ? older.promise : initial,
+    )
+    getMessages.mockClear()
+    vi.spyOn(bridge, 'requestMessageHistory').mockResolvedValue(undefined)
+    vi.spyOn(bridge, 'markChannelRead').mockResolvedValue(undefined)
+    vi.spyOn(bridge, 'onMessageReceived').mockResolvedValue(() => {})
+
+    await act(async () => {
+      root.render(<ChatView channel={activeChannel} />)
+      await flushAsyncWork()
+    })
+
+    const log = container.querySelector<HTMLDivElement>('[role="log"]')!
+    Object.defineProperty(log, 'clientHeight', { configurable: true, value: 400 })
+    Object.defineProperty(log, 'scrollTop', { configurable: true, writable: true, value: 0 })
+    log.getBoundingClientRect = () => ({
+      x: 0,
+      y: 0,
+      top: 0,
+      right: 800,
+      bottom: 400,
+      left: 0,
+      width: 800,
+      height: 400,
+      toJSON: () => ({}),
+    })
+    container.querySelectorAll<HTMLElement>('[data-message-id]').forEach((row, index) => {
+      row.getBoundingClientRect = () => ({
+        x: 0,
+        y: index * 50,
+        top: index * 50,
+        right: 800,
+        bottom: index * 50 + 50,
+        left: 0,
+        width: 800,
+        height: 50,
+        toJSON: () => ({}),
+      })
+    })
+
+    await act(async () => {
+      log.dispatchEvent(new Event('scroll', { bubbles: true }))
+      log.dispatchEvent(new Event('scroll', { bubbles: true }))
+      await flushAsyncWork()
+    })
+    const olderCalls = getMessages.mock.calls.filter(
+      ([, , before]) => before !== undefined,
+    )
+    expect(olderCalls).toHaveLength(1)
+    expect(container.querySelector('[aria-label="Loading earlier messages"]')).not.toBeNull()
+
+    await act(async () => {
+      older.resolve([])
+      await flushAsyncWork()
+      await flushAsyncWork()
+    })
+
+    expect(container.textContent).toContain('Beginning of this conversation')
+    expect(container.querySelector('[aria-label="Loading earlier messages"]')).toBeNull()
+  })
+
+  it('keeps one unread boundary anchored before the messages that were unread on entry', async () => {
+    const activeChannel = {
+      ...channel('channel-a', 'alpha'),
+      unreadCount: 2,
+    }
+    const first = {
+      ...message('message-a', activeChannel.id, 'Already read'),
+      timestamp: '2026-07-29T12:00:00.000Z',
+    }
+    const firstUnread = {
+      ...message('message-b', activeChannel.id, 'First unread'),
+      timestamp: '2026-07-29T12:01:00.000Z',
+    }
+    const secondUnread = {
+      ...message('message-c', activeChannel.id, 'Second unread'),
+      timestamp: '2026-07-29T12:02:00.000Z',
+    }
+
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(false)
+    vi.spyOn(bridge, 'getMessages').mockImplementation(async (channelId) =>
+      channelId === activeChannel.id ? [first, firstUnread, secondUnread] : [],
+    )
+    vi.spyOn(bridge, 'requestMessageHistory').mockResolvedValue(undefined)
+    vi.spyOn(bridge, 'markChannelRead').mockResolvedValue(undefined)
+    vi.spyOn(bridge, 'onMessageReceived').mockResolvedValue(() => {})
+
+    await act(async () => {
+      root.render(<ChatView channel={activeChannel} />)
+      await flushAsyncWork()
+    })
+
+    const divider = container.querySelector('[data-unread-divider="true"]')
+    const firstUnreadRow = container.querySelector(
+      `[data-message-id="${firstUnread.id}"]`,
+    )
+    expect(divider?.textContent).toContain('New messages')
+    expect(
+      divider?.compareDocumentPosition(firstUnreadRow as Node)
+        ?? Node.DOCUMENT_POSITION_PRECEDING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+
+    const receivedAfterEntry = {
+      ...message('message-d', activeChannel.id, 'Arrived after entry'),
+      timestamp: '2026-07-29T12:03:00.000Z',
+    }
+    await act(async () => {
+      useMessageStore.getState().addMessage(activeChannel.id, receivedAfterEntry)
+    })
+
+    expect(container.querySelectorAll('[data-unread-divider="true"]')).toHaveLength(1)
+    expect(
+      container
+        .querySelector('[data-unread-divider="true"]')
+        ?.compareDocumentPosition(
+          container.querySelector(`[data-message-id="${firstUnread.id}"]`) as Node,
+        ) ?? Node.DOCUMENT_POSITION_PRECEDING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+
+    const caughtUpChannel = channel('channel-b', 'beta')
+    await act(async () => {
+      root.render(<ChatView channel={caughtUpChannel} />)
+      await flushAsyncWork()
+    })
+
+    expect(container.querySelector('[data-unread-divider="true"]')).toBeNull()
+  })
+
   it('uses the shared accessible empty state for a new room', async () => {
     const activeChannel = channel('channel-a', 'alpha')
     vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(false)
@@ -440,14 +578,13 @@ describe('ChatView channel switching', () => {
     expect(emptyState?.querySelector('.border-dashed')).toBeNull()
   })
 
-  it('accepts one durable Matrix echo and retries or cancels it in place', async () => {
+  it('renders a Matrix optimistic echo immediately, then reconciles and retries it in place', async () => {
     const activeChannel = channel('!channel:example.org', 'private')
     const send = deferred<Message>()
     const queued = {
       ...message('txn-1', activeChannel.id, 'Saved while offline'),
       authorPublicKey: '@alice:example.org',
       transactionId: 'txn-1',
-      clientRequestId: 'request-1',
       deliveryStatus: 'pending' as const,
     }
 
@@ -481,7 +618,14 @@ describe('ChatView channel switching', () => {
       submission = composerHarness.onSend?.('Saved while offline') ?? Promise.resolve()
       await flushAsyncWork()
     })
-    expect(useMessageStore.getState().messages[activeChannel.id] ?? []).toEqual([])
+    expect(useMessageStore.getState().messages[activeChannel.id]).toEqual([
+      expect.objectContaining({
+        id: 'request-1',
+        clientRequestId: 'request-1',
+        content: 'Saved while offline',
+        deliveryStatus: 'pending',
+      }),
+    ])
 
     await act(async () => {
       send.resolve(queued)
@@ -494,7 +638,15 @@ describe('ChatView channel switching', () => {
       undefined,
       'request-1',
     )
-    expect(useMessageStore.getState().messages[activeChannel.id]).toEqual([queued])
+    // Native and mocked responses may omit the renderer request id. The
+    // caller still knows it and must preserve it to collapse the optimistic
+    // echo into the queued/server record instead of rendering a duplicate.
+    expect(useMessageStore.getState().messages[activeChannel.id]).toEqual([
+      {
+        ...queued,
+        clientRequestId: 'request-1',
+      },
+    ])
 
     await act(async () => {
       useMessageStore.getState().applyQueuedMessageUpdate({
@@ -530,5 +682,44 @@ describe('ChatView channel switching', () => {
     })
     expect(cancel).toHaveBeenCalledWith(activeChannel.id, 'txn-1')
     expect(useMessageStore.getState().messages[activeChannel.id]).toEqual([])
+  })
+
+  it('keeps a rejected Matrix send as a retryable failed timeline row', async () => {
+    const activeChannel = channel('!channel:example.org', 'private')
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@alice:example.org')
+    vi.spyOn(bridge, 'getBackendCapabilities').mockReturnValue({
+      encryptedText: true,
+      encryptedAttachments: true,
+      directMessages: true,
+      voice: false,
+      durableTimeouts: false,
+      deviceManagement: true,
+      recovery: true,
+      legacyMigration: false,
+    })
+    vi.spyOn(bridge, 'getMessages').mockResolvedValue([])
+    vi.spyOn(bridge, 'markChannelRead').mockResolvedValue(undefined)
+    vi.spyOn(bridge, 'matrixTypingUsers').mockResolvedValue([])
+    vi.spyOn(bridge, 'createMatrixTransactionId').mockReturnValue('request-failed')
+    vi.spyOn(bridge, 'sendMessage').mockRejectedValue(new Error('service unavailable'))
+
+    await act(async () => {
+      root.render(<ChatView channel={activeChannel} />)
+      await flushAsyncWork()
+    })
+    await act(async () => {
+      await composerHarness.onSend?.('Keep this message')
+      await flushAsyncWork()
+    })
+
+    const failed = useMessageStore.getState().messages[activeChannel.id][0]
+    expect(failed).toMatchObject({
+      id: 'request-failed',
+      clientRequestId: 'request-failed',
+      content: 'Keep this message',
+      deliveryStatus: 'failed',
+    })
+    expect(messageHarness.onRetry['request-failed']).toBeTypeOf('function')
   })
 })

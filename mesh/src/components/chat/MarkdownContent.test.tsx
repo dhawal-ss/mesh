@@ -35,7 +35,8 @@ describe('MarkdownContent mentions', () => {
     expect(mentions).toHaveLength(2)
     expect(mentions[0].textContent).toBe('@Alice')
     expect(mentions[0].getAttribute('title')).toBe('@alice:example.org')
-    expect(mentions[0].getAttribute('aria-label')).toBe('Mention @alice:example.org')
+    // Non-interactive mention text keeps its readable label instead of relying on dropped span aria-label.
+    expect(mentions[0].hasAttribute('aria-label')).toBe(false)
     expect(mentions[0].className).toContain('bg-accent/25')
     expect(mentions[1].textContent).toBe('@unknown:example.org')
     expect(container.textContent).toContain('@Alice, and @unknown:example.org')
@@ -62,6 +63,41 @@ describe('MarkdownContent mentions', () => {
     })
     expect(container.querySelectorAll('[data-mention-id]')).toHaveLength(0)
     expect(container.textContent).toBe('@alice:example.org')
+  })
+
+  it('only pills full Matrix IDs or short names that resolve to one member', async () => {
+    await act(async () => {
+      root.render(
+        <MarkdownContent
+          content="@Alice @types/node @ts-ignore email me @ work @unknown:example.org"
+          members={[{ publicKey: '@alice:example.org', displayName: 'Alice' }]}
+        />,
+      )
+    })
+
+    const mentions = [...container.querySelectorAll<HTMLElement>('[data-mention-id]')]
+    expect(mentions).toHaveLength(2)
+    expect(mentions[0].dataset.mentionId).toBe('@alice:example.org')
+    expect(mentions[0].textContent).toBe('@Alice')
+    expect(mentions[1].dataset.mentionId).toBe('@unknown:example.org')
+    expect(container.textContent).toContain('@types/node @ts-ignore email me @ work')
+  })
+
+  it('autolinks bare safe URLs and renders rejected markdown links as plain body text', async () => {
+    await act(async () => {
+      root.render(
+        <MarkdownContent
+          content="Visit https://example.org/docs. Do not [run this](javascript:alert(1))."
+        />,
+      )
+    })
+
+    const link = container.querySelector<HTMLAnchorElement>('a')
+    expect(link?.getAttribute('href')).toBe('https://example.org/docs')
+    expect(link?.textContent).toBe('https://example.org/docs')
+    expect(container.textContent).toContain('docs. Do not run this.')
+    expect(container.querySelector('a[href^="javascript:"]')).toBeNull()
+    expect(container.querySelector('.text-text-link')?.textContent).not.toBe('run this')
   })
 
   it('renders known server emoji while preserving unknown names and inline code', async () => {

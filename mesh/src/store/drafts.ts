@@ -10,6 +10,11 @@ interface DraftStore {
   clearDraft: (channelId: string) => void
 }
 
+/** UTF-8 byte length of a draft, for the composer's remaining-space readout. */
+export function draftByteLength(value: string): number {
+  return utf8Encoder.encode(value).byteLength
+}
+
 export function truncateDraft(value: string): string {
   if (utf8Encoder.encode(value).byteLength <= MAX_DRAFT_BYTES) return value
 

@@ -8,6 +8,16 @@ import {
 } from '../lib/bridge'
 import type { MatrixUserPreferences } from '../types/ipc'
 
+const MINUTE_MS = 60 * 1_000
+
+export const NOTIFICATION_MUTE_DURATIONS = [
+  { id: 'mute-15m', label: 'Mute for 15 minutes', durationMs: 15 * MINUTE_MS },
+  { id: 'mute-1h', label: 'Mute for 1 hour', durationMs: 60 * MINUTE_MS },
+  { id: 'mute-8h', label: 'Mute for 8 hours', durationMs: 8 * 60 * MINUTE_MS },
+  { id: 'mute-24h', label: 'Mute for 24 hours', durationMs: 24 * 60 * MINUTE_MS },
+  { id: 'mute-until-enabled', label: 'Mute until turned back on', durationMs: null },
+] as const
+
 export interface NotificationPreferences {
   /** Whether desktop notifications are enabled */
   enabled: boolean
@@ -324,16 +334,19 @@ function settingsToMatrixPreferences(
     schemaVersion: PREFERENCES_SCHEMA_VERSION,
     notificationsEnabled: notifications.enabled,
     notificationSound: notifications.sound,
-    mutedChannels: [...new Set(notifications.mutedChannels)],
-    mutedCommunities: [...new Set(notifications.mutedCommunities)],
+    // Matrix room notification modes are authoritative in m.push_rules. Keep
+    // the legacy fields empty so a second client does not mistake local-only
+    // expiry state for portable room mute state.
+    mutedChannels: [],
+    mutedCommunities: [],
     notificationSoundId: notifications.soundId,
     doNotDisturb: notifications.doNotDisturb,
     quietHoursEnabled: notifications.quietHours.enabled,
     quietHoursStart: notifications.quietHours.start,
     quietHoursEnd: notifications.quietHours.end,
-    mutedChannelUntil: notifications.channelMuteUntil,
-    mutedCommunityUntil: notifications.communityMuteUntil,
-    channelNotificationLevels: notifications.channelNotificationLevels,
+    mutedChannelUntil: {},
+    mutedCommunityUntil: {},
+    channelNotificationLevels: {},
     // Keep the legacy boolean populated for older Mesh clients. Their true
     // value means private-only; newer clients use readReceiptMode below.
     sendReadReceipts: privacy.readReceiptMode === 'private',
@@ -908,7 +921,7 @@ export async function refreshMatrixPreferences(userId: string): Promise<void> {
 
 useSettingsStore.subscribe((state) => {
   const current = state.notifications.mutedChannels
-  if (current !== prevMutedChannels) {
+  if (current !== prevMutedChannels && !isMatrixBackend()) {
     prevMutedChannels = current
     setKv('muted_channels', JSON.stringify(current)).catch(() => {})
   }

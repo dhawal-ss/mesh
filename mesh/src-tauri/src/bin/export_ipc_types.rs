@@ -4,11 +4,11 @@ use mesh_lib::backend::{
     BackendCapabilities, BackendKind, BackendStatus, CommunityModerationResult, CustomEmoji,
     MatrixCommunityAdmission, MatrixNotification, MatrixPersonalDataExport,
     MatrixQueuedMessageState, MatrixQueuedMessageUpdate, MatrixRoomNotificationMode,
-    MatrixRoomPins, MatrixRoomPinsUpdate, MatrixRtcJoinResult, MatrixRtcMediaKey,
-    MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember,
-    MatrixRtcMembershipUpdate, MatrixUnreadUpdate, ModerationAuditEntry, ModerationRoomOutcome,
-    NotificationPresentationContext, PendingInvitationMetadata, ReadReceiptMode, UserPreferences,
-    VoiceProvider, VoiceServiceAvailability, VoiceServiceStatus,
+    MatrixRoomPins, MatrixRoomPinsUpdate, MatrixRoomUpgrade, MatrixRtcJoinResult,
+    MatrixRtcMediaKey, MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause,
+    MatrixRtcMember, MatrixRtcMembershipUpdate, MatrixUnreadUpdate, ModerationAuditEntry,
+    ModerationRoomOutcome, NotificationPresentationContext, PendingInvitationMetadata,
+    ReadReceiptMode, UserPreferences, VoiceProvider, VoiceServiceAvailability, VoiceServiceStatus,
 };
 use mesh_lib::types::{
     community::{ChannelDto, CommunityDto},
@@ -50,6 +50,7 @@ fn generated_contract() -> String {
     output.push_str(&declaration::<MatrixQueuedMessageState>());
     output.push_str(&declaration::<MatrixQueuedMessageUpdate>());
     output.push_str(&declaration::<MatrixRoomNotificationMode>());
+    output.push_str(&declaration::<MatrixRoomUpgrade>());
     output.push_str(&declaration::<MatrixRoomPins>());
     output.push_str(&declaration::<MatrixRoomPinsUpdate>());
     output.push_str(&declaration::<MatrixRtcMember>());

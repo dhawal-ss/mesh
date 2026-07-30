@@ -12,12 +12,13 @@ use std::{
 use matrix_sdk::{
     config::SyncSettings,
     ruma::{
+        api::client::room::upgrade_room::v3::Request as UpgradeRoomRequest,
         events::{
             fully_read::FullyReadEventContent,
             receipt::{ReceiptThread, ReceiptType},
         },
         presence::PresenceState,
-        RoomId, UserId,
+        RoomId, RoomVersionId, UserId,
     },
     Client,
 };
@@ -184,7 +185,7 @@ async fn wait_for_member_presence(
     user_id: &str,
     expected_online: bool,
 ) -> bool {
-    for _ in 0..20 {
+    for _ in 0..90 {
         observer.sync_once().await.unwrap();
         if observer
             .list_members(community_id.to_owned())
@@ -193,6 +194,24 @@ async fn wait_for_member_presence(
             .iter()
             .find(|member| member.public_key == user_id)
             .is_some_and(|member| member.online == expected_online)
+        {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    false
+}
+
+async fn wait_for_room_notification_mode(
+    observer: &MatrixBackend,
+    room_id: &str,
+    expected: MatrixRoomNotificationMode,
+) -> bool {
+    for _ in 0..20 {
+        if observer
+            .matrix_room_notification_mode(room_id.to_owned())
+            .await
+            .is_ok_and(|mode| mode == expected)
         {
             return true;
         }
@@ -406,19 +425,28 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
             bob_user.clone(),
             dm_body.clone(),
             None,
+            None,
             uuid::Uuid::new_v4().to_string(),
         )
         .await
         .unwrap();
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    bob.sync_once().await.unwrap();
-    let bob_dm_messages = bob
-        .dm_messages(alice_dm.id.clone(), 20, None, None)
-        .await
-        .unwrap();
-    assert!(bob_dm_messages
-        .iter()
-        .any(|message| { message.id == dm_message.id && message.content == dm_body }));
+    let mut bob_received_dm = false;
+    for _ in 0..30 {
+        bob_received_dm = bob
+            .dm_messages(alice_dm.id.clone(), 20, None, None)
+            .await
+            .unwrap()
+            .iter()
+            .any(|message| message.id == dm_message.id && message.content == dm_body);
+        if bob_received_dm {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert!(
+        bob_received_dm,
+        "Bob did not receive and decrypt Alice's federated DM"
+    );
 
     let dm_reply_body = format!("dm-reply-{nonce}");
     let dm_reply = bob
@@ -426,6 +454,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
             alice_user.clone(),
             dm_reply_body.clone(),
             Some(dm_message.id.clone()),
+            None,
             uuid::Uuid::new_v4().to_string(),
         )
         .await
@@ -434,8 +463,23 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         dm_reply.reply_to_id.as_deref(),
         Some(dm_message.id.as_str())
     );
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    alice.sync_once().await.unwrap();
+    let mut alice_received_reply = false;
+    for _ in 0..30 {
+        alice_received_reply = alice
+            .dm_messages(alice_dm.id.clone(), 20, None, None)
+            .await
+            .unwrap()
+            .iter()
+            .any(|message| message.id == dm_reply.id && message.content == dm_reply_body);
+        if alice_received_reply {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert!(
+        alice_received_reply,
+        "Alice did not receive and decrypt Bob's federated DM reply"
+    );
     let edited_dm_body = format!("dm-edited-{nonce}");
     alice
         .edit_message(
@@ -623,11 +667,30 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         .update_user_preferences(privacy_preferences(true, true, true, false))
         .await
         .unwrap();
-    bob.sync_once().await.unwrap();
-    let bob_dm_messages = bob
-        .dm_messages(alice_dm.id.clone(), 20, None, None)
-        .await
-        .unwrap();
+    let mut bob_dm_messages = Vec::new();
+    for _ in 0..30 {
+        bob_dm_messages = bob
+            .dm_messages(alice_dm.id.clone(), 20, None, None)
+            .await
+            .unwrap();
+        let edit_received = bob_dm_messages.iter().any(|message| {
+            message.id == dm_message.id
+                && message.content == edited_dm_body
+                && message.edited_at.is_some()
+        });
+        let reaction_received = bob_dm_messages.iter().any(|message| {
+            message.id == dm_reply.id
+                && message.reply_to_id.as_deref() == Some(dm_message.id.as_str())
+                && message
+                    .reactions
+                    .get("thumbsup")
+                    .is_some_and(|authors| authors.iter().any(|author| author == &alice_user))
+        });
+        if edit_received && reaction_received {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
     assert!(bob_dm_messages.iter().any(|message| {
         message.id == dm_message.id
             && message.content == edited_dm_body
@@ -649,6 +712,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         .send_dm(
             bob_user.clone(),
             "blocked-dm".into(),
+            None,
             None,
             uuid::Uuid::new_v4().to_string(),
         )
@@ -893,6 +957,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         community.channel_id.clone(),
         emoji_body.clone(),
         None,
+        None,
         uuid::Uuid::new_v4().to_string(),
     )
     .await
@@ -965,6 +1030,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         .send_message(
             community.channel_id.clone(),
             online_body.clone(),
+            None,
             None,
             online_request_id.clone(),
         )
@@ -1109,6 +1175,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
             community.channel_id.clone(),
             reply_body.clone(),
             Some(online_message.id.clone()),
+            None,
             reply_request_id.clone(),
         )
         .await
@@ -1224,6 +1291,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
                 community.channel_id.clone(),
                 update_body,
                 None,
+                None,
                 uuid::Uuid::new_v4().to_string(),
             )
             .await
@@ -1257,6 +1325,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
             community.channel_id.clone(),
             offline_body.clone(),
             None,
+            None,
             offline_request_id.clone(),
         ),
     )
@@ -1277,6 +1346,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         .send_message(
             community.channel_id.clone(),
             offline_body.clone(),
+            None,
             None,
             offline_request_id.clone(),
         )
@@ -1485,6 +1555,199 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
     );
     checkpoint!("second device rediscovered and decrypted the historical DM");
 
+    bob.matrix_set_room_notification_mode(
+        community.channel_id.clone(),
+        MatrixRoomNotificationMode::Nothing,
+    )
+    .await
+    .unwrap();
+    assert!(
+        wait_for_room_notification_mode(
+            &bob_second,
+            &community.channel_id,
+            MatrixRoomNotificationMode::Nothing,
+        )
+        .await,
+        "second device did not reconcile the Matrix room mute push rule"
+    );
+    bob_second
+        .matrix_set_room_notification_mode(
+            community.channel_id.clone(),
+            MatrixRoomNotificationMode::Mentions,
+        )
+        .await
+        .unwrap();
+    assert!(
+        wait_for_room_notification_mode(
+            &bob,
+            &community.channel_id,
+            MatrixRoomNotificationMode::Mentions,
+        )
+        .await,
+        "first device did not reconcile the Matrix mention-only push rule"
+    );
+    checkpoint!("Matrix room notification mode reconciled across two device sessions");
+
+    let pre_upgrade_body = format!("before-room-upgrade-{nonce}");
+    let pre_upgrade_message = alice
+        .send_text(extra_channel.id.clone(), pre_upgrade_body.clone())
+        .await
+        .unwrap();
+    alice_observer
+        .sync_once(
+            SyncSettings::default()
+                .timeout(Duration::ZERO)
+                .set_presence(PresenceState::Offline),
+        )
+        .await
+        .unwrap();
+    assert!(
+        alice_observer
+            .get_room(&RoomId::parse(&extra_channel.id).unwrap())
+            .is_some(),
+        "the room-upgrade client did not discover the source channel"
+    );
+    let upgrade_response = alice_observer
+        .send(UpgradeRoomRequest::new(
+            RoomId::parse(&extra_channel.id).unwrap(),
+            RoomVersionId::V11,
+        ))
+        .await
+        .unwrap();
+    let replacement_channel_id = upgrade_response.replacement_room.to_string();
+
+    let mut bob_saw_upgrade = false;
+    for _ in 0..20 {
+        bob_saw_upgrade = bob
+            .matrix_room_upgrade(extra_channel.id.clone())
+            .await
+            .unwrap()
+            .is_some_and(|upgrade| {
+                upgrade.replacement_room_id.as_deref() == Some(&replacement_channel_id)
+            });
+        if bob_saw_upgrade {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert!(
+        bob_saw_upgrade,
+        "the room tombstone did not federate to the other homeserver"
+    );
+    let channels_before_follow = bob.list_channels(community.space_id.clone()).await.unwrap();
+    assert!(
+        channels_before_follow
+            .iter()
+            .any(|channel| channel.id == extra_channel.id),
+        "the old channel signpost disappeared before the replacement was joined"
+    );
+    assert!(
+        !channels_before_follow
+            .iter()
+            .any(|channel| channel.id == replacement_channel_id),
+        "an unjoined replacement channel was exposed as available"
+    );
+
+    bob.join_room(replacement_channel_id.clone()).await.unwrap();
+    let mut channels_after_follow = Vec::new();
+    for _ in 0..20 {
+        channels_after_follow = bob.list_channels(community.space_id.clone()).await.unwrap();
+        if channels_after_follow
+            .iter()
+            .any(|channel| channel.id == replacement_channel_id)
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert!(
+        channels_after_follow
+            .iter()
+            .any(|channel| channel.id == replacement_channel_id),
+        "the joined replacement did not become the community channel"
+    );
+    assert!(
+        !channels_after_follow
+            .iter()
+            .any(|channel| channel.id == extra_channel.id),
+        "the old channel remained duplicated after following the upgrade"
+    );
+    let replacement_upgrade = bob
+        .matrix_room_upgrade(replacement_channel_id.clone())
+        .await
+        .unwrap()
+        .expect("the replacement room did not expose its predecessor");
+    assert_eq!(
+        replacement_upgrade.predecessor_room_id.as_deref(),
+        Some(extra_channel.id.as_str())
+    );
+
+    let mut alice_saw_replacement = false;
+    for _ in 0..20 {
+        alice_saw_replacement = alice
+            .list_channels(community.space_id.clone())
+            .await
+            .unwrap()
+            .iter()
+            .any(|channel| channel.id == replacement_channel_id);
+        if alice_saw_replacement {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert!(
+        alice_saw_replacement,
+        "the room creator did not reconcile the joined replacement"
+    );
+    let mut second_device_saw_replacement = false;
+    for _ in 0..20 {
+        second_device_saw_replacement = bob_second
+            .list_channels(community.space_id.clone())
+            .await
+            .unwrap()
+            .iter()
+            .any(|channel| channel.id == replacement_channel_id);
+        if second_device_saw_replacement {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert!(
+        second_device_saw_replacement,
+        "Bob's second device did not reconcile the joined replacement"
+    );
+
+    let post_upgrade_body = format!("after-room-upgrade-{nonce}");
+    let post_upgrade_message = alice
+        .send_text(replacement_channel_id.clone(), post_upgrade_body)
+        .await
+        .unwrap();
+    let mut predecessor_history = Vec::new();
+    for _ in 0..30 {
+        predecessor_history = bob
+            .messages(
+                replacement_channel_id.clone(),
+                50,
+                None,
+                Some(post_upgrade_message.event_id.clone()),
+            )
+            .await
+            .unwrap();
+        if predecessor_history.iter().any(|message| {
+            message.id == pre_upgrade_message.event_id && message.content == pre_upgrade_body
+        }) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert!(
+        predecessor_history.iter().any(|message| {
+            message.id == pre_upgrade_message.event_id && message.content == pre_upgrade_body
+        }),
+        "replacement-room pagination did not continue into encrypted predecessor history"
+    );
+    checkpoint!("room upgrade signpost, follow transition, and predecessor history verified");
+
     let saved_preferences = bob
         .update_user_preferences(UserPreferences {
             schema_version: 0,
@@ -1570,6 +1833,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         &community.space_id,
         &community.channel_id,
         &extra_channel.id,
+        &replacement_channel_id,
     ] {
         assert!(moderation
             .audit
@@ -1596,7 +1860,11 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
             && member.ban_status == "banned"
     }));
     restored.sync_once().await.unwrap();
-    for room_id in [&community.channel_id, &extra_channel.id] {
+    for room_id in [
+        &community.channel_id,
+        &extra_channel.id,
+        &replacement_channel_id,
+    ] {
         assert!(
             restored.join_room(room_id.clone()).await.is_err(),
             "banned member rejoined a server channel"

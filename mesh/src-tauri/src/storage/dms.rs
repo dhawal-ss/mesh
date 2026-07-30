@@ -210,6 +210,7 @@ impl Database {
                 edited_at: row.get(8)?,
                 deleted_at: row.get(9)?,
                 reply_to_id: None,
+                thread_root_id: None,
                 delivery_status: Some("sent".into()),
             })
         })?;

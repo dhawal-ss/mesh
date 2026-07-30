@@ -67,6 +67,8 @@ export default {
         // Borders.
         border: withAlpha('--border-default-rgb'),
         'border-light': withAlpha('--border-emphasis-rgb'),
+        // 3:1 boundary for controls whose shape is not conveyed by a fill.
+        'border-control': withAlpha('--border-control-rgb'),
 
         // Content.
         primary: withAlpha('--content-primary-rgb'),

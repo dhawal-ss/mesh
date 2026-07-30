@@ -1,15 +1,25 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useState } from 'react'
-import { IdentityScreen } from './IdentityScreen'
-import { JoinScreen } from './JoinScreen'
-import { ReadyScreen } from './ReadyScreen'
+import { lazy, Suspense, useState } from 'react'
 import { MatrixAccountScreen, type MatrixAccountOutcome } from './MatrixAccountScreen'
-import { BackupCodeScreen } from './BackupCodeScreen'
+import { Button } from '../ui/Button'
 import { ErrorState } from '../ui/ErrorState'
 import { Spinner } from '../ui/Spinner'
 import { Icon, type IconName } from '../ui/Icon'
 import { variants } from '../../lib/motion'
 import { DEFAULT_AVATAR_COLORS, type OnboardingFlowProps, type OnboardingProfile } from './types'
+
+const IdentityScreen = lazy(() =>
+  import('./IdentityScreen').then((module) => ({ default: module.IdentityScreen })),
+)
+const JoinScreen = lazy(() =>
+  import('./JoinScreen').then((module) => ({ default: module.JoinScreen })),
+)
+const ReadyScreen = lazy(() =>
+  import('./ReadyScreen').then((module) => ({ default: module.ReadyScreen })),
+)
+const BackupCodeScreen = lazy(() =>
+  import('./BackupCodeScreen').then((module) => ({ default: module.BackupCodeScreen })),
+)
 
 type Step = 'account' | 'identity' | 'profile' | 'backup' | 'bootstrap'
 
@@ -84,6 +94,8 @@ export function OnboardingFlow({
   const [backupCode, setBackupCode] = useState<string | null>(null)
   const [backupError, setBackupError] = useState<unknown | null>(null)
   const [preparingBackup, setPreparingBackup] = useState(false)
+  /** True only after the user explicitly asks to enable recovery. */
+  const [recoveryRequested, setRecoveryRequested] = useState(false)
 
   const currentIndex = steps.indexOf(step)
 
@@ -109,7 +121,14 @@ export function OnboardingFlow({
     }
     setNewAccount(true)
     setStep('backup')
-    void prepareBackupCode()
+    /*
+     * Deliberately does NOT call prepareBackupCode() here. Preparing the code
+     * enables cross-signing recovery on the account, and doing that as a side
+     * effect of navigation meant a user who then chose "Remind me later" ended
+     * up in the worst possible state: the account believing it was
+     * recoverable, with a key the human had never seen. Recovery is now
+     * enabled only by the explicit action on the consent step below.
+     */
   }
 
   return (
@@ -203,7 +222,12 @@ export function OnboardingFlow({
           </div>
 
           <div className="my-auto w-full max-w-lg">
-            <AnimatePresence mode="wait" initial={false}>
+            <Suspense fallback={(
+              <div className="flex min-h-64 items-center justify-center" role="status" aria-label="Loading setup step">
+                <Spinner />
+              </div>
+            )}>
+              <AnimatePresence mode="wait" initial={false}>
               {step === 'account' && (
                 <motion.div key="account" variants={variants.screen} initial="initial" animate="animate" exit="exit">
                   <MatrixAccountScreen
@@ -223,7 +247,54 @@ export function OnboardingFlow({
 
               {step === 'backup' && (
                 <motion.div key="backup" variants={variants.screen} initial="initial" animate="animate" exit="exit">
-                  {preparingBackup ? (
+                  {!recoveryRequested ? (
+                    <section aria-labelledby="recovery-consent-title" className="space-y-6">
+                      <header className="space-y-2">
+                        <p className="text-caption uppercase tracking-eyebrow text-content-muted">
+                          Protect your messages
+                        </p>
+                        <h1
+                          id="recovery-consent-title"
+                          className="text-lg font-semibold tracking-tight text-content"
+                        >
+                          Set up message recovery
+                        </h1>
+                        <p className="max-w-lg text-sm leading-6 text-content-secondary">
+                          Your messages are locked so only you can read them — not even we can see
+                          them. That also means that if you lose this device, there is no way back
+                          into your history unless you set up recovery now.
+                        </p>
+                      </header>
+
+                      <ul className="space-y-2 text-sm text-content-secondary">
+                        <li>Mesh creates a one-time backup code that only you hold.</li>
+                        <li>You save it somewhere safe, then confirm a few words of it.</li>
+                        <li>You can turn recovery on later in Settings instead.</li>
+                      </ul>
+
+                      <div className="space-y-3">
+                        <Button
+                          className="w-full"
+                          onClick={() => {
+                            setRecoveryRequested(true)
+                            void prepareBackupCode()
+                          }}
+                        >
+                          Set up recovery
+                        </Button>
+                        <button
+                          type="button"
+                          className="w-full rounded-md px-3 py-2 text-sm text-content-secondary transition-colors hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                          onClick={() => {
+                            onBackupSkipped?.()
+                            setStep('bootstrap')
+                          }}
+                        >
+                          Not now (you could lose your messages)
+                        </button>
+                      </div>
+                    </section>
+                  ) : preparingBackup ? (
                     <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-center">
                       <Spinner />
                       <p className="text-sm text-content-secondary">Preparing your backup code…</p>
@@ -293,7 +364,8 @@ export function OnboardingFlow({
                   />
                 </motion.div>
               )}
-            </AnimatePresence>
+              </AnimatePresence>
+            </Suspense>
           </div>
         </div>
       </motion.section>

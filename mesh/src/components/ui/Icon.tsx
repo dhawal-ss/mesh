@@ -1,5 +1,6 @@
 import {
   Activity,
+  BellOff,
   Check,
   ChevronDown,
   CirclePlus,
@@ -43,6 +44,7 @@ import {
 
 const ICONS = {
   activity: Activity,
+  bellOff: BellOff,
   check: Check,
   chevronDown: ChevronDown,
   circlePlus: CirclePlus,

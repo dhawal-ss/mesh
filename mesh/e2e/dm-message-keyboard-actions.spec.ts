@@ -313,8 +313,10 @@ test.describe('DM message action bar keyboard access (V-25 follow-up)', () => {
 
     const bobRow = page.getByRole('group', { name: /^Message from Bob,/ })
     const ownRow = page.getByRole('group', { name: /^Message from alice,/ })
-    const reactButtonBob = bobRow.getByRole('button', { name: 'Add reaction' })
-    const replyButtonBob = bobRow.getByRole('button', { name: 'Reply to message' })
+    // DMs now use the shared channel row, whose accessible action names
+    // include the author so repeated controls remain distinguishable.
+    const reactButtonBob = bobRow.getByRole('button', { name: 'React to message from Bob' })
+    const replyButtonBob = bobRow.getByRole('button', { name: 'Reply to Bob' })
     const editButtonOwn = ownRow.getByRole('button', { name: 'Edit message' })
     // Opacity/pointer-events live on the action bar's wrapper div, not the
     // buttons themselves — assert visibility there, matching Message.tsx's
@@ -328,7 +330,7 @@ test.describe('DM message action bar keyboard access (V-25 follow-up)', () => {
 
     // --- React (on Bob's message) ---
     await page.keyboard.press('Enter')
-    const thumbsUp = page.getByRole('button', { name: '👍', exact: true })
+    const thumbsUp = page.getByRole('button', { name: 'React with thumbs up', exact: true })
     await tabUntilFocused(page, thumbsUp, 'forward')
     await page.keyboard.press('Enter')
 
@@ -336,7 +338,9 @@ test.describe('DM message action bar keyboard access (V-25 follow-up)', () => {
       command: 'matrix_toggle_reaction',
       args: { roomId: '!alice-bob-dm:mesh.test', eventId: '$dm-history', key: '👍' },
     })
-    await expect(bobRow.getByRole('button', { name: '👍 1' })).toBeVisible()
+    await expect(
+      bobRow.getByRole('button', { name: /1 reaction, you reacted/ }),
+    ).toBeVisible()
 
     // --- Reply (to Bob's message) ---
     await tabUntilFocused(page, replyButtonBob, 'forward')
@@ -375,12 +379,12 @@ test.describe('DM message action bar keyboard access (V-25 follow-up)', () => {
     await expect(page.getByText("A DM Bob didn't send to himself.")).toBeVisible()
 
     const bobRow = page.getByRole('group', { name: /^Message from Bob,/ })
-    const reactButtonBob = bobRow.getByRole('button', { name: 'Add reaction' })
+    const reactButtonBob = bobRow.getByRole('button', { name: 'React to message from Bob' })
     await tabUntilFocused(page, reactButtonBob, 'backward')
 
     await expect(reactButtonBob).toHaveAttribute('aria-expanded', 'false')
     await page.keyboard.press('Enter')
-    const thumbsUp = page.getByRole('button', { name: '👍', exact: true })
+    const thumbsUp = page.getByRole('button', { name: 'React with thumbs up', exact: true })
     await expect(thumbsUp).toBeVisible()
     await expect(reactButtonBob).toHaveAttribute('aria-expanded', 'true')
 
@@ -389,7 +393,7 @@ test.describe('DM message action bar keyboard access (V-25 follow-up)', () => {
     await expect(reactButtonBob).toBeFocused()
     await expect(reactButtonBob).toHaveAttribute('aria-expanded', 'false')
     // No emoji was picked — the picker was dismissed, not activated.
-    await expect(bobRow.getByRole('button', { name: '👍 1' })).toHaveCount(0)
+    await expect(bobRow.getByRole('button', { name: /1 reaction, you reacted/ })).toHaveCount(0)
     expect(await ipcCalls(page)).not.toContainEqual(
       expect.objectContaining({ command: 'matrix_toggle_reaction' }),
     )
@@ -400,7 +404,7 @@ test.describe('DM message action bar keyboard access (V-25 follow-up)', () => {
     await expect(page.getByText("A DM Bob didn't send to himself.")).toBeVisible()
 
     const bobRow = page.getByRole('group', { name: /^Message from Bob,/ })
-    const reactButtonBob = bobRow.getByRole('button', { name: 'Add reaction' })
+    const reactButtonBob = bobRow.getByRole('button', { name: 'React to message from Bob' })
     const actionBarBob = reactButtonBob.locator('xpath=..')
     await expect(actionBarBob).toHaveCSS('opacity', '0')
 

@@ -84,4 +84,12 @@ describe('Matrix preference sync state', () => {
     await expect(refreshMatrixPreferences('@alice:example.org')).rejects.toThrow('offline')
     expect(useSettingsStore.getState().matrixPreferenceSync.status).toBe('failed')
   })
+
+  it('does not route Matrix room mute state through the legacy local kv store', async () => {
+    await refreshMatrixPreferences('@alice:example.org')
+    useSettingsStore.getState().muteChannel('!room:example.org')
+    await flushPromises()
+
+    expect(bridge.setKv).not.toHaveBeenCalled()
+  })
 })

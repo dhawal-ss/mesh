@@ -73,7 +73,7 @@ describe('OnboardingFlow account outcomes', () => {
     expect(progress?.textContent).toContain('Ready')
   })
 
-  it('requires the backup-code step immediately after registration', async () => {
+  it('requires the backup-code step after registration, but only enables recovery on consent', async () => {
     const createBackupCode = vi.fn().mockResolvedValue('MESH-ONE-TWO-THREE-FOUR')
     const configured = vi.fn()
     await act(async () => {
@@ -94,9 +94,25 @@ describe('OnboardingFlow account outcomes', () => {
       await new Promise((resolve) => window.setTimeout(resolve, 350))
     })
 
+    /*
+     * Creating the code enables cross-signing recovery on the account. Doing
+     * that as a side effect of navigation meant a user who then declined ended
+     * up with recovery on and a key they had never seen. Reaching the step must
+     * not enable anything.
+     */
+    expect(createBackupCode).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Set up message recovery')
+    expect(container.textContent).not.toContain('Ready step')
+
+    const consent = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent === 'Set up recovery')
+    await act(async () => {
+      consent?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 350))
+    })
+
     expect(createBackupCode).toHaveBeenCalledOnce()
     expect(container.textContent).toContain('Backup: MESH-ONE-TWO-THREE-FOUR')
-    expect(container.textContent).not.toContain('Ready step')
 
     const confirm = Array.from(container.querySelectorAll('button'))
       .find((button) => button.textContent === 'Confirm backup')
@@ -105,6 +121,39 @@ describe('OnboardingFlow account outcomes', () => {
       await new Promise((resolve) => window.setTimeout(resolve, 350))
     })
     expect(configured).toHaveBeenCalledOnce()
+    expect(container.textContent).toContain('Ready step')
+  })
+
+  it('never enables recovery when the user declines at the consent step', async () => {
+    const createBackupCode = vi.fn().mockResolvedValue('MESH-ONE-TWO-THREE-FOUR')
+    const skipped = vi.fn()
+    await act(async () => {
+      root.render(
+        <OnboardingFlow
+          backendKind="matrix"
+          onComplete={() => {}}
+          onCreateBackupCode={createBackupCode}
+          onBackupSkipped={skipped}
+        />,
+      )
+    })
+
+    const registered = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent === 'Registered')
+    await act(async () => {
+      registered?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 350))
+    })
+
+    const decline = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent?.startsWith('Not now'))
+    await act(async () => {
+      decline?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 350))
+    })
+
+    expect(createBackupCode).not.toHaveBeenCalled()
+    expect(skipped).toHaveBeenCalledOnce()
     expect(container.textContent).toContain('Ready step')
   })
 

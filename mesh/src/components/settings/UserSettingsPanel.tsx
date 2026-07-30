@@ -703,14 +703,16 @@ function SelectRow({
   onChange: (value: string) => void
 }) {
   return (
-    <label className="flex items-start justify-between gap-4 rounded-control bg-surface-hover px-3 py-3">
+    <div className="flex items-start justify-between gap-4 rounded-control bg-surface-hover px-3 py-3">
       <span>
-        <span className="block text-sm font-medium text-primary">{label}</span>
-        <span className="mt-0.5 block text-xs leading-5 text-muted">{description}</span>
+        <label htmlFor={id} className="block text-sm font-medium text-primary">{label}</label>
+        <span id={`${id}-description`} className="mt-0.5 block text-xs leading-5 text-muted">
+          {description}
+        </span>
       </span>
       <select
         id={id}
-        aria-label={label}
+        aria-describedby={`${id}-description`}
         className="min-h-control-sm max-w-xs rounded-control border border-border bg-surface-sunken px-2 text-xs text-primary outline-none focus:border-accent"
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -719,6 +721,6 @@ function SelectRow({
           <option key={optionValue} value={optionValue}>{optionLabel}</option>
         ))}
       </select>
-    </label>
+    </div>
   )
 }

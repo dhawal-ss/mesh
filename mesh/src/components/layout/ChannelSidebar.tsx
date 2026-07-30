@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent,
   type ReactNode,
 } from 'react'
 import { useActiveCommunity, useCommunityStore } from '../../store/communities'
@@ -17,16 +18,16 @@ import { DialogErrorBoundary, ScopedErrorBoundary } from '../ui/ScopedErrorBound
 import { Icon } from '../ui/Icon'
 import { useShellStore } from '../../store/shell'
 import * as bridge from '../../lib/bridge'
-import { copyText, matrixRoomPermalink } from '../../lib/notifications'
+import { copyText, identityLabel, matrixRoomPermalink } from '../../lib/notifications'
 import { showToast } from '../ui/Toast'
 import type { Channel } from '../../types/ipc'
 import { useMatrixRtcMembershipSync } from '../../hooks/useMatrixRtcMembershipSync'
 import { canStartMatrixVoice, shouldActivateVoiceSession } from '../../lib/voice-runtime'
 import { ModalLoadingFallback } from '../ui/ModalLoadingFallback'
 import { useIdentityStore } from '../../store/identity'
-import { useNetworkStore } from '../../store/network'
 import { EmptyState } from '../ui/Primitives'
 import { useVirtualScroll, type VirtualItem } from '../../hooks/useVirtualScroll'
+import { IconButton } from '../ui/IconButton'
 
 const CommunitySettings = lazy(() =>
   import('../community/CommunitySettings').then((module) => ({ default: module.CommunitySettings })),
@@ -61,12 +62,17 @@ export function ChannelSidebar() {
   const [showSettings, setShowSettings] = useState(false)
   const [textCollapsed, setTextCollapsed] = useState(false)
   const [voiceCollapsed, setVoiceCollapsed] = useState(false)
+  const [roomFocus, setRoomFocus] = useState({
+    activeChannelId,
+    roomId: activeChannelId,
+  })
+  const typeaheadRef = useRef('')
+  const typeaheadTimerRef = useRef<number | null>(null)
   const matrixMode = bridge.isMatrixBackend()
   const matrixVoiceReady = canStartMatrixVoice(bridge.getBackendStatusSnapshot())
-  const networkStatus = useNetworkStore((state) => state.status)
   const storedIdentity = useIdentityStore((state) => state.identity)
   const matrixAccountId = matrixMode ? bridge.getMatrixUserId() : null
-  const identityLabel = storedIdentity?.displayName || (matrixMode ? 'Mesh account' : 'Local identity')
+  const currentIdentityLabel = identityLabel(storedIdentity, matrixMode)
   const homeService = serviceName(
     bridge.getBackendStatusSnapshot()?.homeserver
       ?? (matrixAccountId?.split(':').slice(1).join(':') || null),
@@ -143,6 +149,7 @@ export function ChannelSidebar() {
     handleMeasuredHeight,
     handleScroll,
     resetLayout,
+    scrollToItem,
   } = useVirtualScroll(virtualRoomItems, {
     estimatedMessageHeight: 36,
     estimatedGapHeight: 32,
@@ -157,6 +164,78 @@ export function ChannelSidebar() {
   useEffect(() => {
     resetLayout()
   }, [activeCommunityId, resetLayout, textCollapsed, voiceCollapsed])
+  const navigableRooms = useMemo(
+    () => roomListEntries.flatMap((entry) => entry.kind === 'room' ? [entry.channel] : []),
+    [roomListEntries],
+  )
+  const activeRoomIsNavigable = Boolean(
+    activeChannelId && navigableRooms.some((room) => room.id === activeChannelId),
+  )
+  const focusedRoomIsNavigable = Boolean(
+    roomFocus.roomId && navigableRooms.some((room) => room.id === roomFocus.roomId),
+  )
+  let focusedRoomId = roomFocus.roomId
+  if (roomFocus.activeChannelId !== activeChannelId) {
+    focusedRoomId = activeRoomIsNavigable
+      ? activeChannelId
+      : navigableRooms[0]?.id ?? null
+  } else if (!focusedRoomIsNavigable) {
+    focusedRoomId = activeRoomIsNavigable
+      ? activeChannelId
+      : navigableRooms[0]?.id ?? null
+  }
+  if (
+    roomFocus.activeChannelId !== activeChannelId
+    || roomFocus.roomId !== focusedRoomId
+  ) {
+    setRoomFocus({ activeChannelId, roomId: focusedRoomId })
+  }
+  useEffect(() => () => {
+    if (typeaheadTimerRef.current !== null) window.clearTimeout(typeaheadTimerRef.current)
+  }, [])
+
+  const focusRoom = (roomId: string) => {
+    setRoomFocus({ activeChannelId, roomId })
+    scrollToItem(`room:${roomId}`)
+    window.requestAnimationFrame(() => {
+      const target = [...document.querySelectorAll<HTMLButtonElement>('[data-room-id]')]
+        .find((button) => button.dataset.roomId === roomId)
+      target?.focus()
+    })
+  }
+
+  const handleRoomListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target instanceof HTMLElement
+      ? event.target.closest<HTMLButtonElement>('button[data-room-id]')
+      : null
+    if (!target || navigableRooms.length === 0) return
+    const currentIndex = Math.max(
+      0,
+      navigableRooms.findIndex((room) => room.id === target.dataset.roomId),
+    )
+    let nextIndex: number | null = null
+    if (event.key === 'ArrowDown') nextIndex = Math.min(navigableRooms.length - 1, currentIndex + 1)
+    else if (event.key === 'ArrowUp') nextIndex = Math.max(0, currentIndex - 1)
+    else if (event.key === 'Home') nextIndex = 0
+    else if (event.key === 'End') nextIndex = navigableRooms.length - 1
+    else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      typeaheadRef.current += event.key.toLocaleLowerCase()
+      if (typeaheadTimerRef.current !== null) window.clearTimeout(typeaheadTimerRef.current)
+      typeaheadTimerRef.current = window.setTimeout(() => {
+        typeaheadRef.current = ''
+        typeaheadTimerRef.current = null
+      }, 700)
+      const start = (currentIndex + 1) % navigableRooms.length
+      const ordered = [...navigableRooms.slice(start), ...navigableRooms.slice(0, start)]
+      const match = ordered.find((room) => (
+        room.name.toLocaleLowerCase().startsWith(typeaheadRef.current)
+      ))
+      if (match) nextIndex = navigableRooms.indexOf(match)
+    }
+    if (nextIndex === null) return
+    event.preventDefault()
+    focusRoom(navigableRooms[nextIndex].id)
+  }
   useMatrixRtcMembershipSync(
     matrixMode
       ? channels.filter((channel) => channel.channelType === 'voice').map((channel) => channel.id)
@@ -218,12 +297,7 @@ export function ChannelSidebar() {
   return (
     <>
       <div className="flex flex-col h-full">
-        <button
-          className="flex h-conversation-header flex-shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-3 text-left transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          onClick={() => setShowSettings(true)}
-          aria-label={`Open settings for ${activeCommunity.name}`}
-          data-tauri-drag-region
-        >
+        <div className="flex min-h-conversation-header flex-shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-3 py-2">
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-semibold text-primary">
               {activeCommunity.name}
@@ -232,36 +306,26 @@ export function ChannelSidebar() {
               {homeService ?? (matrixMode ? 'Connected service' : 'Local community')}
             </span>
             <span className="mt-0.5 block truncate text-caption text-secondary">
-              Identity · {identityLabel}
-            </span>
-            <span className="mt-1 flex items-center gap-1.5 text-caption text-muted">
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  networkStatus.state === 'connected'
-                    ? 'bg-status-success'
-                    : networkStatus.state === 'connecting'
-                      ? 'bg-status-warning'
-                      : 'bg-status-warning'
-                }`}
-                aria-hidden="true"
-              />
-              {networkStatus.state === 'connected'
-                ? 'Synced'
-                : networkStatus.state === 'connecting'
-                  ? 'Syncing'
-                  : 'Offline'}
+              Identity · {currentIdentityLabel}
             </span>
           </span>
-          <Icon name="settings" size="sm" className="mt-0.5 flex-shrink-0 text-muted" />
-        </button>
+          <IconButton
+            size="sm"
+            aria-label={`Open settings for ${activeCommunity.name}`}
+            onClick={() => setShowSettings(true)}
+          >
+            <Icon name="settings" size="sm" />
+          </IconButton>
+        </div>
 
         {/* Room list */}
         <div
           id="community-room-list"
           ref={scrollContainerRef}
           onScroll={() => void handleScroll()}
+          onKeyDown={handleRoomListKeyDown}
           className="flex-1 overflow-y-auto px-2 py-3"
-          role="list"
+          role="navigation"
           aria-label="Community rooms"
         >
           <div
@@ -272,8 +336,7 @@ export function ChannelSidebar() {
               paddingBottom: `${bottomSpacerHeight}px`,
             }}
           >
-            {visibleRoomEntries.map((entry, visibleIndex) => {
-              const listPosition = visibleRange.start + visibleIndex + 1
+            {visibleRoomEntries.map((entry) => {
               if (entry.kind === 'heading') {
                 const collapsed = entry.collapsed
                 const toggle = entry.roomType === 'text'
@@ -285,32 +348,22 @@ export function ChannelSidebar() {
                     rowKey={entry.key}
                     onHeightChange={handleMeasuredHeight}
                   >
-                    <div
-                      role="listitem"
-                      aria-posinset={listPosition}
-                      aria-setsize={roomListEntries.length}
-                      className={entry.roomType === 'voice' ? 'pt-3' : undefined}
-                    >
+                    <h3 className={entry.roomType === 'voice' ? 'pt-3' : undefined}>
                       <button
                         onClick={toggle}
                         className="group flex min-h-8 w-full items-center gap-0.5 px-0.5 text-left"
                         aria-expanded={!collapsed}
-                        aria-controls="community-room-list"
                       >
                         <Icon
                           name="chevronDown"
                           size="xs"
                           className={`text-muted transition-transform duration-150 ${collapsed ? '-rotate-90' : ''}`}
                         />
-                        <span
-                          role="heading"
-                          aria-level={3}
-                          className="text-meta font-semibold uppercase tracking-caption text-muted group-hover:text-secondary"
-                        >
+                        <span className="text-meta font-semibold uppercase tracking-caption text-muted group-hover:text-secondary">
                           {entry.label}
                         </span>
                       </button>
-                    </div>
+                    </h3>
                   </MeasuredRoomRow>
                 )
               }
@@ -323,18 +376,17 @@ export function ChannelSidebar() {
                     rowKey={entry.key}
                     onHeightChange={handleMeasuredHeight}
                   >
-                    <div
-                      role="listitem"
-                      aria-posinset={listPosition}
-                      aria-setsize={roomListEntries.length}
-                    >
+                    <div role="presentation">
                       <ChannelItem
                         channel={channel}
+                        matrixMode={matrixMode}
                         active={channel.id === activeChannelId}
                         onClick={() => setActiveChannel(channel.id)}
                         onMarkRead={() => void markRead(channel)}
                         onOpenNotificationSettings={() => setProfileOpen(true)}
                         onCopyLink={() => void copyChannelLink(channel)}
+                        tabIndex={focusedRoomId === channel.id ? 0 : -1}
+                        onFocus={() => setRoomFocus({ activeChannelId, roomId: channel.id })}
                       />
                     </div>
                   </MeasuredRoomRow>
@@ -356,9 +408,7 @@ export function ChannelSidebar() {
                   onHeightChange={handleMeasuredHeight}
                 >
                   <div
-                    role="listitem"
-                    aria-posinset={listPosition}
-                    aria-setsize={roomListEntries.length}
+                    role="presentation"
                     draggable={
                       channel.id === currentChannelId &&
                       channel.communityId === currentCommunityId
@@ -397,6 +447,7 @@ export function ChannelSidebar() {
                   >
                     <ChannelItem
                       channel={channel}
+                      matrixMode={matrixMode}
                       active={
                         channel.id === currentChannelId &&
                         channel.communityId === currentCommunityId
@@ -405,6 +456,8 @@ export function ChannelSidebar() {
                       onMarkRead={() => void markRead(channel)}
                       onOpenNotificationSettings={() => setProfileOpen(true)}
                       onCopyLink={() => void copyChannelLink(channel)}
+                      tabIndex={focusedRoomId === channel.id ? 0 : -1}
+                      onFocus={() => setRoomFocus({ activeChannelId, roomId: channel.id })}
                     />
                     {members.length > 0 && (
                       <div

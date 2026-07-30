@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { Fragment, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import {
   ContextMenu as ContextMenuPrimitive,
   Dialog as DialogPrimitive,
@@ -517,6 +517,10 @@ export function Sheet({
 export interface ComboboxOption {
   value: string
   label: string
+  group?: string
+  title?: string
+  subtitle?: string
+  icon?: ReactNode
   keywords?: string[]
   disabled?: boolean
 }
@@ -562,6 +566,7 @@ export function Combobox({
   disabled = false,
   required = false,
   size = 'md',
+  maxEmptyOptions,
   className,
 }: {
   label: string
@@ -574,6 +579,7 @@ export function Combobox({
   disabled?: boolean
   required?: boolean
   size?: UiSize
+  maxEmptyOptions?: number
   className?: string
 }) {
   const listboxId = useId()
@@ -584,6 +590,7 @@ export function Combobox({
   const [uncontrolledLabel, setUncontrolledLabel] = useState(selectedLabel)
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
+  const rootRef = useRef<HTMLDivElement>(null)
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
     if (!normalized) return options
@@ -603,13 +610,25 @@ export function Combobox({
       .map((entry) => entry.option)
   }, [options, query])
 
+  const visibleFiltered = query.trim() || maxEmptyOptions === undefined
+    ? filtered
+    : filtered.slice(0, maxEmptyOptions)
+  const resultsCapped = visibleFiltered.length < filtered.length
   const currentLabel = value === undefined ? uncontrolledLabel : selectedLabel
-  const resolvedActiveIndex =
-    activeIndex >= 0 && activeIndex < filtered.length && !filtered[activeIndex]?.disabled ? activeIndex : -1
-  const enabledIndices = filtered.reduce<number[]>((indices, option, index) => {
+  const enabledIndices = visibleFiltered.reduce<number[]>((indices, option, index) => {
     if (!option.disabled) indices.push(index)
     return indices
   }, [])
+  const indexedActive =
+    activeIndex >= 0 && activeIndex < visibleFiltered.length && !visibleFiltered[activeIndex]?.disabled
+      ? activeIndex
+      : -1
+  const resolvedActiveIndex =
+    indexedActive >= 0
+      ? indexedActive
+      : open && query.trim()
+        ? (enabledIndices[0] ?? -1)
+        : -1
   const moveActive = (direction: 1 | -1) => {
     if (enabledIndices.length === 0) return -1
     const position = enabledIndices.indexOf(resolvedActiveIndex)
@@ -641,21 +660,27 @@ export function Combobox({
     } else if (event.key === 'End' && open && enabledIndices.length > 0) {
       event.preventDefault()
       setActiveIndex(enabledIndices[enabledIndices.length - 1])
-    } else if (event.key === 'Enter' && open && filtered[resolvedActiveIndex]) {
+    } else if (event.key === 'Enter' && open && visibleFiltered[resolvedActiveIndex]) {
       event.preventDefault()
-      choose(filtered[resolvedActiveIndex])
+      choose(visibleFiltered[resolvedActiveIndex])
     } else if (event.key === 'Escape') {
       event.preventDefault()
-      setOpen(false)
-      setActiveIndex(-1)
-    } else if (event.key === 'Tab') {
       setOpen(false)
       setActiveIndex(-1)
     }
   }
 
   return (
-    <div className={clsx('relative space-y-1.5', className)}>
+    <div
+      ref={rootRef}
+      className={clsx('relative space-y-1.5', className)}
+      onBlur={(event) => {
+        const nextTarget = event.relatedTarget
+        if (nextTarget instanceof Node && rootRef.current?.contains(nextTarget)) return
+        setOpen(false)
+        setActiveIndex(-1)
+      }}
+    >
       <label htmlFor={inputId} className="text-xs font-medium text-content-secondary">
         {label}
         {required && (
@@ -672,7 +697,7 @@ export function Combobox({
         aria-haspopup="listbox"
         aria-autocomplete="list"
         aria-activedescendant={
-          open && filtered[resolvedActiveIndex] ? `${listboxId}-${resolvedActiveIndex}` : undefined
+          open && visibleFiltered[resolvedActiveIndex] ? `${listboxId}-${resolvedActiveIndex}` : undefined
         }
         aria-describedby={error || description ? supportingTextId : undefined}
         aria-invalid={error ? true : undefined}
@@ -684,11 +709,9 @@ export function Combobox({
         onFocus={() => {
           setQuery(currentLabel)
           setOpen(true)
-          setActiveIndex(-1)
-        }}
-        onBlur={() => {
-          setOpen(false)
-          setActiveIndex(-1)
+          setActiveIndex(currentLabel.trim()
+            ? visibleFiltered.findIndex((option) => !option.disabled)
+            : -1)
         }}
         onChange={(event) => {
           setQuery(event.target.value)
@@ -719,31 +742,56 @@ export function Combobox({
           role="listbox"
           className={clsx('absolute top-full z-popover mt-1 max-h-56 w-full overflow-auto p-1', overlaySurfaceClass)}
         >
-          {filtered.length === 0 ? (
+          {visibleFiltered.length === 0 ? (
             <p className="px-2 py-3 text-sm text-content-muted">No results</p>
           ) : (
-            filtered.map((option, index) => (
-              <button
-                key={option.value}
-                id={`${listboxId}-${index}`}
-                type="button"
-                role="option"
-                aria-selected={option.value === value}
-                aria-disabled={option.disabled || undefined}
-                disabled={option.disabled}
-                onMouseDown={(event) => event.preventDefault()}
-                onMouseMove={() => {
-                  if (!option.disabled) setActiveIndex(index)
-                }}
-                onClick={() => choose(option)}
-                className={clsx(
-                  'block w-full rounded px-2 py-1.5 text-left text-sm text-content disabled:opacity-40',
-                  index === resolvedActiveIndex && 'bg-surface-hover',
-                )}
-              >
-                {option.label}
-              </button>
-            ))
+            <>
+              {visibleFiltered.map((option, index) => (
+                <Fragment key={option.value}>
+                  {option.group && option.group !== visibleFiltered[index - 1]?.group ? (
+                    <p
+                      role="presentation"
+                      className="px-2 pb-1 pt-2 text-meta font-semibold uppercase tracking-caption text-content-muted first:pt-1"
+                    >
+                      {option.group}
+                    </p>
+                  ) : null}
+                  <button
+                    id={`${listboxId}-${index}`}
+                    type="button"
+                    role="option"
+                    aria-selected={option.value === value}
+                    aria-disabled={option.disabled || undefined}
+                    disabled={option.disabled}
+                    onMouseMove={() => {
+                      if (!option.disabled) setActiveIndex(index)
+                    }}
+                    onClick={() => choose(option)}
+                    className={clsx(
+                      'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-content disabled:opacity-40',
+                      index === resolvedActiveIndex && 'bg-surface-hover',
+                    )}
+                  >
+                    {option.icon ? (
+                      <span className="flex flex-none text-content-muted" aria-hidden="true">
+                        {option.icon}
+                      </span>
+                    ) : null}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{option.title ?? option.label}</span>
+                      {option.subtitle ? (
+                        <span className="block truncate text-xs text-content-muted">{option.subtitle}</span>
+                      ) : null}
+                    </span>
+                  </button>
+                </Fragment>
+              ))}
+              {resultsCapped ? (
+                <p role="status" className="px-2 py-2 text-xs text-content-muted">
+                  Showing the first {visibleFiltered.length} results. Type to narrow the list.
+                </p>
+              ) : null}
+            </>
           )}
         </div>
       )}
@@ -762,10 +810,19 @@ export function Command({
   onOpenChange: (open: boolean) => void
   title?: string
   options: ComboboxOption[]
-  onSelect: (value: string) => void
+  onSelect: (value: string) => void | Promise<void>
 }) {
+  const [busyValue, setBusyValue] = useState<string | null>(null)
+  const busyOption = options.find((option) => option.value === busyValue)
+
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+    <DialogPrimitive.Root
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && busyValue) return
+        onOpenChange(nextOpen)
+      }}
+    >
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-overlay bg-surface-scrim" />
         <DialogPrimitive.Content className="fixed left-1/2 top-1/4 z-modal w-11/12 max-w-lg -translate-x-1/2 overflow-hidden rounded-panel border border-border-subtle bg-surface-raised shadow-overlay outline-none">
@@ -774,11 +831,25 @@ export function Command({
             label={title}
             className="mesh-command-combobox"
             options={options}
+            disabled={busyValue !== null}
+            maxEmptyOptions={60}
             onValueChange={(value) => {
-              onSelect(value)
-              onOpenChange(false)
+              setBusyValue(value)
+              void Promise.resolve(onSelect(value))
+                .then(() => onOpenChange(false))
+                .catch(() => {
+                  // The owner surfaces the actionable error and the palette stays open for retry.
+                })
+                .finally(() => setBusyValue(null))
             }}
           />
+          {busyOption ? (
+            <p role="status" className="border-t border-border-subtle px-3 py-2 text-xs text-content-muted">
+              {busyValue?.startsWith('person:')
+                ? `Opening a conversation with ${busyOption.title ?? busyOption.label}…`
+                : `Opening ${busyOption.title ?? busyOption.label}…`}
+            </p>
+          ) : null}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

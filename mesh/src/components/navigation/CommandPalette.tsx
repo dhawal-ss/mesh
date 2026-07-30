@@ -11,13 +11,18 @@ import { showToast } from '../ui/Toast'
 import { Command, type ComboboxOption } from '../ui/InteractivePrimitives'
 import { Modal } from '../ui/Modal'
 import { Kbd } from '../ui/Primitives'
+import { Icon, type IconName } from '../ui/Icon'
+import { COMMAND_PALETTE_OPEN_EVENT } from '../../lib/command-palette'
 
 const RECENT_COMMANDS_KEY = 'mesh-command-palette-recents'
 const MAX_RECENT_COMMANDS = 20
 
 interface PaletteCommand {
   id: string
-  label: string
+  group: 'Communities' | 'Rooms' | 'Messages' | 'People' | 'Settings' | 'Actions'
+  title: string
+  subtitle?: string
+  icon: IconName
   keywords: string[]
   run: () => void | Promise<void>
 }
@@ -55,10 +60,10 @@ function saveRecent(commandId: string, current: string[]): string[] {
   return next
 }
 
-export function sortCommandsByRecency(
-  commands: PaletteCommand[],
+export function sortCommandsByRecency<T extends { id: string }>(
+  commands: T[],
   recents: string[],
-): PaletteCommand[] {
+): T[] {
   const positions = new Map(recents.map((id, index) => [id, index]))
   return commands
     .map((command, index) => ({ command, index, recent: positions.get(command.id) }))
@@ -139,8 +144,11 @@ export function CommandPalette() {
     for (const community of communities) {
       entries.push({
         id: `server:${community.id}`,
-        label: `Server · ${community.name}`,
-        keywords: ['server', 'community', community.name, community.description],
+        group: 'Communities',
+        title: community.name,
+        subtitle: community.description || `${community.memberCount} members`,
+        icon: 'users',
+        keywords: [community.name, community.description],
         run: () => selectCommunity(community.id),
       })
     }
@@ -149,8 +157,11 @@ export function CommandPalette() {
       const communityName = communities.find((community) => community.id === channel.communityId)?.name ?? ''
       entries.push({
         id: `channel:${channel.id}`,
-        label: `${channel.channelType === 'voice' ? 'Voice room' : 'Room'} · ${channel.name}`,
-        keywords: ['channel', channel.channelType, channel.name, communityName],
+        group: 'Rooms',
+        title: channel.name,
+        subtitle: `${channel.channelType === 'voice' ? 'Voice' : 'Text'} · ${communityName}`,
+        icon: channel.channelType === 'voice' ? 'volume' : 'hash',
+        keywords: [channel.channelType, channel.name, communityName],
         run: () => selectChannel(channel.id),
       })
     }
@@ -158,7 +169,10 @@ export function CommandPalette() {
     for (const conversation of conversations) {
       entries.push({
         id: `dm:${conversation.id}`,
-        label: `Message · ${conversation.peerDisplayName}`,
+        group: 'Messages',
+        title: conversation.peerDisplayName,
+        subtitle: 'Direct message',
+        icon: 'messageCircle',
         keywords: ['dm', 'direct message', conversation.peerDisplayName, conversation.peerPublicKey],
         run: () => selectConversation(conversation.id),
       })
@@ -186,8 +200,11 @@ export function CommandPalette() {
         seenPeople.add(member.publicKey)
         entries.push({
           id: `person:${member.publicKey}`,
-          label: `Person · ${member.displayName}`,
-          keywords: ['person', 'member', member.displayName, member.publicKey, communityName],
+          group: 'People',
+          title: member.displayName,
+          subtitle: communityName ? `Start a conversation · ${communityName}` : 'Start a conversation',
+          icon: 'userPlus',
+          keywords: [member.displayName, member.publicKey, communityName],
           run: async () => {
             const conversation = existingDm ?? await bridge.ensureDm(member.publicKey)
             useDmStore.getState().upsertConversation(conversation)
@@ -200,48 +217,62 @@ export function CommandPalette() {
     entries.push(
       {
         id: 'settings:profile',
-        label: 'Settings · Profile and preferences',
-        keywords: ['settings', 'profile', 'preferences', 'account'],
+        group: 'Settings',
+        title: 'Profile and preferences',
+        icon: 'settings',
+        keywords: ['profile', 'preferences', 'account'],
         run: () => useShellStore.getState().setProfileOpen(true),
       },
       {
         id: 'action:create-server',
-        label: 'Action · Create a community',
-        keywords: ['action', 'create', 'new', 'server', 'community'],
+        group: 'Actions',
+        title: 'Create a community',
+        icon: 'plus',
+        keywords: ['create', 'new', 'community'],
         run: () => useShellStore.getState().openServerModal('create'),
       },
       {
         id: 'action:join-server',
-        label: 'Action · Join a community',
-        keywords: ['action', 'join', 'invite', 'server', 'community'],
+        group: 'Actions',
+        title: 'Join a community',
+        icon: 'userPlus',
+        keywords: ['join', 'invite', 'community'],
         run: () => useShellStore.getState().openServerModal('join'),
       },
     )
     if (matrixMode) {
       entries.push({
         id: 'action:explore-servers',
-        label: 'Action · Explore communities',
-        keywords: ['action', 'explore', 'discover', 'search', 'server', 'community'],
+        group: 'Actions',
+        title: 'Explore communities',
+        icon: 'search',
+        keywords: ['explore', 'discover', 'search', 'community'],
         run: () => useShellStore.getState().openServerModal('discover'),
       })
     }
     entries.push(
       {
         id: 'action:toggle-mute',
-        label: `Action · ${isMuted ? 'Unmute' : 'Mute'} microphone`,
-        keywords: ['action', 'toggle', 'mute', 'microphone', 'voice'],
+        group: 'Actions',
+        title: `${isMuted ? 'Unmute' : 'Mute'} microphone`,
+        icon: isMuted ? 'mic' : 'micOff',
+        keywords: ['toggle', 'mute', 'microphone', 'voice'],
         run: () => useVoiceStore.getState().setMuted(!useVoiceStore.getState().isMuted),
       },
       {
         id: 'action:toggle-deafen',
-        label: `Action · ${isDeafened ? 'Undeafen' : 'Deafen'} audio`,
-        keywords: ['action', 'toggle', 'deafen', 'audio', 'voice'],
+        group: 'Actions',
+        title: `${isDeafened ? 'Undeafen' : 'Deafen'} audio`,
+        icon: isDeafened ? 'headphones' : 'headphoneOff',
+        keywords: ['toggle', 'deafen', 'audio', 'voice'],
         run: () => useVoiceStore.getState().setDeafened(!useVoiceStore.getState().isDeafened),
       },
       {
         id: 'action:show-shortcuts',
-        label: 'Action · Show keyboard shortcuts',
-        keywords: ['action', 'keyboard', 'shortcut', 'keys', 'help'],
+        group: 'Actions',
+        title: 'Show keyboard shortcuts',
+        icon: 'settings',
+        keywords: ['keyboard', 'shortcut', 'keys', 'help'],
         run: () => setShortcutsOpen(true),
       },
     )
@@ -270,14 +301,23 @@ export function CommandPalette() {
   const options = useMemo<ComboboxOption[]>(
     () => orderedCommands.map((command) => ({
       value: command.id,
-      label: command.label,
+      label: command.title,
+      group: recents.includes(command.id) ? 'Recent' : command.group,
+      title: command.title,
+      subtitle: command.subtitle,
+      icon: <Icon name={command.icon} size="sm" />,
       keywords: command.keywords,
     })),
-    [orderedCommands],
+    [orderedCommands, recents],
   )
 
   useEffect(() => {
+    const openPalette = () => setOpen(true)
     const handleKeyDown = (event: KeyboardEvent) => {
+      // Another handler (the navigation drawer, the room-context panel) has
+      // already claimed this key. Without this guard, Escape both dismissed the
+      // drawer and silently marked the room read.
+      if (event.defaultPrevented) return
       const primary = event.ctrlKey || event.metaKey
       const key = event.key.toLocaleLowerCase()
       if (primary && !event.altKey && !event.shiftKey && key === 'k') {
@@ -291,6 +331,11 @@ export function CommandPalette() {
         return
       }
       if (open || shortcutsOpen) return
+
+      // Hoisted above the mute/deafen/next-unread/mark-read branches. It used to
+      // sit below them, so Shift+Escape mid-compose wiped unread state across
+      // every room in the community while the user was typing.
+      if (isEditableTarget(event.target)) return
 
       if (primary && event.shiftKey && !event.altKey && key === 'm') {
         event.preventDefault()
@@ -329,7 +374,6 @@ export function CommandPalette() {
           .forEach((channel) => markChannelRead(channel.id))
         return
       }
-      if (isEditableTarget(event.target)) return
 
       if (!primary && event.altKey && !event.shiftKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
         const available = channels.filter((channel) => channel.communityId === activeCommunityId)
@@ -344,15 +388,23 @@ export function CommandPalette() {
       if (
         event.key === 'Escape'
         && !event.shiftKey
-        && !document.querySelector('[role="dialog"][data-state="open"]')
+        // Radix popovers, tooltips, context menus and our own drawers all mark
+        // themselves with data-state="open". Matching on the attribute alone
+        // (rather than only on role="dialog") stops Escape-to-dismiss-a-popover
+        // from also marking the room read.
+        && !document.querySelector('[data-state="open"]')
         && activeChannelId
       ) {
         markChannelRead(activeChannelId)
       }
     }
 
+    window.addEventListener(COMMAND_PALETTE_OPEN_EVENT, openPalette)
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener(COMMAND_PALETTE_OPEN_EVENT, openPalette)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
   }, [
     activeChannelId,
     activeCommunityId,
@@ -362,13 +414,16 @@ export function CommandPalette() {
     shortcutsOpen,
   ])
 
-  const execute = (commandId: string) => {
+  const execute = async (commandId: string) => {
     const command = commandById.get(commandId)
     if (!command) return
     setRecents((current) => saveRecent(commandId, current))
-    void Promise.resolve(command.run()).catch(() => {
+    try {
+      await command.run()
+    } catch (error) {
       showToast('That action could not be completed. Try again.', 'error')
-    })
+      throw error
+    }
   }
 
   return (

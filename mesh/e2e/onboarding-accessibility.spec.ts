@@ -240,7 +240,7 @@ test('@a11y has no automated WCAG A/AA violations on account-service selection',
 })
 
 test('@a11y has no automated WCAG A/AA violations on sign in', async ({ page }) => {
-  await page.getByRole('button', { name: 'Choose Matrix.org' }).click()
+  await page.getByRole('button', { name: 'Sign in with Matrix.org' }).click()
   const signInHeading = page.getByRole('heading', { name: 'Sign in to Matrix.org' })
   await expect(signInHeading).toBeVisible()
   await waitForAccountScreenMotion(page)
@@ -267,10 +267,10 @@ for (const viewport of [
       await expect(control).toBeInViewport()
     }
 
-    await assertReachable('Choose Matrix.org')
+    await assertReachable('Sign in with Matrix.org')
     await assertReachable('More public services')
     await assertReachable('Use another service')
-    await page.getByRole('button', { name: 'Choose Matrix.org' }).click()
+    await page.getByRole('button', { name: 'Sign in with Matrix.org' }).click()
     await page.getByRole('textbox', { name: 'Username' }).fill('compact-user')
     await page.locator('input[name="password"]').fill('a long compact passphrase')
     await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled()
@@ -390,8 +390,8 @@ test('prefills and resolves a cold-start invitation before account creation', as
     command: 'resolve_pending_invitation',
     args: {},
   }])
-  await expect(page.getByRole('button', { name: 'Choose Matrix.org' })).toBeVisible()
-  await page.getByRole('button', { name: 'Choose community-hosted service' }).click()
+  await expect(page.getByRole('button', { name: 'Sign in with Matrix.org' })).toBeVisible()
+  await page.getByRole('button', { name: 'Create account with community.example' }).click()
   await expect(page.getByText('Invitation saved securely on this device')).toBeVisible()
   await expect(page.getByText('Community target: !invited:friends.example.')).toBeVisible()
   await expect(page.getByRole('textbox', { name: 'Invitation code' })).toHaveCount(0)
@@ -405,7 +405,7 @@ test('keeps trust context and account setup usable in a narrow window', async ({
   await expect(shell).toBeVisible()
   await expect(page.getByText('Conversations that stay yours.')).toBeVisible()
   await expect(page.getByRole('list', { name: 'Setup progress' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Choose Matrix.org' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Sign in with Matrix.org' })).toBeVisible()
 
   const bounds = await shell.boundingBox()
   expect(bounds?.x).toBeGreaterThanOrEqual(0)

@@ -2,15 +2,21 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useMemo, useRef } from 'react'
 import { useVoiceStore } from '../../store/voice'
 import { transitions } from '../../lib/motion'
+import { Icon } from '../ui/Icon'
+import { Button } from '../ui/Button'
 import type { Peer } from '../../types/ipc'
 
 export function VoicePeerGrid({
   onParticipantVolume,
+  onRetry,
 }: {
   onParticipantVolume?: (identity: string, volume: number) => void
+  onRetry?: () => void
 }) {
   const peers = useVoiceStore((state) => state.peers)
   const sessionSnapshot = useVoiceStore((state) => state.sessionSnapshot)
+  const connectionState = useVoiceStore((state) => state.connectionState)
+  const lastReconnectReason = useVoiceStore((state) => state.lastReconnectReason)
 
   const visiblePeers = useMemo(() => {
     if (peers.length > 0) {
@@ -40,6 +46,49 @@ export function VoicePeerGrid({
   }, [peers, sessionSnapshot])
 
   if (visiblePeers.length === 0) {
+    /*
+     * This branch used to render "Joining the call…" unconditionally, so a
+     * failed join spun forever: the engine had already set connectionState to
+     * 'disconnected' with a reason, but the reason was only rendered inside
+     * sr-only text in VoiceControls. Sighted users saw a permanent spinner with
+     * no cause and no way to retry.
+     */
+    if (connectionState === 'disconnected') {
+      return (
+        <div
+          className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center"
+          role="alert"
+        >
+          <Icon name="phoneOff" size="lg" className="text-status-danger" aria-hidden="true" />
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-content">Couldn’t join the call</p>
+            <p className="max-w-content-error text-xs text-content-muted">
+              {lastReconnectReason ?? 'The call could not be reached. Check your connection and try again.'}
+            </p>
+          </div>
+          {onRetry && (
+            <Button onClick={onRetry} variant="secondary">
+              Try again
+            </Button>
+          )}
+        </div>
+      )
+    }
+
+    if (connectionState === 'reconnecting') {
+      return (
+        <div className="flex h-full flex-col items-center justify-center gap-2 text-muted" role="status">
+          <Icon name="loader" size="lg" className="animate-spin" aria-hidden="true" />
+          <p className="text-sm">Reconnecting…</p>
+          {lastReconnectReason && (
+            <p className="max-w-content-error text-center text-xs text-content-muted">
+              {lastReconnectReason}
+            </p>
+          )}
+        </div>
+      )
+    }
+
     return (
       <div className="flex h-full flex-col items-center justify-center text-muted animate-pulse-soft" role="status">
         <p className="text-sm">Joining the call…</p>

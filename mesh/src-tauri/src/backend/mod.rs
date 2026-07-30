@@ -172,6 +172,15 @@ pub struct MatrixUnreadUpdate {
     pub unread_mentions: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixRoomUpgrade {
+    pub room_id: String,
+    pub replacement_room_id: Option<String>,
+    pub predecessor_room_id: Option<String>,
+    pub reason: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum MatrixQueuedMessageState {
@@ -312,6 +321,7 @@ pub struct MatrixAttachmentSendRequest {
     pub content_type: Option<String>,
     pub body: String,
     pub reply_to_id: Option<String>,
+    pub thread_root_id: Option<String>,
 }
 
 #[cfg(feature = "legacy-p2p")]
@@ -870,6 +880,16 @@ pub struct MatrixCommunityAdmission {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(type = "number | null")]
     pub expires_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub community_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inviter_display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inviter_user_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub join_rule: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub community_service_display_name: Option<String>,
 }
 
 /// Metadata for an invitation held by the native pending-invitation store.
@@ -885,6 +905,16 @@ pub struct PendingInvitationMetadata {
     pub via: Vec<String>,
     pub service: Option<String>,
     pub admission_service: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub community_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inviter_display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inviter_user_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub join_rule: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub community_service_display_name: Option<String>,
     #[ts(type = "number")]
     pub stored_at: u64,
     #[ts(type = "number")]
@@ -1145,6 +1175,12 @@ pub trait MeshBackend: Send + Sync {
     async fn matrix_room_is_encrypted(&self, _room_id: String) -> BackendResult<bool> {
         Err(BackendError::Unsupported("room protection status"))
     }
+    async fn matrix_room_upgrade(
+        &self,
+        _room_id: String,
+    ) -> BackendResult<Option<MatrixRoomUpgrade>> {
+        Err(BackendError::Unsupported("room upgrade status"))
+    }
     async fn matrix_room_notification_mode(
         &self,
         _room_id: String,
@@ -1361,6 +1397,7 @@ pub trait MeshBackend: Send + Sync {
         _room_id: String,
         _body: String,
         _reply_to_id: Option<String>,
+        _thread_root_id: Option<String>,
         _transaction_id: String,
     ) -> BackendResult<MessageDto> {
         Err(BackendError::Unsupported("message delivery"))
@@ -1458,6 +1495,7 @@ pub trait MeshBackend: Send + Sync {
         _recipient_user_id: String,
         _body: String,
         _reply_to_id: Option<String>,
+        _thread_root_id: Option<String>,
         _transaction_id: String,
     ) -> BackendResult<DirectMessageDto> {
         Err(BackendError::Unsupported("Matrix direct messages"))

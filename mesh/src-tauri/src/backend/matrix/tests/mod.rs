@@ -181,6 +181,14 @@ fn pending_invitation_metadata_is_bounded_opaque_and_secret_free() {
         metadata.admission_service.as_deref(),
         Some("https://invites.community.example")
     );
+    assert_eq!(
+        metadata.community_service_display_name.as_deref(),
+        Some("matrix.community.example")
+    );
+    assert_eq!(metadata.community_name, None);
+    assert_eq!(metadata.inviter_display_name, None);
+    assert_eq!(metadata.inviter_user_id, None);
+    assert_eq!(metadata.join_rule, None);
     assert_eq!(metadata.stored_at, 42);
     assert_eq!(metadata.expires_at, 42 + PENDING_INVITATION_MAX_AGE_MS);
 
@@ -215,6 +223,11 @@ fn community_invitation_response_does_not_select_the_users_account_service() {
         service: "https://matrix.mesh.example".into(),
         via: vec!["mesh.example".into()],
         expires_at: Some(1_800_000_000_000),
+        community_name: Some("Mesh Garden".into()),
+        inviter_display_name: Some("Alice".into()),
+        inviter_user_id: Some("@alice:mesh.example".into()),
+        join_rule: Some("invite".into()),
+        community_service_display_name: Some("Mesh Community Service".into()),
     };
     let admission = MatrixBackend::validate_admission_response(response, true).unwrap();
     assert_eq!(
@@ -222,6 +235,17 @@ fn community_invitation_response_does_not_select_the_users_account_service() {
         Some("registration-token")
     );
     assert_eq!(admission.service, "https://matrix.mesh.example");
+    assert_eq!(admission.community_name.as_deref(), Some("Mesh Garden"));
+    assert_eq!(admission.inviter_display_name.as_deref(), Some("Alice"));
+    assert_eq!(
+        admission.inviter_user_id.as_deref(),
+        Some("@alice:mesh.example")
+    );
+    assert_eq!(admission.join_rule.as_deref(), Some("invite"));
+    assert_eq!(
+        admission.community_service_display_name.as_deref(),
+        Some("Mesh Community Service")
+    );
 
     let unsafe_service = AdmissionServiceResponse {
         version: 4,
@@ -230,6 +254,11 @@ fn community_invitation_response_does_not_select_the_users_account_service() {
         service: "http://matrix.other.example".into(),
         via: vec!["mesh.example".into()],
         expires_at: Some(1_800_000_000_000),
+        community_name: None,
+        inviter_display_name: None,
+        inviter_user_id: None,
+        join_rule: None,
+        community_service_display_name: None,
     };
     assert!(MatrixBackend::validate_admission_response(unsafe_service, true).is_err());
 }
@@ -1410,6 +1439,20 @@ fn mention_metadata_serializes_on_plain_messages_and_replies() {
         serde_json::to_value(empty).unwrap()["m.mentions"],
         json!({})
     );
+
+    let replacement = RoomMessageEventContentWithoutRelation::text_plain(body)
+        .add_mentions(MatrixBackend::mentions_for_body(body, None))
+        .make_replacement(ReplacementMetadata::new(event_id, None))
+        .add_mentions(MatrixBackend::mentions_for_body(body, None));
+    let replacement_json = serde_json::to_value(replacement).unwrap();
+    assert_eq!(
+        replacement_json["m.mentions"]["user_ids"],
+        json!(["@alice:example.org"])
+    );
+    assert_eq!(
+        replacement_json["m.new_content"]["m.mentions"]["user_ids"],
+        json!(["@alice:example.org"])
+    );
 }
 
 #[test]
@@ -1552,6 +1595,138 @@ fn security_boundary_every_room_creation_uses_the_canonical_encryption_initial_s
 }
 
 #[test]
+fn community_channels_allow_members_of_the_parent_space_to_join() {
+    let join_rule = MatrixBackend::community_channel_join_rule_initial_state(
+        &RoomId::parse("!community:example.org").unwrap(),
+    );
+    assert_eq!(
+        join_rule.get_field::<String>("type").unwrap().as_deref(),
+        Some("m.room.join_rules")
+    );
+    assert_eq!(
+        join_rule
+            .get_field::<serde_json::Value>("content")
+            .unwrap()
+            .unwrap(),
+        json!({
+            "join_rule": "restricted",
+            "allow": [{
+                "type": "m.room_membership",
+                "room_id": "!community:example.org"
+            }]
+        })
+    );
+}
+
+#[test]
+fn security_boundary_all_matrix_clients_require_owner_signed_room_key_recipients() {
+    let matrix_source = MATRIX_PRODUCTION_SOURCES
+        .iter()
+        .find(|(file_name, _)| *file_name == "matrix.rs")
+        .map(|(_, source)| *source)
+        .expect("matrix backend source must be part of the production corpus");
+
+    assert_eq!(
+        matrix_source
+            .matches("with_room_key_recipient_strategy")
+            .count(),
+        2,
+        "durable and ephemeral Matrix clients must configure room-key sharing"
+    );
+    assert_eq!(
+        matrix_source
+            .matches("CollectStrategy::IdentityBasedStrategy")
+            .count(),
+        2,
+        "all Matrix clients must exclude devices that are not signed by their owner's identity"
+    );
+    assert!(
+        !matrix_source.contains("CollectStrategy::AllDevices"),
+        "Matrix clients must not share room keys with every unblacklisted device"
+    );
+}
+
+#[test]
+fn server_push_rules_are_projected_to_room_notification_modes() {
+    use matrix_sdk::ruma::push::{
+        EventMatchConditionData, NewConditionalPushRule, NewPushRule, NewSimplePushRule,
+    };
+
+    let user_id = UserId::parse("@alice:example.org").unwrap();
+    let room_id = RoomId::parse("!room:example.org").unwrap();
+    let base_rules = || Ruleset::server_default(&user_id);
+
+    let mut mentions_rules = base_rules();
+    mentions_rules
+        .insert(
+            NewPushRule::Room(NewSimplePushRule::new(room_id.clone(), Vec::new())),
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        MatrixBackend::room_notification_mode_from_ruleset(&mentions_rules, &room_id, true, false,),
+        RoomNotificationMode::MentionsAndKeywordsOnly
+    );
+
+    let mut all_rules = base_rules();
+    all_rules
+        .insert(
+            NewPushRule::Room(NewSimplePushRule::new(
+                room_id.clone(),
+                vec![Action::Notify],
+            )),
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        MatrixBackend::room_notification_mode_from_ruleset(&all_rules, &room_id, true, false,),
+        RoomNotificationMode::AllMessages
+    );
+
+    let mut muted_rules = base_rules();
+    muted_rules
+        .insert(
+            NewPushRule::Override(NewConditionalPushRule::new(
+                room_id.to_string(),
+                vec![PushCondition::EventMatch(EventMatchConditionData::new(
+                    "room_id".into(),
+                    room_id.to_string(),
+                ))],
+                Vec::new(),
+            )),
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        MatrixBackend::room_notification_mode_from_ruleset(&muted_rules, &room_id, true, false,),
+        RoomNotificationMode::Mute
+    );
+}
+
+#[test]
+fn message_receipts_select_the_matrix_thread_scope_from_event_relations() {
+    assert!(matches!(
+        MatrixBackend::receipt_thread_for_message(false),
+        ReceiptThread::Unthreaded
+    ));
+    assert!(matches!(
+        MatrixBackend::receipt_thread_for_message(true),
+        ReceiptThread::Main
+    ));
+}
+
+#[test]
+fn upgrade_history_walk_includes_at_most_sixteen_predecessor_rooms() {
+    assert!(MatrixBackend::can_follow_upgrade_predecessor(0));
+    assert!(MatrixBackend::can_follow_upgrade_predecessor(15));
+    assert!(!MatrixBackend::can_follow_upgrade_predecessor(16));
+    assert!(!MatrixBackend::can_follow_upgrade_predecessor(17));
+}
+
+#[test]
 fn security_boundary_encrypted_room_guard_fails_closed_with_actionable_room_context() {
     let protected_actions = [
         "reading unread message counts",
@@ -1623,6 +1798,8 @@ fn security_boundary_protected_room_guard_requires_joined_membership() {
 fn direct_room_lookups_are_limited_to_guard_or_prejoin_paths() {
     let allowed = [
         "protected_joined_room",
+        "protected_joined_room_if_available",
+        "prejoin_invited_room_if_available",
         "room_for_cleanup_redaction",
         "matrix_room_is_encrypted",
         "knock_community",
@@ -2031,10 +2208,26 @@ fn projects_standard_edits_reactions_redactions_and_replies() {
             }
         }),
         json!({
+            "type": "m.room.message",
+            "event_id": "$thread-reply",
+            "sender": "@bob:example.org",
+            "origin_server_ts": 5,
+            "content": {
+                "msgtype": "m.text",
+                "body": "thread body",
+                "m.relates_to": {
+                    "rel_type": "m.thread",
+                    "event_id": "$one",
+                    "m.in_reply_to": { "event_id": "$one" },
+                    "is_falling_back": true
+                }
+            }
+        }),
+        json!({
             "type": "m.room.redaction",
             "event_id": "$redact-reaction",
             "sender": "@bob:example.org",
-            "origin_server_ts": 5,
+            "origin_server_ts": 6,
             "redacts": "$reaction-one",
             "content": {}
         }),
@@ -2042,13 +2235,13 @@ fn projects_standard_edits_reactions_redactions_and_replies() {
             "type": "m.room.redaction",
             "event_id": "$redact-message",
             "sender": "@alice:example.org",
-            "origin_server_ts": 6,
+            "origin_server_ts": 7,
             "content": { "redacts": "$one" }
         }),
     ];
 
     let projected = MatrixBackend::project_timeline("!room:example.org", &members, events);
-    assert_eq!(projected.len(), 2);
+    assert_eq!(projected.len(), 3);
     assert_eq!(projected[0].id, "$one");
     assert_eq!(projected[0].content, "");
     assert!(projected[0].edited_at.is_some());
@@ -2056,6 +2249,10 @@ fn projects_standard_edits_reactions_redactions_and_replies() {
     assert!(projected[0].reactions.is_empty());
     assert_eq!(projected[1].content, "reply body");
     assert_eq!(projected[1].reply_to_id.as_deref(), Some("$one"));
+    assert_eq!(projected[2].id, "$thread-reply");
+    assert_eq!(projected[2].content, "thread body");
+    assert_eq!(projected[2].reply_to_id.as_deref(), Some("$one"));
+    assert_eq!(projected[2].thread_root_id.as_deref(), Some("$one"));
 }
 
 #[test]
@@ -2404,6 +2601,7 @@ fn direct_message_projection_reuses_matrix_message_and_attachment_fields() {
         edited_at: None,
         deleted_at: None,
         reply_to_id: Some("$root".into()),
+        thread_root_id: None,
         transaction_id: None,
         client_request_id: None,
         delivery_status: Some("sent".into()),

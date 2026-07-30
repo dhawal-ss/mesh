@@ -93,6 +93,30 @@ impl MatrixBackend {
         Ok(room)
     }
 
+    async fn protected_joined_room_if_available(
+        client: &Client,
+        room_id: &matrix_sdk::ruma::RoomId,
+        action: &str,
+    ) -> BackendResult<Option<Room>> {
+        let Some(room) = client.get_room(room_id) else {
+            return Ok(None);
+        };
+        if room.state() != RoomState::Joined {
+            return Ok(None);
+        }
+        Self::require_protected_room(&room, action).await?;
+        Ok(Some(room))
+    }
+
+    fn prejoin_invited_room_if_available(
+        client: &Client,
+        room_id: &matrix_sdk::ruma::RoomId,
+    ) -> Option<Room> {
+        client
+            .get_room(room_id)
+            .filter(|room| room.state() == RoomState::Invited)
+    }
+
     async fn existing_protected_text_channel(
         client: &Client,
         room_id: &matrix_sdk::ruma::RoomId,

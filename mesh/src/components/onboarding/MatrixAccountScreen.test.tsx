@@ -40,10 +40,25 @@ describe('MatrixAccountScreen', () => {
     expect(container.textContent).toContain('Choose your account service')
     expect(container.textContent).toContain('Matrix.org')
     expect(container.textContent).toContain('independently')
-    expect(findButton('Choose Matrix.org')).toBeTruthy()
+    // Public services now expose registration and sign-in as equal, explicit choices.
+    expect(findLink('Create account').getAttribute('href')).toMatch(/^https:\/\//)
+    expect(findLink('Terms').getAttribute('href')).toMatch(/^https:\/\//)
+    expect(findLink('Privacy').getAttribute('href')).toMatch(/^https:\/\//)
+    expect(findButton('Sign in')).toBeTruthy()
     expect(findButton('More public services')).toBeTruthy()
     expect(findButton('Use another service')).toBeTruthy()
     expect(container.querySelector('form')).toBeNull()
+  })
+
+  it('keeps an expired prominent service visible but unavailable', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2030-01-01T00:00:00Z'))
+    await renderScreen()
+
+    expect(container.textContent).toContain('Matrix.org')
+    expect(container.textContent).toContain('Review expired')
+    expect(findButton('Create account').disabled).toBe(true)
+    expect(findButton('Sign in').disabled).toBe(true)
   })
 
   it('shows only the reviewed public-service catalog and its disclosures', async () => {
@@ -63,7 +78,7 @@ describe('MatrixAccountScreen', () => {
     const onNext = vi.fn()
     await renderScreen({ onMatrixLogin: login, onNext })
 
-    await act(async () => findButton('Choose Matrix.org').click())
+    await act(async () => findButton('Sign in').click())
     expect(container.textContent).toContain('Sign in to Matrix.org')
     expect(container.textContent).toContain('10 MB')
     expect(container.textContent).toContain('100 MB')
@@ -135,7 +150,7 @@ describe('MatrixAccountScreen', () => {
     await renderScreen()
 
     await act(async () => {
-      findButton('Choose Matrix.org').click()
+      findButton('Sign in').click()
       await Promise.resolve()
       await Promise.resolve()
     })
@@ -158,7 +173,7 @@ describe('MatrixAccountScreen', () => {
     await renderScreen()
 
     await act(async () => {
-      findButton('Choose Matrix.org').click()
+      findButton('Sign in').click()
       await Promise.resolve()
       await Promise.resolve()
     })
@@ -170,7 +185,7 @@ describe('MatrixAccountScreen', () => {
   it('clears the prior provider before checking a custom service', async () => {
     await renderScreen()
     await act(async () => {
-      findButton('Choose Matrix.org').click()
+      findButton('Sign in').click()
       await Promise.resolve()
     })
     expect(container.querySelector('[aria-label="Matrix.org service details"]')).not.toBeNull()
@@ -191,6 +206,7 @@ describe('MatrixAccountScreen', () => {
       service: 'community.example',
       via: ['community.example'],
       expiresAt: 1_785_283_200_000,
+      communityServiceDisplayName: 'Friends Account Service',
     })
     vi.mocked(bridge.matrixServiceCapabilities).mockResolvedValue(capabilities({
       homeserver: 'community.example',
@@ -209,10 +225,14 @@ describe('MatrixAccountScreen', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    expect(findButton('Choose Matrix.org')).toBeTruthy()
-    expect(findButton('Choose community-hosted service')).toBeTruthy()
+    expect(findButton('Sign in')).toBeTruthy()
+    // The invitation-backed service still owns only account creation; public registration is a link.
+    expect(findButton('Create account')).toBeTruthy()
+    expect(container.textContent).toContain('Friends Account Service')
+    expect(container.textContent).toContain('community.example')
 
-    await act(async () => findButton('Choose community-hosted service').click())
+    await act(async () => findButton('Create account').click())
+    expect(container.textContent).toContain('Create your account with Friends Account Service')
     await act(async () => {
       setInputValue(findInput('username'), 'NewFriend')
       setInputValue(findInput('password'), 'correct horse battery staple')
@@ -272,9 +292,9 @@ describe('MatrixAccountScreen', () => {
     })
 
     expect(resolvePending).toHaveBeenCalledTimes(1)
-    expect(findButton('Choose community-hosted service')).toBeTruthy()
+    expect(findButton('Create account')).toBeTruthy()
 
-    await act(async () => findButton('Choose community-hosted service').click())
+    await act(async () => findButton('Create account').click())
     expect(container.textContent).toContain('Invitation saved securely on this device')
     expect(container.textContent).toContain('!garden:community.example')
     expect(container.textContent).not.toContain('native-only-registration-token')

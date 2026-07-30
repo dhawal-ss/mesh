@@ -12,10 +12,10 @@ use crate::backend::{
     CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest, MatrixCommunityAdmission,
     MatrixDevice, MatrixLogin, MatrixOidcStatus, MatrixPersonalDataExport, MatrixProfile,
     MatrixRecoveryHealth, MatrixRegistration, MatrixRoomNotificationMode, MatrixRoomPins,
-    MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyLease, MatrixRtcMember,
-    MatrixServiceCapabilities, MatrixTransferObserver, MatrixTransferProgressCallback,
-    MatrixVerificationSession, ModerationAuditEntry, TypingUser, UserPreferences,
-    MATRIX_TRANSFER_PROGRESS_EVENT,
+    MatrixRoomUpgrade, MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyLease,
+    MatrixRtcMember, MatrixServiceCapabilities, MatrixTransferObserver,
+    MatrixTransferProgressCallback, MatrixVerificationSession, ModerationAuditEntry, TypingUser,
+    UserPreferences, MATRIX_TRANSFER_PROGRESS_EVENT,
 };
 use crate::state::AppState;
 use crate::types::{
@@ -96,6 +96,20 @@ pub async fn matrix_room_is_encrypted(
         .backend
         .backend()
         .matrix_room_is_encrypted(room_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_room_upgrade(
+    room_id: String,
+    state: State<'_, AppState>,
+) -> Result<Option<MatrixRoomUpgrade>, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .matrix_room_upgrade(room_id)
         .await
         .map_err(map_error)
 }
@@ -763,6 +777,7 @@ pub async fn matrix_send_message(
     room_id: String,
     body: String,
     reply_to_id: Option<String>,
+    thread_root_id: Option<String>,
     transaction_id: String,
     state: State<'_, AppState>,
 ) -> Result<MessageDto, CommandError> {
@@ -770,7 +785,7 @@ pub async fn matrix_send_message(
     state
         .backend
         .backend()
-        .send_message(room_id, body, reply_to_id, transaction_id)
+        .send_message(room_id, body, reply_to_id, thread_root_id, transaction_id)
         .await
         .map_err(map_error)
 }
@@ -868,6 +883,7 @@ pub async fn matrix_send_attachment(
     attachment_grant: String,
     body: String,
     reply_to_id: Option<String>,
+    thread_root_id: Option<String>,
     transfer_id: String,
     app: AppHandle,
     state: State<'_, AppState>,
@@ -887,6 +903,7 @@ pub async fn matrix_send_attachment(
                 content_type: Some(claimed.content_type()),
                 body,
                 reply_to_id,
+                thread_root_id,
             },
             MatrixTransferObserver {
                 transfer_id,
@@ -1040,6 +1057,7 @@ pub async fn matrix_send_dm(
     recipient_user_id: String,
     body: String,
     reply_to_id: Option<String>,
+    thread_root_id: Option<String>,
     transaction_id: String,
     state: State<'_, AppState>,
 ) -> Result<DirectMessageDto, CommandError> {
@@ -1047,7 +1065,13 @@ pub async fn matrix_send_dm(
     state
         .backend
         .backend()
-        .send_dm(recipient_user_id, body, reply_to_id, transaction_id)
+        .send_dm(
+            recipient_user_id,
+            body,
+            reply_to_id,
+            thread_root_id,
+            transaction_id,
+        )
         .await
         .map_err(map_error)
 }
@@ -1059,6 +1083,7 @@ pub async fn matrix_send_dm_attachment(
     attachment_grant: String,
     body: String,
     reply_to_id: Option<String>,
+    thread_root_id: Option<String>,
     transfer_id: String,
     app: AppHandle,
     state: State<'_, AppState>,
@@ -1078,6 +1103,7 @@ pub async fn matrix_send_dm_attachment(
                 content_type: Some(claimed.content_type()),
                 body,
                 reply_to_id,
+                thread_root_id,
             },
             MatrixTransferObserver {
                 transfer_id,
@@ -1495,6 +1521,20 @@ pub async fn matrix_join_community(
         .backend
         .backend()
         .join_community(room_or_alias, via.unwrap_or_default())
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_join_room(
+    room_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .join_room(room_id)
         .await
         .map_err(map_error)
 }

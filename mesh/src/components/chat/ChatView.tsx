@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from 'react'
-import type { Channel, Message as MessageType } from '../../types/ipc'
+import type { Channel, MatrixRoomUpgrade, Message as MessageType } from '../../types/ipc'
 import { MessageComponent } from './Message'
 import { MessageInput } from './MessageInput'
 import type { StagedFile } from './FileAttachment'
@@ -16,13 +16,17 @@ import { useVirtualScroll, type VirtualItem } from '../../hooks/useVirtualScroll
 import { useTypingStore } from '../../store/typing'
 import { TypingIndicator } from './TypingIndicator'
 import { resolveSenderIdentity } from '../../lib/matrixIdentity'
-import { federatedTimestampMilliseconds } from '../../lib/federated-time'
+import { dayIndex } from '../../lib/message-time'
+import { DayDivider } from './DayDivider'
+import { UnreadDivider } from './UnreadDivider'
 import { getBackoffDelay, registerPoll, waitForDelay } from '../../lib/scheduler'
 import { useMessageNavigationStore } from '../../store/message-navigation'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
 import { Icon } from '../ui/Icon'
 import { useCommunityMembers } from '../../store/membership'
 import { useCommunityStore } from '../../store/communities'
+import { groupThreadReplies } from '../../lib/threads'
+import { shouldGroupMessage } from '../../lib/message-grouping'
 import type { RoomTrustSnapshot } from '../../hooks/useRoomTrust'
 import type { RoomContextTab } from '../community/RoomContextPanel'
 import { RoomTrustSummary } from './RoomTrustSummary'
@@ -39,6 +43,16 @@ interface ChatViewProps {
 }
 
 const EMPTY_MESSAGES: MessageType[] = []
+
+/** Fixed height of a DayDivider row, so virtual layout needs no measurement. */
+const DAY_DIVIDER_HEIGHT = 36
+const UNREAD_DIVIDER_HEIGHT = 40
+
+type UnreadBoundary = {
+  channelId: string
+  lastReadEventId: string | null
+  firstUnreadEventId: string
+}
 
 export function ChatView({
   channel,
@@ -62,14 +76,18 @@ export function ChatView({
   const acceptQueuedMessage = useMessageStore((state) => state.acceptQueuedMessage)
   const loadOlderMessages = useMessageStore((state) => state.loadOlderMessages)
   const isLoadingOlder = useMessageStore((state) => state.loadingOlder[channel.id] ?? false)
+  const hasMoreOlder = useMessageStore((state) => state.hasMoreOlder[channel.id] !== false)
   const isBrowsingOlder = useMessageStore((state) => state.browsingOlder[channel.id] ?? false)
   const hiddenNewerCount = useMessageStore((state) => state.newerGapCount[channel.id] ?? 0)
   const matrixMode = bridge.isMatrixBackend()
   const communityName = useCommunityStore(
     (state) => state.communityEntities[channel.communityId]?.name,
   )
+  const setCommunities = useCommunityStore((state) => state.setCommunities)
+  const setActiveCommunity = useCommunityStore((state) => state.setActiveCommunity)
   const communityMembers = useCommunityMembers(channel.communityId)
   const patchChannel = useChannelStore((state) => state.patchChannel)
+  const setChannels = useChannelStore((state) => state.setChannels)
   const setActiveChannel = useChannelStore((state) => state.setActiveChannel)
   const navigationRequest = useMessageNavigationStore((state) => (
     state.pending?.message.channelId === channel.id ? state.pending : null
@@ -78,36 +96,154 @@ export function ChatView({
   const hydratingLatestRef = useRef(false)
   const bufferedMessagesRef = useRef<MessageType[]>([])
   const loadGenerationRef = useRef(0)
+  const olderLoadInFlightRef = useRef(false)
+  const lastScrollSeenRequestAtRef = useRef(0)
+  const scrollSeenRequestRef = useRef<Promise<void> | null>(null)
   const windowLoadRef = useRef<Promise<void>>(Promise.resolve())
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const [isLoading, setIsLoading] = useState(false)
   const [showNewMessages, setShowNewMessages] = useState(false)
   const [replyingTo, setReplyingTo] = useState<MessageType | null>(null)
+  const [threadReplyRoot, setThreadReplyRoot] = useState<MessageType | null>(null)
+  const [openThreadId, setOpenThreadId] = useState<string | null>(null)
   const [preparedNavigationId, setPreparedNavigationId] = useState<number | null>(null)
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
   const [jumpAnnouncement, setJumpAnnouncement] = useState('')
+  const [unreadBoundary, setUnreadBoundary] = useState<UnreadBoundary | null>(null)
+  const [announcement, setAnnouncement] = useState<{
+    channelId: string | null
+    tailId: string | null
+    text: string
+  }>({ channelId: null, tailId: null, text: '' })
   const [editRequest, setEditRequest] = useState<{ messageId: string; token: number } | null>(null)
+  const [roomUpgradeState, setRoomUpgradeState] = useState<{
+    roomId: string
+    checked: boolean
+    upgrade: MatrixRoomUpgrade | null
+  }>({ roomId: '', checked: !matrixMode, upgrade: null })
+  const [isFollowingRoomUpgrade, setIsFollowingRoomUpgrade] = useState(false)
+  const [roomUpgradeError, setRoomUpgradeError] = useState<string | null>(null)
+  const previousChannelIdRef = useRef(channel.id)
   const legacyPublicKey = useIdentityStore((state) => state.identity?.publicKey)
   const ownAuthorId = matrixMode
     ? bridge.getMatrixUserId() ?? undefined
     : legacyPublicKey
+  const { visibleMessages, repliesByRoot } = useMemo(
+    () => groupThreadReplies(channelMessages),
+    [channelMessages],
+  )
+  const roomUpgradeReady = !matrixMode || (
+    roomUpgradeState.roomId === channel.id && roomUpgradeState.checked
+  )
+  const roomUpgrade = matrixMode && roomUpgradeReady && roomUpgradeState.upgrade?.replacementRoomId
+    ? roomUpgradeState.upgrade
+    : null
+  const roomUpgradeIsCommunity = roomUpgrade?.roomId === channel.communityId
+  const activeUnreadBoundary = unreadBoundary?.channelId === channel.id
+    ? unreadBoundary
+    : null
+
+  const beginThreadReply = useCallback((root: MessageType, target: MessageType = root) => {
+    setOpenThreadId(root.id)
+    setThreadReplyRoot(root)
+    setReplyingTo(target)
+  }, [])
+
+  const beginOrdinaryReply = useCallback((message: MessageType) => {
+    setThreadReplyRoot(null)
+    setReplyingTo(message)
+  }, [])
+
+  const toggleThread = useCallback((messageId: string) => {
+    setOpenThreadId((current) => current === messageId ? null : messageId)
+  }, [])
+
+  useEffect(() => {
+    if (previousChannelIdRef.current === channel.id) return
+    previousChannelIdRef.current = channel.id
+    setOpenThreadId(null)
+    setThreadReplyRoot(null)
+    setReplyingTo(null)
+  }, [channel.id])
+
+  // O(1) message lookup for the render map and the scroll handler, which both
+  // previously did a linear scan per row / per scroll event.
+  const messageIndexById = useMemo(() => {
+    const index = new Map<string, number>()
+    visibleMessages.forEach((message, position) => index.set(message.id, position))
+    return index
+  }, [visibleMessages])
+
+  // The first message of each calendar day, keyed by divider key. The divider
+  // must not read its date off whichever row happens to follow it in the
+  // virtual window, because that row can be clipped at a window boundary.
+  const dividerTimestamps = useMemo(() => {
+    const firstOfDay = new Map<string, unknown>()
+    for (const message of visibleMessages) {
+      const day = dayIndex(message.timestamp)
+      if (day === null) continue
+      const key = `day:${day}`
+      if (!firstOfDay.has(key)) firstOfDay.set(key, message.timestamp)
+    }
+    return firstOfDay
+  }, [visibleMessages])
 
   // Build the virtual item list
   const virtualItems = useMemo<VirtualItem[]>(() => {
-    const items: VirtualItem[] = channelMessages.map((message) => ({
-      key: message.id,
-      type: 'message' as const,
-      height:
-        56
-        + Math.min(
-          160,
-          Math.max(
-            1,
-            Math.ceil((typeof message.content === 'string' ? message.content.length : 0) / 80),
-          ) * 20,
-        )
-        + (Array.isArray(message.attachments) && message.attachments.length > 0 ? 96 : 0),
-    }))
+    const items: VirtualItem[] = []
+    let previousDay: number | null = null
+    let unreadDividerAdded = false
+
+    if (!hasMoreOlder && visibleMessages.length > 0) {
+      items.push({
+        key: `history-start:${channel.id}`,
+        type: 'history-start',
+        height: 40,
+      })
+    }
+
+    for (const message of visibleMessages) {
+      // Date separators are emitted as their own fixed-height virtual items so
+      // the timeline stays scannable when scrolled back through history.
+      const currentDay = dayIndex(message.timestamp)
+      if (currentDay !== null && currentDay !== previousDay) {
+        items.push({
+          key: `day:${currentDay}`,
+          type: 'divider' as const,
+          height: DAY_DIVIDER_HEIGHT,
+        })
+        previousDay = currentDay
+      }
+
+      if (
+        !unreadDividerAdded
+        && activeUnreadBoundary?.firstUnreadEventId === message.id
+      ) {
+        items.push({
+          key: `unread:${channel.id}:${activeUnreadBoundary.lastReadEventId ?? 'start'}`,
+          type: 'unread-divider',
+          height: UNREAD_DIVIDER_HEIGHT,
+        })
+        unreadDividerAdded = true
+      }
+
+      items.push({
+        key: message.id,
+        type: 'message' as const,
+        height:
+          56
+          + Math.min(
+            160,
+            Math.max(
+              1,
+              Math.ceil((typeof message.content === 'string' ? message.content.length : 0) / 80),
+            ) * 20,
+          )
+          + (Array.isArray(message.attachments) && message.attachments.length > 0 ? 96 : 0)
+          + (repliesByRoot.get(message.id)?.length ?? 0) * 88
+          + (repliesByRoot.has(message.id) ? 36 : 0),
+      })
+    }
     if (hiddenNewerCount > 0) {
       items.push({
         key: `history-gap:${channel.id}`,
@@ -116,7 +252,14 @@ export function ChatView({
       })
     }
     return items
-  }, [channel.id, channelMessages, hiddenNewerCount])
+  }, [
+    activeUnreadBoundary,
+    channel.id,
+    hasMoreOlder,
+    hiddenNewerCount,
+    repliesByRoot,
+    visibleMessages,
+  ])
 
   const {
     scrollContainerRef,
@@ -143,6 +286,27 @@ export function ChatView({
     patchChannel(channel.id, { unreadCount: 0 })
   }, [channel.id, patchChannel])
 
+  const markChannelSeenFromScroll = useCallback(() => {
+    const now = Date.now()
+    if (
+      scrollSeenRequestRef.current
+      || now - lastScrollSeenRequestAtRef.current < 1_000
+    ) {
+      return
+    }
+    lastScrollSeenRequestAtRef.current = now
+    const request = markChannelSeen()
+      .catch((err) => {
+        console.error('Failed to mark channel as read:', err)
+      })
+      .finally(() => {
+        if (scrollSeenRequestRef.current === request) {
+          scrollSeenRequestRef.current = null
+        }
+      })
+    scrollSeenRequestRef.current = request
+  }, [markChannelSeen])
+
   const flushBufferedMessages = useCallback(() => {
     if (bufferedMessagesRef.current.length === 0) return
     const pending = bufferedMessagesRef.current
@@ -161,6 +325,23 @@ export function ChatView({
       const latest = await bridge.getMessages(channel.id, 50)
       if (generation !== loadGenerationRef.current) return
 
+      const unreadCount = channel.unreadCount
+      if (unreadCount > 0) {
+        const latestVisible = groupThreadReplies(latest).visibleMessages
+        const firstUnreadIndex = Math.max(0, latestVisible.length - unreadCount)
+        const firstUnread = latestVisible[firstUnreadIndex]
+        if (firstUnread) {
+          setUnreadBoundary((current) => (
+            current?.channelId === channel.id
+              ? current
+              : {
+                  channelId: channel.id,
+                  lastReadEventId: latestVisible[firstUnreadIndex - 1]?.id ?? null,
+                  firstUnreadEventId: firstUnread.id,
+                }
+          ))
+        }
+      }
       replaceMessages(channel.id, latest)
       if (!matrixMode) {
         await bridge.requestMessageHistory(channel.id, { limit: 100 })
@@ -184,6 +365,7 @@ export function ChatView({
     }
   }, [
     channel.id,
+    channel.unreadCount,
     flushBufferedMessages,
     markChannelSeen,
     matrixMode,
@@ -191,8 +373,41 @@ export function ChatView({
     scrollToBottom,
   ])
 
+  // Read room-upgrade state before loading a Matrix room.
+  useEffect(() => {
+    let active = true
+    if (!matrixMode) return () => { active = false }
+
+    Promise.allSettled([
+      bridge.matrixRoomUpgrade(channel.id),
+      bridge.matrixRoomUpgrade(channel.communityId),
+    ])
+      .then(([channelResult, communityResult]) => {
+        if (!active) return
+        const channelUpgrade = channelResult.status === 'fulfilled' ? channelResult.value : null
+        const communityUpgrade = communityResult.status === 'fulfilled' ? communityResult.value : null
+        setRoomUpgradeError(null)
+        setRoomUpgradeState({
+          roomId: channel.id,
+          checked: true,
+          upgrade: communityUpgrade?.replacementRoomId ? communityUpgrade : channelUpgrade,
+        })
+      })
+      .catch((error) => {
+        if (!active) return
+        console.error('Failed to read Matrix room upgrade state:', error)
+        setRoomUpgradeError(null)
+        setRoomUpgradeState({ roomId: channel.id, checked: true, upgrade: null })
+      })
+
+    return () => { active = false }
+  }, [channel.communityId, channel.id, matrixMode])
+
   // Load messages on channel switch
   useEffect(() => {
+    if (!roomUpgradeReady || roomUpgrade) {
+      return
+    }
     const loadMessages = async () => {
       setIsLoading(true)
       const pendingLoad = resetToLatestWindow()
@@ -212,7 +427,7 @@ export function ChatView({
     return () => {
       loadGenerationRef.current += 1
     }
-  }, [resetToLatestWindow])
+  }, [resetToLatestWindow, roomUpgrade, roomUpgradeReady])
 
   // Search can target another channel or a message outside the bounded hot
   // window. Wait for the channel-switch load first, then merge older context
@@ -303,7 +518,7 @@ export function ChatView({
   // Matrix sync runs in Rust. Wait on the SDK room update stream, then refresh
   // the DTO projection so federated state appears without fixed-interval polling.
   useEffect(() => {
-    if (!matrixMode || !isViewingLatest) return
+    if (!matrixMode || !isViewingLatest || !roomUpgradeReady || roomUpgrade) return
 
     let active = true
     const refresh = async () => {
@@ -359,6 +574,8 @@ export function ChatView({
     getIsAtBottom,
     isViewingLatest,
     matrixMode,
+    roomUpgrade,
+    roomUpgradeReady,
     replaceMessages,
     scrollToBottom,
   ])
@@ -377,7 +594,7 @@ export function ChatView({
       })
     })
     return () => { unsub.then((fn) => fn()) }
-  }, [channel.id, matrixMode])
+  }, [channel.communityId, channel.id, matrixMode])
 
   // Listen for incoming messages
   useEffect(() => {
@@ -481,6 +698,7 @@ export function ChatView({
   const setTyping = useTypingStore((state) => state.setTyping)
   useEffect(() => {
     if (matrixMode) {
+      if (!roomUpgradeReady || roomUpgrade) return
       let active = true
       const refreshTyping = async () => {
         try {
@@ -512,17 +730,7 @@ export function ChatView({
       }
     })
     return () => { unsub.then((fn) => fn()) }
-  }, [channel.id, matrixMode, setTyping])
-
-  const isGrouped = (msg: MessageType, prevMsg?: MessageType) => {
-    if (!prevMsg) return false
-    if (msg.authorPublicKey !== prevMsg.authorPublicKey) return false
-    const timestamp = federatedTimestampMilliseconds(msg.timestamp)
-    const previousTimestamp = federatedTimestampMilliseconds(prevMsg.timestamp)
-    if (timestamp === null || previousTimestamp === null) return false
-    const timeDiff = timestamp - previousTimestamp
-    return timeDiff < 5 * 60 * 1000
-  }
+  }, [channel.id, matrixMode, roomUpgrade, roomUpgradeReady, setTyping])
 
   const jumpToLatest = useCallback(async () => {
     if (hiddenNewerCount > 0 || isBrowsingOlder) {
@@ -547,49 +755,120 @@ export function ChatView({
     scrollToBottom,
   ])
 
+  /**
+   * Announce genuinely new messages, once each. Driven off the tail of the
+   * timeline rather than off DOM insertion, so virtualization and history
+   * pagination never trigger it. Own messages are skipped — the sender already
+   * knows what they sent.
+   */
+  /*
+   * Announcement text is adjusted during render (React's supported
+   * "adjust state when inputs change" pattern) rather than in an effect, so it
+   * neither triggers cascading renders nor mutates refs during render.
+   *
+   * Switching channels re-baselines without announcing, so arriving in a room
+   * does not read its last message aloud; only a genuinely new tail does.
+   */
+  const tailMessage = visibleMessages[visibleMessages.length - 1]
+  const tailMessageId = tailMessage?.id ?? null
+
+  if (announcement.channelId !== channel.id) {
+    setAnnouncement({ channelId: channel.id, tailId: tailMessageId, text: '' })
+  } else if (announcement.tailId !== tailMessageId) {
+    const isOwnMessage = Boolean(
+      ownAuthorId && tailMessage && tailMessage.authorPublicKey === ownAuthorId,
+    )
+    const isUnsent = Boolean(
+      tailMessage?.deliveryStatus && tailMessage.deliveryStatus !== 'sent',
+    )
+    const body = typeof tailMessage?.content === 'string'
+      ? tailMessage.content.slice(0, 140)
+      : ''
+    const shouldAnnounce = Boolean(
+      tailMessage && announcement.tailId !== null && !isOwnMessage && !isUnsent,
+    )
+    setAnnouncement({
+      channelId: channel.id,
+      tailId: tailMessageId,
+      text: shouldAnnounce && tailMessage
+        ? (body
+            ? `${tailMessage.authorDisplayName}: ${body}`
+            : `New message from ${tailMessage.authorDisplayName}`)
+        : '',
+    })
+  }
+
+  const arrivalAnnouncement = announcement.text
+
+  /**
+   * Jump from a reply to the message it answers. Reuses the search-jump
+   * highlight so both entry points look and announce the same.
+   */
+  const handleJumpToReply = useCallback((target: MessageType) => {
+    if (!scrollToItem(target.id, 'center')) return
+    clearTimeout(highlightTimerRef.current)
+    setHighlightedMessageId(target.id)
+    setJumpAnnouncement(`Jumped to message from ${target.authorDisplayName}`)
+    highlightTimerRef.current = setTimeout(() => {
+      setHighlightedMessageId(null)
+      setJumpAnnouncement('')
+    }, 2_000)
+  }, [scrollToItem])
+
   const handleNavigateToMessage = useCallback((message: MessageType) => {
     useMessageNavigationStore.getState().requestNavigation(message)
     setActiveChannel(message.channelId)
   }, [setActiveChannel])
 
-  const handleScroll = useCallback(async () => {
+  const handleScroll = useCallback(async (scrollElement: HTMLDivElement) => {
     const position = updateVirtualScroll()
     if (!position) return
 
     if (position.isAtBottom && showNewMessages && isViewingLatest) {
       setShowNewMessages(false)
-      markChannelSeen().catch((err) => {
-        console.error('Failed to mark channel as read:', err)
-      })
+      markChannelSeenFromScroll()
     }
 
-    if (position.scrollTop < 100 && !isLoadingOlder) {
-      const anchorItem = visibleItems.find((item) => item.type === 'message')
-      if (anchorItem) {
-        const anchorIndex = virtualItems.findIndex((item) => item.key === anchorItem.key)
+    if (
+      position.scrollTop < 100
+      && hasMoreOlder
+      && !isLoadingOlder
+      && !olderLoadInFlightRef.current
+    ) {
+      olderLoadInFlightRef.current = true
+      const containerBounds = scrollElement.getBoundingClientRect()
+      const anchorRow = [...scrollElement.querySelectorAll<HTMLElement>('[data-message-id]')]
+        .find((row) => {
+          const bounds = row.getBoundingClientRect()
+          return (
+            bounds.top >= containerBounds.top
+            && bounds.bottom <= containerBounds.bottom
+          )
+        })
+      if (anchorRow?.dataset.messageId) {
+        const anchorBounds = anchorRow.getBoundingClientRect()
         setScrollAnchor({
-          messageId: anchorItem.key,
-          offset: Math.max(
-            0,
-            position.scrollTop - (anchorIndex >= 0 ? topSpacerHeight : 0),
-          ),
+          messageId: anchorRow.dataset.messageId,
+          offset: containerBounds.top - anchorBounds.top,
         })
       }
 
-      await loadOlderMessages(channel.id)
+      try {
+        await loadOlderMessages(channel.id)
+      } finally {
+        olderLoadInFlightRef.current = false
+      }
     }
   }, [
     channel.id,
+    hasMoreOlder,
     isLoadingOlder,
     isViewingLatest,
     loadOlderMessages,
-    markChannelSeen,
+    markChannelSeenFromScroll,
     setScrollAnchor,
     showNewMessages,
-    topSpacerHeight,
     updateVirtualScroll,
-    virtualItems,
-    visibleItems,
   ])
 
   const handleSend = async (
@@ -597,6 +876,7 @@ export function ChatView({
     files: StagedFile[] = [],
     onAttachmentSent?: (file: StagedFile, contentConsumed: boolean) => void | Promise<void>,
   ) => {
+    const threadRootId = threadReplyRoot?.id
     if (matrixMode && files.length > 0) {
       const replyToId = replyingTo?.id
       for (const [index, file] of files.entries()) {
@@ -606,24 +886,68 @@ export function ChatView({
           file.transferId ?? bridge.createMatrixTransferId(),
           index === 0 ? content : '',
           index === 0 ? replyToId : undefined,
+          index === 0 ? threadRootId : undefined,
         )
         addMessage(channel.id, { ...msg, deliveryStatus: 'sent' })
-        if (index === 0) setReplyingTo(null)
+        if (index === 0) {
+          setReplyingTo(null)
+          setThreadReplyRoot(null)
+        }
         await onAttachmentSent?.(file, index === 0 && content.length > 0)
       }
       return
     }
     if (matrixMode) {
       const clientRequestId = bridge.createMatrixTransactionId()
-      const message = await bridge.sendMessage(
-        channel.id,
-        content,
-        [],
-        replyingTo?.id ?? undefined,
-        clientRequestId,
+      const replyToId = replyingTo?.id
+      const identity = resolveSenderIdentity(
+        useIdentityStore.getState().identity,
+        bridge.getMatrixUserId(),
       )
-      acceptQueuedMessage(message)
+      const optimistic: MessageType = {
+        id: clientRequestId,
+        channelId: channel.id,
+        authorPublicKey: identity.publicKey,
+        authorDisplayName: identity.displayName,
+        authorAvatarColor: identity.avatarColor,
+        content,
+        attachments: [],
+        reactions: {},
+        timestamp: new Date().toISOString(),
+        signature: '',
+        replyToId,
+        threadRootId,
+        clientRequestId,
+        deliveryStatus: 'pending',
+      }
+      addMessage(channel.id, optimistic)
       setReplyingTo(null)
+      setThreadReplyRoot(null)
+      try {
+        const message = threadRootId
+          ? await bridge.sendMessage(
+              channel.id,
+              content,
+              [],
+              replyToId ?? undefined,
+              clientRequestId,
+              threadRootId,
+            )
+          : await bridge.sendMessage(
+              channel.id,
+              content,
+              [],
+              replyToId ?? undefined,
+              clientRequestId,
+            )
+        acceptQueuedMessage({
+          ...message,
+          clientRequestId: message.clientRequestId ?? clientRequestId,
+        })
+      } catch (error) {
+        console.error('Failed to queue Matrix message:', error)
+        setDeliveryStatus(channel.id, clientRequestId, 'failed')
+      }
       return
     }
     const identity = resolveSenderIdentity(
@@ -657,6 +981,7 @@ export function ChatView({
         [],
         replyingTo?.id ?? undefined,
         optimisticId,
+        threadRootId,
       )
       removeMessage(channel.id, optimisticId)
       if (hydratingLatestRef.current) {
@@ -708,30 +1033,48 @@ export function ChatView({
       timestamp: new Date().toISOString(),
       signature: '',
       replyToId: failedMessage.replyToId,
+      threadRootId: failedMessage.threadRootId,
+      clientRequestId: retryId,
       deliveryStatus: 'pending',
     }
 
+    setDeliveryStatus(channel.id, retryId, 'pending')
     addMessage(channel.id, optimistic)
 
     try {
-      const msg = await bridge.sendMessage(
-        channel.id,
-        failedMessage.content,
-        [],
-        failedMessage.replyToId ?? undefined,
-        retryId,
-      )
-      removeMessage(channel.id, retryId)
-      if (hydratingLatestRef.current) {
+      const msg = failedMessage.threadRootId
+        ? await bridge.sendMessage(
+            channel.id,
+            failedMessage.content,
+            [],
+            failedMessage.replyToId ?? undefined,
+            retryId,
+            failedMessage.threadRootId,
+          )
+        : await bridge.sendMessage(
+            channel.id,
+            failedMessage.content,
+            [],
+            failedMessage.replyToId ?? undefined,
+            retryId,
+          )
+      if (matrixMode) {
+        acceptQueuedMessage({
+          ...msg,
+          clientRequestId: msg.clientRequestId ?? retryId,
+        })
+      } else if (hydratingLatestRef.current) {
+        removeMessage(channel.id, retryId)
         bufferedMessagesRef.current.push({ ...msg, deliveryStatus: 'sent' })
       } else {
+        removeMessage(channel.id, retryId)
         addMessage(channel.id, { ...msg, deliveryStatus: 'sent' })
       }
     } catch (err) {
       console.error('Failed to retry message:', err)
       setDeliveryStatus(channel.id, retryId, 'failed')
     }
-  }, [addMessage, channel.id, matrixMode, removeMessage, setDeliveryStatus])
+  }, [acceptQueuedMessage, addMessage, channel.id, matrixMode, removeMessage, setDeliveryStatus])
 
   const handleCancelQueued = useCallback(async (message: MessageType) => {
     if (!matrixMode || !message.transactionId) return
@@ -742,6 +1085,65 @@ export function ChatView({
       console.error('Failed to cancel saved message:', error)
     }
   }, [channel.id, matrixMode, removeMessage])
+
+  const handleFollowRoomUpgrade = useCallback(async () => {
+    const replacementRoomId = roomUpgrade?.replacementRoomId
+    if (!replacementRoomId || isFollowingRoomUpgrade) return
+
+    setIsFollowingRoomUpgrade(true)
+    setRoomUpgradeError(null)
+    try {
+      if (roomUpgradeIsCommunity) {
+        const joinedCommunity = await bridge.joinCommunity(replacementRoomId)
+        await bridge.matrixSyncOnce()
+        const communities = await bridge.getCommunities()
+        const replacementCommunity = communities.find((candidate) => candidate.id === joinedCommunity.id)
+          ?? joinedCommunity
+        const replacementChannels = await bridge.getChannels(replacementCommunity.id)
+        const currentCommunities = useCommunityStore.getState().communities
+        setCommunities([
+          ...currentCommunities.filter((candidate) => candidate.id !== channel.communityId),
+          replacementCommunity,
+        ])
+        const currentChannels = useChannelStore.getState().channels
+        setChannels([
+          ...currentChannels.filter((candidate) => candidate.communityId !== channel.communityId),
+          ...replacementChannels,
+        ])
+        setActiveCommunity(replacementCommunity.id)
+        setActiveChannel(replacementChannels[0]?.id ?? null)
+        return
+      }
+
+      await bridge.matrixJoinRoom(replacementRoomId)
+      await bridge.matrixSyncOnce()
+      const replacementChannels = await bridge.getChannels(channel.communityId)
+      const currentChannels = useChannelStore.getState().channels
+      setChannels([
+        ...currentChannels.filter((candidate) => candidate.communityId !== channel.communityId),
+        ...replacementChannels,
+      ])
+      const replacement = replacementChannels.find((candidate) => candidate.id === replacementRoomId)
+      if (!replacement) {
+        throw new Error('The new room is not available in this community yet.')
+      }
+      setActiveChannel(replacement.id)
+    } catch (error) {
+      console.error('Failed to open the replacement Matrix room:', error)
+      setRoomUpgradeError('The new room could not be opened yet. Try again in a moment.')
+    } finally {
+      setIsFollowingRoomUpgrade(false)
+    }
+  }, [
+    channel.communityId,
+    isFollowingRoomUpgrade,
+    roomUpgrade,
+    roomUpgradeIsCommunity,
+    setActiveCommunity,
+    setActiveChannel,
+    setCommunities,
+    setChannels,
+  ])
 
   return (
     <div className="flex h-full flex-1 flex-col">
@@ -812,21 +1214,46 @@ export function ChatView({
         <p className="sr-only" role="status" aria-live="polite">
           {jumpAnnouncement}
         </p>
+        {/*
+          Genuinely new messages are announced here, not by the scroll container.
+        */}
+        <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {arrivalAnnouncement}
+        </p>
+        <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {activeUnreadBoundary ? 'New messages start here.' : ''}
+        </p>
         <div
           ref={scrollContainerRef}
-          onScroll={() => void handleScroll()}
+          onScroll={(event) => void handleScroll(event.currentTarget)}
           className="flex-1 overflow-y-auto"
           role="log"
-          aria-live="polite"
+          /*
+            `role="log"` implies aria-live="polite", which is wrong here: this
+            container's children are inserted and removed by *virtualization*,
+            not by message arrival, so scrolling through history announced every
+            old message as if it were new. Overriding to "off" keeps the log
+            structure for navigation while moving announcements to the dedicated
+            region above, which is driven by the timeline tail.
+          */
+          aria-live="off"
           aria-label={`Messages in #${channel.name}`}
         >
-          {isLoading ? (
+          {roomUpgrade ? (
+            <RoomUpgradeSignpost
+              roomName={channel.name}
+              reason={roomUpgrade.reason}
+              error={roomUpgradeError}
+              isFollowing={isFollowingRoomUpgrade}
+              onFollow={() => void handleFollowRoomUpgrade()}
+            />
+          ) : !roomUpgradeReady || isLoading ? (
             <div className="space-y-1 pt-4">
               {Array.from({ length: 8 }).map((_, i) => (
                 <MessageSkeleton key={i} />
               ))}
             </div>
-          ) : channelMessages.length === 0 ? (
+          ) : visibleMessages.length === 0 ? (
             <div className="flex h-full items-center justify-center">
               <EmptyState
                 icon={<Icon name="hash" size="lg" />}
@@ -836,20 +1263,29 @@ export function ChatView({
             </div>
           ) : (
             <div className="relative">
-              {isLoadingOlder && (
-                <div className="flex justify-center py-4">
-                  <Spinner size={20} />
-                </div>
-              )}
               <div
+                className="relative"
                 data-design-token-exception="data-driven-virtual-spacer-geometry"
                 style={{
                   paddingTop: `${topSpacerHeight}px`,
                   paddingBottom: `${bottomSpacerHeight}px`,
                 }}
               >
+                {isLoadingOlder && (
+                  <div
+                    className="pointer-events-none absolute inset-x-0 top-2 z-sticky flex justify-center"
+                    role="status"
+                    aria-label="Loading earlier messages"
+                  >
+                    <Spinner size={20} />
+                  </div>
+                )}
                 {visibleItems.map((item, index) => {
                   const nextItem = visibleItems[index + 1]
+
+                  if (item.type === 'history-start') {
+                    return <HistoryStartRow key={item.key} />
+                  }
 
                   if (item.type === 'gap') {
                     return (
@@ -863,21 +1299,47 @@ export function ChatView({
                     )
                   }
 
-                  const messageIndex = channelMessages.findIndex((m) => m.id === item.key)
-                  const message = channelMessages[messageIndex]
+                  if (item.type === 'divider') {
+                    return (
+                      <DayDivider
+                        key={item.key}
+                        timestamp={dividerTimestamps.get(item.key) ?? null}
+                      />
+                    )
+                  }
+
+                  if (item.type === 'unread-divider') {
+                    return <UnreadDivider key={item.key} />
+                  }
+
+                  const messageIndex = messageIndexById.get(item.key) ?? -1
+                  const message = visibleMessages[messageIndex]
                   if (!message) return null
+                  const threadReplies = repliesByRoot.get(message.id) ?? EMPTY_MESSAGES
+                  const replyPreview = message.replyToId
+                    ? visibleMessages[messageIndexById.get(message.replyToId) ?? -1] ?? null
+                    : null
 
                   return (
                     <VirtualMessageRow
                       key={item.key}
                       rowKey={item.key}
                       message={message}
-                      isGrouped={isGrouped(message, channelMessages[messageIndex - 1])}
+                      isGrouped={shouldGroupMessage(
+                        message,
+                        visibleMessages[messageIndex - 1],
+                      )}
                       hasGap={nextItem?.type !== 'gap'}
                       onHeightChange={handleMeasuredHeight}
-                      onReply={setReplyingTo}
+                      onReply={beginOrdinaryReply}
+                      threadReplies={threadReplies}
+                      threadOpen={openThreadId === message.id}
+                      onToggleThread={toggleThread}
+                      onThreadReply={beginThreadReply}
                       onRetry={handleRetry}
                       onCancel={handleCancelQueued}
+                      replyPreview={replyPreview}
+                      onJumpToReply={handleJumpToReply}
                       limitedActions={false}
                       trust={trust}
                       isHighlighted={highlightedMessageId === message.id}
@@ -904,7 +1366,7 @@ export function ChatView({
       </div>
 
       {/* Reply bar */}
-      {replyingTo && (
+      {!roomUpgradeReady || roomUpgrade ? null : replyingTo && (
         <div className="flex items-center gap-2 border-t border-border-subtle bg-surface-sunken px-4 py-2">
           <Icon name="reply" size="sm" className="shrink-0 text-secondary" />
           <span className="text-sm text-secondary">
@@ -912,7 +1374,10 @@ export function ChatView({
           </span>
           <span className="truncate text-sm text-muted flex-1">{replyingTo.content.slice(0, 100)}</span>
           <button
-            onClick={() => setReplyingTo(null)}
+            onClick={() => {
+              setReplyingTo(null)
+              setThreadReplyRoot(null)
+            }}
             aria-label="Cancel reply"
             className="shrink-0 rounded p-1 text-muted transition-colors hover:text-primary"
           >
@@ -921,30 +1386,77 @@ export function ChatView({
         </div>
       )}
 
-      <TypingIndicator channelId={channel.id} />
-      <MessageInput
-        channelId={channel.id}
-        channelName={channel.name}
-        onSend={handleSend}
-        communityId={channel.communityId}
-        members={communityMembers}
-        disableAttachments={matrixMode && !bridge.getBackendCapabilities().encryptedAttachments}
-        onEditLastMessage={() => {
-          const ownMessage = [...channelMessages]
-            .reverse()
-            .find((message) =>
-              message.authorPublicKey === ownAuthorId
-              && !message.deletedAt
-              && message.deliveryStatus !== 'pending'
-              && message.deliveryStatus !== 'failed',
-            )
-          if (!ownMessage) return
-          setEditRequest((current) => ({
-            messageId: ownMessage.id,
-            token: (current?.token ?? 0) + 1,
-          }))
-        }}
-      />
+      {!roomUpgradeReady || roomUpgrade ? null : (
+        <>
+          <TypingIndicator channelId={channel.id} />
+          <MessageInput
+            channelId={channel.id}
+            channelName={channel.name}
+            onSend={handleSend}
+            communityId={channel.communityId}
+            members={communityMembers}
+            disableAttachments={matrixMode && !bridge.getBackendCapabilities().encryptedAttachments}
+            onEditLastMessage={() => {
+              const ownMessage = [...channelMessages]
+                .reverse()
+                .find((message) =>
+                  message.authorPublicKey === ownAuthorId
+                  && !message.deletedAt
+                  && message.deliveryStatus !== 'pending'
+                  && message.deliveryStatus !== 'failed',
+                )
+              if (!ownMessage) return
+              setEditRequest((current) => ({
+                messageId: ownMessage.id,
+                token: (current?.token ?? 0) + 1,
+              }))
+            }}
+          />
+        </>
+      )}
+    </div>
+  )
+}
+
+interface RoomUpgradeSignpostProps {
+  roomName: string
+  reason?: string | null
+  error: string | null
+  isFollowing: boolean
+  onFollow: () => void
+}
+
+export function RoomUpgradeSignpost({
+  roomName,
+  reason,
+  error,
+  isFollowing,
+  onFollow,
+}: RoomUpgradeSignpostProps) {
+  return (
+    <div className="flex h-full items-center justify-center px-4 py-8">
+      <div className="w-full max-w-md rounded-panel border border-border-subtle bg-surface-raised p-6 text-center shadow-overlay">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-surface-selected text-accent">
+          <Icon name="refresh" size="lg" />
+        </div>
+        <h2 className="text-base font-semibold text-primary">This room has moved</h2>
+        <p className="mt-2 text-sm leading-6 text-muted">
+          <span className="font-medium text-secondary">#{roomName}</span> was replaced by a new room.
+          Mesh will keep this room here and will not move you automatically.
+        </p>
+        {reason && <p className="mt-2 text-xs text-muted">{reason}</p>}
+        <button
+          type="button"
+          className="mt-5 inline-flex min-h-control-md items-center justify-center rounded-control bg-accent px-4 text-sm font-semibold text-content-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={onFollow}
+          disabled={isFollowing}
+        >
+          {isFollowing ? 'Opening new room...' : 'Go to new room'}
+        </button>
+        {error && (
+          <p className="mt-3 text-sm text-status-danger" role="alert">{error}</p>
+        )}
+      </div>
     </div>
   )
 }
@@ -956,8 +1468,14 @@ interface VirtualMessageRowProps {
   hasGap: boolean
   onHeightChange: (rowKey: string, height: number) => void
   onReply: (message: MessageType) => void
+  threadReplies: MessageType[]
+  threadOpen: boolean
+  onToggleThread: (messageId: string) => void
+  onThreadReply: (root: MessageType, target?: MessageType) => void
   onRetry?: (message: MessageType) => void
   onCancel?: (message: MessageType) => void
+  replyPreview?: MessageType | null
+  onJumpToReply?: (message: MessageType) => void
   limitedActions?: boolean
   trust?: RoomTrustSnapshot
   isHighlighted: boolean
@@ -971,8 +1489,14 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
   hasGap,
   onHeightChange,
   onReply,
+  threadReplies,
+  threadOpen,
+  onToggleThread,
+  onThreadReply,
   onRetry,
   onCancel,
+  replyPreview,
+  onJumpToReply,
   limitedActions,
   trust,
   isHighlighted,
@@ -996,7 +1520,7 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
 
     observer.observe(el)
     return () => observer.disconnect()
-  }, [hasGap, isGrouped, message, onHeightChange, rowKey])
+  }, [hasGap, isGrouped, message, onHeightChange, rowKey, threadOpen, threadReplies])
 
   useLayoutEffect(() => {
     if (isHighlighted) {
@@ -1039,17 +1563,57 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
           message={message}
           isGrouped={isGrouped}
           disableMotion
+          replyPreview={replyPreview}
+          onJumpToReply={onJumpToReply}
           onReply={onReply}
+          threadReplyCount={threadReplies.length}
+          threadOpen={threadOpen}
+          onToggleThread={() => onToggleThread(message.id)}
           onRetry={onRetry}
           onCancel={onCancel}
           limitedActions={limitedActions}
           trust={trust}
           editRequestToken={editRequestToken}
         />
+        {threadOpen && threadReplies.length > 0 && (
+          <div className="ml-10 mr-4 border-l border-border-subtle pl-3" aria-label="Thread replies">
+            {threadReplies.map((reply) => (
+              <MessageComponent
+                key={reply.id}
+                message={reply}
+                isGrouped={false}
+                disableMotion
+                onReply={() => onThreadReply(message, reply)}
+                limitedActions={limitedActions}
+                trust={trust}
+              />
+            ))}
+            <button
+              type="button"
+              onClick={() => onThreadReply(message)}
+              className="mb-2 mt-1 min-h-8 rounded-control px-2 text-xs font-medium text-text-link transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              Reply in thread
+            </button>
+          </div>
+        )}
       </ErrorBoundary>
     </div>
   )
 })
+
+function HistoryStartRow() {
+  return (
+    <div
+      className="flex h-10 items-center justify-center gap-2 px-4 text-caption text-content-muted"
+      role="status"
+    >
+      <span className="h-px min-w-6 flex-1 bg-border-subtle" aria-hidden="true" />
+      <span>Beginning of this conversation</span>
+      <span className="h-px min-w-6 flex-1 bg-border-subtle" aria-hidden="true" />
+    </div>
+  )
+}
 
 function HistoryGapRow({
   rowKey,

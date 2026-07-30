@@ -23,9 +23,9 @@ export function ToastContainer() {
   const addToast = useCallback((message: string, tone: ToastTone) => {
     const id = ++toastId
     setToasts((prev) => [...prev, { id, message, tone }])
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id))
-    }, 4000)
+  }, [])
+  const dismissToast = useCallback((id: number) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id))
   }, [])
 
   useEffect(() => {
@@ -33,38 +33,68 @@ export function ToastContainer() {
     return () => { addToastFn = null }
   }, [addToast])
 
-  if (toasts.length === 0) return null
-
+  /*
+   * The live region must exist in the DOM *before* the message lands in it.
+   * Returning null while empty meant the region and its content were inserted
+   * in the same tick, which screen readers generally do not announce — every
+   * moderation result, copy confirmation and error was silent.
+   */
   return (
     <div
-      className="fixed bottom-4 left-4 right-4 z-toast flex flex-col items-end gap-2 sm:left-auto"
-      role="status"
-      aria-live="polite"
-      aria-atomic="false"
+      className="pointer-events-none fixed bottom-4 left-4 right-4 z-toast flex flex-col items-end gap-2 sm:left-auto"
+      role="region"
       aria-label="Notifications"
     >
-      <AnimatePresence initial={false}>
-        {toasts.map((toast) => (
-          <motion.div
-            key={toast.id}
-            variants={variants.toast}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className={`w-fit max-w-full rounded-panel border border-border-subtle bg-surface-overlay px-3 py-2 text-sm font-medium shadow-overlay ${
-              toast.tone === 'danger'
-                ? 'border-l-2 border-l-status-danger text-status-danger'
-                : toast.tone === 'success'
-                  ? 'border-l-2 border-l-status-success text-status-success'
-                  : toast.tone === 'warning'
-                    ? 'border-l-2 border-l-status-warning text-status-warning'
-                    : 'border-l-2 border-l-status-info text-content'
-            }`}
-          >
-            {toast.message}
-          </motion.div>
-        ))}
-      </AnimatePresence>
+      <div role="status" aria-live="polite" aria-atomic="false" className="contents">
+        <AnimatePresence initial={false}>
+          {toasts.filter((toast) => toast.tone !== 'danger').map((toast) => (
+            <ToastItem key={toast.id} toast={toast} onDismiss={dismissToast} />
+          ))}
+        </AnimatePresence>
+      </div>
+      <div role="alert" aria-live="assertive" aria-atomic="false" className="contents">
+        <AnimatePresence initial={false}>
+          {toasts.filter((toast) => toast.tone === 'danger').map((toast) => (
+            <ToastItem key={toast.id} toast={toast} onDismiss={dismissToast} />
+          ))}
+        </AnimatePresence>
+      </div>
     </div>
+  )
+}
+
+function ToastItem({
+  toast,
+  onDismiss,
+}: {
+  toast: ToastState
+  onDismiss: (id: number) => void
+}) {
+  return (
+    <motion.div
+      variants={variants.toast}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      className={`pointer-events-auto flex w-fit max-w-full items-start gap-2 rounded-panel border border-border-subtle bg-surface-overlay px-3 py-2 text-sm font-medium shadow-overlay ${
+        toast.tone === 'danger'
+          ? 'border-l-2 border-l-status-danger text-status-danger'
+          : toast.tone === 'success'
+            ? 'border-l-2 border-l-status-success text-status-success'
+            : toast.tone === 'warning'
+              ? 'border-l-2 border-l-status-warning text-status-warning'
+              : 'border-l-2 border-l-status-info text-content'
+      }`}
+    >
+      <span className="min-w-0 flex-1">{toast.message}</span>
+      <button
+        type="button"
+        className="min-h-8 flex-none rounded-control px-2 text-xs text-content-secondary hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+        aria-label={`Dismiss notification: ${toast.message}`}
+        onClick={() => onDismiss(toast.id)}
+      >
+        Dismiss
+      </button>
+    </motion.div>
   )
 }

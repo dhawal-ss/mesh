@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import * as bridge from '../lib/bridge'
 
-export type RoomProtectionState = 'checking' | 'protected' | 'blocked' | 'unavailable'
+/**
+ * 'unencrypted' was previously called 'blocked' and surfaced as "Sending
+ * blocked", which was untrue: nothing gates the composer on trust state. The
+ * state describes the room, not a restriction Mesh actually enforces.
+ */
+export type RoomProtectionState = 'checking' | 'protected' | 'unencrypted' | 'unavailable'
 
 export interface TrustMember {
   publicKey: string
@@ -95,6 +100,12 @@ export function useRoomTrust(
     () => members.map((member) => member.publicKey).sort().join('\u0000'),
     [members],
   )
+  const stableMembers = useMemo(
+    () => memberIds
+      ? memberIds.split('\u0000').map((publicKey) => ({ publicKey }))
+      : [],
+    [memberIds],
+  )
   const [loaded, setLoaded] = useState<{
     roomId: string | null
     snapshot: RoomTrustSnapshot
@@ -107,11 +118,13 @@ export function useRoomTrust(
     if (!matrixMode || !roomId) return
 
     let active = true
+    let loadGeneration = 0
 
     const load = async () => {
+      const generation = ++loadGeneration
       const status = await bridge.getBackendStatus().catch(() => bridge.getBackendStatusSnapshot())
       const protectionResult = await bridge.matrixRoomIsEncrypted(roomId).then(
-        (encrypted): RoomProtectionState => encrypted ? 'protected' : 'blocked',
+        (encrypted): RoomProtectionState => encrypted ? 'protected' : 'unencrypted',
         (): RoomProtectionState => 'unavailable',
       )
 
@@ -126,7 +139,7 @@ export function useRoomTrust(
         if (backupResult.status === 'fulfilled') backup = backupResult.value
       }
 
-      if (!active) return
+      if (!active || generation !== loadGeneration) return
       const homeService = serviceName(status?.homeserver)
       const devicesNeedReview = devices.filter(
         (device) => !device.verified || device.newDevice || device.identityChanged,
@@ -136,8 +149,8 @@ export function useRoomTrust(
         snapshot: {
           matrixMode: true,
           protection: protectionResult,
-          communityMemberCount: members.length,
-          services: servicesForMembers(members, homeService),
+          communityMemberCount: stableMembers.length,
+          services: servicesForMembers(stableMembers, homeService),
           devices,
           devicesNeedReview,
           verifiedDevices: Math.max(0, devices.length - devicesNeedReview),
@@ -151,10 +164,17 @@ export function useRoomTrust(
     }
 
     void load()
+    const refreshTrust = () => {
+      void load()
+    }
+    const stopTrustSubscription = bridge.onMatrixTrustChanged(refreshTrust)
+    window.addEventListener('focus', refreshTrust)
     return () => {
       active = false
+      stopTrustSubscription()
+      window.removeEventListener('focus', refreshTrust)
     }
-  }, [matrixMode, memberIds, members, roomId])
+  }, [matrixMode, memberIds, roomId, stableMembers])
 
   if (loaded.roomId !== (roomId ?? null)) {
     return initialSnapshot(matrixMode, members.length)

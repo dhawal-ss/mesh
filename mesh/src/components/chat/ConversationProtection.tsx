@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import * as bridge from '../../lib/bridge'
 import { Icon } from '../ui/Icon'
 
-type ProtectionState = 'checking' | 'protected' | 'blocked' | 'unavailable'
+type ProtectionState = 'checking' | 'protected' | 'unencrypted' | 'unavailable'
 
 export function ConversationProtection({ roomId }: { roomId: string }) {
   const [state, setState] = useState<ProtectionState>('checking')
@@ -14,7 +14,7 @@ export function ConversationProtection({ roomId }: { roomId: string }) {
     try {
       const encrypted = await bridge.matrixRoomIsEncrypted(roomId)
       if (requestId.current === currentRequest) {
-        setState(encrypted ? 'protected' : 'blocked')
+        setState(encrypted ? 'protected' : 'unencrypted')
       }
     } catch {
       if (requestId.current === currentRequest) setState('unavailable')
@@ -62,7 +62,7 @@ export function ConversationProtection({ roomId }: { roomId: string }) {
       role="alert"
     >
       <Icon name="triangleAlert" size="xs" />
-      {state === 'blocked' ? 'Sending blocked: not protected' : 'Protection check unavailable'}
+      {state === 'unencrypted' ? 'Not end-to-end encrypted' : 'Protection check unavailable'}
       {state === 'unavailable' && (
         <button
           type="button"
