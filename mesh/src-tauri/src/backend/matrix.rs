@@ -72,6 +72,7 @@ use matrix_sdk::{
             image_pack::{PackImage, PackInfo, PackUsage, RoomImagePackEventContent},
             presence::PresenceEvent,
             reaction::ReactionEventContent,
+            receipt::{ReceiptThread, ReceiptType},
             relation::Annotation,
             room::{
                 encryption::RoomEncryptionEventContent,
@@ -121,7 +122,7 @@ use crate::crypto::keychain;
 use crate::security::{create_private_dir, has_blocked_attachment_extension, open_private_file};
 use crate::types::{
     community::{ChannelDto, CommunityDto},
-    dm::{DirectMessageDto, DmConversationDto},
+    dm::{DirectMessageDto, DmConversationDto, ReadReceiptDto},
     message::{
         AttachmentDto, AttachmentThumbnailDto, MessageDto, UndecryptableMessageDto,
         UndecryptableMessageReason,
@@ -141,8 +142,8 @@ use super::{
     MatrixServiceCapabilities, MatrixTransferDirection, MatrixTransferObserver,
     MatrixTransferProgress, MatrixTransferProgressCallback, MatrixTransferResult,
     MatrixTransferRetryMode, MatrixTransferState, MatrixUnreadUpdate, MatrixVerificationSession,
-    MeshBackend, ModerationAuditEntry, PendingInvitationMetadata, SentMessage, TypingUser,
-    UserPreferences, VerificationEmoji, VoiceServiceAvailability, VoiceServiceStatus,
+    MeshBackend, ModerationAuditEntry, PendingInvitationMetadata, ReadReceiptMode, SentMessage,
+    TypingUser, UserPreferences, VerificationEmoji, VoiceServiceAvailability, VoiceServiceStatus,
 };
 
 mod moderation;
@@ -653,7 +654,7 @@ impl Default for MatrixSyncControl {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct WirePrivacyPreferences {
-    send_read_receipts: bool,
+    read_receipt_mode: ReadReceiptMode,
     send_typing_indicators: bool,
     share_presence: bool,
     invisible_mode: bool,
@@ -662,7 +663,7 @@ struct WirePrivacyPreferences {
 impl From<&UserPreferences> for WirePrivacyPreferences {
     fn from(preferences: &UserPreferences) -> Self {
         Self {
-            send_read_receipts: preferences.send_read_receipts,
+            read_receipt_mode: preferences.effective_read_receipt_mode(),
             send_typing_indicators: preferences.send_typing_indicators,
             share_presence: preferences.share_presence,
             invisible_mode: preferences.invisible_mode,
@@ -6034,12 +6035,43 @@ impl MeshBackend for MatrixBackend {
                 "conversation is not a one-to-one Matrix direct room".into(),
             ));
         }
-        Ok(self
+        let mut messages = self
             .messages(conversation_id, limit, before_timestamp, before_id)
             .await?
             .into_iter()
             .map(Self::direct_message_from_message)
-            .collect())
+            .collect::<Vec<_>>();
+        let own_user_id = client.user_id();
+
+        for message in &mut messages {
+            let Ok(event_id) = matrix_sdk::ruma::EventId::parse(&message.id) else {
+                continue;
+            };
+            let receipts = room
+                .load_event_receipts(ReceiptType::Read, ReceiptThread::Unthreaded, &event_id)
+                .await
+                .map_err(Self::map_error)?;
+            for (user_id, _) in receipts {
+                if own_user_id.is_some_and(|own_user_id| own_user_id == user_id) {
+                    continue;
+                }
+                let display_name = room
+                    .get_member(&user_id)
+                    .await
+                    .map_err(Self::map_error)?
+                    .map(|member| member.name().to_owned())
+                    .unwrap_or_else(|| user_id.localpart().to_owned());
+                message
+                    .seen_by
+                    .get_or_insert_default()
+                    .push(ReadReceiptDto {
+                        user_id: user_id.to_string(),
+                        display_name,
+                    });
+            }
+        }
+
+        Ok(messages)
     }
 
     async fn send_dm(
@@ -6382,7 +6414,7 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn mark_read(&self, room_id: String) -> BackendResult<()> {
-        let send_read_receipts = self.wire_privacy.read().await.send_read_receipts;
+        let read_receipt_mode = self.wire_privacy.read().await.read_receipt_mode;
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let room =
@@ -6396,9 +6428,11 @@ impl MeshBackend for MatrixBackend {
         };
         let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
         let mut receipts = Receipts::new().fully_read_marker(event_id.clone());
-        if send_read_receipts {
-            receipts = receipts.private_read_receipt(event_id);
-        }
+        receipts = match read_receipt_mode {
+            ReadReceiptMode::Public => receipts.public_read_receipt(event_id),
+            ReadReceiptMode::Private => receipts.private_read_receipt(event_id),
+            ReadReceiptMode::Off => receipts,
+        };
         room.send_multiple_receipts(receipts)
             .await
             .map_err(Self::map_error)

@@ -23,7 +23,7 @@ use matrix_sdk::{
 };
 use mesh_lib::backend::{
     MatrixBackend, MatrixLogin, MatrixRegistration, MatrixRoomNotificationMode, MeshBackend,
-    UserPreferences,
+    ReadReceiptMode, UserPreferences,
 };
 
 struct EnvironmentOverride {
@@ -137,6 +137,24 @@ fn privacy_preferences(
     share_presence: bool,
     invisible_mode: bool,
 ) -> UserPreferences {
+    privacy_preferences_with_receipt_mode(
+        if send_read_receipts {
+            ReadReceiptMode::Private
+        } else {
+            ReadReceiptMode::Off
+        },
+        send_typing_indicators,
+        share_presence,
+        invisible_mode,
+    )
+}
+
+fn privacy_preferences_with_receipt_mode(
+    read_receipt_mode: ReadReceiptMode,
+    send_typing_indicators: bool,
+    share_presence: bool,
+    invisible_mode: bool,
+) -> UserPreferences {
     UserPreferences {
         schema_version: UserPreferences::SCHEMA_VERSION,
         notifications_enabled: true,
@@ -151,7 +169,8 @@ fn privacy_preferences(
         muted_channel_until: std::collections::HashMap::new(),
         muted_community_until: std::collections::HashMap::new(),
         channel_notification_levels: std::collections::HashMap::new(),
-        send_read_receipts,
+        send_read_receipts: read_receipt_mode == ReadReceiptMode::Private,
+        read_receipt_mode: Some(read_receipt_mode),
         send_typing_indicators,
         share_presence,
         invisible_mode,
@@ -301,7 +320,12 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
     .await
     .unwrap();
     alice
-        .update_user_preferences(privacy_preferences(false, false, false, false))
+        .update_user_preferences(privacy_preferences_with_receipt_mode(
+            ReadReceiptMode::Public,
+            false,
+            false,
+            false,
+        ))
         .await
         .unwrap();
     checkpoint!("both users authenticated");
@@ -427,6 +451,54 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         .unwrap();
     alice.mark_dm_read(alice_dm.id.clone()).await.unwrap();
 
+    let bob_observer = Client::builder()
+        .homeserver_url("http://localhost:8009")
+        .build()
+        .await
+        .unwrap();
+    bob_observer
+        .matrix_auth()
+        .login_username("bob", "mesh-bob")
+        .initial_device_display_name("Mesh public receipt observer")
+        .send()
+        .await
+        .unwrap();
+    bob_observer
+        .sync_once(
+            SyncSettings::default()
+                .timeout(Duration::ZERO)
+                .set_presence(PresenceState::Offline),
+        )
+        .await
+        .unwrap();
+    let observer_bob_dm = bob_observer
+        .get_room(&RoomId::parse(&bob_dm.id).unwrap())
+        .expect("public receipt observer did not receive the DM room");
+    let alice_user_id = UserId::parse(&alice_user).unwrap();
+    let mut public_receipt = None;
+    for _ in 0..10 {
+        bob_observer
+            .sync_once(
+                SyncSettings::default()
+                    .timeout(Duration::ZERO)
+                    .set_presence(PresenceState::Offline),
+            )
+            .await
+            .unwrap();
+        public_receipt = observer_bob_dm
+            .load_user_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, &alice_user_id)
+            .await
+            .unwrap();
+        if public_receipt.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    assert!(
+        public_receipt.is_some(),
+        "explicit public read receipt did not reach the other DM participant"
+    );
+
     let alice_observer = Client::builder()
         .homeserver_url("http://localhost:8008")
         .build()
@@ -456,9 +528,8 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
             .await
             .unwrap()
             .is_some(),
-        "read-receipt opt-out did not preserve the private fully-read marker"
+        "public read-receipt mode did not preserve the private fully-read marker"
     );
-    let alice_user_id = UserId::parse(&alice_user).unwrap();
     assert!(
         observer_dm
             .load_user_receipt(
@@ -469,7 +540,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
             .await
             .unwrap()
             .is_none(),
-        "read-receipt opt-out emitted a private receipt"
+        "public read-receipt mode emitted a private receipt"
     );
 
     alice.set_typing(alice_dm.id.clone(), true).await.unwrap();
@@ -1439,6 +1510,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
                 MatrixRoomNotificationMode::Mentions,
             )]),
             send_read_receipts: false,
+            read_receipt_mode: Some(ReadReceiptMode::Off),
             send_typing_indicators: true,
             share_presence: false,
             invisible_mode: true,

@@ -9,6 +9,7 @@ import type {
   AppearanceDensity,
   AppearanceTheme,
   NotificationSoundId,
+  ReadReceiptMode,
 } from '../../store/settings'
 import type { Identity } from '../../types/ipc'
 
@@ -52,7 +53,7 @@ export function UserSettingsPanel({
   const setAppearanceTheme = useSettingsStore((state) => state.setAppearanceTheme)
   const setAppearanceDensity = useSettingsStore((state) => state.setAppearanceDensity)
   const setAppearanceAccent = useSettingsStore((state) => state.setAppearanceAccent)
-  const setSendReadReceipts = useSettingsStore((state) => state.setSendReadReceipts)
+  const setReadReceiptMode = useSettingsStore((state) => state.setReadReceiptMode)
   const setSendTypingIndicators = useSettingsStore((state) => state.setSendTypingIndicators)
   const setSharePresence = useSettingsStore((state) => state.setSharePresence)
   const setInvisibleMode = useSettingsStore((state) => state.setInvisibleMode)
@@ -350,11 +351,17 @@ export function UserSettingsPanel({
             </div>
 
             <div className="space-y-3" aria-label="Privacy controls">
-              <ToggleRow
-                label="Send read receipts"
-                description="Helps your devices agree on what you read; other people never receive this private receipt."
-                checked={privacy.sendReadReceipts}
-                onChange={setSendReadReceipts}
+              <SelectRow
+                id="read-receipts"
+                label="Read receipts"
+                description="Choose whether people in a conversation can see when you have read their messages."
+                value={privacy.readReceiptMode}
+                options={[
+                  ['public', 'Public — show when I have read messages'],
+                  ['private', 'Private — keep receipts between my devices'],
+                  ['off', 'Off — do not send read receipts'],
+                ]}
+                onChange={(value) => setReadReceiptMode(value as ReadReceiptMode)}
               />
               <ToggleRow
                 label="Show when I am typing"
@@ -676,6 +683,42 @@ function ToggleRow({
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
       />
+    </label>
+  )
+}
+
+function SelectRow({
+  id,
+  label,
+  description,
+  value,
+  options,
+  onChange,
+}: {
+  id: string
+  label: string
+  description: string
+  value: string
+  options: Array<[string, string]>
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="flex items-start justify-between gap-4 rounded-control bg-surface-hover px-3 py-3">
+      <span>
+        <span className="block text-sm font-medium text-primary">{label}</span>
+        <span className="mt-0.5 block text-xs leading-5 text-muted">{description}</span>
+      </span>
+      <select
+        id={id}
+        aria-label={label}
+        className="min-h-control-sm max-w-[15rem] rounded-control border border-border bg-surface-sunken px-2 text-xs text-primary outline-none focus:border-accent"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {options.map(([optionValue, optionLabel]) => (
+          <option key={optionValue} value={optionValue}>{optionLabel}</option>
+        ))}
+      </select>
     </label>
   )
 }

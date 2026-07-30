@@ -273,6 +273,7 @@ impl MatrixBackend {
             signature: message.signature,
             attachments: message.attachments,
             reactions: message.reactions,
+            seen_by: None,
             edited_at: message.edited_at,
             deleted_at: message.deleted_at,
             reply_to_id: message.reply_to_id,

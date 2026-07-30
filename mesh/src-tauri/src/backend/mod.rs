@@ -938,6 +938,10 @@ pub struct UserPreferences {
     pub channel_notification_levels: std::collections::HashMap<String, MatrixRoomNotificationMode>,
     #[serde(default)]
     pub send_read_receipts: bool,
+    /// Explicit receipt visibility. Missing values are migrated from the
+    /// legacy boolean: true meant private-only and false meant off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_receipt_mode: Option<ReadReceiptMode>,
     #[serde(default)]
     pub send_typing_indicators: bool,
     #[serde(default)]
@@ -948,16 +952,42 @@ pub struct UserPreferences {
 }
 
 impl UserPreferences {
-    pub const SCHEMA_VERSION: u32 = 3;
+    pub const SCHEMA_VERSION: u32 = 4;
+
+    pub fn effective_read_receipt_mode(&self) -> ReadReceiptMode {
+        self.read_receipt_mode
+            .unwrap_or(if self.send_read_receipts {
+                ReadReceiptMode::Private
+            } else {
+                ReadReceiptMode::Off
+            })
+    }
 
     pub fn normalized(mut self) -> Self {
         self.schema_version = Self::SCHEMA_VERSION;
+        if self.read_receipt_mode.is_none() {
+            self.read_receipt_mode = Some(self.effective_read_receipt_mode());
+        }
         self.muted_channels.sort();
         self.muted_channels.dedup();
         self.muted_communities.sort();
         self.muted_communities.dedup();
         self.updated_at = chrono::Utc::now().to_rfc3339();
         self
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReadReceiptMode {
+    Public,
+    Private,
+    Off,
+}
+
+impl Default for ReadReceiptMode {
+    fn default() -> Self {
+        Self::Off
     }
 }
 
@@ -1805,7 +1835,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_wire_privacy_fields_deserialize_to_private_defaults() {
+    fn missing_wire_privacy_fields_keep_read_receipts_off() {
         let preferences: UserPreferences = serde_json::from_value(serde_json::json!({
             "schemaVersion": 1,
             "notificationsEnabled": true,
@@ -1815,6 +1845,11 @@ mod tests {
         .expect("legacy preferences should migrate");
 
         assert!(!preferences.send_read_receipts);
+        assert_eq!(preferences.read_receipt_mode, None);
+        assert_eq!(
+            preferences.effective_read_receipt_mode(),
+            ReadReceiptMode::Off
+        );
         assert!(!preferences.send_typing_indicators);
         assert!(!preferences.share_presence);
         assert!(!preferences.invisible_mode);
@@ -1846,6 +1881,7 @@ mod tests {
                 MatrixRoomNotificationMode::Mentions,
             )]),
             send_read_receipts: false,
+            read_receipt_mode: Some(ReadReceiptMode::Off),
             send_typing_indicators: true,
             share_presence: false,
             invisible_mode: true,
@@ -1854,12 +1890,34 @@ mod tests {
         .normalized();
 
         assert_eq!(preferences.schema_version, UserPreferences::SCHEMA_VERSION);
+        assert_eq!(preferences.read_receipt_mode, Some(ReadReceiptMode::Off));
         assert_eq!(preferences.muted_channels, vec!["!b:example.org"]);
         assert_eq!(
             preferences.channel_notification_levels["!b:example.org"],
             MatrixRoomNotificationMode::Mentions
         );
         assert_ne!(preferences.updated_at, "stale");
+    }
+
+    #[test]
+    fn legacy_read_receipt_opt_in_migrates_to_private_only() {
+        let preferences: UserPreferences = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 3,
+            "notificationsEnabled": true,
+            "notificationSound": true,
+            "sendReadReceipts": true,
+            "updatedAt": "2026-07-26T00:00:00Z"
+        }))
+        .expect("legacy preferences should migrate");
+
+        assert_eq!(
+            preferences.effective_read_receipt_mode(),
+            ReadReceiptMode::Private
+        );
+        assert_eq!(
+            preferences.normalized().read_receipt_mode,
+            Some(ReadReceiptMode::Private)
+        );
     }
 
     #[test]

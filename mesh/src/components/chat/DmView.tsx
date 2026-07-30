@@ -565,6 +565,14 @@ export function DmView() {
                         ))}
                       </div>
                     )}
+                    {isOwnMessage && (msg.seenBy?.length ?? 0) > 0 && (
+                      <p
+                        className="mt-1 text-2xs text-muted"
+                        aria-label={`Seen by ${msg.seenBy?.map((receipt) => receipt.displayName).join(', ')}`}
+                      >
+                        Seen by {msg.seenBy?.map((receipt) => receipt.displayName).join(', ')}
+                      </p>
+                    )}
                   </div>
                   {/* Action bar — always mounted (not just on hover) so Tab can
                       reach it; group-hover/group-focus-within reveal it

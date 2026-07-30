@@ -36,7 +36,7 @@ describe('UserSettingsPanel', () => {
     useSettingsStore.getState().setAppearanceAccent('sand')
     useSettingsStore.setState({
       privacy: {
-        sendReadReceipts: false,
+        readReceiptMode: 'public',
         sendTypingIndicators: true,
         sharePresence: true,
         invisibleMode: false,
@@ -136,13 +136,17 @@ describe('UserSettingsPanel', () => {
         candidate.textContent?.includes(label),
       )?.querySelector<HTMLInputElement>('input[type="checkbox"]')
 
-    await act(async () => toggle('Send read receipts')?.click())
+    const readReceipts = document.querySelector<HTMLSelectElement>('#read-receipts')
+    await act(async () => {
+      if (readReceipts) readReceipts.value = 'private'
+      readReceipts?.dispatchEvent(new Event('change', { bubbles: true }))
+    })
     await act(async () => toggle('Show when I am typing')?.click())
     await act(async () => toggle('Share my online status')?.click())
     await act(async () => toggle('Invisible mode')?.click())
 
     expect(useSettingsStore.getState().privacy).toEqual({
-      sendReadReceipts: true,
+      readReceiptMode: 'private',
       sendTypingIndicators: false,
       sharePresence: false,
       invisibleMode: true,

@@ -772,6 +772,7 @@ async fn route_incoming_dm(app_handle: &AppHandle, envelope: &SignedEnvelope) {
         signature: envelope.signature.clone(),
         attachments: Vec::new(),
         reactions: std::collections::HashMap::new(),
+        seen_by: None,
         edited_at: None,
         deleted_at: None,
         reply_to_id: None,
