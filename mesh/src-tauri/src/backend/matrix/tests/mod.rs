@@ -2,6 +2,48 @@ use super::*;
 use matrix_sdk::{authentication::SessionTokens, SessionMeta};
 use serde_json::json;
 
+#[derive(Debug, serde::Deserialize)]
+struct CommunityInviteCorpusCase {
+    name: String,
+    url: String,
+    accept: bool,
+    via: Vec<String>,
+    #[serde(rename = "viaTruncated")]
+    via_truncated: bool,
+}
+
+#[test]
+fn community_invitation_parser_matches_shared_corpus() {
+    let fixtures: Vec<CommunityInviteCorpusCase> = serde_json::from_str(include_str!(
+        "../../../../../src/lib/community-invite-corpus.json"
+    ))
+    .unwrap();
+
+    for fixture in fixtures {
+        let result = MatrixBackend::parse_admission_invitation(&fixture.url, None);
+        if fixture.accept {
+            let parsed = result.unwrap_or_else(|error| {
+                panic!(
+                    "shared invite fixture {} was rejected: {error:?}",
+                    fixture.name
+                )
+            });
+            assert_eq!(parsed.via, fixture.via, "fixture {}", fixture.name);
+            assert_eq!(
+                parsed.via_truncated, fixture.via_truncated,
+                "fixture {}",
+                fixture.name
+            );
+        } else {
+            assert!(
+                result.is_err(),
+                "shared invite fixture {} was accepted",
+                fixture.name
+            );
+        }
+    }
+}
+
 #[test]
 fn admission_invitation_parser_can_bind_local_links_without_restricting_received_issuers() {
     let expected = MatrixBackend::normalize_admission_origin("https://mesh.example").unwrap();
@@ -32,7 +74,10 @@ fn admission_invitation_parser_can_bind_local_links_without_restricting_received
         Some(&expected),
     )
     .unwrap();
-    assert_eq!(versioned, public);
+    assert_eq!(versioned.code, public.code);
+    assert_eq!(versioned.api_origin, public.api_origin);
+    assert_eq!(versioned.via, vec!["mesh.example"]);
+    assert!(!versioned.via_truncated);
 
     assert!(matches!(
         MatrixBackend::parse_admission_invitation(

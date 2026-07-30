@@ -32,6 +32,8 @@ struct AdmissionErrorResponse {
 struct AdmissionInvitationTarget {
     code: String,
     api_origin: url::Url,
+    via: Vec<String>,
+    via_truncated: bool,
 }
 
 impl MatrixBackend {
@@ -102,7 +104,7 @@ impl MatrixBackend {
             ));
         }
 
-        let (code, origin) = if invite.scheme() == "mesh" {
+        let (code, origin, via, via_truncated) = if invite.scheme() == "mesh" {
             if invite.host_str() != Some("join") || !matches!(invite.path(), "" | "/") {
                 return Err(BackendError::InvalidConfiguration(
                     "this community invitation is incomplete or invalid".into(),
@@ -148,6 +150,8 @@ impl MatrixBackend {
                         )
                     })?,
                     Self::normalize_admission_origin(&api)?,
+                    Vec::new(),
+                    false,
                 )
             } else if version.as_deref() == Some("5") && kind.as_deref() == Some("community") {
                 if fields.iter().any(|(key, _)| {
@@ -177,22 +181,30 @@ impl MatrixBackend {
                         "this community invitation has an invalid community identifier".into(),
                     )
                 })?;
-                let via = fields
+                let raw_via = fields
                     .iter()
                     .filter(|(key, _)| key == "via")
                     .flat_map(|(_, value)| value.split(','))
-                    .filter(|value| !value.trim().is_empty())
                     .collect::<Vec<_>>();
-                if via.is_empty()
-                    || via.len() > 3
-                    || via
-                        .iter()
-                        .any(|server| ServerName::parse(server.trim()).is_err())
-                {
+                if raw_via.is_empty() || raw_via.iter().any(|server| server.trim().is_empty()) {
                     return Err(BackendError::InvalidConfiguration(
                         "this community invitation has invalid routing information".into(),
                     ));
                 }
+                let mut via = Vec::new();
+                for server in raw_via {
+                    let server = server.trim();
+                    ServerName::parse(server).map_err(|_| {
+                        BackendError::InvalidConfiguration(
+                            "this community invitation has invalid routing information".into(),
+                        )
+                    })?;
+                    if !via.iter().any(|existing| existing == server) {
+                        via.push(server.to_owned());
+                    }
+                }
+                let via_truncated = via.len() > 3;
+                via.truncate(3);
                 if let Some(service) = one("community_service")? {
                     Self::normalize_homeserver_input(&service)?;
                 }
@@ -230,6 +242,8 @@ impl MatrixBackend {
                         )
                     })?,
                     Self::normalize_admission_origin(&admission)?,
+                    via,
+                    via_truncated,
                 )
             } else {
                 return Err(BackendError::InvalidConfiguration(
@@ -256,7 +270,7 @@ impl MatrixBackend {
                     "this community invitation is incomplete or invalid".into(),
                 ));
             }
-            (segments[1].to_owned(), origin)
+            (segments[1].to_owned(), origin, Vec::new(), false)
         };
 
         if expected_origin.is_some_and(|expected| origin.origin() != expected.origin()) {
@@ -276,6 +290,8 @@ impl MatrixBackend {
         Ok(AdmissionInvitationTarget {
             code,
             api_origin: origin,
+            via,
+            via_truncated,
         })
     }
 

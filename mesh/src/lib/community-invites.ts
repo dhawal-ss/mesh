@@ -4,6 +4,7 @@ const COMMUNITY_INVITE_VERSION = '5'
 const MAX_INVITE_LENGTH = 4_096
 const MAX_MATRIX_IDENTIFIER_LENGTH = 512
 const MAX_SERVER_NAME_LENGTH = 255
+const MAX_VIA_SERVERS = 3
 const ADMISSION_CODE_PATTERN = /^[A-Za-z0-9_-]{32,64}$/
 
 export interface MatrixCommunityInvite {
@@ -11,6 +12,7 @@ export interface MatrixCommunityInvite {
   version: 3
   roomOrAlias: string
   via: string[]
+  viaTruncated: boolean
   service: string | null
   original: string
 }
@@ -28,6 +30,7 @@ export interface CommunityInviteV5 {
   version: 5
   roomOrAlias: string
   via: string[]
+  viaTruncated: boolean
   communityService: string | null
   admissionOrigin: string | null
   admissionCode: string | null
@@ -83,12 +86,18 @@ function hasOnlySearchParameters(url: URL, allowed: ReadonlySet<string>): boolea
   return [...url.searchParams.keys()].every((key) => allowed.has(key))
 }
 
-function parseViaServers(url: URL): string[] {
-  const via = url.searchParams.getAll('via')
+function parseViaServers(url: URL): { servers: string[]; truncated: boolean } | null {
+  const rawVia = url.searchParams.getAll('via')
     .flatMap((value) => value.split(','))
     .map((serverName) => serverName.trim())
-    .filter(isServerName)
-  return [...new Set(via)].slice(0, 3)
+  if (rawVia.length === 0 || rawVia.some((serverName) => !isServerName(serverName))) {
+    return null
+  }
+  const uniqueVia = [...new Set(rawVia)]
+  return {
+    servers: uniqueVia.slice(0, MAX_VIA_SERVERS),
+    truncated: uniqueVia.length > MAX_VIA_SERVERS,
+  }
 }
 
 function normalizeResumeUrl(value: string | null): string | null {
@@ -151,8 +160,8 @@ export function parseCommunityInviteV5(value: string): CommunityInviteV5 | null 
   }
 
   const roomOrAlias = url.searchParams.get('room')?.trim() ?? ''
-  const via = parseViaServers(url)
-  if (!isMatrixRoomIdentifier(roomOrAlias) || via.length === 0) return null
+  const parsedVia = parseViaServers(url)
+  if (!isMatrixRoomIdentifier(roomOrAlias) || !parsedVia) return null
 
   const communityServiceValue = url.searchParams.get('community_service')
   const communityService = normalizeCommunityService(communityServiceValue)
@@ -176,7 +185,8 @@ export function parseCommunityInviteV5(value: string): CommunityInviteV5 | null 
     kind: 'community',
     version: 5,
     roomOrAlias,
-    via,
+    via: parsedVia.servers,
+    viaTruncated: parsedVia.truncated,
     communityService,
     admissionOrigin,
     admissionCode,
@@ -215,8 +225,8 @@ export function parseMatrixCommunityInvite(
   const roomOrAlias = url.searchParams.get('room')?.trim() ?? ''
   if (!isMatrixRoomIdentifier(roomOrAlias)) return null
 
-  const uniqueVia = parseViaServers(url)
-  if (uniqueVia.length === 0) return null
+  const parsedVia = parseViaServers(url)
+  if (!parsedVia) return null
 
   const serviceValue = url.searchParams.get('service')
   const service = normalizeCommunityService(serviceValue)
@@ -226,7 +236,8 @@ export function parseMatrixCommunityInvite(
     kind: 'matrix',
     version: 3,
     roomOrAlias,
-    via: uniqueVia,
+    via: parsedVia.servers,
+    viaTruncated: parsedVia.truncated,
     service,
     original: input,
   }
