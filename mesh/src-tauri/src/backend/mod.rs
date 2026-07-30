@@ -977,18 +977,13 @@ impl UserPreferences {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum ReadReceiptMode {
     Public,
     Private,
+    #[default]
     Off,
-}
-
-impl Default for ReadReceiptMode {
-    fn default() -> Self {
-        Self::Off
-    }
 }
 
 #[derive(Debug, thiserror::Error)]
