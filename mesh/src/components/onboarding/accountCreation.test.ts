@@ -32,7 +32,7 @@ describe('account creation helpers', () => {
     expect(invitationValidationError('')).toContain('invitation')
   })
 
-  it('never treats a managed admission capability as a registration token', () => {
+  it('never treats a legacy admission capability as a registration token', () => {
     const link =
       'https://mesh.dhawal.org/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789'
     expect(invitationValidationError(link)).toBeNull()
@@ -47,10 +47,10 @@ describe('account creation helpers', () => {
 
   it('preserves typed registration guidance from the Rust boundary', () => {
     expect(friendlyAccountCreationError({
-      code: 'managed_homeserver_unconfigured',
-      detail: 'managed account service is not configured',
+      code: 'community_homeserver_unconfigured',
+      detail: 'community-hosted service is not configured',
       retryable: false,
-    })).toContain('does not have a managed account service configured')
+    })).toContain('does not have an optional account service configured')
     expect(friendlyAccountCreationError({
       code: 'registration_terms_required',
       detail: 'terms required',

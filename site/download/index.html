@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Download and verify Mesh developer previews.">
+  <title>Download Mesh</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <a class="brand" href="../">Mesh</a>
+    <nav aria-label="Primary"><a href="../services/">Services</a><a href="../status/">Status</a><a href="https://github.com/dhawal-ss/mesh">Source</a></nav>
+  </header>
+  <main id="main" class="prose">
+    <p class="eyebrow">Download</p>
+    <h1>Developer previews only</h1>
+    <p class="lede">The public release path is prepared, but trusted Windows signing and signed automatic updates are still release blockers.</p>
+    <div class="notice">
+      <p><strong>Do not bypass Windows security warnings.</strong> Until a package is signed by a reviewed trusted certificate, use it only for controlled development testing.</p>
+    </div>
+    <h2>Get the latest reviewed artifact</h2>
+    <p>
+      Releases will appear on the project's
+      <a href="https://github.com/dhawal-ss/mesh/releases">GitHub Releases page</a>.
+      Each reviewed release must include SHA-256 checksums and CycloneDX SBOMs. A missing
+      checksum, unexpected signer, or failed signature means stop.
+    </p>
+    <h2>Verification</h2>
+    <ol>
+      <li>Download the installer and <code>SHA256SUMS.txt</code> from the same release.</li>
+      <li>Compare the local SHA-256 hash with the published value.</li>
+      <li>For a consumer beta, verify a valid trusted Authenticode signature and timestamp.</li>
+      <li>Confirm the version and channel before installing or rolling back.</li>
+    </ol>
+    <p class="meta">A canonical latest-download redirect will be enabled only after a signed release exists and is verified from outside the development machine.</p>
+  </main>
+  <footer class="site-footer"><span>Mesh</span><div class="footer-links"><a href="../privacy/">Privacy</a><a href="../security/">Security</a><a href="../support/">Support</a></div></footer>
+</body>
+</html>

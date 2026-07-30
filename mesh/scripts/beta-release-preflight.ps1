@@ -2,7 +2,6 @@
 param(
     [string]$Tag = "",
     [switch]$RequireSigningEnvironment,
-    [switch]$RequireManagedService,
     [switch]$VerifyFrontendBundle,
     [string]$FrontendRoot = "",
     [switch]$VerifyArtifacts,
@@ -289,7 +288,36 @@ function Assert-MatrixFrontendBundleBoundary {
             "Legacy SimplePeer chunk is statically reachable from the Matrix entry: $($legacyChunk.FullName)"
 
         $escapedName = [regex]::Escape($legacyChunk.Name)
-        Assert-Condition ($entryText -match "import\(\s*[`"']\./$escapedName[`"']\s*\)") `
+        $javascriptChunks = @(
+            Get-ChildItem -LiteralPath $Root -Recurse -File -Filter "*.js"
+        )
+        $staticImporters = @(
+            $javascriptChunks |
+                Where-Object { $_.FullName -ne $legacyChunk.FullName } |
+                Where-Object {
+                    $importerRoot = Split-Path -Parent $_.FullName
+                    @(
+                        Get-StaticJavaScriptImports (Read-Utf8Text $_.FullName) |
+                            ForEach-Object {
+                                [IO.Path]::GetFullPath((Join-Path $importerRoot $_))
+                            } |
+                            Where-Object {
+                                $_ -eq $legacyChunk.FullName
+                            }
+                    ).Count -gt 0
+                }
+        )
+        $staticImporterNames = @($staticImporters | ForEach-Object { $_.FullName }) -join ', '
+        Assert-Condition ($staticImporters.Count -eq 0) `
+            "Legacy SimplePeer code is statically imported by: $staticImporterNames"
+
+        $dynamicImporters = @(
+            $javascriptChunks |
+                Where-Object {
+                    (Read-Utf8Text $_.FullName) -match "import\(\s*[`"']\./$escapedName[`"']\s*\)"
+                }
+        )
+        Assert-Condition ($dynamicImporters.Count -gt 0) `
             "Legacy SimplePeer code must be isolated in an explicitly lazy chunk: $($legacyChunk.FullName)"
     }
 
@@ -309,6 +337,8 @@ $nightlyWorkflowPath = Join-Path $gitRoot ".github/workflows/nightly-soak.yml"
 $releaseWorkflowPath = Join-Path $gitRoot ".github/workflows/release-beta.yml"
 $securityWorkflowPath = Join-Path $gitRoot ".github/workflows/security.yml"
 $matrixAcceptanceWorkflowPath = Join-Path $gitRoot ".github/workflows/matrix-federation-acceptance.yml"
+$developerPreviewWorkflowPath = Join-Path $gitRoot ".github/workflows/developer-preview.yml"
+$pagesWorkflowPath = Join-Path $gitRoot ".github/workflows/pages.yml"
 $matrixSpikeComposePath = Join-Path $repoRoot "infra/matrix-spike/docker-compose.yml"
 
 $packageConfig = Read-JsonFile $packagePath
@@ -320,6 +350,8 @@ $nightlyWorkflowText = Read-Utf8Text $nightlyWorkflowPath
 $releaseWorkflowText = Read-Utf8Text $releaseWorkflowPath
 $securityWorkflowText = Read-Utf8Text $securityWorkflowPath
 $matrixAcceptanceWorkflowText = Read-Utf8Text $matrixAcceptanceWorkflowPath
+$developerPreviewWorkflowText = Read-Utf8Text $developerPreviewWorkflowPath
+$pagesWorkflowText = Read-Utf8Text $pagesWorkflowPath
 $matrixSpikeComposeText = Read-Utf8Text $matrixSpikeComposePath
 
 if (Test-Path -LiteralPath $nestedWorkflowRoot -PathType Container) {
@@ -371,6 +403,31 @@ Assert-PinnedActions -WorkflowName "security.yml" -WorkflowText $securityWorkflo
 Assert-PinnedActions `
     -WorkflowName "matrix-federation-acceptance.yml" `
     -WorkflowText $matrixAcceptanceWorkflowText
+Assert-PinnedActions `
+    -WorkflowName "developer-preview.yml" `
+    -WorkflowText $developerPreviewWorkflowText
+Assert-PinnedActions -WorkflowName "pages.yml" -WorkflowText $pagesWorkflowText
+
+Assert-Condition ($releaseWorkflowText -match 'npm run check:public-services') `
+    "The beta workflow must validate the reviewed public-service catalog."
+Assert-Condition ($releaseWorkflowText -match 'npm run check:public-site') `
+    "The beta workflow must validate the public site source."
+Assert-Condition ($developerPreviewWorkflowText -match '(?m)^\s*workflow_dispatch:\s*$') `
+    "Unsigned developer previews must be owner-triggered, not published automatically."
+Assert-Condition ($developerPreviewWorkflowText -notmatch '(?m)^\s*gh release create\b') `
+    "Unsigned developer previews must remain short-lived workflow artifacts, not GitHub releases."
+Assert-Condition ($developerPreviewWorkflowText -match 'UNSIGNED-DEVELOPER-PREVIEW') `
+    "Developer-preview artifact names must state that the packages are unsigned."
+Assert-Condition ($developerPreviewWorkflowText -match '(?m)^\s*retention-days:\s*30\s*$') `
+    "Unsigned developer previews must use the bounded 30-day artifact retention."
+Assert-Condition ($pagesWorkflowText -match '(?m)^\s*workflow_dispatch:\s*$') `
+    "Public pages must require an explicit owner-triggered publication."
+Assert-Condition ($pagesWorkflowText -notmatch '(?m)^\s*(?:push|pull_request):\s*$') `
+    "Draft legal pages must not deploy automatically from pushes or pull requests."
+Assert-Condition ($pagesWorkflowText -match 'confirm_legal_review') `
+    "Public page deployment must require an explicit legal-review confirmation."
+Assert-Condition ($pagesWorkflowText -match 'actions/deploy-pages@[0-9a-fA-F]{40}') `
+    "Public page deployment must use the pinned GitHub Pages action."
 
 Assert-Condition ($matrixAcceptanceWorkflowText -match 'npm run setup:matrix-spike:reset') `
     "Matrix federation acceptance must reset the disposable homeservers before every run."
@@ -395,28 +452,6 @@ if (-not [string]::IsNullOrWhiteSpace($Tag)) {
     $expectedTag = "v$tauriVersion"
     Assert-Condition ($Tag -eq $expectedTag) `
         "Release tag $Tag does not match the application version $expectedTag."
-}
-
-if ($RequireManagedService) {
-    $managedService = [Environment]::GetEnvironmentVariable("VITE_MESH_HOMESERVER")
-    Assert-Condition (-not [string]::IsNullOrWhiteSpace($managedService)) `
-        "VITE_MESH_HOMESERVER is required for a managed beta release."
-
-    $managedService = $managedService.Trim().TrimEnd("/")
-    $managedUri = $null
-    if ([Uri]::TryCreate($managedService, [UriKind]::Absolute, [ref]$managedUri)) {
-        Assert-Condition ($managedUri.Scheme -eq "https") `
-            "VITE_MESH_HOMESERVER must use HTTPS for a managed beta release."
-        Assert-Condition ([string]::IsNullOrEmpty($managedUri.UserInfo)) `
-            "VITE_MESH_HOMESERVER must not contain credentials."
-        Assert-Condition (-not [string]::IsNullOrWhiteSpace($managedUri.Host)) `
-            "VITE_MESH_HOMESERVER must contain a valid host."
-        Assert-Condition ($managedUri.AbsolutePath -eq "/" -and [string]::IsNullOrEmpty($managedUri.Query) -and [string]::IsNullOrEmpty($managedUri.Fragment)) `
-            "VITE_MESH_HOMESERVER must be a server origin without a path, query, or fragment."
-    } else {
-        Assert-Condition ($managedService -match '^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$') `
-            "VITE_MESH_HOMESERVER must be an HTTPS origin or a fully qualified Matrix server name."
-    }
 }
 
 if ($RequireSigningEnvironment) {

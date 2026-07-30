@@ -36,6 +36,7 @@ export type {
   MatrixNotification,
   MatrixCommunityAdmission,
   MatrixPersonalDataExport,
+  PendingInvitationMetadata,
   MatrixQueuedMessageState,
   MatrixQueuedMessageUpdate,
   MatrixRoomNotificationMode,

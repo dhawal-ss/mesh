@@ -15,6 +15,10 @@ describe('MemberList actions', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    })
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
       unobserve() {}
@@ -130,5 +134,39 @@ describe('MemberList actions', () => {
     expect(container.textContent).toContain('No members yet')
     expect(container.textContent).toContain('People who join will appear here.')
     expect(container.querySelector('section')?.className).toContain('py-5')
+  })
+
+  it('keeps a five-thousand-member community DOM bounded with ordered list metadata', async () => {
+    const members = Array.from({ length: 5_000 }, (_, index) => ({
+      publicKey: `@member-${index}:example.org`,
+      displayName: `Member ${index.toString().padStart(4, '0')}`,
+      avatarColor: '#6c8f76',
+      role: 'member' as const,
+      online: index < 2_500,
+    }))
+    await act(async () => {
+      root.render(
+        <MemberList isOpen embedded onClose={() => {}} members={members} />,
+      )
+    })
+
+    const renderedMembers = container.querySelectorAll('[role="listitem"]')
+    expect(renderedMembers.length).toBeGreaterThan(0)
+    expect(renderedMembers.length).toBeLessThan(100)
+    expect(renderedMembers[0]?.getAttribute('aria-posinset')).toBe('1')
+    expect(renderedMembers[0]?.getAttribute('aria-setsize')).toBe('5002')
+
+    const list = container.querySelector<HTMLElement>(
+      '[role="list"][aria-label="Community members"]',
+    )
+    await act(async () => {
+      if (list) list.scrollTop = 200_056
+      list?.dispatchEvent(new Event('scroll', { bubbles: true }))
+      await Promise.resolve()
+    })
+    const finalMember = [...container.querySelectorAll('[role="listitem"]')]
+      .find((member) => member.getAttribute('aria-posinset') === '5002')
+    expect(finalMember).toBeDefined()
+    expect(finalMember?.getAttribute('aria-setsize')).toBe('5002')
   })
 })

@@ -33,13 +33,17 @@ export interface OnboardingFlowProps {
     deviceName?: string
   }) => Promise<void>
   onMatrixOidcLogin?: (homeserver: string) => Promise<void>
-  onMatrixCheckUsernameAvailable?: (username: string) => Promise<boolean>
-  onMatrixRegisterAccount?: (
-    username: string,
-    password: string,
-    registrationToken: string,
-  ) => Promise<void>
+  onMatrixCheckUsernameAvailable?: (homeserver: string, username: string) => Promise<boolean>
+  onMatrixRegisterAccount?: (request: {
+    homeserver: string
+    username: string
+    password: string
+    registrationToken?: string
+    deviceName?: string
+  }) => Promise<void>
   onMatrixSwitchAccount?: (profileId: string) => Promise<void>
+  onResolvePendingInvitation?: () => Promise<MatrixCommunityAdmission | null>
+  onDiscardPendingInvitation?: () => Promise<void>
   onCreateBackupCode?: () => Promise<string>
   onBackupConfigured?: () => void
   onBackupSkipped?: () => void
@@ -47,6 +51,8 @@ export interface OnboardingFlowProps {
   onUpdateProfile?: (profile: OnboardingProfile) => Promise<void>
   onBootstrap?: (update: (state: BootstrapState) => void) => Promise<void>
   initialMatrixInvitation?: string
+  initialPendingInvitation?: PendingInvitationMetadata | null
   initialProfile?: Partial<OnboardingProfile>
   avatarColors?: readonly string[]
 }
+import type { MatrixCommunityAdmission, PendingInvitationMetadata } from '../../types/ipc'

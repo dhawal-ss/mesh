@@ -19,19 +19,29 @@ then
 fi
 
 check_subset="${MESH_RESTIC_CHECK_SUBSET:-5%}"
+offsite_keep_daily="${MESH_OFFSITE_BACKUP_KEEP_DAILY:-30}"
+offsite_keep_weekly="${MESH_OFFSITE_BACKUP_KEEP_WEEKLY:-12}"
 if ! printf '%s' "$check_subset" |
    grep -Eq '^([1-9][0-9]*%|[1-9][0-9]*/[1-9][0-9]*)$'
 then
   echo "MESH_RESTIC_CHECK_SUBSET must be a restic subset such as 5% or 1/20." >&2
   exit 1
 fi
+for value in "$offsite_keep_daily" "$offsite_keep_weekly"; do
+  case "$value" in
+    *[!0-9]*|"")
+      echo "MESH_OFFSITE_BACKUP_KEEP_DAILY and MESH_OFFSITE_BACKUP_KEEP_WEEKLY must be non-negative integers." >&2
+      exit 1
+      ;;
+  esac
+done
 
 backup_path="$(sh "$script_dir/backup.sh")"
 sh "$script_dir/verify-backup.sh" "$backup_path" >&2
 
 server_name="$(
   awk -F= '$1 == "MESH_SERVER_NAME" { sub(/^[^=]*=/, ""); print; exit }' \
-    "$backup_path/operator.env"
+    "$backup_path/backup-metadata.env"
 )"
 restic backup \
   --host "$server_name" \
@@ -39,6 +49,11 @@ restic backup \
   "$backup_path"
 restic snapshots --latest 1 --tag mesh-homeserver >/dev/null
 restic check --read-data-subset="$check_subset"
+restic forget \
+  --prune \
+  --tag mesh-homeserver \
+  --keep-daily "$offsite_keep_daily" \
+  --keep-weekly "$offsite_keep_weekly"
 
 status_root="$script_dir/runtime/status"
 mkdir -p "$status_root"

@@ -42,13 +42,20 @@ until curl --fail --silent http://127.0.0.1:8008/health >/dev/null 2>&1; do
   sleep 2
 done
 
-admin_user="@dhawal:${MESH_SERVER_NAME}"
+: "${MESH_OPERATOR_LOCALPART:?MESH_OPERATOR_LOCALPART is required}"
+case "$MESH_OPERATOR_LOCALPART" in
+  *[!a-z0-9._=-]*|'')
+    echo "MESH_OPERATOR_LOCALPART must be a lowercase Matrix localpart." >&2
+    exit 1
+    ;;
+esac
+admin_user="@${MESH_OPERATOR_LOCALPART}:${MESH_SERVER_NAME}"
 admin_service="Mesh Homeserver Admin"
 if ! security find-generic-password -a "$admin_user" -s "$admin_service" -w >/dev/null 2>&1; then
   admin_password="$(openssl rand -base64 36 | tr -d '\n')"
   if ! docker compose exec -T synapse register_new_matrix_user \
     -c /data/homeserver.yaml http://127.0.0.1:8008 \
-    -u dhawal -p "$admin_password" --admin >/dev/null; then
+    -u "$MESH_OPERATOR_LOCALPART" -p "$admin_password" --admin >/dev/null; then
     echo "Could not bootstrap $admin_user. The account may already exist without a matching Keychain entry." >&2
     echo "Recover or reset that account locally, then store its password under '$admin_service'." >&2
     unset admin_password

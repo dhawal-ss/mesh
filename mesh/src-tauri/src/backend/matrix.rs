@@ -24,7 +24,7 @@ use matrix_sdk::{
         AuthApi, AuthSession,
     },
     config::SyncSettings,
-    deserialized_responses::{AlgorithmInfo, EncryptionInfo},
+    deserialized_responses::{AlgorithmInfo, EncryptionInfo, TimelineEventKind},
     encryption::{
         backups::BackupState,
         recovery::RecoveryState,
@@ -57,6 +57,7 @@ use matrix_sdk::{
                     Visibility,
                 },
                 rtc::{transports::v1::Request as MatrixRtcTransportsRequest, RtcTransport},
+                session::get_login_types::v3::LoginType,
                 state::{get_state_events, send_state_event},
                 uiaa::{self, AuthData, AuthType, Dummy, RegistrationToken, UiaaInfo},
             },
@@ -71,6 +72,7 @@ use matrix_sdk::{
             image_pack::{PackImage, PackInfo, PackUsage, RoomImagePackEventContent},
             presence::PresenceEvent,
             reaction::ReactionEventContent,
+            receipt::{ReceiptThread, ReceiptType},
             relation::Annotation,
             room::{
                 encryption::RoomEncryptionEventContent,
@@ -96,8 +98,8 @@ use matrix_sdk::{
         room::RoomType,
         serde::Raw,
         EventEncryptionAlgorithm, MxcUri, OwnedDeviceId, OwnedRoomAliasId, OwnedRoomId,
-        OwnedServerName, OwnedTransactionId, OwnedUserId, RoomAliasId, RoomOrAliasId, ServerName,
-        UInt, UserId,
+        OwnedServerName, OwnedTransactionId, OwnedUserId, RoomAliasId, RoomId, RoomOrAliasId,
+        ServerName, UInt, UserId,
     },
     send_queue::{LocalEcho, LocalEchoContent, RoomSendQueueUpdate, SendQueueUpdate},
     store::RoomLoadSettings,
@@ -120,8 +122,11 @@ use crate::crypto::keychain;
 use crate::security::{create_private_dir, has_blocked_attachment_extension, open_private_file};
 use crate::types::{
     community::{ChannelDto, CommunityDto},
-    dm::{DirectMessageDto, DmConversationDto},
-    message::{AttachmentDto, AttachmentThumbnailDto, MessageDto},
+    dm::{DirectMessageDto, DmConversationDto, ReadReceiptDto},
+    message::{
+        AttachmentDto, AttachmentThumbnailDto, MessageDto, UndecryptableMessageDto,
+        UndecryptableMessageReason,
+    },
 };
 
 use super::{
@@ -130,14 +135,15 @@ use super::{
     CreatedCommunity, CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest, MatrixBackendEvent,
     MatrixBackendEventCallback, MatrixDevice, MatrixLogin, MatrixNotification,
     MatrixOidcAvailability, MatrixOidcStatus, MatrixPersonalDataExport, MatrixProfile,
-    MatrixQueuedMessageState, MatrixQueuedMessageUpdate, MatrixRecoveryHealth,
-    MatrixRoomNotificationMode, MatrixRoomPins, MatrixRoomPinsUpdate, MatrixRtcJoinResult,
-    MatrixRtcMediaKey, MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause,
-    MatrixRtcMember, MatrixRtcMembershipUpdate, MatrixTransferDirection, MatrixTransferObserver,
+    MatrixQueuedMessageState, MatrixQueuedMessageUpdate, MatrixRecoveryHealth, MatrixRegistration,
+    MatrixRegistrationAvailability, MatrixRoomNotificationMode, MatrixRoomPins,
+    MatrixRoomPinsUpdate, MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyFailure,
+    MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember, MatrixRtcMembershipUpdate,
+    MatrixServiceCapabilities, MatrixTransferDirection, MatrixTransferObserver,
     MatrixTransferProgress, MatrixTransferProgressCallback, MatrixTransferResult,
     MatrixTransferRetryMode, MatrixTransferState, MatrixUnreadUpdate, MatrixVerificationSession,
-    MeshBackend, ModerationAuditEntry, SentMessage, TypingUser, UserPreferences, VerificationEmoji,
-    VoiceServiceAvailability, VoiceServiceStatus,
+    MeshBackend, ModerationAuditEntry, PendingInvitationMetadata, ReadReceiptMode, SentMessage,
+    TypingUser, UserPreferences, VerificationEmoji, VoiceServiceAvailability, VoiceServiceStatus,
 };
 
 mod moderation;
@@ -147,14 +153,16 @@ use moderation::MatrixModerationAction;
 const SESSION_KEY: &str = "matrix-session-v1";
 const STORE_PASSPHRASE_KEY: &str = "matrix-store-passphrase-v1";
 const ACCOUNT_REGISTRY_KEY: &str = "matrix-account-registry-v1";
+const PENDING_INVITATION_KEY: &str = "matrix-pending-invitation-key-v1";
+const PENDING_INVITATION_FILE: &str = "pending-invitation-v1.bin";
+const PENDING_INVITATION_MAX_BYTES: usize = 8 * 1024;
+const PENDING_INVITATION_MAX_AGE_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
 const TRUSTED_DEVICES_KEY: &str = "matrix-trusted-devices-v1";
 const RECOVERY_TEST_KEY: &str = "matrix-recovery-test-v1";
 const PREFERENCES_EVENT_TYPE: &str = "org.mesh.preferences.v1";
 const MAX_PINNED_EVENTS: usize = 100;
-const MANAGED_HOMESERVER_ENV: &str = "MESH_MANAGED_HOMESERVER";
-const MANAGED_SERVER_NAME_ENV: &str = "MESH_MANAGED_SERVER_NAME";
-const DEFAULT_MANAGED_HOMESERVER: &str = "https://matrix.mesh.dhawal.org";
-const DEFAULT_MANAGED_SERVER_NAME: &str = "mesh.dhawal.org";
+const COMMUNITY_HOMESERVER_ENV: &str = "MESH_COMMUNITY_HOMESERVER";
+const COMMUNITY_SERVER_NAME_ENV: &str = "MESH_COMMUNITY_SERVER_NAME";
 const LOGIN_TIMEOUT_SECONDS: u64 = 45;
 const SESSION_RESTORE_SYNC_TIMEOUT_SECONDS: u64 = 10;
 const REGISTRATION_TIMEOUT_SECONDS: u64 = 45;
@@ -526,6 +534,12 @@ struct LegacyPersistedSession {
     session: MatrixSession,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PendingInvitationRecord {
+    invite_link: String,
+    metadata: PendingInvitationMetadata,
+}
+
 impl PersistedAuthentication {
     fn into_sdk_session(self) -> AuthSession {
         match self {
@@ -640,7 +654,7 @@ impl Default for MatrixSyncControl {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct WirePrivacyPreferences {
-    send_read_receipts: bool,
+    read_receipt_mode: ReadReceiptMode,
     send_typing_indicators: bool,
     share_presence: bool,
     invisible_mode: bool,
@@ -649,7 +663,7 @@ struct WirePrivacyPreferences {
 impl From<&UserPreferences> for WirePrivacyPreferences {
     fn from(preferences: &UserPreferences) -> Self {
         Self {
-            send_read_receipts: preferences.send_read_receipts,
+            read_receipt_mode: preferences.effective_read_receipt_mode(),
             send_typing_indicators: preferences.send_typing_indicators,
             share_presence: preferences.share_presence,
             invisible_mode: preferences.invisible_mode,
@@ -684,7 +698,7 @@ struct MatrixSyncCoordinator {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct ManagedHomeserverConfig {
+struct CommunityHomeserverConfig {
     homeserver: String,
     server_name: OwnedServerName,
 }
@@ -708,6 +722,7 @@ pub struct MatrixBackend {
     send_queue_gate: Arc<Mutex<()>>,
     send_queue_reconcile: Arc<Notify>,
     send_queue_known: Arc<Mutex<HashMap<String, HashSet<String>>>>,
+    pending_invitation_gate: Arc<Mutex<()>>,
     thumbnail_loads: Semaphore,
     lightbox_image_loads: Semaphore,
     rtc_sessions: Arc<Mutex<HashMap<(String, String), MatrixRtcLocalSession>>>,
@@ -748,6 +763,7 @@ impl MatrixBackend {
             send_queue_gate: Arc::new(Mutex::new(())),
             send_queue_reconcile: Arc::new(Notify::new()),
             send_queue_known: Arc::new(Mutex::new(HashMap::new())),
+            pending_invitation_gate: Arc::new(Mutex::new(())),
             thumbnail_loads: Semaphore::new(MAX_CONCURRENT_THUMBNAIL_LOADS),
             lightbox_image_loads: Semaphore::new(MAX_CONCURRENT_LIGHTBOX_IMAGE_LOADS),
             rtc_sessions: Arc::new(Mutex::new(HashMap::new())),
@@ -791,6 +807,7 @@ impl MatrixBackend {
             send_queue_gate: Arc::new(Mutex::new(())),
             send_queue_reconcile: Arc::new(Notify::new()),
             send_queue_known: Arc::new(Mutex::new(HashMap::new())),
+            pending_invitation_gate: Arc::new(Mutex::new(())),
             thumbnail_loads: Semaphore::new(MAX_CONCURRENT_THUMBNAIL_LOADS),
             lightbox_image_loads: Semaphore::new(MAX_CONCURRENT_LIGHTBOX_IMAGE_LOADS),
             rtc_sessions: Arc::new(Mutex::new(HashMap::new())),
@@ -820,6 +837,245 @@ impl MatrixBackend {
                 key_namespace: profile_id.to_owned(),
             }
         }
+    }
+
+    fn pending_invitation_key(storage: &AccountStorage) -> String {
+        format!("{PENDING_INVITATION_KEY}-{}", storage.key_namespace)
+    }
+
+    fn pending_invitation_path(storage: &AccountStorage) -> PathBuf {
+        storage.store_root.join(PENDING_INVITATION_FILE)
+    }
+
+    async fn pending_invitation_storages(&self) -> Vec<AccountStorage> {
+        let preferred = match self.runtime.read().await.profile_id.clone() {
+            Some(profile_id) => self.storage_for_profile(&profile_id),
+            None => self
+                .active_storage_from_registry()
+                .unwrap_or_else(|_| self.storage_for_profile("default")),
+        };
+        let default = self.storage_for_profile("default");
+        if preferred.store_root == default.store_root {
+            vec![preferred]
+        } else {
+            vec![preferred, default]
+        }
+    }
+
+    fn pending_invitation_now_ms() -> u64 {
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+            .unwrap_or(0)
+    }
+
+    fn pending_invitation_expired(metadata: &PendingInvitationMetadata, now_ms: u64) -> bool {
+        now_ms >= metadata.expires_at
+    }
+
+    fn pending_invitation_metadata(invite_link: &str, stored_at: u64) -> PendingInvitationMetadata {
+        let mut room_or_alias = None;
+        let mut service = None;
+        let mut admission_service = None;
+        let mut via = Vec::new();
+
+        if let Ok(url) = url::Url::parse(invite_link) {
+            for (key, value) in url.query_pairs() {
+                match key.as_ref() {
+                    "room" => room_or_alias = Some(value.into_owned()),
+                    "service" | "community_service" => {
+                        if service.is_none() {
+                            service = Some(value.into_owned());
+                        }
+                    }
+                    "admission" => admission_service = Some(value.into_owned()),
+                    "via" => {
+                        for server in value
+                            .split(',')
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                        {
+                            if !via.iter().any(|existing| existing == server) && via.len() < 3 {
+                                via.push(server.to_owned());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            if admission_service.is_none()
+                && url.path().starts_with("/invite/")
+                && matches!(url.scheme(), "https" | "http")
+            {
+                admission_service = url.host_str().map(|_| url.origin().ascii_serialization());
+            }
+        }
+
+        PendingInvitationMetadata {
+            // The renderer needs only an opaque identity token. Do not derive
+            // it from the invitation, because even a truncated digest would
+            // give the renderer an offline oracle for low-entropy links.
+            handle: uuid::Uuid::new_v4().to_string(),
+            room_or_alias,
+            via,
+            service,
+            admission_service,
+            stored_at,
+            expires_at: stored_at.saturating_add(PENDING_INVITATION_MAX_AGE_MS),
+        }
+    }
+
+    fn load_or_create_pending_invitation_key(storage: &AccountStorage) -> BackendResult<[u8; 32]> {
+        let key_name = Self::pending_invitation_key(storage);
+        match keychain::lookup_secret(&key_name).map_err(Self::map_secure_storage_error)? {
+            keychain::SecretLookup::Found(bytes) => bytes.try_into().map_err(|_| {
+                BackendError::Crypto("pending invitation secure-storage key is invalid".into())
+            }),
+            keychain::SecretLookup::Missing => {
+                let mut key = [0_u8; 32];
+                rand::thread_rng().fill_bytes(&mut key);
+                keychain::store_secret(&key_name, &key).map_err(Self::map_secure_storage_error)?;
+                Ok(key)
+            }
+        }
+    }
+
+    async fn read_pending_invitation_record(
+        &self,
+        storage: &AccountStorage,
+    ) -> BackendResult<Option<PendingInvitationRecord>> {
+        let path = Self::pending_invitation_path(storage);
+        let ciphertext = match tokio::fs::read(&path).await {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                return Err(BackendError::Crypto(format!(
+                    "could not read the pending invitation store: {error}"
+                )))
+            }
+        };
+        let mut key = Self::load_or_create_pending_invitation_key(storage)?;
+        let plaintext = crate::crypto::encryption::decrypt_community_payload(
+            &key,
+            &ciphertext,
+            b"mesh-pending-invitation-v1",
+        )
+        .map_err(|_| BackendError::Crypto("pending invitation store could not be opened".into()));
+        key.zeroize();
+        let plaintext = plaintext?;
+        serde_json::from_slice(&plaintext)
+            .map(Some)
+            .map_err(|_| BackendError::Crypto("pending invitation store is invalid".into()))
+    }
+
+    async fn write_pending_invitation_record(
+        &self,
+        storage: &AccountStorage,
+        record: &PendingInvitationRecord,
+    ) -> BackendResult<()> {
+        let plaintext = serde_json::to_vec(record).map_err(|_| {
+            BackendError::Serialization("pending invitation could not be encoded".into())
+        })?;
+        if plaintext.len() > PENDING_INVITATION_MAX_BYTES {
+            return Err(BackendError::InvalidConfiguration(
+                "pending invitation is too large".into(),
+            ));
+        }
+        let mut key = Self::load_or_create_pending_invitation_key(storage)?;
+        let ciphertext = crate::crypto::encryption::encrypt_community_payload(
+            &key,
+            &plaintext,
+            b"mesh-pending-invitation-v1",
+        )
+        .map_err(|_| BackendError::Crypto("pending invitation could not be protected".into()));
+        key.zeroize();
+        let ciphertext = ciphertext?;
+
+        create_private_dir(&storage.store_root, true)
+            .await
+            .map_err(|error| {
+                BackendError::Crypto(format!(
+                    "could not prepare the pending invitation store: {error}"
+                ))
+            })?;
+        let path = Self::pending_invitation_path(storage);
+        let temporary_path = storage.store_root.join(format!(
+            "{PENDING_INVITATION_FILE}.tmp-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let mut file = open_private_file(&temporary_path, true)
+            .await
+            .map_err(|error| {
+                BackendError::Crypto(format!(
+                    "could not write the pending invitation store: {error}"
+                ))
+            })?;
+        file.write_all(&ciphertext).await.map_err(|error| {
+            BackendError::Crypto(format!(
+                "could not write the pending invitation store: {error}"
+            ))
+        })?;
+        file.flush().await.map_err(|error| {
+            BackendError::Crypto(format!(
+                "could not flush the pending invitation store: {error}"
+            ))
+        })?;
+        drop(file);
+
+        match tokio::fs::remove_file(&path).await {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                let _ = tokio::fs::remove_file(&temporary_path).await;
+                return Err(BackendError::Crypto(format!(
+                    "could not replace the pending invitation store: {error}"
+                )));
+            }
+        }
+        if let Err(error) = tokio::fs::rename(&temporary_path, &path).await {
+            let _ = tokio::fs::remove_file(&temporary_path).await;
+            return Err(BackendError::Crypto(format!(
+                "could not replace the pending invitation store: {error}"
+            )));
+        }
+        Ok(())
+    }
+
+    async fn remove_pending_invitation_record(storage: &AccountStorage) -> BackendResult<()> {
+        let path = Self::pending_invitation_path(storage);
+        match tokio::fs::remove_file(&path).await {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(BackendError::Crypto(format!(
+                    "could not clear the pending invitation store: {error}"
+                )))
+            }
+        }
+        let key_name = Self::pending_invitation_key(storage);
+        if keychain::try_secret_exists(&key_name).map_err(Self::map_secure_storage_error)? {
+            keychain::delete_secret(&key_name).map_err(Self::map_secure_storage_error)?;
+        }
+        Ok(())
+    }
+
+    async fn clear_pending_invitation_records(&self) -> BackendResult<()> {
+        for storage in self.pending_invitation_storages().await {
+            Self::remove_pending_invitation_record(&storage).await?;
+        }
+        Ok(())
+    }
+
+    async fn find_pending_invitation_record(
+        &self,
+    ) -> BackendResult<Option<(AccountStorage, PendingInvitationRecord)>> {
+        for storage in self.pending_invitation_storages().await {
+            if let Some(record) = self.read_pending_invitation_record(&storage).await? {
+                return Ok(Some((storage, record)));
+            }
+        }
+        Ok(None)
     }
 
     fn profile_id(homeserver: &str, username: &str) -> String {
@@ -1043,14 +1299,25 @@ impl MatrixBackend {
         Ok(input.to_owned())
     }
 
-    fn managed_homeserver_config_from(
+    fn normalize_report_reason(reason: String) -> BackendResult<String> {
+        let reason = reason.split_whitespace().collect::<Vec<_>>().join(" ");
+        let character_count = reason.chars().count();
+        if character_count == 0 || character_count > 500 || reason.chars().any(char::is_control) {
+            return Err(BackendError::InvalidConfiguration(
+                "report reason must contain 1 to 500 visible characters".into(),
+            ));
+        }
+        Ok(reason)
+    }
+
+    fn community_homeserver_config_from(
         homeserver: Option<&str>,
         server_name: Option<&str>,
-    ) -> BackendResult<ManagedHomeserverConfig> {
+    ) -> BackendResult<CommunityHomeserverConfig> {
         let homeserver = homeserver
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .ok_or(BackendError::ManagedHomeserverUnconfigured)?;
+            .ok_or(BackendError::CommunityHomeserverUnconfigured)?;
         let homeserver = Self::normalize_homeserver_input(homeserver)?;
 
         let derived_server_name = if let Some(server_name) =
@@ -1060,12 +1327,12 @@ impl MatrixBackend {
         } else if homeserver.contains("://") {
             let url = url::Url::parse(&homeserver).map_err(|error| {
                 BackendError::InvalidConfiguration(format!(
-                    "invalid managed homeserver URL: {error}"
+                    "invalid community homeserver URL: {error}"
                 ))
             })?;
             let host = url.host_str().ok_or_else(|| {
                 BackendError::InvalidConfiguration(
-                    "managed homeserver URL has no server name".into(),
+                    "community homeserver URL has no server name".into(),
                 )
             })?;
             let mut derived = if host.contains(':') {
@@ -1087,22 +1354,16 @@ impl MatrixBackend {
                 "invalid managed Matrix server name: {error}"
             ))
         })?;
-        Ok(ManagedHomeserverConfig {
+        Ok(CommunityHomeserverConfig {
             homeserver,
             server_name,
         })
     }
 
-    fn managed_homeserver_config() -> BackendResult<ManagedHomeserverConfig> {
-        let homeserver = std::env::var(MANAGED_HOMESERVER_ENV)
-            .ok()
-            .or_else(|| option_env!("MESH_MANAGED_HOMESERVER").map(str::to_owned))
-            .unwrap_or_else(|| DEFAULT_MANAGED_HOMESERVER.to_owned());
-        let server_name = std::env::var(MANAGED_SERVER_NAME_ENV)
-            .ok()
-            .or_else(|| option_env!("MESH_MANAGED_SERVER_NAME").map(str::to_owned))
-            .unwrap_or_else(|| DEFAULT_MANAGED_SERVER_NAME.to_owned());
-        Self::managed_homeserver_config_from(Some(&homeserver), Some(&server_name))
+    fn community_homeserver_config() -> BackendResult<CommunityHomeserverConfig> {
+        let homeserver = std::env::var(COMMUNITY_HOMESERVER_ENV).ok();
+        let server_name = std::env::var(COMMUNITY_SERVER_NAME_ENV).ok();
+        Self::community_homeserver_config_from(homeserver.as_deref(), server_name.as_deref())
     }
 
     fn normalize_product_username(input: &str) -> BackendResult<String> {
@@ -1185,28 +1446,25 @@ impl MatrixBackend {
         Ok(slug)
     }
 
-    fn qualify_user_input(
-        input: &str,
-        managed: &ManagedHomeserverConfig,
-    ) -> BackendResult<OwnedUserId> {
+    fn qualify_user_input(input: &str, account_server: &ServerName) -> BackendResult<OwnedUserId> {
         let input = input.trim();
         if input.starts_with('@') {
             return UserId::parse(input).map_err(Self::map_error);
         }
         let username = Self::normalize_product_username(input)?;
-        UserId::parse(format!("@{username}:{}", managed.server_name)).map_err(Self::map_error)
+        UserId::parse(format!("@{username}:{account_server}")).map_err(Self::map_error)
     }
 
     fn qualify_public_link_input(
         input: &str,
-        managed: &ManagedHomeserverConfig,
+        account_server: &ServerName,
     ) -> BackendResult<OwnedRoomAliasId> {
         let input = input.trim();
         if input.starts_with('#') {
             return RoomAliasId::parse(input).map_err(Self::map_error);
         }
         let slug = Self::normalize_public_link_slug(input)?;
-        RoomAliasId::parse(format!("#{slug}:{}", managed.server_name)).map_err(Self::map_error)
+        RoomAliasId::parse(format!("#{slug}:{account_server}")).map_err(Self::map_error)
     }
 
     fn uiaa_has_incomplete_stage(info: &UiaaInfo, stage: AuthType) -> bool {
@@ -1287,10 +1545,10 @@ impl MatrixBackend {
         match error.client_api_error_kind() {
             Some(ErrorKind::UserInUse) => BackendError::UsernameUnavailable,
             Some(ErrorKind::InvalidUsername) => BackendError::InvalidConfiguration(
-                "the managed account service rejected that username".into(),
+                "the selected account service rejected that username".into(),
             ),
             Some(ErrorKind::WeakPassword) => BackendError::InvalidConfiguration(
-                "password does not meet the managed account service requirements".into(),
+                "password does not meet the selected account service requirements".into(),
             ),
             _ => Self::map_error(error),
         }
@@ -1773,7 +2031,7 @@ impl MatrixBackend {
             "Continue with Mesh is ready for this provider".to_owned()
         } else {
             format!(
-                "An operator must register {OIDC_REDIRECT_URI} and set {OIDC_CLIENT_ID_ENV}; managed sign-in does not use dynamic client registration"
+                "An operator must register {OIDC_REDIRECT_URI} and set {OIDC_CLIENT_ID_ENV}; Mesh does not use dynamic client registration"
             )
         };
 
@@ -2476,6 +2734,100 @@ impl MeshBackend for MatrixBackend {
         BackendKind::Matrix
     }
 
+    async fn store_pending_invitation(
+        &self,
+        invite_link: String,
+    ) -> BackendResult<PendingInvitationMetadata> {
+        let invite_link = invite_link.trim().to_owned();
+        if invite_link.is_empty() || invite_link.len() > 4_096 {
+            return Err(BackendError::InvalidConfiguration(
+                "pending invitation is empty or too large".into(),
+            ));
+        }
+
+        let _gate = self.pending_invitation_gate.lock().await;
+        let stored_at = Self::pending_invitation_now_ms();
+        let metadata = Self::pending_invitation_metadata(&invite_link, stored_at);
+        let record = PendingInvitationRecord {
+            invite_link,
+            metadata: metadata.clone(),
+        };
+        let storages = self.pending_invitation_storages().await;
+        for storage in storages.iter().skip(1) {
+            Self::remove_pending_invitation_record(storage).await?;
+        }
+        let storage = storages.first().ok_or_else(|| {
+            BackendError::Crypto("pending invitation store is unavailable".into())
+        })?;
+        self.write_pending_invitation_record(storage, &record)
+            .await?;
+        Ok(metadata)
+    }
+
+    async fn read_pending_invitation(&self) -> BackendResult<Option<String>> {
+        let _gate = self.pending_invitation_gate.lock().await;
+        let Some((storage, record)) = self.find_pending_invitation_record().await? else {
+            return Ok(None);
+        };
+        if Self::pending_invitation_expired(&record.metadata, Self::pending_invitation_now_ms()) {
+            Self::remove_pending_invitation_record(&storage).await?;
+            return Ok(None);
+        }
+        Ok(Some(record.invite_link))
+    }
+
+    async fn take_pending_invitation(&self) -> BackendResult<Option<String>> {
+        let _gate = self.pending_invitation_gate.lock().await;
+        let Some((storage, record)) = self.find_pending_invitation_record().await? else {
+            return Ok(None);
+        };
+        if Self::pending_invitation_expired(&record.metadata, Self::pending_invitation_now_ms()) {
+            Self::remove_pending_invitation_record(&storage).await?;
+            return Ok(None);
+        }
+        let invite_link = record.invite_link;
+        Self::remove_pending_invitation_record(&storage).await?;
+        Ok(Some(invite_link))
+    }
+
+    async fn peek_pending_invitation(&self) -> BackendResult<Option<PendingInvitationMetadata>> {
+        let _gate = self.pending_invitation_gate.lock().await;
+        let Some((storage, record)) = self.find_pending_invitation_record().await? else {
+            return Ok(None);
+        };
+        if Self::pending_invitation_expired(&record.metadata, Self::pending_invitation_now_ms()) {
+            Self::remove_pending_invitation_record(&storage).await?;
+            return Ok(None);
+        }
+        Ok(Some(record.metadata))
+    }
+
+    async fn resolve_pending_invitation(
+        &self,
+    ) -> BackendResult<Option<super::MatrixCommunityAdmission>> {
+        let record = {
+            let _gate = self.pending_invitation_gate.lock().await;
+            let Some((storage, record)) = self.find_pending_invitation_record().await? else {
+                return Ok(None);
+            };
+            if Self::pending_invitation_expired(&record.metadata, Self::pending_invitation_now_ms())
+            {
+                Self::remove_pending_invitation_record(&storage).await?;
+                return Ok(None);
+            }
+            record
+        };
+
+        self.resolve_community_invite(record.invite_link)
+            .await
+            .map(Some)
+    }
+
+    async fn clear_pending_invitation(&self) -> BackendResult<()> {
+        let _gate = self.pending_invitation_gate.lock().await;
+        self.clear_pending_invitation_records().await
+    }
+
     async fn active_account_storage_root(&self) -> BackendResult<PathBuf> {
         let profile_id = self
             .runtime
@@ -2702,12 +3054,21 @@ impl MeshBackend for MatrixBackend {
         Ok(self.status().await)
     }
 
-    async fn register_account(
-        &self,
-        username: String,
-        mut password: String,
-        registration_token: Option<String>,
-    ) -> BackendResult<BackendStatus> {
+    async fn register_account(&self, request: MatrixRegistration) -> BackendResult<BackendStatus> {
+        let MatrixRegistration {
+            homeserver,
+            username,
+            mut password,
+            registration_token,
+            device_name,
+        } = request;
+        let normalized_homeserver = match Self::normalize_homeserver_input(&homeserver) {
+            Ok(homeserver) => homeserver,
+            Err(error) => {
+                password.zeroize();
+                return Err(error);
+            }
+        };
         let mut registration_token = match Self::normalize_registration_token(registration_token) {
             Ok(token) => token,
             Err(error) => {
@@ -2734,18 +3095,8 @@ impl MeshBackend for MatrixBackend {
                 "password must be at least 8 characters".into(),
             ));
         }
-        let managed = match Self::managed_homeserver_config() {
-            Ok(managed) => managed,
-            Err(error) => {
-                password.zeroize();
-                if let Some(token) = &mut registration_token {
-                    token.zeroize();
-                }
-                return Err(error);
-            }
-        };
         let profile_id = if self.dynamic_accounts {
-            Self::profile_id(&managed.homeserver, &username)
+            Self::profile_id(&normalized_homeserver, &username)
         } else {
             self.profile_hint.clone()
         };
@@ -2753,12 +3104,13 @@ impl MeshBackend for MatrixBackend {
 
         let operation =
             match tokio::time::timeout(Duration::from_secs(REGISTRATION_TIMEOUT_SECONDS), async {
-                let client = self.build_client(&managed.homeserver, &storage).await?;
+                let client = self.build_client(&normalized_homeserver, &storage).await?;
                 let registration_request = |auth: Option<AuthData>| {
                     let mut request = RegistrationRequest::new();
                     request.username = Some(username.clone());
                     request.password = Some(password.clone());
-                    request.initial_device_display_name = Some("Mesh desktop".into());
+                    request.initial_device_display_name =
+                        Some(device_name.clone().unwrap_or_else(|| "Mesh desktop".into()));
                     request.auth = auth;
                     request.refresh_token = true;
                     request
@@ -2828,7 +3180,7 @@ impl MeshBackend for MatrixBackend {
 
                 let session = client.matrix_auth().session().ok_or_else(|| {
                     BackendError::Other(
-                        "managed account registration returned no usable session".into(),
+                        "account registration returned no usable Matrix session".into(),
                     )
                 })?;
                 let resolved_homeserver = client.homeserver().to_string();
@@ -2859,11 +3211,15 @@ impl MeshBackend for MatrixBackend {
         Ok(self.status().await)
     }
 
-    async fn check_username_available(&self, username: String) -> BackendResult<bool> {
+    async fn check_username_available(
+        &self,
+        homeserver: String,
+        username: String,
+    ) -> BackendResult<bool> {
         let username = Self::normalize_product_username(&username)?;
-        let managed = Self::managed_homeserver_config()?;
+        let homeserver = Self::normalize_homeserver_input(&homeserver)?;
         let client = Client::builder()
-            .server_name_or_homeserver_url(&managed.homeserver)
+            .server_name_or_homeserver_url(&homeserver)
             .build()
             .await
             .map_err(Self::map_error)?;
@@ -2875,6 +3231,72 @@ impl MeshBackend for MatrixBackend {
             }
             Err(error) => Err(Self::map_error(error)),
         }
+    }
+
+    async fn service_capabilities(
+        &self,
+        homeserver: String,
+    ) -> BackendResult<MatrixServiceCapabilities> {
+        let homeserver = Self::normalize_homeserver_input(&homeserver)?;
+        tokio::time::timeout(Duration::from_secs(20), async {
+            let client = Client::builder()
+                .server_name_or_homeserver_url(&homeserver)
+                .build()
+                .await
+                .map_err(Self::map_error)?;
+            let server_versions = client
+                .server_versions()
+                .await
+                .map_err(Self::map_error)?
+                .into_iter()
+                .map(|version| format!("{version:?}"))
+                .collect();
+            let login_types = client
+                .matrix_auth()
+                .get_login_types()
+                .await
+                .map_err(Self::map_error)?;
+            let password_login = login_types
+                .flows
+                .iter()
+                .any(|flow| matches!(flow, LoginType::Password(_)));
+            let browser_login = login_types
+                .flows
+                .iter()
+                .any(|flow| matches!(flow, LoginType::Sso(_)));
+            let registration_request = get_username_availability::v3::Request::new(
+                "mesh-service-capability-probe".to_owned(),
+            );
+            let registration = match client.send(registration_request).await {
+                Ok(_) => MatrixRegistrationAvailability::Open,
+                Err(error)
+                    if matches!(error.client_api_error_kind(), Some(ErrorKind::Forbidden)) =>
+                {
+                    MatrixRegistrationAvailability::Closed
+                }
+                Err(_) => MatrixRegistrationAvailability::Unknown,
+            };
+            let max_upload_bytes = client
+                .load_or_fetch_max_upload_size()
+                .await
+                .ok()
+                .map(u64::from);
+
+            Ok(MatrixServiceCapabilities {
+                homeserver: client.homeserver().to_string(),
+                server_versions,
+                password_login,
+                browser_login,
+                registration,
+                max_upload_bytes,
+            })
+        })
+        .await
+        .map_err(|_| {
+            BackendError::Network(
+                "the selected account service did not respond to capability checks".into(),
+            )
+        })?
     }
 
     async fn oidc_status(&self, homeserver: String) -> BackendResult<MatrixOidcStatus> {
@@ -2896,7 +3318,7 @@ impl MeshBackend for MatrixBackend {
             .map_err(BackendError::InvalidConfiguration)?
             .ok_or_else(|| {
                 BackendError::InvalidConfiguration(format!(
-                    "{OIDC_CLIENT_ID_ENV} is required for managed browser sign-in"
+                    "{OIDC_CLIENT_ID_ENV} is required for browser sign-in"
                 ))
             })?;
 
@@ -5144,6 +5566,7 @@ impl MeshBackend for MatrixBackend {
                 transaction_id: None,
                 client_request_id: None,
                 delivery_status: Some("sent".into()),
+                undecryptable: None,
             })
         }
         .await;
@@ -5612,12 +6035,43 @@ impl MeshBackend for MatrixBackend {
                 "conversation is not a one-to-one Matrix direct room".into(),
             ));
         }
-        Ok(self
+        let mut messages = self
             .messages(conversation_id, limit, before_timestamp, before_id)
             .await?
             .into_iter()
             .map(Self::direct_message_from_message)
-            .collect())
+            .collect::<Vec<_>>();
+        let own_user_id = client.user_id();
+
+        for message in &mut messages {
+            let Ok(event_id) = matrix_sdk::ruma::EventId::parse(&message.id) else {
+                continue;
+            };
+            let receipts = room
+                .load_event_receipts(ReceiptType::Read, ReceiptThread::Unthreaded, &event_id)
+                .await
+                .map_err(Self::map_error)?;
+            for (user_id, _) in receipts {
+                if own_user_id.is_some_and(|own_user_id| own_user_id == user_id) {
+                    continue;
+                }
+                let display_name = room
+                    .get_member(&user_id)
+                    .await
+                    .map_err(Self::map_error)?
+                    .map(|member| member.name().to_owned())
+                    .unwrap_or_else(|| user_id.localpart().to_owned());
+                message
+                    .seen_by
+                    .get_or_insert_default()
+                    .push(ReadReceiptDto {
+                        user_id: user_id.to_string(),
+                        display_name,
+                    });
+            }
+        }
+
+        Ok(messages)
     }
 
     async fn send_dm(
@@ -5808,6 +6262,23 @@ impl MeshBackend for MatrixBackend {
         Ok(())
     }
 
+    async fn report_message(
+        &self,
+        room_id: String,
+        event_id: String,
+        reason: String,
+    ) -> BackendResult<()> {
+        let reason = Self::normalize_report_reason(reason)?;
+        let client = self.client().await?;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
+        let room = Self::protected_joined_room(&client, &room_id, "reporting a message").await?;
+        room.report_content(event_id, Some(reason))
+            .await
+            .map_err(Self::map_error)?;
+        Ok(())
+    }
+
     async fn toggle_reaction(
         &self,
         room_id: String,
@@ -5943,7 +6414,7 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn mark_read(&self, room_id: String) -> BackendResult<()> {
-        let send_read_receipts = self.wire_privacy.read().await.send_read_receipts;
+        let read_receipt_mode = self.wire_privacy.read().await.read_receipt_mode;
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let room =
@@ -5957,9 +6428,11 @@ impl MeshBackend for MatrixBackend {
         };
         let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
         let mut receipts = Receipts::new().fully_read_marker(event_id.clone());
-        if send_read_receipts {
-            receipts = receipts.private_read_receipt(event_id);
-        }
+        receipts = match read_receipt_mode {
+            ReadReceiptMode::Public => receipts.public_read_receipt(event_id),
+            ReadReceiptMode::Private => receipts.private_read_receipt(event_id),
+            ReadReceiptMode::Off => receipts,
+        };
         room.send_multiple_receipts(receipts)
             .await
             .map_err(Self::map_error)
@@ -6131,11 +6604,15 @@ impl MeshBackend for MatrixBackend {
         community_id: String,
         user_id: String,
     ) -> BackendResult<()> {
+        let client = self.client().await?;
+        let account_server = client
+            .user_id()
+            .ok_or(BackendError::NotAuthenticated)?
+            .server_name();
         let user_id = if user_id.trim().starts_with('@') {
             UserId::parse(user_id.trim()).map_err(Self::map_error)?
         } else {
-            let managed = Self::managed_homeserver_config()?;
-            Self::qualify_user_input(&user_id, &managed)?
+            Self::qualify_user_input(&user_id, account_server)?
         };
         let mut rooms = self.community_rooms(&community_id).await?;
         rooms.reverse();
@@ -6159,14 +6636,21 @@ impl MeshBackend for MatrixBackend {
         }
 
         let user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
-        let managed = Self::managed_homeserver_config()?;
-        if client.homeserver().as_str().trim_end_matches('/')
-            == managed.homeserver.trim_end_matches('/')
+        let community = Self::community_homeserver_config().ok();
+        let admission_origin = Self::community_admission_origin().ok();
+        if community.as_ref().is_some_and(|community| {
+            client.homeserver().as_str().trim_end_matches('/')
+                == community.homeserver.trim_end_matches('/')
+        }) && admission_origin.is_some()
         {
             let access_token = client
                 .access_token()
                 .ok_or(BackendError::NotAuthenticated)?;
-            let origin = Self::managed_admission_origin()?;
+            let origin = admission_origin.ok_or_else(|| {
+                BackendError::InvalidConfiguration(
+                    "no community admission service is configured".into(),
+                )
+            })?;
             let endpoint = origin
                 .join("/_mesh/admission/v1/invitations")
                 .map_err(|_| {
@@ -6188,7 +6672,7 @@ impl MeshBackend for MatrixBackend {
                         "the invitation service returned invalid JSON: {error}"
                     ))
                 })?;
-            Self::parse_managed_invitation(&created.invite_url, &origin)?;
+            Self::parse_admission_invitation(&created.invite_url, Some(&origin))?;
             return Ok(created.invite_url);
         }
 
@@ -6206,11 +6690,11 @@ impl MeshBackend for MatrixBackend {
         })?;
         invite
             .query_pairs_mut()
-            .append_pair("v", "3")
-            .append_pair("kind", "matrix")
+            .append_pair("v", "5")
+            .append_pair("kind", "community")
             .append_pair("room", space.room_id().as_str())
             .append_pair("via", user_id.server_name().as_str())
-            .append_pair("service", client.homeserver().as_str());
+            .append_pair("community_service", client.homeserver().as_str());
         Ok(invite.into())
     }
 
@@ -6218,21 +6702,17 @@ impl MeshBackend for MatrixBackend {
         &self,
         invite_url: String,
     ) -> BackendResult<super::MatrixCommunityAdmission> {
-        self.resolve_managed_invitation(&invite_url, true).await
+        self.resolve_admission_invitation(&invite_url, true).await
     }
 
     async fn claim_community_invite(&self, invite_url: String) -> BackendResult<CommunityDto> {
         let client = self.client().await?;
-        let access_token = client
-            .access_token()
-            .ok_or(BackendError::NotAuthenticated)?;
-        let origin = Self::managed_admission_origin()?;
-        let target = Self::parse_managed_invitation(&invite_url, &origin)?;
+        let user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
+        let target = Self::parse_admission_invitation(&invite_url, None)?;
         let endpoint = Self::admission_endpoint(&target, "/claim")?;
         let response = Self::admission_http_client()?
             .post(endpoint)
-            .bearer_auth(access_token)
-            .json(&serde_json::json!({}))
+            .json(&serde_json::json!({ "user_id": user_id.as_str() }))
             .send()
             .await
             .map_err(BackendError::from_sdk_error)?;
@@ -6243,8 +6723,7 @@ impl MeshBackend for MatrixBackend {
                     "the invitation service returned invalid JSON: {error}"
                 ))
             })?;
-        let managed = Self::managed_homeserver_config()?;
-        let admission = Self::validate_admission_response(claimed, &managed, false)?;
+        let admission = Self::validate_admission_response(claimed, false)?;
         self.join_community(admission.room_id, admission.via).await
     }
 
@@ -6310,8 +6789,11 @@ impl MeshBackend for MatrixBackend {
             let alias = if alias.starts_with('#') {
                 RoomAliasId::parse(alias).map_err(Self::map_error)?
             } else {
-                let managed = Self::managed_homeserver_config()?;
-                Self::qualify_public_link_input(&alias, &managed)?
+                let account_server = client
+                    .user_id()
+                    .ok_or(BackendError::NotAuthenticated)?
+                    .server_name();
+                Self::qualify_public_link_input(&alias, account_server)?
             };
             let own_server = client
                 .user_id()

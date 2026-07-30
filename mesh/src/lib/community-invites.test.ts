@@ -2,9 +2,27 @@ import { describe, expect, it } from 'vitest'
 import {
   isMeshJoinLink,
   parseCommunityInvite,
-  parseManagedCommunityInvite,
+  parseCommunityInviteV5,
+  parseAdmissionCommunityInvite,
   parseMatrixCommunityInvite,
 } from './community-invites'
+import corpus from './community-invite-corpus.json'
+
+describe('shared community invite corpus', () => {
+  for (const fixture of corpus) {
+    it(`${fixture.accept ? 'accepts' : 'rejects'} ${fixture.name}`, () => {
+      const parsed = parseCommunityInviteV5(fixture.url)
+      if (!fixture.accept) {
+        expect(parsed).toBeNull()
+        return
+      }
+      expect(parsed).toMatchObject({
+        via: fixture.via,
+        viaTruncated: fixture.viaTruncated,
+      })
+    })
+  }
+})
 
 describe('Matrix community invites', () => {
   it('parses a room, federation route, and service without exposing credentials', () => {
@@ -39,13 +57,13 @@ describe('Matrix community invites', () => {
     expect(parseMatrixCommunityInvite(legacy)).toBeNull()
   })
 
-  it('parses one-use managed HTTPS and app links without confusing them with room links', () => {
+  it('parses legacy one-use admission links without confusing them with room links', () => {
     const code = 'abcdefghijklmnopqrstuvwxyzABCDEFG_123456789'
     const publicLink = `https://mesh.example/invite/${code}`
     const deepLink =
       `mesh://join?v=4&kind=managed&code=${code}&api=https%3A%2F%2Fmesh.example`
 
-    expect(parseManagedCommunityInvite(publicLink)).toMatchObject({
+    expect(parseAdmissionCommunityInvite(publicLink)).toMatchObject({
       kind: 'managed',
       version: 4,
       code,
@@ -59,6 +77,40 @@ describe('Matrix community invites', () => {
     expect(parseMatrixCommunityInvite(publicLink)).toBeNull()
   })
 
+  it('parses the versioned account-independent community contract', () => {
+    const code = 'abcdefghijklmnopqrstuvwxyzABCDEFG_123456789'
+    const link =
+      `mesh://join?v=5&kind=community&room=!garden%3Acommunity.example`
+      + `&via=community.example&community_service=https%3A%2F%2Fmatrix.community.example`
+      + `&admission=https%3A%2F%2Finvites.community.example&code=${code}`
+      + `&resume=https%3A%2F%2Finvites.community.example%2Finvite%2F${code}`
+
+    expect(parseCommunityInviteV5(link)).toMatchObject({
+      kind: 'community',
+      version: 5,
+      roomOrAlias: '!garden:community.example',
+      via: ['community.example'],
+      communityService: 'https://matrix.community.example',
+      admissionOrigin: 'https://invites.community.example',
+      admissionCode: code,
+    })
+    expect(parseAdmissionCommunityInvite(link)).not.toBeNull()
+    expect(parseMatrixCommunityInvite(link)).not.toBeNull()
+  })
+
+  it('supports a version 5 federated room without an account-registration offer', () => {
+    const link =
+      'mesh://join?v=5&kind=community&room=!garden%3Acommunity.example'
+      + '&via=community.example&community_service=https%3A%2F%2Fmatrix.community.example'
+
+    expect(parseCommunityInvite(link)).toMatchObject({
+      kind: 'community',
+      admissionOrigin: null,
+      admissionCode: null,
+    })
+    expect(parseAdmissionCommunityInvite(link)).toBeNull()
+  })
+
   it.each([
     'http://mesh.example/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789',
     `https://${['user', 'secret'].join(':')}@mesh.example/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789`,
@@ -66,7 +118,9 @@ describe('Matrix community invites', () => {
     'https://mesh.example/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789?next=elsewhere',
     'mesh://join?v=4&kind=managed&code=abcdefghijklmnopqrstuvwxyzABCDEFG_123456789&api=http%3A%2F%2Fremote.example',
     'mesh://join?v=4&kind=managed&code=abcdefghijklmnopqrstuvwxyzABCDEFG_123456789&api=https%3A%2F%2Fmesh.example&extra=1',
-  ])('rejects unsafe managed invitation forms: %s', (link) => {
-    expect(parseManagedCommunityInvite(link)).toBeNull()
+    'mesh://join?v=5&kind=community&room=!room%3Amesh.example&via=mesh.example&admission=https%3A%2F%2Finvites.example',
+    'mesh://join?v=5&kind=community&room=!room%3Amesh.example&via=mesh.example&code=abcdefghijklmnopqrstuvwxyzABCDEFG_123456789',
+  ])('rejects unsafe legacy admission invitation forms: %s', (link) => {
+    expect(parseAdmissionCommunityInvite(link)).toBeNull()
   })
 })

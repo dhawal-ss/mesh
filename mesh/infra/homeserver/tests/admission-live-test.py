@@ -249,20 +249,19 @@ def main() -> None:
         claimant_password,
         registration_token,
     )
+    claimant_user = f"@{username}:hs1.mesh.test"
     claimed = require_success(
         "community admission claim",
         request(
             "POST",
             ADMISSION,
             f"/v1/invitations/{admission_code}/claim",
-            {},
-            claimant_token,
+            {"user_id": claimant_user},
         ),
     )
     if claimed.get("room_id") != room_id:
         raise RuntimeError("claim returned the wrong community")
 
-    claimant_user = f"@{username}:hs1.mesh.test"
     for target, label in (
         (room_id, "community"),
         (channel_id, "private channel"),
@@ -301,8 +300,7 @@ def main() -> None:
         "POST",
         ADMISSION,
         f"/v1/invitations/{admission_code}/claim",
-        {},
-        claimant_token,
+        {"user_id": claimant_user},
     )
     if claim_status != 410 or claim_error.get("code") != "invitation_used":
         raise RuntimeError("used invitation could be claimed twice")

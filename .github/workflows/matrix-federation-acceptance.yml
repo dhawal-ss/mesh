@@ -2,7 +2,7 @@ name: Matrix federation acceptance
 
 # Development-only protocol acceptance against two disposable local Synapse
 # homeservers. This exercises federation, encrypted history, and recovery, but
-# it is not evidence that the managed production service is ready.
+# it is not evidence that any community-operated production service is ready.
 
 on:
   schedule:

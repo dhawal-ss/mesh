@@ -4,6 +4,8 @@ set -eu
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 cd "$script_dir"
 umask 077
+# shellcheck source=infra/homeserver/backup-lib.sh
+. "$script_dir/backup-lib.sh"
 
 postgres_image="postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193"
 synapse_image="matrixdotorg/synapse:v1.157.0@sha256:53a686c52cdfca5fdb0adff5ef10b276b1d0971931b09815a9eb6b48d7188a1a"
@@ -36,13 +38,17 @@ sh "$script_dir/verify-backup.sh" "$backup_dir" >&2
 read_setting() {
   awk -F= -v key="$1" \
     '$1 == key { sub(/^[^=]*=/, ""); print; exit }' \
-    "$backup_dir/operator.env"
+    "$backup_dir/backup-metadata.env"
 }
 
 server_name="$(read_setting MESH_SERVER_NAME)"
 postgres_user="$(read_setting POSTGRES_USER)"
 postgres_db="$(read_setting POSTGRES_DB)"
-postgres_password="$(read_setting POSTGRES_PASSWORD)"
+postgres_password="${MESH_RESTORE_POSTGRES_PASSWORD:-}"
+if [ -z "$postgres_password" ]; then
+  echo "MESH_RESTORE_POSTGRES_PASSWORD must be supplied from the external operator secret store; the backup does not contain the standalone operator environment." >&2
+  exit 1
+fi
 case "$server_name" in
   *[!A-Za-z0-9.-]*|"")
     echo "Backup contains an invalid server name." >&2
@@ -128,6 +134,9 @@ do
   sleep 2
 done
 
+dump_listing="$(docker exec -i "$postgres_container" pg_restore --list < "$backup_dir/postgres.dump")"
+printf '%s\n' "$dump_listing" | assert_no_otk_table_data
+
 docker exec -i "$postgres_container" \
   pg_restore \
     --username "$postgres_user" \
@@ -150,6 +159,21 @@ required_tables="$(
 required_tables="$(printf '%s' "$required_tables" | tr -d '[:space:]')"
 if [ "$required_tables" -ne 3 ]; then
   echo "Restored database is missing required Synapse tables." >&2
+  exit 1
+fi
+otk_rows="$(
+  docker exec "$postgres_container" \
+    psql \
+      --username "$postgres_user" \
+      --dbname "$postgres_db" \
+      --tuples-only \
+      --no-align \
+      --command \
+      "SELECT count(*) FROM e2e_one_time_keys_json;"
+)"
+otk_rows="$(printf '%s' "$otk_rows" | tr -d '[:space:]')"
+if [ "$otk_rows" -ne 0 ]; then
+  echo "Restored database contains $otk_rows e2e_one_time_keys_json rows." >&2
   exit 1
 fi
 

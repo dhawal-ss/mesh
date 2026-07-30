@@ -60,6 +60,49 @@ describe('normalizeError', () => {
     })
   })
 
+  it.each([
+    {
+      name: 'NotFoundError',
+      code: 'media_device_not_found',
+      title: 'Microphone not found',
+      body: "Mesh couldn't start voice. Connect a microphone and make sure your system can see it, then try again.",
+    },
+    {
+      name: 'NotReadableError',
+      code: 'media_device_not_readable',
+      title: 'Microphone is in use',
+      body: "Mesh couldn't start voice. Close other apps using your microphone, then try again.",
+    },
+    {
+      name: 'OverconstrainedError',
+      code: 'media_constraints_unmet',
+      title: 'Microphone settings unavailable',
+      body: "Mesh couldn't start voice. Choose another microphone or check its system settings, then try again.",
+    },
+  ])('classifies $name with actionable microphone guidance', ({ name, code, title, body }) => {
+    const source = new Error(name)
+    source.name = name
+
+    const error = normalizeError(source)
+
+    expect(error.code).toBe(code)
+    expect(describeError(error, { operation: 'start voice', mediaKind: 'microphone' })).toEqual({
+      title,
+      body,
+      action: 'Try again',
+    })
+  })
+
+  it('uses camera-specific copy when a media operation identifies the camera', () => {
+    const error = new AppError('media_permission_denied', 'camera access denied')
+
+    expect(describeError(error, { operation: 'start video', mediaKind: 'camera' })).toEqual({
+      title: 'Camera permission needed',
+      body: "Mesh couldn't start video. Allow camera access for Mesh in your system settings, then try again.",
+      action: 'Try again',
+    })
+  })
+
   it('reads the planned serialized Rust error payload', () => {
     const error = normalizeError({
       code: 'RateLimited',

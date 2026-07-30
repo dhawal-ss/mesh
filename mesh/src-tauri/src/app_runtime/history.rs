@@ -248,6 +248,7 @@ pub(super) fn reconstruct_messages_from_events(
                         transaction_id: None,
                         client_request_id: None,
                         delivery_status: None,
+                        undecryptable: None,
                     };
                     message_map.insert(event_id.to_string(), msg);
                 }
@@ -525,6 +526,7 @@ mod tests {
                             transaction_id: None,
                             client_request_id: None,
                             delivery_status: None,
+                            undecryptable: None,
                         };
                         message_map.insert(event_id.to_string(), msg);
                     }

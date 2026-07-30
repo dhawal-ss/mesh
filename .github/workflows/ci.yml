@@ -53,11 +53,11 @@ jobs:
 
       - name: Check Matrix backend
         working-directory: mesh/src-tauri
-        run: cargo check --no-default-features --features matrix-backend --locked
+        run: cargo check --no-default-features --features matrix-backend --locked --jobs 1
 
       - name: Lint Matrix backend and tests
         working-directory: mesh/src-tauri
-        run: cargo clippy --no-default-features --features matrix-backend --all-targets --locked -- -D warnings
+        run: cargo clippy --no-default-features --features matrix-backend --all-targets --locked --jobs 1 -- -D warnings
 
       - name: Check Rust formatting
         working-directory: mesh/src-tauri
@@ -66,6 +66,10 @@ jobs:
       - name: Check generated TypeScript IPC DTOs
         working-directory: mesh
         run: npm run check:ipc-types
+
+      - name: Check behavior-level security boundaries
+        working-directory: mesh
+        run: npm run check:security-invariants:matrix
 
       - name: Test Matrix backend
         working-directory: mesh/src-tauri
@@ -111,6 +115,10 @@ jobs:
         working-directory: mesh/src-tauri
         run: cargo test --no-default-features --features legacy-p2p --locked --jobs 1
 
+      - name: Check legacy behavior-level security boundaries
+        working-directory: mesh
+        run: npm run check:security-invariants:legacy
+
   check-frontend:
     name: Frontend Build & Browser E2E
     runs-on: ubuntu-latest
@@ -140,10 +148,6 @@ jobs:
         working-directory: mesh
         run: npm run check:ipc-contract
 
-      - name: Check documented security invariant symbols
-        working-directory: mesh
-        run: npm run check:security-invariants
-
       - name: Check design token source of truth
         working-directory: mesh
         run: npm run check:design-tokens
@@ -152,12 +156,22 @@ jobs:
         working-directory: mesh
         run: npm run check:icons
 
+      - name: Check reviewed public services
+        working-directory: mesh
+        run: npm run check:public-services
+
+      - name: Check public site source
+        working-directory: mesh
+        run: npm run check:public-site
+
       - name: Check homeserver recovery scripts
         working-directory: mesh
         run: |
-          shellcheck -e SC1007 infra/homeserver/*.sh infra/homeserver/tests/*.sh
-          sh infra/homeserver/tests/backup-tools.test.sh
-          python -m unittest discover -s infra/homeserver/tests -p 'test_admission_service.py' -v
+          shellcheck -x -e SC1007 infra/homeserver/*.sh infra/homeserver/tests/*.sh
+          for test_script in infra/homeserver/tests/*.test.sh; do
+            sh "$test_script"
+          done
+          python -m unittest discover -s infra/homeserver/tests -p 'test_*.py' -v
           cp infra/homeserver/.env.example infra/homeserver/.env
           trap 'rm -f infra/homeserver/.env' EXIT
           docker compose \
@@ -165,7 +179,7 @@ jobs:
 
       - name: Run tests
         working-directory: mesh
-        run: npm run test
+        run: npm run test -- --maxWorkers=4
 
       - name: Build frontend
         working-directory: mesh

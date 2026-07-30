@@ -50,7 +50,14 @@ export type MatrixRtcJoinResult = { roomId: string, sessionId: string, memberId:
 
 export type NotificationPresentationContext = { activeRoomId: string | null, notificationsEnabled: boolean, doNotDisturb: boolean, quietHoursActive: boolean, mutedRoomIds: Array<string>, };
 
-export type UserPreferences = { schemaVersion: number, notificationsEnabled: boolean, notificationSound: boolean, notificationSoundId?: string | null, doNotDisturb: boolean, quietHoursEnabled: boolean, quietHoursStart?: string | null, quietHoursEnd?: string | null, mutedChannels: Array<string>, mutedCommunities: Array<string>, mutedChannelUntil: { [key in string]?: string | null }, mutedCommunityUntil: { [key in string]?: string | null }, channelNotificationLevels: { [key in string]?: MatrixRoomNotificationMode }, sendReadReceipts: boolean, sendTypingIndicators: boolean, sharePresence: boolean, invisibleMode: boolean, updatedAt: string, };
+export type ReadReceiptMode = "public" | "private" | "off";
+
+export type UserPreferences = { schemaVersion: number, notificationsEnabled: boolean, notificationSound: boolean, notificationSoundId?: string | null, doNotDisturb: boolean, quietHoursEnabled: boolean, quietHoursStart?: string | null, quietHoursEnd?: string | null, mutedChannels: Array<string>, mutedCommunities: Array<string>, mutedChannelUntil: { [key in string]?: string | null }, mutedCommunityUntil: { [key in string]?: string | null }, channelNotificationLevels: { [key in string]?: MatrixRoomNotificationMode }, sendReadReceipts: boolean,
+/**
+ * Explicit receipt visibility. Missing values are migrated from the
+ * legacy boolean: true meant private-only and false meant off.
+ */
+readReceiptMode?: ReadReceiptMode | null, sendTypingIndicators: boolean, sharePresence: boolean, invisibleMode: boolean, updatedAt: string, };
 
 export type CustomEmoji = { shortcode: string, body: string, mxcUri: string, contentType: string, width: number, height: number, sizeBytes: number, };
 
@@ -61,6 +68,8 @@ export type ModerationAuditEntry = { id: string, actorUserId: string, actorDispl
 export type CommunityModerationResult = { audit: ModerationAuditEntry, auditRecorded: boolean, };
 
 export type MatrixCommunityAdmission = { registrationToken?: string | null, roomId: string, service: string, via: Array<string>, expiresAt?: number | null, };
+
+export type PendingInvitationMetadata = { handle: string, roomOrAlias: string | null, via: Array<string>, service: string | null, admissionService: string | null, storedAt: number, expiresAt: number, };
 
 export type IdentityDto = { publicKey: string, displayName: string, avatarColor: string, };
 
@@ -77,6 +86,10 @@ export type AttachmentDto = { fileHash: string, filename: string, size: number, 
  */
 thumbnail?: AttachmentThumbnailDto | null, };
 
+export type UndecryptableMessageReason = "sent-before-device" | "keys-not-shared" | "waiting-for-keys" | "could-not-decrypt";
+
+export type UndecryptableMessageDto = { eventId: string, sender: string, originServerTs: number, reason: UndecryptableMessageReason, };
+
 export type MessageDto = { id: string, channelId: string, authorPublicKey: string, authorDisplayName: string, authorAvatarColor: string, content: string, attachments: Array<AttachmentDto>, reactions: Record<string, string[]>, timestamp: string, signature: string, editedAt?: string | null, deletedAt?: string | null, replyToId?: string | null,
 /**
  * SDK transaction ID used to reconcile a durable local echo with the
@@ -91,11 +104,18 @@ clientRequestId?: string | null,
 /**
  * Delivery status: "sent", "pending", or "failed". None = sent.
  */
-deliveryStatus?: "sent" | "pending" | "failed" | null, };
+deliveryStatus?: "sent" | "pending" | "failed" | null,
+/**
+ * Present only when Matrix received an event but the SDK could not
+ * decrypt its message content.
+ */
+undecryptable?: UndecryptableMessageDto | null, };
 
 export type DmConversationDto = { id: string, peerPublicKey: string, peerDisplayName: string, peerAvatarColor: string, lastMessageAt: string | null, unreadCount: number, createdAt: string, };
 
-export type DirectMessageDto = { id: string, conversationId: string, authorPublicKey: string, authorDisplayName: string, authorAvatarColor: string, content: string, timestamp: string, signature: string, attachments: Array<AttachmentDto>, reactions: Record<string, string[]>, editedAt?: string | null, deletedAt?: string | null, replyToId?: string | null, deliveryStatus?: "sent" | "pending" | "failed" | null, };
+export type ReadReceiptDto = { userId: string, displayName: string, };
+
+export type DirectMessageDto = { id: string, conversationId: string, authorPublicKey: string, authorDisplayName: string, authorAvatarColor: string, content: string, timestamp: string, signature: string, attachments: Array<AttachmentDto>, reactions: Record<string, string[]>, seenBy?: Array<ReadReceiptDto> | null, editedAt?: string | null, deletedAt?: string | null, replyToId?: string | null, deliveryStatus?: "sent" | "pending" | "failed" | null, };
 
 export type PeerDto = { publicKey: string, displayName: string, avatarColor: string, peerId: string, latency: number, };
 

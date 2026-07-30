@@ -206,6 +206,7 @@ impl Database {
                 signature: row.get(7)?,
                 attachments: Vec::new(),
                 reactions: std::collections::HashMap::new(),
+                seen_by: None,
                 edited_at: row.get(8)?,
                 deleted_at: row.get(9)?,
                 reply_to_id: None,

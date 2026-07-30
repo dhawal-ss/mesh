@@ -238,6 +238,7 @@ impl Database {
             transaction_id: None,
             client_request_id: None,
             delivery_status: None,
+            undecryptable: None,
         })
     }
 
