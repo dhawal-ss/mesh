@@ -157,7 +157,11 @@ class AdmissionServiceTests(unittest.TestCase):
 
     def test_claim_invites_once_and_invalidates_resolution(self) -> None:
         code, _ = self.create()
-        claimed = self.application.claim_invitation(code, "claimant-token")
+        whoami_before_claim = len([
+            call for call in self.matrix.calls
+            if call[1] == "/_matrix/client/v3/account/whoami"
+        ])
+        claimed = self.application.claim_invitation(code, "@claimant:public.test")
 
         self.assertEqual(claimed["room_id"], "!community:mesh.test")
         invite_calls = [
@@ -166,24 +170,41 @@ class AdmissionServiceTests(unittest.TestCase):
         self.assertEqual(len(invite_calls), 2)
         self.assertEqual(
             invite_calls[0][2],
-            {"user_id": "@claimant:mesh.test"},
+            {"user_id": "@claimant:public.test"},
+        )
+        self.assertEqual(
+            len([
+                call for call in self.matrix.calls
+                if call[1] == "/_matrix/client/v3/account/whoami"
+            ]),
+            whoami_before_claim,
         )
         with self.assertRaises(admission.AdmissionError) as raised:
             self.application.resolve_invitation(code)
         self.assertEqual(raised.exception.code, "invitation_used")
+
+    def test_claim_rejects_an_invalid_account_without_consuming_the_invitation(self) -> None:
+        code, _ = self.create()
+        with self.assertRaises(admission.AdmissionError) as raised:
+            self.application.claim_invitation(code, "not-a-matrix-id")
+        self.assertEqual(raised.exception.code, "user_id_invalid")
+        self.assertEqual(
+            self.application.resolve_invitation(code)["room_id"],
+            "!community:mesh.test",
+        )
 
     def test_failed_claim_releases_the_one_use_lease_for_safe_retry(self) -> None:
         code, _ = self.create()
         self.matrix.fail_next_invite = True
 
         with self.assertRaises(admission.AdmissionError):
-            self.application.claim_invitation(code, "claimant-token")
+            self.application.claim_invitation(code, "@claimant:public.test")
         self.assertEqual(
             self.application.resolve_invitation(code)["room_id"],
             "!community:mesh.test",
         )
         self.assertEqual(
-            self.application.claim_invitation(code, "claimant-token")["version"],
+            self.application.claim_invitation(code, "@claimant:public.test")["version"],
             4,
         )
 
@@ -194,7 +215,7 @@ class AdmissionServiceTests(unittest.TestCase):
             "%21general%3Amesh.test": "invite",
         }
 
-        self.application.claim_invitation(code, "claimant-token")
+        self.application.claim_invitation(code, "@claimant:public.test")
         invite_calls = [
             call for call in self.matrix.calls if call[1].endswith("/invite")
         ]
@@ -208,7 +229,7 @@ class AdmissionServiceTests(unittest.TestCase):
         ]
 
         with self.assertRaises(admission.AdmissionError) as raised:
-            self.application.claim_invitation(code, "claimant-token")
+            self.application.claim_invitation(code, "@claimant:public.test")
         self.assertEqual(raised.exception.code, "community_too_large")
         self.assertEqual(
             self.application.resolve_invitation(code)["room_id"],
@@ -230,6 +251,9 @@ class AdmissionServiceTests(unittest.TestCase):
         derived = admission.registration_token(self.config.signing_key, code)
 
         self.assertIn("mesh://join?", payload)
+        self.assertIn("v=5", payload)
+        self.assertIn("kind=community", payload)
+        self.assertIn("room=%21community%3Amesh.test", payload)
         self.assertIn(code, payload)
         self.assertNotIn(derived, payload)
         self.assertIn("default-src 'none'", payload)

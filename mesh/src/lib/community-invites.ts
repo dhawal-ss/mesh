@@ -1,8 +1,10 @@
 const MATRIX_INVITE_VERSION = '3'
-const MANAGED_INVITE_VERSION = '4'
+const LEGACY_ADMISSION_INVITE_VERSION = '4'
+const COMMUNITY_INVITE_VERSION = '5'
 const MAX_INVITE_LENGTH = 4_096
 const MAX_MATRIX_IDENTIFIER_LENGTH = 512
 const MAX_SERVER_NAME_LENGTH = 255
+const MAX_VIA_SERVERS = 3
 const ADMISSION_CODE_PATTERN = /^[A-Za-z0-9_-]{32,64}$/
 
 export interface MatrixCommunityInvite {
@@ -10,11 +12,12 @@ export interface MatrixCommunityInvite {
   version: 3
   roomOrAlias: string
   via: string[]
+  viaTruncated: boolean
   service: string | null
   original: string
 }
 
-export interface ManagedCommunityInvite {
+export interface LegacyAdmissionCommunityInvite {
   kind: 'managed'
   version: 4
   code: string
@@ -22,7 +25,21 @@ export interface ManagedCommunityInvite {
   original: string
 }
 
-export type CommunityInvite = MatrixCommunityInvite | ManagedCommunityInvite
+export interface CommunityInviteV5 {
+  kind: 'community'
+  version: 5
+  roomOrAlias: string
+  via: string[]
+  viaTruncated: boolean
+  communityService: string | null
+  admissionOrigin: string | null
+  admissionCode: string | null
+  resumeUrl: string | null
+  original: string
+}
+
+export type AdmissionCommunityInvite = LegacyAdmissionCommunityInvite | CommunityInviteV5
+export type CommunityInvite = MatrixCommunityInvite | LegacyAdmissionCommunityInvite | CommunityInviteV5
 
 function isMatrixRoomIdentifier(value: string): boolean {
   if (
@@ -69,7 +86,121 @@ function hasOnlySearchParameters(url: URL, allowed: ReadonlySet<string>): boolea
   return [...url.searchParams.keys()].every((key) => allowed.has(key))
 }
 
-export function parseMatrixCommunityInvite(value: string): MatrixCommunityInvite | null {
+function parseViaServers(url: URL): { servers: string[]; truncated: boolean } | null {
+  const rawVia = url.searchParams.getAll('via')
+    .flatMap((value) => value.split(','))
+    .map((serverName) => serverName.trim())
+  if (rawVia.length === 0 || rawVia.some((serverName) => !isServerName(serverName))) {
+    return null
+  }
+  const uniqueVia = [...new Set(rawVia)]
+  return {
+    servers: uniqueVia.slice(0, MAX_VIA_SERVERS),
+    truncated: uniqueVia.length > MAX_VIA_SERVERS,
+  }
+}
+
+function normalizeResumeUrl(value: string | null): string | null {
+  if (!value || value.length > 2_048) return null
+  try {
+    const resume = new URL(value)
+    const localDevelopmentResume =
+      resume.protocol === 'http:'
+      && (resume.hostname === 'localhost'
+        || resume.hostname === '127.0.0.1'
+        || resume.hostname === '[::1]')
+    if (
+      (resume.protocol !== 'https:' && !localDevelopmentResume)
+      || resume.username
+      || resume.password
+      || resume.hash
+    ) {
+      return null
+    }
+    return resume.toString()
+  } catch {
+    return null
+  }
+}
+
+export function parseCommunityInviteV5(value: string): CommunityInviteV5 | null {
+  const input = value.trim()
+  if (!input || input.length > MAX_INVITE_LENGTH) return null
+
+  let url: URL
+  try {
+    url = new URL(input)
+  } catch {
+    return null
+  }
+  if (
+    url.protocol !== 'mesh:'
+    || url.hostname.toLowerCase() !== 'join'
+    || (url.pathname !== '' && url.pathname !== '/')
+    || url.username
+    || url.password
+    || url.hash
+    || url.searchParams.get('v') !== COMMUNITY_INVITE_VERSION
+    || url.searchParams.get('kind') !== 'community'
+    || !hasOnlySearchParameters(
+      url,
+      new Set([
+        'v',
+        'kind',
+        'room',
+        'via',
+        'community_service',
+        'admission',
+        'code',
+        'resume',
+      ]),
+    )
+  ) {
+    return null
+  }
+
+  const roomOrAlias = url.searchParams.get('room')?.trim() ?? ''
+  const parsedVia = parseViaServers(url)
+  if (!isMatrixRoomIdentifier(roomOrAlias) || !parsedVia) return null
+
+  const communityServiceValue = url.searchParams.get('community_service')
+  const communityService = normalizeCommunityService(communityServiceValue)
+  if (communityServiceValue && !communityService) return null
+
+  const admissionValue = url.searchParams.get('admission')
+  const admissionOrigin = normalizeCommunityService(admissionValue)
+  const admissionCode = url.searchParams.get('code')
+  if (
+    Boolean(admissionValue) !== Boolean(admissionCode)
+    || (admissionValue && (!admissionOrigin || !ADMISSION_CODE_PATTERN.test(admissionCode ?? '')))
+  ) {
+    return null
+  }
+
+  const resumeValue = url.searchParams.get('resume')
+  const resumeUrl = normalizeResumeUrl(resumeValue)
+  if (resumeValue && !resumeUrl) return null
+
+  return {
+    kind: 'community',
+    version: 5,
+    roomOrAlias,
+    via: parsedVia.servers,
+    viaTruncated: parsedVia.truncated,
+    communityService,
+    admissionOrigin,
+    admissionCode,
+    resumeUrl,
+    original: input,
+  }
+}
+
+export function parseMatrixCommunityInvite(
+  value: string,
+): MatrixCommunityInvite | CommunityInviteV5 | null {
+  const current = parseCommunityInviteV5(value)
+  if (current) return current
+
   const input = value.trim()
   if (!input || input.length > MAX_INVITE_LENGTH) return null
 
@@ -94,14 +225,8 @@ export function parseMatrixCommunityInvite(value: string): MatrixCommunityInvite
   const roomOrAlias = url.searchParams.get('room')?.trim() ?? ''
   if (!isMatrixRoomIdentifier(roomOrAlias)) return null
 
-  const via = [
-    ...url.searchParams.getAll('via'),
-    ...(url.searchParams.get('via')?.split(',') ?? []),
-  ]
-    .map((serverName) => serverName.trim())
-    .filter(isServerName)
-  const uniqueVia = [...new Set(via)].slice(0, 3)
-  if (uniqueVia.length === 0) return null
+  const parsedVia = parseViaServers(url)
+  if (!parsedVia) return null
 
   const serviceValue = url.searchParams.get('service')
   const service = normalizeCommunityService(serviceValue)
@@ -111,13 +236,17 @@ export function parseMatrixCommunityInvite(value: string): MatrixCommunityInvite
     kind: 'matrix',
     version: 3,
     roomOrAlias,
-    via: uniqueVia,
+    via: parsedVia.servers,
+    viaTruncated: parsedVia.truncated,
     service,
     original: input,
   }
 }
 
-export function parseManagedCommunityInvite(value: string): ManagedCommunityInvite | null {
+export function parseAdmissionCommunityInvite(value: string): AdmissionCommunityInvite | null {
+  const current = parseCommunityInviteV5(value)
+  if (current?.admissionOrigin && current.admissionCode) return current
+
   const input = value.trim()
   if (!input || input.length > MAX_INVITE_LENGTH) return null
 
@@ -135,7 +264,7 @@ export function parseManagedCommunityInvite(value: string): ManagedCommunityInvi
       || url.username
       || url.password
       || url.hash
-      || url.searchParams.get('v') !== MANAGED_INVITE_VERSION
+      || url.searchParams.get('v') !== LEGACY_ADMISSION_INVITE_VERSION
       || url.searchParams.get('kind') !== 'managed'
       || !hasOnlySearchParameters(url, new Set(['v', 'kind', 'code', 'api']))
     ) {
@@ -177,7 +306,7 @@ export function parseManagedCommunityInvite(value: string): ManagedCommunityInvi
 }
 
 export function parseCommunityInvite(value: string): CommunityInvite | null {
-  return parseManagedCommunityInvite(value) ?? parseMatrixCommunityInvite(value)
+  return parseAdmissionCommunityInvite(value) ?? parseMatrixCommunityInvite(value)
 }
 
 export function isMeshJoinLink(value: string): boolean {

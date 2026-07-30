@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  classifyServiceFailure,
   displayServiceAddress,
+  friendlyServiceError,
   friendlySignInError,
   normalizeServiceAddress,
-  recommendedServiceConfigError,
+  serviceAddressConfigError,
   resolveServiceAddress,
   serviceFromUsername,
 } from './matrixSignIn'
@@ -44,20 +46,39 @@ describe('consumer Matrix sign-in helpers', () => {
   it('fails closed when the recommended build service is absent or unsafe', () => {
     const credentialedService = ['https://alice:', 'secret', '@remote.example'].join('')
 
-    expect(recommendedServiceConfigError('')).toContain('configured')
-    expect(recommendedServiceConfigError('http://remote.example')).toContain('HTTPS')
-    expect(recommendedServiceConfigError(credentialedService)).toContain('credentials')
-    expect(recommendedServiceConfigError('mesh.example')).toBeNull()
-    expect(recommendedServiceConfigError('https://matrix.mesh.example')).toBeNull()
-    expect(recommendedServiceConfigError('localhost:8008')).toBeNull()
+    expect(serviceAddressConfigError('')).toContain('configured')
+    expect(serviceAddressConfigError('http://remote.example')).toContain('HTTPS')
+    expect(serviceAddressConfigError(credentialedService)).toContain('credentials')
+    expect(serviceAddressConfigError('mesh.example')).toBeNull()
+    expect(serviceAddressConfigError('https://matrix.mesh.example')).toBeNull()
+    expect(serviceAddressConfigError('localhost:8008')).toBeNull()
   })
 
   it('keeps protocol errors away from nontechnical users', () => {
     expect(friendlySignInError('M_FORBIDDEN: invalid password')).toContain('username or password')
-    expect(friendlySignInError('DNS discovery request failed')).toContain('could not reach')
+    expect(friendlySignInError('DNS discovery request failed')).toContain('could not be found')
     expect(friendlySignInError('Matrix sign-in was cancelled')).toContain('cancelled')
     expect(friendlySignInError('Matrix sign-in timed out after 45 seconds')).toContain('took too long')
     expect(friendlySignInError({ code: 'login_cancelled', detail: 'callback closed' })).toContain('cancelled')
     expect(friendlySignInError({ code: 'login_timed_out', detail: 'callback timeout' })).toContain('took too long')
+  })
+
+  it.each([
+    ['DNS lookup failed for the homeserver', 'dns'],
+    ['TLS certificate verification failed', 'tls'],
+    ['HTTP status 404 from .well-known/matrix/client', 'malformed_well_known'],
+    ['HTTP status 503 from the account service', 'http_status'],
+    ['capability check timed out after 20 seconds', 'timeout'],
+  ] as const)('classifies %s as %s', (detail, kind) => {
+    expect(classifyServiceFailure(new Error(detail))).toBe(kind)
+  })
+
+  it('turns classified service failures into next-step guidance', () => {
+    expect(friendlyServiceError(new Error('TLS certificate verification failed'), 'reach that account service'))
+      .toContain('secure HTTPS connection')
+    expect(friendlyServiceError(new Error('HTTP status 503'), 'reach that account service'))
+      .toContain('choose another service')
+    expect(friendlyServiceError(new Error('invalid .well-known discovery JSON'), 'reach that account service'))
+      .toContain('invalid discovery information')
   })
 })

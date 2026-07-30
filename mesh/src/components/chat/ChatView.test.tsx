@@ -33,6 +33,9 @@ vi.mock('./Message', () => ({
     if (message.content === 'THROW') {
       throw new Error('Malformed federated event')
     }
+    if (message.undecryptable) {
+      return <div data-undecryptable-message="true">Message waiting for secure keys</div>
+    }
     return <div>{message.content}</div>
   },
 }))
@@ -326,6 +329,52 @@ describe('ChatView channel switching', () => {
     expect(container.textContent).toContain('Healthy after')
     expect(container.textContent).toContain("This message couldn't be displayed.")
     expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1)
+    expect(container.querySelector('[data-message-composer]')?.textContent).toBe(
+      'Message composer',
+    )
+  })
+
+  it('keeps an undecryptable event visible between healthy virtualized rows', async () => {
+    const activeChannel = channel('channel-a', 'alpha')
+    const healthyBefore = {
+      ...message('healthy-a', activeChannel.id, 'Healthy before'),
+      timestamp: '2026-07-29T12:00:00.000Z',
+    }
+    const undecryptable = {
+      ...message('encrypted-a', activeChannel.id, ''),
+      timestamp: '2026-07-29T12:01:00.000Z',
+      undecryptable: {
+        eventId: '$encrypted-a:example.org',
+        sender: '@bob:example.org',
+        originServerTs: 1_725_000_000_000,
+        reason: 'waiting-for-keys' as const,
+      },
+    }
+    const healthyAfter = {
+      ...message('healthy-b', activeChannel.id, 'Healthy after'),
+      timestamp: '2026-07-29T12:02:00.000Z',
+    }
+
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
+    vi.spyOn(bridge, 'getMessages').mockResolvedValue([
+      healthyBefore,
+      undecryptable,
+      healthyAfter,
+    ])
+    vi.spyOn(bridge, 'markChannelRead').mockResolvedValue(undefined)
+    vi.spyOn(bridge, 'onMessageReceived').mockResolvedValue(() => {})
+
+    await act(async () => {
+      root.render(<ChatView channel={activeChannel} />)
+      await flushAsyncWork()
+    })
+
+    expect(container.textContent).toContain('Healthy before')
+    expect(container.textContent).toContain('Message waiting for secure keys')
+    expect(container.textContent).toContain('Healthy after')
+    expect(container.querySelector('[data-undecryptable-message="true"]')).not.toBeNull()
+    expect(useMessageStore.getState().messages[activeChannel.id]?.map((entry) => entry.id))
+      .toEqual([healthyBefore.id, undecryptable.id, healthyAfter.id])
     expect(container.querySelector('[data-message-composer]')?.textContent).toBe(
       'Message composer',
     )

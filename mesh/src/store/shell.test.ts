@@ -3,29 +3,55 @@ import { useShellStore } from './shell'
 
 describe('shell navigation state', () => {
   beforeEach(() => {
+    localStorage.clear()
     useShellStore.setState({
       serverModalOpen: false,
       serverModalTab: 'create',
-      inviteDraft: '',
+      pendingInvitation: null,
       profileOpen: false,
       securityOpen: false,
     })
   })
 
   it('opens the join flow with a pasted first-run invite', () => {
-    useShellStore.getState().openServerModal('join', 'https://mesh.app/i/aB3xK9')
+    const pendingInvitation = {
+      handle: 'a1b2c3d4',
+      roomOrAlias: '#friends:example.org',
+      via: ['example.org'],
+      service: 'https://matrix.example.org',
+      admissionService: null,
+      storedAt: 1_752_000_000_000,
+      expiresAt: 1_754_592_000_000,
+    }
+    useShellStore.getState().setPendingInvitation(pendingInvitation)
+    useShellStore.getState().openServerModal('join')
 
     expect(useShellStore.getState()).toMatchObject({
       serverModalOpen: true,
       serverModalTab: 'join',
-      inviteDraft: 'https://mesh.app/i/aB3xK9',
+      pendingInvitation,
     })
 
     useShellStore.getState().closeServerModal()
     expect(useShellStore.getState()).toMatchObject({
       serverModalOpen: false,
-      inviteDraft: '',
+      pendingInvitation,
     })
+  })
+
+  it('does not persist invitation secrets in localStorage', () => {
+    useShellStore.getState().setPendingInvitation({
+      handle: 'a1b2c3d4',
+      roomOrAlias: '!friends:example.org',
+      via: ['example.org'],
+      service: null,
+      admissionService: 'https://invites.example.org',
+      storedAt: 1_752_000_000_000,
+      expiresAt: 1_754_592_000_000,
+    })
+
+    expect(localStorage.getItem('mesh-pending-invitation')).toBeNull()
+    expect(localStorage.length).toBe(0)
   })
 
   it('opens Profile independently of the server modal', () => {

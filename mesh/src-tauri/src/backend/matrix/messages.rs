@@ -1,4 +1,6 @@
 impl MatrixBackend {
+    const UNDECRYPTABLE_REASON_KEY: &'static str = "org.mesh.undecryptable_reason";
+
     fn dispatch_backend_event(
         callback: &Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
         event: MatrixBackendEvent,
@@ -155,6 +157,57 @@ impl MatrixBackend {
             .is_some()
     }
 
+    fn is_undecryptable_message(value: &serde_json::Value) -> bool {
+        value.get("type").and_then(serde_json::Value::as_str) == Some("m.room.encrypted")
+            && value.get(Self::UNDECRYPTABLE_REASON_KEY).is_some()
+    }
+
+    fn product_decryption_reason(
+        raw_event: &matrix_sdk::deserialized_responses::TimelineEventKind,
+        context: matrix_sdk_crypto::types::events::CryptoContextInfo,
+    ) -> UndecryptableMessageReason {
+        let TimelineEventKind::UnableToDecrypt { event, utd_info } = raw_event else {
+            return UndecryptableMessageReason::CouldNotDecrypt;
+        };
+
+        let cause = matrix_sdk_crypto::types::events::UtdCause::determine(
+            event,
+            context,
+            utd_info,
+        );
+        match cause {
+            matrix_sdk_crypto::types::events::UtdCause::SentBeforeWeJoined
+            | matrix_sdk_crypto::types::events::UtdCause::HistoricalMessageAndBackupIsDisabled
+            | matrix_sdk_crypto::types::events::UtdCause::HistoricalMessageAndDeviceIsUnverified => {
+                UndecryptableMessageReason::SentBeforeDevice
+            }
+            matrix_sdk_crypto::types::events::UtdCause::WithheldBySender
+            | matrix_sdk_crypto::types::events::UtdCause::WithheldForUnverifiedOrInsecureDevice
+            | matrix_sdk_crypto::types::events::UtdCause::VerificationViolation
+            | matrix_sdk_crypto::types::events::UtdCause::UnsignedDevice
+            | matrix_sdk_crypto::types::events::UtdCause::UnknownDevice => {
+                UndecryptableMessageReason::KeysNotShared
+            }
+            matrix_sdk_crypto::types::events::UtdCause::Unknown => match &utd_info.reason {
+                matrix_sdk::deserialized_responses::UnableToDecryptReason::MissingMegolmSession {
+                    withheld_code: None,
+                }
+                | matrix_sdk::deserialized_responses::UnableToDecryptReason::UnknownMegolmMessageIndex => {
+                    UndecryptableMessageReason::WaitingForKeys
+                }
+                _ => UndecryptableMessageReason::CouldNotDecrypt,
+            },
+        }
+    }
+
+    fn undecryptable_reason(value: &serde_json::Value) -> UndecryptableMessageReason {
+        value
+            .get(Self::UNDECRYPTABLE_REASON_KEY)
+            .cloned()
+            .and_then(|reason| serde_json::from_value(reason).ok())
+            .unwrap_or(UndecryptableMessageReason::CouldNotDecrypt)
+    }
+
     async fn timeline_values(
         room: &Room,
         minimum_base_messages: usize,
@@ -167,6 +220,7 @@ impl MatrixBackend {
         let mut from = None;
         let mut anchor_seen = before_id.is_none();
         let mut qualifying_messages = 0_usize;
+        let crypto_context = room.crypto_context_info().await;
 
         loop {
             let mut options = MessagesOptions::backward();
@@ -178,13 +232,27 @@ impl MatrixBackend {
             }
 
             for event in response.chunk {
-                let value = match event.raw().deserialize_as::<serde_json::Value>() {
+                let mut value = match event.raw().deserialize_as::<serde_json::Value>() {
                     Ok(value) => value,
                     Err(error) => {
                         tracing::warn!(target: "mesh::matrix", "Skipping malformed timeline event: {error}");
                         continue;
                     }
                 };
+                if matches!(&event.kind, TimelineEventKind::UnableToDecrypt { .. }) {
+                    if let Some(object) = value.as_object_mut() {
+                        object.insert(
+                            Self::UNDECRYPTABLE_REASON_KEY.to_owned(),
+                            serde_json::to_value(Self::product_decryption_reason(
+                                &event.kind,
+                                crypto_context,
+                            ))
+                            .unwrap_or_else(|_| {
+                                serde_json::Value::String("could-not-decrypt".into())
+                            }),
+                        );
+                    }
+                }
                 let event_id = value.get("event_id").and_then(serde_json::Value::as_str);
                 let legacy_message_id = Self::legacy_message_id(&value);
                 if !anchor_seen
@@ -192,7 +260,9 @@ impl MatrixBackend {
                 {
                     anchor_seen = true;
                 } else if anchor_seen
-                    && (Self::is_base_text_message(&value) || legacy_message_id.is_some())
+                    && (Self::is_base_text_message(&value)
+                        || Self::is_undecryptable_message(&value)
+                        || legacy_message_id.is_some())
                 {
                     qualifying_messages += 1;
                 }
@@ -330,6 +400,7 @@ impl MatrixBackend {
             transaction_id: Some(echo.transaction_id.to_string()),
             client_request_id: Some(client_request_id),
             delivery_status: Some(if failed { "failed" } else { "pending" }.into()),
+            undecryptable: None,
         }))
     }
 
@@ -763,6 +834,63 @@ impl MatrixBackend {
             transaction_id: None,
             client_request_id: None,
             delivery_status: Some("imported".into()),
+            undecryptable: None,
+        })
+    }
+
+    fn project_undecryptable_message(
+        room_id: &str,
+        members: &HashMap<String, String>,
+        value: &serde_json::Value,
+    ) -> Option<MessageDto> {
+        if !Self::is_undecryptable_message(value) {
+            return None;
+        }
+        let event_id = value
+            .get("event_id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)?;
+        let sender = value
+            .get("sender")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("@unknown:invalid")
+            .to_owned();
+        let origin_server_ts = value
+            .get("origin_server_ts")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or_default();
+        let timestamp = Self::event_timestamp(value);
+
+        Some(MessageDto {
+            id: event_id.clone(),
+            channel_id: room_id.to_owned(),
+            author_public_key: sender.clone(),
+            author_display_name: members.get(&sender).cloned().unwrap_or_else(|| {
+                sender
+                    .split(':')
+                    .next()
+                    .unwrap_or(&sender)
+                    .trim_start_matches('@')
+                    .to_owned()
+            }),
+            author_avatar_color: Self::avatar_color(&sender),
+            content: String::new(),
+            attachments: Vec::new(),
+            reactions: HashMap::new(),
+            timestamp,
+            signature: String::new(),
+            edited_at: None,
+            deleted_at: None,
+            reply_to_id: None,
+            transaction_id: None,
+            client_request_id: None,
+            delivery_status: Some("sent".into()),
+            undecryptable: Some(UndecryptableMessageDto {
+                event_id,
+                sender,
+                origin_server_ts,
+                reason: Self::undecryptable_reason(value),
+            }),
         })
     }
 
@@ -815,6 +943,11 @@ impl MatrixBackend {
 
         for value in &values {
             if let Some(message) = Self::project_legacy_message(room_id, value) {
+                ordered_ids.push(message.id.clone());
+                messages.insert(message.id.clone(), message);
+                continue;
+            }
+            if let Some(message) = Self::project_undecryptable_message(room_id, members, value) {
                 ordered_ids.push(message.id.clone());
                 messages.insert(message.id.clone(), message);
                 continue;
@@ -890,6 +1023,7 @@ impl MatrixBackend {
                     transaction_id,
                     client_request_id,
                     delivery_status: Some("sent".into()),
+                    undecryptable: None,
                 },
             );
         }

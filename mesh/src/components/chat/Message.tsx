@@ -1,6 +1,7 @@
 import { memo, useState, useEffect, useCallback, useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { Message as MessageType } from '../../types/ipc'
+import type { RoomTrustSnapshot } from '../../hooks/useRoomTrust'
 import { Avatar } from '../ui/Avatar'
 import { ReactionPicker } from './ReactionPicker'
 import { MarkdownContent } from './MarkdownContent'
@@ -22,6 +23,8 @@ import { showToast } from '../ui/Toast'
 import { EncryptedAttachmentPreview } from './EncryptedAttachmentPreview'
 import { ProtectedImageLightbox } from './ProtectedImageLightbox'
 import { ContextMenu, type MenuItem } from '../ui/InteractivePrimitives'
+import { MessageReportDialog } from './MessageReportDialog'
+import { useShellStore } from '../../store/shell'
 
 interface MessageProps {
   message: MessageType
@@ -33,6 +36,7 @@ interface MessageProps {
   replyPreview?: MessageType | null
   limitedActions?: boolean
   editRequestToken?: number
+  trust?: RoomTrustSnapshot
 }
 
 export const MessageComponent = memo(function MessageComponent({
@@ -44,6 +48,7 @@ export const MessageComponent = memo(function MessageComponent({
   replyPreview,
   limitedActions = false,
   editRequestToken = 0,
+  trust,
 }: MessageProps) {
   const [hovered, setHovered] = useState(false)
   const [showReactions, setShowReactions] = useState(false)
@@ -51,6 +56,7 @@ export const MessageComponent = memo(function MessageComponent({
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState('')
   const [confirmBan, setConfirmBan] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
   const [activeImageAttachmentIndex, setActiveImageAttachmentIndex] = useState<number | null>(null)
   const rowRef = useRef<HTMLDivElement>(null)
   const reactButtonRef = useRef<HTMLButtonElement>(null)
@@ -64,6 +70,7 @@ export const MessageComponent = memo(function MessageComponent({
   const legacyPublicKey = useIdentityStore((s) => s.identity?.publicKey)
   const myPublicKey = bridge.isMatrixBackend() ? (bridge.getMatrixUserId() ?? undefined) : legacyPublicKey
   const activeChannelId = useChannelStore((s) => s.activeChannelId)
+  const setSecurityOpen = useShellStore((s) => s.setSecurityOpen)
   const updateReaction = useMessageStore((s) => s.updateReaction)
   const editMessage = useMessageStore((s) => s.editMessage)
   const deleteMessage = useMessageStore((s) => s.deleteMessage)
@@ -74,8 +81,16 @@ export const MessageComponent = memo(function MessageComponent({
   const isOwnMessage = myPublicKey === message.authorPublicKey
   const canModerate = myRole === 'owner' || myRole === 'admin'
   const isDeleted = !!message.deletedAt
+  const undecryptable = message.undecryptable
+  const isUndecryptable = !!undecryptable
   const isQueued = !!message.transactionId && message.deliveryStatus !== 'sent'
-  const canPinMessage = matrixMode && canManagePins && message.id.startsWith('$')
+  const canPinMessage = matrixMode && canManagePins && message.id.startsWith('$') && !isUndecryptable
+  const securityNeedsAttention = Boolean(
+    isUndecryptable
+      && trust
+      && !trust.loadingAccountTrust
+      && (trust.devicesNeedReview > 0 || trust.backup?.healthy === false),
+  )
   const imageAttachmentIndexes = (message.attachments ?? []).flatMap((attachment, index) =>
     attachment.thumbnail ? [index] : [],
   )
@@ -90,7 +105,7 @@ export const MessageComponent = memo(function MessageComponent({
       reactButtonRef.current?.focus()
       return
     }
-    if (isQueued || (limitedActions && !isOwnMessage)) return
+    if (isQueued) return
     if (e.key !== 'ContextMenu' && !(e.key === 'F10' && e.shiftKey)) return
     e.preventDefault()
     setConfirmBan(false)
@@ -206,6 +221,7 @@ export const MessageComponent = memo(function MessageComponent({
   )
 
   const handleReaction = async (emoji: string) => {
+    if (isUndecryptable) return
     const channelId = activeChannelId ?? message.channelId
     if (!channelId) return
 
@@ -240,7 +256,7 @@ export const MessageComponent = memo(function MessageComponent({
       onSelect: () => void handlePin(),
     })
   }
-  if (isOwnMessage && !isDeleted) {
+  if (isOwnMessage && !isDeleted && !isUndecryptable) {
     contextMenuItems.push(
       {
         id: 'edit',
@@ -254,6 +270,16 @@ export const MessageComponent = memo(function MessageComponent({
         onSelect: () => void handleDelete(),
       },
     )
+  }
+  if (matrixMode && !isOwnMessage && !isDeleted && message.id.startsWith('$')) {
+    contextMenuItems.push({
+      id: 'report',
+      label: 'Report message',
+      onSelect: () => {
+        setContextMenuOpen(false)
+        setReportOpen(true)
+      },
+    })
   }
   if (!limitedActions && canModerate && !isOwnMessage && !isDeleted) {
     contextMenuItems.push(
@@ -303,14 +329,15 @@ export const MessageComponent = memo(function MessageComponent({
       : message.deliveryStatus === 'failed'
         ? ', delivery needs attention'
         : ''
-  const messageAriaLabel = `Message from ${message.authorDisplayName}, ${formatFederatedTimestamp(message.timestamp, 'MM/dd/yyyy h:mm a')}${deliveryLabel}`
+  const undecryptableLabel = isUndecryptable ? ', message content unavailable' : ''
+  const messageAriaLabel = `Message from ${message.authorDisplayName}, ${formatFederatedTimestamp(message.timestamp, 'MM/dd/yyyy h:mm a')}${deliveryLabel}${undecryptableLabel}`
 
   return (
     <>
       <ContextMenu
         label="Message actions"
         items={contextMenuItems}
-        disabled={isQueued || (limitedActions && !isOwnMessage)}
+        disabled={isQueued}
         open={contextMenuOpen}
         onOpenChange={(open) => {
           setContextMenuOpen(open)
@@ -400,7 +427,7 @@ export const MessageComponent = memo(function MessageComponent({
             )}
 
             {/* Reply preview */}
-            {replyPreview && (
+            {replyPreview && !isUndecryptable && (
               <div className="mb-1 flex items-center gap-1.5 text-sm">
                 <Icon name="reply" size="xs" className="text-muted" />
                 <span className="text-xs font-medium text-secondary">{replyPreview.authorDisplayName}</span>
@@ -408,7 +435,13 @@ export const MessageComponent = memo(function MessageComponent({
               </div>
             )}
 
-            {isEditing ? (
+            {undecryptable ? (
+              <UndecryptableMessageNotice
+                reason={undecryptable.reason}
+                showSecurityHelp={securityNeedsAttention}
+                onOpenSecurity={() => setSecurityOpen(true)}
+              />
+            ) : isEditing ? (
               <div className="mt-1 space-y-2">
                 <textarea
                   value={editContent}
@@ -502,7 +535,7 @@ export const MessageComponent = memo(function MessageComponent({
             volume-slider pattern in VoicePeerGrid.tsx. pointer-events-none at
             rest keeps the invisible bar from intercepting clicks meant for
             the grouped message rendered underneath it (-top-4 overlap). */}
-          {!contextMenuOpen && !isEditing && !isDeleted && !isQueued && (
+          {!contextMenuOpen && !isEditing && !isDeleted && !isQueued && !isUndecryptable && (
             <div className="mesh-message-actions pointer-events-none absolute -top-4 right-4 z-sticky flex items-center rounded-panel border border-border-subtle bg-surface-overlay opacity-0 shadow-overlay transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
               <button
                 ref={reactButtonRef}
@@ -582,9 +615,81 @@ export const MessageComponent = memo(function MessageComponent({
           onClose={() => setActiveImageAttachmentIndex(null)}
         />
       )}
+
+      <MessageReportDialog
+        open={reportOpen}
+        roomId={message.channelId}
+        eventId={message.id}
+        onClose={() => setReportOpen(false)}
+      />
     </>
   )
 })
+
+type UndecryptableReason = NonNullable<MessageType['undecryptable']>['reason']
+
+function UndecryptableMessageNotice({
+  reason,
+  showSecurityHelp,
+  onOpenSecurity,
+}: {
+  reason: UndecryptableReason
+  showSecurityHelp: boolean
+  onOpenSecurity: () => void
+}) {
+  const copy = undecryptableCopy(reason)
+
+  return (
+    <div
+      className="mt-1 max-w-xl rounded-panel border border-status-warning/30 bg-status-warning/5 px-3 py-2 text-sm"
+      data-undecryptable-message="true"
+      role="note"
+    >
+      <div className="flex items-start gap-2">
+        <Icon name="triangleAlert" size="sm" className="mt-0.5 shrink-0 text-status-warning" />
+        <div className="min-w-0 space-y-1">
+          <p className="font-medium text-primary">{copy.title}</p>
+          <p className="text-xs leading-5 text-secondary">{copy.body}</p>
+          {showSecurityHelp && (
+            <button
+              type="button"
+              onClick={onOpenSecurity}
+              className="min-h-control-sm rounded-control px-2 text-xs font-medium text-text-link transition-colors hover:bg-status-warning/10 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              Review message security
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function undecryptableCopy(reason: UndecryptableReason) {
+  switch (reason) {
+    case 'sent-before-device':
+      return {
+        title: 'This message was sent before this device could receive it.',
+        body: 'It may become available after you restore message history on this device.',
+      }
+    case 'keys-not-shared':
+      return {
+        title: 'The message keys were not shared with this device.',
+        body: 'Review your device security and ask the sender to share the message again if needed.',
+      }
+    case 'waiting-for-keys':
+      return {
+        title: 'Waiting for the message keys.',
+        body: 'Mesh is still syncing secure message history. This message may appear when syncing finishes.',
+      }
+    case 'could-not-decrypt':
+    default:
+      return {
+        title: "Mesh couldn't decrypt this message on this device.",
+        body: 'The message is still part of the conversation, but its content is not available here.',
+      }
+  }
+}
 
 export function FileAttachmentCard({
   attachment,

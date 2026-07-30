@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="How Mesh separates account services from community hosting.">
+  <title>Account services and communities — Mesh</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header"><a class="brand" href="../">Mesh</a><nav aria-label="Primary"><a href="../download/">Download</a><a href="../status/">Status</a><a href="https://github.com/dhawal-ss/mesh">Source</a></nav></header>
+  <main id="main" class="prose">
+    <p class="eyebrow">Third-party service disclosure</p>
+    <h1>Choose where your account lives</h1>
+    <p class="lede">Mesh is a client. Public account services and community-hosted services are operated independently and set their own rules.</p>
+    <h2>Available paths</h2>
+    <ul>
+      <li><strong>Matrix.org:</strong> a prominent independently operated public option.</li>
+      <li><strong>Reviewed public services:</strong> a small checked-in catalog with operator, policy, registration, limit, source, and review metadata.</li>
+      <li><strong>Community-hosted service:</strong> an optional account offer carried by an invitation, with no Mesh uptime guarantee.</li>
+      <li><strong>Another service:</strong> any compatible homeserver selected by Matrix ID or service address.</li>
+    </ul>
+    <h2>What a choice means</h2>
+    <p>The account service stores account and synchronization data and participates in encrypted conversations. It can observe normal Matrix metadata and encrypted event envelopes. Its terms, privacy policy, moderation, availability, registration, and limits apply.</p>
+    <p>The community's rooms may be hosted elsewhere. Federation lets an account from one compatible service join a room on another when room policy permits. A community registration token is offered only for that community's service and is never sent to a different provider.</p>
+    <h2>No endorsement</h2>
+    <p>Catalog inclusion is a dated review, not ownership, endorsement, permanence, or an SLA. Expired catalog entries are unavailable until re-reviewed. Mesh does not download or mirror raw public server directories at runtime and probes only the service a user selected.</p>
+    <p>See current reviewed metadata in the <a href="https://github.com/dhawal-ss/mesh/blob/main/mesh/src/config/public-services.json">source catalog</a>.</p>
+  </main>
+  <footer class="site-footer"><span>Mesh</span><div class="footer-links"><a href="../privacy/">Privacy</a><a href="../terms/">Terms</a><a href="../support/">Support</a></div></footer>
+</body>
+</html>

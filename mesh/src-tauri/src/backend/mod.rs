@@ -613,6 +613,35 @@ pub struct MatrixLogin {
     pub device_name: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixRegistration {
+    pub homeserver: String,
+    pub username: String,
+    pub password: String,
+    pub registration_token: Option<String>,
+    pub device_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MatrixRegistrationAvailability {
+    Open,
+    Closed,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixServiceCapabilities {
+    pub homeserver: String,
+    pub server_versions: Vec<String>,
+    pub password_login: bool,
+    pub browser_login: bool,
+    pub registration: MatrixRegistrationAvailability,
+    pub max_upload_bytes: Option<u64>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MatrixOidcAvailability {
@@ -843,6 +872,25 @@ pub struct MatrixCommunityAdmission {
     pub expires_at: Option<u64>,
 }
 
+/// Metadata for an invitation held by the native pending-invitation store.
+///
+/// This intentionally contains no invitation URL, admission code, or
+/// registration token. The renderer may use it to explain that an invitation
+/// is waiting without receiving the secret itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingInvitationMetadata {
+    pub handle: String,
+    pub room_or_alias: Option<String>,
+    pub via: Vec<String>,
+    pub service: Option<String>,
+    pub admission_service: Option<String>,
+    #[ts(type = "number")]
+    pub stored_at: u64,
+    #[ts(type = "number")]
+    pub expires_at: u64,
+}
+
 /// A server-scoped custom emoji published through a room image pack.
 ///
 /// Unlike encrypted message content, image-pack state and its media URI are
@@ -890,6 +938,10 @@ pub struct UserPreferences {
     pub channel_notification_levels: std::collections::HashMap<String, MatrixRoomNotificationMode>,
     #[serde(default)]
     pub send_read_receipts: bool,
+    /// Explicit receipt visibility. Missing values are migrated from the
+    /// legacy boolean: true meant private-only and false meant off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_receipt_mode: Option<ReadReceiptMode>,
     #[serde(default)]
     pub send_typing_indicators: bool,
     #[serde(default)]
@@ -900,10 +952,22 @@ pub struct UserPreferences {
 }
 
 impl UserPreferences {
-    pub const SCHEMA_VERSION: u32 = 3;
+    pub const SCHEMA_VERSION: u32 = 4;
+
+    pub fn effective_read_receipt_mode(&self) -> ReadReceiptMode {
+        self.read_receipt_mode
+            .unwrap_or(if self.send_read_receipts {
+                ReadReceiptMode::Private
+            } else {
+                ReadReceiptMode::Off
+            })
+    }
 
     pub fn normalized(mut self) -> Self {
         self.schema_version = Self::SCHEMA_VERSION;
+        if self.read_receipt_mode.is_none() {
+            self.read_receipt_mode = Some(self.effective_read_receipt_mode());
+        }
         self.muted_channels.sort();
         self.muted_channels.dedup();
         self.muted_communities.sort();
@@ -911,6 +975,15 @@ impl UserPreferences {
         self.updated_at = chrono::Utc::now().to_rfc3339();
         self
     }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReadReceiptMode {
+    Public,
+    Private,
+    #[default]
+    Off,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -939,19 +1012,19 @@ pub enum BackendError {
     Unsupported(&'static str),
     #[error("invalid backend configuration: {0}")]
     InvalidConfiguration(String),
-    #[error("managed account service is not configured")]
-    ManagedHomeserverUnconfigured,
+    #[error("community-hosted service is not configured")]
+    CommunityHomeserverUnconfigured,
     #[error("that username is not available")]
     UsernameUnavailable,
-    #[error("the managed account service requires terms acceptance")]
+    #[error("the selected account service requires terms acceptance")]
     RegistrationTermsRequired,
-    #[error("the managed account service requires an additional verification step")]
+    #[error("the selected account service requires an additional verification step")]
     RegistrationAdditionalAuthRequired,
     #[error("a valid Mesh invitation is required to create an account")]
     RegistrationInvitationRequired,
     #[error("the Mesh invitation is invalid, expired, or has already been used")]
     RegistrationInvitationInvalid,
-    #[error("managed account creation timed out after {0} seconds")]
+    #[error("account creation timed out after {0} seconds")]
     RegistrationTimedOut(u64),
     #[error("backend error: {0}")]
     Other(String),
@@ -1045,6 +1118,27 @@ pub trait MeshBackend: Send + Sync {
     async fn active_account_storage_root(&self) -> BackendResult<PathBuf> {
         Err(BackendError::Unsupported("active account storage"))
     }
+    async fn store_pending_invitation(
+        &self,
+        _invite_link: String,
+    ) -> BackendResult<PendingInvitationMetadata> {
+        Err(BackendError::Unsupported("pending invitations"))
+    }
+    async fn read_pending_invitation(&self) -> BackendResult<Option<String>> {
+        Err(BackendError::Unsupported("pending invitations"))
+    }
+    async fn take_pending_invitation(&self) -> BackendResult<Option<String>> {
+        Err(BackendError::Unsupported("pending invitations"))
+    }
+    async fn peek_pending_invitation(&self) -> BackendResult<Option<PendingInvitationMetadata>> {
+        Err(BackendError::Unsupported("pending invitations"))
+    }
+    async fn resolve_pending_invitation(&self) -> BackendResult<Option<MatrixCommunityAdmission>> {
+        Err(BackendError::Unsupported("pending invitations"))
+    }
+    async fn clear_pending_invitation(&self) -> BackendResult<()> {
+        Err(BackendError::Unsupported("pending invitations"))
+    }
     fn set_matrix_event_callback(&self, _callback: Option<MatrixBackendEventCallback>) {}
     async fn start(&self) -> BackendResult<()>;
     async fn status(&self) -> BackendStatus;
@@ -1069,18 +1163,23 @@ pub trait MeshBackend: Send + Sync {
         ))
     }
     async fn login(&self, request: MatrixLogin) -> BackendResult<BackendStatus>;
-    async fn register_account(
-        &self,
-        _username: String,
-        _password: String,
-        _registration_token: Option<String>,
-    ) -> BackendResult<BackendStatus> {
-        Err(BackendError::Unsupported("managed account registration"))
+    async fn register_account(&self, _request: MatrixRegistration) -> BackendResult<BackendStatus> {
+        Err(BackendError::Unsupported("Matrix account registration"))
     }
-    async fn check_username_available(&self, _username: String) -> BackendResult<bool> {
+    async fn check_username_available(
+        &self,
+        _homeserver: String,
+        _username: String,
+    ) -> BackendResult<bool> {
         Err(BackendError::Unsupported(
-            "managed account username availability",
+            "Matrix account username availability",
         ))
+    }
+    async fn service_capabilities(
+        &self,
+        _homeserver: String,
+    ) -> BackendResult<MatrixServiceCapabilities> {
+        Err(BackendError::Unsupported("Matrix service discovery"))
     }
     async fn oidc_status(&self, _homeserver: String) -> BackendResult<MatrixOidcStatus> {
         Err(BackendError::Unsupported("Matrix OIDC discovery"))
@@ -1406,6 +1505,14 @@ pub trait MeshBackend: Send + Sync {
     async fn redact_message(&self, _room_id: String, _event_id: String) -> BackendResult<()> {
         Err(BackendError::Unsupported("message redaction"))
     }
+    async fn report_message(
+        &self,
+        _room_id: String,
+        _event_id: String,
+        _reason: String,
+    ) -> BackendResult<()> {
+        Err(BackendError::Unsupported("message reporting"))
+    }
     async fn toggle_reaction(
         &self,
         _room_id: String,
@@ -1723,7 +1830,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_wire_privacy_fields_deserialize_to_private_defaults() {
+    fn missing_wire_privacy_fields_keep_read_receipts_off() {
         let preferences: UserPreferences = serde_json::from_value(serde_json::json!({
             "schemaVersion": 1,
             "notificationsEnabled": true,
@@ -1733,6 +1840,11 @@ mod tests {
         .expect("legacy preferences should migrate");
 
         assert!(!preferences.send_read_receipts);
+        assert_eq!(preferences.read_receipt_mode, None);
+        assert_eq!(
+            preferences.effective_read_receipt_mode(),
+            ReadReceiptMode::Off
+        );
         assert!(!preferences.send_typing_indicators);
         assert!(!preferences.share_presence);
         assert!(!preferences.invisible_mode);
@@ -1764,6 +1876,7 @@ mod tests {
                 MatrixRoomNotificationMode::Mentions,
             )]),
             send_read_receipts: false,
+            read_receipt_mode: Some(ReadReceiptMode::Off),
             send_typing_indicators: true,
             share_presence: false,
             invisible_mode: true,
@@ -1772,12 +1885,34 @@ mod tests {
         .normalized();
 
         assert_eq!(preferences.schema_version, UserPreferences::SCHEMA_VERSION);
+        assert_eq!(preferences.read_receipt_mode, Some(ReadReceiptMode::Off));
         assert_eq!(preferences.muted_channels, vec!["!b:example.org"]);
         assert_eq!(
             preferences.channel_notification_levels["!b:example.org"],
             MatrixRoomNotificationMode::Mentions
         );
         assert_ne!(preferences.updated_at, "stale");
+    }
+
+    #[test]
+    fn legacy_read_receipt_opt_in_migrates_to_private_only() {
+        let preferences: UserPreferences = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 3,
+            "notificationsEnabled": true,
+            "notificationSound": true,
+            "sendReadReceipts": true,
+            "updatedAt": "2026-07-26T00:00:00Z"
+        }))
+        .expect("legacy preferences should migrate");
+
+        assert_eq!(
+            preferences.effective_read_receipt_mode(),
+            ReadReceiptMode::Private
+        );
+        assert_eq!(
+            preferences.normalized().read_receipt_mode,
+            Some(ReadReceiptMode::Private)
+        );
     }
 
     #[test]
@@ -1790,7 +1925,7 @@ mod tests {
     }
 
     #[test]
-    fn matrix_rtc_configuration_requires_service_and_sfu_endpoints() {
+    fn security_boundary_matrix_rtc_configuration_requires_service_and_sfu_endpoints() {
         let missing_sfu = VoiceServiceStatus::matrix_rtc(
             Some("https://rtc.example.org".into()),
             None,
@@ -1817,7 +1952,7 @@ mod tests {
     }
 
     #[test]
-    fn configured_matrix_rtc_remains_unavailable_until_client_and_e2ee_are_verified() {
+    fn security_boundary_matrix_rtc_stays_unavailable_until_client_and_e2ee_are_verified() {
         let status = VoiceServiceStatus::matrix_rtc(
             Some("https://rtc.example.org/livekit/jwt".into()),
             Some("wss://livekit.example.org".into()),
@@ -1842,7 +1977,7 @@ mod tests {
     }
 
     #[test]
-    fn matrix_rtc_fails_closed_when_tauri_csp_omits_media_origins() {
+    fn security_boundary_matrix_rtc_fails_closed_when_csp_omits_media_origins() {
         let status = VoiceServiceStatus::matrix_rtc(
             Some("https://rtc.example.org".into()),
             Some("wss://livekit.example.org".into()),
@@ -1861,7 +1996,7 @@ mod tests {
     }
 
     #[test]
-    fn matrix_rtc_rejects_credentials_and_only_accepts_connect_src_origins() {
+    fn security_boundary_matrix_rtc_rejects_credentials_and_non_connect_src_origins() {
         let credentialed_url = ["https://operator:", "secret", "@rtc.example.org"].concat();
         let credentialed = VoiceServiceStatus::matrix_rtc(
             Some(credentialed_url),
@@ -1890,7 +2025,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_voice_is_explicitly_separate_from_matrix_rtc() {
+    fn security_boundary_legacy_voice_is_explicitly_separate_from_matrix_rtc() {
         let status = VoiceServiceStatus::for_kind(BackendKind::LegacyP2p);
         assert_eq!(status.provider, VoiceProvider::LegacySimplePeer);
         assert_eq!(status.availability, VoiceServiceAvailability::Ready);

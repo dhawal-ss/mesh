@@ -31,6 +31,22 @@ async function installAuthenticatedMatrixMock(
     let nextCallbackId = 1
     let nextListenerId = 1
     let invitationJoined = false
+    let pendingInvitationLink: string | null = null
+
+    const pendingInvitationMetadata = () => {
+      if (!pendingInvitationLink) return null
+      const parsed = new URL(pendingInvitationLink)
+      return {
+        handle: '11111111-2222-4333-8444-555555555555',
+        roomOrAlias: parsed.searchParams.get('room'),
+        via: parsed.searchParams.getAll('via').flatMap((value) => value.split(',')),
+        service: parsed.searchParams.get('community_service')
+          ?? parsed.searchParams.get('service'),
+        admissionService: parsed.searchParams.get('admission'),
+        storedAt: 1_752_000_000_000,
+        expiresAt: 1_754_592_000_000,
+      }
+    }
 
     const community = {
       id: '!mesh-e2e:mesh.test',
@@ -182,6 +198,16 @@ async function installAuthenticatedMatrixMock(
           }
           invitationJoined = true
           return invitedCommunity
+        case 'store_pending_invitation':
+          pendingInvitationLink = String(args.inviteLink)
+          return pendingInvitationMetadata()
+        case 'peek_pending_invitation':
+          return pendingInvitationMetadata()
+        case 'read_pending_invitation':
+          return pendingInvitationLink
+        case 'clear_pending_invitation':
+          pendingInvitationLink = null
+          return null
         case 'matrix_room_is_encrypted':
           return true
         case 'matrix_devices':
@@ -443,6 +469,19 @@ test.describe('authenticated desktop shell', () => {
         via: ['mesh.test'],
       },
     }])
+    await expect.poll(async () => (
+      (await ipcCalls(page))
+        .filter((call) => [
+          'store_pending_invitation',
+          'read_pending_invitation',
+          'clear_pending_invitation',
+        ].includes(call.command))
+        .map((call) => call.command)
+    )).toEqual([
+      'store_pending_invitation',
+      'read_pending_invitation',
+      'clear_pending_invitation',
+    ])
     await expect(
       page.getByRole('button', { name: 'Invited Mesh Community', exact: true }),
     ).toHaveAttribute('aria-current', 'true')

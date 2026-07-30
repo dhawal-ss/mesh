@@ -239,9 +239,10 @@ export function useVirtualScroll(
     scrollElementRef.current = element
     if (!element) return
 
-    setViewportHeight(element.clientHeight)
+    setViewportHeight(element.clientHeight || 800)
+    if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver((entries) => {
-      const nextHeight = entries[0]?.contentRect.height ?? element.clientHeight
+      const nextHeight = (entries[0]?.contentRect.height ?? element.clientHeight) || 800
       setViewportHeight(nextHeight)
     })
     observer.observe(element)

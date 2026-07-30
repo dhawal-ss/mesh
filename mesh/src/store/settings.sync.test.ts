@@ -16,12 +16,13 @@ import {
 } from './settings'
 
 const remotePreferences = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   notificationsEnabled: true,
   notificationSound: true,
   mutedChannels: [],
   mutedCommunities: [],
   sendReadReceipts: false,
+  readReceiptMode: 'public',
   sendTypingIndicators: false,
   sharePresence: false,
   invisibleMode: false,
@@ -44,7 +45,7 @@ describe('Matrix preference sync state', () => {
     bridge.updateMatrixUserPreferences.mockResolvedValue(remotePreferences)
     useSettingsStore.setState({
       privacy: {
-        sendReadReceipts: false,
+        readReceiptMode: 'public',
         sendTypingIndicators: false,
         sharePresence: false,
         invisibleMode: false,

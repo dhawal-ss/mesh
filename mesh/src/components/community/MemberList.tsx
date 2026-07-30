@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { Avatar } from '../ui/Avatar'
 import { useActiveCommunity, useCommunityStore } from '../../store/communities'
 import { useIdentityStore } from '../../store/identity'
@@ -9,6 +10,7 @@ import { showToast } from '../ui/Toast'
 import { Icon } from '../ui/Icon'
 import { DropdownMenu, type MenuItem } from '../ui/InteractivePrimitives'
 import { EmptyState } from '../ui/Primitives'
+import { useVirtualScroll, type VirtualItem } from '../../hooks/useVirtualScroll'
 
 interface MemberEntry {
   publicKey: string
@@ -26,6 +28,9 @@ interface MemberListProps {
 }
 
 const ROLE_ORDER = { owner: 0, admin: 1, member: 2 } as const
+type MemberListEntry =
+  | { key: string; kind: 'heading'; label: string }
+  | { key: string; kind: 'member'; member: MemberEntry }
 
 export function MemberList({ isOpen, members, embedded = false }: MemberListProps) {
   const activeCommunityId = useCommunityStore((state) => state.activeCommunityId)
@@ -38,8 +43,6 @@ export function MemberList({ isOpen, members, embedded = false }: MemberListProp
   const upsertConversation = useDmStore((state) => state.upsertConversation)
   const setActiveConversation = useDmStore((state) => state.setActiveConversation)
   const setDmMode = useDmStore((state) => state.setDmMode)
-  if (!isOpen) return null
-
   const canModerate = activeCommunity?.role === 'owner' || activeCommunity?.role === 'admin'
   const canManageRoles = activeCommunity?.role === 'owner'
   const actions = activeCommunityId
@@ -85,16 +88,58 @@ export function MemberList({ isOpen, members, embedded = false }: MemberListProp
       }
     : undefined
 
-  const sorted = [...members].sort((a, b) => {
+  const sorted = useMemo(() => [...members].sort((a, b) => {
     const roleSort = ROLE_ORDER[a.role] - ROLE_ORDER[b.role]
     if (roleSort !== 0) return roleSort
     if (a.online !== b.online) return a.online ? -1 : 1
     return a.displayName.localeCompare(b.displayName)
-  })
+  }), [members])
 
   // Group: online vs offline, then by role within each
-  const online = sorted.filter((m) => m.online)
-  const offline = sorted.filter((m) => !m.online)
+  const { online, offline } = useMemo(() => ({
+    online: sorted.filter((member) => member.online),
+    offline: sorted.filter((member) => !member.online),
+  }), [sorted])
+  const listEntries = useMemo<MemberListEntry[]>(() => {
+    const entries: MemberListEntry[] = []
+    if (online.length > 0) {
+      entries.push({ key: 'heading:online', kind: 'heading', label: `Online — ${online.length}` })
+      for (const member of online) {
+        entries.push({ key: `member:${member.publicKey}`, kind: 'member', member })
+      }
+    }
+    if (offline.length > 0) {
+      entries.push({ key: 'heading:offline', kind: 'heading', label: `Offline — ${offline.length}` })
+      for (const member of offline) {
+        entries.push({ key: `member:${member.publicKey}`, kind: 'member', member })
+      }
+    }
+    return entries
+  }, [offline, online])
+  const virtualItems = useMemo<VirtualItem[]>(() => listEntries.map((entry) => ({
+    key: entry.key,
+    type: entry.kind === 'heading' ? 'gap' : 'message',
+    height: entry.kind === 'heading' ? 28 : 40,
+  })), [listEntries])
+  const {
+    scrollContainerRef,
+    topSpacerHeight,
+    bottomSpacerHeight,
+    visibleRange,
+    handleScroll,
+  } = useVirtualScroll(virtualItems, {
+    estimatedMessageHeight: 40,
+    estimatedGapHeight: 28,
+    overscanPx: 800,
+  })
+  const visibleEntries = useMemo(
+    () => listEntries.length === 0
+      ? []
+      : listEntries.slice(visibleRange.start, visibleRange.end + 1),
+    [listEntries, visibleRange.end, visibleRange.start],
+  )
+
+  if (!isOpen) return null
 
   return (
     <div
@@ -104,38 +149,53 @@ export function MemberList({ isOpen, members, embedded = false }: MemberListProp
           : 'mesh-member-list flex w-member-list flex-shrink-0 flex-col overflow-hidden bg-surface-sidebar'
       }
     >
-      <div className="flex-1 overflow-y-auto px-2 py-4">
-        {/* Online section */}
-        {online.length > 0 && (
-          <div className="mb-2">
-            <p className="px-2 pb-1 text-meta font-semibold uppercase text-muted">Online — {online.length}</p>
-            <div>
-              {online.map((member) => (
-                <MemberRow key={member.publicKey} member={member} actions={actions} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Offline section */}
-        {offline.length > 0 && (
-          <div className="mb-2">
-            <p className="px-2 pb-1 text-meta font-semibold uppercase text-muted">Offline — {offline.length}</p>
-            <div>
-              {offline.map((member) => (
-                <MemberRow key={member.publicKey} member={member} actions={actions} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {members.length === 0 && (
+      <div
+        ref={scrollContainerRef}
+        onScroll={() => void handleScroll()}
+        className="flex-1 overflow-y-auto px-2 py-4"
+        role="list"
+        aria-label="Community members"
+      >
+        {members.length === 0 ? (
           <EmptyState
             variant="compact"
             icon={<Icon name="users" size="lg" />}
             title="No members yet"
             description="People who join will appear here."
           />
+        ) : (
+          <div
+            data-design-token-exception="data-driven-virtual-spacer-geometry"
+            style={{
+              paddingTop: `${topSpacerHeight}px`,
+              paddingBottom: `${bottomSpacerHeight}px`,
+            }}
+          >
+            {visibleEntries.map((entry, visibleIndex) => entry.kind === 'heading' ? (
+              <div
+                key={entry.key}
+                role="listitem"
+                aria-posinset={visibleRange.start + visibleIndex + 1}
+                aria-setsize={listEntries.length}
+              >
+                <p
+                  role="heading"
+                  aria-level={3}
+                  className="flex h-7 items-end px-2 pb-1 text-meta font-semibold uppercase text-muted"
+                >
+                  {entry.label}
+                </p>
+              </div>
+            ) : (
+              <MemberRow
+                key={entry.key}
+                member={entry.member}
+                actions={actions}
+                position={visibleRange.start + visibleIndex + 1}
+                setSize={listEntries.length}
+              />
+            ))}
+          </div>
         )}
       </div>
     </div>
@@ -145,8 +205,12 @@ export function MemberList({ isOpen, members, embedded = false }: MemberListProp
 function MemberRow({
   member,
   actions,
+  position,
+  setSize,
 }: {
   member: MemberEntry
+  position: number
+  setSize: number
   actions?: {
     currentUserId?: string | null
     canModerate: boolean
@@ -194,6 +258,9 @@ function MemberRow({
 
   return (
     <div
+      role="listitem"
+      aria-posinset={position}
+      aria-setsize={setSize}
       className={`group flex min-h-10 items-center gap-3 rounded-control px-2 transition-colors hover:bg-surface-hover focus-within:bg-surface-hover ${
         !member.online ? 'opacity-40' : ''
       }`}

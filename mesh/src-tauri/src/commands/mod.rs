@@ -20,6 +20,7 @@ pub mod migration;
 #[cfg(feature = "legacy-p2p")]
 pub mod moderation;
 pub mod notifications;
+pub mod pending_invitation;
 #[cfg(feature = "legacy-p2p")]
 pub mod permissions;
 #[cfg(feature = "legacy-p2p")]

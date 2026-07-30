@@ -236,10 +236,12 @@ describe('W2.3 primitive library', () => {
 
     await act(async () => {
       menu?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-      await new Promise((resolve) => window.setTimeout(resolve, 20))
+      await Promise.resolve()
     })
-    expect(document.querySelector('[role="menu"][aria-label="Message actions"]')).toBeNull()
-    expect(document.activeElement).toBe(trigger)
+    await vi.waitFor(() => {
+      expect(document.querySelector('[role="menu"][aria-label="Message actions"]')).toBeNull()
+      expect(document.activeElement).toBe(trigger)
+    })
   })
 
   it('opens the combobox on ArrowDown and activates the first enabled option', () => {
