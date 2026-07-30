@@ -19,6 +19,14 @@ pub struct DmConversationDto {
     pub created_at: String,
 }
 
+/// A person whose public Matrix read receipt covers a direct message.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadReceiptDto {
+    pub user_id: String,
+    pub display_name: String,
+}
+
 /// A direct message.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -36,6 +44,8 @@ pub struct DirectMessageDto {
     #[serde(default)]
     #[ts(type = "Record<string, string[]>")]
     pub reactions: HashMap<String, Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seen_by: Option<Vec<ReadReceiptDto>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "string | null")]
     pub edited_at: Option<String>,

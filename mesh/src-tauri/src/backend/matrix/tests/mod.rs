@@ -441,6 +441,30 @@ fn wire_privacy_presence_requires_sharing_without_invisible_mode() {
 }
 
 #[test]
+fn wire_privacy_defaults_to_read_receipts_off() {
+    assert_eq!(
+        WirePrivacyPreferences::default().read_receipt_mode,
+        ReadReceiptMode::Off
+    );
+    assert_eq!(
+        WirePrivacyPreferences {
+            read_receipt_mode: ReadReceiptMode::Private,
+            ..WirePrivacyPreferences::default()
+        }
+        .read_receipt_mode,
+        ReadReceiptMode::Private
+    );
+    assert_eq!(
+        WirePrivacyPreferences {
+            read_receipt_mode: ReadReceiptMode::Off,
+            ..WirePrivacyPreferences::default()
+        }
+        .read_receipt_mode,
+        ReadReceiptMode::Off
+    );
+}
+
+#[test]
 fn typing_privacy_only_sends_opt_in_or_required_cleanup() {
     let private = WirePrivacyPreferences::default();
     let opted_in = WirePrivacyPreferences {

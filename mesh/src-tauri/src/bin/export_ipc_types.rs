@@ -7,12 +7,12 @@ use mesh_lib::backend::{
     MatrixRoomPins, MatrixRoomPinsUpdate, MatrixRtcJoinResult, MatrixRtcMediaKey,
     MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember,
     MatrixRtcMembershipUpdate, MatrixUnreadUpdate, ModerationAuditEntry, ModerationRoomOutcome,
-    NotificationPresentationContext, PendingInvitationMetadata, UserPreferences, VoiceProvider,
-    VoiceServiceAvailability, VoiceServiceStatus,
+    NotificationPresentationContext, PendingInvitationMetadata, ReadReceiptMode, UserPreferences,
+    VoiceProvider, VoiceServiceAvailability, VoiceServiceStatus,
 };
 use mesh_lib::types::{
     community::{ChannelDto, CommunityDto},
-    dm::{DirectMessageDto, DmConversationDto},
+    dm::{DirectMessageDto, DmConversationDto, ReadReceiptDto},
     identity::IdentityDto,
     message::{
         AttachmentDto, AttachmentThumbnailDto, MessageDto, UndecryptableMessageDto,
@@ -60,6 +60,7 @@ fn generated_contract() -> String {
     output.push_str(&declaration::<MatrixRtcMediaKeyLease>());
     output.push_str(&declaration::<MatrixRtcJoinResult>());
     output.push_str(&declaration::<NotificationPresentationContext>());
+    output.push_str(&declaration::<ReadReceiptMode>());
     output.push_str(&declaration::<UserPreferences>());
     output.push_str(&declaration::<CustomEmoji>());
     output.push_str(&declaration::<ModerationRoomOutcome>());
@@ -76,6 +77,7 @@ fn generated_contract() -> String {
     output.push_str(&declaration::<UndecryptableMessageDto>());
     output.push_str(&declaration::<MessageDto>());
     output.push_str(&declaration::<DmConversationDto>());
+    output.push_str(&declaration::<ReadReceiptDto>());
     output.push_str(&declaration::<DirectMessageDto>());
     output.push_str(&declaration::<PeerDto>());
     output.push_str(&declaration::<NetworkStatusDto>());

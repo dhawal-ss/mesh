@@ -180,6 +180,30 @@ describe('DmView message containment', () => {
     )
   })
 
+  it('shows public read receipts on messages sent by the local user', async () => {
+    vi.mocked(bridge.isMatrixBackend).mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@me:example.org')
+    vi.spyOn(bridge, 'getDmMessages').mockResolvedValue([
+      {
+        ...directMessage('$me-event:example.org', 'Message the peer has read'),
+        authorPublicKey: '@me:example.org',
+        seenBy: [{ userId: '@peer:example.org', displayName: 'Peer' }],
+      },
+    ])
+    vi.spyOn(bridge, 'matrixDmBlocked').mockResolvedValue(false)
+    vi.spyOn(bridge, 'matrixRoomIsEncrypted').mockResolvedValue(true)
+    vi.spyOn(bridge, 'matrixWaitForRoomUpdate').mockReturnValue(new Promise(() => {}))
+
+    await act(async () => {
+      root.render(<DmView />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Seen by Peer')
+    expect(container.querySelector('[aria-label="Seen by Peer"]')).not.toBeNull()
+  })
+
   it('keeps a five-thousand-message conversation DOM bounded', async () => {
     const messages = Array.from({ length: 5_000 }, (_, index) => ({
       ...directMessage(`event-${index}`, `Message ${index}`),

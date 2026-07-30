@@ -59,11 +59,13 @@ export interface BackupPreferences {
 }
 
 export interface PrivacyPreferences {
-  sendReadReceipts: boolean
+  readReceiptMode: ReadReceiptMode
   sendTypingIndicators: boolean
   sharePresence: boolean
   invisibleMode: boolean
 }
+
+export type ReadReceiptMode = 'public' | 'private' | 'off'
 
 export type MatrixPreferenceSyncStatus = 'idle' | 'saving' | 'saved' | 'failed'
 
@@ -97,7 +99,7 @@ const DEFAULT_NOTIFICATIONS: NotificationPreferences = {
   channelNotificationLevels: {},
 }
 const DEFAULT_PRIVACY: PrivacyPreferences = {
-  sendReadReceipts: false,
+  readReceiptMode: 'off',
   sendTypingIndicators: false,
   sharePresence: false,
   invisibleMode: false,
@@ -123,6 +125,7 @@ const APPEARANCE_ACCENTS = new Set<AppearanceAccent>([
 ])
 const NOTIFICATION_SOUNDS = new Set<NotificationSoundId>(['mesh', 'chime', 'pulse', 'soft'])
 const NOTIFICATION_LEVELS = new Set<NotificationLevel>(['all', 'mentions', 'nothing'])
+const READ_RECEIPT_MODES = new Set<ReadReceiptMode>(['public', 'private', 'off'])
 const WALL_CLOCK_TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/
 
 type ExtendedMatrixUserPreferences = MatrixUserPreferences & {
@@ -252,10 +255,17 @@ function normalizeAppearancePreferences(
 }
 
 export function normalizePrivacyPreferences(
-  preferences: Partial<PrivacyPreferences> | undefined,
+  preferences:
+    | (Partial<PrivacyPreferences> & { sendReadReceipts?: boolean })
+    | undefined,
 ): PrivacyPreferences {
+  const mode = preferences?.readReceiptMode
   return {
-    sendReadReceipts: preferences?.sendReadReceipts ?? DEFAULT_PRIVACY.sendReadReceipts,
+    readReceiptMode: READ_RECEIPT_MODES.has(mode as ReadReceiptMode)
+      ? (mode as ReadReceiptMode)
+      : preferences?.sendReadReceipts === true
+        ? 'private'
+        : DEFAULT_PRIVACY.readReceiptMode,
     sendTypingIndicators:
       preferences?.sendTypingIndicators ?? DEFAULT_PRIVACY.sendTypingIndicators,
     sharePresence: preferences?.sharePresence ?? DEFAULT_PRIVACY.sharePresence,
@@ -297,6 +307,8 @@ export function matrixPreferencesToPrivacy(
   preferences: MatrixUserPreferences,
 ): PrivacyPreferences {
   return normalizePrivacyPreferences({
+    readReceiptMode:
+      preferences.readReceiptMode === null ? undefined : preferences.readReceiptMode,
     sendReadReceipts: preferences.sendReadReceipts,
     sendTypingIndicators: preferences.sendTypingIndicators,
     sharePresence: preferences.sharePresence,
@@ -322,7 +334,10 @@ function settingsToMatrixPreferences(
     mutedChannelUntil: notifications.channelMuteUntil,
     mutedCommunityUntil: notifications.communityMuteUntil,
     channelNotificationLevels: notifications.channelNotificationLevels,
-    sendReadReceipts: privacy.sendReadReceipts,
+    // Keep the legacy boolean populated for older Mesh clients. Their true
+    // value means private-only; newer clients use readReceiptMode below.
+    sendReadReceipts: privacy.readReceiptMode === 'private',
+    readReceiptMode: privacy.readReceiptMode,
     sendTypingIndicators: privacy.sendTypingIndicators,
     sharePresence: privacy.sharePresence,
     invisibleMode: privacy.invisibleMode,
@@ -347,7 +362,7 @@ export interface SettingsStore {
   setBackupConfigured: (configured: boolean) => void
   scheduleBackupReminder: () => void
   dismissBackupReminder: () => void
-  setSendReadReceipts: (enabled: boolean) => void
+  setReadReceiptMode: (mode: ReadReceiptMode) => void
   setSendTypingIndicators: (enabled: boolean) => void
   setSharePresence: (enabled: boolean) => void
   setInvisibleMode: (enabled: boolean) => void
@@ -531,8 +546,8 @@ export const useSettingsStore = create<SettingsStore>()(
           },
         })),
 
-      setSendReadReceipts: (sendReadReceipts) =>
-        set((state) => ({ privacy: { ...state.privacy, sendReadReceipts } })),
+      setReadReceiptMode: (readReceiptMode) =>
+        set((state) => ({ privacy: { ...state.privacy, readReceiptMode } })),
 
       setSendTypingIndicators: (sendTypingIndicators) =>
         set((state) => ({ privacy: { ...state.privacy, sendTypingIndicators } })),

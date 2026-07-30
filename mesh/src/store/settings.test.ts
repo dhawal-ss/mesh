@@ -68,18 +68,24 @@ describe('Matrix preference projection', () => {
     })
   })
 
-  it('preserves explicit wire opt-ins while defaulting absent settings to private', () => {
+  it('preserves explicit receipt modes while defaulting absent settings to off', () => {
     expect(matrixPreferencesToPrivacy(matrixPreferences)).toEqual({
-      sendReadReceipts: false,
+      readReceiptMode: 'off',
       sendTypingIndicators: true,
       sharePresence: true,
       invisibleMode: false,
     })
     expect(normalizePrivacyPreferences(undefined)).toEqual({
-      sendReadReceipts: false,
+      readReceiptMode: 'off',
       sendTypingIndicators: false,
       sharePresence: false,
       invisibleMode: false,
+    })
+    expect(normalizePrivacyPreferences({ sendReadReceipts: true })).toMatchObject({
+      readReceiptMode: 'private',
+    })
+    expect(normalizePrivacyPreferences({ readReceiptMode: 'public' })).toMatchObject({
+      readReceiptMode: 'public',
     })
   })
 })
@@ -198,13 +204,13 @@ describe('privacy settings actions', () => {
 
   it('updates each wire-level privacy control independently', () => {
     const store = useSettingsStore.getState()
-    store.setSendReadReceipts(true)
+    store.setReadReceiptMode('private')
     store.setSendTypingIndicators(false)
     store.setSharePresence(false)
     store.setInvisibleMode(true)
 
     expect(useSettingsStore.getState().privacy).toEqual({
-      sendReadReceipts: true,
+      readReceiptMode: 'private',
       sendTypingIndicators: false,
       sharePresence: false,
       invisibleMode: true,
