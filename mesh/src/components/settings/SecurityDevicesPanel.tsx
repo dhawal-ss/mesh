@@ -7,6 +7,7 @@ import { EmptyState } from '../ui/Primitives'
 import { StatusDot } from '../ui/StatusDot'
 import * as bridge from '../../lib/bridge'
 import { describeError } from '../../lib/errors'
+import { clearRegistrationContinuation } from '../../lib/registration-continuation'
 
 interface SecurityDevicesPanelProps {
   open: boolean
@@ -223,6 +224,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
     setError(null)
     try {
       await bridge.matrixRemoveLocalAccount()
+      clearRegistrationContinuation()
       setLocalRemovalPhrase('')
       setLocalRemovalAcknowledged(false)
       onClose()
@@ -896,7 +898,8 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
             <p className="text-sm font-medium text-primary">Account on this device</p>
             <p className="mt-1 text-xs leading-5 text-muted">
               Sign out removes this account from Mesh but keeps downloaded messages on this device. Removing the account
-              also deletes Mesh account data saved here.
+              also deletes only this account's Mesh data saved here. Neither action deletes the account at its service
+              or erases message history already shared with other people and services.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">

@@ -27,6 +27,7 @@ pub const MATRIX_RTC_MEMBERSHIP_EVENT: &str = "matrix:rtc-membership";
 pub const MATRIX_RTC_MEDIA_KEY_EVENT: &str = "matrix:rtc-media-key";
 pub const MATRIX_RTC_MEDIA_KEY_FAILURE_EVENT: &str = "matrix:rtc-media-key-failure";
 pub const MATRIX_RTC_MEDIA_KEY_PAUSE_EVENT: &str = "matrix:rtc-media-key-pause";
+pub const MATRIX_PERMISSION_STATE_CHANGED_EVENT: &str = "matrix:permission-state-changed";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -172,6 +173,104 @@ pub struct MatrixUnreadUpdate {
     pub unread_mentions: i64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum MatrixPermissionRoomStatus {
+    Loaded,
+    MatrixDefault,
+    Inaccessible,
+    Unsupported,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum CommunityPermissionAggregateStatus {
+    GrantedEverywhere,
+    GrantedSomeRooms,
+    NotGranted,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum CommunityPermissionId {
+    Participate,
+    Invite,
+    Redact,
+    Remove,
+    Ban,
+    RoomState,
+    Roles,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixRoomPowerLevelProjection {
+    #[ts(type = "{ [key in string]?: number }")]
+    pub users: std::collections::BTreeMap<String, i64>,
+    #[ts(type = "number")]
+    pub users_default: i64,
+    #[ts(type = "{ [key in string]?: number }")]
+    pub events: std::collections::BTreeMap<String, i64>,
+    #[ts(type = "number")]
+    pub events_default: i64,
+    #[ts(type = "number")]
+    pub state_default: i64,
+    #[ts(type = "number")]
+    pub ban: i64,
+    #[ts(type = "number")]
+    pub kick: i64,
+    #[ts(type = "number")]
+    pub invite: i64,
+    #[ts(type = "number")]
+    pub redact: i64,
+    #[ts(type = "{ [key in string]?: number }")]
+    pub notifications: std::collections::BTreeMap<String, i64>,
+    pub creator_user_ids: Vec<String>,
+    pub privileged_creator_user_ids: Vec<String>,
+    pub joined_user_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixRoomPermissionProjection {
+    pub room_id: String,
+    pub room_name: String,
+    #[ts(type = "\"space\" | \"room\"")]
+    pub room_kind: String,
+    pub status: MatrixPermissionRoomStatus,
+    pub policy: Option<MatrixRoomPowerLevelProjection>,
+    pub failure_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunityPermissionAggregate {
+    pub permission_id: CommunityPermissionId,
+    pub status: CommunityPermissionAggregateStatus,
+    pub granted_room_count: usize,
+    pub verified_room_count: usize,
+    pub total_room_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunityPermissionProjection {
+    pub community_id: String,
+    pub subject_user_id: String,
+    pub discovery_complete: bool,
+    pub discovery_failure_reason: Option<String>,
+    pub rooms: Vec<MatrixRoomPermissionProjection>,
+    pub aggregate: Vec<CommunityPermissionAggregate>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixPermissionStateChanged {
+    pub room_id: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct MatrixRoomUpgrade {
@@ -214,6 +313,7 @@ pub enum MatrixBackendEvent {
     RtcMediaKey(MatrixRtcMediaKey),
     RtcMediaKeyFailure(MatrixRtcMediaKeyFailure),
     RtcMediaKeyPause(MatrixRtcMediaKeyPause),
+    PermissionStateChanged(MatrixPermissionStateChanged),
 }
 
 pub type MatrixBackendEventCallback = Arc<dyn Fn(MatrixBackendEvent) + Send + Sync>;
@@ -1681,6 +1781,13 @@ pub trait MeshBackend: Send + Sync {
         _description: String,
     ) -> BackendResult<()> {
         Err(BackendError::Unsupported("community metadata"))
+    }
+    async fn community_permission_projection(
+        &self,
+        _community_id: String,
+        _subject_user_id: String,
+    ) -> BackendResult<CommunityPermissionProjection> {
+        Err(BackendError::Unsupported("community permission projection"))
     }
     async fn update_member_role(
         &self,

@@ -3,7 +3,10 @@ param(
     [switch]$Production,
     [switch]$Online,
     [string]$EnvironmentFile,
-    [string]$WellKnownFile
+    [string]$WellKnownFile,
+    [string]$AcceptanceEvidenceFile,
+    [string]$EvidenceRoot,
+    [switch]$RequireLiveAcceptance
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,12 +15,22 @@ $repoRoot = Split-Path -Parent $scriptRoot
 $infraRoot = Join-Path $repoRoot "infra\matrixrtc"
 $composePath = Join-Path $infraRoot "docker-compose.yml"
 $nginxPath = Join-Path $infraRoot "nginx.example.conf"
+$runbookPath = Join-Path $infraRoot "RUNBOOK.rst"
+$acceptanceTemplatePath = Join-Path $infraRoot "acceptance-matrix.example.json"
+$evidenceModulePath = Join-Path $infraRoot "MatrixRtcEvidence.psm1"
+$sourceRoot = Split-Path -Parent $repoRoot
+Import-Module $evidenceModulePath -Force
 
 if (-not $EnvironmentFile) {
     $EnvironmentFile = Join-Path $infraRoot ".env.example"
 }
 if (-not $WellKnownFile) {
     $WellKnownFile = Join-Path $infraRoot "well-known.matrix-client.example.json"
+}
+if (-not $AcceptanceEvidenceFile) {
+    $AcceptanceEvidenceFile = $acceptanceTemplatePath
+} elseif (-not [IO.Path]::IsPathRooted($AcceptanceEvidenceFile)) {
+    $AcceptanceEvidenceFile = Join-Path $repoRoot $AcceptanceEvidenceFile
 }
 
 $failures = [System.Collections.Generic.List[string]]::new()
@@ -89,7 +102,15 @@ function Test-MatrixServerName([string]$Value) {
     return -not $portMatch.Success -or [int]$portMatch.Groups[1].Value -le 65535
 }
 
-foreach ($path in @($composePath, $nginxPath, $EnvironmentFile, $WellKnownFile)) {
+foreach ($path in @(
+    $composePath,
+    $nginxPath,
+    $runbookPath,
+    $evidenceModulePath,
+    $EnvironmentFile,
+    $WellKnownFile,
+    $AcceptanceEvidenceFile
+)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         Add-Failure "Required file does not exist: $path"
     }
@@ -178,6 +199,44 @@ if (Test-Path -LiteralPath $nginxPath) {
     if ($failures.Count -eq $nginxFailureCount) {
         Add-Pass "Reverse-proxy routes include bounded auth traffic and WebSocket signalling."
     }
+}
+
+if (Test-Path -LiteralPath $runbookPath) {
+    $runbookFailureCount = $failures.Count
+    $runbook = Get-Content -LiteralPath $runbookPath -Raw
+    foreach ($requiredRunbookText in @(
+        "LIVEKIT_API_KEY",
+        "LIVEKIT_API_SECRET",
+        "--force-recreate",
+        "matrixrtc-preflight.ps1",
+        "operator-smoke.ps1",
+        "MESH_RTC_ENABLED=0",
+        "no uptime",
+        "SLA"
+    )) {
+        if ($runbook -notmatch [regex]::Escape($requiredRunbookText)) {
+            Add-Failure "MatrixRTC runbook is missing required procedure text: $requiredRunbookText"
+        }
+    }
+    if ($failures.Count -eq $runbookFailureCount) {
+        Add-Pass "MatrixRTC restart, secret-rotation, rollback, and fail-closed runbook is present."
+    }
+}
+
+$evidenceValidation = Test-MatrixRtcAcceptanceEvidence `
+    -Path $AcceptanceEvidenceFile `
+    -EvidenceRoot $EvidenceRoot `
+    -SourceRoot $sourceRoot `
+    -TrackedTemplatePath $acceptanceTemplatePath `
+    -RequireComplete:$RequireLiveAcceptance
+foreach ($message in $evidenceValidation.Passes) {
+    Add-Pass $message
+}
+foreach ($message in $evidenceValidation.Failures) {
+    Add-Failure $message
+}
+if ($RequireLiveAcceptance -and (-not $Production -or -not $Online)) {
+    Add-Failure "-RequireLiveAcceptance requires both -Production and -Online."
 }
 
 $environment = Get-EnvironmentMap $EnvironmentFile
@@ -436,5 +495,5 @@ if ($Production -and $Online) {
 } elseif ($Production) {
     Write-Host "MatrixRTC single-node operator configuration passed offline beta preflight. Run again with -Online after deployment; resilience is not certified." -ForegroundColor Green
 } else {
-    Write-Host "MatrixRTC tracked templates passed offline preflight. This does not authorize production deployment." -ForegroundColor Green
+    Write-Host "MatrixRTC configuration validated; no live evidence collected. This does not authorize production deployment." -ForegroundColor Green
 }

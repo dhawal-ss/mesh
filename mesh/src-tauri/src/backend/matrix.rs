@@ -52,10 +52,14 @@ use matrix_sdk::{
                     AuthorizationServerMetadata, CodeChallengeMethod, GrantType, ResponseMode,
                     ResponseType,
                 },
+                presence::set_presence::v3::Request as SetPresenceRequest,
                 push::{delete_pushrule, get_pushrules_all, set_pushrule},
                 receipt::create_receipt::v3::ReceiptType as MatrixReceiptType,
                 room::{
-                    create_room::v3::{CreationContent, Request as CreateRoomRequest, RoomPreset},
+                    create_room::{
+                        v3::{CreationContent, Request as CreateRoomRequest, RoomPreset},
+                        RoomPowerLevelsContentOverride,
+                    },
                     Visibility,
                 },
                 rtc::{transports::v1::Request as MatrixRtcTransportsRequest, RtcTransport},
@@ -86,11 +90,15 @@ use matrix_sdk::{
                     RoomMessageEventContent, RoomMessageEventContentWithoutRelation,
                 },
                 pinned_events::{OriginalSyncRoomPinnedEventsEvent, RoomPinnedEventsEventContent},
+                power_levels::OriginalSyncRoomPowerLevelsEvent,
                 tombstone::RoomTombstoneEventContent,
                 EncryptedFile, EncryptedFileHash, EncryptedFileHashAlgorithm, ImageInfo,
                 MediaSource, ThumbnailInfo,
             },
-            space::{child::SpaceChildEventContent, parent::SpaceParentEventContent},
+            space::{
+                child::{OriginalSyncSpaceChildEvent, SpaceChildEventContent},
+                parent::SpaceParentEventContent,
+            },
             typing::SyncTypingEvent,
             AnyGlobalAccountDataEventContent, AnyInitialStateEvent, AnyMessageLikeEventContent,
             AnyStateEvent, AnyStateEventContent, AnyToDeviceEvent, AnyToDeviceEventContent,
@@ -140,9 +148,10 @@ use crate::types::{
 use super::{
     BackendError, BackendKind, BackendResult, BackendStatus, CommunityAccessResult,
     CommunityAccessSettings, CommunityApplication, CommunityDirectoryEntry, CommunityMember,
-    CreatedCommunity, CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest, MatrixBackendEvent,
-    MatrixBackendEventCallback, MatrixDevice, MatrixLogin, MatrixNotification,
-    MatrixOidcAvailability, MatrixOidcStatus, MatrixPersonalDataExport, MatrixProfile,
+    CommunityPermissionProjection, CreatedCommunity, CustomEmoji, MatrixAccount,
+    MatrixAttachmentSendRequest, MatrixBackendEvent, MatrixBackendEventCallback, MatrixDevice,
+    MatrixLogin, MatrixNotification, MatrixOidcAvailability, MatrixOidcStatus,
+    MatrixPermissionStateChanged, MatrixPersonalDataExport, MatrixProfile,
     MatrixQueuedMessageState, MatrixQueuedMessageUpdate, MatrixRecoveryHealth, MatrixRegistration,
     MatrixRegistrationAvailability, MatrixRoomNotificationMode, MatrixRoomPins,
     MatrixRoomPinsUpdate, MatrixRoomUpgrade, MatrixRtcJoinResult, MatrixRtcMediaKey,
@@ -158,6 +167,10 @@ use super::{
 mod moderation;
 mod oidc;
 use moderation::MatrixModerationAction;
+use oidc::configuration::{
+    NativeOidcCapabilities, OidcClientRegistration, OidcClientRegistry, OidcRegistrationError,
+    NATIVE_REDIRECT_URI,
+};
 
 const SESSION_KEY: &str = "matrix-session-v1";
 const STORE_PASSPHRASE_KEY: &str = "matrix-store-passphrase-v1";
@@ -175,8 +188,6 @@ const COMMUNITY_SERVER_NAME_ENV: &str = "MESH_COMMUNITY_SERVER_NAME";
 const LOGIN_TIMEOUT_SECONDS: u64 = 45;
 const SESSION_RESTORE_SYNC_TIMEOUT_SECONDS: u64 = 10;
 const REGISTRATION_TIMEOUT_SECONDS: u64 = 45;
-const OIDC_REDIRECT_URI: &str = "http://127.0.0.1:8418/oauth/callback";
-const OIDC_CLIENT_ID_ENV: &str = "MESH_OAUTH_CLIENT_ID";
 const MAX_COMPOSER_DRAFT_BYTES: usize = 16 * 1024;
 const CLIENT_REQUEST_ID_KEY: &str = "org.mesh.client_request_id";
 const MAX_MEDIA_CACHE_BYTES: u64 = 512 * 1024 * 1024;
@@ -1996,87 +2007,32 @@ impl MatrixBackend {
         }
     }
 
-    fn configured_oidc_client_id() -> Result<Option<String>, String> {
-        let Some(value) = std::env::var_os(OIDC_CLIENT_ID_ENV) else {
-            return Ok(None);
-        };
-        let value = value
-            .into_string()
-            .map_err(|_| format!("{OIDC_CLIENT_ID_ENV} must be valid UTF-8"))?;
-        Self::normalize_oidc_client_id(Some(value))
-    }
-
-    fn normalize_oidc_client_id(value: Option<String>) -> Result<Option<String>, String> {
-        let Some(value) = value else {
-            return Ok(None);
-        };
-        let value = value.trim();
-        if value.is_empty() {
-            return Ok(None);
-        }
-        if value.len() > 512 || value.chars().any(char::is_control) {
-            return Err(format!(
-                "{OIDC_CLIENT_ID_ENV} must be 1-512 characters and contain no control characters"
-            ));
-        }
-        Ok(Some(value.to_owned()))
-    }
-
-    fn oidc_metadata_supports_native_flow(metadata: &AuthorizationServerMetadata) -> bool {
-        Self::has_required_oidc_capabilities(
-            metadata
+    fn native_oidc_capabilities(metadata: &AuthorizationServerMetadata) -> NativeOidcCapabilities {
+        NativeOidcCapabilities {
+            code_response: metadata
                 .response_types_supported
                 .contains(&ResponseType::Code),
-            metadata
+            query_response_mode: metadata
                 .response_modes_supported
                 .contains(&ResponseMode::Query),
-            metadata
+            authorization_code_grant: metadata
                 .grant_types_supported
                 .contains(&GrantType::AuthorizationCode),
-            metadata
+            refresh_token_grant: metadata
                 .grant_types_supported
                 .contains(&GrantType::RefreshToken),
-            metadata
+            s256_pkce: metadata
                 .code_challenge_methods_supported
                 .contains(&CodeChallengeMethod::S256),
-        )
+        }
     }
 
-    fn has_required_oidc_capabilities(
-        code_response: bool,
-        query_response_mode: bool,
-        authorization_code_grant: bool,
-        refresh_token_grant: bool,
-        s256_pkce: bool,
-    ) -> bool {
-        code_response
-            && query_response_mode
-            && authorization_code_grant
-            && refresh_token_grant
-            && s256_pkce
-    }
-
-    async fn discover_oidc(&self, homeserver: String) -> BackendResult<MatrixOidcStatus> {
+    async fn discover_oidc_registration(
+        &self,
+        homeserver: String,
+    ) -> BackendResult<(MatrixOidcStatus, Option<OidcClientRegistration>)> {
         let homeserver = Self::normalize_homeserver_input(&homeserver)?;
-        let redirect_uri = OIDC_REDIRECT_URI.to_owned();
-        let configured_client_id = match Self::configured_oidc_client_id() {
-            Ok(client_id) => client_id,
-            Err(reason) => {
-                return Ok(MatrixOidcStatus {
-                    homeserver,
-                    availability: MatrixOidcAvailability::InvalidConfiguration,
-                    issuer: None,
-                    authorization_endpoint: None,
-                    registration_mode: None,
-                    client_id_configured: false,
-                    redirect_uri,
-                    authorization_code_pkce: false,
-                    native_callback_ready: false,
-                    ready: false,
-                    reason,
-                });
-            }
-        };
+        let redirect_uri = NATIVE_REDIRECT_URI.to_owned();
 
         // Discovery deliberately uses a storeless client. Merely checking
         // whether browser sign-in is available must not create an encrypted
@@ -2091,81 +2047,118 @@ impl MatrixBackend {
         let metadata = match client.oauth().server_metadata().await {
             Ok(metadata) => metadata,
             Err(error) if error.is_not_supported() => {
-                return Ok(MatrixOidcStatus {
-                    homeserver: resolved_homeserver,
-                    availability: MatrixOidcAvailability::NotSupported,
-                    issuer: None,
-                    authorization_endpoint: None,
-                    registration_mode: None,
-                    client_id_configured: configured_client_id.is_some(),
-                    redirect_uri,
-                    authorization_code_pkce: false,
-                    native_callback_ready: false,
-                    ready: false,
-                    reason: "This homeserver does not advertise Matrix OAuth/OIDC metadata".into(),
-                });
+                return Ok((
+                    MatrixOidcStatus {
+                        homeserver: resolved_homeserver,
+                        availability: MatrixOidcAvailability::NotSupported,
+                        issuer: None,
+                        authorization_endpoint: None,
+                        registration_mode: None,
+                        client_id_configured: false,
+                        redirect_uri,
+                        authorization_code_pkce: false,
+                        native_callback_ready: false,
+                        ready: false,
+                        reason: "This homeserver does not advertise Matrix OAuth/OIDC metadata"
+                            .into(),
+                    },
+                    None,
+                ));
             }
             Err(error) => {
-                return Ok(MatrixOidcStatus {
+                return Ok((
+                    MatrixOidcStatus {
+                        homeserver: resolved_homeserver,
+                        availability: MatrixOidcAvailability::InvalidConfiguration,
+                        issuer: None,
+                        authorization_endpoint: None,
+                        registration_mode: None,
+                        client_id_configured: false,
+                        redirect_uri,
+                        authorization_code_pkce: false,
+                        native_callback_ready: false,
+                        ready: false,
+                        reason: format!("OAuth/OIDC metadata could not be validated: {error}"),
+                    },
+                    None,
+                ));
+            }
+        };
+        let issuer = metadata.issuer.to_string();
+        let authorization_endpoint = metadata.authorization_endpoint.to_string();
+        let capabilities = Self::native_oidc_capabilities(&metadata);
+        if let Err(error) = capabilities.require_all(&issuer) {
+            return Ok((
+                MatrixOidcStatus {
                     homeserver: resolved_homeserver,
                     availability: MatrixOidcAvailability::InvalidConfiguration,
-                    issuer: None,
-                    authorization_endpoint: None,
+                    issuer: Some(issuer),
+                    authorization_endpoint: Some(authorization_endpoint),
                     registration_mode: None,
-                    client_id_configured: configured_client_id.is_some(),
+                    client_id_configured: false,
                     redirect_uri,
                     authorization_code_pkce: false,
                     native_callback_ready: false,
                     ready: false,
-                    reason: format!("OAuth/OIDC metadata could not be validated: {error}"),
-                });
-            }
-        };
-        if !Self::oidc_metadata_supports_native_flow(&metadata) {
-            return Ok(MatrixOidcStatus {
-                homeserver: resolved_homeserver,
-                availability: MatrixOidcAvailability::InvalidConfiguration,
-                issuer: Some(metadata.issuer.to_string()),
-                authorization_endpoint: Some(metadata.authorization_endpoint.to_string()),
-                registration_mode: None,
-                client_id_configured: configured_client_id.is_some(),
-                redirect_uri,
-                authorization_code_pkce: false,
-                native_callback_ready: false,
-                ready: false,
-                reason: "OAuth/OIDC metadata must explicitly include response type code, response mode query, authorization_code and refresh_token grants, and S256 PKCE".into(),
-            });
+                    reason: error.to_string(),
+                },
+                None,
+            ));
         }
 
-        let registration_mode = if configured_client_id.is_some() {
-            Some("static".into())
-        } else if metadata.registration_endpoint.is_some() {
-            Some("dynamic".into())
-        } else {
-            None
-        };
-        let ready = configured_client_id.is_some();
-        let registration_reason = if ready {
-            "Continue with Mesh is ready for this provider".to_owned()
-        } else {
-            format!(
-                "An operator must register {OIDC_REDIRECT_URI} and set {OIDC_CLIENT_ID_ENV}; Mesh does not use dynamic client registration"
-            )
+        let registration = OidcClientRegistry::from_embedded_build_configuration()
+            .and_then(|registry| registry.resolve(&metadata.issuer, capabilities).cloned());
+        let registration = match registration {
+            Ok(registration) => registration,
+            Err(error) => {
+                let availability = match &error {
+                    OidcRegistrationError::MissingConfiguration
+                    | OidcRegistrationError::MissingIssuerRegistration { .. } => {
+                        MatrixOidcAvailability::Supported
+                    }
+                    _ => MatrixOidcAvailability::InvalidConfiguration,
+                };
+                return Ok((
+                    MatrixOidcStatus {
+                        homeserver: resolved_homeserver,
+                        availability,
+                        issuer: Some(issuer),
+                        authorization_endpoint: Some(authorization_endpoint),
+                        registration_mode: None,
+                        client_id_configured: false,
+                        redirect_uri,
+                        authorization_code_pkce: true,
+                        native_callback_ready: true,
+                        ready: false,
+                        reason: error.to_string(),
+                    },
+                    None,
+                ));
+            }
         };
 
-        Ok(MatrixOidcStatus {
-            homeserver: resolved_homeserver,
-            availability: MatrixOidcAvailability::Supported,
-            issuer: Some(metadata.issuer.to_string()),
-            authorization_endpoint: Some(metadata.authorization_endpoint.to_string()),
-            registration_mode,
-            client_id_configured: configured_client_id.is_some(),
-            redirect_uri,
-            authorization_code_pkce: true,
-            native_callback_ready: true,
-            ready,
-            reason: registration_reason,
-        })
+        Ok((
+            MatrixOidcStatus {
+                homeserver: resolved_homeserver,
+                availability: MatrixOidcAvailability::Supported,
+                issuer: Some(issuer),
+                authorization_endpoint: Some(authorization_endpoint),
+                registration_mode: Some("static".into()),
+                client_id_configured: true,
+                redirect_uri,
+                authorization_code_pkce: true,
+                native_callback_ready: true,
+                ready: true,
+                reason: "Continue with Mesh is ready for this provider".into(),
+            },
+            Some(registration),
+        ))
+    }
+
+    async fn discover_oidc(&self, homeserver: String) -> BackendResult<MatrixOidcStatus> {
+        self.discover_oidc_registration(homeserver)
+            .await
+            .map(|(status, _registration)| status)
     }
 
     // `MatrixSyncFreshness` is advisory (staleness telemetry for the status
@@ -2374,25 +2367,49 @@ impl MatrixBackend {
         }
     }
 
-    async fn apply_wire_privacy(&self, preferences: &UserPreferences) {
+    async fn apply_wire_privacy(&self, preferences: &UserPreferences) -> BackendResult<()> {
         let next = WirePrivacyPreferences::from(preferences);
-        let previous = {
-            let mut current = self.wire_privacy.write().await;
-            let previous = *current;
-            *current = next;
-            previous
-        };
+        let previous = *self.wire_privacy.read().await;
+        let mut control = self.matrix_sync_control.lock().await;
+        let presence = next.presence();
+        if control.presence != presence {
+            let publish_target = control
+                .client
+                .clone()
+                .map(|client| {
+                    let user_id = client
+                        .user_id()
+                        .ok_or(BackendError::NotAuthenticated)?
+                        .to_owned();
+                    Ok::<_, BackendError>((client, user_id))
+                })
+                .transpose()?;
+            let previous_presence = control.presence.clone();
+            control.presence = presence.clone();
+            Self::restart_matrix_sync_locked(&mut control, &self.matrix_sync_freshness).await;
+
+            if let Some((client, user_id)) = publish_target {
+                if let Err(error) = client
+                    .send(SetPresenceRequest::new(user_id, presence))
+                    .await
+                    .map_err(Self::map_error)
+                {
+                    // Keep the background sync and in-memory privacy state on
+                    // the last successfully published value when the explicit
+                    // Matrix presence write fails.
+                    control.presence = previous_presence;
+                    Self::restart_matrix_sync_locked(&mut control, &self.matrix_sync_freshness)
+                        .await;
+                    return Err(error);
+                }
+            }
+        }
+        drop(control);
         if previous.send_typing_indicators && !next.send_typing_indicators {
             self.clear_sent_typing_notices().await;
         }
-
-        let mut control = self.matrix_sync_control.lock().await;
-        let presence = next.presence();
-        if control.presence == presence {
-            return;
-        }
-        control.presence = presence;
-        Self::restart_matrix_sync_locked(&mut control, &self.matrix_sync_freshness).await;
+        *self.wire_privacy.write().await = next;
+        Ok(())
     }
 
     async fn reconcile_matrix_sync_cadence(
@@ -2496,6 +2513,34 @@ impl MatrixBackend {
                                 .take(MAX_PINNED_EVENTS)
                                 .map(|event_id| event_id.to_string())
                                 .collect(),
+                        }),
+                    );
+                }
+            }
+        });
+        client.add_event_handler({
+            let event_callback = Arc::clone(&self.event_callback);
+            move |_event: OriginalSyncRoomPowerLevelsEvent, room: Room| {
+                let event_callback = Arc::clone(&event_callback);
+                async move {
+                    MatrixBackend::dispatch_backend_event(
+                        &event_callback,
+                        MatrixBackendEvent::PermissionStateChanged(MatrixPermissionStateChanged {
+                            room_id: room.room_id().to_string(),
+                        }),
+                    );
+                }
+            }
+        });
+        client.add_event_handler({
+            let event_callback = Arc::clone(&self.event_callback);
+            move |_event: OriginalSyncSpaceChildEvent, room: Room| {
+                let event_callback = Arc::clone(&event_callback);
+                async move {
+                    MatrixBackend::dispatch_backend_event(
+                        &event_callback,
+                        MatrixBackendEvent::PermissionStateChanged(MatrixPermissionStateChanged {
+                            room_id: room.room_id().to_string(),
                         }),
                     );
                 }
@@ -3661,23 +3706,18 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn start_oidc_login(&self, homeserver: String) -> BackendResult<()> {
-        let status = self.discover_oidc(homeserver).await?;
-        if status.availability != MatrixOidcAvailability::Supported
-            || !status.authorization_code_pkce
-            || !status.client_id_configured
-        {
+        let (status, registration) = self.discover_oidc_registration(homeserver).await?;
+        if !status.ready {
             return Err(BackendError::InvalidConfiguration(format!(
                 "Matrix browser sign-in is unavailable: {}. Password sign-in remains available for an existing account",
                 status.reason
             )));
         }
-        let client_id = Self::configured_oidc_client_id()
-            .map_err(BackendError::InvalidConfiguration)?
-            .ok_or_else(|| {
-                BackendError::InvalidConfiguration(format!(
-                    "{OIDC_CLIENT_ID_ENV} is required for browser sign-in"
-                ))
-            })?;
+        let registration = registration.ok_or_else(|| {
+            BackendError::InvalidConfiguration(
+                "Matrix browser sign-in has no issuer-specific desktop registration".into(),
+            )
+        })?;
 
         let attempt_id = self.login_sequence.fetch_add(1, Ordering::SeqCst) + 1;
         let cancellation = CancellationToken::new();
@@ -3718,8 +3758,9 @@ impl MeshBackend for MatrixBackend {
                     .map_err(|_| BackendError::LoginTimedOut(LOGIN_TIMEOUT_SECONDS))??,
             };
             let oauth = client.oauth();
-            oauth.restore_registered_client(ClientId::new(client_id));
-            let redirect_uri = url::Url::parse(OIDC_REDIRECT_URI).map_err(Self::map_error)?;
+            oauth.restore_registered_client(ClientId::new(registration.client_id().to_owned()));
+            let redirect_uri =
+                url::Url::parse(registration.redirect_uri()).map_err(Self::map_error)?;
             let authorization = tokio::select! {
                 _ = cancellation.cancelled() => return Err(BackendError::LoginCancelled),
                 result = oauth.login(redirect_uri, None, None, None).build() => {
@@ -4619,6 +4660,8 @@ impl MeshBackend for MatrixBackend {
             (!description.trim().is_empty()).then(|| description.trim().to_owned());
         space_request.preset = Some(RoomPreset::PrivateChat);
         space_request.creation_content = Some(Raw::new(&space_creation).map_err(Self::map_error)?);
+        space_request.power_level_content_override =
+            Some(Self::community_role_power_level_override()?);
         space_request.initial_state = vec![Self::encrypted_room_initial_state()];
         let space = client
             .create_room(space_request)
@@ -4632,6 +4675,8 @@ impl MeshBackend for MatrixBackend {
         channel_request.name = Some("general".into());
         channel_request.topic = Some(format!("General discussion for {}", name.trim()));
         channel_request.preset = Some(RoomPreset::PrivateChat);
+        channel_request.power_level_content_override =
+            Some(Self::community_role_power_level_override()?);
         channel_request.initial_state = vec![
             Self::encrypted_room_initial_state(),
             Self::community_channel_join_rule_initial_state(space.room_id()),
@@ -4806,6 +4851,7 @@ impl MeshBackend for MatrixBackend {
         let mut request = CreateRoomRequest::new();
         request.name = Some(name.trim().to_owned());
         request.preset = Some(RoomPreset::PrivateChat);
+        request.power_level_content_override = Some(Self::community_role_power_level_override()?);
         if channel_type == "voice" {
             let mut creation = CreationContent::new();
             creation.room_type = Some("org.mesh.voice".into());
@@ -7584,6 +7630,14 @@ impl MeshBackend for MatrixBackend {
         Ok(())
     }
 
+    async fn community_permission_projection(
+        &self,
+        community_id: String,
+        subject_user_id: String,
+    ) -> BackendResult<CommunityPermissionProjection> {
+        MatrixBackend::community_permission_projection(self, &community_id, &subject_user_id).await
+    }
+
     async fn update_member_role(
         &self,
         community_id: String,
@@ -7642,7 +7696,7 @@ impl MeshBackend for MatrixBackend {
             })
             .transpose()?;
         if let Some(preferences) = preferences.as_ref() {
-            self.apply_wire_privacy(preferences).await;
+            self.apply_wire_privacy(preferences).await?;
         }
         Ok(preferences)
     }
@@ -7653,7 +7707,7 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<UserPreferences> {
         let client = self.client().await?;
         let preferences = preferences.normalized();
-        self.apply_wire_privacy(&preferences).await;
+        self.apply_wire_privacy(&preferences).await?;
         let content: Raw<AnyGlobalAccountDataEventContent> = Raw::new(&preferences)
             .map_err(Self::map_error)?
             .cast_unchecked();
@@ -7768,7 +7822,13 @@ impl MeshBackend for MatrixBackend {
         let result = client
             .sync_once(
                 SyncSettings::default()
-                    .timeout(sync.cadence.timeout())
+                    // Explicit one-shot synchronization must not inherit the
+                    // background 30-second long poll. A one-second server poll
+                    // is long enough to deliver newly published ephemeral
+                    // state while remaining inside the caller's bounded
+                    // deadline; the restarted background task below retains
+                    // the normal long poll.
+                    .timeout(Duration::from_secs(1))
                     .set_presence(sync.presence.clone()),
             )
             .await

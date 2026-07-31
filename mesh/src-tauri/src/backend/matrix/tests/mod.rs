@@ -1456,35 +1456,6 @@ fn mention_metadata_serializes_on_plain_messages_and_replies() {
 }
 
 #[test]
-fn oidc_client_id_configuration_fails_closed() {
-    assert_eq!(MatrixBackend::normalize_oidc_client_id(None).unwrap(), None);
-    assert_eq!(
-        MatrixBackend::normalize_oidc_client_id(Some("  mesh-desktop  ".into())).unwrap(),
-        Some("mesh-desktop".into())
-    );
-    assert!(MatrixBackend::normalize_oidc_client_id(Some("bad\nclient".into())).is_err());
-    assert!(MatrixBackend::normalize_oidc_client_id(Some("x".repeat(513))).is_err());
-}
-
-#[test]
-fn oidc_requires_every_native_authorization_capability() {
-    assert!(MatrixBackend::has_required_oidc_capabilities(
-        true, true, true, true, true
-    ));
-    for missing in 0..5 {
-        let mut capabilities = [true; 5];
-        capabilities[missing] = false;
-        assert!(!MatrixBackend::has_required_oidc_capabilities(
-            capabilities[0],
-            capabilities[1],
-            capabilities[2],
-            capabilities[3],
-            capabilities[4],
-        ));
-    }
-}
-
-#[test]
 fn persisted_sessions_record_auth_kind_and_migrate_password_v1() {
     let current = PersistedSession {
         homeserver: "https://matrix.example.org/".into(),

@@ -35,8 +35,22 @@ import {
   technicalSignInError,
   friendlySignInError,
 } from './matrixSignIn'
+import {
+  clearRegistrationContinuation,
+  consumeRegistrationContinuation,
+  createRegistrationContinuation,
+  inspectRegistrationContinuation,
+  type RegistrationContinuation,
+} from '../../lib/registration-continuation'
+import { clearRendererAccountState } from '../../lib/account-transition'
 
-type AccountMode = 'select' | 'public-services' | 'create' | 'sign-in' | 'advanced'
+type AccountMode =
+  | 'select'
+  | 'public-services'
+  | 'registration-return'
+  | 'create'
+  | 'sign-in'
+  | 'advanced'
 type Availability = 'idle' | 'checking' | 'available' | 'taken' | 'error'
 type AvailabilityCheck = {
   username: string
@@ -86,12 +100,19 @@ export function MatrixAccountScreen({
   initialPendingInvitation = null,
   initialAccountService,
 }: MatrixAccountScreenProps) {
+  const [registrationStartup] = useState(initializeRegistrationContinuation)
   const normalizedInitialService = normalizeServiceAddress(initialAccountService ?? '')
   const [mode, setMode] = useState<AccountMode>(
-    normalizedInitialService ? 'sign-in' : 'select',
+    registrationStartup.service
+      ? 'registration-return'
+      : normalizedInitialService
+        ? 'sign-in'
+        : 'select',
   )
   const [selectedService, setSelectedService] = useState<SelectedAccountService | null>(
-    normalizedInitialService
+    registrationStartup.service
+      ? { kind: 'public', service: registrationStartup.service }
+      : normalizedInitialService
       ? {
           kind: 'configured',
           name: 'Selected service',
@@ -121,6 +142,10 @@ export function MatrixAccountScreen({
   const [browserSigningIn, setBrowserSigningIn] = useState(false)
   const [capabilities, setCapabilities] = useState<bridge.MatrixServiceCapabilities | null>(null)
   const [checkingCapabilities, setCheckingCapabilities] = useState(false)
+  const [registrationContinuation, setRegistrationContinuation] =
+    useState<RegistrationContinuation | null>(registrationStartup.continuation)
+  const [continuationNotice, setContinuationNotice] =
+    useState<string | null>(registrationStartup.notice)
   const modeHeadingRef = useRef<HTMLHeadingElement>(null)
   const previousModeRef = useRef<AccountMode>(mode)
 
@@ -310,6 +335,7 @@ export function MatrixAccountScreen({
       !selectedServiceAddress
       || mode === 'select'
       || mode === 'public-services'
+      || mode === 'registration-return'
       || mode === 'advanced'
     ) {
       return
@@ -402,6 +428,120 @@ export function MatrixAccountScreen({
     resetFeedback()
   }
 
+  const beginExternalRegistration = (service: PublicService): boolean => {
+    setError(null)
+    setContinuationNotice(null)
+    try {
+      const continuation = createRegistrationContinuation({
+        invitationTarget: storedPendingInvitation?.handle ?? null,
+        accountServiceId: service.id,
+        accountServiceAddress: service.serviceAddress,
+      })
+      setSelectedService({ kind: 'public', service })
+      setRegistrationContinuation(continuation)
+      setMode('registration-return')
+      setPassword('')
+      setPasswordConfirmation('')
+      setCapabilities(null)
+      return true
+    } catch {
+      setContinuationNotice(
+        'Mesh could not save a safe return point on this device. Free some storage or choose Sign in if you already have an account.',
+      )
+      return false
+    }
+  }
+
+  const continueAfterExternalRegistration = () => {
+    if (!registrationContinuation || selectedService?.kind !== 'public') {
+      clearRegistrationContinuation()
+      setRegistrationContinuation(null)
+      setSelectedService(null)
+      setMode('select')
+      setContinuationNotice(
+        'That registration return was incomplete. Choose your account service and try again.',
+      )
+      return
+    }
+    if (
+      registrationContinuation.invitationTarget
+      && !storedPendingInvitation
+    ) {
+      setContinuationNotice(
+        'Mesh could not find the saved community invitation yet. Wait a moment and try again, or open the invitation again.',
+      )
+      return
+    }
+    if (
+      registrationContinuation.invitationTarget
+      && storedPendingInvitation
+      && (
+        storedPendingInvitation.handle !== registrationContinuation.invitationTarget
+        || storedPendingInvitation.expiresAt <= Date.now()
+      )
+    ) {
+      clearRegistrationContinuation()
+      setRegistrationContinuation(null)
+      setSelectedService(null)
+      setMode('select')
+      setContinuationNotice(
+        'The saved invitation is missing or expired. Open the invitation again, then choose your account service.',
+      )
+      return
+    }
+
+    const inspected = inspectRegistrationContinuation()
+    if (
+      inspected.status !== 'ready'
+      || inspected.continuation.correlation !== registrationContinuation.correlation
+    ) {
+      setRegistrationContinuation(null)
+      setSelectedService(null)
+      setMode('select')
+      setContinuationNotice(registrationContinuationProblem(
+        inspected.status === 'ready' ? 'mismatch' : inspected.status,
+      ))
+      return
+    }
+
+    setContinuationNotice(null)
+    setMode('sign-in')
+    resetFeedback()
+  }
+
+  const completeRegistrationContinuation = (): boolean => {
+    if (!registrationContinuation) return true
+
+    const consumed = consumeRegistrationContinuation(
+      registrationContinuation.correlation,
+    )
+    if (consumed.status !== 'consumed') {
+      setRegistrationContinuation(null)
+      setSelectedService(null)
+      setMode('select')
+      setContinuationNotice(registrationContinuationProblem(consumed.status))
+      return false
+    }
+
+    setRegistrationContinuation(null)
+    setContinuationNotice(null)
+    return true
+  }
+
+  const cancelExternalRegistration = () => {
+    clearRegistrationContinuation()
+    setRegistrationContinuation(null)
+    setSelectedService(null)
+    setCapabilities(null)
+    setMode('select')
+    setContinuationNotice(
+      storedPendingInvitation
+        ? 'Account creation was cancelled. Your invitation is still saved on this device.'
+        : 'Account creation was cancelled. Choose a service when you are ready.',
+    )
+    resetFeedback()
+  }
+
   const selectPublicService = (service: PublicService) => {
     setSelectedService({ kind: 'public', service })
     setServiceAddress('')
@@ -426,6 +566,8 @@ export function MatrixAccountScreen({
     setError(null)
     try {
       await onDiscardPendingInvitation?.()
+      clearRegistrationContinuation()
+      setRegistrationContinuation(null)
       setPendingInvitationDismissed(true)
       setPendingAdmissionResolution(null)
     } catch (cause) {
@@ -533,6 +675,7 @@ export function MatrixAccountScreen({
         password,
         deviceName: 'Mesh Desktop',
       })
+      if (!completeRegistrationContinuation()) return
       setPassword('')
       onNext('signed-in')
     } catch (cause) {
@@ -548,6 +691,7 @@ export function MatrixAccountScreen({
     setError(null)
     try {
       await onMatrixSwitchAccount(profileId)
+      clearRendererAccountState()
       onNext('signed-in')
     } catch (cause) {
       setError(friendlySignInError(cause), cause)
@@ -583,6 +727,7 @@ export function MatrixAccountScreen({
     setError(null)
     try {
       await onMatrixOidcLogin(resolvedService)
+      if (!completeRegistrationContinuation()) return
       onNext('signed-in')
     } catch (cause) {
       setError(friendlySignInError(cause), cause)
@@ -619,6 +764,82 @@ export function MatrixAccountScreen({
     || capabilities?.passwordLogin === false
     || (isAdvanced && !capabilities)
 
+  if (
+    mode === 'registration-return'
+    && registrationContinuation
+    && selectedPublicService
+  ) {
+    return (
+      <section
+        aria-labelledby="registration-return-title"
+        className="space-y-5"
+      >
+        <header className="space-y-2">
+          <p className="text-2xs uppercase tracking-eyebrow text-muted">
+            Continue account setup
+          </p>
+          <h1
+            id="registration-return-title"
+            ref={modeHeadingRef}
+            tabIndex={-1}
+            className="text-lg font-semibold tracking-tight text-primary"
+          >
+            Finish with {selectedPublicService.displayName}
+          </h1>
+          <p className="max-w-md text-sm leading-6 text-secondary">
+            {selectedPublicService.displayName} creates the account in its own browser page.
+            When you have finished there, return to Mesh and sign in below.
+          </p>
+        </header>
+
+        <div className="space-y-2 rounded-panel border border-border-subtle bg-surface-sunken p-3 text-xs leading-5 text-secondary">
+          <p className="font-medium text-primary">
+            Mesh has saved your place for two hours
+          </p>
+          <p>
+            {registrationContinuation.invitationTarget
+              ? 'Your community invitation remains protected on this device and is separate from your account service.'
+              : 'Your selected account service is saved on this device.'}
+          </p>
+          <p>
+            Mesh has not received or stored your provider credentials, and cannot tell whether
+            the provider created the account until you sign in.
+          </p>
+        </div>
+
+        <Button
+          type="button"
+          className="w-full"
+          onClick={continueAfterExternalRegistration}
+        >
+          I created my account — sign in
+        </Button>
+
+        {continuationNotice ? (
+          <div
+            role="alert"
+            className="rounded-control border border-status-warning/40 bg-status-warning/10 px-3 py-2 text-xs leading-5 text-secondary"
+          >
+            {continuationNotice}
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs">
+          <ExternalLink href={selectedPublicService.registration.url}>
+            Open the registration page again
+          </ExternalLink>
+          <button
+            type="button"
+            className="min-h-8 rounded-control px-2 text-muted transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            onClick={cancelExternalRegistration}
+          >
+            Cancel
+          </button>
+        </div>
+      </section>
+    )
+  }
+
   if (mode === 'select') {
     return (
       <div className="space-y-3">
@@ -642,6 +863,15 @@ export function MatrixAccountScreen({
           />
         ) : null}
 
+        {continuationNotice ? (
+          <div
+            role="alert"
+            className="rounded-control border border-status-warning/40 bg-status-warning/10 px-3 py-2 text-xs leading-5 text-secondary"
+          >
+            {continuationNotice}
+          </div>
+        ) : null}
+
         {MATRIX_ORG_SERVICE ? (
           <ServiceChoiceCard
             title="Matrix.org"
@@ -652,6 +882,7 @@ export function MatrixAccountScreen({
             actionLabel="Sign in"
             disabled={prominentServiceExpired}
             registrationUrl={MATRIX_ORG_SERVICE.registration.url}
+            onRegister={() => beginExternalRegistration(MATRIX_ORG_SERVICE)}
             onSelect={() => selectPublicService(MATRIX_ORG_SERVICE)}
             termsUrl={MATRIX_ORG_SERVICE.termsUrl}
             privacyUrl={MATRIX_ORG_SERVICE.privacyUrl}
@@ -729,6 +960,7 @@ export function MatrixAccountScreen({
               actionLabel="Sign in"
               disabled={expired}
               registrationUrl={service.registration.url}
+              onRegister={() => beginExternalRegistration(service)}
               onSelect={() => selectPublicService(service)}
               termsUrl={service.termsUrl}
               privacyUrl={service.privacyUrl}
@@ -772,7 +1004,10 @@ export function MatrixAccountScreen({
             {selectedPublicService.freeUseLimits.summary}
           </p>
           <div className="flex flex-wrap gap-x-3 gap-y-1">
-            <ExternalLink href={selectedPublicService.registration.url}>
+            <ExternalLink
+              href={selectedPublicService.registration.url}
+              onBeforeOpen={() => beginExternalRegistration(selectedPublicService)}
+            >
               {selectedPublicService.registration.label}
             </ExternalLink>
             <ExternalLink href={selectedPublicService.termsUrl}>Terms</ExternalLink>
@@ -1102,7 +1337,10 @@ export function MatrixAccountScreen({
           {selectedPublicService ? (
             <p className="text-xs text-muted">
               Need an account?{' '}
-              <ExternalLink href={selectedPublicService.registration.url}>
+              <ExternalLink
+                href={selectedPublicService.registration.url}
+                onBeforeOpen={() => beginExternalRegistration(selectedPublicService)}
+              >
                 Register with {selectedPublicService.displayName}
               </ExternalLink>
             </p>
@@ -1161,6 +1399,7 @@ function ServiceChoiceCard({
   onSelect,
   disabled = false,
   registrationUrl,
+  onRegister,
   termsUrl,
   privacyUrl,
 }: {
@@ -1171,6 +1410,7 @@ function ServiceChoiceCard({
   onSelect: () => void
   disabled?: boolean
   registrationUrl?: string
+  onRegister?: () => boolean
   termsUrl?: string
   privacyUrl?: string
 }) {
@@ -1188,31 +1428,39 @@ function ServiceChoiceCard({
         </div>
       ) : null}
       {registrationUrl ? (
-        <div className="grid grid-cols-2 gap-2">
-          {disabled ? (
-            <Button type="button" variant="secondary" disabled>
-              Create account
-            </Button>
-          ) : (
-            <a
-              href={registrationUrl}
-              target="_blank"
-              rel="noreferrer noopener"
-              aria-label={`Create account with ${title}`}
-              className="no-select inline-flex items-center justify-center rounded-md bg-surface-hover px-4 py-2 text-sm font-medium text-content transition-colors duration-fast hover:bg-surface-active focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+        <div className="space-y-2">
+          <p className="text-xs leading-5 text-muted">
+            Account creation opens this service in your browser. Return to Mesh afterward to sign in.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {disabled ? (
+              <Button type="button" variant="secondary" disabled>
+                Create account
+              </Button>
+            ) : (
+              <a
+                href={registrationUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                aria-label={`Create account with ${title}`}
+                onClick={(event) => {
+                  if (onRegister && !onRegister()) event.preventDefault()
+                }}
+                className="no-select inline-flex items-center justify-center rounded-md bg-surface-hover px-4 py-2 text-sm font-medium text-content transition-colors duration-fast hover:bg-surface-active focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                Create account
+              </a>
+            )}
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={disabled}
+              aria-label={`${actionLabel} with ${title}`}
+              onClick={onSelect}
             >
-              Create account
-            </a>
-          )}
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={disabled}
-            aria-label={`${actionLabel} with ${title}`}
-            onClick={onSelect}
-          >
-            {actionLabel}
-          </Button>
+              {actionLabel}
+            </Button>
+          </div>
         </div>
       ) : (
         <Button
@@ -1230,17 +1478,88 @@ function ServiceChoiceCard({
   )
 }
 
-function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
+function ExternalLink({
+  href,
+  children,
+  onBeforeOpen,
+}: {
+  href: string
+  children: ReactNode
+  onBeforeOpen?: () => boolean
+}) {
   return (
     <a
       href={href}
       target="_blank"
       rel="noreferrer noopener"
+      onClick={(event) => {
+        if (onBeforeOpen && !onBeforeOpen()) event.preventDefault()
+      }}
       className="text-accent underline-offset-2 hover:underline"
     >
       {children}
     </a>
   )
+}
+
+function initializeRegistrationContinuation(): {
+  continuation: RegistrationContinuation | null
+  service: PublicService | null
+  notice: string | null
+} {
+  const inspected = inspectRegistrationContinuation()
+  if (inspected.status === 'ready') {
+    const service = PUBLIC_SERVICES.find((candidate) => (
+      candidate.id === inspected.continuation.accountServiceId
+      && candidate.serviceAddress.toLowerCase()
+        === inspected.continuation.accountServiceAddress.toLowerCase()
+    ))
+    if (service && !publicServiceReviewExpired(service)) {
+      return {
+        continuation: inspected.continuation,
+        service,
+        notice: null,
+      }
+    }
+    clearRegistrationContinuation()
+    return {
+      continuation: null,
+      service: null,
+      notice: 'That saved account service is no longer available. Choose another reviewed service or use your own.',
+    }
+  }
+  if (inspected.status === 'empty') {
+    return { continuation: null, service: null, notice: null }
+  }
+  return {
+    continuation: null,
+    service: null,
+    notice: registrationContinuationProblem(inspected.status),
+  }
+}
+
+function registrationContinuationProblem(
+  status:
+    | 'empty'
+    | 'expired'
+    | 'malformed'
+    | 'replayed'
+    | 'unavailable'
+    | 'mismatch',
+): string {
+  if (status === 'expired') {
+    return 'The saved registration return expired. Choose your account service again; your invitation remains saved separately.'
+  }
+  if (status === 'replayed' || status === 'mismatch') {
+    return 'Mesh rejected a registration return that was already used or replaced. Choose your account service again.'
+  }
+  if (status === 'unavailable') {
+    return 'Mesh cannot save a registration return on this device right now. You can still sign in to an existing account.'
+  }
+  if (status === 'empty') {
+    return 'No saved registration return was found. Choose your account service again.'
+  }
+  return 'Mesh rejected invalid saved registration state. Choose your account service again; your invitation remains saved separately.'
 }
 
 function displayAccountService(service: SelectedAccountService | null): string {

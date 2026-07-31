@@ -9,13 +9,13 @@ use tauri_plugin_dialog::DialogExt;
 use crate::backend::{
     BackendError, BackendKind, BackendStatus, CommunityAccessResult, CommunityAccessSettings,
     CommunityApplication, CommunityDirectoryEntry, CommunityMember, CommunityModerationResult,
-    CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest, MatrixCommunityAdmission,
-    MatrixDevice, MatrixLogin, MatrixOidcStatus, MatrixPersonalDataExport, MatrixProfile,
-    MatrixRecoveryHealth, MatrixRegistration, MatrixRoomNotificationMode, MatrixRoomPins,
-    MatrixRoomUpgrade, MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyLease,
-    MatrixRtcMember, MatrixServiceCapabilities, MatrixTransferObserver,
-    MatrixTransferProgressCallback, MatrixVerificationSession, ModerationAuditEntry, TypingUser,
-    UserPreferences, MATRIX_TRANSFER_PROGRESS_EVENT,
+    CommunityPermissionProjection, CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest,
+    MatrixCommunityAdmission, MatrixDevice, MatrixLogin, MatrixOidcStatus,
+    MatrixPersonalDataExport, MatrixProfile, MatrixRecoveryHealth, MatrixRegistration,
+    MatrixRoomNotificationMode, MatrixRoomPins, MatrixRoomUpgrade, MatrixRtcJoinResult,
+    MatrixRtcMediaKey, MatrixRtcMediaKeyLease, MatrixRtcMember, MatrixServiceCapabilities,
+    MatrixTransferObserver, MatrixTransferProgressCallback, MatrixVerificationSession,
+    ModerationAuditEntry, TypingUser, UserPreferences, MATRIX_TRANSFER_PROGRESS_EVENT,
 };
 use crate::state::AppState;
 use crate::types::{
@@ -1356,6 +1356,21 @@ pub async fn matrix_list_members(
         .backend
         .backend()
         .list_members(community_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_get_community_permission_projection(
+    community_id: String,
+    subject_user_id: String,
+    state: State<'_, AppState>,
+) -> Result<CommunityPermissionProjection, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .community_permission_projection(community_id, subject_user_id)
         .await
         .map_err(map_error)
 }

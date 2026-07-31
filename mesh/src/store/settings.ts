@@ -755,6 +755,42 @@ let matrixSaveTimer: ReturnType<typeof setTimeout> | null = null
 let channelMuteTimers = new Map<string, ReturnType<typeof setTimeout>>()
 let communityMuteTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
+/**
+ * Invalidate every account-scoped preference read/write and clear its renderer
+ * projection while preserving device-local appearance.
+ */
+export function resetMatrixAccountPreferences(): void {
+  activeMatrixUserId = null
+  matrixRemoteReady = false
+  localPreferenceRevision += 1
+  matrixSaveRequestId += 1
+  if (matrixSaveTimer) {
+    clearTimeout(matrixSaveTimer)
+    matrixSaveTimer = null
+  }
+
+  applyingRemotePreferences = true
+  useSettingsStore.setState({
+    notifications: {
+      ...DEFAULT_NOTIFICATIONS,
+      quietHours: { ...DEFAULT_NOTIFICATIONS.quietHours },
+      mutedChannels: [],
+      mutedCommunities: [],
+      channelMuteUntil: {},
+      communityMuteUntil: {},
+      channelNotificationLevels: {},
+    },
+    backup: {
+      configured: false,
+      reminderPending: false,
+      dismissedAt: null,
+    },
+    privacy: { ...DEFAULT_PRIVACY },
+    matrixPreferenceSync: { ...DEFAULT_MATRIX_PREFERENCE_SYNC },
+  })
+  applyingRemotePreferences = false
+}
+
 function replaceMuteExpiryTimers(
   expirations: Record<string, string | null>,
   currentTimers: Map<string, ReturnType<typeof setTimeout>>,

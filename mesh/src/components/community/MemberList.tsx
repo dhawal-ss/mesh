@@ -15,6 +15,15 @@ import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { ErrorState } from '../ui/ErrorState'
 import { describeError } from '../../lib/errors'
+import {
+  evaluateAuthoritativeCommunityRoleAssignment,
+  type CommunityPermissionProjection,
+  type CommunityRole,
+} from '../../lib/community-permissions'
+import {
+  RolePermissionPreview,
+  type RolePermissionEvidence,
+} from './RolePermissionPreview'
 
 interface MemberEntry {
   publicKey: string
@@ -29,6 +38,10 @@ interface MemberListProps {
   onClose: () => void
   members: MemberEntry[]
   embedded?: boolean
+  rolePermissionProjection?: CommunityPermissionProjection
+  rolePermissionsLoading?: boolean
+  onRetryRolePermissions?: () => void
+  onOpenPermissionDiagnostics?: () => void
 }
 
 const ROLE_ORDER = { owner: 0, admin: 1, member: 2 } as const
@@ -39,8 +52,20 @@ type PendingModeration = {
   action: 'remove' | 'ban'
   member: MemberEntry
 }
+type PendingRoleChange = {
+  member: MemberEntry
+  nextRole: Extract<CommunityRole, 'admin' | 'member'>
+}
 
-export function MemberList({ isOpen, members, embedded = false }: MemberListProps) {
+export function MemberList({
+  isOpen,
+  members,
+  embedded = false,
+  rolePermissionProjection,
+  rolePermissionsLoading = false,
+  onRetryRolePermissions,
+  onOpenPermissionDiagnostics,
+}: MemberListProps) {
   const activeCommunityId = useCommunityStore((state) => state.activeCommunityId)
   const activeCommunity = useActiveCommunity()
   const legacyUserId = useIdentityStore((state) => state.identity?.publicKey)
@@ -52,8 +77,11 @@ export function MemberList({ isOpen, members, embedded = false }: MemberListProp
   const setActiveConversation = useDmStore((state) => state.setActiveConversation)
   const setDmMode = useDmStore((state) => state.setDmMode)
   const [pendingModeration, setPendingModeration] = useState<PendingModeration | null>(null)
+  const [pendingRoleChange, setPendingRoleChange] = useState<PendingRoleChange | null>(null)
   const [moderationBusy, setModerationBusy] = useState(false)
   const [moderationError, setModerationError] = useState<unknown | null>(null)
+  const [roleBusy, setRoleBusy] = useState(false)
+  const [roleError, setRoleError] = useState<unknown | null>(null)
   const canModerate = activeCommunity?.role === 'owner' || activeCommunity?.role === 'admin'
   const canManageRoles = activeCommunity?.role === 'owner'
   const actions = activeCommunityId
@@ -62,25 +90,20 @@ export function MemberList({ isOpen, members, embedded = false }: MemberListProp
         canModerate,
         canManageRoles,
         directMessages: bridge.isMatrixBackend() && bridge.getBackendCapabilities().directMessages,
-        onRole: async (member: MemberEntry) => {
-          try {
-            const role = member.role === 'admin' ? 'member' : 'admin'
-            const result = await bridge.updateMemberRole(activeCommunityId, member.publicKey, role)
-            const summary = summarizeModerationResult(
-              result,
-              `${member.displayName} is now ${role === 'admin' ? 'an administrator' : 'a member'}`,
-            )
-            if (summary.serverSucceeded) {
-              updateRole(activeCommunityId, member.publicKey, role)
-            }
-            showToast(summary.message, summary.tone)
-          } catch (error) {
-            const description = describeError(error, {
-              operation: `change ${member.displayName}'s role`,
-              resource: 'community',
-            })
-            showToast(`${description.title}. ${description.body}`, 'error')
+        onRole: async (
+          member: MemberEntry,
+          role: PendingRoleChange['nextRole'],
+        ) => {
+          const result = await bridge.updateMemberRole(activeCommunityId, member.publicKey, role)
+          const summary = summarizeModerationResult(
+            result,
+            `${member.displayName} is now ${role === 'admin' ? 'an administrator' : 'a member'}`,
+          )
+          if (summary.serverSucceeded) {
+            updateRole(activeCommunityId, member.publicKey, role)
           }
+          showToast(summary.message, summary.tone)
+          onRetryRolePermissions?.()
         },
         onKick: async (member: MemberEntry) => {
           const result = await bridge.kickUser(activeCommunityId, member.publicKey)
@@ -116,6 +139,12 @@ export function MemberList({ isOpen, members, embedded = false }: MemberListProp
           setModerationError(null)
           setPendingModeration({ action, member })
         },
+        onRequestRole: (member: MemberEntry) => {
+          const nextRole = member.role === 'admin' ? 'member' : 'admin'
+          setRoleError(null)
+          setPendingRoleChange({ member, nextRole })
+          onRetryRolePermissions?.()
+        },
       }
     : undefined
 
@@ -136,6 +165,52 @@ export function MemberList({ isOpen, members, embedded = false }: MemberListProp
       setModerationBusy(false)
     }
   }
+
+  const confirmRoleChange = async () => {
+    if (!pendingRoleChange || !actions) return
+    if (!rolePermissionProjection || !currentUserId) {
+      setRoleError(new Error('Unable to verify permissions before applying this role.'))
+      return
+    }
+    const decision = evaluateAuthoritativeCommunityRoleAssignment({
+      projection: rolePermissionProjection,
+      actorUserId: currentUserId,
+      targetUserId: pendingRoleChange.member.publicKey,
+      nextRole: pendingRoleChange.nextRole,
+    })
+    if (!decision.allowed) {
+      setRoleError(new Error(decision.reason ?? 'This role change is not permitted.'))
+      return
+    }
+    setRoleBusy(true)
+    setRoleError(null)
+    try {
+      await actions.onRole(pendingRoleChange.member, pendingRoleChange.nextRole)
+      setPendingRoleChange(null)
+    } catch (error) {
+      setRoleError(error)
+    } finally {
+      setRoleBusy(false)
+    }
+  }
+
+  const rolePermissionEvidence: RolePermissionEvidence = rolePermissionsLoading
+    ? { kind: 'loading' }
+    : rolePermissionProjection && pendingRoleChange
+      ? {
+          kind: 'proposed',
+          projection: rolePermissionProjection,
+          userId: pendingRoleChange.member.publicKey,
+        }
+      : {
+          kind: 'unavailable',
+          onRetry: onRetryRolePermissions,
+          onDiagnostics: onOpenPermissionDiagnostics ?? (() => {
+            setRoleError(new Error(
+              'Permission diagnostics are not connected yet. Retry after the integration is available.',
+            ))
+          }),
+        }
 
   const sorted = useMemo(() => [...members].sort((a, b) => {
     const roleSort = ROLE_ORDER[a.role] - ROLE_ORDER[b.role]
@@ -302,6 +377,62 @@ export function MemberList({ isOpen, members, embedded = false }: MemberListProp
           </div>
         </div>
       </Modal>
+      <Modal
+        open={pendingRoleChange !== null}
+        onClose={() => {
+          if (roleBusy) return
+          setPendingRoleChange(null)
+          setRoleError(null)
+        }}
+        title={pendingRoleChange
+          ? pendingRoleChange.nextRole === 'admin'
+            ? `Make ${pendingRoleChange.member.displayName} an administrator?`
+            : `Make ${pendingRoleChange.member.displayName} a member?`
+          : 'Confirm role change'}
+        description="Review the server-enforced permissions before applying this change."
+        size="sm"
+      >
+        {pendingRoleChange ? (
+          <div className="space-y-3">
+            <RolePermissionPreview
+              role={pendingRoleChange.nextRole}
+              previousRole={pendingRoleChange.member.role}
+              memberName={pendingRoleChange.member.displayName}
+              evidence={rolePermissionEvidence}
+            />
+            {roleError != null ? (
+              <ErrorState
+                error={roleError}
+                context={{
+                  operation: `change ${pendingRoleChange.member.displayName}'s role`,
+                  resource: 'community',
+                }}
+                compact
+              />
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={roleBusy}
+                onClick={() => {
+                  setPendingRoleChange(null)
+                  setRoleError(null)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={roleBusy || rolePermissionsLoading || !rolePermissionProjection || !currentUserId}
+                onClick={() => void confirmRoleChange()}
+              >
+                {roleBusy ? 'Applying…' : 'Apply role'}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </>
   )
 }
@@ -320,11 +451,15 @@ function MemberRow({
     canModerate: boolean
     canManageRoles: boolean
     directMessages: boolean
-    onRole: (member: MemberEntry) => Promise<void>
+    onRole: (
+      member: MemberEntry,
+      role: PendingRoleChange['nextRole'],
+    ) => Promise<void>
     onKick: (member: MemberEntry) => Promise<void>
     onBan: (member: MemberEntry) => Promise<void>
     onDm: (member: MemberEntry) => Promise<void>
     onRequestModeration: (action: PendingModeration['action'], member: MemberEntry) => void
+    onRequestRole: (member: MemberEntry) => void
   }
 }) {
   const canAct = actions?.canModerate && actions.currentUserId !== member.publicKey && member.role !== 'owner'
@@ -337,9 +472,7 @@ function MemberRow({
                 {
                   id: 'role',
                   label: member.role === 'admin' ? 'Make member' : 'Make administrator',
-                  onSelect: () => {
-                    void actions.onRole(member).catch((error) => console.error('Role update failed:', error))
-                  },
+                  onSelect: () => actions.onRequestRole(member),
                 },
               ]
             : []),

@@ -1,14 +1,17 @@
 use std::{fs, path::PathBuf};
 
 use mesh_lib::backend::{
-    BackendCapabilities, BackendKind, BackendStatus, CommunityModerationResult, CustomEmoji,
-    MatrixCommunityAdmission, MatrixNotification, MatrixPersonalDataExport,
+    BackendCapabilities, BackendKind, BackendStatus, CommunityModerationResult,
+    CommunityPermissionAggregate, CommunityPermissionAggregateStatus, CommunityPermissionId,
+    CommunityPermissionProjection, CustomEmoji, MatrixCommunityAdmission, MatrixNotification,
+    MatrixPermissionRoomStatus, MatrixPermissionStateChanged, MatrixPersonalDataExport,
     MatrixQueuedMessageState, MatrixQueuedMessageUpdate, MatrixRoomNotificationMode,
-    MatrixRoomPins, MatrixRoomPinsUpdate, MatrixRoomUpgrade, MatrixRtcJoinResult,
-    MatrixRtcMediaKey, MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause,
-    MatrixRtcMember, MatrixRtcMembershipUpdate, MatrixUnreadUpdate, ModerationAuditEntry,
-    ModerationRoomOutcome, NotificationPresentationContext, PendingInvitationMetadata,
-    ReadReceiptMode, UserPreferences, VoiceProvider, VoiceServiceAvailability, VoiceServiceStatus,
+    MatrixRoomPermissionProjection, MatrixRoomPins, MatrixRoomPinsUpdate,
+    MatrixRoomPowerLevelProjection, MatrixRoomUpgrade, MatrixRtcJoinResult, MatrixRtcMediaKey,
+    MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember,
+    MatrixRtcMembershipUpdate, MatrixUnreadUpdate, ModerationAuditEntry, ModerationRoomOutcome,
+    NotificationPresentationContext, PendingInvitationMetadata, ReadReceiptMode, UserPreferences,
+    VoiceProvider, VoiceServiceAvailability, VoiceServiceStatus,
 };
 use mesh_lib::types::{
     community::{ChannelDto, CommunityDto},
@@ -47,6 +50,14 @@ fn generated_contract() -> String {
     output.push_str(&declaration::<MatrixPersonalDataExport>());
     output.push_str(&declaration::<MatrixNotification>());
     output.push_str(&declaration::<MatrixUnreadUpdate>());
+    output.push_str(&declaration::<MatrixPermissionRoomStatus>());
+    output.push_str(&declaration::<CommunityPermissionAggregateStatus>());
+    output.push_str(&declaration::<CommunityPermissionId>());
+    output.push_str(&declaration::<MatrixRoomPowerLevelProjection>());
+    output.push_str(&declaration::<MatrixRoomPermissionProjection>());
+    output.push_str(&declaration::<CommunityPermissionAggregate>());
+    output.push_str(&declaration::<CommunityPermissionProjection>());
+    output.push_str(&declaration::<MatrixPermissionStateChanged>());
     output.push_str(&declaration::<MatrixQueuedMessageState>());
     output.push_str(&declaration::<MatrixQueuedMessageUpdate>());
     output.push_str(&declaration::<MatrixRoomNotificationMode>());

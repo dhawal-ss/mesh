@@ -25,9 +25,11 @@ import type {
   CommunityApplication,
   CommunityAccessResult,
   CommunityModerationResult,
+  CommunityPermissionProjection,
   ModerationAuditEntry,
   MatrixUserPreferences,
   MatrixNotification,
+  MatrixPermissionStateChanged,
   MatrixPersonalDataExport,
   MatrixCommunityAdmission,
   PendingInvitationMetadata,
@@ -1922,6 +1924,12 @@ export function onMatrixRoomPinsUpdate(
   return tauriListen('matrix:room-pins', handler)
 }
 
+export function onMatrixPermissionStateChanged(
+  handler: (change: MatrixPermissionStateChanged) => void,
+): Promise<UnlistenFn> {
+  return tauriListen('matrix:permission-state-changed', handler)
+}
+
 export function onMatrixQueuedMessage(
   handler: (update: MatrixQueuedMessageUpdate) => void,
 ): Promise<UnlistenFn> {
@@ -2164,6 +2172,20 @@ export async function getModerationAudit(
 ): Promise<ModerationAuditEntry[]> {
   if (!isMatrixBackend()) return []
   return tauriInvoke('matrix_list_moderation_audit', { communityId, limit }, READ_IPC_OPTIONS)
+}
+
+export async function getCommunityPermissionProjection(
+  communityId: string,
+  subjectUserId: string,
+): Promise<CommunityPermissionProjection> {
+  if (!isMatrixBackend()) {
+    throw new Error('Community permission projection requires the Matrix backend')
+  }
+  return tauriInvoke(
+    'matrix_get_community_permission_projection',
+    { communityId, subjectUserId },
+    READ_IPC_OPTIONS,
+  )
 }
 
 export async function getMembers(

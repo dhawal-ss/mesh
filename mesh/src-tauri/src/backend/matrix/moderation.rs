@@ -1,10 +1,15 @@
 use super::*;
-use crate::backend::{CommunityModerationResult, ModerationRoomOutcome};
+use crate::backend::{
+    CommunityModerationResult, CommunityPermissionProjection, ModerationRoomOutcome,
+};
+
+mod permission_projection;
 
 const MODERATION_AUDIT_PREFIX: &str = "org.mesh.moderation.audit.v1:";
 const MAX_MODERATION_REASON_CHARS: usize = 500;
 const MAX_MODERATION_AUDIT_EVENTS: u32 = 200;
 const MAX_MODERATION_AUDIT_SCAN_EVENTS: usize = 2_000;
+const COMMUNITY_ROLE_POWER_LEVEL_OVERRIDE_JSON: &str = r#"{"events":{"m.room.power_levels":100}}"#;
 
 // Direct room membership remains authoritative while MSC4284/MSC4204 policy
 // list semantics are unstable; importing them without verified enforcement
@@ -50,9 +55,18 @@ impl MatrixModerationAction {
         }
     }
 
+    fn role_power_level(&self) -> Option<matrix_sdk::ruma::Int> {
+        match self {
+            Self::RoleAdmin => Some(int!(50)),
+            Self::RoleMember => Some(int!(0)),
+            Self::Ban | Self::Kick => None,
+        }
+    }
+
     async fn apply(
         &self,
         room: &Room,
+        actor_user_id: &UserId,
         user_id: &UserId,
         reason: Option<&str>,
     ) -> BackendResult<()> {
@@ -65,21 +79,95 @@ impl MatrixModerationAction {
                 .kick_user(user_id, reason)
                 .await
                 .map_err(MatrixBackend::map_error),
-            Self::RoleAdmin => room
-                .update_power_levels(vec![(user_id, int!(50))])
+            Self::RoleAdmin | Self::RoleMember => {
+                let role_power_level = self.role_power_level().ok_or_else(|| {
+                    BackendError::InvalidConfiguration(
+                        "role action does not define a Matrix power level".into(),
+                    )
+                })?;
+                let creators = room.creators().ok_or_else(|| {
+                    BackendError::InvalidConfiguration(
+                        "This room does not expose enough creation state to change roles safely."
+                            .into(),
+                    )
+                })?;
+                let has_power_levels_event = room
+                    .get_state_event_static::<
+                        matrix_sdk::ruma::events::room::power_levels::RoomPowerLevelsEventContent,
+                    >()
+                    .await
+                    .map_err(MatrixBackend::map_error)?
+                    .is_some();
+                let mut power_levels = if has_power_levels_event {
+                    room.power_levels()
+                        .await
+                        .map_err(MatrixBackend::map_error)?
+                } else {
+                    room.power_levels_or_default().await
+                };
+                let joined_user_ids = room
+                    .members(RoomMemberships::JOIN)
+                    .await
+                    .map_err(MatrixBackend::map_error)?
+                    .into_iter()
+                    .map(|member| member.user_id().to_string())
+                    .collect();
+                let projected = permission_projection::project_power_levels(
+                    &power_levels,
+                    creators,
+                    joined_user_ids,
+                );
+                permission_projection::ensure_authoritative_role_change(
+                    &projected,
+                    actor_user_id,
+                    user_id,
+                    i64::from(role_power_level),
+                    &room.name().unwrap_or_else(|| "This room".into()),
+                )?;
+                power_levels
+                    .events
+                    .insert(StateEventType::RoomPowerLevels.into(), int!(100));
+                if role_power_level == power_levels.users_default {
+                    power_levels.users.remove(user_id);
+                } else {
+                    power_levels
+                        .users
+                        .insert(user_id.to_owned(), role_power_level);
+                }
+                room.send_state_event(
+                    matrix_sdk::ruma::events::room::power_levels::RoomPowerLevelsEventContent::try_from(
+                        power_levels,
+                    )
+                    .map_err(MatrixBackend::map_error)?,
+                )
                 .await
                 .map(|_| ())
-                .map_err(MatrixBackend::map_error),
-            Self::RoleMember => room
-                .update_power_levels(vec![(user_id, int!(0))])
-                .await
-                .map(|_| ())
-                .map_err(MatrixBackend::map_error),
+                .map_err(MatrixBackend::map_error)
+            }
         }
     }
 }
 
 impl MatrixBackend {
+    pub(super) fn community_role_power_level_override(
+    ) -> BackendResult<Raw<RoomPowerLevelsContentOverride>> {
+        Raw::from_json_string(COMMUNITY_ROLE_POWER_LEVEL_OVERRIDE_JSON.to_owned())
+            .map_err(Self::map_error)
+    }
+
+    pub(super) async fn community_permission_projection(
+        &self,
+        community_id: &str,
+        subject_user_id: &str,
+    ) -> BackendResult<CommunityPermissionProjection> {
+        permission_projection::read_community_permission_projection(
+            self,
+            community_id,
+            subject_user_id,
+        )
+        .await
+    }
+
     pub(super) async fn require_community_permission(
         &self,
         space: &Room,
@@ -290,7 +378,7 @@ impl MatrixBackend {
 
         for room in rooms {
             let outcome = action
-                .apply(&room, &target_user_id, reason.as_deref())
+                .apply(&room, &actor_user_id, &target_user_id, reason.as_deref())
                 .await;
             room_outcomes.push(ModerationRoomOutcome {
                 room_id: room.room_id().to_string(),
@@ -428,6 +516,42 @@ mod tests {
             MatrixModerationAction::RoleMember
         );
         assert!(MatrixModerationAction::role("owner".into()).is_err());
+    }
+
+    #[test]
+    fn role_templates_keep_permission_management_owner_only() {
+        assert_eq!(
+            MatrixModerationAction::RoleAdmin.role_power_level(),
+            Some(int!(50))
+        );
+        assert_eq!(
+            MatrixModerationAction::RoleMember.role_power_level(),
+            Some(int!(0))
+        );
+        assert!(int!(100) > int!(50));
+    }
+
+    #[test]
+    fn role_updates_harden_the_power_levels_event_before_assigning_an_admin() {
+        let source = include_str!("moderation.rs");
+        let apply = source
+            .split("async fn apply(")
+            .nth(1)
+            .expect("moderation apply implementation exists")
+            .split("impl MatrixBackend")
+            .next()
+            .expect("moderation action implementation is bounded");
+        assert!(apply.contains("StateEventType::RoomPowerLevels"));
+        assert!(apply.contains("int!(100)"));
+        assert!(apply.contains("send_state_event"));
+        assert!(!apply.contains("update_power_levels"));
+    }
+
+    #[test]
+    fn new_room_override_protects_role_management_from_level_fifty_members() {
+        let raw = MatrixBackend::community_role_power_level_override().unwrap();
+        let content = raw.deserialize_as_unchecked::<serde_json::Value>().unwrap();
+        assert_eq!(content["events"]["m.room.power_levels"], 100);
     }
 
     #[test]

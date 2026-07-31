@@ -4,14 +4,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MatrixAccountScreen } from './MatrixAccountScreen'
 import * as bridge from '../../lib/bridge'
 import type { MatrixCommunityAdmission, PendingInvitationMetadata } from '../../types/ipc'
+import {
+  REGISTRATION_CONTINUATION_STORAGE_KEY,
+  REGISTRATION_CONTINUATION_TTL_MS,
+  createRegistrationContinuation,
+} from '../../lib/registration-continuation'
+import { useDraftStore } from '../../store/drafts'
 
 vi.mock('../../lib/bridge', () => ({
+  getMatrixUserPreferences: vi.fn(async () => null),
+  isMatrixBackend: vi.fn(() => true),
   isTauriRuntime: vi.fn(() => false),
   matrixAccounts: vi.fn(async () => []),
   matrixServiceCapabilities: vi.fn(),
   matrixOidcStatus: vi.fn(),
   matrixCancelLogin: vi.fn(async () => {}),
   resolveCommunityInvite: vi.fn(),
+  setKv: vi.fn(async () => {}),
+  updateMatrixUserPreferences: vi.fn(async () => {}),
 }))
 
 describe('MatrixAccountScreen', () => {
@@ -23,6 +33,8 @@ describe('MatrixAccountScreen', () => {
     vi.useRealTimers()
     vi.mocked(bridge.isTauriRuntime).mockReturnValue(false)
     vi.mocked(bridge.matrixAccounts).mockResolvedValue([])
+    window.localStorage.clear()
+    useDraftStore.setState({ drafts: {} })
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -40,6 +52,8 @@ describe('MatrixAccountScreen', () => {
     expect(container.textContent).toContain('Choose your account service')
     expect(container.textContent).toContain('Matrix.org')
     expect(container.textContent).toContain('independently')
+    expect(container.textContent).toContain('opens this service in your browser')
+    expect(container.textContent).toContain('Return to Mesh afterward')
     // Public services now expose registration and sign-in as equal, explicit choices.
     expect(findLink('Create account').getAttribute('href')).toMatch(/^https:\/\//)
     expect(findLink('Terms').getAttribute('href')).toMatch(/^https:\/\//)
@@ -71,6 +85,157 @@ describe('MatrixAccountScreen', () => {
     expect(container.textContent).toContain('quassel.io')
     expect(findLink('Terms').getAttribute('href')).toMatch(/^https:\/\//)
     expect(container.textContent).not.toContain('server directory')
+  })
+
+  it('survives a Matrix.org registration round trip and app restart', async () => {
+    const pendingInvitation = pendingInvitationMetadata()
+    const login = vi.fn(async () => {})
+    const onNext = vi.fn()
+    await renderScreen({
+      initialPendingInvitation: pendingInvitation,
+      onMatrixLogin: login,
+      onNext,
+    })
+
+    await act(async () => clickLink(findLink('Create account')))
+    expect(container.textContent).toContain('Finish with Matrix.org')
+    expect(container.textContent).toContain('saved your place for two hours')
+    expect(container.textContent).toContain('invitation remains protected')
+    expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY))
+      .not.toContain('!garden:community.example')
+
+    act(() => root.unmount())
+    root = createRoot(container)
+    await renderScreen({
+      initialPendingInvitation: pendingInvitation,
+      onMatrixLogin: login,
+      onNext,
+    })
+
+    expect(container.textContent).toContain('Finish with Matrix.org')
+    await act(async () => findButton('I created my account — sign in').click())
+    expect(container.textContent).toContain('Sign in to Matrix.org')
+    expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY)).not.toBeNull()
+
+    await act(async () => {
+      setInputValue(findInput('username'), 'alice')
+      setInputValue(findInput('password'), 'correct horse battery staple')
+      submitForm()
+      await Promise.resolve()
+    })
+
+    expect(login).toHaveBeenCalledOnce()
+    expect(onNext).toHaveBeenCalledWith('signed-in')
+    expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY)).toBeNull()
+  })
+
+  it('retains the invitation and selected service after a failed login and restart', async () => {
+    const pendingInvitation = pendingInvitationMetadata()
+    const failedLogin = vi.fn(async () => {
+      throw new Error('offline')
+    })
+    await renderScreen({
+      initialPendingInvitation: pendingInvitation,
+      onMatrixLogin: failedLogin,
+    })
+
+    await act(async () => clickLink(findLink('Create account')))
+    await act(async () => findButton('I created my account — sign in').click())
+    await act(async () => {
+      setInputValue(findInput('username'), 'alice')
+      setInputValue(findInput('password'), 'correct horse battery staple')
+      submitForm()
+      await Promise.resolve()
+    })
+
+    expect(failedLogin).toHaveBeenCalledOnce()
+    expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY))
+      .toContain('"accountServiceId":"matrix-org"')
+
+    act(() => root.unmount())
+    root = createRoot(container)
+    await renderScreen({ initialPendingInvitation: pendingInvitation })
+
+    expect(container.textContent).toContain('Finish with Matrix.org')
+    expect(container.textContent).toContain('invitation remains protected')
+  })
+
+  it('uses the same registration continuation for another reviewed public service', async () => {
+    await renderScreen({ initialPendingInvitation: pendingInvitationMetadata() })
+    await act(async () => findButton('More public services').click())
+
+    const createLink = container.querySelector<HTMLAnchorElement>(
+      'a[aria-label="Create account with tchncs.de"]',
+    )
+    expect(createLink).not.toBeNull()
+    await act(async () => clickLink(createLink!))
+
+    expect(container.textContent).toContain('Finish with tchncs.de')
+    expect(container.textContent).toContain('provider credentials')
+    expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY))
+      .toContain('"accountServiceId":"tchncs-de"')
+  })
+
+  it('cancels external registration without discarding the invitation', async () => {
+    const pendingInvitation = pendingInvitationMetadata()
+    const discardPending = vi.fn(async () => {})
+    await renderScreen({
+      initialPendingInvitation: pendingInvitation,
+      onDiscardPendingInvitation: discardPending,
+    })
+
+    await act(async () => clickLink(findLink('Create account')))
+    await act(async () => findButton('Cancel').click())
+
+    expect(container.textContent).toContain('invitation is still saved')
+    expect(container.textContent).toContain('used after you sign in')
+    expect(discardPending).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY)).toBeNull()
+  })
+
+  it('fails closed with a recovery action when saved registration state expires', async () => {
+    createRegistrationContinuation({
+      invitationTarget: null,
+      accountServiceId: 'matrix-org',
+      accountServiceAddress: 'matrix.org',
+    }, Date.now() - REGISTRATION_CONTINUATION_TTL_MS - 1)
+
+    await renderScreen()
+
+    expect(container.textContent).toContain('saved registration return expired')
+    expect(findButton('Sign in')).toBeTruthy()
+    expect(findButton('Use another service')).toBeTruthy()
+    expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY)).toBeNull()
+  })
+
+  it('rejects a registration return for a replaced invitation', async () => {
+    createRegistrationContinuation({
+      invitationTarget: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      accountServiceId: 'matrix-org',
+      accountServiceAddress: 'matrix.org',
+    })
+
+    await renderScreen({ initialPendingInvitation: pendingInvitationMetadata() })
+    await act(async () => findButton('I created my account — sign in').click())
+
+    expect(container.textContent).toContain('saved invitation is missing or expired')
+    expect(container.textContent).toContain('Choose your account service')
+    expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY)).toBeNull()
+  })
+
+  it('does not discard a continuation while the native invitation is still loading', async () => {
+    createRegistrationContinuation({
+      invitationTarget: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      accountServiceId: 'matrix-org',
+      accountServiceAddress: 'matrix.org',
+    })
+
+    await renderScreen()
+    await act(async () => findButton('I created my account — sign in').click())
+
+    expect(container.textContent).toContain('could not find the saved community invitation yet')
+    expect(container.textContent).toContain('Finish with Matrix.org')
+    expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY)).not.toBeNull()
   })
 
   it('uses the explicitly selected Matrix.org service without coupling it to a community', async () => {
@@ -370,6 +535,44 @@ describe('MatrixAccountScreen', () => {
     expect(container.textContent).not.toContain('friends.example')
   })
 
+  it('clears previous-account renderer data after a saved-account switch succeeds', async () => {
+    vi.mocked(bridge.isTauriRuntime).mockReturnValue(true)
+    vi.mocked(bridge.matrixAccounts).mockResolvedValue([
+      {
+        profileId: 'profile-2',
+        userId: '@bob:friends.example',
+        homeserver: 'https://friends.example',
+        deviceId: 'DEVICE',
+        lastUsedAt: '2026-07-25T00:00:00Z',
+        current: false,
+      },
+    ])
+    useDraftStore.setState({ drafts: { '!shared:example.org': 'Alice private draft' } })
+    const switchAccount = vi.fn(async () => {})
+    let resolveNext!: () => void
+    const nextCalled = new Promise<void>((resolve) => {
+      resolveNext = resolve
+    })
+    const onNext = vi.fn(() => resolveNext())
+    await renderScreen({ onMatrixSwitchAccount: switchAccount, onNext })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(container.textContent).toContain('bob')
+    const continueButton = container.querySelector<HTMLButtonElement>(
+      'section[aria-label="Saved accounts"] button',
+    )
+    expect(continueButton).not.toBeNull()
+    await act(async () => {
+      continueButton!.click()
+      await nextCalled
+    })
+
+    expect(switchAccount).toHaveBeenCalledWith('profile-2')
+    expect(useDraftStore.getState().drafts).toEqual({})
+    expect(onNext).toHaveBeenCalledWith('signed-in')
+  })
+
   async function renderScreen(overrides: {
     onMatrixCheckUsernameAvailable?: (homeserver: string, username: string) => Promise<boolean>
     onMatrixRegisterAccount?: (request: {
@@ -386,6 +589,7 @@ describe('MatrixAccountScreen', () => {
       deviceName?: string
     }) => Promise<void>
     onMatrixOidcLogin?: (homeserver: string) => Promise<void>
+    onMatrixSwitchAccount?: (profileId: string) => Promise<void>
     initialInvitation?: string
     initialPendingInvitation?: PendingInvitationMetadata
     onResolvePendingInvitation?: () => Promise<MatrixCommunityAdmission | null>
@@ -403,6 +607,7 @@ describe('MatrixAccountScreen', () => {
           }
           onMatrixLogin={overrides.onMatrixLogin ?? vi.fn(async () => {})}
           onMatrixOidcLogin={overrides.onMatrixOidcLogin ?? vi.fn(async () => {})}
+          onMatrixSwitchAccount={overrides.onMatrixSwitchAccount}
           initialInvitation={overrides.initialInvitation}
           initialPendingInvitation={overrides.initialPendingInvitation}
           onResolvePendingInvitation={overrides.onResolvePendingInvitation}
@@ -433,6 +638,12 @@ describe('MatrixAccountScreen', () => {
     return input
   }
 
+  function clickLink(link: HTMLAnchorElement) {
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true })
+    event.preventDefault()
+    link.dispatchEvent(event)
+  }
+
   function submitForm() {
     container.querySelector('form')?.dispatchEvent(
       new Event('submit', { bubbles: true, cancelable: true }),
@@ -458,4 +669,16 @@ function setInputValue(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
   setter?.call(input, value)
   input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+function pendingInvitationMetadata(): PendingInvitationMetadata {
+  return {
+    handle: 'd283967b-e094-460c-bf06-fbe068c21d5b',
+    roomOrAlias: '!garden:community.example',
+    via: ['community.example'],
+    service: 'community.example',
+    admissionService: null,
+    storedAt: 1_786_000_000_000,
+    expiresAt: 1_788_592_000_000,
+  }
 }

@@ -11,8 +11,8 @@ use tauri_plugin_notification::NotificationExt;
 
 use crate::backend::{
     MatrixBackendEvent, MatrixNotification, MatrixUnreadUpdate, NotificationPresentationContext,
-    MATRIX_NOTIFICATION_EVENT, MATRIX_QUEUED_MESSAGE_EVENT, MATRIX_ROOM_PINS_EVENT,
-    MATRIX_RTC_MEDIA_KEY_EVENT, MATRIX_RTC_MEDIA_KEY_FAILURE_EVENT,
+    MATRIX_NOTIFICATION_EVENT, MATRIX_PERMISSION_STATE_CHANGED_EVENT, MATRIX_QUEUED_MESSAGE_EVENT,
+    MATRIX_ROOM_PINS_EVENT, MATRIX_RTC_MEDIA_KEY_EVENT, MATRIX_RTC_MEDIA_KEY_FAILURE_EVENT,
     MATRIX_RTC_MEDIA_KEY_PAUSE_EVENT, MATRIX_RTC_MEMBERSHIP_EVENT, MATRIX_UNREAD_UPDATE_EVENT,
 };
 
@@ -258,6 +258,14 @@ pub fn handle_matrix_backend_event(app: &AppHandle, event: MatrixBackendEvent) {
                 tracing::warn!(
                     target: "mesh::matrixrtc",
                     "Could not emit MatrixRTC media key pause request: {error}"
+                );
+            }
+        }
+        MatrixBackendEvent::PermissionStateChanged(change) => {
+            if let Err(error) = app.emit(MATRIX_PERMISSION_STATE_CHANGED_EVENT, &change) {
+                tracing::warn!(
+                    target: "mesh::matrix",
+                    "Could not emit Matrix permission-state update: {error}"
                 );
             }
         }

@@ -11,6 +11,7 @@ vi.mock('../lib/bridge', () => bridge)
 
 import {
   refreshMatrixPreferences,
+  resetMatrixAccountPreferences,
   retryMatrixPreferenceSync,
   useSettingsStore,
 } from './settings'
@@ -19,8 +20,8 @@ const remotePreferences = {
   schemaVersion: 4,
   notificationsEnabled: true,
   notificationSound: true,
-  mutedChannels: [],
-  mutedCommunities: [],
+  mutedChannels: [] as string[],
+  mutedCommunities: [] as string[],
   sendReadReceipts: false,
   readReceiptMode: 'public',
   sendTypingIndicators: false,
@@ -43,6 +44,7 @@ describe('Matrix preference sync state', () => {
     consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     bridge.getMatrixUserPreferences.mockResolvedValue(remotePreferences)
     bridge.updateMatrixUserPreferences.mockResolvedValue(remotePreferences)
+    resetMatrixAccountPreferences()
     useSettingsStore.setState({
       privacy: {
         readReceiptMode: 'public',
@@ -91,5 +93,41 @@ describe('Matrix preference sync state', () => {
     await flushPromises()
 
     expect(bridge.setKv).not.toHaveBeenCalled()
+  })
+
+  it('rejects an old account read after reset and accepts the next account', async () => {
+    let resolveOldRead!: (value: typeof remotePreferences) => void
+    bridge.getMatrixUserPreferences.mockImplementationOnce(
+      () => new Promise<typeof remotePreferences>((resolve) => {
+        resolveOldRead = resolve
+      }),
+    )
+
+    const oldRead = refreshMatrixPreferences('@alice:example.org')
+    await flushPromises()
+    resetMatrixAccountPreferences()
+    expect(useSettingsStore.getState().privacy.readReceiptMode).toBe('off')
+
+    resolveOldRead({
+      ...remotePreferences,
+      readReceiptMode: 'public',
+      mutedChannels: ['!alice-private:example.org'],
+    })
+    await oldRead
+
+    expect(useSettingsStore.getState().privacy.readReceiptMode).toBe('off')
+    expect(useSettingsStore.getState().notifications.mutedChannels).toEqual([])
+
+    bridge.getMatrixUserPreferences.mockResolvedValueOnce({
+      ...remotePreferences,
+      readReceiptMode: 'private',
+      mutedChannels: ['!bob:example.org'],
+    })
+    await refreshMatrixPreferences('@bob:example.org')
+
+    expect(useSettingsStore.getState().privacy.readReceiptMode).toBe('private')
+    expect(useSettingsStore.getState().notifications.mutedChannels).toEqual([
+      '!bob:example.org',
+    ])
   })
 })

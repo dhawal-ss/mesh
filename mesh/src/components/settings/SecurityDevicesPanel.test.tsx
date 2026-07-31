@@ -85,6 +85,7 @@ describe('SecurityDevicesPanel', () => {
   let root: Root
 
   beforeEach(() => {
+    window.localStorage.clear()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -250,6 +251,9 @@ describe('SecurityDevicesPanel', () => {
     act(() => removeButton?.click())
 
     expect(document.body.textContent).toContain('This cannot be undone')
+    expect(document.body.textContent).toContain("only this account's Mesh data")
+    expect(document.body.textContent).toContain('Neither action deletes the account at its service')
+    expect(document.body.textContent).toContain('history already shared')
     const confirmButton = findButton(document.body, 'Permanently remove local account')
     // Local data deletion now uses the same explicit danger confirmation bar as remote deletion.
     expect(confirmButton.disabled).toBe(true)

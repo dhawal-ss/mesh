@@ -1,6 +1,9 @@
 [CmdletBinding()]
 param(
     [string]$Tag = "",
+    [string]$ReleaseVersion = "",
+    [switch]$RequireCleanSource,
+    [string]$ExpectedSourceSha = "",
     [switch]$RequireSigningEnvironment,
     [switch]$VerifyFrontendBundle,
     [string]$FrontendRoot = "",
@@ -340,6 +343,11 @@ $matrixAcceptanceWorkflowPath = Join-Path $gitRoot ".github/workflows/matrix-fed
 $developerPreviewWorkflowPath = Join-Path $gitRoot ".github/workflows/developer-preview.yml"
 $pagesWorkflowPath = Join-Path $gitRoot ".github/workflows/pages.yml"
 $matrixSpikeComposePath = Join-Path $repoRoot "infra/matrix-spike/docker-compose.yml"
+$matrixRtcPreflightPath = Join-Path $repoRoot "scripts/matrixrtc-preflight.ps1"
+$matrixRtcEvidenceModulePath = Join-Path $repoRoot "infra/matrixrtc/MatrixRtcEvidence.psm1"
+$matrixRtcEvidenceTestPath = Join-Path $repoRoot "infra/matrixrtc/test-evidence-validation.ps1"
+$matrixDependencyBoundaryPath = Join-Path $repoRoot "scripts/check-matrix-release-dependencies.ps1"
+$releaseArtifactScanPath = Join-Path $repoRoot "scripts/scan-release-artifacts.ps1"
 
 $packageConfig = Read-JsonFile $packagePath
 $tauriConfig = Read-JsonFile $tauriConfigPath
@@ -353,6 +361,11 @@ $matrixAcceptanceWorkflowText = Read-Utf8Text $matrixAcceptanceWorkflowPath
 $developerPreviewWorkflowText = Read-Utf8Text $developerPreviewWorkflowPath
 $pagesWorkflowText = Read-Utf8Text $pagesWorkflowPath
 $matrixSpikeComposeText = Read-Utf8Text $matrixSpikeComposePath
+$matrixRtcPreflightText = Read-Utf8Text $matrixRtcPreflightPath
+$matrixRtcEvidenceModuleText = Read-Utf8Text $matrixRtcEvidenceModulePath
+$matrixRtcEvidenceTestText = Read-Utf8Text $matrixRtcEvidenceTestPath
+$matrixDependencyBoundaryText = Read-Utf8Text $matrixDependencyBoundaryPath
+$releaseArtifactScanText = Read-Utf8Text $releaseArtifactScanPath
 
 if (Test-Path -LiteralPath $nestedWorkflowRoot -PathType Container) {
     $nestedWorkflows = @(
@@ -371,6 +384,18 @@ Assert-Condition ($packageVersion -eq $tauriVersion) `
     "Version mismatch: package.json is $packageVersion but tauri.conf.json is $tauriVersion."
 Assert-Condition ($cargoVersion -eq $tauriVersion) `
     "Version mismatch: Cargo.toml is $cargoVersion but tauri.conf.json is $tauriVersion."
+if (-not [string]::IsNullOrWhiteSpace($ReleaseVersion)) {
+    $normalizedReleaseVersion = $ReleaseVersion.Trim()
+    if ($normalizedReleaseVersion.StartsWith("v", [StringComparison]::OrdinalIgnoreCase)) {
+        $normalizedReleaseVersion = $normalizedReleaseVersion.Substring(1)
+    }
+    Assert-Condition ($normalizedReleaseVersion -match '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$') `
+        "ReleaseVersion must be an explicit semantic version."
+    Assert-Condition ($normalizedReleaseVersion -eq $tauriVersion) `
+        "ReleaseVersion $normalizedReleaseVersion does not match the application version $tauriVersion."
+    Assert-Condition ($normalizedReleaseVersion -ne "0.1.0") `
+        "Version 0.1.0 is a placeholder and cannot be published as a Matrix beta."
+}
 Assert-Condition ($tauriConfig.identifier -eq "com.mesh.desktop") `
     "The production application identifier must remain com.mesh.desktop."
 Assert-WindowsOnlyBundleTargets -TauriConfig $tauriConfig
@@ -389,6 +414,14 @@ Assert-Condition ($releaseWorkflowText -match '(?m)^\s*--prerelease\s*`?\s*$') `
     "The beta workflow must mark releases as prereleases."
 Assert-Condition ($releaseWorkflowText -match 'npm run tauri -- build --features matrix-backend -- --no-default-features --locked --jobs 1') `
     "The beta workflow must build the locked Matrix-only feature set."
+Assert-Condition ($releaseWorkflowText -match '(?m)^\s*release_version:\s*$') `
+    "The beta workflow must require an explicit release_version input for manual runs."
+Assert-Condition ($releaseWorkflowText -match 'ReleaseVersion') `
+    "The beta workflow must pass its explicit version to source preflight."
+Assert-Condition ($releaseWorkflowText -match 'MESH_OAUTH_CLIENT_REGISTRATIONS_JSON:\s*\$\{\{\s*vars\.MESH_OAUTH_CLIENT_REGISTRATIONS_JSON\s*\}\}') `
+    "The beta workflow must pass the reviewed public issuer registration registry as a build input."
+Assert-Condition ($releaseWorkflowText -notmatch 'MESH_OAUTH_CLIENT_ID') `
+    "The beta workflow must not use one global OAuth client ID across unrelated issuers."
 
 Assert-NoUpdaterConfiguration `
     -TauriConfig $tauriConfig `
@@ -412,6 +445,42 @@ Assert-Condition ($releaseWorkflowText -match 'npm run check:public-services') `
     "The beta workflow must validate the reviewed public-service catalog."
 Assert-Condition ($releaseWorkflowText -match 'npm run check:public-site') `
     "The beta workflow must validate the public site source."
+Assert-Condition ($releaseWorkflowText -match 'matrixrtc-preflight\.ps1') `
+    "The beta workflow must validate pinned MatrixRTC configuration and the physical/network acceptance contract."
+Assert-Condition ($releaseWorkflowText -match 'test-evidence-validation\.ps1') `
+    "The beta workflow must run the MatrixRTC evidence validator positive and negative tests."
+Assert-Condition ($releaseWorkflowText -match 'operator-smoke\.ps1') `
+    "The beta workflow must validate the secret-free operator-smoke configuration before building release artifacts."
+Assert-Condition ($matrixRtcPreflightText -match '\[switch\]\$RequireLiveAcceptance') `
+    "MatrixRTC preflight must retain an explicit complete-live-acceptance evidence gate."
+Assert-Condition ($matrixRtcPreflightText -match 'acceptance-matrix\.example\.json') `
+    "MatrixRTC preflight must validate the checked physical/network acceptance matrix."
+Assert-Condition ($matrixRtcEvidenceModuleText -match 'sourceSha must equal the current') `
+    "Complete MatrixRTC evidence must remain bound to the exact current source SHA."
+Assert-Condition ($matrixRtcEvidenceModuleText -match '--untracked-files=all') `
+    "Complete MatrixRTC evidence must reject tracked and untracked worktree changes."
+Assert-Condition ($matrixRtcEvidenceModuleText -match 'Get-FileHash.+SHA256') `
+    "Complete MatrixRTC evidence must verify artifact SHA-256 digests."
+Assert-Condition ($matrixRtcEvidenceModuleText -match 'resolves outside the explicit evidence root') `
+    "Complete MatrixRTC evidence must reject canonical path and symlink escape."
+Assert-Condition ($matrixRtcEvidenceTestText -match 'dirty source is rejected' -and
+    $matrixRtcEvidenceTestText -match 'changed hash is rejected' -and
+    $matrixRtcEvidenceTestText -match 'unknown evidence reference is rejected') `
+    "MatrixRTC evidence tests must retain dirty-source, hash-tamper, and unknown-reference cases."
+Assert-Condition ($releaseWorkflowText -match 'check-matrix-release-dependencies\.ps1') `
+    "The beta workflow must mechanically prove the Matrix and legacy dependency boundary."
+Assert-Condition ($matrixDependencyBoundaryText -match 'hickory-proto v0\\\.24\\\.4' -and
+    $matrixDependencyBoundaryText -match 'ring v0\\\.16\\\.20' -and
+    $matrixDependencyBoundaryText -match 'rustls-webpki v0\\\.101\\\.7') `
+    "The Matrix dependency boundary must retain all currently enumerated vulnerable legacy versions."
+Assert-Condition ($releaseWorkflowText -match 'Report raw Rust advisory status' -and
+    $releaseWorkflowText -match 'Run Matrix release-scoped Rust audit') `
+    "The beta workflow must report raw and Matrix release-scoped Rust audit results separately."
+Assert-Condition ($releaseWorkflowText -match 'scan-release-artifacts\.ps1') `
+    "The beta workflow must scan generated release artifacts for configured secrets."
+Assert-Condition ($releaseArtifactScanText -match 'WINDOWS_CERTIFICATE_PASSWORD' -and
+    $releaseArtifactScanText -match 'Test-ByteSequence') `
+    "Release artifact scanning must check configured secret values without printing them."
 Assert-Condition ($developerPreviewWorkflowText -match '(?m)^\s*workflow_dispatch:\s*$') `
     "Unsigned developer previews must be owner-triggered, not published automatically."
 Assert-Condition ($developerPreviewWorkflowText -notmatch '(?m)^\s*gh release create\b') `
@@ -452,6 +521,27 @@ if (-not [string]::IsNullOrWhiteSpace($Tag)) {
     $expectedTag = "v$tauriVersion"
     Assert-Condition ($Tag -eq $expectedTag) `
         "Release tag $Tag does not match the application version $expectedTag."
+    Assert-Condition ($Tag -ne "v0.1.0") `
+        "Tag v0.1.0 is a placeholder and cannot publish a Matrix beta."
+}
+
+if ($RequireCleanSource) {
+    $currentSourceSha = (& git -C $gitRoot rev-parse HEAD).Trim()
+    Assert-Condition ($currentSourceSha -match '^[0-9a-f]{40}$') `
+        "Could not resolve the exact release source SHA."
+    $worktreeState = [string]::Join(
+        "`n",
+        @(& git -C $gitRoot status --porcelain --untracked-files=all)
+    ).Trim()
+    Assert-Condition ([string]::IsNullOrWhiteSpace($worktreeState)) `
+        "Release source must have a clean tracked and untracked worktree."
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedSourceSha)) {
+        Assert-Condition ($ExpectedSourceSha -match '^[0-9a-f]{40}$') `
+            "ExpectedSourceSha must be a 40-character Git SHA."
+        Assert-Condition ($ExpectedSourceSha -eq $currentSourceSha) `
+            "Release source SHA $currentSourceSha does not match ExpectedSourceSha $ExpectedSourceSha."
+    }
+    Write-Host "Clean release source verified at $currentSourceSha."
 }
 
 if ($RequireSigningEnvironment) {
@@ -465,6 +555,30 @@ if ($RequireSigningEnvironment) {
     }
     Assert-Condition ($missingVariables.Count -eq 0) `
         "Missing required release secrets: $($missingVariables -join ', ')."
+
+    $oidcRegistrationJson = [Environment]::GetEnvironmentVariable(
+        "MESH_OAUTH_CLIENT_REGISTRATIONS_JSON"
+    )
+    Assert-Condition (-not [string]::IsNullOrWhiteSpace($oidcRegistrationJson)) `
+        "MESH_OAUTH_CLIENT_REGISTRATIONS_JSON is required as a reviewed non-secret release build input."
+    try {
+        $oidcRegistrations = $oidcRegistrationJson | ConvertFrom-Json -Depth 8 -ErrorAction Stop
+    } catch {
+        throw "MESH_OAUTH_CLIENT_REGISTRATIONS_JSON is not valid JSON."
+    }
+    Assert-Condition ($oidcRegistrations.version -eq 1) `
+        "MESH_OAUTH_CLIENT_REGISTRATIONS_JSON must use schema version 1."
+    Assert-Condition (@($oidcRegistrations.registrations).Count -gt 0) `
+        "MESH_OAUTH_CLIENT_REGISTRATIONS_JSON must contain at least one reviewed issuer registration."
+    foreach ($registration in @($oidcRegistrations.registrations)) {
+        Assert-Condition (-not [string]::IsNullOrWhiteSpace([string]$registration.issuer)) `
+            "Every OAuth registration must name an exact issuer."
+        Assert-Condition (-not [string]::IsNullOrWhiteSpace([string]$registration.clientId)) `
+            "Every OAuth registration must include its public desktop client ID."
+        Assert-Condition (
+            [string]$registration.redirectUri -eq "http://127.0.0.1:8418/oauth/callback"
+        ) "Every OAuth registration must use the fixed Mesh loopback callback."
+    }
 
     $normalizedThumbprint = $env:WINDOWS_CERTIFICATE_THUMBPRINT.Replace(" ", "").ToUpperInvariant()
     Assert-Condition ($normalizedThumbprint -match '^[0-9A-F]{40}$') `

@@ -8,7 +8,7 @@
 
 ## Current verified readiness ledger
 
-**Evidence date:** 2026-07-30
+**Evidence date:** 2026-07-31
 **Branch:** `main`
 **Phase 0 implementation SHA:** `67b1ec80d90d9f1e4d016fea8984a14b06b2d37a`
 **Phase 0 main merge SHA:** `12f451dca133f4d7658e42a7930614691b27a299`
@@ -23,6 +23,103 @@ This section is the current source of truth. The detailed workstream review belo
 is retained as the original `2ca3dcc` audit baseline, so statements there that
 describe invitations, deep links, account removal, export, rate-limit cleanup,
 or test counts as missing are historical rather than current.
+
+### 2026-07-31 wave-two final integration barrier
+
+**Verdict:** `LOCALLY_INTEGRATED_NOT_RELEASE_READY`.
+
+The barrier was first verified in a dirty `main` integration worktree based on
+`72f093c84621183073ec43e233cfe0a26a1ca5f2`. The unified `main` commit
+containing this ledger records the reviewed source state, but local verification
+and a clean commit do not substitute for protected same-SHA CI, signing,
+deployment, or public-download evidence.
+
+Integrated result:
+
+- External registration preserves the explicitly selected account service and
+  opaque pending invitation across restart. Continuation state is bounded,
+  replay-resistant, expires, and is consumed only after authentication
+  succeeds.
+- Browser sign-in now selects a public desktop client registration by the exact
+  canonical issuer discovered from the selected service. The fixed callback is
+  `http://127.0.0.1:8418/oauth/callback`; one global client ID, issuer aliases,
+  dynamic fallback, and callback variation are rejected. The local build has no
+  embedded production registrations, so browser sign-in remains fail-closed.
+- Account switching clears rooms, DMs, drafts, downloads, notification and
+  privacy preferences, recovery state, voice state, selection state, and
+  identity-scoped caches before the next bootstrap. In-flight preference reads
+  are generation-invalidated; device-local appearance and the native pending
+  invitation are preserved.
+- Agent 3's authoritative community permission reader is now part of the shared
+  backend/IPC contract. Renderer reads are coalesced, generation-guarded, and
+  refreshed after role changes plus relevant `m.room.power_levels` and
+  `m.space.child` sync events. Role Apply stays disabled without current
+  authority, and diagnostics list bounded per-room status and plain failure
+  reasons.
+- Agent 2's explicit Matrix presence publication/rollback, one-second bounded
+  `sync_once`, live-test diagnostics, MatrixRTC evidence controls, release
+  provenance, dependency split, and signing checks were preserved. Voice
+  remains unavailable and all 23 physical/network MatrixRTC cases remain
+  `not-run`.
+- The release workflow accepts the reviewed non-secret
+  `MESH_OAUTH_CLIENT_REGISTRATIONS_JSON` repository variable, but no provider
+  IDs, signing keys, secrets, or production values were invented.
+- C1 guided entry, C2 forums/events, C3 integrations, C4 expression features,
+  and C5 cache/i18n/mobile work remain not started; they were not smuggled
+  through the C0 integration barrier.
+
+Final serialized evidence from the integrated worktree:
+
+- `npm ci` audited 406 packages; `npm audit` reported 0 vulnerabilities.
+  ESLint passed with zero warnings and TypeScript passed with no errors.
+- Vitest passed 91 files and 648 tests with one worker. Playwright passed 64 of
+  64 browser/WCAG scenarios with one worker. Its runtime sample was 168 ms
+  ready, 97 DOM nodes, 11,200,000 heap bytes, 0 ms long tasks, and 3,614,767
+  transferred bytes.
+- The production build passed. Bundle budgets passed at 201.80 KiB entry,
+  514.13 KiB eager JavaScript, 1,967.16 KiB all JavaScript, 74.52 KiB CSS,
+  332.28 KiB fonts, and 2,373.96 KiB total assets.
+- Design-token, central-icon, 172-command IPC, generated Rust-to-TypeScript DTO,
+  three reviewed public-service, nine-page public-site, and `git diff --check`
+  gates passed.
+- Matrix formatting and all-target Clippy passed with warnings denied. The
+  Matrix tree passed 164 library tests, one generated-contract test, and two
+  deterministic live-harness helper tests; three environment-backed tests were
+  explicitly ignored. The legacy tree passed 203 library tests, one
+  generated-contract test, 15 crypto integration tests, and two deterministic
+  TURN outcomes; 19 live/soak/environment cases were explicitly ignored.
+- Security-invariant filters passed 19 Matrix and 13 legacy behavior tests.
+
+Peer live evidence, kept separate from the final dirty integration state:
+
+- Agent 2 recorded two independent reset/live federation-recovery cycles
+  against the same observed base HEAD after its final presence fix. Each cycle
+  passed two tests with zero failures: 179,634 ms plus 7,012 ms fresh
+  registration, then 179,408 ms plus 6,892 ms fresh registration. They covered
+  encrypted federation, offline catch-up, recovery/decryption, presence,
+  account data, room upgrades, moderation, and audit.
+- Agent 2's RTC evidence validator passed 15 positive/negative cases, and its
+  local voice checks passed 42 frontend tests plus the Rust boundary. Those are
+  validator and fail-closed implementation results, not live media acceptance.
+- The final Agent 1 barrier intentionally did not rerun Agent 2's disposable
+  live systems or physical/signing/operator cases merely to manufacture a
+  second claim. Agent 3's post-integration compatible-client acceptance also
+  remains open.
+
+External gates still block release readiness:
+
+- reviewed provider-owned client registrations and redirect approval;
+  first-login, refresh, restart, revocation, logout-everywhere, recovery, and
+  clean installed-app OIDC evidence;
+- protected CI/security evidence for the exact unified integration commit;
+- trusted LiveKit authorization/SFU/TURN, active media E2EE and key rotation,
+  revocation, physical devices, a reviewed compatible client, and the 23-case
+  MatrixRTC acceptance matrix;
+- production DNS/TLS/federation, Mac mini or other operator deployment,
+  backup/restore, monitoring, quotas, incident, and rollback exercises;
+- non-placeholder release version, publisher identity, signing certificate,
+  signed installers, SBOM/provenance/attestation review, draft release, legal
+  approval, public pages, and canonical public-download verification.
 
 ### Phase 0 implementation
 

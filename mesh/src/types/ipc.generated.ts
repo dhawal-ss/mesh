@@ -24,6 +24,22 @@ export type MatrixNotification = { roomId: string, eventId: string, sender: stri
 
 export type MatrixUnreadUpdate = { roomId: string, unreadMessages: number, unreadMentions: number, };
 
+export type MatrixPermissionRoomStatus = "loaded" | "matrix-default" | "inaccessible" | "unsupported" | "failed";
+
+export type CommunityPermissionAggregateStatus = "granted-everywhere" | "granted-some-rooms" | "not-granted" | "unknown";
+
+export type CommunityPermissionId = "participate" | "invite" | "redact" | "remove" | "ban" | "roomState" | "roles";
+
+export type MatrixRoomPowerLevelProjection = { users: { [key in string]?: number }, usersDefault: number, events: { [key in string]?: number }, eventsDefault: number, stateDefault: number, ban: number, kick: number, invite: number, redact: number, notifications: { [key in string]?: number }, creatorUserIds: Array<string>, privilegedCreatorUserIds: Array<string>, joinedUserIds: Array<string>, };
+
+export type MatrixRoomPermissionProjection = { roomId: string, roomName: string, roomKind: "space" | "room", status: MatrixPermissionRoomStatus, policy: MatrixRoomPowerLevelProjection | null, failureReason: string | null, };
+
+export type CommunityPermissionAggregate = { permissionId: CommunityPermissionId, status: CommunityPermissionAggregateStatus, grantedRoomCount: number, verifiedRoomCount: number, totalRoomCount: number, };
+
+export type CommunityPermissionProjection = { communityId: string, subjectUserId: string, discoveryComplete: boolean, discoveryFailureReason: string | null, rooms: Array<MatrixRoomPermissionProjection>, aggregate: Array<CommunityPermissionAggregate>, };
+
+export type MatrixPermissionStateChanged = { roomId: string, };
+
 export type MatrixQueuedMessageState = "pending" | "failed" | "sent" | "cancelled";
 
 export type MatrixQueuedMessageUpdate = { roomId: string, transactionId: string, state: MatrixQueuedMessageState, eventId?: string | null, message?: MessageDto | null, };

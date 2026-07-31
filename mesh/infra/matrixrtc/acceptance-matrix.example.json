@@ -1,0 +1,238 @@
+{
+  "schemaVersion": 2,
+  "sourceSha": "REPLACE_WITH_40_CHARACTER_SOURCE_SHA",
+  "testedAt": "REPLACE_WITH_UTC_TIMESTAMP",
+  "operator": "REPLACE_WITH_RESPONSIBLE_TEST_ROLE",
+  "clientBuild": {
+    "identifier": "REPLACE_WITH_SIGNED_BUILD_IDENTIFIER",
+    "sourceSha": "REPLACE_WITH_40_CHARACTER_SOURCE_SHA",
+    "artifactEvidenceId": "REPLACE_WITH_CLIENT_BUILD_EVIDENCE_ID"
+  },
+  "homeservers": [
+    "REPLACE_WITH_SERVICE_A",
+    "REPLACE_WITH_SERVICE_B"
+  ],
+  "services": {
+    "authorizationEndpoint": "REPLACE_WITH_HTTPS_AUTHORIZATION_ENDPOINT",
+    "sfuEndpoint": "REPLACE_WITH_WSS_SFU_ENDPOINT",
+    "turnEndpoint": "REPLACE_WITH_TURNS_ENDPOINT"
+  },
+  "devices": [
+    {
+      "id": "REPLACE_WITH_DEVICE_A_ID",
+      "platform": "REPLACE_WITH_DEVICE_A_PLATFORM",
+      "description": "REPLACE_WITH_SANITIZED_DEVICE_A_DESCRIPTION"
+    },
+    {
+      "id": "REPLACE_WITH_DEVICE_B_ID",
+      "platform": "REPLACE_WITH_DEVICE_B_PLATFORM",
+      "description": "REPLACE_WITH_SANITIZED_DEVICE_B_DESCRIPTION"
+    }
+  ],
+  "networks": [
+    {
+      "id": "REPLACE_WITH_NETWORK_A_ID",
+      "description": "REPLACE_WITH_SANITIZED_NETWORK_A_DESCRIPTION"
+    },
+    {
+      "id": "REPLACE_WITH_NETWORK_B_ID",
+      "description": "REPLACE_WITH_SANITIZED_NETWORK_B_DESCRIPTION"
+    }
+  ],
+  "stack": {
+    "liveKitImage": "livekit/livekit-server:v1.13.1@sha256:2c6869d2d5ff6c9c0166f47be1c92dad6928bfecfa5e4060a6ece48db8accfa3",
+    "authorizationImage": "ghcr.io/element-hq/lk-jwt-service:0.4.4@sha256:9c715697c6f7c1f538f2ee41b7b59b04a8d06bf790a7cc8c8517ccac8d28813d"
+  },
+  "privacy": {
+    "sanitized": true,
+    "containsSecrets": false,
+    "notes": "Artifacts must omit account IDs, room names, message or media content, access tokens, JWTs, TURN credentials, API keys, API secrets, and personal contact data."
+  },
+  "artifacts": [],
+  "results": [
+    {
+      "id": "two-windows-same-lan",
+      "status": "not-run",
+      "expected": "Two supported Windows devices join, exchange encrypted audio, leave, and leave no ghost participant.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "two-windows-different-networks",
+      "status": "not-run",
+      "expected": "Two supported Windows devices on independent networks sustain encrypted audio and cleanly leave.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "windows-plus-supported-client",
+      "status": "not-run",
+      "expected": "A Windows device interoperates with another supported MatrixRTC client, or records why no reviewed client is available.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "restrictive-nat",
+      "status": "not-run",
+      "expected": "A call behind symmetric or restrictive NAT succeeds through an authorized transport without leaking credentials.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "udp-blocked-turn-tcp-tls",
+      "status": "not-run",
+      "expected": "With UDP blocked, the call uses TURN over TCP or TLS and diagnostics identify relay use without credentials.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "network-loss-reconnect",
+      "status": "not-run",
+      "expected": "Temporary loss and a network change reconnect without duplicate publication, stale UI, or ghost participants.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "active-kick",
+      "status": "not-run",
+      "expected": "A kicked participant promptly loses publication and cannot decrypt media sent after key rotation.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "active-ban",
+      "status": "not-run",
+      "expected": "A banned participant promptly loses publication and cannot rejoin or decrypt post-ban media.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "logout-during-call",
+      "status": "not-run",
+      "expected": "Logout revokes membership and publication and prevents the prior session from receiving new keys.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "device-removal-during-call",
+      "status": "not-run",
+      "expected": "Removing the publishing device revokes it and rotates keys before remaining members publish again.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "permission-loss-during-call",
+      "status": "not-run",
+      "expected": "Permission loss stops the affected source, explains the recovery action, and leaves chat usable.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "room-departure-during-call",
+      "status": "not-run",
+      "expected": "Leaving the room clears MatrixRTC membership, stops every local source, and prevents new key delivery.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "screen-share-start-stop",
+      "status": "not-run",
+      "expected": "Screen sharing starts and stops on each supported display path with no stale shared frame or publication.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "screen-share-permission-denied",
+      "status": "not-run",
+      "expected": "Denied screen-share permission produces an actionable recovery state without dropping chat or audio.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "app-restart-during-call",
+      "status": "not-run",
+      "expected": "Restarting during a call clears the prior membership and publication before a fresh join.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "app-restart-after-call",
+      "status": "not-run",
+      "expected": "Restarting after leaving does not resurrect call membership, media intent, or a ghost participant.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "media-key-rotation-late-join",
+      "status": "not-run",
+      "expected": "Rotation, pause and resume, replay rejection, and late join preserve E2EE without accepting stale keys.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "three-person-call",
+      "status": "not-run",
+      "expected": "Three invited participants sustain encrypted audio and leave with membership and participant counts at zero.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "larger-invited-call",
+      "status": "not-run",
+      "expected": "The declared beta participant limit meets its latency, packet-loss, resource, and cleanup targets.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "cross-service-call",
+      "status": "not-run",
+      "expected": "Accounts on separate compatible services join the same community call without moving account hosting.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "input-output-device-switch",
+      "status": "not-run",
+      "expected": "Input and output devices switch during a call and recover clearly from removal or permission denial.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "push-to-talk-deafen-mute",
+      "status": "not-run",
+      "expected": "Push-to-talk, mute, and deafen remain consistent across reconnect and never publish against local intent.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    },
+    {
+      "id": "concurrent-camera-screen-share",
+      "status": "not-run",
+      "expected": "Camera and screen share can transition concurrently within the supported bandwidth policy and both stop cleanly.",
+      "actual": "",
+      "notApplicableReason": null,
+      "evidenceIds": []
+    }
+  ]
+}

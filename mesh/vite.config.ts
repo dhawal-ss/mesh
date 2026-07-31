@@ -65,8 +65,18 @@ export default defineConfig(async () => ({
       output: {
         // Keep slow-changing framework code cacheable and keep the interactive
         // application shell below Vite's large-chunk threshold.
-        manualChunks: {
-          motion: ["framer-motion"],
+        manualChunks(id) {
+          const normalizedId = id.replaceAll("\\", "/");
+          if (
+            normalizedId.includes("/node_modules/react/")
+            || normalizedId.includes("/node_modules/react-dom/")
+            || normalizedId.includes("/node_modules/scheduler/")
+          ) {
+            return "framework";
+          }
+          if (normalizedId.includes("/node_modules/framer-motion/")) {
+            return "motion";
+          }
         },
       },
     },
