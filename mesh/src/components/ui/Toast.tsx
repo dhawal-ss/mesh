@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion } from '../../lib/lazy-motion'
 import { variants } from '../../lib/motion'
 
 export type ToastTone = 'success' | 'danger' | 'info' | 'warning'

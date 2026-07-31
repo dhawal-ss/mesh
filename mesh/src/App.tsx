@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion } from './lib/lazy-motion'
 import { OnboardingFlow } from './components/onboarding/OnboardingFlow'
 import { showToast, ToastContainer } from './components/ui/Toast'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
@@ -19,11 +19,14 @@ import { useShellStore } from './store/shell'
 import { describeError } from './lib/errors'
 
 const AppLayout = lazy(() =>
-  import('./components/layout/AppLayout').then((module) => ({ default: module.AppLayout })),
+  import('./components/layout/AppLayout').then((module) => ({
+    default: module.AppLayout,
+  })),
 )
 const InvitationConfirmation = lazy(() =>
-  import('./components/onboarding/InvitationConfirmation')
-    .then((module) => ({ default: module.InvitationConfirmation })),
+  import('./components/onboarding/InvitationConfirmation').then((module) => ({
+    default: module.InvitationConfirmation,
+  })),
 )
 
 const BOOTSTRAP_STEPS = {
@@ -72,13 +75,14 @@ function isProfileComplete(identity: Identity | null) {
   return Boolean(identity?.displayName.trim()) && Boolean(identity?.avatarColor.trim())
 }
 
-function mapNetworkState(status: { connected: boolean; peerCount: number; averageLatency: number; usingRelay: boolean }) {
+function mapNetworkState(status: {
+  connected: boolean
+  peerCount: number
+  averageLatency: number
+  usingRelay: boolean
+}) {
   return {
-    state: status.connected
-      ? 'connected'
-      : status.usingRelay
-        ? 'degraded'
-        : 'connecting',
+    state: status.connected ? 'connected' : status.usingRelay ? 'degraded' : 'connecting',
     peerCount: status.peerCount,
     averageLatency: status.averageLatency,
   } as const
@@ -121,11 +125,14 @@ export default function App() {
   useEffect(() => {
     if (!isTauriRuntime) return
     let active = true
-    void bridge.peekPendingInvitation().then((pending) => {
-      if (active) setPendingInvitation(pending)
-    }).catch((error) => {
-      if (active) console.warn('Could not inspect the pending invitation:', error)
-    })
+    void bridge
+      .peekPendingInvitation()
+      .then((pending) => {
+        if (active) setPendingInvitation(pending)
+      })
+      .catch((error) => {
+        if (active) console.warn('Could not inspect the pending invitation:', error)
+      })
     return () => {
       active = false
     }
@@ -137,26 +144,34 @@ export default function App() {
     let unlisten: (() => void) | undefined
     void installDeepLinkHandler((inviteLink) => {
       if (!active) return
-      void bridge.storePendingInvitation(inviteLink).then(async (pending) => {
-        if (!active) return
-        const describedPending = await bridge.peekPendingInvitation().catch(() => pending)
-        if (!active) return
-        setPendingInvitation(describedPending ?? pending)
-        setPendingAdmissionResolution(null)
-        setInvitationConfirmationError(null)
-        showToast('Community invitation saved securely and ready to review.', 'success')
-      }).catch((error) => {
-        if (active) {
-          console.error('Could not save community invitation:', error)
-          showToast('Mesh could not save this invitation securely. Try opening it again.', 'error')
-        }
-      })
-    }).then((cleanup) => {
-      if (active) unlisten = cleanup
-      else cleanup()
-    }).catch((error) => {
-      console.error('Could not listen for community invitation links:', error)
+      void bridge
+        .storePendingInvitation(inviteLink)
+        .then(async (pending) => {
+          if (!active) return
+          const describedPending = await bridge.peekPendingInvitation().catch(() => pending)
+          if (!active) return
+          setPendingInvitation(describedPending ?? pending)
+          setPendingAdmissionResolution(null)
+          setInvitationConfirmationError(null)
+          showToast('Community invitation saved securely and ready to review.', 'success')
+        })
+        .catch((error) => {
+          if (active) {
+            console.error('Could not save community invitation:', error)
+            showToast(
+              'Mesh could not save this invitation securely. Try opening it again.',
+              'error',
+            )
+          }
+        })
     })
+      .then((cleanup) => {
+        if (active) unlisten = cleanup
+        else cleanup()
+      })
+      .catch((error) => {
+        console.error('Could not listen for community invitation links:', error)
+      })
     return () => {
       active = false
       unlisten?.()
@@ -240,7 +255,13 @@ export default function App() {
     }
 
     setNetworkStatus(mapMatrixNetworkState(backendStatus.authenticated, backendStatus.syncRunning))
-  }, [backendStatus?.authenticated, backendStatus?.kind, backendStatus?.syncRunning, isTauriRuntime, setNetworkStatus])
+  }, [
+    backendStatus?.authenticated,
+    backendStatus?.kind,
+    backendStatus?.syncRunning,
+    isTauriRuntime,
+    setNetworkStatus,
+  ])
 
   useEffect(() => {
     if (!isTauriRuntime || backendStatus?.kind !== 'matrix') {
@@ -282,22 +303,25 @@ export default function App() {
   useEffect(() => {
     const pendingHandle = pendingInvitation?.handle
     if (
-      !isTauriRuntime
-      || showOnboarding
-      || backendStatus?.kind !== 'matrix'
-      || !backendStatus.authenticated
-      || !pendingHandle
+      !isTauriRuntime ||
+      showOnboarding ||
+      backendStatus?.kind !== 'matrix' ||
+      !backendStatus.authenticated ||
+      !pendingHandle
     ) {
       return
     }
     let active = true
-    void bridge.peekPendingInvitation().then((describedPending) => {
-      if (active && describedPending?.handle === pendingHandle) {
-        setPendingInvitation(describedPending)
-      }
-    }).catch((error) => {
-      if (active) console.warn('Could not refresh community invitation details:', error)
-    })
+    void bridge
+      .peekPendingInvitation()
+      .then((describedPending) => {
+        if (active && describedPending?.handle === pendingHandle) {
+          setPendingInvitation(describedPending)
+        }
+      })
+      .catch((error) => {
+        if (active) console.warn('Could not refresh community invitation details:', error)
+      })
     return () => {
       active = false
     }
@@ -314,12 +338,12 @@ export default function App() {
     const pendingHandle = pendingInvitation?.handle
     const admissionService = pendingInvitation?.admissionService
     if (
-      !isTauriRuntime
-      || showOnboarding
-      || backendStatus?.kind !== 'matrix'
-      || !backendStatus.authenticated
-      || !pendingHandle
-      || !admissionService
+      !isTauriRuntime ||
+      showOnboarding ||
+      backendStatus?.kind !== 'matrix' ||
+      !backendStatus.authenticated ||
+      !pendingHandle ||
+      !admissionService
     ) {
       return
     }
@@ -342,7 +366,9 @@ export default function App() {
           resolving: false,
           error: admission
             ? null
-            : new Error('This invitation is no longer available. Discard it and ask for a new one.'),
+            : new Error(
+                'This invitation is no longer available. Discard it and ask for a new one.',
+              ),
         })
       } catch (error) {
         if (active) {
@@ -422,8 +448,8 @@ export default function App() {
     }
   }
 
-  const activePendingAdmission = pendingInvitation
-    && pendingAdmissionResolution?.handle === pendingInvitation.handle
+  const activePendingAdmission =
+    pendingInvitation && pendingAdmissionResolution?.handle === pendingInvitation.handle
       ? pendingAdmissionResolution
       : null
 
@@ -467,18 +493,11 @@ export default function App() {
     return () => {
       alive = false
     }
-  }, [
-    activeCommunityId,
-    communityIdsKey,
-    isTauriRuntime,
-    setActiveChannel,
-    setChannels,
-  ])
+  }, [activeCommunityId, communityIdsKey, isTauriRuntime, setActiveChannel, setChannels])
 
   useEffect(() => {
-    const userId = backendStatus?.kind === 'matrix' && backendStatus.authenticated
-      ? backendStatus.userId
-      : null
+    const userId =
+      backendStatus?.kind === 'matrix' && backendStatus.authenticated ? backendStatus.userId : null
     if (!isTauriRuntime || !userId) return
 
     let alive = true
@@ -555,253 +574,295 @@ export default function App() {
       <AnimatePresence mode="wait">
         {showOnboarding || (backendStatus?.kind === 'legacy-p2p' && !identity) ? (
           <ErrorBoundary scope="app">
-          <motion.div
-            key="onboarding"
-            variants={variants.screen}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="h-full"
-          >
-            <OnboardingFlow
-              initialPendingInvitation={pendingInvitation}
-              onResolvePendingInvitation={async () => {
-                if (!isTauriRuntime) return null
-                return bridge.resolvePendingInvitation()
-              }}
-              onDiscardPendingInvitation={async () => {
-                if (isTauriRuntime) await bridge.clearPendingInvitation()
-                setPendingInvitation(null)
-              }}
-              backendKind={backendStatus?.kind ?? 'matrix'}
-              backendAuthenticated={backendStatus?.authenticated ?? false}
-              onMatrixCheckUsernameAvailable={async (homeserver, username) => {
-                if (!isTauriRuntime) {
-                  return !['admin', 'support', 'taken'].includes(username)
-                }
-                return bridge.matrixCheckUsernameAvailable(homeserver, username)
-              }}
-              onMatrixRegisterAccount={async (request) => {
-                if (!isTauriRuntime) {
-                  const status: bridge.BackendStatus = {
-                    kind: 'matrix',
-                    capabilities: bridge.getBackendCapabilities(),
-                    voiceService: bridge.getVoiceServiceStatus(),
-                    authenticated: true,
-                    userId: `@${request.username}:preview.mesh`,
-                    deviceId: 'PREVIEW',
-                    homeserver: 'https://preview.mesh',
-                    syncRunning: true,
-                    durableHistory: true,
-                    endToEndEncryption: true,
-                    warnings: [],
-                  }
-                  setBackendStatus(status)
-                  const registeredIdentity = await loadMatrixIdentity(status.userId, false)
-                  if (registeredIdentity) setIdentity(registeredIdentity)
-                  return
-                }
-                const status = await bridge.matrixRegisterAccount(request)
-                setBackendStatus(status)
-                const registeredIdentity = await loadMatrixIdentity(status.userId, true)
-                if (registeredIdentity) setIdentity(registeredIdentity)
-              }}
-              onMatrixLogin={async (request) => {
-                if (!isTauriRuntime) {
-                  const status: bridge.BackendStatus = {
-                    kind: 'matrix',
-                    capabilities: bridge.getBackendCapabilities(),
-                    voiceService: bridge.getVoiceServiceStatus(),
-                    authenticated: true,
-                    userId: '@preview:example.com',
-                    deviceId: 'PREVIEW',
-                    homeserver: request.homeserver,
-                    syncRunning: true,
-                    durableHistory: true,
-                    endToEndEncryption: true,
-                    warnings: [],
-                  }
-                  setBackendStatus(status)
-                  const signedInIdentity = await loadMatrixIdentity(status.userId, false)
-                  if (signedInIdentity) setIdentity(signedInIdentity)
-                  return
-                }
-                const status = await bridge.matrixLogin(request)
-                setBackendStatus(status)
-                const signedInIdentity = await loadMatrixIdentity(status.userId, true)
-                if (signedInIdentity) setIdentity(signedInIdentity)
-              }}
-              onMatrixOidcLogin={async (homeserver) => {
-                const status = await bridge.matrixStartOidcLogin(homeserver)
-                setBackendStatus(status)
-                const signedInIdentity = await loadMatrixIdentity(status.userId, true)
-                if (signedInIdentity) setIdentity(signedInIdentity)
-              }}
-              onMatrixSwitchAccount={async (profileId) => {
-                const status = await bridge.matrixSwitchAccount(profileId)
-                setBackendStatus(status)
-                const signedInIdentity = await loadMatrixIdentity(status.userId, true)
-                if (signedInIdentity) setIdentity(signedInIdentity)
-              }}
-              onCreateBackupCode={async () => {
-                if (!isTauriRuntime) {
-                  return 'MESH-FROST-LANTERN-HARBOR-COPPER-ORBIT-MEADOW'
-                }
-                return bridge.matrixEnableRecovery()
-              }}
-              onBackupConfigured={() => setBackupConfigured(true)}
-              onBackupSkipped={scheduleBackupReminder}
-              initialProfile={identity ?? undefined}
-              onGenerateIdentity={async () => {
-                if (!isTauriRuntime) {
-                  setIdentity({
-                    publicKey: 'preview-local-identity',
-                    displayName: '',
-                    avatarColor: '',
-                  })
-                  return
-                }
-
-                const nextIdentity = await bridge.createIdentity()
-                setIdentity(nextIdentity)
-              }}
-              onUpdateProfile={async (profile) => {
-                if (!isTauriRuntime) {
-                  setIdentity({
-                    publicKey: identity?.publicKey ?? 'preview-local-identity',
-                    displayName: profile.displayName,
-                    avatarColor: profile.avatarColor,
-                  })
-                  return
-                }
-
-                const nextIdentity = await bridge.updateProfile(profile.displayName, profile.avatarColor)
-                setIdentity(nextIdentity)
-              }}
-              onBootstrap={async (update) => {
-                if (backendStatus?.kind === 'matrix') {
-                  update({ phase: 'connecting', ...MATRIX_BOOTSTRAP_STEPS.connecting })
+            <motion.div
+              key="onboarding"
+              variants={variants.screen}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="h-full"
+            >
+              <OnboardingFlow
+                initialPendingInvitation={pendingInvitation}
+                onResolvePendingInvitation={async () => {
+                  if (!isTauriRuntime) return null
+                  return bridge.resolvePendingInvitation()
+                }}
+                onDiscardPendingInvitation={async () => {
+                  if (isTauriRuntime) await bridge.clearPendingInvitation()
+                  setPendingInvitation(null)
+                }}
+                backendKind={backendStatus?.kind ?? 'matrix'}
+                backendAuthenticated={backendStatus?.authenticated ?? false}
+                onMatrixCheckUsernameAvailable={async (homeserver, username) => {
                   if (!isTauriRuntime) {
-                    await wait(450)
-                    update({ phase: 'syncing', ...MATRIX_BOOTSTRAP_STEPS.syncing })
-                    await wait(450)
+                    return !['admin', 'support', 'taken'].includes(username)
+                  }
+                  return bridge.matrixCheckUsernameAvailable(homeserver, username)
+                }}
+                onMatrixRegisterAccount={async (request) => {
+                  if (!isTauriRuntime) {
+                    const status: bridge.BackendStatus = {
+                      kind: 'matrix',
+                      capabilities: bridge.getBackendCapabilities(),
+                      voiceService: bridge.getVoiceServiceStatus(),
+                      authenticated: true,
+                      userId: `@${request.username}:preview.mesh`,
+                      deviceId: 'PREVIEW',
+                      homeserver: 'https://preview.mesh',
+                      syncRunning: true,
+                      durableHistory: true,
+                      endToEndEncryption: true,
+                      warnings: [],
+                    }
+                    setBackendStatus(status)
+                    const registeredIdentity = await loadMatrixIdentity(status.userId, false)
+                    if (registeredIdentity) setIdentity(registeredIdentity)
+                    return
+                  }
+                  const status = await bridge.matrixRegisterAccount(request)
+                  setBackendStatus(status)
+                  const registeredIdentity = await loadMatrixIdentity(status.userId, true)
+                  if (registeredIdentity) setIdentity(registeredIdentity)
+                }}
+                onMatrixLogin={async (request) => {
+                  if (!isTauriRuntime) {
+                    const status: bridge.BackendStatus = {
+                      kind: 'matrix',
+                      capabilities: bridge.getBackendCapabilities(),
+                      voiceService: bridge.getVoiceServiceStatus(),
+                      authenticated: true,
+                      userId: '@preview:example.com',
+                      deviceId: 'PREVIEW',
+                      homeserver: request.homeserver,
+                      syncRunning: true,
+                      durableHistory: true,
+                      endToEndEncryption: true,
+                      warnings: [],
+                    }
+                    setBackendStatus(status)
+                    const signedInIdentity = await loadMatrixIdentity(status.userId, false)
+                    if (signedInIdentity) setIdentity(signedInIdentity)
+                    return
+                  }
+                  const status = await bridge.matrixLogin(request)
+                  setBackendStatus(status)
+                  const signedInIdentity = await loadMatrixIdentity(status.userId, true)
+                  if (signedInIdentity) setIdentity(signedInIdentity)
+                }}
+                onMatrixOidcLogin={async (homeserver) => {
+                  const status = await bridge.matrixStartOidcLogin(homeserver)
+                  setBackendStatus(status)
+                  const signedInIdentity = await loadMatrixIdentity(status.userId, true)
+                  if (signedInIdentity) setIdentity(signedInIdentity)
+                }}
+                onMatrixSwitchAccount={async (profileId) => {
+                  const status = await bridge.matrixSwitchAccount(profileId)
+                  setBackendStatus(status)
+                  const signedInIdentity = await loadMatrixIdentity(status.userId, true)
+                  if (signedInIdentity) setIdentity(signedInIdentity)
+                }}
+                onCreateBackupCode={async () => {
+                  if (!isTauriRuntime) {
+                    return {
+                      recoveryKey: 'MESH-FROST-LANTERN-HARBOR-COPPER-ORBIT-MEADOW',
+                      secureStorageState: 'saved',
+                      verificationState: 'verified',
+                    }
+                  }
+                  return bridge.matrixEnableRecovery()
+                }}
+                onBackupConfigured={() => setBackupConfigured(true)}
+                onBackupSkipped={scheduleBackupReminder}
+                initialProfile={identity ?? undefined}
+                onGenerateIdentity={async () => {
+                  if (!isTauriRuntime) {
+                    setIdentity({
+                      publicKey: 'preview-local-identity',
+                      displayName: '',
+                      avatarColor: '',
+                    })
+                    return
+                  }
+
+                  const nextIdentity = await bridge.createIdentity()
+                  setIdentity(nextIdentity)
+                }}
+                onUpdateProfile={async (profile) => {
+                  if (!isTauriRuntime) {
+                    setIdentity({
+                      publicKey: identity?.publicKey ?? 'preview-local-identity',
+                      displayName: profile.displayName,
+                      avatarColor: profile.avatarColor,
+                    })
+                    return
+                  }
+
+                  const nextIdentity = await bridge.updateProfile(
+                    profile.displayName,
+                    profile.avatarColor,
+                  )
+                  setIdentity(nextIdentity)
+                }}
+                onBootstrap={async (update) => {
+                  if (backendStatus?.kind === 'matrix') {
+                    update({
+                      phase: 'connecting',
+                      ...MATRIX_BOOTSTRAP_STEPS.connecting,
+                    })
+                    if (!isTauriRuntime) {
+                      await wait(450)
+                      update({
+                        phase: 'syncing',
+                        ...MATRIX_BOOTSTRAP_STEPS.syncing,
+                      })
+                      await wait(450)
+                      update({
+                        phase: 'ready',
+                        ...MATRIX_BOOTSTRAP_STEPS.ready,
+                      })
+                      return
+                    }
+
+                    update({
+                      phase: 'syncing',
+                      ...MATRIX_BOOTSTRAP_STEPS.syncing,
+                    })
+                    // Matrix login/session restoration already completes an initial sync
+                    // before starting the continuous background sync loop. Starting a
+                    // second sync here can contend with that loop and leave onboarding
+                    // waiting indefinitely.
+                    update({
+                      phase: 'finalizing',
+                      ...MATRIX_BOOTSTRAP_STEPS.finalizing,
+                    })
                     update({ phase: 'ready', ...MATRIX_BOOTSTRAP_STEPS.ready })
                     return
                   }
 
-                  update({ phase: 'syncing', ...MATRIX_BOOTSTRAP_STEPS.syncing })
-                  // Matrix login/session restoration already completes an initial sync
-                  // before starting the continuous background sync loop. Starting a
-                  // second sync here can contend with that loop and leave onboarding
-                  // waiting indefinitely.
-                  update({ phase: 'finalizing', ...MATRIX_BOOTSTRAP_STEPS.finalizing })
-                  update({ phase: 'ready', ...MATRIX_BOOTSTRAP_STEPS.ready })
-                  return
-                }
-
-                update({ phase: 'connecting', ...BOOTSTRAP_STEPS.connecting })
-
-                if (!isTauriRuntime) {
-                  await wait(700)
-                  update({ phase: 'syncing', ...BOOTSTRAP_STEPS.syncing })
-                  await wait(850)
                   update({
-                    phase: 'finalizing',
-                    label: 'Browser preview mode. Use tauri dev for live mesh bootstrap.',
-                    progress: BOOTSTRAP_STEPS.finalizing.progress,
+                    phase: 'connecting',
+                    ...BOOTSTRAP_STEPS.connecting,
                   })
-                  await wait(550)
-                  update({
-                    phase: 'ready',
-                    label: 'Preview ready',
-                    progress: BOOTSTRAP_STEPS.ready.progress,
-                  })
-                  return
-                }
 
-                const unlistenPromise = bridge.onNetworkStatus((status) => {
-                  if (status.peerCount > 0) {
+                  if (!isTauriRuntime) {
+                    await wait(700)
+                    update({ phase: 'syncing', ...BOOTSTRAP_STEPS.syncing })
+                    await wait(850)
                     update({
-                      phase: 'syncing',
-                      label: `Resolved ${status.peerCount} peer${status.peerCount === 1 ? '' : 's'} on the mesh`,
-                      progress: 74,
+                      phase: 'finalizing',
+                      label: 'Browser preview mode. Use tauri dev for live mesh bootstrap.',
+                      progress: BOOTSTRAP_STEPS.finalizing.progress,
                     })
+                    await wait(550)
+                    update({
+                      phase: 'ready',
+                      label: 'Preview ready',
+                      progress: BOOTSTRAP_STEPS.ready.progress,
+                    })
+                    return
                   }
-                })
 
-                try {
-                  await wait(700)
-                  update({ phase: 'syncing', ...BOOTSTRAP_STEPS.syncing })
-
-                  await wait(850)
-                  const { status } = useNetworkStore.getState()
-                  update({
-                    phase: 'finalizing',
-                    label:
-                      status.peerCount > 0
-                        ? `Connected to ${status.peerCount} peer${status.peerCount === 1 ? '' : 's'}`
-                        : BOOTSTRAP_STEPS.finalizing.label,
-                    progress: BOOTSTRAP_STEPS.finalizing.progress,
+                  const unlistenPromise = bridge.onNetworkStatus((status) => {
+                    if (status.peerCount > 0) {
+                      update({
+                        phase: 'syncing',
+                        label: `Resolved ${status.peerCount} peer${status.peerCount === 1 ? '' : 's'} on the mesh`,
+                        progress: 74,
+                      })
+                    }
                   })
 
-                  await wait(550)
-                  const latest = useNetworkStore.getState().status
-                  update({
-                    phase: 'ready',
-                    label:
-                      latest.peerCount > 0
-                        ? BOOTSTRAP_STEPS.ready.label
-                        : 'Ready. Nearby peers will appear as they come online.',
-                    progress: BOOTSTRAP_STEPS.ready.progress,
-                  })
-                } finally {
-                  const unlisten = await unlistenPromise
-                  unlisten()
-                }
-              }}
-              onComplete={() => {
-                setShowOnboarding(false)
-                if (isTauriRuntime && bridge.isMatrixBackend()) {
-                  void bridge.getCommunities().then((communities) => {
-                    setCommunities(communities)
-                    setActiveCommunity(communities[0]?.id ?? null)
-                  }).catch((error) => {
-                    console.error('Failed to load Matrix communities after onboarding:', error)
-                  })
-                }
-              }}
-            />
-          </motion.div>
+                  try {
+                    await wait(700)
+                    update({ phase: 'syncing', ...BOOTSTRAP_STEPS.syncing })
+
+                    await wait(850)
+                    const { status } = useNetworkStore.getState()
+                    update({
+                      phase: 'finalizing',
+                      label:
+                        status.peerCount > 0
+                          ? `Connected to ${status.peerCount} peer${status.peerCount === 1 ? '' : 's'}`
+                          : BOOTSTRAP_STEPS.finalizing.label,
+                      progress: BOOTSTRAP_STEPS.finalizing.progress,
+                    })
+
+                    await wait(550)
+                    const latest = useNetworkStore.getState().status
+                    update({
+                      phase: 'ready',
+                      label:
+                        latest.peerCount > 0
+                          ? BOOTSTRAP_STEPS.ready.label
+                          : 'Ready. Nearby peers will appear as they come online.',
+                      progress: BOOTSTRAP_STEPS.ready.progress,
+                    })
+                  } finally {
+                    const unlisten = await unlistenPromise
+                    unlisten()
+                  }
+                }}
+                onComplete={() => {
+                  setShowOnboarding(false)
+                  if (isTauriRuntime && bridge.isMatrixBackend()) {
+                    void bridge
+                      .getCommunities()
+                      .then((communities) => {
+                        setCommunities(communities)
+                        setActiveCommunity(communities[0]?.id ?? null)
+                      })
+                      .catch((error) => {
+                        console.error('Failed to load Matrix communities after onboarding:', error)
+                      })
+                  }
+                }}
+              />
+            </motion.div>
           </ErrorBoundary>
         ) : (
           <ErrorBoundary scope="app">
-          <motion.div
-            key="app"
-            variants={variants.screen}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="h-full"
-          >
-            <Suspense fallback={<div className="flex h-full items-center justify-center" role="status" aria-label="Loading Mesh"><Spinner /></div>}>
-              <AppLayout />
-            </Suspense>
-            {pendingInvitation && backendStatus?.kind === 'matrix' && backendStatus.authenticated ? (
-              <Suspense fallback={null}>
-                <InvitationConfirmation
-                  pending={pendingInvitation}
-                  admission={activePendingAdmission?.admission}
-                  resolving={activePendingAdmission?.resolving}
-                  resolutionError={activePendingAdmission?.error}
-                  confirming={invitationConfirming}
-                  confirmationError={invitationConfirmationError}
-                  onConfirm={() => void confirmPendingInvitation()}
-                  onRetryResolution={() => setInvitationResolutionAttempt((attempt) => attempt + 1)}
-                  onDiscard={() => void discardPendingInvitation()}
-                />
+            <motion.div
+              key="app"
+              variants={variants.screen}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="h-full"
+            >
+              <Suspense
+                fallback={
+                  <div
+                    className="flex h-full items-center justify-center"
+                    role="status"
+                    aria-label="Loading Mesh"
+                  >
+                    <Spinner />
+                  </div>
+                }
+              >
+                <AppLayout />
               </Suspense>
-            ) : null}
-          </motion.div>
+              {pendingInvitation &&
+              backendStatus?.kind === 'matrix' &&
+              backendStatus.authenticated ? (
+                <Suspense fallback={null}>
+                  <InvitationConfirmation
+                    pending={pendingInvitation}
+                    admission={activePendingAdmission?.admission}
+                    resolving={activePendingAdmission?.resolving}
+                    resolutionError={activePendingAdmission?.error}
+                    confirming={invitationConfirming}
+                    confirmationError={invitationConfirmationError}
+                    onConfirm={() => void confirmPendingInvitation()}
+                    onRetryResolution={() =>
+                      setInvitationResolutionAttempt((attempt) => attempt + 1)
+                    }
+                    onDiscard={() => void discardPendingInvitation()}
+                  />
+                </Suspense>
+              ) : null}
+            </motion.div>
           </ErrorBoundary>
         )}
       </AnimatePresence>

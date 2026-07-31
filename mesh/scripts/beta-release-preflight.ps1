@@ -286,48 +286,11 @@ function Assert-MatrixFrontendBundleBoundary {
                 Test-SimplePeerImplementation (Read-Utf8Text $_.FullName)
             }
     )
-    foreach ($legacyChunk in $legacyChunks) {
-        Assert-Condition (-not $eagerAssets.Contains($legacyChunk.FullName)) `
-            "Legacy SimplePeer chunk is statically reachable from the Matrix entry: $($legacyChunk.FullName)"
+    $legacyChunkNames = @($legacyChunks | ForEach-Object { $_.Name }) -join ", "
+    Assert-Condition ($legacyChunks.Count -eq 0) `
+        "Matrix frontend bundle must exclude the legacy SimplePeer implementation entirely; found: $legacyChunkNames"
 
-        $escapedName = [regex]::Escape($legacyChunk.Name)
-        $javascriptChunks = @(
-            Get-ChildItem -LiteralPath $Root -Recurse -File -Filter "*.js"
-        )
-        $staticImporters = @(
-            $javascriptChunks |
-                Where-Object { $_.FullName -ne $legacyChunk.FullName } |
-                Where-Object {
-                    $importerRoot = Split-Path -Parent $_.FullName
-                    @(
-                        Get-StaticJavaScriptImports (Read-Utf8Text $_.FullName) |
-                            ForEach-Object {
-                                [IO.Path]::GetFullPath((Join-Path $importerRoot $_))
-                            } |
-                            Where-Object {
-                                $_ -eq $legacyChunk.FullName
-                            }
-                    ).Count -gt 0
-                }
-        )
-        $staticImporterNames = @($staticImporters | ForEach-Object { $_.FullName }) -join ', '
-        Assert-Condition ($staticImporters.Count -eq 0) `
-            "Legacy SimplePeer code is statically imported by: $staticImporterNames"
-
-        $dynamicImporters = @(
-            $javascriptChunks |
-                Where-Object {
-                    (Read-Utf8Text $_.FullName) -match "import\(\s*[`"']\./$escapedName[`"']\s*\)"
-                }
-        )
-        Assert-Condition ($dynamicImporters.Count -gt 0) `
-            "Legacy SimplePeer code must be isolated in an explicitly lazy chunk: $($legacyChunk.FullName)"
-    }
-
-    Write-Host "Frontend boundary: Matrix entry and module preloads exclude the SimplePeer implementation."
-    if ($legacyChunks.Count -gt 0) {
-        Write-Host "Frontend boundary: legacy voice remains isolated in $($legacyChunks.Count) guarded lazy chunk(s)."
-    }
+    Write-Host "Frontend boundary: Matrix bundle excludes the SimplePeer implementation entirely."
 }
 
 $packagePath = Join-Path $repoRoot "package.json"
@@ -348,6 +311,7 @@ $matrixRtcEvidenceModulePath = Join-Path $repoRoot "infra/matrixrtc/MatrixRtcEvi
 $matrixRtcEvidenceTestPath = Join-Path $repoRoot "infra/matrixrtc/test-evidence-validation.ps1"
 $matrixDependencyBoundaryPath = Join-Path $repoRoot "scripts/check-matrix-release-dependencies.ps1"
 $releaseArtifactScanPath = Join-Path $repoRoot "scripts/scan-release-artifacts.ps1"
+$resourceProbePath = Join-Path $repoRoot "scripts/resource-budget-probe.ps1"
 
 $packageConfig = Read-JsonFile $packagePath
 $tauriConfig = Read-JsonFile $tauriConfigPath
@@ -366,6 +330,7 @@ $matrixRtcEvidenceModuleText = Read-Utf8Text $matrixRtcEvidenceModulePath
 $matrixRtcEvidenceTestText = Read-Utf8Text $matrixRtcEvidenceTestPath
 $matrixDependencyBoundaryText = Read-Utf8Text $matrixDependencyBoundaryPath
 $releaseArtifactScanText = Read-Utf8Text $releaseArtifactScanPath
+$resourceProbeText = Read-Utf8Text $resourceProbePath
 
 if (Test-Path -LiteralPath $nestedWorkflowRoot -PathType Container) {
     $nestedWorkflows = @(
@@ -465,8 +430,24 @@ Assert-Condition ($matrixRtcEvidenceModuleText -match 'resolves outside the expl
     "Complete MatrixRTC evidence must reject canonical path and symlink escape."
 Assert-Condition ($matrixRtcEvidenceTestText -match 'dirty source is rejected' -and
     $matrixRtcEvidenceTestText -match 'changed hash is rejected' -and
-    $matrixRtcEvidenceTestText -match 'unknown evidence reference is rejected') `
-    "MatrixRTC evidence tests must retain dirty-source, hash-tamper, and unknown-reference cases."
+    $matrixRtcEvidenceTestText -match 'unknown evidence reference is rejected' -and
+    $matrixRtcEvidenceTestText -match 'wrong device is rejected' -and
+    $matrixRtcEvidenceTestText -match 'missing TURN relay observation is rejected' -and
+    $matrixRtcEvidenceTestText -match 'missing media E2EE observation is rejected' -and
+    $matrixRtcEvidenceTestText -match 'generic cross-case evidence is rejected' -and
+    $matrixRtcEvidenceTestText -match 'missing network result is rejected') `
+    "MatrixRTC evidence tests must retain source, artifact, device, TURN, media-E2EE, and case-binding rejection coverage."
+Assert-Condition ($nightlyWorkflowText -match 'browser-resource-budget' -and
+    $nightlyWorkflowText -match 'runtime-budgets\.spec\.ts' -and
+    $nightlyWorkflowText -match 'resource-budget-browser\.json') `
+    "Nightly CI must retain controlled repeated browser resource evidence."
+Assert-Condition ($resourceProbeText -match 'idle-text-sync' -and
+    $resourceProbeText -match 'active-voice' -and
+    $resourceProbeText -match 'screen-share' -and
+    $resourceProbeText -match 'contextSwitchesPerSecond' -and
+    $resourceProbeText -match 'standardDeviation' -and
+    $resourceProbeText -match 'sourceSha') `
+    "Native resource evidence must retain all scenarios, wakeup-pressure sampling, variance, and exact-SHA provenance."
 Assert-Condition ($releaseWorkflowText -match 'check-matrix-release-dependencies\.ps1') `
     "The beta workflow must mechanically prove the Matrix and legacy dependency boundary."
 Assert-Condition ($matrixDependencyBoundaryText -match 'hickory-proto v0\\\.24\\\.4' -and

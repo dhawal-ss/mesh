@@ -5,7 +5,10 @@ import { useVoiceStore } from '../../store/voice'
 import { Tooltip } from '../ui/Tooltip'
 import { transitions } from '../../lib/motion'
 import { Icon } from '../ui/Icon'
-import { voiceConnectionLabel } from '../../lib/voice-runtime'
+import {
+  voiceConnectionLabel,
+  voiceMediaErrorMessage,
+} from '../../lib/voice-runtime'
 import { Popover } from '../ui/InteractivePrimitives'
 import { IconButton } from '../ui/IconButton'
 
@@ -81,13 +84,7 @@ export function VoiceControls({
         await onScreenShareChange(enabled)
       }
     } catch (error) {
-      setControlError(
-        error instanceof Error
-          ? error.message
-          : kind === 'camera'
-            ? 'The camera could not be changed.'
-            : 'Screen sharing could not be changed.',
-      )
+      setControlError(voiceMediaErrorMessage(error, kind))
     }
   }
 

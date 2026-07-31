@@ -56,6 +56,11 @@
       "expected": "Two supported Windows devices join, exchange encrypted audio, leave, and leave no ghost participant.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
@@ -64,6 +69,11 @@
       "expected": "Two supported Windows devices on independent networks sustain encrypted audio and cleanly leave.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
@@ -72,6 +82,11 @@
       "expected": "A Windows device interoperates with another supported MatrixRTC client, or records why no reviewed client is available.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
@@ -80,6 +95,11 @@
       "expected": "A call behind symmetric or restrictive NAT succeeds through an authorized transport without leaking credentials.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
@@ -88,14 +108,24 @@
       "expected": "With UDP blocked, the call uses TURN over TCP or TLS and diagnostics identify relay use without credentials.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
       "id": "network-loss-reconnect",
       "status": "not-run",
-      "expected": "Temporary loss and a network change reconnect without duplicate publication, stale UI, or ghost participants.",
+      "expected": "Temporary loss, a network change, and sleep/wake reconnect without duplicate publication, stale UI, or ghost participants.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
@@ -104,6 +134,11 @@
       "expected": "A kicked participant promptly loses publication and cannot decrypt media sent after key rotation.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
@@ -112,6 +147,11 @@
       "expected": "A banned participant promptly loses publication and cannot rejoin or decrypt post-ban media.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
@@ -120,6 +160,11 @@
       "expected": "Logout revokes membership and publication and prevents the prior session from receiving new keys.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
@@ -128,14 +173,24 @@
       "expected": "Removing the publishing device revokes it and rotates keys before remaining members publish again.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
       "id": "permission-loss-during-call",
       "status": "not-run",
-      "expected": "Permission loss stops the affected source, explains the recovery action, and leaves chat usable.",
+      "expected": "Microphone/camera denial, room permission downgrade, or calling-service revocation stops affected sources, explains the recovery action, and leaves chat usable.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
@@ -144,6 +199,11 @@
       "expected": "Leaving the room clears MatrixRTC membership, stops every local source, and prevents new key delivery.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
@@ -152,6 +212,11 @@
       "expected": "Screen sharing starts and stops on each supported display path with no stale shared frame or publication.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
@@ -160,6 +225,11 @@
       "expected": "Denied screen-share permission produces an actionable recovery state without dropping chat or audio.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
@@ -168,6 +238,11 @@
       "expected": "Restarting during a call clears the prior membership and publication before a fresh join.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
@@ -176,14 +251,24 @@
       "expected": "Restarting after leaving does not resurrect call membership, media intent, or a ghost participant.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
       "id": "media-key-rotation-late-join",
       "status": "not-run",
-      "expected": "Rotation, pause and resume, replay rejection, and late join preserve E2EE without accepting stale keys.",
+      "expected": "Rotation, pause and resume, replay rejection, and late join preserve E2EE; missing or stale keys fail closed before publication.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
@@ -192,6 +277,11 @@
       "expected": "Three invited participants sustain encrypted audio and leave with membership and participant counts at zero.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
@@ -200,6 +290,11 @@
       "expected": "The declared beta participant limit meets its latency, packet-loss, resource, and cleanup targets.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
@@ -208,6 +303,11 @@
       "expected": "Accounts on separate compatible services join the same community call without moving account hosting.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
@@ -216,6 +316,11 @@
       "expected": "Input and output devices switch during a call and recover clearly from removal or permission denial.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
@@ -224,6 +329,11 @@
       "expected": "Push-to-talk, mute, and deafen remain consistent across reconnect and never publish against local intent.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     },
     {
@@ -232,6 +342,11 @@
       "expected": "Camera and screen share can transition concurrently within the supported bandwidth policy and both stop cleanly.",
       "actual": "",
       "notApplicableReason": null,
+      "deviceIds": [],
+      "networkIds": [],
+      "transport": "not-observed",
+      "mediaE2eeActive": false,
+      "mediaE2eeFailureClosed": false,
       "evidenceIds": []
     }
   ]

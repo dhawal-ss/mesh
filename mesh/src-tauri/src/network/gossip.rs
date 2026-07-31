@@ -1,5 +1,5 @@
-/// Gossip topic naming conventions for Mesh.
-/// Every community uses exactly these topic patterns:
+//! Gossip topic naming conventions for Mesh.
+//! Every community uses exactly these topic patterns:
 
 /// Topic for all signed community message traffic in a community.
 /// DEPRECATED: Retained for backward compatibility during the transition to

@@ -4,14 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OnboardingFlow } from './OnboardingFlow'
 
 vi.mock('./MatrixAccountScreen', () => ({
-  MatrixAccountScreen: ({
-    onNext,
-  }: {
-    onNext: (outcome: 'registered' | 'signed-in') => void
-  }) => (
+  MatrixAccountScreen: ({ onNext }: { onNext: (outcome: 'registered' | 'signed-in') => void }) => (
     <div>
-      <button type="button" onClick={() => onNext('registered')}>Registered</button>
-      <button type="button" onClick={() => onNext('signed-in')}>Signed in</button>
+      <button type="button" onClick={() => onNext('registered')}>
+        Registered
+      </button>
+      <button type="button" onClick={() => onNext('signed-in')}>
+        Signed in
+      </button>
     </div>
   ),
 }))
@@ -28,8 +28,12 @@ vi.mock('./BackupCodeScreen', () => ({
   }) => (
     <div>
       <p>Backup: {backupCode}</p>
-      <button type="button" onClick={onContinue}>Confirm backup</button>
-      <button type="button" onClick={onSkip}>Skip backup</button>
+      <button type="button" onClick={onContinue}>
+        Confirm backup
+      </button>
+      <button type="button" onClick={onSkip}>
+        Skip backup
+      </button>
     </div>
   ),
 }))
@@ -55,12 +59,7 @@ describe('OnboardingFlow account outcomes', () => {
 
   it('introduces Mesh trust cues and exposes the current setup step', async () => {
     await act(async () => {
-      root.render(
-        <OnboardingFlow
-          backendKind="matrix"
-          onComplete={() => {}}
-        />,
-      )
+      root.render(<OnboardingFlow backendKind="matrix" onComplete={() => {}} />)
     })
 
     expect(container.querySelector('[aria-label="Set up Mesh"]')).not.toBeNull()
@@ -74,7 +73,11 @@ describe('OnboardingFlow account outcomes', () => {
   })
 
   it('requires the backup-code step after registration, but only enables recovery on consent', async () => {
-    const createBackupCode = vi.fn().mockResolvedValue('MESH-ONE-TWO-THREE-FOUR')
+    const createBackupCode = vi.fn().mockResolvedValue({
+      recoveryKey: 'MESH-ONE-TWO-THREE-FOUR',
+      secureStorageState: 'saved',
+      verificationState: 'verified',
+    })
     const configured = vi.fn()
     await act(async () => {
       root.render(
@@ -87,8 +90,9 @@ describe('OnboardingFlow account outcomes', () => {
       )
     })
 
-    const registered = Array.from(container.querySelectorAll('button'))
-      .find((button) => button.textContent === 'Registered')
+    const registered = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Registered',
+    )
     await act(async () => {
       registered?.click()
       await new Promise((resolve) => window.setTimeout(resolve, 350))
@@ -104,8 +108,9 @@ describe('OnboardingFlow account outcomes', () => {
     expect(container.textContent).toContain('Set up message recovery')
     expect(container.textContent).not.toContain('Ready step')
 
-    const consent = Array.from(container.querySelectorAll('button'))
-      .find((button) => button.textContent === 'Set up recovery')
+    const consent = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Set up recovery',
+    )
     await act(async () => {
       consent?.click()
       await new Promise((resolve) => window.setTimeout(resolve, 350))
@@ -114,8 +119,9 @@ describe('OnboardingFlow account outcomes', () => {
     expect(createBackupCode).toHaveBeenCalledOnce()
     expect(container.textContent).toContain('Backup: MESH-ONE-TWO-THREE-FOUR')
 
-    const confirm = Array.from(container.querySelectorAll('button'))
-      .find((button) => button.textContent === 'Confirm backup')
+    const confirm = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Confirm backup',
+    )
     await act(async () => {
       confirm?.click()
       await new Promise((resolve) => window.setTimeout(resolve, 350))
@@ -125,7 +131,11 @@ describe('OnboardingFlow account outcomes', () => {
   })
 
   it('never enables recovery when the user declines at the consent step', async () => {
-    const createBackupCode = vi.fn().mockResolvedValue('MESH-ONE-TWO-THREE-FOUR')
+    const createBackupCode = vi.fn().mockResolvedValue({
+      recoveryKey: 'MESH-ONE-TWO-THREE-FOUR',
+      secureStorageState: 'saved',
+      verificationState: 'verified',
+    })
     const skipped = vi.fn()
     await act(async () => {
       root.render(
@@ -138,15 +148,17 @@ describe('OnboardingFlow account outcomes', () => {
       )
     })
 
-    const registered = Array.from(container.querySelectorAll('button'))
-      .find((button) => button.textContent === 'Registered')
+    const registered = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Registered',
+    )
     await act(async () => {
       registered?.click()
       await new Promise((resolve) => window.setTimeout(resolve, 350))
     })
 
-    const decline = Array.from(container.querySelectorAll('button'))
-      .find((button) => button.textContent?.startsWith('Not now'))
+    const decline = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.startsWith('Not now'),
+    )
     await act(async () => {
       decline?.click()
       await new Promise((resolve) => window.setTimeout(resolve, 350))
@@ -169,8 +181,9 @@ describe('OnboardingFlow account outcomes', () => {
       )
     })
 
-    const signedIn = Array.from(container.querySelectorAll('button'))
-      .find((button) => button.textContent === 'Signed in')
+    const signedIn = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Signed in',
+    )
     await act(async () => {
       signedIn?.click()
       await new Promise((resolve) => window.setTimeout(resolve, 350))

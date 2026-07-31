@@ -16,6 +16,11 @@ import { Button } from '../ui/Button'
 import { ErrorState } from '../ui/ErrorState'
 import { describeError } from '../../lib/errors'
 import {
+  sequenceCardPositionFromNeighbors,
+  sequenceCardProps,
+  type SequenceCardPosition,
+} from '../ui/SequenceCard'
+import {
   evaluateAuthoritativeCommunityRoleAssignment,
   type CommunityPermissionProjection,
   type CommunityRole,
@@ -318,6 +323,10 @@ export function MemberList({
                   actions={actions}
                   position={visibleRange.start + visibleIndex + 1}
                   setSize={listEntries.length}
+                  sequencePosition={sequenceCardPositionFromNeighbors(
+                    listEntries[visibleRange.start + visibleIndex - 1]?.kind === 'member',
+                    listEntries[visibleRange.start + visibleIndex + 1]?.kind === 'member',
+                  )}
                 />
               ))}
             </div>
@@ -442,10 +451,12 @@ function MemberRow({
   actions,
   position,
   setSize,
+  sequencePosition,
 }: {
   member: MemberEntry
   position: number
   setSize: number
+  sequencePosition: SequenceCardPosition
   actions?: {
     currentUserId?: string | null
     canModerate: boolean
@@ -462,6 +473,7 @@ function MemberRow({
     onRequestRole: (member: MemberEntry) => void
   }
 }) {
+  const sequence = sequenceCardProps(sequencePosition)
   const canAct = actions?.canModerate && actions.currentUserId !== member.publicKey && member.role !== 'owner'
   const canDm = actions?.directMessages && actions.currentUserId !== member.publicKey
   const moderationItems: MenuItem[] =
@@ -495,7 +507,8 @@ function MemberRow({
       role="listitem"
       aria-posinset={position}
       aria-setsize={setSize}
-      className="group flex min-h-10 items-center gap-3 rounded-control px-2 transition-colors hover:bg-surface-hover focus-within:bg-surface-hover"
+      data-sequence-position={sequence['data-sequence-position']}
+      className={`${sequence.className} group flex min-h-10 items-center gap-3 px-2 transition-colors`}
     >
       <div className="relative flex-shrink-0">
         <Avatar color={member.avatarColor} size={32} name={member.displayName} />

@@ -2,11 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import {
   getMatrixRoomNotificationMode,
+  getIceServers,
   matrixCreateCommunity,
   matrixGetProfile,
   matrixListChannels,
   matrixLogout,
   matrixSendMessage,
+  probeIceServers,
   sendDm,
   matrixUpdateProfileDisplayName,
 } from './bridge'
@@ -74,6 +76,43 @@ describe('bridge IPC resilience', () => {
       code: 'network_unavailable',
     })
     expect(invokeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('surfaces a Tauri ICE configuration failure instead of silently using public defaults', async () => {
+    invokeMock.mockRejectedValueOnce({
+      code: 'network_unavailable',
+      detail: 'ICE service offline',
+      retryable: false,
+    })
+
+    await expect(getIceServers()).rejects.toMatchObject({
+      code: 'network_unavailable',
+      retryable: false,
+    })
+    expect(invokeMock).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the browser preview fallback explicit and backend-free', async () => {
+    isTauriMock.mockReturnValue(false)
+
+    await expect(getIceServers()).resolves.toEqual([
+      { urls: ['stun:stun.l.google.com:19302'] },
+    ])
+    expect(invokeMock).not.toHaveBeenCalled()
+  })
+
+  it('propagates ICE probe failures so diagnostics can offer recovery', async () => {
+    invokeMock.mockRejectedValueOnce({
+      code: 'network_unavailable',
+      detail: 'TURN probe offline',
+      retryable: false,
+    })
+
+    await expect(probeIceServers()).rejects.toMatchObject({
+      code: 'network_unavailable',
+      retryable: false,
+    })
+    expect(invokeMock).toHaveBeenCalledOnce()
   })
 
   it('keeps newly created room names while Matrix state finishes syncing', async () => {

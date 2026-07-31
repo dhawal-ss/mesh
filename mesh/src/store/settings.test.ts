@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MatrixUserPreferences } from '../types/ipc'
 import {
+  effectiveConversationPrivacy,
   getEffectiveChannelNotificationLevel,
   isQuietHoursActive,
   matrixPreferencesToNotifications,
@@ -28,6 +29,7 @@ describe('Matrix preference projection', () => {
       enabled: false,
       sound: true,
       soundId: 'mesh',
+      showMessageContent: false,
       doNotDisturb: false,
       quietHours: {
         enabled: false,
@@ -46,6 +48,7 @@ describe('Matrix preference projection', () => {
     const projected = matrixPreferencesToNotifications({
       ...matrixPreferences,
       notificationSoundId: 'pulse',
+      showNotificationContent: true,
       doNotDisturb: true,
       quietHoursEnabled: true,
       quietHoursStart: '21:30',
@@ -57,6 +60,7 @@ describe('Matrix preference projection', () => {
     } as unknown as MatrixUserPreferences & Record<string, unknown>)
 
     expect(projected.soundId).toBe('pulse')
+    expect(projected.showMessageContent).toBe(true)
     expect(projected.doNotDisturb).toBe(true)
     expect(projected.quietHours).toEqual({
       enabled: true,
@@ -72,12 +76,14 @@ describe('Matrix preference projection', () => {
     expect(matrixPreferencesToPrivacy(matrixPreferences)).toEqual({
       readReceiptMode: 'off',
       sendTypingIndicators: true,
+      conversationPrivacy: {},
       sharePresence: true,
       invisibleMode: false,
     })
     expect(normalizePrivacyPreferences(undefined)).toEqual({
       readReceiptMode: 'off',
       sendTypingIndicators: false,
+      conversationPrivacy: {},
       sharePresence: false,
       invisibleMode: false,
     })
@@ -86,6 +92,23 @@ describe('Matrix preference projection', () => {
     })
     expect(normalizePrivacyPreferences({ readReceiptMode: 'public' })).toMatchObject({
       readReceiptMode: 'public',
+    })
+    expect(
+      normalizePrivacyPreferences({
+        conversationPrivacy: {
+          '!valid:example.org': {
+            readReceiptMode: 'public',
+            sendTypingIndicators: false,
+          },
+          'not-a-room': { readReceiptMode: 'private' },
+          '!empty:example.org': {},
+        },
+      }).conversationPrivacy,
+    ).toEqual({
+      '!valid:example.org': {
+        readReceiptMode: 'public',
+        sendTypingIndicators: false,
+      },
     })
   })
 })
@@ -166,9 +189,9 @@ describe('notification settings actions', () => {
 
     expect(useSettingsStore.getState().isChannelMuted('!timed:example.org')).toBe(true)
     expect(useSettingsStore.getState().isCommunityMuted('!forever:example.org')).toBe(true)
-    expect(
-      useSettingsStore.getState().notifications.channelMuteUntil['!timed:example.org'],
-    ).toBe('2026-07-25T12:15:00.000Z')
+    expect(useSettingsStore.getState().notifications.channelMuteUntil['!timed:example.org']).toBe(
+      '2026-07-25T12:15:00.000Z',
+    )
     expect(
       useSettingsStore.getState().notifications.communityMuteUntil['!forever:example.org'],
     ).toBeNull()
@@ -193,6 +216,12 @@ describe('notification settings actions', () => {
     useSettingsStore.getState().setChannelNotificationLevel('!room:example.org', 'all')
     expect(useSettingsStore.getState().notifications.channelNotificationLevels).toEqual({})
   })
+
+  it('keeps message previews private until explicitly enabled', () => {
+    expect(useSettingsStore.getState().notifications.showMessageContent).toBe(false)
+    useSettingsStore.getState().setShowMessageContent(true)
+    expect(useSettingsStore.getState().notifications.showMessageContent).toBe(true)
+  })
 })
 
 describe('privacy settings actions', () => {
@@ -212,8 +241,30 @@ describe('privacy settings actions', () => {
     expect(useSettingsStore.getState().privacy).toEqual({
       readReceiptMode: 'private',
       sendTypingIndicators: false,
+      conversationPrivacy: {},
       sharePresence: false,
       invisibleMode: true,
     })
+  })
+
+  it('applies and removes sparse per-conversation overrides', () => {
+    const store = useSettingsStore.getState()
+    store.setConversationReadReceiptMode('!room:example.org', 'public')
+    store.setConversationTypingIndicators('!room:example.org', false)
+
+    let privacy = useSettingsStore.getState().privacy
+    expect(effectiveConversationPrivacy(privacy, '!room:example.org')).toEqual({
+      readReceiptMode: 'public',
+      sendTypingIndicators: false,
+    })
+    expect(effectiveConversationPrivacy(privacy, '!other:example.org')).toEqual({
+      readReceiptMode: 'off',
+      sendTypingIndicators: true,
+    })
+
+    useSettingsStore.getState().setConversationReadReceiptMode('!room:example.org', null)
+    useSettingsStore.getState().setConversationTypingIndicators('!room:example.org', null)
+    privacy = useSettingsStore.getState().privacy
+    expect(privacy.conversationPrivacy).toEqual({})
   })
 })

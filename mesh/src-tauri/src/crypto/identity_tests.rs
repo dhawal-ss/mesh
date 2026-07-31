@@ -69,8 +69,8 @@ mod tests {
     #[test]
     fn verify_signature_with_wrong_length_key_returns_error() {
         // Valid base64 but wrong length for an Ed25519 key (not 32 bytes)
-        let short_key = BASE64.encode(&[0u8; 16]);
-        let sig = BASE64.encode(&[0u8; 64]);
+        let short_key = BASE64.encode([0u8; 16]);
+        let sig = BASE64.encode([0u8; 64]);
         let result = verify_signature(&short_key, b"payload", &sig);
         assert!(result.is_err(), "Wrong-length key should return an error");
     }
@@ -152,7 +152,7 @@ mod tests {
     #[test]
     fn ed25519_pub_to_x25519_with_invalid_key_returns_error() {
         // Wrong length
-        let short_key = BASE64.encode(&[0u8; 16]);
+        let short_key = BASE64.encode([0u8; 16]);
         assert!(ed25519_pub_to_x25519(&short_key).is_err());
     }
 

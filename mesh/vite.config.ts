@@ -6,7 +6,7 @@ import react from "@vitejs/plugin-react";
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
-export default defineConfig(async () => ({
+export default defineConfig(async ({ mode }) => ({
   plugins: [
     react({
       babel: {
@@ -32,6 +32,10 @@ export default defineConfig(async () => ({
   // identifier. Tauri's WebView only provides globalThis/window.
   define: {
     global: "globalThis",
+    // Replaced at compile time so Rollup can make the production Matrix graph
+    // incapable of resolving the legacy voice engine. The explicitly separate
+    // LAN build opts in with `--mode legacy-p2p`.
+    __MESH_LEGACY_FRONTEND__: JSON.stringify(mode === "legacy-p2p"),
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
@@ -73,9 +77,6 @@ export default defineConfig(async () => ({
             || normalizedId.includes("/node_modules/scheduler/")
           ) {
             return "framework";
-          }
-          if (normalizedId.includes("/node_modules/framer-motion/")) {
-            return "motion";
           }
         },
       },

@@ -315,18 +315,16 @@ pub fn apply_control_event(
             .map_err(|error| CommandError::Other(error.to_string()))?;
 
             // Enforce epoch monotonicity: reject replayed or stale rotation events
-            if let Ok(stored_epoch) = db.get_group_key_epoch(&event.community_id) {
-                if let Some(current_epoch) = stored_epoch {
-                    if let Err(e) =
-                        key_rotation::validate_epoch_monotonicity(rotation.epoch, current_epoch)
-                    {
-                        tracing::warn!(
-                            "Rejecting key_rotation for community {} — {}",
-                            event.community_id,
-                            e,
-                        );
-                        return Err(CommandError::Crypto(e));
-                    }
+            if let Ok(Some(current_epoch)) = db.get_group_key_epoch(&event.community_id) {
+                if let Err(e) =
+                    key_rotation::validate_epoch_monotonicity(rotation.epoch, current_epoch)
+                {
+                    tracing::warn!(
+                        "Rejecting key_rotation for community {} — {}",
+                        event.community_id,
+                        e,
+                    );
+                    return Err(CommandError::Crypto(e));
                 }
                 // If stored_epoch is None, this is the first rotation — accept it
             }

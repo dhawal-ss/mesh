@@ -50,12 +50,6 @@ export interface VoicePeer {
   addTrack(track: MediaStreamTrack, stream: MediaStream): void
 
   /**
-   * Trigger SDP renegotiation explicitly. SimplePeer exposes this via a
-   * property we cast to; the fake implements it as a direct method.
-   */
-  negotiate(): void
-
-  /**
    * Gracefully destroy the peer connection. Idempotent.
    */
   destroy(): void
@@ -91,9 +85,10 @@ export interface VoicePeerFactory {
 
 /**
  * Wraps SimplePeer.Instance so it conforms to the VoicePeer interface.
- * The wrapper is mostly a pass-through but provides a typed `negotiate()`
- * method that internally does the `(peer as unknown as {...}).negotiate()`
- * cast that the engine previously did inline.
+ * `simple-peer`'s public `addTrack()` API schedules the required negotiation.
+ * Do not reach into its private `_needsNegotiation`/`negotiate` internals:
+ * those are not part of the compatibility contract and have changed between
+ * releases.
  */
 class SimplePeerWrapper implements VoicePeer {
   constructor(private readonly peer: SimplePeer.Instance) {}
@@ -109,11 +104,6 @@ class SimplePeerWrapper implements VoicePeer {
 
   addTrack(track: MediaStreamTrack, stream: MediaStream): void {
     this.peer.addTrack(track, stream)
-  }
-
-  negotiate(): void {
-    // SimplePeer has a private `negotiate` method on its instance, cast to access
-    ;(this.peer as unknown as { negotiate: () => void }).negotiate()
   }
 
   destroy(): void {
@@ -167,7 +157,6 @@ export class FakeVoicePeer implements VoicePeer {
   readonly options: VoicePeerOptions
   public signalCalls: SimplePeer.SignalData[] = []
   public addedTracks: Array<{ track: MediaStreamTrack; stream: MediaStream }> = []
-  public negotiateCalls: number = 0
   public destroyCalls: number = 0
   public isConnected: boolean = false
   public destroyed: boolean = false
@@ -202,11 +191,6 @@ export class FakeVoicePeer implements VoicePeer {
   addTrack(track: MediaStreamTrack, stream: MediaStream): void {
     if (this.destroyed) return
     this.addedTracks.push({ track, stream })
-  }
-
-  negotiate(): void {
-    if (this.destroyed) return
-    this.negotiateCalls += 1
   }
 
   destroy(): void {

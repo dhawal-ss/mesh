@@ -9,7 +9,7 @@ import {
   type SchedulerStats,
   type IceServerProbeResult,
 } from '../../lib/bridge'
-import { Spinner } from '../ui/Spinner'
+import { Skeleton } from '../ui/Skeleton'
 import { ErrorState } from '../ui/ErrorState'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
@@ -124,8 +124,15 @@ export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: 
         )}
 
         {!diagnostics && !matrixStatus && !error && (
-          <div className="flex h-32 items-center justify-center">
-            <Spinner />
+          <div
+            className="space-y-3 py-3"
+            role="status"
+            aria-label="Loading diagnostics"
+          >
+            <span className="sr-only">Loading diagnostics…</span>
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-4/5" />
           </div>
         )}
 

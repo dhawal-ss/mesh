@@ -91,6 +91,7 @@ async function installAuthenticatedMatrixMock(
         name: 'random',
         channelType: 'text',
         unreadCount: 1,
+        unreadMentions: 2,
       },
       {
         id: '!lounge:mesh.test',
@@ -464,6 +465,51 @@ test.describe('authenticated desktop shell', () => {
     await expect(page.getByText('Anonymous', { exact: true })).toHaveCount(0)
   })
 
+  test('restores multiple account-scoped tabs with authoritative mention badges', async ({ page }) => {
+    await page.addInitScript(() => {
+      const accountId = '@alice:mesh.test'
+      localStorage.setItem(`mesh-room-tabs-v1:${encodeURIComponent(accountId)}`, JSON.stringify({
+        schemaVersion: 1,
+        accountId,
+        tabs: [
+          {
+            key: 'room:!general:mesh.test',
+            kind: 'room',
+            roomId: '!general:mesh.test',
+            communityId: '!mesh-e2e:mesh.test',
+            title: 'general',
+            pinned: true,
+            unreadCount: 0,
+            mentionCount: 0,
+            lastOpenedAt: 1,
+          },
+          {
+            key: 'room:!random:mesh.test',
+            kind: 'room',
+            roomId: '!random:mesh.test',
+            communityId: '!mesh-e2e:mesh.test',
+            title: 'random',
+            pinned: false,
+            unreadCount: 1,
+            mentionCount: 0,
+            lastOpenedAt: 2,
+          },
+        ],
+        activeKey: 'room:!random:mesh.test',
+        recentlyClosed: [],
+      }))
+    })
+    await openAuthenticatedShell(page)
+
+    const tabs = page.getByRole('tablist', { name: 'Open rooms and direct messages' })
+    await expect(tabs.getByRole('tab')).toHaveCount(2)
+    await expect(tabs.getByRole('tab', { name: /general, pinned/ })).toBeVisible()
+    const random = tabs.getByRole('tab', { name: /random, 2 mentions/ })
+    await expect(random).toBeVisible()
+    await random.click()
+    await expect(page.getByRole('log', { name: 'Messages in #random' })).toBeVisible()
+  })
+
   test('joins a cold-start Mesh invitation through Matrix and opens the community', async ({ page }) => {
     const invite =
       'mesh://join?v=3&kind=matrix&room=!invited:mesh.test&via=mesh.test&service=https%3A%2F%2Fmatrix.mesh.test'
@@ -525,6 +571,27 @@ test.describe('authenticated desktop shell', () => {
     await expect(dialog.getByText('Account', { exact: true })).toBeVisible()
     await expect(dialog.locator(':scope > div').first()).toHaveCSS('opacity', '1')
     await expectNoWcagViolations(page, 'User Settings dialog')
+  })
+
+  test('cycles major regions with F6 and exposes virtual message order', async ({ page }) => {
+    await openAuthenticatedShell(page)
+
+    await page.keyboard.press('F6')
+    await expect(
+      page.getByRole('navigation', { name: 'Communities and direct messages' }),
+    ).toBeFocused()
+    await page.keyboard.press('F6')
+    await expect(page.getByRole('complementary', { name: 'Room list' })).toBeFocused()
+    await page.keyboard.press('F6')
+    await expect(page.getByRole('main')).toBeFocused()
+    await page.keyboard.press('Shift+F6')
+    await expect(page.getByRole('complementary', { name: 'Room list' })).toBeFocused()
+
+    const message = page
+      .getByRole('log', { name: 'Messages in #general' })
+      .getByRole('article')
+    await expect(message).toHaveAttribute('aria-posinset', '1')
+    await expect(message).toHaveAttribute('aria-setsize', '1')
   })
 
   test('sends a message through the Matrix boundary and renders it in the chat log', async ({ page }) => {
@@ -736,7 +803,7 @@ test.describe('authenticated desktop shell', () => {
     ).toBeVisible()
   })
 
-  test('shows MatrixRTC membership but never starts media while encryption is unverified', async ({ page }) => {
+  test('@a11y shows MatrixRTC membership but never starts media while encryption is unverified', async ({ page }) => {
     await openAuthenticatedShell(page)
 
     await expect(page.getByLabel('Lounge call members').getByText('Bob')).toBeVisible()
@@ -746,6 +813,7 @@ test.describe('authenticated desktop shell', () => {
     await expect(
       page.getByText('Your microphone, camera, and screen stay off until every safety check passes.'),
     ).toBeVisible()
+    await expectNoWcagViolations(page, 'Voice-disabled room')
 
     const calls = await ipcCalls(page)
     expect(calls).toContainEqual({

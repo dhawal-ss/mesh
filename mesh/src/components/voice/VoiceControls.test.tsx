@@ -187,6 +187,23 @@ describe('VoiceControls', () => {
     expect(controls.onScreenShareChange).toHaveBeenCalledWith(true)
   })
 
+  it('turns camera permission denial into a system-settings recovery action', async () => {
+    const controls = props()
+    controls.onCameraChange.mockRejectedValue(
+      Object.assign(new Error('raw browser denial'), { name: 'NotAllowedError' }),
+    )
+    await act(async () => root.render(<VoiceControls {...controls} />))
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="Turn camera on"]')?.click()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      'Mesh can’t access camera. Allow camera access for Mesh in your system settings, then try again.',
+    )
+  })
+
   it('keeps all five core call actions visible and wired to their existing boundaries', async () => {
     const controls = props()
     await act(async () => root.render(<VoiceControls {...controls} />))

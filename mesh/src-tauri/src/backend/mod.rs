@@ -353,6 +353,10 @@ pub struct NotificationPresentationContext {
     pub notifications_enabled: bool,
     pub do_not_disturb: bool,
     pub quiet_hours_active: bool,
+    /// Explicit account-scoped opt-in for showing bounded message text in
+    /// native notifications. Missing values fail closed for older clients.
+    #[serde(default)]
+    pub show_message_content: bool,
     #[serde(default)]
     pub muted_room_ids: Vec<String>,
 }
@@ -836,7 +840,22 @@ pub struct MatrixProfile {
     pub avatar_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum MatrixRecoverySecureStorageState {
+    Saved,
+    Missing,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum MatrixRecoveryVerificationState {
+    Verified,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct MatrixRecoveryHealth {
     pub recovery_state: String,
@@ -846,7 +865,16 @@ pub struct MatrixRecoveryHealth {
     pub healthy: bool,
     pub checked_at: String,
     pub last_successful_test_at: Option<String>,
+    pub secure_storage_state: MatrixRecoverySecureStorageState,
     pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixRecoverySetupResult {
+    pub recovery_key: String,
+    pub secure_storage_state: MatrixRecoverySecureStorageState,
+    pub verification_state: MatrixRecoveryVerificationState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1050,6 +1078,10 @@ pub struct UserPreferences {
     pub notification_sound_id: Option<String>,
     #[serde(default)]
     pub do_not_disturb: bool,
+    /// Whether bounded message text may appear in native notifications.
+    /// Fresh and migrated accounts remain private unless the user opts in.
+    #[serde(default)]
+    pub show_notification_content: bool,
     #[serde(default)]
     pub quiet_hours_enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1074,6 +1106,10 @@ pub struct UserPreferences {
     pub read_receipt_mode: Option<ReadReceiptMode>,
     #[serde(default)]
     pub send_typing_indicators: bool,
+    /// Optional per-conversation privacy choices, keyed by Matrix room ID.
+    /// Missing fields inherit the account-level choice above.
+    #[serde(default)]
+    pub conversation_privacy: std::collections::BTreeMap<String, ConversationPrivacyOverride>,
     #[serde(default)]
     pub share_presence: bool,
     #[serde(default)]
@@ -1082,7 +1118,8 @@ pub struct UserPreferences {
 }
 
 impl UserPreferences {
-    pub const SCHEMA_VERSION: u32 = 4;
+    pub const SCHEMA_VERSION: u32 = 6;
+    pub const MAX_CONVERSATION_PRIVACY_OVERRIDES: usize = 256;
 
     pub fn effective_read_receipt_mode(&self) -> ReadReceiptMode {
         self.read_receipt_mode
@@ -1102,9 +1139,35 @@ impl UserPreferences {
         self.muted_channels.dedup();
         self.muted_communities.sort();
         self.muted_communities.dedup();
+        self.conversation_privacy = self.normalized_conversation_privacy();
         self.updated_at = chrono::Utc::now().to_rfc3339();
         self
     }
+
+    pub fn normalized_conversation_privacy(
+        &self,
+    ) -> std::collections::BTreeMap<String, ConversationPrivacyOverride> {
+        self.conversation_privacy
+            .iter()
+            .filter(|(room_id, value)| {
+                room_id.starts_with('!')
+                    && room_id.len() <= 255
+                    && !room_id.chars().any(char::is_whitespace)
+                    && (value.read_receipt_mode.is_some() || value.send_typing_indicators.is_some())
+            })
+            .take(Self::MAX_CONVERSATION_PRIVACY_OVERRIDES)
+            .map(|(room_id, value)| (room_id.clone(), value.clone()))
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationPrivacyOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_receipt_mode: Option<ReadReceiptMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub send_typing_indicators: Option<bool>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -1369,6 +1432,9 @@ pub trait MeshBackend: Send + Sync {
         _recovery_key_or_passphrase: String,
     ) -> BackendResult<MatrixRecoveryHealth> {
         Err(BackendError::Unsupported("Matrix recovery test"))
+    }
+    async fn test_stored_recovery(&self) -> BackendResult<MatrixRecoveryHealth> {
+        Err(BackendError::Unsupported("stored Matrix recovery test"))
     }
     async fn start_device_verification(
         &self,
@@ -1832,7 +1898,10 @@ pub trait MeshBackend: Send + Sync {
     async fn invite_user(&self, room_id: String, user_id: String) -> BackendResult<()>;
     async fn join_room(&self, room_id: String) -> BackendResult<()>;
     async fn recent_texts(&self, room_id: String, limit: u32) -> BackendResult<Vec<String>>;
-    async fn enable_recovery(&self, passphrase: Option<String>) -> BackendResult<String>;
+    async fn enable_recovery(
+        &self,
+        passphrase: Option<String>,
+    ) -> BackendResult<MatrixRecoverySetupResult>;
     async fn recover(&self, recovery_key_or_passphrase: String) -> BackendResult<()>;
     async fn sync_once(&self) -> BackendResult<()>;
     /// Persist one provenance event from an explicitly approved legacy import.
@@ -1854,6 +1923,7 @@ pub struct BackendManager {
 }
 
 impl BackendManager {
+    #[allow(clippy::needless_return)]
     pub fn from_environment(app_data_dir: PathBuf) -> Self {
         #[cfg(not(feature = "matrix-backend"))]
         let _ = &app_data_dir;
@@ -1993,6 +2063,7 @@ mod tests {
         assert!(!preferences.send_typing_indicators);
         assert!(!preferences.share_presence);
         assert!(!preferences.invisible_mode);
+        assert!(!preferences.show_notification_content);
     }
 
     #[test]
@@ -2003,6 +2074,7 @@ mod tests {
             notification_sound: false,
             notification_sound_id: Some("chime".into()),
             do_not_disturb: true,
+            show_notification_content: true,
             quiet_hours_enabled: true,
             quiet_hours_start: Some("22:00".into()),
             quiet_hours_end: Some("07:00".into()),
@@ -2023,6 +2095,22 @@ mod tests {
             send_read_receipts: false,
             read_receipt_mode: Some(ReadReceiptMode::Off),
             send_typing_indicators: true,
+            conversation_privacy: std::collections::BTreeMap::from([
+                (
+                    "!room:example.org".into(),
+                    ConversationPrivacyOverride {
+                        read_receipt_mode: Some(ReadReceiptMode::Public),
+                        send_typing_indicators: Some(true),
+                    },
+                ),
+                (
+                    "not-a-room".into(),
+                    ConversationPrivacyOverride {
+                        read_receipt_mode: Some(ReadReceiptMode::Public),
+                        send_typing_indicators: None,
+                    },
+                ),
+            ]),
             share_presence: false,
             invisible_mode: true,
             updated_at: "stale".into(),
@@ -2030,7 +2118,13 @@ mod tests {
         .normalized();
 
         assert_eq!(preferences.schema_version, UserPreferences::SCHEMA_VERSION);
+        assert!(preferences.show_notification_content);
         assert_eq!(preferences.read_receipt_mode, Some(ReadReceiptMode::Off));
+        assert_eq!(preferences.conversation_privacy.len(), 1);
+        assert_eq!(
+            preferences.conversation_privacy["!room:example.org"].read_receipt_mode,
+            Some(ReadReceiptMode::Public)
+        );
         assert_eq!(preferences.muted_channels, vec!["!b:example.org"]);
         assert_eq!(
             preferences.channel_notification_levels["!b:example.org"],

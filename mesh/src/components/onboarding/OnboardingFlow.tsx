@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion } from '../../lib/lazy-motion'
 import { lazy, Suspense, useState } from 'react'
 import { MatrixAccountScreen, type MatrixAccountOutcome } from './MatrixAccountScreen'
 import { Button } from '../ui/Button'
@@ -7,9 +7,12 @@ import { Spinner } from '../ui/Spinner'
 import { Icon, type IconName } from '../ui/Icon'
 import { variants } from '../../lib/motion'
 import { DEFAULT_AVATAR_COLORS, type OnboardingFlowProps, type OnboardingProfile } from './types'
+import type { MatrixRecoverySetupResult } from '../../types/ipc'
 
 const IdentityScreen = lazy(() =>
-  import('./IdentityScreen').then((module) => ({ default: module.IdentityScreen })),
+  import('./IdentityScreen').then((module) => ({
+    default: module.IdentityScreen,
+  })),
 )
 const JoinScreen = lazy(() =>
   import('./JoinScreen').then((module) => ({ default: module.JoinScreen })),
@@ -18,7 +21,9 @@ const ReadyScreen = lazy(() =>
   import('./ReadyScreen').then((module) => ({ default: module.ReadyScreen })),
 )
 const BackupCodeScreen = lazy(() =>
-  import('./BackupCodeScreen').then((module) => ({ default: module.BackupCodeScreen })),
+  import('./BackupCodeScreen').then((module) => ({
+    default: module.BackupCodeScreen,
+  })),
 )
 
 type Step = 'account' | 'identity' | 'profile' | 'backup' | 'bootstrap'
@@ -77,21 +82,29 @@ export function OnboardingFlow({
 }: OnboardingFlowProps) {
   const needsMatrixLogin = backendKind === 'matrix' && !backendAuthenticated
   const [newAccount, setNewAccount] = useState(false)
-  const steps: Step[] = backendKind === 'matrix'
-    ? needsMatrixLogin
-      ? newAccount ? ['account', 'backup', 'bootstrap'] : ['account', 'bootstrap']
-      : ['bootstrap']
-    : ['identity', 'profile', 'bootstrap']
+  const steps: Step[] =
+    backendKind === 'matrix'
+      ? needsMatrixLogin
+        ? newAccount
+          ? ['account', 'backup', 'bootstrap']
+          : ['account', 'bootstrap']
+        : ['bootstrap']
+      : ['identity', 'profile', 'bootstrap']
   const [step, setStep] = useState<Step>(
     backendKind === 'matrix'
-      ? needsMatrixLogin ? 'account' : 'bootstrap'
-      : initialProfile ? 'profile' : 'identity',
+      ? needsMatrixLogin
+        ? 'account'
+        : 'bootstrap'
+      : initialProfile
+        ? 'profile'
+        : 'identity',
   )
   const [profile, setProfile] = useState<OnboardingProfile>({
     displayName: initialProfile?.displayName ?? '',
     avatarColor: initialProfile?.avatarColor ?? avatarColors[0] ?? DEFAULT_AVATAR_COLORS[0],
   })
   const [backupCode, setBackupCode] = useState<string | null>(null)
+  const [backupSetup, setBackupSetup] = useState<MatrixRecoverySetupResult | null>(null)
   const [backupError, setBackupError] = useState<unknown | null>(null)
   const [preparingBackup, setPreparingBackup] = useState(false)
   /** True only after the user explicitly asks to enable recovery. */
@@ -102,11 +115,15 @@ export function OnboardingFlow({
   const prepareBackupCode = async () => {
     setPreparingBackup(true)
     setBackupError(null)
+    setBackupSetup(null)
+    setBackupCode(null)
     try {
       if (!onCreateBackupCode) {
         throw new Error('Message backup is unavailable in this build.')
       }
-      setBackupCode(await onCreateBackupCode())
+      const setup = await onCreateBackupCode()
+      setBackupSetup(setup)
+      setBackupCode(setup.recoveryKey)
     } catch (error) {
       setBackupError(error)
     } finally {
@@ -194,11 +211,7 @@ export function OnboardingFlow({
                 const complete = index < currentIndex
                 const current = index === currentIndex
                 return (
-                  <li
-                    key={item}
-                    aria-current={current ? 'step' : undefined}
-                    className="min-w-0"
-                  >
+                  <li key={item} aria-current={current ? 'step' : undefined} className="min-w-0">
                     <span
                       className={`block h-1 rounded-full transition-colors duration-normal ${
                         index <= currentIndex ? 'bg-accent' : 'bg-surface-active'
@@ -222,148 +235,189 @@ export function OnboardingFlow({
           </div>
 
           <div className="my-auto w-full max-w-lg">
-            <Suspense fallback={(
-              <div className="flex min-h-64 items-center justify-center" role="status" aria-label="Loading setup step">
-                <Spinner />
-              </div>
-            )}>
+            <Suspense
+              fallback={
+                <div
+                  className="flex min-h-64 items-center justify-center"
+                  role="status"
+                  aria-label="Loading setup step"
+                >
+                  <Spinner />
+                </div>
+              }
+            >
               <AnimatePresence mode="wait" initial={false}>
-              {step === 'account' && (
-                <motion.div key="account" variants={variants.screen} initial="initial" animate="animate" exit="exit">
-                  <MatrixAccountScreen
-                    initialInvitation={initialMatrixInvitation}
-                    initialPendingInvitation={initialPendingInvitation}
-                    onResolvePendingInvitation={onResolvePendingInvitation}
-                    onDiscardPendingInvitation={onDiscardPendingInvitation}
-                    onMatrixCheckUsernameAvailable={onMatrixCheckUsernameAvailable}
-                    onMatrixRegisterAccount={onMatrixRegisterAccount}
-                    onMatrixLogin={onMatrixLogin}
-                    onMatrixOidcLogin={onMatrixOidcLogin}
-                    onMatrixSwitchAccount={onMatrixSwitchAccount}
-                    onNext={handleMatrixAccount}
-                  />
-                </motion.div>
-              )}
+                {step === 'account' && (
+                  <motion.div
+                    key="account"
+                    variants={variants.screen}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                  >
+                    <MatrixAccountScreen
+                      initialInvitation={initialMatrixInvitation}
+                      initialPendingInvitation={initialPendingInvitation}
+                      onResolvePendingInvitation={onResolvePendingInvitation}
+                      onDiscardPendingInvitation={onDiscardPendingInvitation}
+                      onMatrixCheckUsernameAvailable={onMatrixCheckUsernameAvailable}
+                      onMatrixRegisterAccount={onMatrixRegisterAccount}
+                      onMatrixLogin={onMatrixLogin}
+                      onMatrixOidcLogin={onMatrixOidcLogin}
+                      onMatrixSwitchAccount={onMatrixSwitchAccount}
+                      onNext={handleMatrixAccount}
+                    />
+                  </motion.div>
+                )}
 
-              {step === 'backup' && (
-                <motion.div key="backup" variants={variants.screen} initial="initial" animate="animate" exit="exit">
-                  {!recoveryRequested ? (
-                    <section aria-labelledby="recovery-consent-title" className="space-y-6">
-                      <header className="space-y-2">
-                        <p className="text-caption uppercase tracking-eyebrow text-content-muted">
-                          Protect your messages
+                {step === 'backup' && (
+                  <motion.div
+                    key="backup"
+                    variants={variants.screen}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                  >
+                    {!recoveryRequested ? (
+                      <section aria-labelledby="recovery-consent-title" className="space-y-6">
+                        <header className="space-y-2">
+                          <p className="text-caption uppercase tracking-eyebrow text-content-muted">
+                            Protect your messages
+                          </p>
+                          <h1
+                            id="recovery-consent-title"
+                            className="text-lg font-semibold tracking-tight text-content"
+                          >
+                            Set up message recovery
+                          </h1>
+                          <p className="max-w-lg text-sm leading-6 text-content-secondary">
+                            Your messages are locked so only you can read them — not even we can see
+                            them. That also means that if you lose this device, there is no way back
+                            into your history unless you set up recovery now.
+                          </p>
+                        </header>
+
+                        <ul className="space-y-2 text-sm text-content-secondary">
+                          <li>Mesh creates a one-time backup code that only you hold.</li>
+                          <li>You save it somewhere safe, then confirm a few words of it.</li>
+                          <li>You can turn recovery on later in Settings instead.</li>
+                        </ul>
+
+                        <div className="space-y-3">
+                          <Button
+                            className="w-full"
+                            onClick={() => {
+                              setRecoveryRequested(true)
+                              void prepareBackupCode()
+                            }}
+                          >
+                            Set up recovery
+                          </Button>
+                          <button
+                            type="button"
+                            className="w-full rounded-md px-3 py-2 text-sm text-content-secondary transition-colors hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                            onClick={() => {
+                              onBackupSkipped?.()
+                              setStep('bootstrap')
+                            }}
+                          >
+                            Not now (you could lose your messages)
+                          </button>
+                        </div>
+                      </section>
+                    ) : preparingBackup ? (
+                      <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-center">
+                        <Spinner />
+                        <p className="text-sm text-content-secondary">
+                          Preparing your backup code…
                         </p>
-                        <h1
-                          id="recovery-consent-title"
-                          className="text-lg font-semibold tracking-tight text-content"
-                        >
-                          Set up message recovery
-                        </h1>
-                        <p className="max-w-lg text-sm leading-6 text-content-secondary">
-                          Your messages are locked so only you can read them — not even we can see
-                          them. That also means that if you lose this device, there is no way back
-                          into your history unless you set up recovery now.
-                        </p>
-                      </header>
-
-                      <ul className="space-y-2 text-sm text-content-secondary">
-                        <li>Mesh creates a one-time backup code that only you hold.</li>
-                        <li>You save it somewhere safe, then confirm a few words of it.</li>
-                        <li>You can turn recovery on later in Settings instead.</li>
-                      </ul>
-
-                      <div className="space-y-3">
-                        <Button
-                          className="w-full"
-                          onClick={() => {
-                            setRecoveryRequested(true)
-                            void prepareBackupCode()
-                          }}
-                        >
-                          Set up recovery
-                        </Button>
-                        <button
-                          type="button"
-                          className="w-full rounded-md px-3 py-2 text-sm text-content-secondary transition-colors hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                          onClick={() => {
-                            onBackupSkipped?.()
-                            setStep('bootstrap')
-                          }}
-                        >
-                          Not now (you could lose your messages)
-                        </button>
                       </div>
-                    </section>
-                  ) : preparingBackup ? (
-                    <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-center">
-                      <Spinner />
-                      <p className="text-sm text-content-secondary">Preparing your backup code…</p>
-                    </div>
-                  ) : backupError != null || !backupCode ? (
-                    <div className="space-y-4">
-                      <h1 className="text-lg font-semibold text-content">Protect your messages</h1>
-                      <ErrorState
-                        error={backupError ?? new Error('The backup code could not be prepared.')}
-                        context={{ operation: 'prepare your message backup' }}
-                        onAction={() => void prepareBackupCode()}
+                    ) : backupError != null || !backupCode ? (
+                      <div className="space-y-4">
+                        <h1 className="text-lg font-semibold text-content">
+                          Protect your messages
+                        </h1>
+                        <ErrorState
+                          error={backupError ?? new Error('The backup code could not be prepared.')}
+                          context={{ operation: 'prepare your message backup' }}
+                          onAction={() => void prepareBackupCode()}
+                        />
+                      </div>
+                    ) : (
+                      <BackupCodeScreen
+                        backupCode={backupCode}
+                        secureStorageState={backupSetup?.secureStorageState}
+                        verificationState={backupSetup?.verificationState}
+                        onCopy={(code) => navigator.clipboard.writeText(code)}
+                        onPrint={() => window.print()}
+                        onContinue={() => {
+                          onBackupConfigured?.()
+                          setStep('bootstrap')
+                        }}
+                        onSkip={() => {
+                          onBackupSkipped?.()
+                          setStep('bootstrap')
+                        }}
                       />
-                    </div>
-                  ) : (
-                    <BackupCodeScreen
-                      backupCode={backupCode}
-                      onCopy={(code) => navigator.clipboard.writeText(code)}
-                      onSaveFile={saveBackupCodeFile}
-                      onPrint={() => window.print()}
-                      onContinue={() => {
-                        onBackupConfigured?.()
-                        setStep('bootstrap')
+                    )}
+                  </motion.div>
+                )}
+
+                {step === 'identity' && (
+                  <motion.div
+                    key="identity"
+                    variants={variants.screen}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                  >
+                    <IdentityScreen
+                      backendKind={backendKind}
+                      onGenerateIdentity={async () => {
+                        await onGenerateIdentity?.()
                       }}
-                      onSkip={() => {
-                        onBackupSkipped?.()
+                      onNext={() => setStep('profile')}
+                    />
+                  </motion.div>
+                )}
+
+                {step === 'profile' && (
+                  <motion.div
+                    key="profile"
+                    variants={variants.screen}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                  >
+                    <JoinScreen
+                      avatarColors={avatarColors}
+                      initialProfile={profile}
+                      onBack={() => setStep('identity')}
+                      onNext={async (nextProfile) => {
+                        setProfile(nextProfile)
+                        await onUpdateProfile?.(nextProfile)
                         setStep('bootstrap')
                       }}
                     />
-                  )}
-                </motion.div>
-              )}
+                  </motion.div>
+                )}
 
-              {step === 'identity' && (
-                <motion.div key="identity" variants={variants.screen} initial="initial" animate="animate" exit="exit">
-                  <IdentityScreen
-                    backendKind={backendKind}
-                    onGenerateIdentity={async () => {
-                      await onGenerateIdentity?.()
-                    }}
-                    onNext={() => setStep('profile')}
-                  />
-                </motion.div>
-              )}
-
-              {step === 'profile' && (
-                <motion.div key="profile" variants={variants.screen} initial="initial" animate="animate" exit="exit">
-                  <JoinScreen
-                    avatarColors={avatarColors}
-                    initialProfile={profile}
-                    onBack={() => setStep('identity')}
-                    onNext={async (nextProfile) => {
-                      setProfile(nextProfile)
-                      await onUpdateProfile?.(nextProfile)
-                      setStep('bootstrap')
-                    }}
-                  />
-                </motion.div>
-              )}
-
-              {step === 'bootstrap' && (
-                <motion.div key="bootstrap" variants={variants.screen} initial="initial" animate="animate" exit="exit">
-                  <ReadyScreen
-                    backendKind={backendKind}
-                    onComplete={onComplete}
-                    onBootstrap={onBootstrap}
-                    onBack={backendKind === 'matrix' ? undefined : () => setStep('profile')}
-                  />
-                </motion.div>
-              )}
+                {step === 'bootstrap' && (
+                  <motion.div
+                    key="bootstrap"
+                    variants={variants.screen}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                  >
+                    <ReadyScreen
+                      backendKind={backendKind}
+                      onComplete={onComplete}
+                      onBootstrap={onBootstrap}
+                      onBack={backendKind === 'matrix' ? undefined : () => setStep('profile')}
+                    />
+                  </motion.div>
+                )}
               </AnimatePresence>
             </Suspense>
           </div>
@@ -393,21 +447,4 @@ function TrustCue({
       </span>
     </div>
   )
-}
-
-function saveBackupCodeFile(backupCode: string): void {
-  const blob = new Blob(
-    [
-      'Mesh backup code\n\n',
-      `${backupCode}\n\n`,
-      'Keep this file somewhere private. Anyone with this code can unlock your saved messages.\n',
-    ],
-    { type: 'text/plain;charset=utf-8' },
-  )
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = 'mesh-backup-code.txt'
-  link.click()
-  URL.revokeObjectURL(url)
 }

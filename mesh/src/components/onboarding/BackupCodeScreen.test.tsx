@@ -20,9 +20,8 @@ describe('BackupCodeScreen', () => {
     container.remove()
   })
 
-  it('shows the supplied code and delegates copy, file, and print actions', async () => {
+  it('shows the supplied code and delegates copy and print actions', async () => {
     const onCopy = vi.fn()
-    const onSaveFile = vi.fn()
     const onPrint = vi.fn()
     await act(async () => {
       root.render(
@@ -30,7 +29,6 @@ describe('BackupCodeScreen', () => {
           backupCode={BACKUP_CODE}
           challengeIndices={[0, 2, 4]}
           onCopy={onCopy}
-          onSaveFile={onSaveFile}
           onPrint={onPrint}
           onContinue={() => {}}
           onSkip={() => {}}
@@ -40,12 +38,12 @@ describe('BackupCodeScreen', () => {
 
     expect(container.querySelector('output')?.textContent).toBe(BACKUP_CODE)
     await act(async () => findButton('Copy').click())
-    await act(async () => findButton('Save as file').click())
     await act(async () => findButton('Print').click())
 
     expect(onCopy).toHaveBeenCalledWith(BACKUP_CODE)
-    expect(onSaveFile).toHaveBeenCalledWith(BACKUP_CODE)
     expect(onPrint).toHaveBeenCalledWith(BACKUP_CODE)
+    expect(container.textContent).toContain('does not download an unencrypted backup file')
+    expect(container.textContent).not.toContain('Save as file')
   })
 
   it('requires all three requested parts before continuing', async () => {
@@ -56,7 +54,6 @@ describe('BackupCodeScreen', () => {
           backupCode={BACKUP_CODE}
           challengeIndices={[0, 2, 4]}
           onCopy={() => {}}
-          onSaveFile={() => {}}
           onPrint={() => {}}
           onContinue={onContinue}
           onSkip={() => {}}
@@ -87,7 +84,6 @@ describe('BackupCodeScreen', () => {
         <BackupCodeScreen
           backupCode={BACKUP_CODE}
           onCopy={() => {}}
-          onSaveFile={() => {}}
           onPrint={() => {}}
           onContinue={() => {}}
           onSkip={onSkip}
@@ -102,13 +98,32 @@ describe('BackupCodeScreen', () => {
     })
   })
 
+  it('reports protected-device storage and SDK-backed verification honestly', () => {
+    act(() => {
+      root.render(
+        <BackupCodeScreen
+          backupCode={BACKUP_CODE}
+          secureStorageState="unavailable"
+          verificationState="failed"
+          onCopy={() => {}}
+          onPrint={() => {}}
+          onContinue={() => {}}
+          onSkip={() => {}}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('could not save a copy')
+    expect(container.textContent).toContain('could not complete the backup check')
+    expect(container.textContent).toContain('Keep this screen open')
+  })
+
   it('contains none of the banned storage terminology', () => {
     act(() => {
       root.render(
         <BackupCodeScreen
           backupCode={BACKUP_CODE}
           onCopy={() => {}}
-          onSaveFile={() => {}}
           onPrint={() => {}}
           onContinue={() => {}}
           onSkip={() => {}}
@@ -123,8 +138,9 @@ describe('BackupCodeScreen', () => {
   })
 
   function findButton(label: string): HTMLButtonElement {
-    const button = [...container.querySelectorAll<HTMLButtonElement>('button')]
-      .find((candidate) => candidate.textContent?.includes(label))
+    const button = [...container.querySelectorAll<HTMLButtonElement>('button')].find((candidate) =>
+      candidate.textContent?.includes(label),
+    )
     if (!button) throw new Error(`Button not found: ${label}`)
     return button
   }

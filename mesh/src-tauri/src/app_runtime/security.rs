@@ -30,10 +30,11 @@ pub(super) fn aad_from_topic(topic: &str) -> Option<Vec<u8>> {
 /// Try to decrypt a gossipsub payload using the community group key.
 /// Extracts the community ID from the topic string. Supports all community
 /// topic patterns:
-///   - `mesh/community/{id}/messages`       (legacy)
-///   - `mesh/community/{id}/meta`            (control events)
-///   - `mesh/community/{id}/channel/{ch}/messages` (per-channel)
-///   - `mesh/community/{id}/presence`
+/// - `mesh/community/{id}/messages` (legacy)
+/// - `mesh/community/{id}/meta` (control events)
+/// - `mesh/community/{id}/channel/{ch}/messages` (per-channel)
+/// - `mesh/community/{id}/presence`
+///
 /// Returns None if no key is available or decryption fails (e.g. plaintext message).
 pub(super) fn try_decrypt_community_payload(
     app_handle: &AppHandle,

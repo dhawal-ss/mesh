@@ -148,12 +148,13 @@ use crate::types::{
 use super::{
     BackendError, BackendKind, BackendResult, BackendStatus, CommunityAccessResult,
     CommunityAccessSettings, CommunityApplication, CommunityDirectoryEntry, CommunityMember,
-    CommunityPermissionProjection, CreatedCommunity, CustomEmoji, MatrixAccount,
-    MatrixAttachmentSendRequest, MatrixBackendEvent, MatrixBackendEventCallback, MatrixDevice,
-    MatrixLogin, MatrixNotification, MatrixOidcAvailability, MatrixOidcStatus,
+    CommunityPermissionProjection, ConversationPrivacyOverride, CreatedCommunity, CustomEmoji,
+    MatrixAccount, MatrixAttachmentSendRequest, MatrixBackendEvent, MatrixBackendEventCallback,
+    MatrixDevice, MatrixLogin, MatrixNotification, MatrixOidcAvailability, MatrixOidcStatus,
     MatrixPermissionStateChanged, MatrixPersonalDataExport, MatrixProfile,
-    MatrixQueuedMessageState, MatrixQueuedMessageUpdate, MatrixRecoveryHealth, MatrixRegistration,
-    MatrixRegistrationAvailability, MatrixRoomNotificationMode, MatrixRoomPins,
+    MatrixQueuedMessageState, MatrixQueuedMessageUpdate, MatrixRecoveryHealth,
+    MatrixRecoverySecureStorageState, MatrixRecoverySetupResult, MatrixRecoveryVerificationState,
+    MatrixRegistration, MatrixRegistrationAvailability, MatrixRoomNotificationMode, MatrixRoomPins,
     MatrixRoomPinsUpdate, MatrixRoomUpgrade, MatrixRtcJoinResult, MatrixRtcMediaKey,
     MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember,
     MatrixRtcMembershipUpdate, MatrixServiceCapabilities, MatrixTransferDirection,
@@ -181,6 +182,7 @@ const PENDING_INVITATION_MAX_BYTES: usize = 8 * 1024;
 const PENDING_INVITATION_MAX_AGE_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
 const TRUSTED_DEVICES_KEY: &str = "matrix-trusted-devices-v1";
 const RECOVERY_TEST_KEY: &str = "matrix-recovery-test-v1";
+const RECOVERY_CREDENTIAL_KEY: &str = "matrix-recovery-credential-v1";
 const PREFERENCES_EVENT_TYPE: &str = "org.mesh.preferences.v1";
 const MAX_PINNED_EVENTS: usize = 100;
 const COMMUNITY_HOMESERVER_ENV: &str = "MESH_COMMUNITY_HOMESERVER";
@@ -601,7 +603,7 @@ struct AccountStorage {
 struct LocalAccountRemovalPlan {
     profile_id: String,
     store_root: PathBuf,
-    key_names: [String; 4],
+    key_names: [String; 5],
 }
 
 struct LoginAttempt {
@@ -675,10 +677,11 @@ impl Default for MatrixSyncControl {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct WirePrivacyPreferences {
     read_receipt_mode: ReadReceiptMode,
     send_typing_indicators: bool,
+    conversation_privacy: std::collections::BTreeMap<String, ConversationPrivacyOverride>,
     share_presence: bool,
     invisible_mode: bool,
 }
@@ -688,6 +691,7 @@ impl From<&UserPreferences> for WirePrivacyPreferences {
         Self {
             read_receipt_mode: preferences.effective_read_receipt_mode(),
             send_typing_indicators: preferences.send_typing_indicators,
+            conversation_privacy: preferences.normalized_conversation_privacy(),
             share_presence: preferences.share_presence,
             invisible_mode: preferences.invisible_mode,
         }
@@ -695,7 +699,7 @@ impl From<&UserPreferences> for WirePrivacyPreferences {
 }
 
 impl WirePrivacyPreferences {
-    fn presence(self) -> PresenceState {
+    fn presence(&self) -> PresenceState {
         if self.share_presence && !self.invisible_mode {
             PresenceState::Online
         } else {
@@ -703,8 +707,22 @@ impl WirePrivacyPreferences {
         }
     }
 
-    fn should_send_typing_notice(self, already_sent: bool, typing: bool) -> bool {
-        (typing && self.send_typing_indicators) || (!typing && already_sent)
+    fn read_receipt_mode_for(&self, room_id: &str) -> ReadReceiptMode {
+        self.conversation_privacy
+            .get(room_id)
+            .and_then(|value| value.read_receipt_mode)
+            .unwrap_or(self.read_receipt_mode)
+    }
+
+    fn sends_typing_for(&self, room_id: &str) -> bool {
+        self.conversation_privacy
+            .get(room_id)
+            .and_then(|value| value.send_typing_indicators)
+            .unwrap_or(self.send_typing_indicators)
+    }
+
+    fn should_send_typing_notice(&self, room_id: &str, already_sent: bool, typing: bool) -> bool {
+        (typing && self.sends_typing_for(room_id)) || (!typing && already_sent)
     }
 }
 
@@ -1237,6 +1255,47 @@ impl MatrixBackend {
         format!("{RECOVERY_TEST_KEY}-{}", storage.key_namespace)
     }
 
+    fn recovery_credential_key(storage: &AccountStorage) -> String {
+        format!("{RECOVERY_CREDENTIAL_KEY}-{}", storage.key_namespace)
+    }
+
+    fn recovery_secure_storage_state(storage: &AccountStorage) -> MatrixRecoverySecureStorageState {
+        match keychain::lookup_secret(&Self::recovery_credential_key(storage)) {
+            Ok(keychain::SecretLookup::Found(mut bytes)) => {
+                let valid = std::str::from_utf8(&bytes).is_ok_and(|value| !value.trim().is_empty());
+                bytes.zeroize();
+                if valid {
+                    MatrixRecoverySecureStorageState::Saved
+                } else {
+                    MatrixRecoverySecureStorageState::Unavailable
+                }
+            }
+            Ok(keychain::SecretLookup::Missing) => MatrixRecoverySecureStorageState::Missing,
+            Err(_) => MatrixRecoverySecureStorageState::Unavailable,
+        }
+    }
+
+    fn load_stored_recovery_credential(storage: &AccountStorage) -> BackendResult<String> {
+        match keychain::lookup_secret(&Self::recovery_credential_key(storage))
+            .map_err(Self::map_secure_storage_error)?
+        {
+            keychain::SecretLookup::Found(mut bytes) => {
+                let result = String::from_utf8(bytes.clone()).map_err(Self::map_error);
+                bytes.zeroize();
+                let credential = result?;
+                if credential.trim().is_empty() {
+                    return Err(BackendError::Crypto(
+                        "the saved recovery credential is empty or corrupt".into(),
+                    ));
+                }
+                Ok(credential)
+            }
+            keychain::SecretLookup::Missing => Err(BackendError::InvalidConfiguration(
+                "no recovery credential is saved in this device's secure store".into(),
+            )),
+        }
+    }
+
     fn load_trusted_devices(storage: &AccountStorage) -> BackendResult<TrustedDeviceRegistry> {
         let key = Self::trusted_devices_key(storage);
         match keychain::lookup_secret(&key).map_err(Self::map_secure_storage_error)? {
@@ -1282,6 +1341,34 @@ impl MatrixBackend {
     fn persist_last_recovery_test(storage: &AccountStorage, tested_at: &str) -> BackendResult<()> {
         keychain::store_secret(&Self::recovery_test_key(storage), tested_at.as_bytes())
             .map_err(Self::map_secure_storage_error)
+    }
+
+    async fn verify_recovery_credential(
+        &self,
+        mut recovery_key_or_passphrase: String,
+    ) -> BackendResult<()> {
+        if recovery_key_or_passphrase.trim().is_empty() {
+            recovery_key_or_passphrase.zeroize();
+            return Err(BackendError::InvalidConfiguration(
+                "recovery key or passphrase cannot be empty".into(),
+            ));
+        }
+        let client = self.client().await?;
+        let result = tokio::time::timeout(
+            Duration::from_secs(30),
+            client
+                .encryption()
+                .recovery()
+                .recover(recovery_key_or_passphrase.trim()),
+        )
+        .await;
+        recovery_key_or_passphrase.zeroize();
+        match result {
+            Ok(result) => result.map_err(Self::map_error),
+            Err(_) => Err(BackendError::Network(
+                "recovery verification timed out after 30 seconds".into(),
+            )),
+        }
     }
 
     fn account_registry_key(&self) -> String {
@@ -1733,6 +1820,7 @@ impl MatrixBackend {
                 Self::store_passphrase_key(storage),
                 Self::trusted_devices_key(storage),
                 Self::recovery_test_key(storage),
+                Self::recovery_credential_key(storage),
             ],
         })
     }
@@ -2319,7 +2407,7 @@ impl MatrixBackend {
         Self::restart_matrix_sync_locked(&mut control, freshness).await;
     }
 
-    async fn clear_sent_typing_notices(&self) {
+    async fn clear_disallowed_typing_notices(&self, next: &WirePrivacyPreferences) {
         let mut sent_rooms = self.sent_typing_notices.lock().await;
         if sent_rooms.is_empty() {
             return;
@@ -2331,6 +2419,9 @@ impl MatrixBackend {
         };
 
         for room_id in sent_rooms.clone() {
+            if next.sends_typing_for(&room_id) {
+                continue;
+            }
             let Ok(room_id) = matrix_sdk::ruma::RoomId::parse(&room_id) else {
                 sent_rooms.remove(&room_id);
                 continue;
@@ -2369,7 +2460,7 @@ impl MatrixBackend {
 
     async fn apply_wire_privacy(&self, preferences: &UserPreferences) -> BackendResult<()> {
         let next = WirePrivacyPreferences::from(preferences);
-        let previous = *self.wire_privacy.read().await;
+        let previous = self.wire_privacy.read().await.clone();
         let mut control = self.matrix_sync_control.lock().await;
         let presence = next.presence();
         if control.presence != presence {
@@ -2405,8 +2496,8 @@ impl MatrixBackend {
             }
         }
         drop(control);
-        if previous.send_typing_indicators && !next.send_typing_indicators {
-            self.clear_sent_typing_notices().await;
+        if previous != next {
+            self.clear_disallowed_typing_notices(&next).await;
         }
         *self.wire_privacy.write().await = next;
         Ok(())
@@ -4153,6 +4244,11 @@ impl MeshBackend for MatrixBackend {
                     "Remote logout failed during local account removal; continuing cryptographic erasure: {error}"
                 );
             }
+            // matrix-sdk's encrypted SQLite store remains open for as long as
+            // any Client clone is alive. Windows denies directory removal in
+            // that state, so release the final runtime-owned client before the
+            // local account erasure below.
+            drop(client);
         }
 
         Self::erase_local_account_artifacts_with(
@@ -4360,7 +4456,18 @@ impl MeshBackend for MatrixBackend {
             .clone()
             .ok_or(BackendError::NotAuthenticated)?;
         let storage = self.storage_for_profile(&profile_id);
-        let last_successful_test_at = Self::load_last_recovery_test(&storage)?;
+        let mut warnings = Vec::new();
+        let secure_storage_state = Self::recovery_secure_storage_state(&storage);
+        let last_successful_test_at = match Self::load_last_recovery_test(&storage) {
+            Ok(value) => value,
+            Err(_) => {
+                warnings.push(
+                    "Mesh could not read recovery-check history from this device's secure store"
+                        .into(),
+                );
+                None
+            }
+        };
         let recovery_test_is_fresh = last_successful_test_at
             .as_deref()
             .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
@@ -4373,7 +4480,6 @@ impl MeshBackend for MatrixBackend {
         let backups = encryption.backups();
         let backup_state = backups.state();
         let backup_enabled = backups.are_enabled().await;
-        let mut warnings = Vec::new();
         let backup_exists_on_server =
             match tokio::time::timeout(Duration::from_secs(15), backups.fetch_exists_on_server())
                 .await
@@ -4399,6 +4505,15 @@ impl MeshBackend for MatrixBackend {
         if !backup_exists_on_server {
             warnings.push("No current server-side key backup was confirmed".into());
         }
+        match secure_storage_state {
+            MatrixRecoverySecureStorageState::Saved => {}
+            MatrixRecoverySecureStorageState::Missing => warnings
+                .push("No backup code is saved in this device's protected credential store".into()),
+            MatrixRecoverySecureStorageState::Unavailable => warnings.push(
+                "Unlock or repair this device's protected credential store, then check again"
+                    .into(),
+            ),
+        }
         if last_successful_test_at.is_none() {
             warnings.push("Recovery credentials have not been tested on this device".into());
         } else if !recovery_test_is_fresh {
@@ -4409,6 +4524,7 @@ impl MeshBackend for MatrixBackend {
             && backup_enabled
             && backup_exists_on_server
             && recovery_test_is_fresh
+            && secure_storage_state == MatrixRecoverySecureStorageState::Saved
             && warnings.is_empty();
         Ok(MatrixRecoveryHealth {
             recovery_state: Self::recovery_state_name(recovery_state).into(),
@@ -4418,29 +4534,17 @@ impl MeshBackend for MatrixBackend {
             healthy,
             checked_at: chrono::Utc::now().to_rfc3339(),
             last_successful_test_at,
+            secure_storage_state,
             warnings,
         })
     }
 
     async fn test_recovery(
         &self,
-        mut recovery_key_or_passphrase: String,
+        recovery_key_or_passphrase: String,
     ) -> BackendResult<MatrixRecoveryHealth> {
-        if recovery_key_or_passphrase.trim().is_empty() {
-            recovery_key_or_passphrase.zeroize();
-            return Err(BackendError::InvalidConfiguration(
-                "recovery key or passphrase cannot be empty".into(),
-            ));
-        }
-        let client = self.client().await?;
-        let result = client
-            .encryption()
-            .recovery()
-            .recover(recovery_key_or_passphrase.trim())
-            .await
-            .map_err(Self::map_error);
-        recovery_key_or_passphrase.zeroize();
-        result?;
+        self.verify_recovery_credential(recovery_key_or_passphrase)
+            .await?;
 
         let profile_id = self
             .runtime
@@ -4453,6 +4557,19 @@ impl MeshBackend for MatrixBackend {
         let tested_at = chrono::Utc::now().to_rfc3339();
         Self::persist_last_recovery_test(&storage, &tested_at)?;
         self.recovery_health().await
+    }
+
+    async fn test_stored_recovery(&self) -> BackendResult<MatrixRecoveryHealth> {
+        let profile_id = self
+            .runtime
+            .read()
+            .await
+            .profile_id
+            .clone()
+            .ok_or(BackendError::NotAuthenticated)?;
+        let storage = self.storage_for_profile(&profile_id);
+        let credential = Self::load_stored_recovery_credential(&storage)?;
+        self.test_recovery(credential).await
     }
 
     async fn start_device_verification(
@@ -6475,6 +6592,18 @@ impl MeshBackend for MatrixBackend {
             .into_iter()
             .map(Self::direct_message_from_message)
             .collect::<Vec<_>>();
+        // Reciprocity is a display boundary as well as a publication boundary:
+        // Mesh shows another person's public receipt only while this account
+        // has chosen to share public receipts in the same conversation.
+        if self
+            .wire_privacy
+            .read()
+            .await
+            .read_receipt_mode_for(room.room_id().as_str())
+            != ReadReceiptMode::Public
+        {
+            return Ok(messages);
+        }
         let own_user_id = client.user_id();
 
         for message in &mut messages {
@@ -6861,7 +6990,11 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn mark_read(&self, room_id: String) -> BackendResult<()> {
-        let read_receipt_mode = self.wire_privacy.read().await.read_receipt_mode;
+        let read_receipt_mode = self
+            .wire_privacy
+            .read()
+            .await
+            .read_receipt_mode_for(&room_id);
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let room =
@@ -6910,9 +7043,9 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn set_typing(&self, room_id: String, typing: bool) -> BackendResult<()> {
-        let privacy = *self.wire_privacy.read().await;
+        let privacy = self.wire_privacy.read().await.clone();
         let mut sent_rooms = self.sent_typing_notices.lock().await;
-        if !privacy.should_send_typing_notice(sent_rooms.contains(&room_id), typing) {
+        if !privacy.should_send_typing_notice(&room_id, sent_rooms.contains(&room_id), typing) {
             return Ok(());
         }
         let client = self.client().await?;
@@ -6928,6 +7061,9 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn typing_users(&self, room_id: String) -> BackendResult<Vec<TypingUser>> {
+        if !self.wire_privacy.read().await.sends_typing_for(&room_id) {
+            return Ok(Vec::new());
+        }
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let room = Self::protected_joined_room(&client, &room_id, "reading typing status").await?;
@@ -7778,32 +7914,64 @@ impl MeshBackend for MatrixBackend {
             .collect())
     }
 
-    async fn enable_recovery(&self, passphrase: Option<String>) -> BackendResult<String> {
+    async fn enable_recovery(
+        &self,
+        mut passphrase: Option<String>,
+    ) -> BackendResult<MatrixRecoverySetupResult> {
         let client = self.client().await?;
         let recovery = client.encryption().recovery();
         let enable = recovery.enable().wait_for_backups_to_upload();
-        match passphrase.as_deref() {
+        let result = match passphrase.as_deref() {
             Some(passphrase) if !passphrase.is_empty() => enable
                 .with_passphrase(passphrase)
                 .await
                 .map_err(Self::map_error),
             _ => enable.await.map_err(Self::map_error),
+        };
+        if let Some(passphrase) = passphrase.as_mut() {
+            passphrase.zeroize();
         }
+        let recovery_key = result?;
+        let profile_id = self
+            .runtime
+            .read()
+            .await
+            .profile_id
+            .clone()
+            .ok_or(BackendError::NotAuthenticated)?;
+        let storage = self.storage_for_profile(&profile_id);
+        let secure_storage_state = if keychain::store_secret(
+            &Self::recovery_credential_key(&storage),
+            recovery_key.as_bytes(),
+        )
+        .is_ok()
+        {
+            MatrixRecoverySecureStorageState::Saved
+        } else {
+            MatrixRecoverySecureStorageState::Unavailable
+        };
+        let verification_state = if self
+            .verify_recovery_credential(recovery_key.clone())
+            .await
+            .is_ok()
+        {
+            let tested_at = chrono::Utc::now().to_rfc3339();
+            let _ = Self::persist_last_recovery_test(&storage, &tested_at);
+            MatrixRecoveryVerificationState::Verified
+        } else {
+            MatrixRecoveryVerificationState::Failed
+        };
+
+        Ok(MatrixRecoverySetupResult {
+            recovery_key,
+            secure_storage_state,
+            verification_state,
+        })
     }
 
     async fn recover(&self, recovery_key_or_passphrase: String) -> BackendResult<()> {
-        if recovery_key_or_passphrase.is_empty() {
-            return Err(BackendError::InvalidConfiguration(
-                "recovery key or passphrase cannot be empty".into(),
-            ));
-        }
-        self.client()
-            .await?
-            .encryption()
-            .recovery()
-            .recover(&recovery_key_or_passphrase)
+        self.verify_recovery_credential(recovery_key_or_passphrase)
             .await
-            .map_err(Self::map_error)
     }
 
     async fn sync_once(&self) -> BackendResult<()> {

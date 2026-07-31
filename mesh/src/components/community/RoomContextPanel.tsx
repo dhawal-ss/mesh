@@ -152,6 +152,7 @@ export function RoomContextPanel({
         '--mesh-room-context-width': `${panelWidth}px`,
       } as CSSProperties}
       aria-label={`Room context for ${channel.name}`}
+      data-mesh-region
       tabIndex={-1}
     >
       <PanelResizeHandle

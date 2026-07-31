@@ -158,7 +158,7 @@ pub async fn upload_file(
         .channel_id(&channel_id)
         .payload_typed(&FileAnnouncedPayload {
             file_hash: file_hash.clone(),
-            file_name: file_name,
+            file_name,
             size,
             chunks,
             source_peer_id: local_peer_id,
@@ -330,6 +330,7 @@ pub async fn upload_dm_file(
     Ok(file_hash)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn request_file(
     file_hash: String,

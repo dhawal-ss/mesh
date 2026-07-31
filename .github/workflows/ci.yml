@@ -160,6 +160,10 @@ jobs:
         working-directory: mesh
         run: npm run check:public-services
 
+      - name: Check production readiness ledger
+        working-directory: mesh
+        run: npm run check:readiness-ledger
+
       - name: Check public site source
         working-directory: mesh
         run: npm run check:public-site

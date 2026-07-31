@@ -87,51 +87,7 @@ try {
     }
     $sourceSha = (& git -C $sourceRoot rev-parse HEAD).Trim()
 
-    $artifactDefinitions = @(
-        @{
-            Id = "signed-client-build"
-            Kind = "client-build"
-            File = "client-build.bin"
-            MediaType = "application/octet-stream"
-            Content = "signed Mesh test build bound to source $sourceSha"
-            Description = "Signed disposable client build used by the validator acceptance fixture."
-        },
-        @{
-            Id = "service-log-main"
-            Kind = "service-log"
-            File = "service.log"
-            MediaType = "text/plain"
-            Content = "timestamp=2026-07-30T12:00:00Z phase=join outcome=ok"
-            Description = "Content-free authorization and SFU lifecycle outcome log."
-        },
-        @{
-            Id = "client-diagnostic-main"
-            Kind = "client-diagnostic"
-            File = "client.log"
-            MediaType = "text/plain"
-            Content = "timestamp=2026-07-30T12:00:01Z transport=relay encryption=active outcome=ok"
-            Description = "Content-free client transport and encryption diagnostic."
-        }
-    )
-
     $capturedAt = [DateTimeOffset]::UtcNow.ToString("o")
-    $artifacts = @()
-    foreach ($definition in $artifactDefinitions) {
-        $artifactPath = Join-Path $evidenceRoot $definition.File
-        Set-Content -LiteralPath $artifactPath -Value $definition.Content -NoNewline
-        $artifacts += [pscustomobject]@{
-            id = $definition.Id
-            kind = $definition.Kind
-            path = $definition.File
-            sha256 = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
-            byteSize = (Get-Item -LiteralPath $artifactPath).Length
-            mediaType = $definition.MediaType
-            capturedAt = $capturedAt
-            description = $definition.Description
-        }
-    }
-    Set-Content -LiteralPath $outsidePath -Value "outside evidence root" -NoNewline
-
     $document = Get-Content -LiteralPath $templatePath -Raw | ConvertFrom-Json
     $document.sourceSha = $sourceSha
     $document.testedAt = $capturedAt
@@ -157,6 +113,11 @@ try {
             id = "desktop-ryzen-nine"
             platform = "Windows 10 22H2"
             description = "Desktop workstation with the signed acceptance build."
+        },
+        [pscustomobject]@{
+            id = "isolated-linux-client"
+            platform = "Linux supported MatrixRTC client"
+            description = "Faithfully isolated supported client used for the three-participant case."
         }
     )
     $document.networks = @(
@@ -169,13 +130,91 @@ try {
             description = "Independent cellular hotspot used for cross-network verification."
         }
     )
-    $document.artifacts = $artifacts
+
+    $artifactDefinitions = @(
+        @{
+            Id = "signed-client-build"
+            Kind = "client-build"
+            CaseId = $null
+            File = "client-build.bin"
+            MediaType = "application/octet-stream"
+            Content = "signed Mesh test build bound to source $sourceSha"
+            Description = "Signed disposable client build used by the validator acceptance fixture."
+        }
+    )
     foreach ($result in $document.results) {
+        $caseId = [string]$result.id
+        $transport = switch ($caseId) {
+            "restrictive-nat" { "turn-udp" }
+            "udp-blocked-turn-tcp-tls" { "turn-tcp-tls" }
+            default { "direct" }
+        }
         $result.status = "passed"
         $result.actual = "Expected behavior completed with encrypted media and clean participant teardown."
         $result.notApplicableReason = $null
-        $result.evidenceIds = @("service-log-main", "client-diagnostic-main")
+        $result.deviceIds = if ($caseId -eq "three-person-call") {
+            @("surface-laptop-six", "desktop-ryzen-nine", "isolated-linux-client")
+        } else {
+            @("surface-laptop-six", "desktop-ryzen-nine")
+        }
+        $result.networkIds = @("wired-residential-lan", "cellular-hotspot")
+        $result.transport = $transport
+        $result.mediaE2eeActive = $true
+        $result.mediaE2eeFailureClosed = $caseId -eq "media-key-rotation-late-join"
+        $result.evidenceIds = @(
+            "$caseId-service",
+            "$caseId-client",
+            "$caseId-network"
+        )
+        $artifactDefinitions += @(
+            @{
+                Id = "$caseId-service"
+                Kind = "service-log"
+                CaseId = $caseId
+                File = "$caseId-service.log"
+                MediaType = "text/plain"
+                Content = "case=$caseId phase=authorization outcome=ok"
+                Description = "Content-free authorization and SFU lifecycle outcome for $caseId."
+            },
+            @{
+                Id = "$caseId-client"
+                Kind = "client-diagnostic"
+                CaseId = $caseId
+                File = "$caseId-client.log"
+                MediaType = "text/plain"
+                Content = "case=$caseId transport=$transport media_e2ee=active outcome=ok"
+                Description = "Content-free client transport and encryption diagnostic for $caseId."
+            },
+            @{
+                Id = "$caseId-network"
+                Kind = "network-result"
+                CaseId = $caseId
+                File = "$caseId-network.log"
+                MediaType = "text/plain"
+                Content = "case=$caseId transport=$transport packet_loss=0 outcome=ok"
+                Description = "Content-free network path result for $caseId."
+            }
+        )
     }
+
+    $artifacts = @()
+    foreach ($definition in $artifactDefinitions) {
+        $artifactPath = Join-Path $evidenceRoot $definition.File
+        Set-Content -LiteralPath $artifactPath -Value $definition.Content -NoNewline
+        $artifacts += [pscustomobject]@{
+            id = $definition.Id
+            kind = $definition.Kind
+            caseId = $definition.CaseId
+            path = $definition.File
+            sha256 = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            byteSize = (Get-Item -LiteralPath $artifactPath).Length
+            mediaType = $definition.MediaType
+            capturedAt = $capturedAt
+            description = $definition.Description
+        }
+    }
+    $document.artifacts = $artifacts
+    Set-Content -LiteralPath $outsidePath -Value "outside evidence root" -NoNewline
 
     Assert-ValidationPass "complete manifest passes" $document
 
@@ -251,6 +290,29 @@ try {
     $mutated = Copy-TestDocument $document
     $mutated.results[0].evidenceIds = @("service-log-main", "unknown-evidence")
     Assert-ValidationFailure "unknown evidence reference is rejected" $mutated "unknown evidence ID"
+
+    $mutated = Copy-TestDocument $document
+    $mutated.results[0].deviceIds[0] = "unregistered-device"
+    Assert-ValidationFailure "wrong device is rejected" $mutated "unknown device ID"
+
+    $mutated = Copy-TestDocument $document
+    ($mutated.results | Where-Object { $_.id -eq "restrictive-nat" }).transport = "direct"
+    Assert-ValidationFailure "missing TURN relay observation is rejected" $mutated "must prove TURN-relayed media"
+
+    $mutated = Copy-TestDocument $document
+    $mutated.results[0].mediaE2eeActive = $false
+    Assert-ValidationFailure "missing media E2EE observation is rejected" $mutated "must attest active media E2EE"
+
+    $mutated = Copy-TestDocument $document
+    $mutated.results[0].evidenceIds[0] = $mutated.results[1].evidenceIds[0]
+    Assert-ValidationFailure "generic cross-case evidence is rejected" $mutated "wrong caseId"
+
+    $mutated = Copy-TestDocument $document
+    $mutated.results[0].evidenceIds = @(
+        $mutated.results[0].evidenceIds |
+            Where-Object { $_ -notmatch "-network$" }
+    )
+    Assert-ValidationFailure "missing network result is rejected" $mutated "network-result artifact"
 
     $mutated = Copy-TestDocument $document
     $mutated.testedAt = [DateTimeOffset]::UtcNow.AddDays(-31).ToString("o")

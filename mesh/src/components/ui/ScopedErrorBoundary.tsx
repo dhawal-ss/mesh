@@ -8,6 +8,9 @@ interface ScopedErrorBoundaryProps {
   description?: string
   className?: string
   resetKey?: string | number | null
+  onRetry?: () => void
+  onDismiss?: () => void
+  dismissLabel?: string
 }
 
 export function ScopedErrorBoundary({
@@ -16,6 +19,9 @@ export function ScopedErrorBoundary({
   description = 'You can retry this section without reloading Mesh.',
   className = '',
   resetKey,
+  onRetry,
+  onDismiss,
+  dismissLabel = 'Close',
 }: ScopedErrorBoundaryProps) {
   return (
     <ErrorBoundary
@@ -29,13 +35,27 @@ export function ScopedErrorBoundary({
         >
           <p className="text-xs font-medium text-secondary">{name} is unavailable</p>
           <p className="text-xs text-muted">{description}</p>
-          <button
-            type="button"
-            onClick={resetError}
-            className="inline-flex min-h-8 items-center rounded-control px-2 text-xs font-medium text-text-link transition-colors hover:bg-surface-hover hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          >
-            Try again
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                onRetry?.()
+                resetError()
+              }}
+              className="inline-flex min-h-8 items-center rounded-control px-2 text-xs font-medium text-text-link transition-colors hover:bg-surface-hover hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              Try again
+            </button>
+            {onDismiss && (
+              <button
+                type="button"
+                onClick={onDismiss}
+                className="inline-flex min-h-8 items-center rounded-control px-2 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                {dismissLabel}
+              </button>
+            )}
+          </div>
         </div>
       )}
     >

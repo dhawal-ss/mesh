@@ -1,0 +1,8 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Mesh LAN",
+  "identifier": "com.mesh.desktop.lan",
+  "build": {
+    "beforeBuildCommand": "npm run build:lan"
+  }
+}

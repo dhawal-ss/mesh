@@ -15,7 +15,7 @@ import type { UiSize, UiTone } from './Button'
 import { Icon } from './Icon'
 import { IconButton } from './IconButton'
 
-const overlaySurfaceClass = 'rounded-panel border border-border-subtle bg-surface-overlay shadow-overlay'
+const overlaySurfaceClass = 'mesh-overlay-surface rounded-panel border border-border-subtle bg-surface-overlay shadow-overlay'
 
 export interface SwitchProps extends Omit<React.ComponentPropsWithoutRef<typeof SwitchPrimitive.Root>, 'asChild'> {
   label: string
@@ -525,6 +525,11 @@ export interface ComboboxOption {
   disabled?: boolean
 }
 
+export type ComboboxFilter = (
+  options: ComboboxOption[],
+  query: string,
+) => ComboboxOption[]
+
 export function fuzzySearchScore(candidate: string, query: string): number | null {
   const haystack = candidate.trim().toLocaleLowerCase()
   const needle = query.trim().toLocaleLowerCase()
@@ -567,6 +572,7 @@ export function Combobox({
   required = false,
   size = 'md',
   maxEmptyOptions,
+  filterOptions,
   className,
 }: {
   label: string
@@ -580,6 +586,7 @@ export function Combobox({
   required?: boolean
   size?: UiSize
   maxEmptyOptions?: number
+  filterOptions?: ComboboxFilter
   className?: string
 }) {
   const listboxId = useId()
@@ -591,7 +598,12 @@ export function Combobox({
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
   const rootRef = useRef<HTMLDivElement>(null)
+  // The optional caller filter is stable in CommandPalette and can inspect a
+  // large option set. Keep this runtime memo even though the React compiler
+  // conservatively declines to transform function-prop memoization.
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const filtered = useMemo(() => {
+    if (filterOptions) return filterOptions(options, query)
     const normalized = query.trim().toLowerCase()
     if (!normalized) return options
     return options
@@ -608,7 +620,7 @@ export function Combobox({
       .filter((entry): entry is typeof entry & { score: number } => entry.score !== null)
       .sort((left, right) => left.score - right.score || left.optionIndex - right.optionIndex)
       .map((entry) => entry.option)
-  }, [options, query])
+  }, [filterOptions, options, query])
 
   const visibleFiltered = query.trim() || maxEmptyOptions === undefined
     ? filtered
@@ -646,6 +658,7 @@ export function Combobox({
     setActiveIndex(-1)
   }
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return
     if (event.key === 'ArrowDown') {
       event.preventDefault()
       setOpen(true)
@@ -805,12 +818,16 @@ export function Command({
   title = 'Command palette',
   options,
   onSelect,
+  filterOptions,
+  maxEmptyOptions = 20,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   title?: string
   options: ComboboxOption[]
   onSelect: (value: string) => void | Promise<void>
+  filterOptions?: ComboboxFilter
+  maxEmptyOptions?: number
 }) {
   const [busyValue, setBusyValue] = useState<string | null>(null)
   const busyOption = options.find((option) => option.value === busyValue)
@@ -832,7 +849,8 @@ export function Command({
             className="mesh-command-combobox"
             options={options}
             disabled={busyValue !== null}
-            maxEmptyOptions={60}
+            maxEmptyOptions={maxEmptyOptions}
+            filterOptions={filterOptions}
             onValueChange={(value) => {
               setBusyValue(value)
               void Promise.resolve(onSelect(value))

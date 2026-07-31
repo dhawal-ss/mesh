@@ -24,6 +24,8 @@ describe('scoped error containment', () => {
 
   it('keeps sibling UI available and retries a throwing feature locally', async () => {
     let shouldThrow = true
+    const onRetry = vi.fn()
+    const onDismiss = vi.fn()
 
     function MalformedFeature() {
       if (shouldThrow) throw new Error('malformed child data')
@@ -34,7 +36,12 @@ describe('scoped error containment', () => {
       root.render(
         <div>
           <p>Conversation remains available</p>
-          <ScopedErrorBoundary name="Member list">
+          <ScopedErrorBoundary
+            name="Member list"
+            onRetry={onRetry}
+            onDismiss={onDismiss}
+            dismissLabel="Hide member list"
+          >
             <MalformedFeature />
           </ScopedErrorBoundary>
         </div>,
@@ -54,8 +61,39 @@ describe('scoped error containment', () => {
 
     await act(async () => retry?.click())
 
+    expect(onRetry).toHaveBeenCalledTimes(1)
     expect(container.textContent).toContain('Feature recovered')
     expect(container.querySelector('[role="alert"]')).toBeNull()
+    expect(onDismiss).not.toHaveBeenCalled()
+  })
+
+  it('offers a non-retry escape from a failed optional surface', async () => {
+    const onDismiss = vi.fn()
+
+    function ThrowingFeature(): ReactNode {
+      throw new Error('optional surface failed')
+    }
+
+    await act(async () => {
+      root.render(
+        <ScopedErrorBoundary
+          name="Room context"
+          onDismiss={onDismiss}
+          dismissLabel="Close"
+        >
+          <ThrowingFeature />
+        </ScopedErrorBoundary>,
+      )
+    })
+
+    const close = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Close',
+    )
+    expect(close).toBeTruthy()
+
+    await act(async () => close?.click())
+
+    expect(onDismiss).toHaveBeenCalledTimes(1)
   })
 
   it('keeps a failed settings surface modal and closeable with Escape', async () => {

@@ -3,11 +3,17 @@ import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { ErrorState } from '../ui/ErrorState'
-import { retryMatrixPreferenceSync, useSettingsStore } from '../../store/settings'
+import {
+  effectiveConversationPrivacy,
+  retryMatrixPreferenceSync,
+  useSettingsStore,
+} from '../../store/settings'
+import { sequenceCardProps, type SequenceCardPosition } from '../ui/SequenceCard'
 import type {
   AppearanceAccent,
   AppearanceDensity,
   AppearanceTheme,
+  AppearanceTransparency,
   NotificationSoundId,
   ReadReceiptMode,
 } from '../../store/settings'
@@ -19,6 +25,8 @@ interface UserSettingsPanelProps {
   identity: Identity
   matrixAccountId: string | null
   matrixMode: boolean
+  activeConversationId?: string | null
+  activeConversationName?: string | null
   onUpdateDisplayName?: (displayName: string) => Promise<void>
   onOpenSecurity: () => void
   backupReminderDue?: boolean
@@ -33,6 +41,8 @@ export function UserSettingsPanel({
   identity,
   matrixAccountId,
   matrixMode,
+  activeConversationId = null,
+  activeConversationName = null,
   onUpdateDisplayName,
   onOpenSecurity,
   backupReminderDue = false,
@@ -47,14 +57,22 @@ export function UserSettingsPanel({
   const setNotificationsEnabled = useSettingsStore((state) => state.setNotificationsEnabled)
   const setNotificationSound = useSettingsStore((state) => state.setNotificationSound)
   const setNotificationSoundId = useSettingsStore((state) => state.setNotificationSoundId)
+  const setShowMessageContent = useSettingsStore((state) => state.setShowMessageContent)
   const setDoNotDisturb = useSettingsStore((state) => state.setDoNotDisturb)
   const setQuietHoursEnabled = useSettingsStore((state) => state.setQuietHoursEnabled)
   const setQuietHours = useSettingsStore((state) => state.setQuietHours)
   const setAppearanceTheme = useSettingsStore((state) => state.setAppearanceTheme)
   const setAppearanceDensity = useSettingsStore((state) => state.setAppearanceDensity)
   const setAppearanceAccent = useSettingsStore((state) => state.setAppearanceAccent)
+  const setAppearanceTransparency = useSettingsStore((state) => state.setAppearanceTransparency)
   const setReadReceiptMode = useSettingsStore((state) => state.setReadReceiptMode)
   const setSendTypingIndicators = useSettingsStore((state) => state.setSendTypingIndicators)
+  const setConversationReadReceiptMode = useSettingsStore(
+    (state) => state.setConversationReadReceiptMode,
+  )
+  const setConversationTypingIndicators = useSettingsStore(
+    (state) => state.setConversationTypingIndicators,
+  )
   const setSharePresence = useSettingsStore((state) => state.setSharePresence)
   const setInvisibleMode = useSettingsStore((state) => state.setInvisibleMode)
   const [displayName, setDisplayName] = useState(identity.displayName)
@@ -63,11 +81,17 @@ export function UserSettingsPanel({
   const [profileSaved, setProfileSaved] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const [testingNotification, setTestingNotification] = useState(false)
-  const [testNotificationStatus, setTestNotificationStatus] = useState<
-    'sent' | 'failed' | null
-  >(null)
+  const [testNotificationStatus, setTestNotificationStatus] = useState<'sent' | 'failed' | null>(
+    null,
+  )
   const [advancedUnlocked, setAdvancedUnlocked] = useState(false)
   const versionTapCount = useRef(0)
+  const conversationPrivacy = activeConversationId
+    ? privacy.conversationPrivacy[activeConversationId]
+    : undefined
+  const effectivePrivacy = activeConversationId
+    ? effectiveConversationPrivacy(privacy, activeConversationId)
+    : privacy
 
   const testNotification = async () => {
     if (!onTestNotification || testingNotification) return
@@ -167,13 +191,20 @@ export function UserSettingsPanel({
                   {savingProfile ? 'Saving…' : 'Save display name'}
                 </Button>
                 {profileSaved && (
-                  <span role="status" aria-label="Display name save status" className="text-xs text-green">
+                  <span
+                    role="status"
+                    aria-label="Display name save status"
+                    className="text-xs text-green"
+                  >
                     Profile updated
                   </span>
                 )}
               </div>
               {profileValidation && (
-                <p role="alert" className="rounded-panel bg-status-danger/10 px-3 py-2 text-xs text-status-danger">
+                <p
+                  role="alert"
+                  className="rounded-panel bg-status-danger/10 px-3 py-2 text-xs text-status-danger"
+                >
                   {profileValidation}
                 </p>
               )}
@@ -202,12 +233,12 @@ export function UserSettingsPanel({
               Appearance
             </p>
             <p className="mt-1 text-xs leading-5 text-muted">
-              Choose how Mesh looks and how much space its controls use. These preferences are
-              saved on this device.
+              Choose how Mesh looks and how much space its controls use. These preferences are saved
+              on this device.
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <AppearanceSelect
               id="appearance-theme"
               label="Theme"
@@ -244,6 +275,16 @@ export function UserSettingsPanel({
               ]}
               onChange={(value) => setAppearanceAccent(value as AppearanceAccent)}
             />
+            <AppearanceSelect
+              id="appearance-transparency"
+              label="Transparency"
+              value={appearance.transparency}
+              options={[
+                ['readable', 'Subtle'],
+                ['opaque', 'Opaque'],
+              ]}
+              onChange={(value) => setAppearanceTransparency(value as AppearanceTransparency)}
+            />
           </div>
         </section>
 
@@ -257,8 +298,8 @@ export function UserSettingsPanel({
                 Privacy Center
               </p>
               <p className="mt-1 text-xs leading-5 text-muted">
-                Mesh protects message and file contents before they leave your device. Your
-                service still handles the information needed to connect you and deliver them.
+                Mesh protects message and file contents before they leave your device. Your service
+                still handles the information needed to connect you and deliver them.
               </p>
             </div>
 
@@ -308,9 +349,15 @@ export function UserSettingsPanel({
                 <caption className="sr-only">What your service can see</caption>
                 <thead className="bg-surface-hover text-muted">
                   <tr>
-                    <th scope="col" className="px-3 py-2 font-medium">Information</th>
-                    <th scope="col" className="px-3 py-2 font-medium">Can the service see it?</th>
-                    <th scope="col" className="px-3 py-2 font-medium">Why</th>
+                    <th scope="col" className="px-3 py-2 font-medium">
+                      Information
+                    </th>
+                    <th scope="col" className="px-3 py-2 font-medium">
+                      Can the service see it?
+                    </th>
+                    <th scope="col" className="px-3 py-2 font-medium">
+                      Why
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border-subtle text-secondary">
@@ -332,9 +379,13 @@ export function UserSettingsPanel({
                   />
                   <PrivacyVisibilityRow
                     information="Typing activity"
-                    visible={privacy.sendTypingIndicators ? 'Yes, while enabled' : 'No, disabled now'}
+                    visible={
+                      effectivePrivacy.sendTypingIndicators
+                        ? 'Yes, while enabled'
+                        : 'No, disabled now'
+                    }
                     explanation="Shared only when the typing control below is on."
-                    private={!privacy.sendTypingIndicators}
+                    private={!effectivePrivacy.sendTypingIndicators}
                   />
                   <PrivacyVisibilityRow
                     information="Network address"
@@ -350,7 +401,7 @@ export function UserSettingsPanel({
               </table>
             </div>
 
-            <div className="space-y-3" aria-label="Privacy controls">
+            <div className="sequence-card-group" aria-label="Privacy controls">
               <SelectRow
                 id="read-receipts"
                 label="Read receipts"
@@ -362,42 +413,119 @@ export function UserSettingsPanel({
                   ['off', 'Off — do not send read receipts'],
                 ]}
                 onChange={(value) => setReadReceiptMode(value as ReadReceiptMode)}
+                sequencePosition="first"
               />
               <ToggleRow
                 label="Show when I am typing"
                 description="Lets people in the conversation see you composing; turning it off can make replies feel less immediate."
                 checked={privacy.sendTypingIndicators}
                 onChange={setSendTypingIndicators}
+                sequencePosition="middle"
               />
               <ToggleRow
                 label="Share my online status"
                 description="Lets people see when you are online; the service can still see connection times when this is off."
                 checked={privacy.sharePresence}
                 onChange={setSharePresence}
+                sequencePosition="middle"
               />
               <ToggleRow
                 label="Invisible mode"
                 description="Makes you appear offline without disconnecting and temporarily overrides online-status sharing."
                 checked={privacy.invisibleMode}
                 onChange={setInvisibleMode}
+                sequencePosition="last"
               />
             </div>
 
+            {activeConversationId && (
+              <div className="space-y-3 rounded-control border border-border-subtle bg-surface-sunken p-3">
+                <div>
+                  <p className="text-sm font-medium text-primary">
+                    This conversation
+                    {activeConversationName ? `: ${activeConversationName}` : ''}
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-muted">
+                    Override the account defaults only for this conversation. Inherit follows the
+                    controls above.
+                  </p>
+                </div>
+                <div
+                  className="sequence-card-group"
+                  aria-label="Current conversation privacy controls"
+                >
+                  <SelectRow
+                    id="conversation-read-receipts"
+                    label="Read receipts for this conversation"
+                    description="Controls what Mesh sends here and whether it displays other people's public receipts."
+                    value={conversationPrivacy?.readReceiptMode ?? ''}
+                    options={[
+                      ['', `Inherit account setting (${privacy.readReceiptMode})`],
+                      ['public', 'Public'],
+                      ['private', 'Private between my devices'],
+                      ['off', 'Off'],
+                    ]}
+                    onChange={(value) =>
+                      setConversationReadReceiptMode(
+                        activeConversationId,
+                        value ? (value as ReadReceiptMode) : null,
+                      )
+                    }
+                    sequencePosition="first"
+                  />
+                  <SelectRow
+                    id="conversation-typing"
+                    label="Typing status for this conversation"
+                    description="Controls whether Mesh tells people here when you are composing."
+                    value={
+                      conversationPrivacy?.sendTypingIndicators === undefined
+                        ? ''
+                        : conversationPrivacy.sendTypingIndicators
+                          ? 'on'
+                          : 'off'
+                    }
+                    options={[
+                      [
+                        '',
+                        `Inherit account setting (${privacy.sendTypingIndicators ? 'on' : 'off'})`,
+                      ],
+                      ['on', 'On'],
+                      ['off', 'Off'],
+                    ]}
+                    onChange={(value) =>
+                      setConversationTypingIndicators(
+                        activeConversationId,
+                        value === '' ? null : value === 'on',
+                      )
+                    }
+                    sequencePosition="last"
+                  />
+                </div>
+                <p className="text-xs leading-5 text-muted">
+                  Mesh can control only what it sends and shows. Other compatible apps may publish
+                  or display activity differently.
+                </p>
+              </div>
+            )}
+
             <div className="rounded-control bg-surface-hover px-3 py-3 text-xs leading-5 text-muted">
               <p>
-                Each conversation header checks its current protection and shows
-                “Protected end to end” before you send.
+                Each conversation header checks its current protection and shows “Protected end to
+                end” before you send.
               </p>
               <p className="mt-2">
-                Unlike standard Discord messages, Mesh keeps conversation content unreadable to
-                the service. Both services can still observe operational details such as network
+                Unlike standard Discord messages, Mesh keeps conversation content unreadable to the
+                service. Both services can still observe operational details such as network
                 addresses, devices, membership, and timing.
               </p>
             </div>
           </section>
         )}
 
-        <section className="space-y-3 border-b border-border-subtle pb-5" aria-labelledby="notification-settings-heading">
+        <section
+          className="space-y-3 border-b border-border-subtle pb-5"
+          aria-labelledby="notification-settings-heading"
+        >
           <div>
             <p id="notification-settings-heading" className="text-sm font-medium text-primary">
               Notifications
@@ -419,6 +547,13 @@ export function UserSettingsPanel({
             checked={notifications.sound}
             disabled={!notifications.enabled}
             onChange={setNotificationSound}
+          />
+          <ToggleRow
+            label="Show message text"
+            description="Include message text in notifications. It may appear on lock screens, mirrored displays, and notification history."
+            checked={notifications.showMessageContent}
+            disabled={!notifications.enabled}
+            onChange={setShowMessageContent}
           />
           <label
             htmlFor="notification-sound"
@@ -499,7 +634,11 @@ export function UserSettingsPanel({
               {testingNotification ? 'Sending…' : 'Test notification'}
             </Button>
             {testNotificationStatus === 'sent' && (
-              <span role="status" aria-label="Test notification status" className="text-xs text-green">
+              <span
+                role="status"
+                aria-label="Test notification status"
+                className="text-xs text-green"
+              >
                 Test notification sent
               </span>
             )}
@@ -510,7 +649,8 @@ export function UserSettingsPanel({
             )}
           </div>
 
-          {(notifications.mutedChannels.length > 0 || notifications.mutedCommunities.length > 0) && (
+          {(notifications.mutedChannels.length > 0 ||
+            notifications.mutedCommunities.length > 0) && (
             <p className="rounded-control bg-surface-hover px-3 py-2 text-xs text-muted">
               Muted: {notifications.mutedCommunities.length} communit
               {notifications.mutedCommunities.length === 1 ? 'y' : 'ies'} and{' '}
@@ -551,21 +691,23 @@ export function UserSettingsPanel({
               Call privacy
             </p>
             <p className="mt-1 text-xs leading-5 text-muted">
-              Voice, video, and screen sharing are relayed through the call service. The
-              service can see who connects, network addresses, call timing, and traffic
-              volume.
+              Voice, video, and screen sharing are relayed through the call service. The service can
+              see who connects, network addresses, call timing, and traffic volume.
             </p>
             <p className="mt-2 text-xs leading-5 text-muted">
-              Mesh encrypts call media between participating devices only after call
-              encryption is verified. If verification or membership key rotation fails,
-              your microphone, camera, screen, and incoming media stay off. Call encryption
-              is newer and has a different security model from encrypted messages.
+              Mesh encrypts call media between participating devices only after call encryption is
+              verified. If verification or membership key rotation fails, your microphone, camera,
+              screen, and incoming media stay off. Call encryption is newer and has a different
+              security model from encrypted messages.
             </p>
           </section>
         )}
 
         {advancedUnlocked && (
-          <section className="rounded-panel border border-border-subtle bg-surface-sunken p-4" aria-labelledby="advanced-settings-heading">
+          <section
+            className="rounded-panel border border-border-subtle bg-surface-sunken p-4"
+            aria-labelledby="advanced-settings-heading"
+          >
             <p id="advanced-settings-heading" className="text-sm font-medium text-primary">
               Advanced
             </p>
@@ -616,7 +758,9 @@ function PrivacyVisibilityRow({
 }) {
   return (
     <tr>
-      <th scope="row" className="px-3 py-2 font-medium text-primary">{information}</th>
+      <th scope="row" className="px-3 py-2 font-medium text-primary">
+        {information}
+      </th>
       <td className={`px-3 py-2 font-medium ${isPrivate ? 'text-green' : 'text-status-warning'}`}>
         {visible}
       </td>
@@ -663,15 +807,21 @@ function ToggleRow({
   checked,
   disabled = false,
   onChange,
+  sequencePosition,
 }: {
   label: string
   description: string
   checked: boolean
   disabled?: boolean
   onChange: (checked: boolean) => void
+  sequencePosition?: SequenceCardPosition
 }) {
+  const sequence = sequencePosition ? sequenceCardProps(sequencePosition) : null
   return (
-    <label className={`flex items-start justify-between gap-4 rounded-control bg-surface-hover px-3 py-3 ${disabled ? 'opacity-50' : 'cursor-pointer'}`}>
+    <label
+      data-sequence-position={sequence?.['data-sequence-position']}
+      className={`${sequence?.className ?? 'rounded-control bg-surface-hover'} flex items-start justify-between gap-4 px-3 py-3 ${disabled ? 'opacity-50' : 'cursor-pointer'}`}
+    >
       <span>
         <span className="block text-sm font-medium text-primary">{label}</span>
         <span className="mt-0.5 block text-xs leading-5 text-muted">{description}</span>
@@ -694,6 +844,7 @@ function SelectRow({
   value,
   options,
   onChange,
+  sequencePosition,
 }: {
   id: string
   label: string
@@ -701,11 +852,18 @@ function SelectRow({
   value: string
   options: Array<[string, string]>
   onChange: (value: string) => void
+  sequencePosition?: SequenceCardPosition
 }) {
+  const sequence = sequencePosition ? sequenceCardProps(sequencePosition) : null
   return (
-    <div className="flex items-start justify-between gap-4 rounded-control bg-surface-hover px-3 py-3">
+    <div
+      data-sequence-position={sequence?.['data-sequence-position']}
+      className={`${sequence?.className ?? 'rounded-control bg-surface-hover'} flex items-start justify-between gap-4 px-3 py-3`}
+    >
       <span>
-        <label htmlFor={id} className="block text-sm font-medium text-primary">{label}</label>
+        <label htmlFor={id} className="block text-sm font-medium text-primary">
+          {label}
+        </label>
         <span id={`${id}-description`} className="mt-0.5 block text-xs leading-5 text-muted">
           {description}
         </span>
@@ -718,7 +876,9 @@ function SelectRow({
         onChange={(event) => onChange(event.target.value)}
       >
         {options.map(([optionValue, optionLabel]) => (
-          <option key={optionValue} value={optionValue}>{optionLabel}</option>
+          <option key={optionValue} value={optionValue}>
+            {optionLabel}
+          </option>
         ))}
       </select>
     </div>

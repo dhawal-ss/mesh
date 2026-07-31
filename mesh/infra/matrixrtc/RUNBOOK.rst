@@ -57,6 +57,31 @@ service. Never place them in source, client configuration, logs, command-line
 arguments, support bundles, acceptance evidence, or public monitoring. Use an
 operator-owned secret store and inject them into the Compose environment.
 
+DNS, TLS, and firewall prerequisites
+------------------------------------
+
+- ``matrix-rtc.<community-domain>`` and ``LIVEKIT_TURN_DOMAIN`` must be separate
+  DNS hostnames with reviewed A/AAAA records for the deployed host. Remove stale
+  records before advertising discovery. Check both with ``Resolve-DnsName`` (or
+  the platform DNS equivalent) from each acceptance network.
+- The HTTPS/WSS certificate must cover the MatrixRTC service hostname. The
+  TURN-over-TLS certificate must independently cover ``LIVEKIT_TURN_DOMAIN``.
+  Require a currently trusted TLS 1.2 or TLS 1.3 chain; never bypass hostname or
+  certificate validation.
+- Allow inbound TCP 443 for authorization/signalling, TCP 7881 for LiveKit's
+  ICE/TCP fallback, UDP 3478 for TURN/UDP, TCP 5349 at the trusted TURN/TLS
+  terminator, and UDP 50000-50100 for bounded RTP media. Keep TCP 7880/8080,
+  TCP 6789 metrics, and the plaintext TCP 5349 hop loopback-only. Deny every
+  other container/control port at the host and perimeter firewall.
+- Verify TCP 443 and TCP 5349 from both acceptance networks with
+  ``Test-NetConnection`` (or an equivalent trusted-TLS probe). A successful TCP
+  connection alone is not TURN evidence: the credentialed operator smoke and
+  the ``turn_probe_live_tests`` allocation must also prove UDP and TURN/TLS
+  relay paths.
+- Keep host, reverse-proxy, LiveKit, authorization, and TURN/TLS logs bounded by
+  size and retention. Use the query-redacting format in
+  ``nginx.example.conf`` and never enable packet or media capture by default.
+
 Fresh non-production start
 --------------------------
 
@@ -99,8 +124,13 @@ sourceSha, signed client-build provenance, and client-build artifact must all
 bind to the same Git HEAD. Do not generate live evidence inside the source
 tree. Each artifact entry uses a stable evidence ID, a relative path below the
 explicit evidence root, SHA-256, exact byte size, media type, capture timestamp,
-kind, and sanitized description. Test cases reference evidence IDs; arbitrary
-prose paths are not accepted.
+kind, one exact ``caseId`` (except the global signed client build), and a
+sanitized description. Each completed test case names the registered
+``deviceIds`` and ``networkIds``, records the observed ``transport``, attests
+``mediaE2eeActive``, and attaches a case-bound service log, client diagnostic,
+and network result. The key-rotation case must additionally attest
+``mediaE2eeFailureClosed``. Test cases reference evidence IDs; generic or
+cross-case artifacts and arbitrary prose paths are not accepted.
 
 The validator resolves both the evidence root and artifact paths canonically.
 It rejects absolute paths, traversal, symlink escape, missing or changed files,

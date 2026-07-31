@@ -13,6 +13,7 @@ import { useShellStore } from '../store/shell'
 import { useTypingStore } from '../store/typing'
 import { useVoiceStore } from '../store/voice'
 import { resetMatrixAccountPreferences } from '../store/settings'
+import { roomTabStorageKey } from './room-tabs'
 
 /**
  * Remove renderer-only state that belongs to the previously active account.
@@ -21,7 +22,10 @@ import { resetMatrixAccountPreferences } from '../store/settings'
  * next account's bootstrap starts. Authentication material never enters these
  * stores; native secure storage remains the session authority.
  */
-export function clearRendererAccountState(): void {
+export function clearRendererAccountState(removedAccountId?: string | null): void {
+  if (removedAccountId && typeof localStorage !== 'undefined') {
+    localStorage.removeItem(roomTabStorageKey(removedAccountId))
+  }
   resetMatrixAccountPreferences()
 
   const emojiCommunities = Object.keys(useServerEmojiStore.getState().byCommunity)

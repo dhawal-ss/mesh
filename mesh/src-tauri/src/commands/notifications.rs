@@ -19,6 +19,9 @@ use crate::backend::{
 use super::error::CommandError;
 
 const TRAY_ID: &str = "mesh-main";
+const MAX_NOTIFICATION_SENDER_CHARS: usize = 80;
+const MAX_NOTIFICATION_PREVIEW_CHARS: usize = 180;
+const PRIVATE_NOTIFICATION_BODY: &str = "New message";
 
 #[derive(Debug, Clone, Copy, Default)]
 struct UnreadSnapshot {
@@ -60,13 +63,17 @@ impl NotificationRuntimeState {
         }
     }
 
-    fn should_present(&self, room_id: &str, window_focused: bool) -> bool {
+    /// Return the content-preview policy from the same locked snapshot that
+    /// authorizes presentation, so a context update cannot race private
+    /// content into a notification.
+    fn presentation_policy(&self, room_id: &str, window_focused: bool) -> Option<bool> {
         let Ok(context) = self.context.read() else {
-            return false;
+            return None;
         };
-        context.presentation_enabled()
+        let should_present = context.presentation_enabled()
             && !context.is_room_muted(room_id)
-            && !(window_focused && context.active_room_id.as_deref() == Some(room_id))
+            && !(window_focused && context.active_room_id.as_deref() == Some(room_id));
+        should_present.then_some(context.show_message_content)
     }
 
     fn record_unread(&self, update: &MatrixUnreadUpdate) {
@@ -167,6 +174,95 @@ fn update_unread_indicators(app: &AppHandle, state: &NotificationRuntimeState) {
     }
 }
 
+fn safe_notification_sender(display_name: &str) -> String {
+    let normalized = display_name
+        .chars()
+        .map(|character| {
+            if character.is_control()
+                || matches!(
+                    character,
+                    '\u{061c}'
+                        | '\u{200b}'..='\u{200f}'
+                        | '\u{202a}'..='\u{202e}'
+                        | '\u{2060}'..='\u{206f}'
+                        | '\u{feff}'
+                )
+            {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>();
+    let bounded = normalized
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(MAX_NOTIFICATION_SENDER_CHARS)
+        .collect::<String>();
+    if bounded.is_empty() {
+        "Someone".into()
+    } else {
+        bounded
+    }
+}
+
+fn safe_notification_preview(preview: &str) -> String {
+    let normalized = preview
+        .chars()
+        .map(|character| {
+            if character.is_control()
+                || matches!(
+                    character,
+                    '\u{061c}'
+                        | '\u{200b}'..='\u{200f}'
+                        | '\u{202a}'..='\u{202e}'
+                        | '\u{2060}'..='\u{206f}'
+                        | '\u{feff}'
+                )
+            {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>();
+    let bounded = normalized
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(MAX_NOTIFICATION_PREVIEW_CHARS)
+        .collect::<String>();
+    if bounded.is_empty() {
+        PRIVATE_NOTIFICATION_BODY.into()
+    } else {
+        bounded
+    }
+}
+
+fn presentation_notification(
+    mut notification: MatrixNotification,
+    show_message_content: bool,
+) -> MatrixNotification {
+    notification.display_name = safe_notification_sender(&notification.display_name);
+    notification.preview = if show_message_content {
+        safe_notification_preview(&notification.preview)
+    } else {
+        PRIVATE_NOTIFICATION_BODY.into()
+    };
+    notification.avatar_url = None;
+    notification
+}
+
+fn private_notification_title(display_name: &str) -> String {
+    format!(
+        "New message from {}",
+        safe_notification_sender(display_name)
+    )
+}
+
 pub fn configure_tray(app: &mut App) {
     let Some(icon) = app.default_window_icon().cloned() else {
         tracing::warn!(
@@ -192,9 +288,12 @@ pub fn handle_matrix_backend_event(app: &AppHandle, event: MatrixBackendEvent) {
                 .get_webview_window("main")
                 .and_then(|window| window.is_focused().ok())
                 .unwrap_or(false);
-            if !state.should_present(&notification.room_id, focused) {
+            let Some(show_message_content) =
+                state.presentation_policy(&notification.room_id, focused)
+            else {
                 return;
-            }
+            };
+            let notification = presentation_notification(notification, show_message_content);
             if let Err(error) = app.emit(MATRIX_NOTIFICATION_EVENT, &notification) {
                 tracing::warn!(
                     target: "mesh::notifications",
@@ -285,7 +384,7 @@ fn show_native_notification(app: &AppHandle, notification: &MatrixNotification) 
     if let Err(error) = app
         .notification()
         .builder()
-        .title(&notification.display_name)
+        .title(private_notification_title(&notification.display_name))
         .body(&notification.preview)
         .show()
     {
@@ -348,7 +447,7 @@ mod tests {
     #[test]
     fn startup_policy_fails_closed_until_renderer_restores_preferences() {
         let state = NotificationRuntimeState::default();
-        assert!(!state.should_present("!room:example.org", false));
+        assert_eq!(state.presentation_policy("!room:example.org", false), None);
         assert_eq!(state.visible_unread_total(), 0);
     }
 
@@ -360,13 +459,20 @@ mod tests {
             notifications_enabled: true,
             do_not_disturb: false,
             quiet_hours_active: false,
+            show_message_content: false,
             muted_room_ids: vec!["!muted:example.org".into()],
         });
 
-        assert!(!state.should_present("!active:example.org", true));
-        assert!(state.should_present("!active:example.org", false));
-        assert!(!state.should_present("!muted:example.org", false));
-        assert!(state.should_present("!other:example.org", true));
+        assert_eq!(state.presentation_policy("!active:example.org", true), None);
+        assert_eq!(
+            state.presentation_policy("!active:example.org", false),
+            Some(false)
+        );
+        assert_eq!(state.presentation_policy("!muted:example.org", false), None);
+        assert_eq!(
+            state.presentation_policy("!other:example.org", true),
+            Some(false)
+        );
     }
 
     #[test]
@@ -412,5 +518,83 @@ mod tests {
             unread_mentions: 0,
         });
         assert_eq!(state.visible_unread_total(), 0);
+    }
+
+    #[test]
+    fn notification_minimization_removes_content_and_remote_avatar_data() {
+        let notification = presentation_notification(
+            MatrixNotification {
+                room_id: "!room:example.invalid".into(),
+                event_id: "$event".into(),
+                sender: "@sender:example.invalid".into(),
+                display_name: "  Example\nSender\t".into(),
+                preview: "private fixture phrase attachment-name.pdf".into(),
+                is_mention: false,
+                is_dm: true,
+                avatar_url: Some("mxc://example.invalid/private-avatar".into()),
+            },
+            false,
+        );
+
+        assert_eq!(notification.display_name, "Example Sender");
+        assert_eq!(notification.preview, PRIVATE_NOTIFICATION_BODY);
+        assert_eq!(
+            private_notification_title(&notification.display_name),
+            "New message from Example Sender"
+        );
+        assert_eq!(notification.avatar_url, None);
+        assert!(!notification.preview.contains("private fixture phrase"));
+        assert!(!notification.preview.contains("attachment-name.pdf"));
+    }
+
+    #[test]
+    fn notification_content_requires_explicit_policy_and_stays_bounded() {
+        let notification = presentation_notification(
+            MatrixNotification {
+                room_id: "!room:example.invalid".into(),
+                event_id: "$event".into(),
+                sender: "@sender:example.invalid".into(),
+                display_name: "Example Sender".into(),
+                preview: format!("  hello\u{202e}\nworld {}  ", "x".repeat(300)),
+                is_mention: false,
+                is_dm: true,
+                avatar_url: Some("mxc://example.invalid/private-avatar".into()),
+            },
+            true,
+        );
+
+        assert!(notification.preview.starts_with("hello world "));
+        assert_eq!(
+            notification.preview.chars().count(),
+            MAX_NOTIFICATION_PREVIEW_CHARS
+        );
+        assert!(!notification.preview.contains('\u{202e}'));
+        assert_eq!(notification.avatar_url, None);
+
+        let state = NotificationRuntimeState::default();
+        state.set_context(NotificationPresentationContext {
+            notifications_enabled: true,
+            show_message_content: true,
+            ..NotificationPresentationContext::default()
+        });
+        assert_eq!(
+            state.presentation_policy("!room:example.org", false),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn notification_sender_is_bounded_and_has_a_safe_fallback() {
+        assert_eq!(safe_notification_sender("\r\n\t"), "Someone");
+        assert_eq!(
+            safe_notification_sender("Example\u{202e}cod.exe"),
+            "Example cod.exe"
+        );
+        assert_eq!(
+            safe_notification_sender(&"x".repeat(MAX_NOTIFICATION_SENDER_CHARS + 20))
+                .chars()
+                .count(),
+            MAX_NOTIFICATION_SENDER_CHARS
+        );
     }
 }

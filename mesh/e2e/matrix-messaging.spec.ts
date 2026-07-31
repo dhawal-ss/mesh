@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { expectNoWcagViolations } from './helpers/accessibility'
 
 type IpcCall = {
   command: string
@@ -420,13 +421,14 @@ test.describe('Matrix direct messaging and encrypted attachments', () => {
     })
   })
 
-  test('opens an existing encrypted DM and loads its history through Matrix IPC', async ({ page }) => {
+  test('@a11y opens an existing encrypted DM and loads its history through Matrix IPC', async ({ page }) => {
     await openDirectMessage(page)
 
     await expect(page.getByText('Existing encrypted DM history.', { exact: true })).toBeVisible()
     await expect(page.getByText('encrypted-plan.pdf', { exact: true })).toBeVisible()
     await expect(page.getByAltText('Preview of encrypted-plan.pdf')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Download encrypted-plan.pdf' })).toBeVisible()
+    await expectNoWcagViolations(page, 'Encrypted direct message')
 
     const calls = await ipcCalls(page)
     expect(calls).toContainEqual({

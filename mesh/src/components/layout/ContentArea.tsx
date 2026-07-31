@@ -1,13 +1,18 @@
-import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useState,
+  type CSSProperties,
+} from 'react'
 import { useActiveChannel } from '../../store/channels'
 import { useCommunityStore } from '../../store/communities'
 import { usePresence } from '../../hooks/usePresence'
 import { ChatView } from '../chat/ChatView'
 import { VoiceView } from '../voice/VoiceView'
-import {
-  RoomContextPanel,
-  type RoomContextTab,
-} from '../community/RoomContextPanel'
+import type { RoomContextTab } from '../community/RoomContextPanel'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
 import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
@@ -24,6 +29,14 @@ import {
   writeStoredBoolean,
 } from '../../lib/layout-preferences'
 import { usePersistentPanelWidth } from '../../hooks/usePersistentPanelWidth'
+import { MemberListSkeleton, Skeleton } from '../ui/Skeleton'
+
+function createLazyRoomContextPanel() {
+  return lazy(() =>
+    import('../community/RoomContextPanel')
+      .then((module) => ({ default: module.RoomContextPanel })),
+  )
+}
 
 export function ContentArea() {
   const activeChannel = useActiveChannel()
@@ -43,6 +56,9 @@ export function ContentArea() {
   })
   const [contextTab, setContextTab] = useState<RoomContextTab>('people')
   const [inviteDraft, setInviteDraft] = useState('')
+  const [RoomContextPanel, setRoomContextPanel] = useState(
+    createLazyRoomContextPanel,
+  )
   const { members } = usePresence()
   const trust = useRoomTrust(activeChannel?.id, members)
   const activeTextRoomId = activeChannel?.channelType === 'text' ? activeChannel.id : null
@@ -74,16 +90,22 @@ export function ContentArea() {
       'textarea:not([disabled])',
       '[tabindex]:not([tabindex="-1"])',
     ].join(',')
-    const contextPanel = document.getElementById('mesh-room-context-panel')
+    const getContextPanel = () => document.getElementById('mesh-room-context-panel')
     const focusFirstElement = () => {
-      if (!contextPanel) return
+      const contextPanel = getContextPanel()
+      if (!contextPanel) return false
       const firstVisible = [...contextPanel.querySelectorAll<HTMLElement>(focusableSelector)]
         .find((element) => !element.hidden && element.getClientRects().length > 0)
       ;(firstVisible ?? contextPanel).focus()
+      return true
     }
-    contextPanel?.focus()
+    getContextPanel()?.focus()
     focusFirstElement()
     const focusFirst = window.requestAnimationFrame(focusFirstElement)
+    const mountObserver = new MutationObserver(() => {
+      if (focusFirstElement()) mountObserver.disconnect()
+    })
+    mountObserver.observe(document.body, { childList: true, subtree: true })
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !event.defaultPrevented) {
         event.preventDefault()
@@ -91,6 +113,7 @@ export function ContentArea() {
         return
       }
       if (event.key !== 'Tab') return
+      const contextPanel = getContextPanel()
       const focusable = [...(contextPanel?.querySelectorAll<HTMLElement>(focusableSelector) ?? [])]
         .filter((element) => !element.hidden && element.getClientRects().length > 0)
       if (focusable.length === 0) return
@@ -107,6 +130,7 @@ export function ContentArea() {
     document.addEventListener('keydown', handleKeyDown)
     return () => {
       window.cancelAnimationFrame(focusFirst)
+      mountObserver.disconnect()
       document.removeEventListener('keydown', handleKeyDown)
     }
   }, [closeContext, showContext])
@@ -243,24 +267,82 @@ export function ContentArea() {
             description="Room context could not be displayed. Messaging is unaffected."
             className="m-2 w-content-error"
             resetKey={activeCommunityId}
+            onRetry={() => setRoomContextPanel(createLazyRoomContextPanel())}
+            onDismiss={() => closeContext()}
+            dismissLabel="Close"
           >
-            <RoomContextPanel
-              channel={activeChannel}
-              members={members}
-              trust={trust}
-              activeTab={contextTab}
-              onTabChange={setContextTab}
-              onClose={() => closeContext()}
-              panelWidth={roomContextWidth.width}
-              panelWidthMinimum={240}
-              panelWidthMaximum={420}
-              onResizeStart={roomContextWidth.startResize}
-              onResizeBy={roomContextWidth.resizeBy}
-            />
+            <Suspense
+              fallback={(
+                <RoomContextLoadingFallback
+                  panelWidth={roomContextWidth.width}
+                  onClose={() => closeContext()}
+                />
+              )}
+            >
+              <RoomContextPanel
+                channel={activeChannel}
+                members={members}
+                trust={trust}
+                activeTab={contextTab}
+                onTabChange={setContextTab}
+                onClose={() => closeContext()}
+                panelWidth={roomContextWidth.width}
+                panelWidthMinimum={240}
+                panelWidthMaximum={420}
+                onResizeStart={roomContextWidth.startResize}
+                onResizeBy={roomContextWidth.resizeBy}
+              />
+            </Suspense>
           </ScopedErrorBoundary>
         </>
       )}
     </div>
+  )
+}
+
+function RoomContextLoadingFallback({
+  panelWidth,
+  onClose,
+}: {
+  panelWidth: number
+  onClose: () => void
+}) {
+  return (
+    <aside
+      id="mesh-room-context-panel"
+      className="mesh-room-context-panel relative flex flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-sidebar"
+      data-design-token-exception="user-resizable-persisted-room-context-width"
+      style={{
+        '--mesh-room-context-width': `${panelWidth}px`,
+      } as CSSProperties}
+      aria-label="Loading room context"
+      aria-busy="true"
+      tabIndex={-1}
+    >
+      <div className="flex min-h-control-lg items-center gap-3 border-b border-border-subtle px-3">
+        <span
+          className="min-w-0 flex-1 text-xs font-medium text-secondary"
+          role="status"
+          aria-live="polite"
+        >
+          Loading room context
+        </span>
+        <button
+          type="button"
+          className="min-h-8 rounded-control px-2 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          onClick={onClose}
+        >
+          Close
+        </button>
+      </div>
+      <div className="space-y-3 border-b border-border-subtle px-4 py-3" aria-hidden>
+        <Skeleton width={92} height={12} />
+        <Skeleton width="70%" height={10} />
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden py-2" aria-hidden>
+        <MemberListSkeleton />
+      </div>
+    </aside>
   )
 }
 

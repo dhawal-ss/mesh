@@ -642,7 +642,10 @@ export function useVoiceEngine() {
       }
     }
 
-    if (!legacyVoiceReady) {
+    // This compile-time boundary is false in every production Matrix build.
+    // Rollup therefore removes this entire branch and never resolves or emits
+    // the SimplePeer-backed module. Only the separately named LAN build opts in.
+    if (!__MESH_LEGACY_FRONTEND__ || !legacyVoiceReady) {
       setSessionSnapshot(null)
       setConnectionState('disconnected', voiceService.reason ?? 'Calling is unavailable')
       return

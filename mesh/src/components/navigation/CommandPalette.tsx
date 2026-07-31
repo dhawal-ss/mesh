@@ -8,7 +8,11 @@ import { useShellStore } from '../../store/shell'
 import { useVoiceStore } from '../../store/voice'
 import * as bridge from '../../lib/bridge'
 import { showToast } from '../ui/Toast'
-import { Command, type ComboboxOption } from '../ui/InteractivePrimitives'
+import {
+  Command,
+  fuzzySearchScore,
+  type ComboboxOption,
+} from '../ui/InteractivePrimitives'
 import { Modal } from '../ui/Modal'
 import { Kbd } from '../ui/Primitives'
 import { Icon, type IconName } from '../ui/Icon'
@@ -24,6 +28,7 @@ interface PaletteCommand {
   subtitle?: string
   icon: IconName
   keywords: string[]
+  activityRank: number
   run: () => void | Promise<void>
 }
 
@@ -74,6 +79,71 @@ export function sortCommandsByRecency<T extends { id: string }>(
       return left.index - right.index
     })
     .map(({ command }) => command)
+}
+
+export function parsePaletteQuery(query: string): {
+  scope: 'rooms' | 'people' | 'communities' | null
+  term: string
+} {
+  const normalized = query.trimStart()
+  const sigil = normalized[0]
+  if (sigil === '#') return { scope: 'rooms', term: normalized.slice(1).trimStart() }
+  if (sigil === '@') return { scope: 'people', term: normalized.slice(1).trimStart() }
+  if (sigil === '*') return { scope: 'communities', term: normalized.slice(1).trimStart() }
+  return { scope: null, term: normalized }
+}
+
+export function filterPaletteOptions(
+  options: ComboboxOption[],
+  query: string,
+): ComboboxOption[] {
+  const { scope, term } = parsePaletteQuery(query)
+  const scoped = scope === 'rooms'
+    ? options.filter((option) => option.value.startsWith('channel:'))
+    : scope === 'people'
+      ? options.filter((option) => (
+          option.value.startsWith('dm:') || option.value.startsWith('person:')
+        ))
+      : scope === 'communities'
+        ? options.filter((option) => option.value.startsWith('server:'))
+        : options
+  const normalized = term.trim().toLocaleLowerCase()
+  if (!normalized) return scoped
+
+  return scoped
+    .map((option, optionIndex) => {
+      const scores = [option.label, ...(option.keywords ?? [])]
+        .map((candidate) => fuzzySearchScore(candidate, normalized))
+        .filter((score): score is number => score !== null)
+      return {
+        option,
+        optionIndex,
+        score: scores.length > 0 ? Math.min(...scores) : null,
+      }
+    })
+    .filter((entry): entry is typeof entry & { score: number } => entry.score !== null)
+    .sort((left, right) => left.score - right.score || left.optionIndex - right.optionIndex)
+    .map(({ option }) => option)
+}
+
+export function sortCommandsByActivity<T extends { activityRank: number }>(
+  commands: T[],
+): T[] {
+  return commands
+    .map((command, index) => ({ command, index }))
+    .sort((left, right) => (
+      right.command.activityRank - left.command.activityRank
+      || left.index - right.index
+    ))
+    .map(({ command }) => command)
+}
+
+export function accountServiceContext(userId: string): string | null {
+  const separator = userId.lastIndexOf(':')
+  const service = separator >= 0 ? userId.slice(separator + 1).trim() : ''
+  return service
+    ? `Account service: ${service} (independently operated)`
+    : null
 }
 
 export function isEditableTarget(target: EventTarget | null): boolean {
@@ -149,6 +219,7 @@ export function CommandPalette() {
         subtitle: community.description || `${community.memberCount} members`,
         icon: 'users',
         keywords: [community.name, community.description],
+        activityRank: community.id === activeCommunityId ? 850 : 700,
         run: () => selectCommunity(community.id),
       })
     }
@@ -159,21 +230,37 @@ export function CommandPalette() {
         id: `channel:${channel.id}`,
         group: 'Rooms',
         title: channel.name,
-        subtitle: `${channel.channelType === 'voice' ? 'Voice' : 'Text'} · ${communityName}`,
+        subtitle: `${communityName} › ${channel.channelType === 'voice' ? 'Voice room' : 'Text room'}`,
         icon: channel.channelType === 'voice' ? 'volume' : 'hash',
         keywords: [channel.channelType, channel.name, communityName],
+        activityRank: channel.id === activeChannelId
+          ? 1_000
+          : (channel.unreadCount ?? 0) > 0
+            ? 900 + Math.min(channel.unreadCount ?? 0, 99)
+            : 600,
         run: () => selectChannel(channel.id),
       })
     }
 
     for (const conversation of conversations) {
+      const serviceContext = accountServiceContext(conversation.peerPublicKey)
+      const lastActivity = conversation.lastMessageAt
+        ? Date.parse(conversation.lastMessageAt)
+        : 0
       entries.push({
         id: `dm:${conversation.id}`,
         group: 'Messages',
         title: conversation.peerDisplayName,
-        subtitle: 'Direct message',
+        subtitle: serviceContext
+          ? `Direct message › ${serviceContext}`
+          : 'Direct message',
         icon: 'messageCircle',
         keywords: ['dm', 'direct message', conversation.peerDisplayName, conversation.peerPublicKey],
+        activityRank: 800 + (
+          Number.isFinite(lastActivity)
+            ? Math.min(lastActivity / 10_000_000_000_000, 0.99)
+            : 0
+        ),
         run: () => selectConversation(conversation.id),
       })
     }
@@ -202,9 +289,13 @@ export function CommandPalette() {
           id: `person:${member.publicKey}`,
           group: 'People',
           title: member.displayName,
-          subtitle: communityName ? `Start a conversation · ${communityName}` : 'Start a conversation',
+          subtitle: [
+            communityName,
+            accountServiceContext(member.publicKey),
+          ].filter(Boolean).join(' › ') || 'Start a conversation',
           icon: 'userPlus',
           keywords: [member.displayName, member.publicKey, communityName],
+          activityRank: communityId === activeCommunityId ? 550 : 500,
           run: async () => {
             const conversation = existingDm ?? await bridge.ensureDm(member.publicKey)
             useDmStore.getState().upsertConversation(conversation)
@@ -221,6 +312,7 @@ export function CommandPalette() {
         title: 'Profile and preferences',
         icon: 'settings',
         keywords: ['profile', 'preferences', 'account'],
+        activityRank: 200,
         run: () => useShellStore.getState().setProfileOpen(true),
       },
       {
@@ -229,6 +321,7 @@ export function CommandPalette() {
         title: 'Create a community',
         icon: 'plus',
         keywords: ['create', 'new', 'community'],
+        activityRank: 100,
         run: () => useShellStore.getState().openServerModal('create'),
       },
       {
@@ -237,6 +330,7 @@ export function CommandPalette() {
         title: 'Join a community',
         icon: 'userPlus',
         keywords: ['join', 'invite', 'community'],
+        activityRank: 100,
         run: () => useShellStore.getState().openServerModal('join'),
       },
     )
@@ -247,6 +341,7 @@ export function CommandPalette() {
         title: 'Explore communities',
         icon: 'search',
         keywords: ['explore', 'discover', 'search', 'community'],
+        activityRank: 100,
         run: () => useShellStore.getState().openServerModal('discover'),
       })
     }
@@ -257,6 +352,7 @@ export function CommandPalette() {
         title: `${isMuted ? 'Unmute' : 'Mute'} microphone`,
         icon: isMuted ? 'mic' : 'micOff',
         keywords: ['toggle', 'mute', 'microphone', 'voice'],
+        activityRank: 100,
         run: () => useVoiceStore.getState().setMuted(!useVoiceStore.getState().isMuted),
       },
       {
@@ -265,6 +361,7 @@ export function CommandPalette() {
         title: `${isDeafened ? 'Undeafen' : 'Deafen'} audio`,
         icon: isDeafened ? 'headphones' : 'headphoneOff',
         keywords: ['toggle', 'deafen', 'audio', 'voice'],
+        activityRank: 100,
         run: () => useVoiceStore.getState().setDeafened(!useVoiceStore.getState().isDeafened),
       },
       {
@@ -273,12 +370,14 @@ export function CommandPalette() {
         title: 'Show keyboard shortcuts',
         icon: 'settings',
         keywords: ['keyboard', 'shortcut', 'keys', 'help'],
+        activityRank: 100,
         run: () => setShortcutsOpen(true),
       },
     )
 
     return entries
   }, [
+    activeChannelId,
     activeCommunityId,
     channels,
     communities,
@@ -291,7 +390,7 @@ export function CommandPalette() {
   ])
 
   const orderedCommands = useMemo(
-    () => sortCommandsByRecency(commands, recents),
+    () => sortCommandsByRecency(sortCommandsByActivity(commands), recents),
     [commands, recents],
   )
   const commandById = useMemo(
@@ -433,6 +532,8 @@ export function CommandPalette() {
         onOpenChange={setOpen}
         options={options}
         onSelect={execute}
+        filterOptions={filterPaletteOptions}
+        maxEmptyOptions={20}
       />
       <Modal
         open={shortcutsOpen}

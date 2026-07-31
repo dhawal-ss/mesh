@@ -889,6 +889,22 @@ export function MatrixAccountScreen({
           />
         ) : null}
 
+        {storedPendingInvitation || effectiveAdmission ? (
+          <CommunityInvitationPassport
+            pending={storedPendingInvitation}
+            admission={effectiveAdmission}
+            checking={admissionResolving}
+            error={pendingAdmissionError}
+            onDiscard={storedPendingInvitation ? () => void discardPendingInvitation() : undefined}
+          />
+        ) : null}
+
+        {!storedPendingInvitation && admissionResolving ? (
+          <p role="status" className="rounded-control bg-surface-sunken px-3 py-2 text-xs text-muted">
+            Checking whether this invitation offers a community-hosted account service…
+          </p>
+        ) : null}
+
         {effectiveAdmission?.registrationToken ? (
           <ServiceChoiceCard
             title={communityServiceName}
@@ -897,26 +913,6 @@ export function MatrixAccountScreen({
             actionLabel="Create account"
             onSelect={selectCommunityService}
           />
-        ) : admissionResolving ? (
-          <p role="status" className="rounded-control bg-surface-sunken px-3 py-2 text-xs text-muted">
-            Checking whether this invitation offers a community-hosted account service…
-          </p>
-        ) : storedPendingInvitation && pendingAdmissionError ? (
-          <div className="space-y-2 rounded-control border border-status-warning/40 bg-status-warning/10 px-3 py-2 text-xs text-secondary">
-            <p>{pendingAdmissionError}</p>
-            <Button type="button" size="sm" variant="ghost" onClick={() => void discardPendingInvitation()}>
-              Discard invitation
-            </Button>
-          </div>
-        ) : storedPendingInvitation ? (
-          <div className="space-y-2 rounded-control border border-border-subtle bg-surface-sunken px-3 py-2 text-xs text-secondary">
-            <p>
-              This invitation is saved securely and will be used after you sign in to join the community.
-            </p>
-            <Button type="button" size="sm" variant="ghost" onClick={() => void discardPendingInvitation()}>
-              Discard invitation
-            </Button>
-          </div>
         ) : null}
 
         <div className="grid gap-2 sm:grid-cols-2">
@@ -1180,18 +1176,13 @@ export function MatrixAccountScreen({
         </div>
 
         {isCreate && storedPendingInvitation ? (
-          <section className="space-y-2 rounded-panel border border-border-subtle bg-surface-sunken p-3 text-xs leading-5 text-secondary">
-            <p className="font-medium text-primary">Invitation saved securely on this device</p>
-            <p>
-              {storedPendingInvitation.roomOrAlias
-                ? `Community target: ${storedPendingInvitation.roomOrAlias}. `
-                : ''}
-              Mesh will use it only to create this account and join the community afterward.
-            </p>
-            <Button type="button" size="sm" variant="ghost" onClick={() => void discardPendingInvitation()}>
-              Discard invitation
-            </Button>
-          </section>
+          <CommunityInvitationPassport
+            pending={storedPendingInvitation}
+            admission={effectiveAdmission}
+            error={pendingAdmissionError}
+            onDiscard={() => void discardPendingInvitation()}
+            compact
+          />
         ) : isCreate ? (
           <Input
             label="Invitation code"
@@ -1348,6 +1339,110 @@ export function MatrixAccountScreen({
         </div>
       )}
     </form>
+  )
+}
+
+function CommunityInvitationPassport({
+  pending,
+  admission,
+  checking = false,
+  error,
+  onDiscard,
+  compact = false,
+}: {
+  pending: PendingInvitationMetadata | null | undefined
+  admission: MatrixCommunityAdmission | null | undefined
+  checking?: boolean
+  error?: string | null
+  onDiscard?: () => void
+  compact?: boolean
+}) {
+  const communityName = invitationLabel(admission?.communityName ?? pending?.communityName)
+  const inviter = invitationLabel(
+    admission?.inviterDisplayName ?? pending?.inviterDisplayName,
+  )
+  const communityService = invitationLabel(
+    admission?.communityServiceDisplayName
+      ?? pending?.communityServiceDisplayName
+      ?? (admission?.service ? displayServiceAddress(admission.service) : null)
+      ?? (pending?.service ? displayServiceAddress(pending.service) : null),
+  )
+  const route = (admission?.via ?? pending?.via ?? [])
+    .map(invitationLabel)
+    .filter((value): value is string => value !== null)
+    .join(', ')
+  const joinRule = plainJoinRule(admission?.joinRule ?? pending?.joinRule)
+  const title = communityName ?? 'Community invitation'
+  const initial = Array.from(communityName ?? 'C')[0]?.toUpperCase() ?? 'C'
+
+  return (
+    <section
+      aria-label="Community invitation"
+      className={`space-y-3 rounded-panel border border-border-subtle bg-surface-sunken p-3 text-xs leading-5 text-secondary ${compact ? '' : 'sm:p-4'}`}
+    >
+      <div className="flex items-start gap-3">
+        <span
+          aria-hidden="true"
+          className="flex h-10 w-10 flex-none items-center justify-center rounded-panel bg-accent/10 text-sm font-semibold text-accent"
+        >
+          {initial}
+        </span>
+        <div className="min-w-0 space-y-0.5">
+          <p className="text-2xs uppercase tracking-signal text-muted">Community invitation</p>
+          <h2 className="truncate text-sm font-semibold text-primary">{title}</h2>
+          <p>
+            {inviter
+              ? `Invited by ${inviter}.`
+              : 'An invitation is saved securely on this device.'}
+          </p>
+        </div>
+      </div>
+
+      {communityService || route || joinRule ? (
+        <dl className="grid gap-x-4 gap-y-2 border-t border-border-subtle pt-3 sm:grid-cols-3">
+          {communityService ? (
+            <div>
+              <dt className="text-2xs uppercase tracking-signal text-muted">Community service</dt>
+              <dd className="truncate text-primary">{communityService}</dd>
+            </div>
+          ) : null}
+          {route ? (
+            <div>
+              <dt className="text-2xs uppercase tracking-signal text-muted">Community route</dt>
+              <dd className="truncate text-primary">{route}</dd>
+            </div>
+          ) : null}
+          {joinRule ? (
+            <div>
+              <dt className="text-2xs uppercase tracking-signal text-muted">Access</dt>
+              <dd className="text-primary">{joinRule}</dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : null}
+
+      <p>
+        {compact
+          ? 'Invitation saved securely on this device. Mesh will use it only after your account is ready, and your account service remains separate from this community.'
+          : 'Invitation saved securely on this device and will be used after you sign in. Choose where your account lives below; Mesh checks this invitation and the community rules again before joining.'}
+      </p>
+
+      {checking ? (
+        <p role="status" className="rounded-control bg-surface-base px-3 py-2 text-muted">
+          Checking invitation details…
+        </p>
+      ) : null}
+      {error ? (
+        <p role="alert" className="rounded-control border border-status-warning/40 bg-status-warning/10 px-3 py-2 text-secondary">
+          {error}
+        </p>
+      ) : null}
+      {onDiscard ? (
+        <Button type="button" size="sm" variant="ghost" onClick={onDiscard}>
+          Discard invitation
+        </Button>
+      ) : null}
+    </section>
   )
 }
 
@@ -1565,6 +1660,27 @@ function registrationContinuationProblem(
 function displayAccountService(service: SelectedAccountService | null): string {
   if (!service) return 'your service'
   return service.kind === 'public' ? service.service.displayName : service.name
+}
+
+function invitationLabel(value: string | null | undefined): string | null {
+  const label = value?.trim().replace(/\s+/g, ' ')
+  return label ? label.slice(0, 255) : null
+}
+
+function plainJoinRule(joinRule: string | null | undefined): string | null {
+  switch (joinRule?.trim().toLowerCase()) {
+    case 'public':
+      return 'Anyone with the invitation'
+    case 'knock':
+      return 'Request to join'
+    case 'invite':
+      return 'Invitation only'
+    case 'restricted':
+    case 'knock_restricted':
+      return 'Community approval'
+    default:
+      return joinRule ? 'Community rules apply' : null
+  }
 }
 
 function capabilitySummary(capabilities: bridge.MatrixServiceCapabilities): string {

@@ -65,6 +65,7 @@ jobs:
           pwsh -NoProfile -File ./scripts/matrixrtc-preflight.ps1
           pwsh -NoProfile -File ./scripts/operator-smoke.ps1
           npm run check:public-services
+          npm run check:readiness-ledger -- --milestone R2 --require-live --commit-sha "$GITHUB_SHA"
           npm run check:public-site
           npm test -- --maxWorkers=4
           npm run build

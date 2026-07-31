@@ -457,11 +457,11 @@ fn wire_privacy_presence_requires_sharing_without_invisible_mode() {
     };
     let private = WirePrivacyPreferences {
         share_presence: false,
-        ..visible
+        ..visible.clone()
     };
     let invisible = WirePrivacyPreferences {
         invisible_mode: true,
-        ..visible
+        ..visible.clone()
     };
 
     assert_eq!(visible.presence(), PresenceState::Online);
@@ -498,13 +498,53 @@ fn typing_privacy_only_sends_opt_in_or_required_cleanup() {
     let private = WirePrivacyPreferences::default();
     let opted_in = WirePrivacyPreferences {
         send_typing_indicators: true,
-        ..private
+        ..private.clone()
     };
 
-    assert!(!private.should_send_typing_notice(false, true));
-    assert!(!private.should_send_typing_notice(false, false));
-    assert!(private.should_send_typing_notice(true, false));
-    assert!(opted_in.should_send_typing_notice(false, true));
+    assert!(!private.should_send_typing_notice("!room:example.org", false, true));
+    assert!(!private.should_send_typing_notice("!room:example.org", false, false));
+    assert!(private.should_send_typing_notice("!room:example.org", true, false));
+    assert!(opted_in.should_send_typing_notice("!room:example.org", false, true));
+}
+
+#[test]
+fn conversation_privacy_overrides_publication_and_reciprocal_display() {
+    let privacy = WirePrivacyPreferences {
+        read_receipt_mode: ReadReceiptMode::Private,
+        send_typing_indicators: true,
+        conversation_privacy: std::collections::BTreeMap::from([
+            (
+                "!private:example.org".into(),
+                ConversationPrivacyOverride {
+                    read_receipt_mode: Some(ReadReceiptMode::Off),
+                    send_typing_indicators: Some(false),
+                },
+            ),
+            (
+                "!public:example.org".into(),
+                ConversationPrivacyOverride {
+                    read_receipt_mode: Some(ReadReceiptMode::Public),
+                    send_typing_indicators: None,
+                },
+            ),
+        ]),
+        ..WirePrivacyPreferences::default()
+    };
+
+    assert_eq!(
+        privacy.read_receipt_mode_for("!private:example.org"),
+        ReadReceiptMode::Off
+    );
+    assert_eq!(
+        privacy.read_receipt_mode_for("!public:example.org"),
+        ReadReceiptMode::Public
+    );
+    assert_eq!(
+        privacy.read_receipt_mode_for("!inherited:example.org"),
+        ReadReceiptMode::Private
+    );
+    assert!(!privacy.sends_typing_for("!private:example.org"));
+    assert!(privacy.sends_typing_for("!inherited:example.org"));
 }
 
 fn password_session() -> MatrixSession {
@@ -1986,6 +2026,10 @@ fn production_accounts_use_stable_separate_store_and_key_namespaces() {
         MatrixBackend::recovery_test_key(&alice),
         MatrixBackend::recovery_test_key(&bob)
     );
+    assert_ne!(
+        MatrixBackend::recovery_credential_key(&alice),
+        MatrixBackend::recovery_credential_key(&bob)
+    );
     assert!(alice
         .store_root
         .starts_with(root.path().join("matrix").join("accounts")));
@@ -2058,6 +2102,7 @@ fn security_boundary_local_account_removal_erases_every_artifact_and_preserves_o
         MatrixBackend::store_passphrase_key(&other),
         MatrixBackend::trusted_devices_key(&other),
         MatrixBackend::recovery_test_key(&other),
+        MatrixBackend::recovery_credential_key(&other),
     ];
     let secrets = RefCell::new(
         target_keys

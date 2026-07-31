@@ -469,7 +469,7 @@ export function ChannelSidebar() {
                             key={`${member.userId}:${member.deviceId}:${member.sessionId}`}
                             type="button"
                             onClick={joinChannel}
-                            className="flex w-full items-center gap-1.5 rounded-control px-1 py-0.5 text-left text-xs text-muted hover:bg-surface-hover hover:text-secondary"
+                            className="flex min-h-6 w-full items-center gap-1.5 rounded-control px-1 py-0.5 text-left text-xs text-muted hover:bg-surface-hover hover:text-secondary"
                           >
                             <span
                               className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-control bg-surface-active text-meta font-semibold text-secondary"

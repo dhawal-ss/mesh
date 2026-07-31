@@ -99,6 +99,7 @@ const securityAttentionTrust: RoomTrustSnapshot = {
     healthy: false,
     checkedAt: '2026-07-29T00:00:00Z',
     lastSuccessfulTestAt: null,
+    secureStorageState: 'missing',
     warnings: ['Recovery is not set up'],
   },
   accountId: '@alice:example.org',
@@ -139,12 +140,7 @@ describe('MessageComponent federated timestamps', () => {
     async (isGrouped) => {
       await expect(
         act(async () => {
-          root.render(
-            <MessageComponent
-              message={malformedMessage()}
-              isGrouped={isGrouped}
-            />,
-          )
+          root.render(<MessageComponent message={malformedMessage()} isGrouped={isGrouped} />)
         }),
       ).resolves.toBeUndefined()
 
@@ -200,9 +196,7 @@ describe('MessageComponent federated timestamps', () => {
       )
     })
 
-    const editButtons = container.querySelectorAll<HTMLButtonElement>(
-      '[aria-label="Edit message"]',
-    )
+    const editButtons = container.querySelectorAll<HTMLButtonElement>('[aria-label="Edit message"]')
     await act(async () => editButtons[0]?.click())
     firstRowUpdates = 0
     secondRowUpdates = 0
@@ -229,12 +223,7 @@ describe('MessageComponent federated timestamps', () => {
     ['could-not-decrypt', "couldn't decrypt this message"],
   ] as const)('renders a visible placeholder for %s events', async (reason, copy) => {
     await act(async () => {
-      root.render(
-        <MessageComponent
-          message={undecryptableMessage(reason)}
-          isGrouped={false}
-        />,
-      )
+      root.render(<MessageComponent message={undecryptableMessage(reason)} isGrouped={false} />)
     })
 
     expect(container.querySelector('[data-undecryptable-message="true"]')).not.toBeNull()
@@ -264,8 +253,9 @@ describe('MessageComponent federated timestamps', () => {
     // rendering bug, and its reactions outlived the message they belonged to.
     expect(container.textContent).toContain('Message deleted')
     expect(container.querySelector('[aria-label*="reaction"]')).toBeNull()
-    expect(container.querySelector('[role="group"]')?.getAttribute('aria-label'))
-      .toContain('message deleted')
+    expect(container.querySelector('[role="group"]')?.getAttribute('aria-label')).toContain(
+      'message deleted',
+    )
   })
 
   it('exposes reaction state without relying on colour', async () => {
@@ -293,7 +283,10 @@ describe('MessageComponent federated timestamps', () => {
     await act(async () => {
       root.render(
         <MessageComponent
-          message={{ ...malformedMessage(), timestamp: '2026-07-29T12:00:00.000Z' }}
+          message={{
+            ...malformedMessage(),
+            timestamp: '2026-07-29T12:00:00.000Z',
+          }}
           isGrouped={false}
         />,
       )
@@ -318,8 +311,9 @@ describe('MessageComponent federated timestamps', () => {
       )
     })
 
-    const review = [...container.querySelectorAll<HTMLButtonElement>('button')]
-      .find((button) => button.textContent?.includes('Review message security'))
+    const review = [...container.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
+      button.textContent?.includes('Review message security'),
+    )
     expect(review).toBeDefined()
     await act(async () => review?.click())
     expect(useShellStore.getState().securityOpen).toBe(true)
@@ -342,8 +336,9 @@ describe('MessageComponent federated timestamps', () => {
         )
       })
 
-      expect(container.querySelector('[role="status"]')?.textContent)
-        .toContain('Saved on this device')
+      expect(container.querySelector('[role="status"]')?.textContent).toContain(
+        'Saved on this device',
+      )
       expect(container.getAttribute('aria-label')).toBeNull()
       expect(container.querySelector('[aria-label="Edit message"]')).toBeNull()
       expect(container.querySelector('[aria-label^="React to message"]')).toBeNull()
@@ -372,8 +367,8 @@ describe('MessageComponent federated timestamps', () => {
     // Intentionally role="status", not role="alert": inside the virtualized
     // timeline an assertive region re-announces every time the row scrolls back
     // into view, interrupting the user repeatedly for an already-known failure.
-    const alert = [...container.querySelectorAll('[role="status"]')].find(
-      (node) => node.textContent?.includes('Delivery needs attention'),
+    const alert = [...container.querySelectorAll('[role="status"]')].find((node) =>
+      node.textContent?.includes('Delivery needs attention'),
     )
     expect(alert?.textContent).toContain('Delivery needs attention')
     const [retry, cancel] = [...alert!.querySelectorAll('button')]
@@ -443,8 +438,9 @@ describe('MessageComponent federated timestamps', () => {
     await act(async () => {
       row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
     })
-    const reportAction = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
-      .find((item) => item.textContent?.includes('Report message'))
+    const reportAction = [
+      ...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+    ].find((item) => item.textContent?.includes('Report message'))
     expect(reportAction).toBeDefined()
     await act(async () => reportAction?.click())
 
@@ -454,8 +450,9 @@ describe('MessageComponent federated timestamps', () => {
       dialog?.querySelector<HTMLAnchorElement>('a[href="https://matrix.org/contact/"]'),
     ).not.toBeNull()
     expect(dialog?.textContent).toContain('Mesh does not operate this service')
-    const send = [...dialog!.querySelectorAll<HTMLButtonElement>('button')]
-      .find((button) => button.textContent?.includes('Send report'))
+    const send = [...dialog!.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
+      button.textContent?.includes('Send report'),
+    )
     await act(async () => {
       send?.click()
       await Promise.resolve()
@@ -520,9 +517,7 @@ describe('MessageComponent federated timestamps', () => {
       '$image:example.org',
       0,
     )
-    expect(container.querySelector('img')?.getAttribute('src')).toBe(
-      'blob:protected-thumbnail',
-    )
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:protected-thumbnail')
 
     await act(async () => root.render(<div />))
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:protected-thumbnail')
@@ -586,9 +581,7 @@ describe('MessageComponent federated timestamps', () => {
       await Promise.resolve()
     })
     expect(bridge.matrixLoadAttachmentThumbnail).toHaveBeenCalledTimes(2)
-    expect(container.querySelector('img')?.getAttribute('src')).toBe(
-      'blob:retried-thumbnail',
-    )
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:retried-thumbnail')
   })
 
   it('requires explicit loading without intersection support and ignores stale completion', async () => {
@@ -601,11 +594,12 @@ describe('MessageComponent federated timestamps', () => {
     })
     vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
     vi.spyOn(bridge, 'onMatrixTransferProgress').mockResolvedValue(() => {})
-    vi.spyOn(bridge, 'matrixLoadAttachmentThumbnail').mockImplementation(() => (
-      new Promise((resolve) => {
-        finishLoad = resolve
-      })
-    ))
+    vi.spyOn(bridge, 'matrixLoadAttachmentThumbnail').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishLoad = resolve
+        }),
+    )
 
     await act(async () => {
       root.render(

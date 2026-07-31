@@ -113,7 +113,6 @@ async fn route_network_event(app_handle: &AppHandle, event: NetworkEvent) {
                 "Dropping unsupported network payload on topic {} because it is neither a signed envelope nor a control event",
                 topic
             );
-            return;
         }
         NetworkEvent::FileChunkReceived {
             file_hash,
@@ -645,16 +644,15 @@ async fn validate_and_route(app_handle: &AppHandle, envelope: SignedEnvelope) {
             if matches!(
                 envelope.msg_type.as_str(),
                 "message" | "message_edit" | "reaction"
-            ) {
-                if security::is_timed_out(app_handle, &community_id, &envelope.author) {
-                    tracing::warn!(
-                        "Dropping {} from timed-out user {} in community {}",
-                        envelope.msg_type,
-                        envelope.author,
-                        community_id
-                    );
-                    return;
-                }
+            ) && security::is_timed_out(app_handle, &community_id, &envelope.author)
+            {
+                tracing::warn!(
+                    "Dropping {} from timed-out user {} in community {}",
+                    envelope.msg_type,
+                    envelope.author,
+                    community_id
+                );
+                return;
             }
         }
     }
@@ -802,7 +800,7 @@ async fn route_incoming_dm(app_handle: &AppHandle, envelope: &SignedEnvelope) {
         let preview = message_handler::truncate_preview(&content, 100);
         let _ = tauri_plugin_notification::NotificationExt::notification(app_handle)
             .builder()
-            .title(&format!("DM from {}", display_name))
+            .title(format!("DM from {}", display_name))
             .body(&preview)
             .show();
     }

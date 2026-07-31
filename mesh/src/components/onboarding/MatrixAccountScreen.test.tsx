@@ -64,6 +64,20 @@ describe('MatrixAccountScreen', () => {
     expect(container.querySelector('form')).toBeNull()
   })
 
+  it('shows a plain community passport before account-service selection', async () => {
+    await renderScreen({ initialPendingInvitation: pendingInvitationMetadata() })
+
+    expect(container.querySelector('[aria-label="Community invitation"]')).not.toBeNull()
+    expect(container.textContent).toContain('Garden Club')
+    expect(container.textContent).toContain('Invited by Maya')
+    expect(container.textContent).toContain('Community service')
+    expect(container.textContent).toContain('Community route')
+    expect(container.textContent).toContain('Invitation only')
+    expect(container.textContent).toContain('Choose where your account lives below')
+    expect(container.textContent).not.toContain('!garden:community.example')
+    expect(container.textContent).not.toContain('registration-token')
+  })
+
   it('keeps an expired prominent service visible but unavailable', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2030-01-01T00:00:00Z'))
@@ -461,7 +475,7 @@ describe('MatrixAccountScreen', () => {
 
     await act(async () => findButton('Create account').click())
     expect(container.textContent).toContain('Invitation saved securely on this device')
-    expect(container.textContent).toContain('!garden:community.example')
+    expect(container.textContent).not.toContain('!garden:community.example')
     expect(container.textContent).not.toContain('native-only-registration-token')
 
     await act(async () => {
@@ -678,6 +692,10 @@ function pendingInvitationMetadata(): PendingInvitationMetadata {
     via: ['community.example'],
     service: 'community.example',
     admissionService: null,
+    communityName: 'Garden Club',
+    inviterDisplayName: 'Maya',
+    communityServiceDisplayName: 'Garden community service',
+    joinRule: 'invite',
     storedAt: 1_786_000_000_000,
     expiresAt: 1_788_592_000_000,
   }

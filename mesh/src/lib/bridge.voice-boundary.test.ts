@@ -161,11 +161,11 @@ describe('bridge voice backend boundary', () => {
     const bridge = await cacheStatus(readyLegacyStatus)
     const circular: Record<string, unknown> = {}
     circular.self = circular
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    await bridge.sendVoiceSignal('peer-1', circular, 'community-1', 'channel-1')
+    await expect(
+      bridge.sendVoiceSignal('peer-1', circular, 'community-1', 'channel-1'),
+    ).rejects.toMatchObject({ code: 'serialization_error' })
     expect(invokeMock).not.toHaveBeenCalled()
-    expect(consoleError).toHaveBeenCalledOnce()
 
     const signal = { type: 'offer', sdp: 'bounded-test-sdp' }
     invokeMock.mockResolvedValueOnce(undefined)

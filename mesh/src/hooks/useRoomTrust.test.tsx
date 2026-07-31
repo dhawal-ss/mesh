@@ -62,6 +62,7 @@ describe('useRoomTrust refresh subscriptions', () => {
       healthy: true,
       checkedAt: '2026-07-30T00:00:00Z',
       lastSuccessfulTestAt: null,
+      secureStorageState: 'saved',
       warnings: [],
     })
   })
@@ -74,7 +75,8 @@ describe('useRoomTrust refresh subscriptions', () => {
   })
 
   it('refreshes an open room when device trust changes', async () => {
-    const devices = vi.spyOn(bridge, 'matrixDevices')
+    const devices = vi
+      .spyOn(bridge, 'matrixDevices')
       .mockResolvedValueOnce([device(false)])
       .mockResolvedValue([device(true)])
 

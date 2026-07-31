@@ -349,6 +349,7 @@ fn privacy_preferences_with_receipt_mode(
         notification_sound: true,
         notification_sound_id: Some("mesh".into()),
         do_not_disturb: false,
+        show_notification_content: false,
         quiet_hours_enabled: false,
         quiet_hours_start: Some("22:00".into()),
         quiet_hours_end: Some("08:00".into()),
@@ -360,6 +361,7 @@ fn privacy_preferences_with_receipt_mode(
         send_read_receipts: read_receipt_mode == ReadReceiptMode::Private,
         read_receipt_mode: Some(read_receipt_mode),
         send_typing_indicators,
+        conversation_privacy: std::collections::BTreeMap::new(),
         share_presence,
         invisible_mode,
         updated_at: String::new(),
@@ -598,16 +600,10 @@ async fn wait_for_room_notification_mode(
 }
 
 async fn erase_live_test_account(label: &str, backend: &MatrixBackend) {
-    if let Err(error) = backend.remove_local_account().await {
-        let detail = error.to_string();
-        assert!(
-            detail.contains("account store") && !detail.contains("keychain"),
-            "{label} secure-store cleanup failed: {detail}"
-        );
-        eprintln!(
-            "[matrix-spike] {label} secure keys erased; temporary SDK store cleanup deferred: {detail}"
-        );
-    }
+    backend
+        .remove_local_account()
+        .await
+        .unwrap_or_else(|error| panic!("{label} local account cleanup failed: {error}"));
 }
 
 /// A fresh consumer account must be creatable through Mesh itself using the
@@ -1032,6 +1028,17 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
         "enabled private read receipt did not reach the user's second device"
     );
 
+    alice.set_typing(alice_dm.id.clone(), true).await.unwrap();
+    assert!(
+        bob.typing_users(alice_dm.id.clone())
+            .await
+            .unwrap()
+            .is_empty(),
+        "typing activity was displayed before the observing account opted in"
+    );
+    bob.update_user_preferences(privacy_preferences(true, true, false, false))
+        .await
+        .unwrap();
     alice.set_typing(alice_dm.id.clone(), true).await.unwrap();
     let mut saw_alice_dm_typing = false;
     for _ in 0..20 {
@@ -1886,10 +1893,19 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
     checkpoint!("offline catch-up verified");
 
     let recovery_passphrase = format!("mesh-recovery-{nonce}");
-    let recovery_key = bob
+    let recovery_setup = bob
         .enable_recovery(Some(recovery_passphrase))
         .await
         .unwrap();
+    assert_eq!(
+        recovery_setup.secure_storage_state,
+        mesh_lib::backend::MatrixRecoverySecureStorageState::Saved
+    );
+    assert_eq!(
+        recovery_setup.verification_state,
+        mesh_lib::backend::MatrixRecoveryVerificationState::Verified
+    );
+    let recovery_key = recovery_setup.recovery_key;
 
     let bob_second_store = tempfile::tempdir().unwrap();
     let bob_second = MatrixBackend::with_profile(
@@ -2171,6 +2187,7 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
             notification_sound: true,
             notification_sound_id: Some("mesh".into()),
             do_not_disturb: true,
+            show_notification_content: false,
             quiet_hours_enabled: true,
             quiet_hours_start: Some("22:00".into()),
             quiet_hours_end: Some("07:00".into()),
@@ -2191,6 +2208,13 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
             send_read_receipts: false,
             read_receipt_mode: Some(ReadReceiptMode::Off),
             send_typing_indicators: true,
+            conversation_privacy: std::collections::BTreeMap::from([(
+                community.channel_id.clone(),
+                mesh_lib::backend::ConversationPrivacyOverride {
+                    read_receipt_mode: Some(ReadReceiptMode::Public),
+                    send_typing_indicators: Some(false),
+                },
+            )]),
             share_presence: false,
             invisible_mode: true,
             updated_at: String::new(),
@@ -2207,7 +2231,11 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
     assert_eq!(second_device_preferences, saved_preferences);
     checkpoint!("Matrix account-data preferences propagated across devices");
 
-    bob.pause_sync().await;
+    // Model a real process restart: abort every task that owns an SDK Client
+    // before constructing a replacement backend over the same Windows store.
+    // Pausing sync alone leaves the session and room-update tasks detached and
+    // their SQLite handles remain live after the backend value is dropped.
+    bob.shutdown_for_test().await;
     drop(bob);
     let restored = MatrixBackend::with_profile(bob_store.path().to_owned(), bob_profile);
     restored.restore_session().await.unwrap();

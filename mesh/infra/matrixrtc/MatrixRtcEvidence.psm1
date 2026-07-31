@@ -26,6 +26,19 @@ $script:RequiredMatrixRtcCases = @(
     "concurrent-camera-screen-share"
 )
 $script:NotApplicableMatrixRtcCases = @("windows-plus-supported-client")
+$script:AllowedObservedTransports = @(
+    "not-observed",
+    "direct",
+    "turn-udp",
+    "turn-tcp-tls",
+    "mixed"
+)
+$script:TwoNetworkMatrixRtcCases = @(
+    "two-windows-different-networks",
+    "restrictive-nat",
+    "udp-blocked-turn-tcp-tls",
+    "network-loss-reconnect"
+)
 $script:AllowedArtifactKinds = @(
     "client-build",
     "service-log",
@@ -271,6 +284,7 @@ function Test-MatrixRtcAcceptanceEvidence {
         $mediaType = [string](Get-EvidenceProperty $artifact "mediaType")
         $description = [string](Get-EvidenceProperty $artifact "description")
         $capturedAt = [string](Get-EvidenceProperty $artifact "capturedAt")
+        $caseId = [string](Get-EvidenceProperty $artifact "caseId")
         $byteSizeValue = Get-EvidenceProperty $artifact "byteSize"
 
         if ($id -notmatch "^[a-z0-9][a-z0-9._-]{2,63}$" -or
@@ -292,6 +306,15 @@ function Test-MatrixRtcAcceptanceEvidence {
         }
         if (Test-EvidencePlaceholder $description) {
             $failures.Add("Evidence artifact $id needs a sanitized non-placeholder description.")
+        }
+        if ($RequireComplete) {
+            if ($kind -eq "client-build") {
+                if ($caseId) {
+                    $failures.Add("Client-build evidence artifact $id must not be assigned to one acceptance case.")
+                }
+            } elseif ($caseId -notin $script:RequiredMatrixRtcCases) {
+                $failures.Add("Evidence artifact $id must bind to one required MatrixRTC caseId.")
+            }
         }
         [void](Test-EvidenceTimestamp -Value $capturedAt -Label "Evidence artifact $id capturedAt" -Failures $failures)
 
@@ -366,6 +389,20 @@ function Test-MatrixRtcAcceptanceEvidence {
     $results = @((Get-EvidenceProperty $document "results"))
     $resultById = @{}
     $referencedArtifactIds = @{}
+    $declaredDeviceIds = @{}
+    foreach ($device in @((Get-EvidenceProperty $document "devices"))) {
+        $deviceId = [string](Get-EvidenceProperty $device "id")
+        if ($deviceId) {
+            $declaredDeviceIds[$deviceId] = $true
+        }
+    }
+    $declaredNetworkIds = @{}
+    foreach ($network in @((Get-EvidenceProperty $document "networks"))) {
+        $networkId = [string](Get-EvidenceProperty $network "id")
+        if ($networkId) {
+            $declaredNetworkIds[$networkId] = $true
+        }
+    }
     foreach ($result in $results) {
         if ($null -eq $result) {
             continue
@@ -375,6 +412,19 @@ function Test-MatrixRtcAcceptanceEvidence {
         $expected = [string](Get-EvidenceProperty $result "expected")
         $actual = [string](Get-EvidenceProperty $result "actual")
         $notApplicableReason = [string](Get-EvidenceProperty $result "notApplicableReason")
+        $deviceIds = @(
+            (Get-EvidenceProperty $result "deviceIds") |
+                ForEach-Object { [string]$_ } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        )
+        $networkIds = @(
+            (Get-EvidenceProperty $result "networkIds") |
+                ForEach-Object { [string]$_ } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        )
+        $transport = [string](Get-EvidenceProperty $result "transport")
+        $mediaE2eeActive = Get-EvidenceProperty $result "mediaE2eeActive"
+        $mediaE2eeFailureClosed = Get-EvidenceProperty $result "mediaE2eeFailureClosed"
         $evidenceIds = @(
             (Get-EvidenceProperty $result "evidenceIds") |
                 ForEach-Object { [string]$_ } |
@@ -402,6 +452,18 @@ function Test-MatrixRtcAcceptanceEvidence {
         if ($isTrackedTemplate -and $status -ne "not-run") {
             $failures.Add("The tracked MatrixRTC template must not claim a test result: $id is $status.")
         }
+        if ($transport -notin $script:AllowedObservedTransports) {
+            $failures.Add("MatrixRTC acceptance result $id has invalid transport '$transport'.")
+        }
+        if ($isTrackedTemplate -and (
+            $deviceIds.Count -gt 0 -or
+            $networkIds.Count -gt 0 -or
+            $transport -ne "not-observed" -or
+            $mediaE2eeActive -ne $false -or
+            $mediaE2eeFailureClosed -ne $false
+        )) {
+            $failures.Add("The tracked MatrixRTC template must not contain observed device, network, transport, or media-E2EE claims for $id.")
+        }
         if ($status -eq "not-applicable") {
             if ($id -notin $script:NotApplicableMatrixRtcCases) {
                 $failures.Add("MatrixRTC acceptance result $id cannot be marked not-applicable.")
@@ -425,6 +487,65 @@ function Test-MatrixRtcAcceptanceEvidence {
             if ($status -eq "passed" -and $evidenceIds.Count -lt 1) {
                 $failures.Add("Passed MatrixRTC result $id must reference evidence IDs.")
             }
+            if ($status -eq "passed") {
+                if ($deviceIds.Count -lt 2) {
+                    $failures.Add("Passed MatrixRTC result $id must bind to at least two tested devices.")
+                }
+                if ($id -eq "three-person-call" -and $deviceIds.Count -lt 3) {
+                    $failures.Add("Passed MatrixRTC result three-person-call must bind to at least three tested devices.")
+                }
+                if ($networkIds.Count -lt 1) {
+                    $failures.Add("Passed MatrixRTC result $id must bind to at least one tested network.")
+                }
+                if ($id -in $script:TwoNetworkMatrixRtcCases -and $networkIds.Count -lt 2) {
+                    $failures.Add("Passed MatrixRTC result $id must bind to at least two independent tested networks.")
+                }
+                if ($transport -eq "not-observed") {
+                    $failures.Add("Passed MatrixRTC result $id must record an observed media transport.")
+                }
+                if ($id -eq "two-windows-same-lan" -and
+                    $transport -notin @("direct", "mixed")) {
+                    $failures.Add("Passed MatrixRTC result two-windows-same-lan must prove direct media.")
+                }
+                if ($id -eq "restrictive-nat" -and
+                    $transport -notin @("turn-udp", "mixed")) {
+                    $failures.Add("Passed MatrixRTC result restrictive-nat must prove TURN-relayed media.")
+                }
+                if ($id -eq "udp-blocked-turn-tcp-tls" -and
+                    $transport -ne "turn-tcp-tls") {
+                    $failures.Add("Passed MatrixRTC result udp-blocked-turn-tcp-tls must prove TURN over TCP/TLS.")
+                }
+                if ($mediaE2eeActive -ne $true) {
+                    $failures.Add("Passed MatrixRTC result $id must attest active media E2EE.")
+                }
+                if ($id -eq "media-key-rotation-late-join" -and
+                    $mediaE2eeFailureClosed -ne $true) {
+                    $failures.Add("Passed MatrixRTC result media-key-rotation-late-join must attest failure-closed media publication.")
+                }
+            }
+        }
+
+        $seenDeviceIds = @{}
+        foreach ($deviceId in $deviceIds) {
+            if ($seenDeviceIds.ContainsKey($deviceId)) {
+                $failures.Add("MatrixRTC result $id references device ID $deviceId more than once.")
+            } else {
+                $seenDeviceIds[$deviceId] = $true
+            }
+            if (-not $declaredDeviceIds.ContainsKey($deviceId)) {
+                $failures.Add("MatrixRTC result $id references unknown device ID: $deviceId")
+            }
+        }
+        $seenNetworkIds = @{}
+        foreach ($networkId in $networkIds) {
+            if ($seenNetworkIds.ContainsKey($networkId)) {
+                $failures.Add("MatrixRTC result $id references network ID $networkId more than once.")
+            } else {
+                $seenNetworkIds[$networkId] = $true
+            }
+            if (-not $declaredNetworkIds.ContainsKey($networkId)) {
+                $failures.Add("MatrixRTC result $id references unknown network ID: $networkId")
+            }
         }
 
         $seenResultRefs = @{}
@@ -437,6 +558,13 @@ function Test-MatrixRtcAcceptanceEvidence {
             $referencedArtifactIds[$evidenceId] = $true
             if (-not $artifactById.ContainsKey($evidenceId)) {
                 $failures.Add("MatrixRTC result $id references unknown evidence ID: $evidenceId")
+            } else {
+                $artifact = $artifactById[$evidenceId]
+                $artifactKind = [string](Get-EvidenceProperty $artifact "kind")
+                $artifactCaseId = [string](Get-EvidenceProperty $artifact "caseId")
+                if ($artifactKind -ne "client-build" -and $artifactCaseId -ne $id) {
+                    $failures.Add("MatrixRTC result $id references artifact $evidenceId bound to the wrong caseId.")
+                }
             }
         }
 
@@ -451,6 +579,9 @@ function Test-MatrixRtcAcceptanceEvidence {
             }
             if ("client-diagnostic" -notin $referencedKinds) {
                 $failures.Add("Passed MatrixRTC result $id must reference a client-diagnostic artifact.")
+            }
+            if ("network-result" -notin $referencedKinds) {
+                $failures.Add("Passed MatrixRTC result $id must reference a network-result artifact.")
             }
         }
     }

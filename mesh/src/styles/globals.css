@@ -262,6 +262,42 @@
   --status-warning: var(--ref-amber-11);
   --status-info-rgb: var(--ref-blue-11-rgb);
   --status-info: var(--ref-blue-11);
+
+  /*
+   * Container quintuples are the only component-facing interaction palettes.
+   * The first declarations are conservative WebView fallbacks; the
+   * color-mix override below derives translucent states in perceptual OKLCH.
+   */
+  --surface-container: var(--surface-raised);
+  --surface-container-hover: var(--surface-hover);
+  --surface-container-active: var(--surface-active);
+  --surface-container-line: var(--border-default);
+  --surface-on-container: var(--content-primary);
+  --accent-container: rgb(var(--accent-rgb) / 0.14);
+  --accent-container-hover: rgb(var(--accent-rgb) / 0.2);
+  --accent-container-active: rgb(var(--accent-rgb) / 0.28);
+  --accent-container-line: rgb(var(--accent-rgb) / 0.55);
+  --accent-on-container: var(--content-accent);
+  --success-container: rgb(var(--status-success-rgb) / 0.14);
+  --success-container-hover: rgb(var(--status-success-rgb) / 0.2);
+  --success-container-active: rgb(var(--status-success-rgb) / 0.28);
+  --success-container-line: rgb(var(--status-success-rgb) / 0.55);
+  --success-on-container: var(--status-success);
+  --warning-container: rgb(var(--status-warning-rgb) / 0.14);
+  --warning-container-hover: rgb(var(--status-warning-rgb) / 0.2);
+  --warning-container-active: rgb(var(--status-warning-rgb) / 0.28);
+  --warning-container-line: rgb(var(--status-warning-rgb) / 0.55);
+  --warning-on-container: var(--status-warning);
+  --danger-container: rgb(var(--status-danger-rgb) / 0.14);
+  --danger-container-hover: rgb(var(--status-danger-rgb) / 0.2);
+  --danger-container-active: rgb(var(--status-danger-rgb) / 0.28);
+  --danger-container-line: rgb(var(--status-danger-rgb) / 0.55);
+  --danger-on-container: var(--status-danger);
+  --info-container: rgb(var(--status-info-rgb) / 0.14);
+  --info-container-hover: rgb(var(--status-info-rgb) / 0.2);
+  --info-container-active: rgb(var(--status-info-rgb) / 0.28);
+  --info-container-line: rgb(var(--status-info-rgb) / 0.55);
+  --info-on-container: var(--status-info);
   --scrollbar-rgb: var(--ref-neutral-4-rgb);
   --scrollbar: var(--ref-neutral-4);
   --scrollbar-hover-rgb: var(--ref-neutral-6-rgb);
@@ -446,6 +482,31 @@
     0 12px 32px -8px rgb(0 0 0 / 0.5);
 }
 
+@supports (color: color-mix(in oklch, white, black)) {
+  :root {
+    --accent-container: color-mix(in oklch, var(--accent) 14%, transparent);
+    --accent-container-hover: color-mix(in oklch, var(--accent) 20%, transparent);
+    --accent-container-active: color-mix(in oklch, var(--accent) 28%, transparent);
+    --accent-container-line: color-mix(in oklch, var(--accent) 55%, transparent);
+    --success-container: color-mix(in oklch, var(--status-success) 14%, transparent);
+    --success-container-hover: color-mix(in oklch, var(--status-success) 20%, transparent);
+    --success-container-active: color-mix(in oklch, var(--status-success) 28%, transparent);
+    --success-container-line: color-mix(in oklch, var(--status-success) 55%, transparent);
+    --warning-container: color-mix(in oklch, var(--status-warning) 14%, transparent);
+    --warning-container-hover: color-mix(in oklch, var(--status-warning) 20%, transparent);
+    --warning-container-active: color-mix(in oklch, var(--status-warning) 28%, transparent);
+    --warning-container-line: color-mix(in oklch, var(--status-warning) 55%, transparent);
+    --danger-container: color-mix(in oklch, var(--status-danger) 14%, transparent);
+    --danger-container-hover: color-mix(in oklch, var(--status-danger) 20%, transparent);
+    --danger-container-active: color-mix(in oklch, var(--status-danger) 28%, transparent);
+    --danger-container-line: color-mix(in oklch, var(--status-danger) 55%, transparent);
+    --info-container: color-mix(in oklch, var(--status-info) 14%, transparent);
+    --info-container-hover: color-mix(in oklch, var(--status-info) 20%, transparent);
+    --info-container-active: color-mix(in oklch, var(--status-info) 28%, transparent);
+    --info-container-line: color-mix(in oklch, var(--status-info) 55%, transparent);
+  }
+}
+
 :root[data-theme='dark'],
 [data-theme='dark'] {
   color-scheme: dark;
@@ -562,6 +623,30 @@
   --border-strong: rgb(var(--ref-white-rgb) / 0.72);
   --content-on-accent-rgb: var(--ref-black-rgb);
   --content-on-accent: var(--ref-black);
+  --accent-container: var(--accent);
+  --accent-container-hover: var(--accent-hover);
+  --accent-container-active: var(--accent-muted);
+  --accent-container-line: var(--ref-white);
+  --success-container: var(--status-success);
+  --success-container-hover: var(--status-success);
+  --success-container-active: var(--status-success);
+  --success-container-line: var(--ref-white);
+  --success-on-container: var(--ref-black);
+  --warning-container: var(--status-warning);
+  --warning-container-hover: var(--status-warning);
+  --warning-container-active: var(--status-warning);
+  --warning-container-line: var(--ref-white);
+  --warning-on-container: var(--ref-black);
+  --danger-container: var(--status-danger);
+  --danger-container-hover: var(--status-danger);
+  --danger-container-active: var(--status-danger);
+  --danger-container-line: var(--ref-white);
+  --danger-on-container: var(--ref-black);
+  --info-container: var(--status-info);
+  --info-container-hover: var(--status-info);
+  --info-container-active: var(--status-info);
+  --info-container-line: var(--ref-white);
+  --info-on-container: var(--ref-black);
   /* Keep initials readable when high contrast switches avatar text to black. */
   --avatar-sand: var(--ref-white);
   --avatar-blue: var(--ref-white);
@@ -841,6 +926,7 @@ textarea {
   outline: 2px solid var(--border-focus);
   outline-color: var(--border-focus) !important;
   outline-offset: 2px;
+  scroll-margin-block: 4rem;
 }
 
 /* Text uses a contrast-safe semantic foreground while action fills retain the selected accent. */
@@ -875,6 +961,32 @@ textarea {
   }
 }
 
+/*
+ * Transparency is deliberately limited to bounded menus and popovers.
+ * Conversation panes and scrolling timelines always remain opaque.
+ */
+[data-transparency='readable'] .mesh-overlay-surface:not(.overflow-auto) {
+  background-color: rgb(var(--surface-overlay-rgb) / 0.94);
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  [data-transparency='readable'] .mesh-overlay-surface:not(.overflow-auto) {
+    backdrop-filter: blur(8px);
+  }
+}
+
+[data-transparency='opaque'] .mesh-overlay-surface {
+  background-color: var(--surface-overlay);
+  backdrop-filter: none;
+}
+
+@media (forced-colors: active) {
+  .mesh-overlay-surface {
+    background-color: var(--surface-overlay);
+    backdrop-filter: none;
+  }
+}
+
 .no-select {
   user-select: none;
   -webkit-user-select: none;
@@ -894,6 +1006,51 @@ textarea {
 
 .mesh-room-context-panel {
   width: var(--mesh-room-context-width, var(--member-list-width));
+}
+
+.sequence-card-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.sequence-card {
+  position: relative;
+  border: 1px solid var(--surface-container-line);
+  background: var(--surface-container);
+  color: var(--surface-on-container);
+}
+
+.sequence-card[data-sequence-position='single'] {
+  border-radius: var(--radius-control);
+}
+
+.sequence-card[data-sequence-position='first'] {
+  border-radius: var(--radius-control) var(--radius-control) 0 0;
+}
+
+.sequence-card[data-sequence-position='middle'] {
+  border-top-width: 0;
+  border-radius: 0;
+}
+
+.sequence-card[data-sequence-position='last'] {
+  border-top-width: 0;
+  border-radius: 0 0 var(--radius-control) var(--radius-control);
+}
+
+.sequence-card:hover {
+  background: var(--surface-container-hover);
+}
+
+.sequence-card:focus-within,
+.sequence-card[data-selected='true'] {
+  background: var(--surface-container-active);
+}
+
+.sequence-card:focus-within {
+  z-index: 1;
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
 }
 
 .mesh-panel-resize-handle {

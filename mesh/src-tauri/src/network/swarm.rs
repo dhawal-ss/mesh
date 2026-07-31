@@ -1019,8 +1019,8 @@ fn collect_dialable_addresses(
         addrs.extend(
             swarm
                 .listeners()
-                .cloned()
-                .filter(|addr| !is_unspecified_addr(addr)),
+                .filter(|addr| !is_unspecified_addr(addr))
+                .cloned(),
         );
     }
 

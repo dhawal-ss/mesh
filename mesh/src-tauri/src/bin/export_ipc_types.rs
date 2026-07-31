@@ -3,9 +3,11 @@ use std::{fs, path::PathBuf};
 use mesh_lib::backend::{
     BackendCapabilities, BackendKind, BackendStatus, CommunityModerationResult,
     CommunityPermissionAggregate, CommunityPermissionAggregateStatus, CommunityPermissionId,
-    CommunityPermissionProjection, CustomEmoji, MatrixCommunityAdmission, MatrixNotification,
-    MatrixPermissionRoomStatus, MatrixPermissionStateChanged, MatrixPersonalDataExport,
-    MatrixQueuedMessageState, MatrixQueuedMessageUpdate, MatrixRoomNotificationMode,
+    CommunityPermissionProjection, ConversationPrivacyOverride, CustomEmoji,
+    MatrixCommunityAdmission, MatrixNotification, MatrixPermissionRoomStatus,
+    MatrixPermissionStateChanged, MatrixPersonalDataExport, MatrixQueuedMessageState,
+    MatrixQueuedMessageUpdate, MatrixRecoveryHealth, MatrixRecoverySecureStorageState,
+    MatrixRecoverySetupResult, MatrixRecoveryVerificationState, MatrixRoomNotificationMode,
     MatrixRoomPermissionProjection, MatrixRoomPins, MatrixRoomPinsUpdate,
     MatrixRoomPowerLevelProjection, MatrixRoomUpgrade, MatrixRtcJoinResult, MatrixRtcMediaKey,
     MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember,
@@ -72,7 +74,12 @@ fn generated_contract() -> String {
     output.push_str(&declaration::<MatrixRtcMediaKeyLease>());
     output.push_str(&declaration::<MatrixRtcJoinResult>());
     output.push_str(&declaration::<NotificationPresentationContext>());
+    output.push_str(&declaration::<MatrixRecoverySecureStorageState>());
+    output.push_str(&declaration::<MatrixRecoveryVerificationState>());
+    output.push_str(&declaration::<MatrixRecoveryHealth>());
+    output.push_str(&declaration::<MatrixRecoverySetupResult>());
     output.push_str(&declaration::<ReadReceiptMode>());
+    output.push_str(&declaration::<ConversationPrivacyOverride>());
     output.push_str(&declaration::<UserPreferences>());
     output.push_str(&declaration::<CustomEmoji>());
     output.push_str(&declaration::<ModerationRoomOutcome>());

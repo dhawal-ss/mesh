@@ -2,7 +2,7 @@ use async_trait::async_trait;
 
 use super::{
     BackendError, BackendKind, BackendResult, BackendStatus, CreatedCommunity, MatrixLogin,
-    MeshBackend, SentMessage,
+    MatrixRecoverySetupResult, MeshBackend, SentMessage,
 };
 
 /// Compatibility adapter for the existing libp2p implementation.
@@ -15,6 +15,12 @@ pub struct LegacyP2pBackend;
 impl LegacyP2pBackend {
     pub fn new() -> Self {
         Self
+    }
+}
+
+impl Default for LegacyP2pBackend {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -82,7 +88,10 @@ impl MeshBackend for LegacyP2pBackend {
         Err(BackendError::Unsupported("legacy-p2p"))
     }
 
-    async fn enable_recovery(&self, _passphrase: Option<String>) -> BackendResult<String> {
+    async fn enable_recovery(
+        &self,
+        _passphrase: Option<String>,
+    ) -> BackendResult<MatrixRecoverySetupResult> {
         Err(BackendError::Unsupported("legacy-p2p"))
     }
 

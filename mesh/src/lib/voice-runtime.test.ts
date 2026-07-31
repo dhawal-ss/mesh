@@ -3,11 +3,13 @@ import type { BackendStatus } from './bridge'
 import {
   canStartLegacyVoice,
   canStartMatrixVoice,
+  isPermissionDeniedError,
   isPushToTalkInteractiveTarget,
   shouldActivateVoiceSession,
   shouldPublishInitialMicrophone,
   shouldReleasePushToTalk,
   voiceConnectionLabel,
+  voiceMediaErrorMessage,
 } from './voice-runtime'
 
 function status(overrides: Partial<BackendStatus> = {}): BackendStatus {
@@ -108,6 +110,27 @@ describe('MatrixRTC runtime boundary', () => {
     ).toBe(false)
     expect(canStartMatrixVoice(status())).toBe(false)
     expect(canStartMatrixVoice(null)).toBe(false)
+  })
+})
+
+describe('voice media permission recovery', () => {
+  it.each(['NotAllowedError', 'PermissionDeniedError', 'SecurityError'])(
+    'recognizes the %s platform permission denial',
+    (name) => {
+      expect(isPermissionDeniedError({ name })).toBe(true)
+    },
+  )
+
+  it('maps camera and screen denial to a plain system-settings action', () => {
+    const denied = Object.assign(new Error('raw browser failure'), {
+      name: 'NotAllowedError',
+    })
+    expect(voiceMediaErrorMessage(denied, 'camera')).toBe(
+      'Mesh can’t access camera. Allow camera access for Mesh in your system settings, then try again.',
+    )
+    expect(voiceMediaErrorMessage(denied, 'screen')).toBe(
+      'Mesh can’t access screen sharing. Allow screen sharing access for Mesh in your system settings, then try again.',
+    )
   })
 })
 

@@ -30,6 +30,10 @@ async function installUnauthenticatedMatrixMock(
         service: parsed.searchParams.get('community_service')
           ?? parsed.searchParams.get('service'),
         admissionService: parsed.searchParams.get('admission'),
+        communityName: 'Friends Community',
+        inviterDisplayName: 'Bob',
+        joinRule: 'invite',
+        communityServiceDisplayName: 'Community account service',
         storedAt: 1_752_000_000_000,
         expiresAt: 1_754_592_000_000,
       }
@@ -139,6 +143,10 @@ async function installUnauthenticatedMatrixMock(
             service: 'community.example',
             via: ['friends.example'],
             expiresAt: 1_800_000_000_000,
+            communityName: 'Friends Community',
+            inviterDisplayName: 'Bob',
+            joinRule: 'invite',
+            communityServiceDisplayName: 'Community account service',
           }
         case 'store_pending_invitation':
           pendingInvitationLink = String(args.inviteLink)
@@ -312,7 +320,7 @@ test('keeps validation errors and custom-service sign-in reachable at 200% zoom'
   await expectNoWcagViolations(page, 'Account setup at 200% zoom')
 })
 
-test('offers saved-account switching without exposing the qualified account ID', async ({ page }) => {
+test('@a11y offers saved-account switching without exposing the qualified account ID', async ({ page }) => {
   await installUnauthenticatedMatrixMock(page)
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Choose your account service' })).toBeVisible()
@@ -329,9 +337,10 @@ test('offers saved-account switching without exposing the qualified account ID',
     args: { profileId: 'profile-1' },
   }])
   await expect(page.getByRole('heading', { name: 'Getting things ready' })).toBeVisible()
+  await expectNoWcagViolations(page, 'Saved-account handoff')
 })
 
-test('checks and starts browser sign-in through the native account boundary', async ({ page }) => {
+test('@a11y checks and starts browser sign-in through the native account boundary', async ({ page }) => {
   await installUnauthenticatedMatrixMock(page)
   await page.reload()
   await page.getByRole('button', { name: 'Use another service' }).click()
@@ -365,9 +374,10 @@ test('checks and starts browser sign-in through the native account boundary', as
     },
   ])
   await expect(page.getByRole('heading', { name: 'Getting things ready' })).toBeVisible()
+  await expectNoWcagViolations(page, 'Browser sign-in handoff')
 })
 
-test('prefills and resolves a cold-start invitation before account creation', async ({ page }) => {
+test('@a11y prefills and resolves a cold-start invitation before account creation', async ({ page }) => {
   const code = 'abcdefghijklmnopqrstuvwxyzABCDEFG_123456789'
   const invitation =
     `mesh://join?v=5&kind=community&room=!invited%3Afriends.example&via=friends.example`
@@ -391,11 +401,15 @@ test('prefills and resolves a cold-start invitation before account creation', as
     args: {},
   }])
   await expect(page.getByRole('button', { name: 'Sign in with Matrix.org' })).toBeVisible()
-  await page.getByRole('button', { name: 'Create account with community.example' }).click()
+  await page.getByRole('button', { name: 'Create account with Community account service' }).click()
   await expect(page.getByText('Invitation saved securely on this device')).toBeVisible()
-  await expect(page.getByText('Community target: !invited:friends.example.')).toBeVisible()
+  await expect(page.getByText('Friends Community')).toBeVisible()
+  await expect(page.getByText('Invited by Bob.')).toBeVisible()
+  await expect(page.getByText('Invitation only')).toBeVisible()
+  await expect(page.getByText('!invited:friends.example', { exact: false })).toHaveCount(0)
   await expect(page.getByRole('textbox', { name: 'Invitation code' })).toHaveCount(0)
   await expect(page.getByText('different Mesh service')).toHaveCount(0)
+  await expectNoWcagViolations(page, 'Invitation account creation')
 })
 
 test('keeps trust context and account setup usable in a narrow window', async ({ page }) => {

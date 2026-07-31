@@ -568,4 +568,39 @@ mod tests {
             .unwrap();
         assert!(audit.contains("require_community_permission"));
     }
+
+    #[test]
+    fn ban_and_recovery_use_distinct_matrix_wire_paths() {
+        let moderation_source = include_str!("moderation.rs");
+        let moderation_apply = moderation_source
+            .split("async fn apply(")
+            .nth(1)
+            .expect("moderation apply implementation exists")
+            .split("impl MatrixBackend")
+            .next()
+            .expect("moderation action implementation is bounded");
+        assert!(moderation_apply.contains("Self::Ban => room"));
+        assert!(moderation_apply.contains(".ban_user(user_id, reason)"));
+        assert!(!moderation_apply.contains(".recovery()"));
+
+        let matrix_source = include_str!("../matrix.rs");
+        let recovery_test = matrix_source
+            .split("async fn test_recovery(")
+            .nth(1)
+            .expect("recovery test implementation exists")
+            .split("async fn start_device_verification")
+            .next()
+            .expect("recovery test implementation is bounded");
+        assert!(recovery_test.contains("verify_recovery_credential"));
+        let recovery_wire_path = matrix_source
+            .split("async fn verify_recovery_credential(")
+            .nth(1)
+            .expect("recovery credential verifier exists")
+            .split("fn account_registry_key")
+            .next()
+            .expect("recovery credential verifier is bounded");
+        assert!(recovery_wire_path.contains(".recovery()"));
+        assert!(recovery_wire_path.contains(".recover(recovery_key_or_passphrase.trim())"));
+        assert!(!recovery_test.contains(".ban_user("));
+    }
 }

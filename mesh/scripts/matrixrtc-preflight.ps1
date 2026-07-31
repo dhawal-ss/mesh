@@ -156,6 +156,20 @@ if (Test-Path -LiteralPath $composePath) {
     if ($compose -notmatch [regex]::Escape('${MATRIXRTC_TURN_TLS_BIND:-127.0.0.1}:5349:5349/tcp')) {
         Add-Failure "The plaintext hop behind the TURN/TLS terminator must default to loopback."
     }
+    foreach ($requiredMediaPort in @(
+        '"7881:7881/tcp"',
+        '"3478:3478/udp"',
+        '"50000-50100:50000-50100/udp"'
+    )) {
+        if ($compose -notmatch [regex]::Escape($requiredMediaPort)) {
+            Add-Failure "MatrixRTC Compose is missing required bounded media port $requiredMediaPort."
+        }
+    }
+    if ($compose -notmatch "(?ms)turn:\s*\r?\n\s+enabled:\s*true" -or
+        $compose -notmatch "external_tls:\s*true" -or
+        $compose -notmatch 'domain:\s+\$\{LIVEKIT_TURN_DOMAIN:\?') {
+        Add-Failure "LiveKit must retain explicit UDP TURN and externally terminated TURN/TLS configuration."
+    }
     if ([regex]::Matches($compose, "(?ms)cap_drop:\s*\r?\n\s+- ALL").Count -lt 2 -or
         [regex]::Matches($compose, "no-new-privileges:true").Count -lt 2) {
         Add-Failure "Both MatrixRTC containers must drop Linux capabilities and forbid privilege escalation."
@@ -212,7 +226,15 @@ if (Test-Path -LiteralPath $runbookPath) {
         "operator-smoke.ps1",
         "MESH_RTC_ENABLED=0",
         "no uptime",
-        "SLA"
+        "SLA",
+        "3478",
+        "5349",
+        "50000-50100",
+        "Resolve-DnsName",
+        "Test-NetConnection",
+        "caseId",
+        "mediaE2eeActive",
+        "mediaE2eeFailureClosed"
     )) {
         if ($runbook -notmatch [regex]::Escape($requiredRunbookText)) {
             Add-Failure "MatrixRTC runbook is missing required procedure text: $requiredRunbookText"
@@ -465,6 +487,31 @@ if ($Online -and $failures.Count -eq 0) {
         Add-Pass "Public Matrix discovery is reachable and consistent."
     } catch {
         Add-Failure "Public Matrix discovery failed: $($_.Exception.Message)"
+    }
+
+    try {
+        $turnDomain = $environment["LIVEKIT_TURN_DOMAIN"]
+        $turnAddresses = [System.Net.Dns]::GetHostAddresses($turnDomain)
+        if ($turnAddresses.Count -lt 1) {
+            throw "hostname resolved without an address"
+        }
+        Add-Pass "TURN/TLS hostname resolves through trusted DNS."
+
+        $turnTcp = [System.Net.Sockets.TcpClient]::new()
+        $connectTask = $turnTcp.ConnectAsync($turnDomain, 5349)
+        if (-not $connectTask.Wait([TimeSpan]::FromSeconds(10))) {
+            throw "TCP 5349 connection timed out"
+        }
+        $turnTls = [System.Net.Security.SslStream]::new(
+            $turnTcp.GetStream(),
+            $false
+        )
+        $turnTls.AuthenticateAsClient($turnDomain)
+        Add-Pass "TURN/TLS listener presented a trusted certificate for the configured hostname."
+        $turnTls.Dispose()
+        $turnTcp.Dispose()
+    } catch {
+        Add-Failure "TURN/TLS DNS, TCP 5349, or trusted-certificate probe failed: $($_.Exception.Message)"
     }
 
     $warnings.Add(

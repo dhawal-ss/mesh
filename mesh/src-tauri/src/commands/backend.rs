@@ -11,11 +11,12 @@ use crate::backend::{
     CommunityApplication, CommunityDirectoryEntry, CommunityMember, CommunityModerationResult,
     CommunityPermissionProjection, CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest,
     MatrixCommunityAdmission, MatrixDevice, MatrixLogin, MatrixOidcStatus,
-    MatrixPersonalDataExport, MatrixProfile, MatrixRecoveryHealth, MatrixRegistration,
-    MatrixRoomNotificationMode, MatrixRoomPins, MatrixRoomUpgrade, MatrixRtcJoinResult,
-    MatrixRtcMediaKey, MatrixRtcMediaKeyLease, MatrixRtcMember, MatrixServiceCapabilities,
-    MatrixTransferObserver, MatrixTransferProgressCallback, MatrixVerificationSession,
-    ModerationAuditEntry, TypingUser, UserPreferences, MATRIX_TRANSFER_PROGRESS_EVENT,
+    MatrixPersonalDataExport, MatrixProfile, MatrixRecoveryHealth, MatrixRecoverySetupResult,
+    MatrixRegistration, MatrixRoomNotificationMode, MatrixRoomPins, MatrixRoomUpgrade,
+    MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyLease, MatrixRtcMember,
+    MatrixServiceCapabilities, MatrixTransferObserver, MatrixTransferProgressCallback,
+    MatrixVerificationSession, ModerationAuditEntry, TypingUser, UserPreferences,
+    MATRIX_TRANSFER_PROGRESS_EVENT,
 };
 use crate::state::AppState;
 use crate::types::{
@@ -414,6 +415,19 @@ pub async fn matrix_test_recovery(
         .backend
         .backend()
         .test_recovery(recovery_key_or_passphrase)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_test_stored_recovery(
+    state: State<'_, AppState>,
+) -> Result<MatrixRecoveryHealth, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .test_stored_recovery()
         .await
         .map_err(map_error)
 }
@@ -1657,7 +1671,7 @@ pub async fn matrix_sync_once(state: State<'_, AppState>) -> Result<(), CommandE
 pub async fn matrix_enable_recovery(
     passphrase: Option<String>,
     state: State<'_, AppState>,
-) -> Result<String, CommandError> {
+) -> Result<MatrixRecoverySetupResult, CommandError> {
     require_matrix(&state)?;
     state
         .backend

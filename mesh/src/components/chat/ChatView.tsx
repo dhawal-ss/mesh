@@ -1324,6 +1324,8 @@ export function ChatView({
                     <VirtualMessageRow
                       key={item.key}
                       rowKey={item.key}
+                      position={messageIndex + 1}
+                      setSize={visibleMessages.length}
                       message={message}
                       isGrouped={shouldGroupMessage(
                         message,
@@ -1463,6 +1465,8 @@ export function RoomUpgradeSignpost({
 
 interface VirtualMessageRowProps {
   rowKey: string
+  position: number
+  setSize: number
   message: MessageType
   isGrouped: boolean
   hasGap: boolean
@@ -1484,6 +1488,8 @@ interface VirtualMessageRowProps {
 
 const VirtualMessageRow = memo(function VirtualMessageRow({
   rowKey,
+  position,
+  setSize,
   message,
   isGrouped,
   hasGap,
@@ -1533,6 +1539,9 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
       ref={rowRef}
       data-message-id={message.id}
       data-jump-highlighted={isHighlighted ? 'true' : undefined}
+      role="article"
+      aria-posinset={position}
+      aria-setsize={setSize}
       aria-current={isHighlighted ? 'true' : undefined}
       tabIndex={isHighlighted ? -1 : undefined}
       className={

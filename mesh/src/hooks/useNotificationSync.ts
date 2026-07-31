@@ -71,6 +71,7 @@ export function useNotificationSync({
         activeRoomId,
         notificationsEnabled: notifications.enabled,
         doNotDisturb: notifications.doNotDisturb,
+        showMessageContent: notifications.showMessageContent,
         quietHoursActive: isQuietHoursActive(
           notifications.quietHours,
           new Date(policyClock),
@@ -87,6 +88,7 @@ export function useNotificationSync({
     notifications.doNotDisturb,
     notifications.enabled,
     notifications.quietHours,
+    notifications.showMessageContent,
     policyClock,
   ])
 
@@ -108,6 +110,7 @@ export function useNotificationSync({
       if (useDmStore.getState().conversationEntities[update.roomId]) {
         patchConversation(update.roomId, {
           unreadCount: Math.min(update.unreadMessages, Number.MAX_SAFE_INTEGER),
+          unreadMentions: Math.min(update.unreadMentions, Number.MAX_SAFE_INTEGER),
         })
       }
     })

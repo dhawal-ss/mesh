@@ -14,8 +14,16 @@ export const NOTIFICATION_MUTE_DURATIONS = [
   { id: 'mute-15m', label: 'Mute for 15 minutes', durationMs: 15 * MINUTE_MS },
   { id: 'mute-1h', label: 'Mute for 1 hour', durationMs: 60 * MINUTE_MS },
   { id: 'mute-8h', label: 'Mute for 8 hours', durationMs: 8 * 60 * MINUTE_MS },
-  { id: 'mute-24h', label: 'Mute for 24 hours', durationMs: 24 * 60 * MINUTE_MS },
-  { id: 'mute-until-enabled', label: 'Mute until turned back on', durationMs: null },
+  {
+    id: 'mute-24h',
+    label: 'Mute for 24 hours',
+    durationMs: 24 * 60 * MINUTE_MS,
+  },
+  {
+    id: 'mute-until-enabled',
+    label: 'Mute until turned back on',
+    durationMs: null,
+  },
 ] as const
 
 export interface NotificationPreferences {
@@ -25,6 +33,8 @@ export interface NotificationPreferences {
   sound: boolean
   /** The built-in sound played for message notifications. */
   soundId: NotificationSoundId
+  /** Explicit opt-in for bounded message text in native notifications. */
+  showMessageContent: boolean
   /** Suppress all notification surfaces until explicitly disabled. */
   doNotDisturb: boolean
   /** Daily local-time window in which notification surfaces are suppressed. */
@@ -55,11 +65,13 @@ export interface QuietHoursPreferences {
 export type AppearanceTheme = 'dark' | 'light' | 'high-contrast'
 export type AppearanceDensity = 'default' | 'compact' | 'comfortable'
 export type AppearanceAccent = 'sand' | 'ocean' | 'violet' | 'forest' | 'ember' | 'rose'
+export type AppearanceTransparency = 'readable' | 'opaque'
 
 export interface AppearancePreferences {
   theme: AppearanceTheme
   density: AppearanceDensity
   accent: AppearanceAccent
+  transparency: AppearanceTransparency
 }
 
 export interface BackupPreferences {
@@ -71,11 +83,17 @@ export interface BackupPreferences {
 export interface PrivacyPreferences {
   readReceiptMode: ReadReceiptMode
   sendTypingIndicators: boolean
+  conversationPrivacy: Record<string, ConversationPrivacyPreference>
   sharePresence: boolean
   invisibleMode: boolean
 }
 
 export type ReadReceiptMode = 'public' | 'private' | 'off'
+
+export interface ConversationPrivacyPreference {
+  readReceiptMode?: ReadReceiptMode
+  sendTypingIndicators?: boolean
+}
 
 export type MatrixPreferenceSyncStatus = 'idle' | 'saving' | 'saved' | 'failed'
 
@@ -84,18 +102,21 @@ export interface MatrixPreferenceSyncState {
   error: unknown | null
 }
 
-const PREFERENCES_SCHEMA_VERSION = 3
+const PREFERENCES_SCHEMA_VERSION = 6
+const MAX_CONVERSATION_PRIVACY_OVERRIDES = 256
 const MATRIX_SAVE_DEBOUNCE_MS = 350
 const BACKUP_REMINDER_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000
 const DEFAULT_APPEARANCE: AppearancePreferences = {
   theme: 'dark',
   density: 'default',
   accent: 'sand',
+  transparency: 'readable',
 }
 const DEFAULT_NOTIFICATIONS: NotificationPreferences = {
   enabled: true,
   sound: true,
   soundId: 'mesh',
+  showMessageContent: false,
   doNotDisturb: false,
   quietHours: {
     enabled: false,
@@ -111,6 +132,7 @@ const DEFAULT_NOTIFICATIONS: NotificationPreferences = {
 const DEFAULT_PRIVACY: PrivacyPreferences = {
   readReceiptMode: 'off',
   sendTypingIndicators: false,
+  conversationPrivacy: {},
   sharePresence: false,
   invisibleMode: false,
 }
@@ -120,11 +142,7 @@ const DEFAULT_MATRIX_PREFERENCE_SYNC: MatrixPreferenceSyncState = {
 }
 
 const APPEARANCE_THEMES = new Set<AppearanceTheme>(['dark', 'light', 'high-contrast'])
-const APPEARANCE_DENSITIES = new Set<AppearanceDensity>([
-  'default',
-  'compact',
-  'comfortable',
-])
+const APPEARANCE_DENSITIES = new Set<AppearanceDensity>(['default', 'compact', 'comfortable'])
 const APPEARANCE_ACCENTS = new Set<AppearanceAccent>([
   'sand',
   'ocean',
@@ -133,6 +151,7 @@ const APPEARANCE_ACCENTS = new Set<AppearanceAccent>([
   'ember',
   'rose',
 ])
+const APPEARANCE_TRANSPARENCIES = new Set<AppearanceTransparency>(['readable', 'opaque'])
 const NOTIFICATION_SOUNDS = new Set<NotificationSoundId>(['mesh', 'chime', 'pulse', 'soft'])
 const NOTIFICATION_LEVELS = new Set<NotificationLevel>(['all', 'mentions', 'nothing'])
 const READ_RECEIPT_MODES = new Set<ReadReceiptMode>(['public', 'private', 'off'])
@@ -147,6 +166,7 @@ type ExtendedMatrixUserPreferences = MatrixUserPreferences & {
   mutedChannelUntil?: Record<string, string | null>
   mutedCommunityUntil?: Record<string, string | null>
   channelNotificationLevels?: Record<string, NotificationLevel>
+  conversationPrivacy?: Record<string, ConversationPrivacyPreference>
 }
 
 function normalizeWallClockTime(value: unknown, fallback: string): string {
@@ -162,9 +182,7 @@ function normalizeMuteExpirations(
     ? mutedIds.filter((id): id is string => typeof id === 'string' && id.length > 0)
     : []
   const rawExpirations =
-    expirations && typeof expirations === 'object'
-      ? (expirations as Record<string, unknown>)
-      : {}
+    expirations && typeof expirations === 'object' ? (expirations as Record<string, unknown>) : {}
   const ids = new Set([...legacyIds, ...Object.keys(rawExpirations)])
   const activeIds: string[] = []
   const until: Record<string, string | null> = {}
@@ -223,6 +241,7 @@ export function normalizeNotificationPreferences(
       preferences?.soundId && NOTIFICATION_SOUNDS.has(preferences.soundId)
         ? preferences.soundId
         : DEFAULT_NOTIFICATIONS.soundId,
+    showMessageContent: preferences?.showMessageContent === true,
     doNotDisturb: preferences?.doNotDisturb ?? DEFAULT_NOTIFICATIONS.doNotDisturb,
     quietHours: {
       enabled: preferences?.quietHours?.enabled ?? DEFAULT_NOTIFICATIONS.quietHours.enabled,
@@ -239,9 +258,7 @@ export function normalizeNotificationPreferences(
     mutedCommunities: communities.ids,
     channelMuteUntil: channels.until,
     communityMuteUntil: communities.until,
-    channelNotificationLevels: normalizeNotificationLevels(
-      preferences?.channelNotificationLevels,
-    ),
+    channelNotificationLevels: normalizeNotificationLevels(preferences?.channelNotificationLevels),
   }
 }
 
@@ -261,13 +278,15 @@ function normalizeAppearancePreferences(
       preferences?.accent && APPEARANCE_ACCENTS.has(preferences.accent)
         ? preferences.accent
         : DEFAULT_APPEARANCE.accent,
+    transparency:
+      preferences?.transparency && APPEARANCE_TRANSPARENCIES.has(preferences.transparency)
+        ? preferences.transparency
+        : DEFAULT_APPEARANCE.transparency,
   }
 }
 
 export function normalizePrivacyPreferences(
-  preferences:
-    | (Partial<PrivacyPreferences> & { sendReadReceipts?: boolean })
-    | undefined,
+  preferences: (Partial<PrivacyPreferences> & { sendReadReceipts?: boolean }) | undefined,
 ): PrivacyPreferences {
   const mode = preferences?.readReceiptMode
   return {
@@ -276,10 +295,57 @@ export function normalizePrivacyPreferences(
       : preferences?.sendReadReceipts === true
         ? 'private'
         : DEFAULT_PRIVACY.readReceiptMode,
-    sendTypingIndicators:
-      preferences?.sendTypingIndicators ?? DEFAULT_PRIVACY.sendTypingIndicators,
+    sendTypingIndicators: preferences?.sendTypingIndicators ?? DEFAULT_PRIVACY.sendTypingIndicators,
+    conversationPrivacy: normalizeConversationPrivacy(preferences?.conversationPrivacy),
     sharePresence: preferences?.sharePresence ?? DEFAULT_PRIVACY.sharePresence,
     invisibleMode: preferences?.invisibleMode ?? DEFAULT_PRIVACY.invisibleMode,
+  }
+}
+
+function normalizeConversationPrivacy(
+  value: unknown,
+): Record<string, ConversationPrivacyPreference> {
+  if (!value || typeof value !== 'object') return {}
+
+  const normalized: Record<string, ConversationPrivacyPreference> = {}
+  const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) =>
+    left.localeCompare(right),
+  )
+  for (const [roomId, rawOverride] of entries) {
+    if (
+      Object.keys(normalized).length >= MAX_CONVERSATION_PRIVACY_OVERRIDES ||
+      !roomId.startsWith('!') ||
+      roomId.length > 255 ||
+      /\s/.test(roomId) ||
+      !rawOverride ||
+      typeof rawOverride !== 'object'
+    ) {
+      continue
+    }
+
+    const candidate = rawOverride as Record<string, unknown>
+    const override: ConversationPrivacyPreference = {}
+    if (READ_RECEIPT_MODES.has(candidate.readReceiptMode as ReadReceiptMode)) {
+      override.readReceiptMode = candidate.readReceiptMode as ReadReceiptMode
+    }
+    if (typeof candidate.sendTypingIndicators === 'boolean') {
+      override.sendTypingIndicators = candidate.sendTypingIndicators
+    }
+    if (override.readReceiptMode !== undefined || override.sendTypingIndicators !== undefined) {
+      normalized[roomId] = override
+    }
+  }
+  return normalized
+}
+
+export function effectiveConversationPrivacy(
+  privacy: PrivacyPreferences,
+  roomId: string,
+): { readReceiptMode: ReadReceiptMode; sendTypingIndicators: boolean } {
+  const override = privacy.conversationPrivacy[roomId]
+  return {
+    readReceiptMode: override?.readReceiptMode ?? privacy.readReceiptMode,
+    sendTypingIndicators: override?.sendTypingIndicators ?? privacy.sendTypingIndicators,
   }
 }
 
@@ -289,6 +355,7 @@ export function applyAppearancePreferences(preferences: AppearancePreferences): 
   root.dataset.theme = preferences.theme
   root.dataset.density = preferences.density
   root.dataset.accent = preferences.accent
+  root.dataset.transparency = preferences.transparency
 }
 
 export function matrixPreferencesToNotifications(
@@ -299,6 +366,7 @@ export function matrixPreferencesToNotifications(
     enabled: preferences.notificationsEnabled,
     sound: preferences.notificationSound,
     soundId: extended.notificationSoundId,
+    showMessageContent: preferences.showNotificationContent,
     doNotDisturb: extended.doNotDisturb,
     quietHours: {
       enabled: extended.quietHoursEnabled ?? false,
@@ -313,14 +381,13 @@ export function matrixPreferencesToNotifications(
   })
 }
 
-export function matrixPreferencesToPrivacy(
-  preferences: MatrixUserPreferences,
-): PrivacyPreferences {
+export function matrixPreferencesToPrivacy(preferences: MatrixUserPreferences): PrivacyPreferences {
+  const extended = preferences as ExtendedMatrixUserPreferences
   return normalizePrivacyPreferences({
-    readReceiptMode:
-      preferences.readReceiptMode === null ? undefined : preferences.readReceiptMode,
+    readReceiptMode: preferences.readReceiptMode === null ? undefined : preferences.readReceiptMode,
     sendReadReceipts: preferences.sendReadReceipts,
     sendTypingIndicators: preferences.sendTypingIndicators,
+    conversationPrivacy: extended.conversationPrivacy,
     sharePresence: preferences.sharePresence,
     invisibleMode: preferences.invisibleMode,
   })
@@ -334,6 +401,7 @@ function settingsToMatrixPreferences(
     schemaVersion: PREFERENCES_SCHEMA_VERSION,
     notificationsEnabled: notifications.enabled,
     notificationSound: notifications.sound,
+    showNotificationContent: notifications.showMessageContent,
     // Matrix room notification modes are authoritative in m.push_rules. Keep
     // the legacy fields empty so a second client does not mistake local-only
     // expiry state for portable room mute state.
@@ -352,6 +420,7 @@ function settingsToMatrixPreferences(
     sendReadReceipts: privacy.readReceiptMode === 'private',
     readReceiptMode: privacy.readReceiptMode,
     sendTypingIndicators: privacy.sendTypingIndicators,
+    conversationPrivacy: privacy.conversationPrivacy,
     sharePresence: privacy.sharePresence,
     invisibleMode: privacy.invisibleMode,
   }
@@ -366,17 +435,21 @@ export interface SettingsStore {
   setNotificationsEnabled: (enabled: boolean) => void
   setNotificationSound: (sound: boolean) => void
   setNotificationSoundId: (soundId: NotificationSoundId) => void
+  setShowMessageContent: (enabled: boolean) => void
   setDoNotDisturb: (enabled: boolean) => void
   setQuietHoursEnabled: (enabled: boolean) => void
   setQuietHours: (start: string, end: string) => void
   setAppearanceTheme: (theme: AppearanceTheme) => void
   setAppearanceDensity: (density: AppearanceDensity) => void
   setAppearanceAccent: (accent: AppearanceAccent) => void
+  setAppearanceTransparency: (transparency: AppearanceTransparency) => void
   setBackupConfigured: (configured: boolean) => void
   scheduleBackupReminder: () => void
   dismissBackupReminder: () => void
   setReadReceiptMode: (mode: ReadReceiptMode) => void
   setSendTypingIndicators: (enabled: boolean) => void
+  setConversationReadReceiptMode: (roomId: string, mode: ReadReceiptMode | null) => void
+  setConversationTypingIndicators: (roomId: string, enabled: boolean | null) => void
   setSharePresence: (enabled: boolean) => void
   setInvisibleMode: (enabled: boolean) => void
   muteChannelFor: (channelId: string, durationMs: number | null) => void
@@ -414,23 +487,62 @@ function hasActiveMute(
   return Number.isFinite(expiryTime) && expiryTime > now
 }
 
+function updateConversationPrivacy(
+  privacy: PrivacyPreferences,
+  roomId: string,
+  patch: {
+    readReceiptMode?: ReadReceiptMode | null
+    sendTypingIndicators?: boolean | null
+  },
+): PrivacyPreferences {
+  if (!roomId.startsWith('!') || roomId.length > 255 || /\s/.test(roomId)) return privacy
+
+  const current = privacy.conversationPrivacy[roomId] ?? {}
+  const next: ConversationPrivacyPreference = { ...current }
+  if (Object.prototype.hasOwnProperty.call(patch, 'readReceiptMode')) {
+    if (patch.readReceiptMode == null) delete next.readReceiptMode
+    else next.readReceiptMode = patch.readReceiptMode
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'sendTypingIndicators')) {
+    if (patch.sendTypingIndicators == null) delete next.sendTypingIndicators
+    else next.sendTypingIndicators = patch.sendTypingIndicators
+  }
+
+  const empty = next.readReceiptMode === undefined && next.sendTypingIndicators === undefined
+  if (empty && !privacy.conversationPrivacy[roomId]) return privacy
+  if (
+    !empty &&
+    !privacy.conversationPrivacy[roomId] &&
+    Object.keys(privacy.conversationPrivacy).length >= MAX_CONVERSATION_PRIVACY_OVERRIDES
+  ) {
+    return privacy
+  }
+  if (
+    !empty &&
+    current.readReceiptMode === next.readReceiptMode &&
+    current.sendTypingIndicators === next.sendTypingIndicators
+  ) {
+    return privacy
+  }
+
+  const conversationPrivacy = { ...privacy.conversationPrivacy }
+  if (empty) delete conversationPrivacy[roomId]
+  else conversationPrivacy[roomId] = next
+  return { ...privacy, conversationPrivacy }
+}
+
 function wallClockMinutes(value: string): number {
   const [hours, minutes] = value.split(':').map(Number)
   return hours * 60 + minutes
 }
 
-export function isQuietHoursActive(
-  quietHours: QuietHoursPreferences,
-  now = new Date(),
-): boolean {
+export function isQuietHoursActive(quietHours: QuietHoursPreferences, now = new Date()): boolean {
   if (!quietHours.enabled) return false
   const start = wallClockMinutes(quietHours.start)
   const end = wallClockMinutes(quietHours.end)
   const current = now.getHours() * 60 + now.getMinutes()
   if (start === end) return true
-  return start < end
-    ? current >= start && current < end
-    : current >= start || current < end
+  return start < end ? current >= start && current < end : current >= start || current < end
 }
 
 export function getEffectiveChannelNotificationLevel(
@@ -472,7 +584,7 @@ export const useSettingsStore = create<SettingsStore>()(
         reminderPending: false,
         dismissedAt: null,
       },
-      privacy: DEFAULT_PRIVACY,
+      privacy: { ...DEFAULT_PRIVACY, conversationPrivacy: {} },
       matrixPreferenceSync: DEFAULT_MATRIX_PREFERENCE_SYNC,
 
       setNotificationsEnabled: (enabled) =>
@@ -488,6 +600,11 @@ export const useSettingsStore = create<SettingsStore>()(
       setNotificationSoundId: (soundId) =>
         set((state) => ({
           notifications: { ...state.notifications, soundId },
+        })),
+
+      setShowMessageContent: (showMessageContent) =>
+        set((state) => ({
+          notifications: { ...state.notifications, showMessageContent },
         })),
 
       setDoNotDisturb: (doNotDisturb) =>
@@ -533,6 +650,12 @@ export const useSettingsStore = create<SettingsStore>()(
         applyAppearancePreferences(appearance)
       },
 
+      setAppearanceTransparency: (transparency) => {
+        const appearance = { ...get().appearance, transparency }
+        set({ appearance })
+        applyAppearancePreferences(appearance)
+      },
+
       setBackupConfigured: (configured) =>
         set({
           backup: {
@@ -563,7 +686,23 @@ export const useSettingsStore = create<SettingsStore>()(
         set((state) => ({ privacy: { ...state.privacy, readReceiptMode } })),
 
       setSendTypingIndicators: (sendTypingIndicators) =>
-        set((state) => ({ privacy: { ...state.privacy, sendTypingIndicators } })),
+        set((state) => ({
+          privacy: { ...state.privacy, sendTypingIndicators },
+        })),
+
+      setConversationReadReceiptMode: (roomId, readReceiptMode) =>
+        set((state) => ({
+          privacy: updateConversationPrivacy(state.privacy, roomId, {
+            readReceiptMode,
+          }),
+        })),
+
+      setConversationTypingIndicators: (roomId, sendTypingIndicators) =>
+        set((state) => ({
+          privacy: updateConversationPrivacy(state.privacy, roomId, {
+            sendTypingIndicators,
+          }),
+        })),
 
       setSharePresence: (sharePresence) =>
         set((state) => ({ privacy: { ...state.privacy, sharePresence } })),
@@ -624,7 +763,9 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setChannelNotificationLevel: (channelId, level) =>
         set((state) => {
-          const channelNotificationLevels = { ...state.notifications.channelNotificationLevels }
+          const channelNotificationLevels = {
+            ...state.notifications.channelNotificationLevels,
+          }
           if (level === 'all') {
             delete channelNotificationLevels[channelId]
           } else {
@@ -727,10 +868,7 @@ export const useSettingsStore = create<SettingsStore>()(
   ),
 )
 
-export function isBackupReminderDue(
-  backup: BackupPreferences,
-  now = Date.now(),
-): boolean {
+export function isBackupReminderDue(backup: BackupPreferences, now = Date.now()): boolean {
   if (backup.configured || !backup.reminderPending) return false
   if (!backup.dismissedAt) return true
   const dismissedAt = Date.parse(backup.dismissedAt)
@@ -785,7 +923,7 @@ export function resetMatrixAccountPreferences(): void {
       reminderPending: false,
       dismissedAt: null,
     },
-    privacy: { ...DEFAULT_PRIVACY },
+    privacy: { ...DEFAULT_PRIVACY, conversationPrivacy: {} },
     matrixPreferenceSync: { ...DEFAULT_MATRIX_PREFERENCE_SYNC },
   })
   applyingRemotePreferences = false
@@ -880,12 +1018,11 @@ function scheduleMatrixPreferenceSave() {
   if (matrixSaveTimer) clearTimeout(matrixSaveTimer)
   matrixSaveTimer = setTimeout(() => {
     matrixSaveTimer = null
-    void persistMatrixPreferences(
-      localPreferenceRevision,
-      currentMatrixPreferenceSnapshot(),
-    ).catch((error) => {
-      console.error('Failed to sync Matrix preferences:', error)
-    })
+    void persistMatrixPreferences(localPreferenceRevision, currentMatrixPreferenceSnapshot()).catch(
+      (error) => {
+        console.error('Failed to sync Matrix preferences:', error)
+      },
+    )
   }, MATRIX_SAVE_DEBOUNCE_MS)
 }
 

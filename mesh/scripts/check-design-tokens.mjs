@@ -351,6 +351,60 @@ for (const variable of requiredSemanticColorChannels) {
   }
 }
 
+const containerRoles = ['surface', 'accent', 'success', 'warning', 'danger', 'info']
+for (const role of containerRoles) {
+  for (const suffix of ['container', 'container-hover', 'container-active', 'container-line']) {
+    const variable = `--${role}-${suffix}`
+    if (!declarations.has(variable)) {
+      errors.push(`globals.css must define container role ${variable}`)
+    }
+    if (!tailwind.includes(`var(${variable})`)) {
+      errors.push(`Tailwind must expose container role ${variable}`)
+    }
+  }
+  const onContainer = `--${role}-on-container`
+  if (!declarations.has(onContainer)) {
+    errors.push(`globals.css must define container role ${onContainer}`)
+  }
+  if (!tailwind.includes(`var(${onContainer})`)) {
+    errors.push(`Tailwind must expose container role ${onContainer}`)
+  }
+}
+
+if (!globals.includes('@supports (color: color-mix(in oklch, white, black))')) {
+  errors.push('globals.css must derive supported container states in perceptual OKLCH')
+}
+
+const hexToRgb = (hex) => {
+  const value = Number.parseInt(hex.slice(1), 16)
+  return [(value >> 16) & 255, (value >> 8) & 255, value & 255]
+}
+const relativeLuminance = (hex) => {
+  const channels = hexToRgb(hex).map((channel) => {
+    const value = channel / 255
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+}
+const contrastRatio = (foreground, background) => {
+  const lighter = Math.max(relativeLuminance(foreground), relativeLuminance(background))
+  const darker = Math.min(relativeLuminance(foreground), relativeLuminance(background))
+  return (lighter + 0.05) / (darker + 0.05)
+}
+for (const [label, foreground, background] of [
+  ['dark accent content', '#101113', '#d4c0a1'],
+  ['light accent content', '#ffffff', '#6b5636'],
+  ['light success content', '#1f6f43', '#ffffff'],
+  ['light warning content', '#855b08', '#ffffff'],
+  ['light danger content', '#a3313a', '#ffffff'],
+  ['light info content', '#1f5fae', '#ffffff'],
+]) {
+  const ratio = contrastRatio(foreground, background)
+  if (ratio < 4.5) {
+    errors.push(`${label} contrast must be at least 4.5:1, found ${ratio.toFixed(2)}:1`)
+  }
+}
+
 for (const selector of [
   ":root[data-theme='dark']",
   ":root[data-theme='light']",

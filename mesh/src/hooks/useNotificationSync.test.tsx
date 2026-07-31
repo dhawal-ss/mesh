@@ -119,6 +119,7 @@ describe('useNotificationSync', () => {
       activeRoomId: room.id,
       notificationsEnabled: true,
       doNotDisturb: false,
+      showMessageContent: false,
       quietHoursActive: false,
       mutedRoomIds: [],
     })
@@ -186,5 +187,17 @@ describe('useNotificationSync', () => {
     expect(useSettingsStore.getState().getChannelNotificationLevel('!dm:example.org')).toBe(
       'mentions',
     )
+
+    act(() => {
+      bridgeMocks.unreadHandler?.({
+        roomId: '!dm:example.org',
+        unreadMessages: 4,
+        unreadMentions: 3,
+      })
+    })
+    expect(useDmStore.getState().conversationEntities['!dm:example.org']).toMatchObject({
+      unreadCount: 4,
+      unreadMentions: 3,
+    })
   })
 })

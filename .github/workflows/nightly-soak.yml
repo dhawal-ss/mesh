@@ -112,6 +112,39 @@ jobs:
           path: mesh/soak-logs/
           retention-days: 30
 
+  browser-resource-budget:
+    name: Controlled browser resource budget
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mesh/package-lock.json
+
+      - name: Install frontend and browser
+        working-directory: mesh
+        run: |
+          npm ci
+          npx playwright install chromium
+
+      - name: Capture repeated startup and idle-renderer evidence
+        working-directory: mesh
+        run: npx playwright test e2e/runtime-budgets.spec.ts --workers=1
+
+      - name: Upload resource evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: browser-resource-budget-${{ github.run_number }}
+          path: mesh/test-results/resource-budget-browser.json
+          if-no-files-found: error
+          retention-days: 30
+
   turn-probe:
     name: TURN probe regression
     runs-on: ubuntu-latest

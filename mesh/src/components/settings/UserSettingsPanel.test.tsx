@@ -18,6 +18,7 @@ describe('UserSettingsPanel', () => {
         enabled: true,
         sound: true,
         soundId: 'mesh',
+        showMessageContent: false,
         doNotDisturb: false,
         quietHours: {
           enabled: false,
@@ -38,6 +39,7 @@ describe('UserSettingsPanel', () => {
       privacy: {
         readReceiptMode: 'public',
         sendTypingIndicators: true,
+        conversationPrivacy: {},
         sharePresence: true,
         invisibleMode: false,
       },
@@ -57,7 +59,11 @@ describe('UserSettingsPanel', () => {
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: '@alice:example.org', displayName: 'alice', avatarColor: '#52b5f4' }}
+          identity={{
+            publicKey: '@alice:example.org',
+            displayName: 'alice',
+            avatarColor: '#52b5f4',
+          }}
           matrixAccountId="@alice:example.org"
           matrixMode
           onOpenSecurity={openSecurity}
@@ -68,8 +74,9 @@ describe('UserSettingsPanel', () => {
     expect(document.body.textContent).toContain('alice')
     expect(document.body.textContent).toContain('Mesh account')
     expect(document.body.textContent).not.toContain('@alice:example.org')
-    const securityButton = Array.from(document.body.querySelectorAll('button'))
-      .find((button) => button.textContent?.includes('Open your devices'))
+    const securityButton = Array.from(document.body.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Open your devices'),
+    )
     expect(securityButton).toBeDefined()
     expect(document.body.textContent).toContain('Your devices')
     expect(document.body.textContent).not.toContain('Security & Devices')
@@ -91,7 +98,11 @@ describe('UserSettingsPanel', () => {
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: 'local', displayName: 'Local user', avatarColor: '#52b5f4' }}
+          identity={{
+            publicKey: 'local',
+            displayName: 'Local user',
+            avatarColor: '#52b5f4',
+          }}
           matrixAccountId={null}
           matrixMode={false}
           onOpenSecurity={() => {}}
@@ -100,14 +111,16 @@ describe('UserSettingsPanel', () => {
     })
 
     const checkboxes = document.body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')
-    expect(checkboxes).toHaveLength(4)
+    expect(checkboxes).toHaveLength(5)
     expect(checkboxes[0]?.checked).toBe(true)
     expect(checkboxes[1]?.disabled).toBe(false)
 
     await act(async () => checkboxes[0]?.click())
 
     expect(useSettingsStore.getState().notifications.enabled).toBe(false)
-    expect(document.body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')[1]?.disabled).toBe(true)
+    expect(
+      document.body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')[1]?.disabled,
+    ).toBe(true)
   })
 
   it('explains service visibility and updates every privacy control', async () => {
@@ -116,9 +129,15 @@ describe('UserSettingsPanel', () => {
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#52b5f4' }}
+          identity={{
+            publicKey: '@alice:example.org',
+            displayName: 'Alice',
+            avatarColor: '#52b5f4',
+          }}
           matrixAccountId="@alice:example.org"
           matrixMode
+          activeConversationId="!room:example.org"
+          activeConversationName="General"
           onOpenSecurity={() => {}}
         />,
       )
@@ -129,12 +148,14 @@ describe('UserSettingsPanel', () => {
     expect(document.body.textContent).toContain('Message and file content')
     expect(document.body.textContent).toContain('Network address')
     expect(document.body.textContent).toContain('Unlike standard Discord messages')
-    expect(document.body.textContent).toContain('Each conversation header checks its current protection')
+    expect(document.body.textContent).toContain(
+      'Each conversation header checks its current protection',
+    )
 
     const toggle = (label: string) =>
-      Array.from(document.body.querySelectorAll('label')).find((candidate) =>
-        candidate.textContent?.includes(label),
-      )?.querySelector<HTMLInputElement>('input[type="checkbox"]')
+      Array.from(document.body.querySelectorAll('label'))
+        .find((candidate) => candidate.textContent?.includes(label))
+        ?.querySelector<HTMLInputElement>('input[type="checkbox"]')
 
     const readReceipts = document.querySelector<HTMLSelectElement>('#read-receipts')
     expect(document.querySelector('label[for="read-receipts"]')?.textContent).toBe('Read receipts')
@@ -153,10 +174,30 @@ describe('UserSettingsPanel', () => {
     expect(useSettingsStore.getState().privacy).toEqual({
       readReceiptMode: 'private',
       sendTypingIndicators: false,
+      conversationPrivacy: {},
       sharePresence: false,
       invisibleMode: true,
     })
     expect(document.body.textContent).toContain('No, disabled now')
+
+    const conversationReceipts = document.querySelector<HTMLSelectElement>(
+      '#conversation-read-receipts',
+    )
+    const conversationTyping = document.querySelector<HTMLSelectElement>('#conversation-typing')
+    expect(document.body.textContent).toContain('This conversation: General')
+    expect(document.body.textContent).toContain('Other compatible apps may publish')
+    await act(async () => {
+      if (conversationReceipts) conversationReceipts.value = 'public'
+      conversationReceipts?.dispatchEvent(new Event('change', { bubbles: true }))
+      if (conversationTyping) conversationTyping.value = 'on'
+      conversationTyping?.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(useSettingsStore.getState().privacy.conversationPrivacy).toEqual({
+      '!room:example.org': {
+        readReceiptMode: 'public',
+        sendTypingIndicators: true,
+      },
+    })
   })
 
   it('shows when privacy settings are not confirmed and offers a retry', async () => {
@@ -171,7 +212,11 @@ describe('UserSettingsPanel', () => {
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#52b5f4' }}
+          identity={{
+            publicKey: '@alice:example.org',
+            displayName: 'Alice',
+            avatarColor: '#52b5f4',
+          }}
           matrixAccountId="@alice:example.org"
           matrixMode
           onOpenSecurity={() => {}}
@@ -179,9 +224,7 @@ describe('UserSettingsPanel', () => {
       )
     })
 
-    expect(document.body.textContent).toContain(
-      'could not confirm them on your account',
-    )
+    expect(document.body.textContent).toContain('could not confirm them on your account')
     expect(
       Array.from(document.body.querySelectorAll('button')).some((button) =>
         button.textContent?.includes('Retry saving privacy settings'),
@@ -196,7 +239,11 @@ describe('UserSettingsPanel', () => {
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: 'local', displayName: 'Local user', avatarColor: '#52b5f4' }}
+          identity={{
+            publicKey: 'local',
+            displayName: 'Local user',
+            avatarColor: '#52b5f4',
+          }}
           matrixAccountId={null}
           matrixMode={false}
           onOpenSecurity={() => {}}
@@ -212,11 +259,18 @@ describe('UserSettingsPanel', () => {
     })
     expect(useSettingsStore.getState().notifications.soundId).toBe('pulse')
 
+    const previewToggle = Array.from(
+      document.body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+    )[2]
+    expect(document.body.textContent).toContain('lock screens, mirrored displays')
+    await act(async () => previewToggle?.click())
+    expect(useSettingsStore.getState().notifications.showMessageContent).toBe(true)
+
     const checkboxes = document.body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')
-    await act(async () => checkboxes[2]?.click())
+    await act(async () => checkboxes[3]?.click())
     expect(useSettingsStore.getState().notifications.doNotDisturb).toBe(true)
 
-    await act(async () => checkboxes[3]?.click())
+    await act(async () => checkboxes[4]?.click())
     expect(document.body.querySelector('#quiet-hours-start')).not.toBeNull()
     const start = document.body.querySelector<HTMLInputElement>('#quiet-hours-start')
     const end = document.body.querySelector<HTMLInputElement>('#quiet-hours-end')
@@ -252,7 +306,11 @@ describe('UserSettingsPanel', () => {
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: 'local', displayName: 'Local user', avatarColor: '#52b5f4' }}
+          identity={{
+            publicKey: 'local',
+            displayName: 'Local user',
+            avatarColor: '#52b5f4',
+          }}
           matrixAccountId={null}
           matrixMode={false}
           onOpenSecurity={() => {}}
@@ -263,10 +321,12 @@ describe('UserSettingsPanel', () => {
     const theme = document.body.querySelector<HTMLSelectElement>('#appearance-theme')
     const density = document.body.querySelector<HTMLSelectElement>('#appearance-density')
     const accent = document.body.querySelector<HTMLSelectElement>('#appearance-accent')
+    const transparency = document.body.querySelector<HTMLSelectElement>('#appearance-transparency')
 
     expect(theme?.value).toBe('dark')
     expect(density?.selectedOptions[0]?.textContent).toBe('Cozy')
     expect(accent?.value).toBe('sand')
+    expect(transparency?.value).toBe('readable')
 
     await act(async () => {
       if (theme) theme.value = 'high-contrast'
@@ -275,16 +335,20 @@ describe('UserSettingsPanel', () => {
       density?.dispatchEvent(new Event('change', { bubbles: true }))
       if (accent) accent.value = 'ocean'
       accent?.dispatchEvent(new Event('change', { bubbles: true }))
+      if (transparency) transparency.value = 'opaque'
+      transparency?.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
     expect(useSettingsStore.getState().appearance).toEqual({
       theme: 'high-contrast',
       density: 'compact',
       accent: 'ocean',
+      transparency: 'opaque',
     })
     expect(document.documentElement.dataset.theme).toBe('high-contrast')
     expect(document.documentElement.dataset.density).toBe('compact')
     expect(document.documentElement.dataset.accent).toBe('ocean')
+    expect(document.documentElement.dataset.transparency).toBe('opaque')
   })
 
   it('saves a trimmed Matrix display name and reports success', async () => {
@@ -294,7 +358,11 @@ describe('UserSettingsPanel', () => {
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#52b5f4' }}
+          identity={{
+            publicKey: '@alice:example.org',
+            displayName: 'Alice',
+            avatarColor: '#52b5f4',
+          }}
           matrixAccountId="@alice:example.org"
           matrixMode
           onUpdateDisplayName={updateDisplayName}
@@ -309,10 +377,7 @@ describe('UserSettingsPanel', () => {
     expect(displayNameInput).not.toBeNull()
 
     await act(async () => {
-      const setValue = Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        'value',
-      )?.set
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
       setValue?.call(displayNameInput, '  Alice Cooper  ')
       displayNameInput?.dispatchEvent(new Event('input', { bubbles: true }))
     })
@@ -331,13 +396,19 @@ describe('UserSettingsPanel', () => {
   })
 
   it('surfaces Matrix profile update errors without changing the shown identity', async () => {
-    const updateDisplayName = vi.fn().mockRejectedValue(new Error('Homeserver rejected profile update'))
+    const updateDisplayName = vi
+      .fn()
+      .mockRejectedValue(new Error('Homeserver rejected profile update'))
     await act(async () => {
       root.render(
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#52b5f4' }}
+          identity={{
+            publicKey: '@alice:example.org',
+            displayName: 'Alice',
+            avatarColor: '#52b5f4',
+          }}
           matrixAccountId="@alice:example.org"
           matrixMode
           onUpdateDisplayName={updateDisplayName}
@@ -350,10 +421,7 @@ describe('UserSettingsPanel', () => {
       'input[autocomplete="nickname"]',
     )
     await act(async () => {
-      const setValue = Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        'value',
-      )?.set
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
       setValue?.call(displayNameInput, 'Rejected')
       displayNameInput?.dispatchEvent(new Event('input', { bubbles: true }))
     })
@@ -379,7 +447,11 @@ describe('UserSettingsPanel', () => {
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#52b5f4' }}
+          identity={{
+            publicKey: '@alice:example.org',
+            displayName: 'Alice',
+            avatarColor: '#52b5f4',
+          }}
           matrixAccountId="@alice:example.org"
           matrixMode
           onOpenSecurity={() => {}}
@@ -398,10 +470,12 @@ describe('UserSettingsPanel', () => {
     })
 
     expect(document.body.textContent).toContain('Advanced')
-    const diagnostics = Array.from(document.body.querySelectorAll('button'))
-      .find((button) => button.textContent?.includes('System diagnostics'))
-    const importButton = Array.from(document.body.querySelectorAll('button'))
-      .find((button) => button.textContent?.includes('Import older Mesh data'))
+    const diagnostics = Array.from(document.body.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('System diagnostics'),
+    )
+    const importButton = Array.from(document.body.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Import older Mesh data'),
+    )
     await act(async () => diagnostics?.click())
     await act(async () => importButton?.click())
     expect(openDiagnostics).toHaveBeenCalledOnce()
@@ -414,7 +488,11 @@ describe('UserSettingsPanel', () => {
         <UserSettingsPanel
           open
           onClose={() => {}}
-          identity={{ publicKey: '@alice:example.org', displayName: 'Alice', avatarColor: '#52b5f4' }}
+          identity={{
+            publicKey: '@alice:example.org',
+            displayName: 'Alice',
+            avatarColor: '#52b5f4',
+          }}
           matrixAccountId="@alice:example.org"
           matrixMode
           onOpenSecurity={() => {}}
@@ -425,16 +503,20 @@ describe('UserSettingsPanel', () => {
     })
 
     await act(async () => {
-      document.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'D',
-        ctrlKey: true,
-        shiftKey: true,
-        bubbles: true,
-      }))
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'D',
+          ctrlKey: true,
+          shiftKey: true,
+          bubbles: true,
+        }),
+      )
     })
 
     expect(document.body.textContent).toContain('Advanced')
     expect(document.body.textContent).toContain('Your messages are not backed up yet.')
-    expect(document.body.querySelector('[aria-label="Message backup needs attention"]')).not.toBeNull()
+    expect(
+      document.body.querySelector('[aria-label="Message backup needs attention"]'),
+    ).not.toBeNull()
   })
 })

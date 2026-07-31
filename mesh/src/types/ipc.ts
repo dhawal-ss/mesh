@@ -49,6 +49,10 @@ export type {
   MatrixRoomUpgrade,
   MatrixRoomPins,
   MatrixRoomPinsUpdate,
+  MatrixRecoveryHealth,
+  MatrixRecoverySecureStorageState,
+  MatrixRecoverySetupResult,
+  MatrixRecoveryVerificationState,
   MatrixRoomPermissionProjection,
   MatrixRoomPowerLevelProjection,
   MatrixUnreadUpdate,
@@ -162,7 +166,8 @@ export interface MatrixTransferProgress {
   error?: string | null
 }
 
-export type VoiceConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'degraded' | 'disconnected'
+export type VoiceConnectionState =
+  'idle' | 'connecting' | 'connected' | 'reconnecting' | 'degraded' | 'disconnected'
 export type VoiceTopology = 'mesh' | 'relay-election'
 
 export interface VoiceRelayElection {
@@ -251,7 +256,7 @@ export interface VoiceSignalPayload {
 }
 
 export interface Peer extends PeerDto {
-  stream?: MediaStream       // Local frontend reference to active WebRTC stream
+  stream?: MediaStream // Local frontend reference to active WebRTC stream
   cameraStream?: MediaStream
   screenShareStream?: MediaStream
   screenShareAudioStream?: MediaStream
@@ -292,7 +297,9 @@ export interface BanEvent {
   bannedPublicKey: string
 }
 
-export type DmConversation = DmConversationDto
+export interface DmConversation extends DmConversationDto {
+  unreadMentions?: number
+}
 export type DirectMessage = Omit<DirectMessageDto, 'attachments' | 'reactions'> & {
   // Rust defaults omitted collections when accepting optimistic/local records.
   attachments?: Attachment[]
@@ -300,12 +307,7 @@ export type DirectMessage = Omit<DirectMessageDto, 'attachments' | 'reactions'> 
 }
 
 export type LegacyRecordKind =
-  | 'community'
-  | 'channel'
-  | 'membership'
-  | 'message'
-  | 'control_event'
-  | 'file'
+  'community' | 'channel' | 'membership' | 'message' | 'control_event' | 'file'
 
 export interface LegacyChannelSummary {
   id: string

@@ -44,7 +44,7 @@ export interface OnboardingFlowProps {
   onMatrixSwitchAccount?: (profileId: string) => Promise<void>
   onResolvePendingInvitation?: () => Promise<MatrixCommunityAdmission | null>
   onDiscardPendingInvitation?: () => Promise<void>
-  onCreateBackupCode?: () => Promise<string>
+  onCreateBackupCode?: () => Promise<MatrixRecoverySetupResult>
   onBackupConfigured?: () => void
   onBackupSkipped?: () => void
   onGenerateIdentity?: () => Promise<void>
@@ -55,4 +55,8 @@ export interface OnboardingFlowProps {
   initialProfile?: Partial<OnboardingProfile>
   avatarColors?: readonly string[]
 }
-import type { MatrixCommunityAdmission, PendingInvitationMetadata } from '../../types/ipc'
+import type {
+  MatrixCommunityAdmission,
+  MatrixRecoverySetupResult,
+  PendingInvitationMetadata,
+} from '../../types/ipc'

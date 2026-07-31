@@ -7,16 +7,19 @@ vi.mock('../../lib/bridge', () => ({
   isTauriRuntime: vi.fn(() => false),
   getBackendStatus: vi.fn(),
   matrixDevices: vi.fn(),
-  matrixRecoveryHealth: vi.fn(() => Promise.resolve({
-    recoveryState: 'enabled',
-    backupState: 'enabled',
-    backupExistsOnServer: true,
-    backupEnabled: true,
-    healthy: true,
-    checkedAt: '2026-07-22T20:00:00Z',
-    lastSuccessfulTestAt: '2026-07-21T20:00:00Z',
-    warnings: [],
-  })),
+  matrixRecoveryHealth: vi.fn(() =>
+    Promise.resolve({
+      recoveryState: 'enabled',
+      backupState: 'enabled',
+      backupExistsOnServer: true,
+      backupEnabled: true,
+      healthy: true,
+      checkedAt: '2026-07-22T20:00:00Z',
+      lastSuccessfulTestAt: '2026-07-21T20:00:00Z',
+      secureStorageState: 'saved',
+      warnings: [],
+    }),
+  ),
   matrixAccounts: vi.fn(() => Promise.resolve([])),
   matrixCancelLogin: vi.fn(),
   matrixStartDeviceVerification: vi.fn(),
@@ -25,6 +28,7 @@ vi.mock('../../lib/bridge', () => ({
   matrixConfirmDeviceVerification: vi.fn(),
   matrixCancelDeviceVerification: vi.fn(),
   matrixTestRecovery: vi.fn(),
+  matrixTestStoredRecovery: vi.fn(),
   matrixEnableRecovery: vi.fn(),
   matrixRecover: vi.fn(),
   matrixRevokeDevice: vi.fn(),
@@ -117,6 +121,11 @@ describe('SecurityDevicesPanel', () => {
         identityChanged: false,
       },
     ])
+    vi.mocked(matrixEnableRecovery).mockResolvedValue({
+      recoveryKey: 'MESH-ONE-TWO-THREE-FOUR',
+      secureStorageState: 'saved',
+      verificationState: 'verified',
+    })
   })
 
   afterEach(() => {
@@ -137,10 +146,43 @@ describe('SecurityDevicesPanel', () => {
     expect(document.body.textContent).toContain('Trusted')
     expect(document.body.textContent).toContain('Old phone')
     expect(document.body.textContent).toContain('Not verified yet')
-    expect(document.body.textContent).toContain('shares new private-message keys only with trusted devices')
+    expect(document.body.textContent).toContain(
+      'shares new private-message keys only with trusted devices',
+    )
     expect(document.body.textContent).toContain('Is this you?')
     expect(document.body.textContent).toContain('Your devices')
     expect(document.body.textContent).toContain('2 devices')
+  })
+
+  it('presents a changed device as a re-check advisory, never as moderation', async () => {
+    vi.mocked(matrixDevices).mockResolvedValue([
+      {
+        deviceId: 'CHANGED',
+        displayName: 'Replacement laptop',
+        lastSeenIp: null,
+        lastSeenAt: '2026-07-22T20:00:00Z',
+        firstSeenAt: '2026-07-22T20:00:00Z',
+        current: false,
+        verified: false,
+        crossSigned: false,
+        newDevice: false,
+        identityChanged: true,
+      },
+    ])
+
+    await act(async () => {
+      root.render(<SecurityDevicesPanel open onClose={() => {}} />)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(document.body.textContent).toContain(
+      'This sign-in changed since you trusted it. Check it again or sign it out.',
+    )
+    expect(document.body.textContent?.toLowerCase()).not.toContain('banned')
+    expect(document.body.textContent?.toLowerCase()).not.toContain('moderation')
   })
 
   it('uses the compact empty state when no registered devices are returned', async () => {
@@ -156,8 +198,9 @@ describe('SecurityDevicesPanel', () => {
 
     expect(document.body.textContent).toContain('No registered devices')
     expect(document.body.textContent).toContain('Devices linked to this account will appear here.')
-    const emptyTitle = [...document.body.querySelectorAll('h3')]
-      .find((heading) => heading.textContent === 'No registered devices')
+    const emptyTitle = [...document.body.querySelectorAll('h3')].find(
+      (heading) => heading.textContent === 'No registered devices',
+    )
     expect(emptyTitle?.closest('section')?.className).toContain('py-5')
   })
 
@@ -174,14 +217,18 @@ describe('SecurityDevicesPanel', () => {
     expect(openWorkflow.getAttribute('aria-expanded')).toBe('false')
     await act(async () => openWorkflow.click())
 
-    expect(document.body.querySelector('#lost-device-workflow[aria-labelledby="lost-device-title"]')).not.toBeNull()
+    expect(
+      document.body.querySelector('#lost-device-workflow[aria-labelledby="lost-device-title"]'),
+    ).not.toBeNull()
     expect(document.body.textContent).toContain('cannot delete messages, screenshots')
     expect(document.body.textContent).toContain('message backup is ready')
     expect(document.body.textContent).toContain('Only trust devices you still have')
     expect(document.body.textContent).toContain('cannot erase anything already saved')
     expect(document.body.querySelector('legend')?.textContent).toBe('Which device was lost?')
 
-    const deviceChoices = [...document.body.querySelectorAll<HTMLInputElement>('input[name="lost-device"]')]
+    const deviceChoices = [
+      ...document.body.querySelectorAll<HTMLInputElement>('input[name="lost-device"]'),
+    ]
     expect(deviceChoices).toHaveLength(1)
     expect(deviceChoices[0]?.value).toBe('OLDPHONE')
     const continueButton = findButton(document.body, 'Continue to sign out selected device')
@@ -198,7 +245,9 @@ describe('SecurityDevicesPanel', () => {
     expect(document.body.textContent).toContain('Sign out Old phone?')
     expect(document.body.textContent).toContain('Mesh does not save it')
     expect(document.body.textContent).toContain('account website')
-    expect(document.body.querySelector('input[type="password"][autocomplete="current-password"]')).not.toBeNull()
+    expect(
+      document.body.querySelector('input[type="password"][autocomplete="current-password"]'),
+    ).not.toBeNull()
   })
 
   it('revokes only the selected lost device after interactive authentication', async () => {
@@ -212,7 +261,9 @@ describe('SecurityDevicesPanel', () => {
       findButton(document.body, 'I lost a device').click()
     })
     await act(async () => {
-      document.body.querySelector<HTMLInputElement>('input[name="lost-device"][value="OLDPHONE"]')?.click()
+      document.body
+        .querySelector<HTMLInputElement>('input[name="lost-device"][value="OLDPHONE"]')
+        ?.click()
     })
     await act(async () => {
       document.body.querySelector<HTMLInputElement>('input[type="checkbox"]')?.click()
@@ -221,7 +272,9 @@ describe('SecurityDevicesPanel', () => {
       findButton(document.body, 'Continue to sign out selected device').click()
     })
 
-    const password = document.body.querySelector<HTMLInputElement>('input[type="password"][autocomplete="current-password"]')!
+    const password = document.body.querySelector<HTMLInputElement>(
+      'input[type="password"][autocomplete="current-password"]',
+    )!
     expect(password.getAttribute('aria-describedby')).toBe('revoke-device-description')
     await act(async () => setInputValue(password, 'one-use-password'))
     await act(async () => {
@@ -323,6 +376,22 @@ describe('SecurityDevicesPanel', () => {
     expect(document.body.textContent).not.toContain('Working…')
   })
 
+  it('shows whether a newly created backup code was protected and verified', async () => {
+    await act(async () => {
+      root.render(<SecurityDevicesPanel open onClose={() => {}} />)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await act(async () => {
+      findButton(document.body, 'Create backup code').click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(document.body.textContent).toContain('MESH-ONE-TWO-THREE-FOUR')
+    expect(document.body.textContent).toContain('protected credential store')
+    expect(document.body.textContent).toContain('verified against your encrypted backup')
+  })
+
   it('requires a password, typed phrase, and acknowledgement before remote account deletion', async () => {
     vi.mocked(matrixDeactivateAccount).mockResolvedValue()
     await act(async () => {
@@ -364,7 +433,9 @@ describe('SecurityDevicesPanel', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    const closeButton = document.body.querySelector<HTMLButtonElement>('button[aria-label="Close dialog"]')
+    const closeButton = document.body.querySelector<HTMLButtonElement>(
+      'button[aria-label="Close dialog"]',
+    )
     expect(closeButton).not.toBeNull()
     act(() => closeButton?.click())
     expect(onClose).toHaveBeenCalledOnce()
@@ -419,7 +490,9 @@ describe('SecurityDevicesPanel', () => {
     })
 
     expect(matrixSelectDeviceVerificationMethod).toHaveBeenCalledWith('verification-1', 'qr')
-    expect(document.body.querySelector('img[alt="Code to scan with your other device"]')).not.toBeNull()
+    expect(
+      document.body.querySelector('img[alt="Code to scan with your other device"]'),
+    ).not.toBeNull()
   })
 
   it('keeps protocol and cryptography jargon out of the rendered device workflow', async () => {
@@ -463,17 +536,19 @@ describe('SecurityDevicesPanel', () => {
 })
 
 function findButton(container: HTMLElement, label: string): HTMLButtonElement {
-  const button = [...container.querySelectorAll<HTMLButtonElement>('button')]
-    .find((candidate) => candidate.textContent?.includes(label))
+  const button = [...container.querySelectorAll<HTMLButtonElement>('button')].find((candidate) =>
+    candidate.textContent?.includes(label),
+  )
   if (!button) throw new Error(`Button not found: ${label}`)
   return button
 }
 
 function inputForLabel(container: HTMLElement, labelText: string): HTMLInputElement {
-  const label = [...container.querySelectorAll<HTMLLabelElement>('label')]
-    .find((candidate) => candidate.textContent === labelText)
+  const label = [...container.querySelectorAll<HTMLLabelElement>('label')].find(
+    (candidate) => candidate.textContent === labelText,
+  )
   const id = label?.htmlFor
-  const input = id ? container.ownerDocument.getElementById(id) as HTMLInputElement | null : null
+  const input = id ? (container.ownerDocument.getElementById(id) as HTMLInputElement | null) : null
   if (!input) throw new Error(`Input not found: ${labelText}`)
   return input
 }

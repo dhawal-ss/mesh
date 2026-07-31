@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mesh:release:readiness-schema:v1",
+  "title": "Mesh production readiness ledger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "ledgerId", "releaseSha", "updatedAt", "gates"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "ledgerId": { "const": "mesh-production-readiness" },
+    "releaseSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "gates": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/gate" }
+    }
+  },
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commitSha",
+        "command",
+        "artifactPath",
+        "environment",
+        "collectedAt",
+        "expiresAt"
+      ],
+      "properties": {
+        "commitSha": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "command": { "type": ["string", "null"] },
+        "artifactPath": { "type": ["string", "null"] },
+        "environment": { "type": ["string", "null"] },
+        "collectedAt": { "type": ["string", "null"], "format": "date-time" },
+        "expiresAt": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "waiver": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["approver", "reason", "expiresAt"],
+      "properties": {
+        "approver": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "milestone",
+        "required",
+        "releaseStatus",
+        "status",
+        "evidence",
+        "owner",
+        "capability",
+        "blockReason",
+        "nextAction",
+        "waiver"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+        },
+        "milestone": { "enum": ["R0", "R1", "R2", "R3", "R4"] },
+        "required": { "type": "boolean" },
+        "releaseStatus": { "enum": ["local-pass", "live-pass"] },
+        "status": {
+          "enum": ["unverified", "local-pass", "live-pass", "blocked", "waived"]
+        },
+        "evidence": { "$ref": "#/$defs/evidence" },
+        "owner": { "type": "string", "minLength": 1 },
+        "capability": { "type": "string", "minLength": 1 },
+        "blockReason": { "type": ["string", "null"] },
+        "nextAction": { "type": ["string", "null"] },
+        "waiver": { "$ref": "#/$defs/waiver" }
+      }
+    }
+  }
+}

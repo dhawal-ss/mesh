@@ -33,10 +33,37 @@ import { CONTEXT_SIDEBAR_WIDTH_KEY } from '../../lib/layout-preferences'
 import { usePersistentPanelWidth } from '../../hooks/usePersistentPanelWidth'
 import { PanelResizeHandle } from './PanelResizeHandle'
 import { NetworkStatus } from '../ui/NetworkStatus'
+import {
+  isVisibleMeshRegion,
+  MESH_REGION_SELECTOR,
+  nextMeshRegion,
+} from '../../lib/region-navigation'
+import {
+  emptyRoomTabState,
+  openRoomTab,
+  restoreRoomTabState,
+  roomTabKey,
+  roomTabStorageKey,
+  serializeRoomTabState,
+  type RoomTab,
+  type RoomTabState,
+} from '../../lib/room-tabs'
 
 const CommandPalette = lazy(() =>
   import('../navigation/CommandPalette').then((module) => ({ default: module.CommandPalette })),
 )
+
+function createLazyRoomTabStrip() {
+  return lazy(() =>
+    import('../navigation/RoomTabStrip')
+      .then((module) => ({ default: module.RoomTabStrip })),
+  )
+}
+
+function loadRoomTabs(accountId: string): RoomTabState {
+  if (typeof localStorage === 'undefined') return emptyRoomTabState(accountId)
+  return restoreRoomTabState(localStorage.getItem(roomTabStorageKey(accountId)), accountId)
+}
 
 export function AppLayout() {
   useCommunitySync()
@@ -44,10 +71,23 @@ export function AppLayout() {
   useQueuedMessageSync(matrixMode)
   const directMessagesAvailable = bridge.getBackendCapabilities().directMessages
   const activeChannelId = useChannelStore((state) => state.activeChannelId)
+  const activeChannel = useChannelStore((state) => (
+    state.activeChannelId ? state.channelEntities[state.activeChannelId] : undefined
+  ))
+  const channelEntities = useChannelStore((state) => state.channelEntities)
+  const setActiveChannel = useChannelStore((state) => state.setActiveChannel)
   const activeCommunityId = useCommunityStore((state) => state.activeCommunityId)
+  const setActiveCommunity = useCommunityStore((state) => state.setActiveCommunity)
   const patchChannel = useChannelStore((state) => state.patchChannel)
   const isDmMode = useDmStore((state) => state.isDmMode)
   const activeConversationId = useDmStore((state) => state.activeConversationId)
+  const activeConversation = useDmStore((state) => (
+    state.activeConversationId
+      ? state.conversationEntities[state.activeConversationId]
+      : undefined
+  ))
+  const conversationEntities = useDmStore((state) => state.conversationEntities)
+  const setActiveConversation = useDmStore((state) => state.setActiveConversation)
   const setDmMode = useDmStore((state) => state.setDmMode)
   const backup = useSettingsStore((state) => state.backup)
   const dismissBackupReminder = useSettingsStore((state) => state.dismissBackupReminder)
@@ -62,6 +102,9 @@ export function AppLayout() {
   })
 
   const myPublicKey = useIdentityStore((state) => state.identity?.publicKey)
+  const roomTabAccountId = myPublicKey ?? 'local-device'
+  const [roomTabs, setRoomTabs] = useState<RoomTabState>(() => loadRoomTabs(roomTabAccountId))
+  const [RoomTabStrip, setRoomTabStrip] = useState(createLazyRoomTabStrip)
   const navigationContextKey = `${activeCommunityId ?? ''}\u0000${activeChannelId ?? ''}\u0000${isDmMode}`
   const [openNavigationContextKey, setOpenNavigationContextKey] = useState<string | null>(null)
   const contextNavigationOpen = openNavigationContextKey === navigationContextKey
@@ -78,19 +121,145 @@ export function AppLayout() {
   const drawerActive = contextNavigationOpen && isCompactViewport
   // Naming the main landmark after the open conversation is far more useful for
   // landmark navigation than the previous static "Content area".
-  const activeChannelName = useChannelStore(
-    (state) => state.channels.find((channel) => channel.id === state.activeChannelId)?.name,
-  )
   const activeConversationLabel = isDmMode
     ? 'Direct message conversation'
-    : activeChannelName
-      ? `Conversation in ${activeChannelName}`
+    : activeChannel?.name
+      ? `Conversation in ${activeChannel.name}`
       : 'Conversation'
   useNotificationSync({ matrixMode, activeRoomId })
 
   useEffect(() => {
     if (!directMessagesAvailable && isDmMode) setDmMode(false)
   }, [directMessagesAvailable, isDmMode, setDmMode])
+
+  useEffect(() => {
+    // This is an external-storage/account boundary: switching accounts must
+    // replace, rather than merge, persisted room identifiers.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRoomTabs((current) => (
+      current.accountId === roomTabAccountId ? current : loadRoomTabs(roomTabAccountId)
+    ))
+  }, [roomTabAccountId])
+
+  useEffect(() => {
+    if (roomTabs.accountId !== roomTabAccountId || typeof localStorage === 'undefined') return
+    localStorage.setItem(roomTabStorageKey(roomTabAccountId), serializeRoomTabState(roomTabs))
+  }, [roomTabAccountId, roomTabs])
+
+  useEffect(() => {
+    let currentTab: RoomTab | null = null
+    if (isDmMode && activeConversation) {
+      currentTab = {
+        key: roomTabKey('dm', activeConversation.id),
+        kind: 'dm',
+        roomId: activeConversation.id,
+        communityId: null,
+        title: activeConversation.peerDisplayName,
+        pinned: false,
+        unreadCount: activeConversation.unreadCount,
+        mentionCount: activeConversation.unreadMentions ?? 0,
+        lastOpenedAt: Date.now(),
+      }
+    } else if (!isDmMode && activeChannel) {
+      currentTab = {
+        key: roomTabKey('room', activeChannel.id),
+        kind: 'room',
+        roomId: activeChannel.id,
+        communityId: activeChannel.communityId,
+        title: activeChannel.name,
+        pinned: false,
+        unreadCount: activeChannel.unreadCount,
+        mentionCount: activeChannel.unreadMentions ?? 0,
+        lastOpenedAt: Date.now(),
+      }
+    }
+    if (!currentTab) return
+    const tab = currentTab
+    // Channel/DM stores are external Zustand sources. Mirror only their
+    // current navigation identity into the bounded tab model.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRoomTabs((current) => (
+      current.accountId === roomTabAccountId ? openRoomTab(current, tab) : current
+    ))
+  }, [activeChannel, activeConversation, isDmMode, roomTabAccountId])
+
+  useEffect(() => {
+    // Keep badges and safe display labels fresh for every open tab, not only
+    // the active conversation. The existing Matrix unread listener owns the
+    // authoritative counts; tabs remain a bounded navigation projection.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRoomTabs((current) => {
+      if (current.accountId !== roomTabAccountId) return current
+      let changed = false
+      const tabs = current.tabs.map((tab) => {
+        const source = tab.kind === 'dm'
+          ? conversationEntities[tab.roomId]
+          : channelEntities[tab.roomId]
+        if (!source) return tab
+        const title = tab.kind === 'dm'
+          ? conversationEntities[tab.roomId]?.peerDisplayName ?? tab.title
+          : channelEntities[tab.roomId]?.name ?? tab.title
+        const mentionCount = source.unreadMentions ?? 0
+        if (
+          tab.title === title
+          && tab.unreadCount === source.unreadCount
+          && tab.mentionCount === mentionCount
+        ) {
+          return tab
+        }
+        changed = true
+        return {
+          ...tab,
+          title,
+          unreadCount: source.unreadCount,
+          mentionCount,
+        }
+      })
+      return changed ? { ...current, tabs } : current
+    })
+  }, [channelEntities, conversationEntities, roomTabAccountId])
+
+  const changeRoomTabs = (next: RoomTabState) => {
+    if (next.accountId !== roomTabAccountId) return
+    const activeTab = next.tabs.find((tab) => tab.key === next.activeKey)
+    if (activeTab && activeTab.key !== roomTabs.activeKey) {
+      if (activeTab.kind === 'dm') {
+        setDmMode(true)
+        setActiveConversation(activeTab.roomId)
+      } else {
+        setDmMode(false)
+        if (activeTab.communityId) setActiveCommunity(activeTab.communityId)
+        setActiveChannel(activeTab.roomId)
+      }
+    }
+    setRoomTabs(next)
+  }
+
+  useEffect(() => {
+    const handleRegionCycle = (event: KeyboardEvent) => {
+      if (
+        event.key !== 'F6'
+        || event.defaultPrevented
+        || event.altKey
+        || event.ctrlKey
+        || event.metaKey
+        || document.querySelector('[role="dialog"][aria-modal="true"]')
+      ) {
+        return
+      }
+
+      const regions = [...document.querySelectorAll<HTMLElement>(MESH_REGION_SELECTOR)]
+        .filter(isVisibleMeshRegion)
+      const nextRegion = nextMeshRegion(regions, document.activeElement, event.shiftKey)
+      if (!nextRegion) return
+
+      event.preventDefault()
+      nextRegion.focus({ preventScroll: true })
+    }
+
+    document.addEventListener('keydown', handleRegionCycle)
+    return () => document.removeEventListener('keydown', handleRegionCycle)
+  }, [])
 
   useLayoutEffect(() => {
     if (!drawerActive) return
@@ -241,6 +410,8 @@ export function AppLayout() {
         <nav
           className="mesh-community-rail flex flex-shrink-0 flex-col items-center overflow-y-auto border-r border-border-subtle bg-surface-sunken pt-2"
           aria-label="Communities and direct messages"
+          data-mesh-region
+          tabIndex={-1}
         >
           <ScopedErrorBoundary
             name="Community navigation"
@@ -273,7 +444,8 @@ export function AppLayout() {
             '--mesh-context-sidebar-width': `${contextSidebarWidth.width}px`,
           } as CSSProperties}
           aria-label={isDmMode && directMessagesAvailable ? 'Direct message conversations' : 'Room list'}
-          tabIndex={drawerActive ? -1 : undefined}
+          data-mesh-region
+          tabIndex={-1}
           /* Only a real drawer is a modal dialog. Above the compact breakpoint
              this is an ordinary static column and must not claim aria-modal. */
           data-state={drawerActive ? 'open' : undefined}
@@ -318,7 +490,30 @@ export function AppLayout() {
           tabIndex={-1}
           className="flex min-w-0 flex-1 flex-col bg-surface-base outline-none"
           aria-label={activeConversationLabel}
+          data-mesh-region
         >
+          <ScopedErrorBoundary
+            name="Conversation tabs"
+            description="Open conversations are still available from the room and direct-message lists."
+            resetKey={roomTabAccountId}
+            onRetry={() => setRoomTabStrip(createLazyRoomTabStrip())}
+          >
+            <Suspense
+              fallback={(
+                <div
+                  role="status"
+                  aria-label="Loading conversation tabs"
+                  className="flex min-h-10 flex-none items-center gap-2 border-b border-border-subtle bg-surface-sunken px-3"
+                >
+                  <span className="h-5 w-24 animate-pulse rounded-control bg-surface-hover" />
+                  <span className="h-5 w-20 animate-pulse rounded-control bg-surface-hover" />
+                  <span className="sr-only">Loading conversation tabs…</span>
+                </div>
+              )}
+            >
+              <RoomTabStrip state={roomTabs} onChange={changeRoomTabs} />
+            </Suspense>
+          </ScopedErrorBoundary>
           <div className="mesh-compact-header">
             <button
               type="button"

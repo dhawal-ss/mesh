@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { clearRendererAccountState } from './account-transition'
+import { roomTabStorageKey } from './room-tabs'
 import { useChannelStore } from '../store/channels'
 import { useCommunityStore } from '../store/communities'
 import { useDmStore } from '../store/dms'
@@ -18,6 +19,19 @@ import { useSettingsStore } from '../store/settings'
 describe('account transition', () => {
   beforeEach(() => {
     clearRendererAccountState()
+  })
+
+  it('deletes room-tab metadata only for an explicitly removed account', () => {
+    const removedKey = roomTabStorageKey('@removed:example.org')
+    const retainedKey = roomTabStorageKey('@retained:example.org')
+    localStorage.setItem(removedKey, 'removed-room-title')
+    localStorage.setItem(retainedKey, 'retained-room-title')
+
+    clearRendererAccountState('@removed:example.org')
+
+    expect(localStorage.getItem(removedKey)).toBeNull()
+    expect(localStorage.getItem(retainedKey)).toBe('retained-room-title')
+    localStorage.removeItem(retainedKey)
   })
 
   it('removes room, notification, draft, transfer, and voice projections', () => {
@@ -50,7 +64,13 @@ describe('account transition', () => {
     })
     useTypingStore.setState({
       typingByChannel: {
-        room: [{ author: '@old:example.org', displayName: 'Old account', expiresAt: Infinity }],
+        room: [
+          {
+            author: '@old:example.org',
+            displayName: 'Old account',
+            expiresAt: Infinity,
+          },
+        ],
       },
     })
     useDraftStore.setState({ drafts: { room: 'private unsent draft' } })
@@ -58,7 +78,10 @@ describe('account transition', () => {
       downloads: { secret: { localPath: 'C:\\private\\file.txt' } as never },
     })
     useMessageNavigationStore.setState({
-      pending: { requestId: 1, message: { id: 'secret-room-message' } as never },
+      pending: {
+        requestId: 1,
+        message: { id: 'secret-room-message' } as never,
+      },
     })
     useRoomPinStore.setState({
       roomId: 'room',
@@ -131,6 +154,7 @@ describe('account transition', () => {
         theme: 'high-contrast',
         density: 'compact',
         accent: 'violet',
+        transparency: 'opaque',
       },
       notifications: {
         ...useSettingsStore.getState().notifications,
@@ -141,6 +165,12 @@ describe('account transition', () => {
       privacy: {
         readReceiptMode: 'public',
         sendTypingIndicators: true,
+        conversationPrivacy: {
+          '!private:example.org': {
+            readReceiptMode: 'public',
+            sendTypingIndicators: true,
+          },
+        },
         sharePresence: true,
         invisibleMode: true,
       },
@@ -158,6 +188,7 @@ describe('account transition', () => {
         theme: 'high-contrast',
         density: 'compact',
         accent: 'violet',
+        transparency: 'opaque',
       },
       notifications: {
         enabled: true,
@@ -167,6 +198,7 @@ describe('account transition', () => {
       privacy: {
         readReceiptMode: 'off',
         sendTypingIndicators: false,
+        conversationPrivacy: {},
         sharePresence: false,
         invisibleMode: false,
       },

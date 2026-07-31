@@ -71,20 +71,31 @@ jobs:
           cargo install cargo-audit --version 0.22.2 --locked
           # cargo-audit scans the whole lockfile and is not feature-aware.
           # These advisories are confined to the optional legacy-p2p graph,
-          # whose exclusion from Matrix production is asserted above.
+          # Linux-only GTK target graph, or Tauri build tooling. Their exclusion
+          # from the current Windows Matrix runtime is asserted above; --deny
+          # unsound makes every advisory outside this reviewed list fail closed.
           cargo audit --file mesh/src-tauri/Cargo.lock \
+            --deny unsound \
             --ignore RUSTSEC-2026-0119 \
             --ignore RUSTSEC-2025-0009 \
             --ignore RUSTSEC-2026-0098 \
             --ignore RUSTSEC-2026-0099 \
             --ignore RUSTSEC-2026-0104 \
             --ignore RUSTSEC-2026-0194 \
-            --ignore RUSTSEC-2026-0195
+            --ignore RUSTSEC-2026-0195 \
+            --ignore RUSTSEC-2024-0429 \
+            --ignore RUSTSEC-2026-0002 \
+            --ignore RUSTSEC-2026-0097
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: mesh/package-lock.json
+      - name: Enforce the on-device and non-autonomous AI boundary
+        working-directory: mesh
+        run: |
+          node --test scripts/check-ai-boundary.test.mjs
+          node scripts/check-ai-boundary.mjs
       - name: Audit JavaScript dependencies
         working-directory: mesh
         run: npm audit --audit-level=high

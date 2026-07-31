@@ -39,6 +39,8 @@ import type {
   MatrixRoomUpgrade,
   MatrixRoomPins,
   MatrixRoomPinsUpdate,
+  MatrixRecoveryHealth,
+  MatrixRecoverySetupResult,
   NotificationPresentationContext,
   LegacyArchiveSummary,
   LegacyDryRunReport,
@@ -65,6 +67,8 @@ import type {
   ServerEmoji,
   VoiceServiceStatus,
 } from '../types/ipc'
+
+export type { MatrixRecoveryHealth, MatrixRecoverySetupResult }
 
 const tauriUnavailable = () =>
   normalizeError('Tauri runtime unavailable. Use `npm run tauri dev` for real IPC.')
@@ -117,14 +121,14 @@ function protectedImageContentType(bytes: Uint8Array): ProtectedImage['contentTy
   if (PNG_SIGNATURE.every((byte, index) => bytes[index] === byte)) return 'image/png'
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
   if (
-    bytes[0] === 0x52
-    && bytes[1] === 0x49
-    && bytes[2] === 0x46
-    && bytes[3] === 0x46
-    && bytes[8] === 0x57
-    && bytes[9] === 0x45
-    && bytes[10] === 0x42
-    && bytes[11] === 0x50
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
   ) {
     return 'image/webp'
   }
@@ -200,7 +204,10 @@ async function invokeRead<T>(
   const timeoutMs = Math.max(1, options.timeoutMs ?? READ_REQUEST_TIMEOUT_MS)
   const maxAttempts = Math.max(1, Math.min(5, options.maxAttempts ?? READ_MAX_ATTEMPTS))
   const retryBaseDelayMs = Math.max(0, options.retryBaseDelayMs ?? READ_RETRY_BASE_DELAY_MS)
-  const retryMaxDelayMs = Math.max(retryBaseDelayMs, options.retryMaxDelayMs ?? READ_RETRY_MAX_DELAY_MS)
+  const retryMaxDelayMs = Math.max(
+    retryBaseDelayMs,
+    options.retryMaxDelayMs ?? READ_RETRY_MAX_DELAY_MS,
+  )
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
@@ -237,11 +244,13 @@ async function tauriInvoke<T>(
 
     request = invokeRead<T>(command, args, options)
     inflightReadRequests.set(key, request)
-    void request.finally(() => {
-      if (inflightReadRequests.get(key) === request) inflightReadRequests.delete(key)
-    }).catch(() => {
-      // The original request carries the rejection to its caller.
-    })
+    void request
+      .finally(() => {
+        if (inflightReadRequests.get(key) === request) inflightReadRequests.delete(key)
+      })
+      .catch(() => {
+        // The original request carries the rejection to its caller.
+      })
   } else {
     try {
       request = Promise.resolve(invoke<T>(command, args))
@@ -403,17 +412,6 @@ export interface MatrixProfile {
   avatarUrl: string | null
 }
 
-export interface MatrixRecoveryHealth {
-  recoveryState: 'unknown' | 'enabled' | 'disabled' | 'incomplete'
-  backupState: 'unknown' | 'creating' | 'enabling' | 'resuming' | 'enabled' | 'downloading' | 'disabling'
-  backupExistsOnServer: boolean
-  backupEnabled: boolean
-  healthy: boolean
-  checkedAt: string
-  lastSuccessfulTestAt: string | null
-  warnings: string[]
-}
-
 export interface MatrixVerificationSession {
   verificationId: string
   deviceId: string
@@ -456,8 +454,12 @@ export async function getBackendStatus(): Promise<BackendStatus> {
   return cacheBackendStatus(status)
 }
 
-export async function storePendingInvitation(inviteLink: string): Promise<PendingInvitationMetadata> {
-  return tauriInvoke<PendingInvitationMetadata>('store_pending_invitation', { inviteLink })
+export async function storePendingInvitation(
+  inviteLink: string,
+): Promise<PendingInvitationMetadata> {
+  return tauriInvoke<PendingInvitationMetadata>('store_pending_invitation', {
+    inviteLink,
+  })
 }
 
 export async function readPendingInvitation(): Promise<string | null> {
@@ -496,7 +498,9 @@ export async function matrixLogin(request: MatrixLoginRequest): Promise<BackendS
 export async function matrixRegisterAccount(
   request: MatrixRegistrationRequest,
 ): Promise<BackendStatus> {
-  const status = await tauriInvoke<BackendStatus>('register_account', { request })
+  const status = await tauriInvoke<BackendStatus>('register_account', {
+    request,
+  })
   return cacheBackendStatus(status)
 }
 
@@ -600,7 +604,9 @@ export async function matrixUpdateProfileDisplayName(displayName: string): Promi
 }
 
 export async function matrixSwitchAccount(profileId: string): Promise<BackendStatus> {
-  const status = await tauriInvoke<BackendStatus>('matrix_switch_account', { profileId })
+  const status = await tauriInvoke<BackendStatus>('matrix_switch_account', {
+    profileId,
+  })
   return cacheBackendStatus(status)
 }
 
@@ -608,20 +614,31 @@ export async function matrixRecoveryHealth(): Promise<MatrixRecoveryHealth> {
   return tauriInvoke('matrix_recovery_health', undefined, READ_IPC_OPTIONS)
 }
 
-export async function matrixTestRecovery(recoveryKeyOrPassphrase: string): Promise<MatrixRecoveryHealth> {
-  const health = await tauriInvoke<MatrixRecoveryHealth>(
-    'matrix_test_recovery',
-    { recoveryKeyOrPassphrase },
-  )
+export async function matrixTestRecovery(
+  recoveryKeyOrPassphrase: string,
+): Promise<MatrixRecoveryHealth> {
+  const health = await tauriInvoke<MatrixRecoveryHealth>('matrix_test_recovery', {
+    recoveryKeyOrPassphrase,
+  })
   emitMatrixTrustChanged()
   return health
 }
 
-export async function matrixStartDeviceVerification(deviceId: string): Promise<MatrixVerificationSession> {
+export async function matrixTestStoredRecovery(): Promise<MatrixRecoveryHealth> {
+  const health = await tauriInvoke<MatrixRecoveryHealth>('matrix_test_stored_recovery')
+  emitMatrixTrustChanged()
+  return health
+}
+
+export async function matrixStartDeviceVerification(
+  deviceId: string,
+): Promise<MatrixVerificationSession> {
   return tauriInvoke('matrix_start_device_verification', { deviceId })
 }
 
-export async function matrixDeviceVerificationStatus(verificationId: string): Promise<MatrixVerificationSession> {
+export async function matrixDeviceVerificationStatus(
+  verificationId: string,
+): Promise<MatrixVerificationSession> {
   const session = await tauriInvoke<MatrixVerificationSession>(
     'matrix_device_verification_status',
     { verificationId },
@@ -635,7 +652,10 @@ export async function matrixSelectDeviceVerificationMethod(
   verificationId: string,
   method: 'sas' | 'qr',
 ): Promise<MatrixVerificationSession> {
-  return tauriInvoke('matrix_select_device_verification_method', { verificationId, method })
+  return tauriInvoke('matrix_select_device_verification_method', {
+    verificationId,
+    method,
+  })
 }
 
 export async function matrixConfirmDeviceVerification(
@@ -697,10 +717,7 @@ export async function setMatrixRoomNotificationMode(
   return tauriInvoke('matrix_set_room_notification_mode', { roomId, mode })
 }
 
-export async function matrixCreateCommunity(
-  name: string,
-  description: string,
-): Promise<Community> {
+export async function matrixCreateCommunity(name: string, description: string): Promise<Community> {
   const created = await tauriInvoke<{ community: Community; channel: Channel }>(
     'matrix_create_community',
     { name, description },
@@ -714,7 +731,11 @@ export async function matrixListCommunities(): Promise<Community[]> {
 }
 
 export async function matrixListChannels(communityId: string): Promise<Channel[]> {
-  const channels = await tauriInvoke<Channel[]>('matrix_list_channels', { communityId }, READ_IPC_OPTIONS)
+  const channels = await tauriInvoke<Channel[]>(
+    'matrix_list_channels',
+    { communityId },
+    READ_IPC_OPTIONS,
+  )
   const merged = new Map<string, Channel>()
   for (const channel of channels) {
     merged.set(channel.id, channel)
@@ -763,11 +784,7 @@ export async function matrixCreateChannel(
 
 export async function listServerEmoji(communityId: string): Promise<ServerEmoji[]> {
   if (!isMatrixBackend()) return []
-  return tauriInvoke(
-    'matrix_list_custom_emoji',
-    { communityId },
-    READ_IPC_OPTIONS,
-  )
+  return tauriInvoke('matrix_list_custom_emoji', { communityId }, READ_IPC_OPTIONS)
 }
 
 export async function uploadServerEmoji(
@@ -789,10 +806,7 @@ export async function uploadServerEmoji(
   })
 }
 
-export async function removeServerEmoji(
-  communityId: string,
-  shortcode: string,
-): Promise<void> {
+export async function removeServerEmoji(communityId: string, shortcode: string): Promise<void> {
   if (!isMatrixBackend()) return
   return tauriInvoke('matrix_remove_custom_emoji', { communityId, shortcode })
 }
@@ -809,9 +823,9 @@ export async function loadServerEmojiImage(
   )
   const normalized = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
   if (
-    normalized.byteLength === 0
-    || normalized.byteLength > MAX_CUSTOM_EMOJI_BYTES
-    || PNG_SIGNATURE.some((byte, index) => normalized[index] !== byte)
+    normalized.byteLength === 0 ||
+    normalized.byteLength > MAX_CUSTOM_EMOJI_BYTES ||
+    PNG_SIGNATURE.some((byte, index) => normalized[index] !== byte)
   ) {
     throw normalizeError('Community emoji failed local validation.')
   }
@@ -940,9 +954,9 @@ export async function matrixLoadAttachmentThumbnail(
   )
   const normalized = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
   if (
-    normalized.byteLength === 0
-    || normalized.byteLength > MAX_INLINE_THUMBNAIL_BYTES
-    || PNG_SIGNATURE.some((byte, index) => normalized[index] !== byte)
+    normalized.byteLength === 0 ||
+    normalized.byteLength > MAX_INLINE_THUMBNAIL_BYTES ||
+    PNG_SIGNATURE.some((byte, index) => normalized[index] !== byte)
   ) {
     throw normalizeError('Protected preview failed local validation')
   }
@@ -963,9 +977,9 @@ export async function matrixLoadAttachmentImage(
   const normalized = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
   const contentType = protectedImageContentType(normalized)
   if (
-    normalized.byteLength === 0
-    || normalized.byteLength > MAX_LIGHTBOX_IMAGE_BYTES
-    || !contentType
+    normalized.byteLength === 0 ||
+    normalized.byteLength > MAX_LIGHTBOX_IMAGE_BYTES ||
+    !contentType
   ) {
     throw normalizeError('Protected image failed local validation')
   }
@@ -1025,12 +1039,16 @@ export async function matrixGetMessages(
   limit: number,
   before?: { timestamp: string; id: string },
 ): Promise<Message[]> {
-  return tauriInvoke('matrix_get_messages', {
-    roomId,
-    limit,
-    beforeTimestamp: before?.timestamp,
-    beforeId: before?.id,
-  }, READ_IPC_OPTIONS)
+  return tauriInvoke(
+    'matrix_get_messages',
+    {
+      roomId,
+      limit,
+      beforeTimestamp: before?.timestamp,
+      beforeId: before?.id,
+    },
+    READ_IPC_OPTIONS,
+  )
 }
 
 export async function matrixRoomPins(roomId: string): Promise<MatrixRoomPins> {
@@ -1044,7 +1062,10 @@ export async function matrixToggleRoomPin(
   return tauriInvoke('matrix_toggle_room_pin', { roomId, eventId }, { toast: true })
 }
 
-export async function matrixWaitForRoomUpdate(roomId: string, timeoutMs = 25_000): Promise<boolean> {
+export async function matrixWaitForRoomUpdate(
+  roomId: string,
+  timeoutMs = 25_000,
+): Promise<boolean> {
   return tauriInvoke('matrix_wait_for_room_update', { roomId, timeoutMs })
 }
 
@@ -1061,10 +1082,14 @@ export async function matrixSyncOnce(): Promise<void> {
   return tauriInvoke('matrix_sync_once')
 }
 
-export async function matrixEnableRecovery(passphrase?: string): Promise<string> {
-  const recoveryKey = await tauriInvoke<string>('matrix_enable_recovery', { passphrase })
+export async function matrixEnableRecovery(
+  passphrase?: string,
+): Promise<MatrixRecoverySetupResult> {
+  const recovery = await tauriInvoke<MatrixRecoverySetupResult>('matrix_enable_recovery', {
+    passphrase,
+  })
   emitMatrixTrustChanged()
-  return recoveryKey
+  return recovery
 }
 
 export async function matrixRecover(recoveryKeyOrPassphrase: string): Promise<void> {
@@ -1095,12 +1120,19 @@ export async function approveLegacyImport(
   approvalToken: string,
   approvalPhrase: string,
 ): Promise<LegacyImportResult> {
-  return tauriInvoke('approve_legacy_import', { request, approvalToken, approvalPhrase })
+  return tauriInvoke('approve_legacy_import', {
+    request,
+    approvalToken,
+    approvalPhrase,
+  })
 }
 
 // ─── Identity Commands ──────────────────────────────
 
-export async function generateIdentity(displayName: string, avatarColor: string): Promise<Identity> {
+export async function generateIdentity(
+  displayName: string,
+  avatarColor: string,
+): Promise<Identity> {
   return tauriInvoke('generate_identity', { displayName, avatarColor })
 }
 
@@ -1146,7 +1178,9 @@ export async function getCommunities(): Promise<Community[]> {
     return []
   }
 
-  return isMatrixBackend() ? matrixListCommunities() : tauriInvoke('get_communities', undefined, READ_IPC_OPTIONS)
+  return isMatrixBackend()
+    ? matrixListCommunities()
+    : tauriInvoke('get_communities', undefined, READ_IPC_OPTIONS)
 }
 
 export async function joinCommunity(inviteLink: string): Promise<Community> {
@@ -1198,12 +1232,12 @@ export async function claimCommunityInvite(inviteLink: string): Promise<Communit
       false,
     )
   }
-  return tauriInvoke('matrix_claim_community_invite', { inviteUrl: inviteLink })
+  return tauriInvoke('matrix_claim_community_invite', {
+    inviteUrl: inviteLink,
+  })
 }
 
-export async function joinOrRequestCommunity(
-  inviteLink: string,
-): Promise<CommunityAccessResult> {
+export async function joinOrRequestCommunity(inviteLink: string): Promise<CommunityAccessResult> {
   const parsed = isMatrixBackend() ? parseMatrixCommunityInvite(inviteLink) : null
   try {
     return {
@@ -1280,11 +1314,15 @@ export async function searchCommunityDirectory(
   server?: string,
   limit = 20,
 ): Promise<CommunityDirectoryEntry[]> {
-  return tauriInvoke('matrix_search_community_directory', {
-    query,
-    server: server?.trim() || null,
-    limit,
-  }, READ_IPC_OPTIONS)
+  return tauriInvoke(
+    'matrix_search_community_directory',
+    {
+      query,
+      server: server?.trim() || null,
+      limit,
+    },
+    READ_IPC_OPTIONS,
+  )
 }
 
 export async function requestCommunityAccess(
@@ -1323,7 +1361,9 @@ export async function generateInviteLink(communityId: string): Promise<string> {
   if (!isMatrixBackend()) {
     return tauriInvoke('generate_invite_link', { communityId })
   }
-  const invite = await tauriInvoke<string>('matrix_create_community_invite', { communityId })
+  const invite = await tauriInvoke<string>('matrix_create_community_invite', {
+    communityId,
+  })
   if (!parseCommunityInvite(invite)) {
     throw new AppError(
       'community_invite_invalid',
@@ -1346,11 +1386,19 @@ export async function getChannels(communityId: string): Promise<Channel[]> {
     : tauriInvoke('get_channels', { communityId }, READ_IPC_OPTIONS)
 }
 
-export async function createChannel(communityId: string, name: string, type: 'text' | 'voice'): Promise<Channel> {
+export async function createChannel(
+  communityId: string,
+  name: string,
+  type: 'text' | 'voice',
+): Promise<Channel> {
   if (isMatrixBackend()) {
     return matrixCreateChannel(communityId, name, type)
   }
-  return tauriInvoke('create_channel', { communityId, name, channelType: type })
+  return tauriInvoke('create_channel', {
+    communityId,
+    name,
+    channelType: type,
+  })
 }
 
 export async function updateCommunityMetadata(
@@ -1359,9 +1407,17 @@ export async function updateCommunityMetadata(
   description: string,
 ): Promise<void> {
   if (isMatrixBackend()) {
-    return tauriInvoke('matrix_update_community', { communityId, name, description })
+    return tauriInvoke('matrix_update_community', {
+      communityId,
+      name,
+      description,
+    })
   }
-  return tauriInvoke('update_community_metadata', { communityId, name, description })
+  return tauriInvoke('update_community_metadata', {
+    communityId,
+    name,
+    description,
+  })
 }
 
 export async function syncLocalChannel(
@@ -1370,7 +1426,12 @@ export async function syncLocalChannel(
   name: string,
   type: 'text' | 'voice',
 ): Promise<void> {
-  return tauriInvoke('sync_local_channel', { communityId, channelId, name, channelType: type })
+  return tauriInvoke('sync_local_channel', {
+    communityId,
+    channelId,
+    name,
+    channelType: type,
+  })
 }
 
 // ─── Message Commands ───────────────────────────────
@@ -1389,7 +1450,12 @@ export async function sendMessage(
     }
     return matrixSendMessage(channelId, content, replyToId, transactionId, threadRootId)
   }
-  return tauriInvoke('send_message', { channelId, content, attachments, replyToId })
+  return tauriInvoke('send_message', {
+    channelId,
+    content,
+    attachments,
+    replyToId,
+  })
 }
 
 export async function getMessages(
@@ -1400,12 +1466,16 @@ export async function getMessages(
   if (isMatrixBackend()) {
     return matrixGetMessages(channelId, limit, before)
   }
-  return tauriInvoke('get_messages', {
-    channelId,
-    limit,
-    beforeTimestamp: before?.timestamp,
-    beforeId: before?.id,
-  }, READ_IPC_OPTIONS)
+  return tauriInvoke(
+    'get_messages',
+    {
+      channelId,
+      limit,
+      beforeTimestamp: before?.timestamp,
+      beforeId: before?.id,
+    },
+    READ_IPC_OPTIONS,
+  )
 }
 
 export async function markChannelRead(channelId: string): Promise<void> {
@@ -1430,10 +1500,18 @@ export async function requestMessageHistory(
   })
 }
 
-export async function editMessage(messageId: string, content: string, channelId?: string): Promise<Message | void> {
+export async function editMessage(
+  messageId: string,
+  content: string,
+  channelId?: string,
+): Promise<Message | void> {
   if (isMatrixBackend()) {
     if (!channelId) throw new Error('Matrix room ID is required to edit a message')
-    return tauriInvoke('matrix_edit_message', { roomId: channelId, eventId: messageId, body: content })
+    return tauriInvoke('matrix_edit_message', {
+      roomId: channelId,
+      eventId: messageId,
+      body: content,
+    })
   }
   return tauriInvoke('edit_message', { messageId, content })
 }
@@ -1441,12 +1519,19 @@ export async function editMessage(messageId: string, content: string, channelId?
 export async function deleteMessage(messageId: string, channelId?: string): Promise<void> {
   if (isMatrixBackend()) {
     if (!channelId) throw new Error('Matrix room ID is required to redact a message')
-    return tauriInvoke('matrix_redact_message', { roomId: channelId, eventId: messageId })
+    return tauriInvoke('matrix_redact_message', {
+      roomId: channelId,
+      eventId: messageId,
+    })
   }
   return tauriInvoke('delete_message', { messageId })
 }
 
-export async function reportMessage(messageId: string, channelId: string, reason: string): Promise<void> {
+export async function reportMessage(
+  messageId: string,
+  channelId: string,
+  reason: string,
+): Promise<void> {
   if (!isMatrixBackend()) {
     throw new Error('Message reporting is available only for Matrix-compatible services')
   }
@@ -1457,10 +1542,18 @@ export async function reportMessage(messageId: string, channelId: string, reason
   })
 }
 
-export async function addReaction(messageId: string, emoji: string, channelId?: string): Promise<string | boolean> {
+export async function addReaction(
+  messageId: string,
+  emoji: string,
+  channelId?: string,
+): Promise<string | boolean> {
   if (isMatrixBackend()) {
     if (!channelId) throw new Error('Matrix room ID is required to react to a message')
-    return tauriInvoke('matrix_toggle_reaction', { roomId: channelId, eventId: messageId, key: emoji })
+    return tauriInvoke('matrix_toggle_reaction', {
+      roomId: channelId,
+      eventId: messageId,
+      key: emoji,
+    })
   }
   return tauriInvoke('add_reaction', { messageId, emoji })
 }
@@ -1489,7 +1582,11 @@ export interface ChannelEvent {
   timestamp: string
 }
 
-export async function getChannelEventLog(channelId: string, sinceSequence: number, limit?: number): Promise<{
+export async function getChannelEventLog(
+  channelId: string,
+  sinceSequence: number,
+  limit?: number,
+): Promise<{
   channelId: string
   events: ChannelEvent[]
   latestSequence: number
@@ -1536,15 +1633,15 @@ export interface IceServerConfig {
   credential?: string
 }
 
+const BROWSER_PREVIEW_ICE_SERVERS: IceServerConfig[] = [
+  { urls: ['stun:stun.l.google.com:19302'] },
+]
+
 export async function getIceServers(): Promise<IceServerConfig[]> {
-  try {
-    return await tauriInvoke<IceServerConfig[]>('get_ice_servers', undefined, READ_IPC_OPTIONS)
-  } catch {
-    // Fallback if backend doesn't support this yet
-    return [
-      { urls: ['stun:stun.l.google.com:19302'] },
-    ]
-  }
+  // Browser preview has no native backend. Keep its deterministic STUN-only
+  // fixture, but never hide a configured Tauri backend failure from callers.
+  if (!isTauri()) return BROWSER_PREVIEW_ICE_SERVERS
+  return tauriInvoke<IceServerConfig[]>('get_ice_servers', undefined, READ_IPC_OPTIONS)
 }
 
 export interface IceServerStatus {
@@ -1571,17 +1668,13 @@ export async function getIceServerStatus(): Promise<IceServerStatus> {
 
 /// Validate ICE server config without persisting it. Returns the status with
 /// any warnings. Fatal errors (malformed URLs, invalid ports) appear as warnings.
-export async function validateIceServers(
-  servers: IceServerConfig[],
-): Promise<IceServerStatus> {
+export async function validateIceServers(servers: IceServerConfig[]): Promise<IceServerStatus> {
   return tauriInvoke<IceServerStatus>('validate_ice_servers', { servers })
 }
 
 /// Persist a custom ICE server configuration. Rejects configs with fatal
 /// errors (malformed URLs, missing credentials on TURN, invalid ports).
-export async function setIceServers(
-  servers: IceServerConfig[],
-): Promise<IceServerStatus> {
+export async function setIceServers(servers: IceServerConfig[]): Promise<IceServerStatus> {
   return tauriInvoke<IceServerStatus>('set_ice_servers', { servers })
 }
 
@@ -1600,12 +1693,11 @@ export interface IceServerProbeResult {
 /// Probe all configured ICE servers for reachability. Returns per-URL results
 /// that distinguish malformed, unreachable, no_credentials, ok.
 export async function probeIceServers(): Promise<IceServerProbeResult[]> {
-  try {
-    return await tauriInvoke<IceServerProbeResult[]>('probe_ice_servers', undefined, READ_IPC_OPTIONS)
-  } catch (e) {
-    console.warn('Failed to probe ICE servers:', e)
-    return []
-  }
+  return tauriInvoke<IceServerProbeResult[]>(
+    'probe_ice_servers',
+    undefined,
+    READ_IPC_OPTIONS,
+  )
 }
 
 // ─── System Diagnostics ────────────────────────────
@@ -1783,7 +1875,10 @@ export async function matrixRtcRenewMediaKeyLease(
   })
 }
 
-export async function joinVoice(communityId: string, channelId: string): Promise<VoiceSessionSnapshot> {
+export async function joinVoice(
+  communityId: string,
+  channelId: string,
+): Promise<VoiceSessionSnapshot> {
   requireLegacyVoice('join a voice room')
   return tauriInvoke('join_voice', { communityId, channelId })
 }
@@ -1803,17 +1898,32 @@ export async function setDeafened(deafened: boolean): Promise<void> {
   return tauriInvoke('set_deafened', { deafened })
 }
 
-export async function sendVoiceSignal(peerId: string, signal: unknown, communityId: string, channelId: string): Promise<void> {
+export async function sendVoiceSignal(
+  peerId: string,
+  signal: unknown,
+  communityId: string,
+  channelId: string,
+): Promise<void> {
   requireLegacyVoice('send legacy WebRTC signaling')
   // Validate that the signal payload is serializable before sending to Tauri
   try {
-    JSON.stringify(signal)
-  } catch (err) {
-    console.error('[bridge] sendVoiceSignal: signal is not serializable, dropping', err)
-    return
+    if (JSON.stringify(signal) === undefined) {
+      throw new TypeError('Signal payload serialized to undefined')
+    }
+  } catch {
+    throw new AppError(
+      'serialization_error',
+      'Voice signaling data could not be sent because the payload is not serializable.',
+      false,
+    )
   }
 
-  const payload: VoiceSignalPayload = { peerId, signal, communityId, channelId }
+  const payload: VoiceSignalPayload = {
+    peerId,
+    signal,
+    communityId,
+    channelId,
+  }
   return tauriInvoke('send_voice_signal', {
     peerId: payload.peerId,
     signal: payload.signal,
@@ -1844,20 +1954,48 @@ interface NotificationTone {
 
 const NOTIFICATION_TONES: Record<NotificationSoundId, NotificationTone[]> = {
   mesh: [
-    { frequency: 523.25, offset: 0, duration: 0.12, volume: 0.12, type: 'sine' },
-    { frequency: 783.99, offset: 0.1, duration: 0.18, volume: 0.1, type: 'sine' },
+    {
+      frequency: 523.25,
+      offset: 0,
+      duration: 0.12,
+      volume: 0.12,
+      type: 'sine',
+    },
+    {
+      frequency: 783.99,
+      offset: 0.1,
+      duration: 0.18,
+      volume: 0.1,
+      type: 'sine',
+    },
   ],
   chime: [
     { frequency: 659.25, offset: 0, duration: 0.16, volume: 0.1, type: 'sine' },
-    { frequency: 987.77, offset: 0.13, duration: 0.24, volume: 0.08, type: 'sine' },
+    {
+      frequency: 987.77,
+      offset: 0.13,
+      duration: 0.24,
+      volume: 0.08,
+      type: 'sine',
+    },
   ],
   pulse: [
-    { frequency: 440, offset: 0, duration: 0.08, volume: 0.08, type: 'triangle' },
-    { frequency: 440, offset: 0.13, duration: 0.08, volume: 0.08, type: 'triangle' },
+    {
+      frequency: 440,
+      offset: 0,
+      duration: 0.08,
+      volume: 0.08,
+      type: 'triangle',
+    },
+    {
+      frequency: 440,
+      offset: 0.13,
+      duration: 0.08,
+      volume: 0.08,
+      type: 'triangle',
+    },
   ],
-  soft: [
-    { frequency: 392, offset: 0, duration: 0.24, volume: 0.06, type: 'sine' },
-  ],
+  soft: [{ frequency: 392, offset: 0, duration: 0.24, volume: 0.06, type: 'sine' }],
 }
 
 let notificationAudioContext: AudioContext | null = null
@@ -1890,7 +2028,10 @@ export function playNotificationSound(soundId: NotificationSoundId = 'mesh') {
     const context = notificationAudioContext
     const play = () => playNotificationTones(context, NOTIFICATION_TONES[soundId])
     if (context.state === 'suspended') {
-      void context.resume().then(play).catch(() => {})
+      void context
+        .resume()
+        .then(play)
+        .catch(() => {})
     } else {
       play()
     }
@@ -1940,11 +2081,20 @@ export function onReactionReceived(handler: (data: ReactionEvent) => void): Prom
   return tauriListen('reaction:received', handler)
 }
 
-export function onMessageEdited(handler: (data: { messageId: string; channelId: string; content: string; editedAt: string }) => void): Promise<UnlistenFn> {
+export function onMessageEdited(
+  handler: (data: {
+    messageId: string
+    channelId: string
+    content: string
+    editedAt: string
+  }) => void,
+): Promise<UnlistenFn> {
   return tauriListen('message:edited', handler)
 }
 
-export function onMessageDeleted(handler: (data: { messageId: string; channelId: string }) => void): Promise<UnlistenFn> {
+export function onMessageDeleted(
+  handler: (data: { messageId: string; channelId: string }) => void,
+): Promise<UnlistenFn> {
   return tauriListen('message:deleted', handler)
 }
 
@@ -1969,12 +2119,16 @@ export function onVoiceSignal(handler: (data: VoiceSignalEvent) => void): Promis
   return tauriListen('voice:signal', handler)
 }
 
-export function onVoiceJoin(handler: (data: { author: string; communityId: string; channelId: string }) => void): Promise<UnlistenFn> {
+export function onVoiceJoin(
+  handler: (data: { author: string; communityId: string; channelId: string }) => void,
+): Promise<UnlistenFn> {
   if (isMatrixBackend()) return Promise.resolve(() => {})
   return tauriListen('voice:join', handler)
 }
 
-export function onVoiceLeave(handler: (data: { author: string; communityId: string; channelId: string }) => void): Promise<UnlistenFn> {
+export function onVoiceLeave(
+  handler: (data: { author: string; communityId: string; channelId: string }) => void,
+): Promise<UnlistenFn> {
   if (isMatrixBackend()) return Promise.resolve(() => {})
   return tauriListen('voice:leave', handler)
 }
@@ -1984,7 +2138,9 @@ export function onVoiceSession(handler: (data: VoiceSessionSnapshot) => void): P
   return tauriListen('voice:session:snapshot', handler)
 }
 
-export function onVoiceSessionEvent(handler: (data: VoiceSessionEvent) => void): Promise<UnlistenFn> {
+export function onVoiceSessionEvent(
+  handler: (data: VoiceSessionEvent) => void,
+): Promise<UnlistenFn> {
   if (isMatrixBackend()) return Promise.resolve(() => {})
   return tauriListen('voice:session:event', handler)
 }
@@ -2057,19 +2213,27 @@ export async function getDmMessages(
   before?: { timestamp: string; id: string },
 ): Promise<DirectMessage[]> {
   if (isMatrixBackend()) {
-    return tauriInvoke('matrix_dm_messages', {
+    return tauriInvoke(
+      'matrix_dm_messages',
+      {
+        conversationId,
+        limit,
+        beforeTimestamp: before?.timestamp,
+        beforeId: before?.id,
+      },
+      READ_IPC_OPTIONS,
+    )
+  }
+  return tauriInvoke(
+    'get_dm_messages',
+    {
       conversationId,
       limit,
       beforeTimestamp: before?.timestamp,
       beforeId: before?.id,
-    }, READ_IPC_OPTIONS)
-  }
-  return tauriInvoke('get_dm_messages', {
-    conversationId,
-    limit,
-    beforeTimestamp: before?.timestamp,
-    beforeId: before?.id,
-  }, READ_IPC_OPTIONS)
+    },
+    READ_IPC_OPTIONS,
+  )
 }
 
 export async function markDmRead(conversationId: string): Promise<void> {
@@ -2077,7 +2241,10 @@ export async function markDmRead(conversationId: string): Promise<void> {
   return tauriInvoke('mark_dm_read', { conversationId })
 }
 
-export async function matrixSetDmBlocked(recipientUserId: string, blocked: boolean): Promise<boolean> {
+export async function matrixSetDmBlocked(
+  recipientUserId: string,
+  blocked: boolean,
+): Promise<boolean> {
   return tauriInvoke('matrix_set_dm_blocked', { recipientUserId, blocked })
 }
 
@@ -2129,7 +2296,11 @@ export async function banUser(
   reason?: string,
 ): Promise<CommunityModerationResult | null> {
   if (isMatrixBackend()) {
-    return tauriInvoke('matrix_ban_member', { communityId, userId: bannedPublicKey, reason })
+    return tauriInvoke('matrix_ban_member', {
+      communityId,
+      userId: bannedPublicKey,
+      reason,
+    })
   }
   await tauriInvoke('ban_user', { communityId, bannedPublicKey })
   return null
@@ -2141,17 +2312,33 @@ export async function kickUser(
   reason?: string,
 ): Promise<CommunityModerationResult | null> {
   if (isMatrixBackend()) {
-    return tauriInvoke('matrix_kick_member', { communityId, userId: targetPublicKey, reason })
+    return tauriInvoke('matrix_kick_member', {
+      communityId,
+      userId: targetPublicKey,
+      reason,
+    })
   }
   await tauriInvoke('kick_user', { communityId, targetPublicKey, reason })
   return null
 }
 
-export async function timeoutUser(communityId: string, targetPublicKey: string, durationMinutes: number, reason?: string): Promise<void> {
+export async function timeoutUser(
+  communityId: string,
+  targetPublicKey: string,
+  durationMinutes: number,
+  reason?: string,
+): Promise<void> {
   if (isMatrixBackend()) {
-    throw new Error('Temporary Matrix moderation requires a durable policy/role restoration service')
+    throw new Error(
+      'Temporary Matrix moderation requires a durable policy/role restoration service',
+    )
   }
-  return tauriInvoke('timeout_user', { communityId, targetPublicKey, durationMinutes, reason })
+  return tauriInvoke('timeout_user', {
+    communityId,
+    targetPublicKey,
+    durationMinutes,
+    reason,
+  })
 }
 
 export async function updateMemberRole(
@@ -2160,7 +2347,11 @@ export async function updateMemberRole(
   role: string,
 ): Promise<CommunityModerationResult | null> {
   if (isMatrixBackend()) {
-    return tauriInvoke('matrix_update_member_role', { communityId, userId: publicKey, role })
+    return tauriInvoke('matrix_update_member_role', {
+      communityId,
+      userId: publicKey,
+      role,
+    })
   }
   await tauriInvoke('update_member_role', { communityId, publicKey, role })
   return null
@@ -2188,18 +2379,18 @@ export async function getCommunityPermissionProjection(
   )
 }
 
-export async function getMembers(
-  communityId: string,
-): Promise<{
-  publicKey: string
-  displayName: string
-  avatarColor: string
-  role: string
-  joinStatus: string
-  banStatus: string
-  lastSeen: string | null
-  online?: boolean
-}[]> {
+export async function getMembers(communityId: string): Promise<
+  {
+    publicKey: string
+    displayName: string
+    avatarColor: string
+    role: string
+    joinStatus: string
+    banStatus: string
+    lastSeen: string | null
+    online?: boolean
+  }[]
+> {
   if (!isTauri()) {
     return []
   }
@@ -2227,13 +2418,17 @@ export function onControlEvent(handler: (data: ControlEventData) => void): Promi
 
 // ─── Presence Events ────────────────────────────────
 
-export function onPresenceUpdate(handler: (data: { author: string; communityId: string; status: string }) => void): Promise<UnlistenFn> {
+export function onPresenceUpdate(
+  handler: (data: { author: string; communityId: string; status: string }) => void,
+): Promise<UnlistenFn> {
   return tauriListen('presence:update', handler)
 }
 
 // ─── File Events ────────────────────────────────────
 
-export function onFileDownloadProgress(handler: (data: FileDownloadProgress) => void): Promise<UnlistenFn> {
+export function onFileDownloadProgress(
+  handler: (data: FileDownloadProgress) => void,
+): Promise<UnlistenFn> {
   return tauriListen('file:download-progress', handler)
 }
 
