@@ -16,6 +16,11 @@ const MILESTONES = ['R0', 'R1', 'R2', 'R3', 'R4']
 const STATUSES = ['unverified', 'local-pass', 'live-pass', 'blocked', 'waived']
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/
 
+export function ledgerPathFromGitRoot(gitRoot) {
+  const pathFromGitRoot = relative(resolve(gitRoot), ledgerPath).replaceAll('\\', '/')
+  return pathFromGitRoot || LEDGER_RELATIVE_PATH
+}
+
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim() === value && value.length > 0
 }
@@ -125,6 +130,19 @@ export function validateReadinessLedger(ledger, {
 async function validateLedgerOnlyCommit(ledger, commitSha) {
   if (ledger.releaseSha === commitSha) return []
 
+  let gitRoot
+  try {
+    const result = await execFileAsync('git', [
+      '-C',
+      repoRoot,
+      'rev-parse',
+      '--show-toplevel',
+    ], { windowsHide: true })
+    gitRoot = result.stdout.trim()
+  } catch {
+    return ['could not determine the Git root while validating the readiness ledger source delta']
+  }
+
   try {
     await execFileAsync('git', [
       '-C',
@@ -156,10 +174,11 @@ async function validateLedgerOnlyCommit(ledger, commitSha) {
     return [`could not inspect the source delta between ${ledger.releaseSha} and ${commitSha}`]
   }
 
-  const unexpectedPaths = changedPaths.filter((path) => path !== LEDGER_RELATIVE_PATH)
+  const ledgerGitPath = ledgerPathFromGitRoot(gitRoot)
+  const unexpectedPaths = changedPaths.filter((path) => path !== ledgerGitPath)
   if (unexpectedPaths.length > 0) {
     return [
-      `releaseSha ${ledger.releaseSha} is stale: the requested commit changed source files besides ${LEDGER_RELATIVE_PATH}: ${unexpectedPaths.join(', ')}`,
+      `releaseSha ${ledger.releaseSha} is stale: the requested commit changed source files besides ${ledgerGitPath}: ${unexpectedPaths.join(', ')}`,
     ]
   }
 

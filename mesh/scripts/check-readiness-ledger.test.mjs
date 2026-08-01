@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { validateReadinessLedger } from './check-readiness-ledger.mjs'
+import { ledgerPathFromGitRoot, validateReadinessLedger } from './check-readiness-ledger.mjs'
 
 const sha = 'a'.repeat(40)
 const baseEvidence = {
@@ -41,6 +41,13 @@ function ledger(overrides = {}) {
 }
 
 describe('readiness ledger validator', () => {
+  it('normalizes the ledger path relative to the actual Git root', () => {
+    assert.equal(
+      ledgerPathFromGitRoot('D:\\Creations\\Applications\\mesh'),
+      'mesh/release/readiness.json',
+    )
+  })
+
   it('requires live evidence to be tied to the release SHA', () => {
     const errors = validateReadinessLedger(ledger(), { now: new Date('2026-08-01T00:00:00Z') })
     assert.ok(errors.some((error) => error.includes('artifact is missing')))
