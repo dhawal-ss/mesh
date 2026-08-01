@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "ledgerId": "mesh-production-readiness",
-  "releaseSha": "b2427b637b659939bebb11ba620c8c434243acc9",
-  "updatedAt": "2026-07-31T20:38:19Z",
+  "releaseSha": "e33713bb330feb6bbda547b3b78b9a15679e7406",
+  "updatedAt": "2026-08-01T01:39:44Z",
   "gates": [
     {
       "id": "r0.frontend-tests",
@@ -11,11 +11,11 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "b2427b637b659939bebb11ba620c8c434243acc9",
-        "command": "npm test -- --maxWorkers=1 (98 files, 700 tests passed)",
+        "commitSha": "e33713bb330feb6bbda547b3b78b9a15679e7406",
+        "command": "npm test -- --maxWorkers=1 (98 files, 707 tests passed)",
         "artifactPath": null,
-        "environment": "Windows local workspace; Node v24.11.1; Vitest v4.1.2",
-        "collectedAt": "2026-07-31T19:52:26Z",
+        "environment": "Windows local workspace; Node v24.11.1; Vitest v4.1.2; maxWorkers=1",
+        "collectedAt": "2026-08-01T01:39:44Z",
         "expiresAt": null
       },
       "owner": "Mesh client",
@@ -31,11 +31,11 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "b2427b637b659939bebb11ba620c8c434243acc9",
-        "command": "npm run build (Matrix frontend build passed)",
+        "commitSha": "e33713bb330feb6bbda547b3b78b9a15679e7406",
+        "command": "npm run build (Matrix frontend build passed); npm run check:bundle-size (eager 441.26 KiB; all JS 1884.01 KiB)",
         "artifactPath": null,
-        "environment": "Windows local workspace; Node v24.11.1; Vite v7.3.6",
-        "collectedAt": "2026-07-31T20:05:30Z",
+        "environment": "Windows local workspace; Node v24.11.1; Vite v7.3.6; Matrix mode",
+        "collectedAt": "2026-08-01T01:39:44Z",
         "expiresAt": null
       },
       "owner": "Mesh client",
@@ -51,11 +51,11 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "b2427b637b659939bebb11ba620c8c434243acc9",
-        "command": "npm run test:rust:matrix (169 tests passed; 2 live tests ignored)",
+        "commitSha": "e33713bb330feb6bbda547b3b78b9a15679e7406",
+        "command": "npm run test:rust:matrix (170 tests passed; 2 live tests ignored)",
         "artifactPath": null,
-        "environment": "Windows local workspace; Rust 1.93.0; Cargo jobs=1",
-        "collectedAt": "2026-07-31T20:14:30Z",
+        "environment": "Windows local workspace; Cargo 1.92.0; Cargo jobs=1",
+        "collectedAt": "2026-08-01T01:39:44Z",
         "expiresAt": null
       },
       "owner": "Mesh backend",
@@ -71,11 +71,11 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "b2427b637b659939bebb11ba620c8c434243acc9",
-        "command": "npm run test:rust:legacy (206 tests passed; live/soak tests ignored)",
+        "commitSha": "e33713bb330feb6bbda547b3b78b9a15679e7406",
+        "command": "npm run test:rust:legacy (206 tests passed; 15 LAN soak and 3 live TURN tests ignored; 2 deterministic TURN tests passed)",
         "artifactPath": null,
-        "environment": "Windows local workspace; Rust 1.93.0; Cargo jobs=1",
-        "collectedAt": "2026-07-31T20:24:00Z",
+        "environment": "Windows local workspace; Cargo 1.92.0; Cargo jobs=1",
+        "collectedAt": "2026-08-01T01:39:44Z",
         "expiresAt": null
       },
       "owner": "Mesh backend",
@@ -91,11 +91,11 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "b2427b637b659939bebb11ba620c8c434243acc9",
+        "commitSha": "e33713bb330feb6bbda547b3b78b9a15679e7406",
         "command": "npm run e2e -- --workers=1 (66 tests passed)",
         "artifactPath": null,
-        "environment": "Windows local workspace; Playwright Chromium; one worker",
-        "collectedAt": "2026-07-31T20:37:53Z",
+        "environment": "Windows local workspace; Playwright Chromium; one worker; runtime budget sourceSha bound to current commit",
+        "collectedAt": "2026-08-01T01:39:44Z",
         "expiresAt": null
       },
       "owner": "Mesh client",
@@ -111,11 +111,11 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "b2427b637b659939bebb11ba620c8c434243acc9",
+        "commitSha": "e33713bb330feb6bbda547b3b78b9a15679e7406",
         "command": "npm run check:ipc-contract (173 commands) and npm run check:ipc-types",
         "artifactPath": null,
-        "environment": "Windows local workspace; generated Rust-to-TypeScript contract",
-        "collectedAt": "2026-07-31T20:07:00Z",
+        "environment": "Windows local workspace; generated Rust-to-TypeScript contract; 173 commands",
+        "collectedAt": "2026-08-01T01:39:44Z",
         "expiresAt": null
       },
       "owner": "Mesh client/backend boundary",
@@ -131,11 +131,11 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "b2427b637b659939bebb11ba620c8c434243acc9",
+        "commitSha": "e33713bb330feb6bbda547b3b78b9a15679e7406",
         "command": "npm run check:security-invariants (19 Matrix, 13 legacy passed)",
         "artifactPath": null,
-        "environment": "Windows local workspace; Cargo jobs=1",
-        "collectedAt": "2026-07-31T20:35:00Z",
+        "environment": "Windows local workspace; Cargo 1.92.0; serialized feature-set runs",
+        "collectedAt": "2026-08-01T01:39:44Z",
         "expiresAt": null
       },
       "owner": "Mesh security",
@@ -151,11 +151,11 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "b2427b637b659939bebb11ba620c8c434243acc9",
+        "commitSha": "e33713bb330feb6bbda547b3b78b9a15679e7406",
         "command": "npm run check:public-services and npm run check:public-site",
         "artifactPath": null,
-        "environment": "Windows local workspace; public HTTPS service discovery",
-        "collectedAt": "2026-07-31T20:07:38Z",
+        "environment": "Windows local workspace; public HTTPS service discovery; public-site validation",
+        "collectedAt": "2026-08-01T01:39:44Z",
         "expiresAt": null
       },
       "owner": "Mesh release",
