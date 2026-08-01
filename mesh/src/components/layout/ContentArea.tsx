@@ -10,7 +10,6 @@ import {
 import { useActiveChannel } from '../../store/channels'
 import { useCommunityStore } from '../../store/communities'
 import { usePresence } from '../../hooks/usePresence'
-import { ChatView } from '../chat/ChatView'
 import { VoiceView } from '../voice/VoiceView'
 import type { RoomContextTab } from '../community/RoomContextPanel'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
@@ -37,6 +36,10 @@ function createLazyRoomContextPanel() {
       .then((module) => ({ default: module.RoomContextPanel })),
   )
 }
+
+const ChatView = lazy(() =>
+  import('../chat/ChatView').then((module) => ({ default: module.ChatView })),
+)
 
 export function ContentArea() {
   const activeChannel = useActiveChannel()
@@ -238,18 +241,20 @@ export function ContentArea() {
           {activeChannel.channelType === 'voice' ? (
             <VoiceView channelId={activeChannel.id} channelName={activeChannel.name} />
           ) : (
-            <ChatView
-              channel={activeChannel}
-              trust={trust}
-              showContextToggle
-              isContextOpen={showContext}
-              activeContextTab={contextTab}
-              onToggleContext={() => setShowContext((current) => !current)}
-              onOpenContext={(tab) => {
-                setContextTab(tab)
-                setShowContext(true)
-              }}
-            />
+            <Suspense fallback={<ChatViewLoadingFallback />}>
+              <ChatView
+                channel={activeChannel}
+                trust={trust}
+                showContextToggle
+                isContextOpen={showContext}
+                activeContextTab={contextTab}
+                onToggleContext={() => setShowContext((current) => !current)}
+                onOpenContext={(tab) => {
+                  setContextTab(tab)
+                  setShowContext(true)
+                }}
+              />
+            </Suspense>
           )}
         </ErrorBoundary>
       </div>
@@ -296,6 +301,26 @@ export function ContentArea() {
           </ScopedErrorBoundary>
         </>
       )}
+    </div>
+  )
+}
+
+function ChatViewLoadingFallback() {
+  return (
+    <div
+      className="flex min-h-0 min-w-0 flex-1 flex-col"
+      role="status"
+      aria-label="Loading conversation"
+    >
+      <div className="flex min-h-control-lg items-center border-b border-border-subtle px-4">
+        <span className="text-xs font-medium text-secondary">Loading conversation…</span>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col justify-end gap-3 p-4" aria-hidden="true">
+        <Skeleton width="42%" height={12} />
+        <Skeleton width="68%" height={12} />
+        <Skeleton width="54%" height={12} />
+        <Skeleton width="36%" height={12} />
+      </div>
     </div>
   )
 }
