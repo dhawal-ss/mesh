@@ -191,16 +191,16 @@
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
-        "commitSha": null,
-        "command": null,
+        "commitSha": "10defc262ee8d91106dd148f61daf533fc6115cc",
+        "command": "npm run setup:matrix-spike:reset && npm run test:matrix-spike (2/2 disposable federation/recovery tests passed; source code unchanged from releaseSha; executed on ledger-only descendant efc2577)",
         "artifactPath": null,
-        "environment": null,
-        "collectedAt": null,
+        "environment": "Windows local Docker/Synapse disposable two-homeserver stack; encrypted federation, restart recovery, fresh account registration, and second-device decryption; not public-provider or physical-device evidence",
+        "collectedAt": "2026-08-01T02:26:31Z",
         "expiresAt": null
       },
       "owner": "Mesh Matrix operations",
       "capability": "Federate communities and recover encrypted account data",
-      "blockReason": "Two-independent-homeserver and fresh/stale-device evidence is external/live acceptance, not closed by local mocks.",
+      "blockReason": "The disposable local two-homeserver federation/recovery run passed, but provider-backed, physical-device, and owner-operated recovery evidence remains external/live acceptance.",
       "nextAction": "Run the two-homeserver federation and fresh-store/stale-device recovery matrix with same-SHA evidence.",
       "waiver": null
     },
