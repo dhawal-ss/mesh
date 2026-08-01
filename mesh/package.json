@@ -14,6 +14,7 @@
     "check:public-services": "node scripts/check-public-services.mjs",
     "check:public-site": "node scripts/check-public-site.mjs",
     "check:readiness-ledger": "node scripts/check-readiness-ledger.mjs",
+    "check:ai-boundary": "node scripts/check-ai-boundary.test.mjs && node scripts/check-ai-boundary.mjs",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "check:design-tokens": "node scripts/check-design-tokens.mjs",
     "check:icons": "node scripts/check-icon-contract.mjs",

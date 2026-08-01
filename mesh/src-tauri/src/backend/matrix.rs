@@ -190,6 +190,8 @@ const COMMUNITY_SERVER_NAME_ENV: &str = "MESH_COMMUNITY_SERVER_NAME";
 const LOGIN_TIMEOUT_SECONDS: u64 = 45;
 const SESSION_RESTORE_SYNC_TIMEOUT_SECONDS: u64 = 10;
 const REGISTRATION_TIMEOUT_SECONDS: u64 = 45;
+const LOCAL_ACCOUNT_STORE_REMOVE_ATTEMPTS: usize = 8;
+const LOCAL_ACCOUNT_STORE_REMOVE_BASE_DELAY_MS: u64 = 50;
 const MAX_COMPOSER_DRAFT_BYTES: usize = 16 * 1024;
 const CLIENT_REQUEST_ID_KEY: &str = "org.mesh.client_request_id";
 const MAX_MEDIA_CACHE_BYTES: u64 = 512 * 1024 * 1024;
@@ -1825,6 +1827,58 @@ impl MatrixBackend {
         })
     }
 
+    fn local_account_store_remove_retry_delay(attempt: usize) -> Duration {
+        Duration::from_millis(
+            (LOCAL_ACCOUNT_STORE_REMOVE_BASE_DELAY_MS.saturating_mul(1_u64 << attempt.min(4)))
+                .min(1_000),
+        )
+    }
+
+    fn remove_account_store_with_retry_with<Exists, Delete, Wait>(
+        path: &Path,
+        mut store_exists: Exists,
+        mut remove_store: Delete,
+        mut wait: Wait,
+    ) -> Result<(), String>
+    where
+        Exists: FnMut(&Path) -> Result<bool, String>,
+        Delete: FnMut(&Path) -> Result<(), String>,
+        Wait: FnMut(Duration),
+    {
+        let mut last_error = None;
+        for attempt in 0..LOCAL_ACCOUNT_STORE_REMOVE_ATTEMPTS {
+            match store_exists(path) {
+                Ok(false) => return Ok(()),
+                Ok(true) => match remove_store(path) {
+                    Ok(()) => match store_exists(path) {
+                        Ok(false) => return Ok(()),
+                        Ok(true) => {
+                            last_error = Some("store remained after remove attempt".to_owned())
+                        }
+                        Err(error) => last_error = Some(error),
+                    },
+                    Err(error) => last_error = Some(error),
+                },
+                Err(error) => last_error = Some(error),
+            }
+
+            if attempt + 1 < LOCAL_ACCOUNT_STORE_REMOVE_ATTEMPTS {
+                wait(Self::local_account_store_remove_retry_delay(attempt));
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| "store removal did not complete".to_owned()))
+    }
+
+    fn remove_account_store_with_retry(path: &Path) -> Result<(), String> {
+        Self::remove_account_store_with_retry_with(
+            path,
+            |path| path.try_exists().map_err(|error| error.to_string()),
+            |path| std::fs::remove_dir_all(path).map_err(|error| error.to_string()),
+            std::thread::sleep,
+        )
+    }
+
     fn erase_local_account_artifacts_with<Exists, Delete>(
         plan: &LocalAccountRemovalPlan,
         mut secret_exists: Exists,
@@ -1861,7 +1915,7 @@ impl MatrixBackend {
 
         match plan.store_root.try_exists() {
             Ok(true) => {
-                if let Err(error) = std::fs::remove_dir_all(&plan.store_root) {
+                if let Err(error) = Self::remove_account_store_with_retry(&plan.store_root) {
                     failures.push(format!(
                         "could not remove account store {}: {error}",
                         plan.store_root.display()

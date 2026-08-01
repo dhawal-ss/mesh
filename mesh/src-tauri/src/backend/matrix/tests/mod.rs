@@ -2180,6 +2180,32 @@ fn security_boundary_local_account_removal_fails_closed_when_keychain_erasure_is
 }
 
 #[test]
+fn local_account_store_cleanup_retries_transient_windows_lock() {
+    let attempts = std::cell::Cell::new(0_u8);
+    let waits = std::cell::RefCell::new(Vec::new());
+    let path = std::path::Path::new("C:/temp/matrix-account");
+
+    MatrixBackend::remove_account_store_with_retry_with(
+        path,
+        |_| Ok(attempts.get() < 3),
+        |_| {
+            attempts.set(attempts.get() + 1);
+            if attempts.get() < 3 {
+                Err("sharing violation".into())
+            } else {
+                Ok(())
+            }
+        },
+        |delay| waits.borrow_mut().push(delay),
+    )
+    .unwrap();
+
+    assert_eq!(attempts.get(), 3);
+    assert_eq!(waits.borrow().len(), 2);
+    assert!(waits.borrow()[0] < waits.borrow()[1]);
+}
+
+#[test]
 fn projects_standard_edits_reactions_redactions_and_replies() {
     let members = HashMap::from([
         ("@alice:example.org".into(), "Alice".into()),
