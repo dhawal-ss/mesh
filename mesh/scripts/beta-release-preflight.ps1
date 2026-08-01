@@ -410,6 +410,8 @@ Assert-Condition ($releaseWorkflowText -match 'npm run check:public-services') `
     "The beta workflow must validate the reviewed public-service catalog."
 Assert-Condition ($releaseWorkflowText -match 'npm run check:public-site') `
     "The beta workflow must validate the public site source."
+Assert-Condition ($releaseWorkflowText -match 'check:readiness-ledger.+--commit-sha.+--allow-ledger-only-commit') `
+    "The beta workflow must bind readiness evidence to the tested source or an explicit ledger-only metadata commit."
 Assert-Condition ($releaseWorkflowText -match 'matrixrtc-preflight\.ps1') `
     "The beta workflow must validate pinned MatrixRTC configuration and the physical/network acceptance contract."
 Assert-Condition ($releaseWorkflowText -match 'test-evidence-validation\.ps1') `

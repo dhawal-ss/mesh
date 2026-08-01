@@ -60,4 +60,27 @@ describe('readiness ledger validator', () => {
     )
     assert.ok(errors.some((error) => error.includes('must equal releaseSha')))
   })
+
+  it('can validate a ledger-only commit after the evidence snapshot', () => {
+    const errors = validateReadinessLedger(
+      ledger({
+        gates: [gate({
+          releaseStatus: 'local-pass',
+          status: 'local-pass',
+          evidence: {
+            ...baseEvidence,
+            artifactPath: null,
+            collectedAt: null,
+            expiresAt: null,
+          },
+          nextAction: 'rerun before the next release',
+        })],
+      }),
+      {
+        commitSha: 'b'.repeat(40),
+        allowReleaseShaMismatch: true,
+      },
+    )
+    assert.deepEqual(errors, [])
+  })
 })

@@ -1,12 +1,16 @@
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
+import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { promisify } from 'node:util'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(scriptDirectory, '..')
 const ledgerPath = resolve(repoRoot, 'release', 'readiness.json')
 const schemaPath = resolve(repoRoot, 'release', 'readiness.schema.json')
+const execFileAsync = promisify(execFile)
+const LEDGER_RELATIVE_PATH = 'release/readiness.json'
 const SHA_PATTERN = /^[0-9a-f]{40}$/
 const MILESTONES = ['R0', 'R1', 'R2', 'R3', 'R4']
 const STATUSES = ['unverified', 'local-pass', 'live-pass', 'blocked', 'waived']
@@ -31,7 +35,13 @@ function milestoneRank(milestone) {
   return MILESTONES.indexOf(milestone)
 }
 
-export function validateReadinessLedger(ledger, { now = new Date(), milestone = null, requireLive = false, commitSha = null } = {}) {
+export function validateReadinessLedger(ledger, {
+  now = new Date(),
+  milestone = null,
+  requireLive = false,
+  commitSha = null,
+  allowReleaseShaMismatch = false,
+} = {}) {
   const errors = []
   const fail = (message) => errors.push(message)
 
@@ -43,7 +53,7 @@ export function validateReadinessLedger(ledger, { now = new Date(), milestone = 
   if (ledger.ledgerId !== 'mesh-production-readiness') fail('ledgerId is invalid')
   if (!SHA_PATTERN.test(ledger.releaseSha ?? '')) fail('releaseSha must be a lowercase 40-character SHA')
   if (!isIsoDate(ledger.updatedAt)) fail('updatedAt must be an ISO UTC timestamp')
-  if (commitSha !== null && ledger.releaseSha !== commitSha) {
+  if (commitSha !== null && ledger.releaseSha !== commitSha && !allowReleaseShaMismatch) {
     fail(`releaseSha ${ledger.releaseSha} does not match requested commit ${commitSha}`)
   }
 
@@ -112,13 +122,63 @@ export function validateReadinessLedger(ledger, { now = new Date(), milestone = 
   return errors
 }
 
+async function validateLedgerOnlyCommit(ledger, commitSha) {
+  if (ledger.releaseSha === commitSha) return []
+
+  try {
+    await execFileAsync('git', [
+      '-C',
+      repoRoot,
+      'merge-base',
+      '--is-ancestor',
+      ledger.releaseSha,
+      commitSha,
+    ], { windowsHide: true })
+  } catch {
+    return [`releaseSha ${ledger.releaseSha} must be an ancestor of requested commit ${commitSha}`]
+  }
+
+  let changedPaths
+  try {
+    const result = await execFileAsync('git', [
+      '-C',
+      repoRoot,
+      'diff',
+      '--name-only',
+      `${ledger.releaseSha}..${commitSha}`,
+      '--',
+    ], { windowsHide: true })
+    changedPaths = result.stdout
+      .split(/\r?\n/u)
+      .map((path) => path.trim())
+      .filter(Boolean)
+  } catch {
+    return [`could not inspect the source delta between ${ledger.releaseSha} and ${commitSha}`]
+  }
+
+  const unexpectedPaths = changedPaths.filter((path) => path !== LEDGER_RELATIVE_PATH)
+  if (unexpectedPaths.length > 0) {
+    return [
+      `releaseSha ${ledger.releaseSha} is stale: the requested commit changed source files besides ${LEDGER_RELATIVE_PATH}: ${unexpectedPaths.join(', ')}`,
+    ]
+  }
+
+  return []
+}
+
 function parseArgs(argv) {
-  const options = { milestone: null, requireLive: false, commitSha: null }
+  const options = {
+    milestone: null,
+    requireLive: false,
+    commitSha: null,
+    allowLedgerOnlyCommit: false,
+  }
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]
     if (argument === '--require-live') options.requireLive = true
     else if (argument === '--milestone') options.milestone = argv[++index] ?? null
     else if (argument === '--commit-sha') options.commitSha = argv[++index] ?? null
+    else if (argument === '--allow-ledger-only-commit') options.allowLedgerOnlyCommit = true
     else throw new Error(`Unknown argument: ${argument}`)
   }
   return options
@@ -132,7 +192,16 @@ export async function main(argv = process.argv.slice(2)) {
   ])
   JSON.parse(schemaText)
   const ledger = JSON.parse(ledgerText)
-  const errors = validateReadinessLedger(ledger, options)
+  let bindingErrors = []
+  let allowReleaseShaMismatch = false
+  if (options.allowLedgerOnlyCommit && options.commitSha !== null) {
+    bindingErrors = await validateLedgerOnlyCommit(ledger, options.commitSha)
+    allowReleaseShaMismatch = bindingErrors.length === 0
+  }
+  const errors = [
+    ...bindingErrors,
+    ...validateReadinessLedger(ledger, { ...options, allowReleaseShaMismatch }),
+  ]
   if (errors.length > 0) {
     console.error('Mesh readiness ledger validation failed:')
     for (const error of errors) console.error(`- ${error}`)

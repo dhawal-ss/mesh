@@ -6,6 +6,14 @@
 
 The machine-readable release gate ledger is [mesh/release/readiness.json](mesh/release/readiness.json), validated by `npm run check:readiness-ledger`. It is release evidence only; runtime security and capability authority remain in the typed backend boundary.
 
+Evidence binding rule: `releaseSha` names the exact source snapshot on which the
+evidence was collected. Because a tracked ledger cannot contain the commit SHA
+of the commit that contains that same ledger, the release workflow permits a
+final metadata-only commit that changes only `mesh/release/readiness.json` after
+the tested source snapshot. The validator rejects any source-code delta in that
+case. Never update the ledger SHA and application code together when preparing a
+release evidence snapshot.
+
 ---
 
 ## Current verified readiness ledger
