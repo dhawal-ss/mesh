@@ -34,6 +34,34 @@ is retained as the original `2ca3dcc` audit baseline, so statements there that
 describe invitations, deep links, account removal, export, rate-limit cleanup,
 or test counts as missing are historical rather than current.
 
+### 2026-07-31 continuation: clean-source audit refresh
+
+The authoritative application source snapshot for the current local evidence is
+`4824d3baf7a6c179b90c60ece69e122118774edd`; `71b59ba78ecf5e88bd921bba13228da3e42060b8`
+is the final readiness-ledger-only commit on `main`. The worktree is clean. The
+ledger is valid when checked against that metadata commit with the documented
+ledger-only exception.
+
+The current local gates are green: 98 Vitest files / 707 tests, 170 Matrix Rust
+tests, 206 legacy Rust tests, 66 Chromium browser tests, 173 IPC commands,
+Matrix/legacy security filters at 19/13, strict Matrix and legacy Clippy,
+formatting, TypeScript, ESLint, npm audit, MatrixRTC offline preflight, public
+service/site validation, design-token/icon checks, and the on-device AI boundary.
+The production bundle remains within every configured budget.
+
+The raw Rust lockfile audit still reports five unresolved advisories in the
+full dependency graph (`hickory-proto`, `ring`, and `rustls-webpki`). The
+workflow-equivalent Matrix release-scoped audit passes because the affected
+legacy dependency versions are excluded from the Matrix graph; these findings
+must remain documented as legacy dependency debt, not described as fixed.
+
+No new Matrix wire event, signed invitation contract, permission extension,
+channel-lifetime scheduler, or voice capability flag was invented during this
+refresh. The remaining release blockers are live/provider onboarding, two-
+homeserver recovery, signed public Windows artifacts, MatrixRTC physical/network
+acceptance, manual assistive-technology/target-WebView testing, and owner/legal
+publication and operator restore evidence.
+
 ### 2026-07-31 security, privacy, voice, and accessibility tranche
 
 **Verdict:** `LOCALLY_INTEGRATED_NOT_RELEASE_READY`.
