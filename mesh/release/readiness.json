@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "ledgerId": "mesh-production-readiness",
   "releaseSha": "10defc262ee8d91106dd148f61daf533fc6115cc",
-  "updatedAt": "2026-08-01T02:17:54Z",
+  "updatedAt": "2026-08-01T02:33:01Z",
   "gates": [
     {
       "id": "r0.frontend-tests",
@@ -32,10 +32,10 @@
       "status": "local-pass",
       "evidence": {
         "commitSha": "10defc262ee8d91106dd148f61daf533fc6115cc",
-        "command": "npm run build (Matrix frontend build passed); npm run check:bundle-size (eager 441.26 KiB; all JS 1884.01 KiB)",
+        "command": "npm run build (Matrix frontend build passed); npm run check:bundle-size (eager 441.26 KiB; all JS 1884.01 KiB); npm run tauri:build:matrix (mesh.exe, MSI, and NSIS produced; all unsigned)",
         "artifactPath": null,
-        "environment": "Windows local workspace; Node v24.11.1; Vite v7.3.6; Matrix mode",
-        "collectedAt": "2026-08-01T02:17:54Z",
+        "environment": "Windows local workspace; Node v24.11.1; Vite v7.3.6; Tauri 2; Matrix mode; x64 native bundles; version 0.1.0",
+        "collectedAt": "2026-08-01T02:33:01Z",
         "expiresAt": null
       },
       "owner": "Mesh client",
