@@ -21,5 +21,8 @@ allow-licenses:
   - Unlicense
   - Zlib
 vulnerability-check: true
+# These exact advisories are retained in the raw Cargo audit and are confined
+# to the legacy-p2p graph, which every shipping Matrix artifact excludes.
+allow-ghsas: GHSA-3v94-mw7p-v465, GHSA-q2qq-hmj6-3wpp
 show-openssf-scorecard: true
 warn-only: false

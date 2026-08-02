@@ -1,8 +1,12 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
 import { REQUIRED_RELEASE_GATES, ledgerPathFromGitRoot, validateReadinessLedger } from './check-readiness-ledger.mjs'
 
 const sha = 'a'.repeat(40)
+const testDirectory = dirname(fileURLToPath(import.meta.url))
+const gitRoot = resolve(testDirectory, '..', '..')
 const baseEvidence = {
   commitSha: sha,
   command: 'test command',
@@ -45,7 +49,7 @@ function ledger(overrides = {}) {
 describe('readiness ledger validator', () => {
   it('normalizes the ledger path relative to the actual Git root', () => {
     assert.equal(
-      ledgerPathFromGitRoot('D:\\Creations\\Applications\\mesh'),
+      ledgerPathFromGitRoot(gitRoot),
       'mesh/release/readiness.json',
     )
   })

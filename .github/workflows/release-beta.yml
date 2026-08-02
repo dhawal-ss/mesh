@@ -274,8 +274,13 @@ jobs:
             throw "Rust dependency evidence does not match the checked-out lockfile and policy."
           }
           $policy = Get-Content -LiteralPath mesh/scripts/rust-dependency-policy.json -Raw | ConvertFrom-Json
+          $windowsBuildWarnings = @($policy.nonRuntimeBuildWarnings | Where-Object {
+            -not ($_.PSObject.Properties.Name -contains "platforms") -or
+              @($_.platforms) -contains "windows"
+          })
           if ($dependency.matrixRuntimeWarningCount -ne @($policy.shippingRuntimeWarnings).Count -or
-              $dependency.nonRuntimeBuildWarningCount -ne @($policy.nonRuntimeBuildWarnings).Count -or
+              $dependency.hostPlatform -ne "windows" -or
+              $dependency.nonRuntimeBuildWarningCount -ne $windowsBuildWarnings.Count -or
               $dependency.excludedNonShippingVulnerabilityCount -ne @($policy.nonShippingVulnerabilities).Count) {
             throw "Rust dependency evidence counts do not match the checked-out policy."
           }

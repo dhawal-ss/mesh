@@ -115,6 +115,16 @@
       "version": "0.7.3",
       "scope": "tauri-html-build-tool-only",
       "remediation": "Remove when tauri-utils no longer resolves the legacy phf_generator build chain; the crate is absent from the Windows Matrix runtime graph."
+    },
+    {
+      "id": "RUSTSEC-2024-0429",
+      "package": "glib",
+      "version": "0.18.5",
+      "platforms": [
+        "linux"
+      ],
+      "scope": "tauri-linux-host-build-tool-only",
+      "remediation": "Remove when Tauri's Linux host build chain no longer resolves glib 0.18.5; the crate is absent from the Windows Matrix runtime graph and release artifacts."
     }
   ]
 }

@@ -29,6 +29,21 @@ $policy = Get-Content -LiteralPath $policyPath -Raw | ConvertFrom-Json
 if ($policy.schemaVersion -ne 1) {
     throw "Unsupported Rust dependency policy schema version."
 }
+$hostPlatform = if ([Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+        [Runtime.InteropServices.OSPlatform]::Windows
+    )) {
+    "windows"
+} elseif ([Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+        [Runtime.InteropServices.OSPlatform]::Linux
+    )) {
+    "linux"
+} elseif ([Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+        [Runtime.InteropServices.OSPlatform]::OSX
+    )) {
+    "macos"
+} else {
+    throw "Unsupported dependency-policy host platform."
+}
 
 function Invoke-CargoText {
     param([string[]]$Arguments, [string]$Description)
@@ -140,6 +155,10 @@ $expectedShippingWarningKeys = @(
 $actualShippingWarningKeys = @()
 $expectedBuildWarningKeys = @(
     @($policy.nonRuntimeBuildWarnings) |
+        Where-Object {
+            -not ($_.PSObject.Properties.Name -contains "platforms") -or
+                @($_.platforms) -contains $hostPlatform
+        } |
         ForEach-Object { "$($_.id)|$($_.package)|$($_.version)" } |
         Sort-Object
 )
@@ -196,6 +215,7 @@ $report = [ordered]@{
     sourceSha = $sourceSha
     cargoLockSha256 = (Get-FileHash -LiteralPath $lockPath -Algorithm SHA256).Hash.ToLowerInvariant()
     policySha256 = (Get-FileHash -LiteralPath $policyPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    hostPlatform = $hostPlatform
     shippingFeature = $shippingFeature
     shippingTarget = $shippingTarget
     matrixReleaseVulnerabilityCount = 0
