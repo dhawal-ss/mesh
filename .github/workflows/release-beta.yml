@@ -144,6 +144,7 @@ jobs:
           npm run check:public-services
           npm run check:beta-contract
           npm run check:operations-contract
+          npm run check:third-party-notices
           # Evidence is collected on the tested source commit. A final release
           # metadata-only commit may update readiness.json afterward; the
           # validator allows that one-file delta and rejects source drift.

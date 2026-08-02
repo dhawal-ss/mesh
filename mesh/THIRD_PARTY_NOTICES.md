@@ -7,7 +7,7 @@ source-offer obligations, trademarks, or platform redistributables.
 
 - JavaScript packages: 459
 - Rust packages: 801
-- Entries requiring license review: 60
+- Entries requiring license review: 0
 
 Any `UNKNOWN - REVIEW REQUIRED` entry is a release blocker. Legal approval of
 the exact candidate remains external acceptance evidence and must not be inferred
@@ -17,465 +17,465 @@ from this generated inventory.
 
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
-| @adobe/css-tools | 4.4.4 | MIT | https://github.com/adobe/css-tools.git |
-| @alloc/quick-lru | 5.2.0 | MIT | sindresorhus/quick-lru |
-| @asamuzakjp/css-color | 5.1.1 | MIT | https://github.com/asamuzaK/cssColor.git |
-| @asamuzakjp/dom-selector | 7.0.4 | MIT | https://github.com/asamuzaK/domSelector.git |
-| @asamuzakjp/nwsapi | 2.3.9 | MIT | git://github.com/dperini/nwsapi.git |
-| @axe-core/playwright | 4.12.1 | MPL-2.0 | https://github.com/dequelabs/axe-core-npm.git |
-| @babel/code-frame | 7.29.7 | MIT | https://github.com/babel/babel.git |
-| @babel/compat-data | 7.29.7 | MIT | https://github.com/babel/babel.git |
-| @babel/core | 7.29.7 | MIT | https://github.com/babel/babel.git |
-| @babel/generator | 7.29.7 | MIT | https://github.com/babel/babel.git |
-| @babel/helper-compilation-targets | 7.29.7 | MIT | https://github.com/babel/babel.git |
-| @babel/helper-globals | 7.29.7 | MIT | https://github.com/babel/babel.git |
-| @babel/helper-module-imports | 7.29.7 | MIT | https://github.com/babel/babel.git |
-| @babel/helper-module-transforms | 7.29.7 | MIT | https://github.com/babel/babel.git |
-| @babel/helper-plugin-utils | 7.28.6 | MIT | https://github.com/babel/babel.git |
-| @babel/helper-string-parser | 7.29.7 | MIT | https://github.com/babel/babel.git |
-| @babel/helper-validator-identifier | 7.29.7 | MIT | https://github.com/babel/babel.git |
-| @babel/helper-validator-option | 7.29.7 | MIT | https://github.com/babel/babel.git |
-| @babel/helpers | 7.29.7 | MIT | https://github.com/babel/babel.git |
-| @babel/parser | 7.29.7 | MIT | https://github.com/babel/babel.git |
-| @babel/plugin-transform-react-jsx-self | 7.27.1 | MIT | https://github.com/babel/babel.git |
-| @babel/plugin-transform-react-jsx-source | 7.27.1 | MIT | https://github.com/babel/babel.git |
-| @babel/template | 7.29.7 | MIT | https://github.com/babel/babel.git |
-| @babel/traverse | 7.29.7 | MIT | https://github.com/babel/babel.git |
-| @babel/types | 7.29.7 | MIT | https://github.com/babel/babel.git |
-| @bramus/specificity | 2.4.2 | MIT | https://github.com/bramus/specificity.git |
-| @bufbuild/protobuf | 1.10.1 | (Apache-2.0 AND BSD-3-Clause) | https://github.com/bufbuild/protobuf-es.git |
-| @csstools/color-helpers | 6.0.2 | MIT-0 | https://github.com/csstools/postcss-plugins.git |
-| @csstools/css-calc | 3.1.1 | MIT | https://github.com/csstools/postcss-plugins.git |
-| @csstools/css-color-parser | 4.0.2 | MIT | https://github.com/csstools/postcss-plugins.git |
-| @csstools/css-parser-algorithms | 4.0.0 | MIT | https://github.com/csstools/postcss-plugins.git |
-| @csstools/css-syntax-patches-for-csstree | 1.1.2 | MIT-0 | https://github.com/csstools/postcss-plugins.git |
-| @csstools/css-tokenizer | 4.0.0 | MIT | https://github.com/csstools/postcss-plugins.git |
-| @esbuild/aix-ppc64 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/aix-ppc64/-/aix-ppc64-0.28.1.tgz |
-| @esbuild/android-arm | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/android-arm/-/android-arm-0.28.1.tgz |
-| @esbuild/android-arm64 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/android-arm64/-/android-arm64-0.28.1.tgz |
-| @esbuild/android-x64 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/android-x64/-/android-x64-0.28.1.tgz |
-| @esbuild/darwin-arm64 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/darwin-arm64/-/darwin-arm64-0.28.1.tgz |
-| @esbuild/darwin-x64 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/darwin-x64/-/darwin-x64-0.28.1.tgz |
-| @esbuild/freebsd-arm64 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/freebsd-arm64/-/freebsd-arm64-0.28.1.tgz |
-| @esbuild/freebsd-x64 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/freebsd-x64/-/freebsd-x64-0.28.1.tgz |
-| @esbuild/linux-arm | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/linux-arm/-/linux-arm-0.28.1.tgz |
-| @esbuild/linux-arm64 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/linux-arm64/-/linux-arm64-0.28.1.tgz |
-| @esbuild/linux-ia32 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/linux-ia32/-/linux-ia32-0.28.1.tgz |
-| @esbuild/linux-loong64 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/linux-loong64/-/linux-loong64-0.28.1.tgz |
-| @esbuild/linux-mips64el | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/linux-mips64el/-/linux-mips64el-0.28.1.tgz |
-| @esbuild/linux-ppc64 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/linux-ppc64/-/linux-ppc64-0.28.1.tgz |
-| @esbuild/linux-riscv64 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/linux-riscv64/-/linux-riscv64-0.28.1.tgz |
-| @esbuild/linux-s390x | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/linux-s390x/-/linux-s390x-0.28.1.tgz |
-| @esbuild/linux-x64 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.28.1.tgz |
-| @esbuild/netbsd-arm64 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/netbsd-arm64/-/netbsd-arm64-0.28.1.tgz |
-| @esbuild/netbsd-x64 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/netbsd-x64/-/netbsd-x64-0.28.1.tgz |
-| @esbuild/openbsd-arm64 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/openbsd-arm64/-/openbsd-arm64-0.28.1.tgz |
-| @esbuild/openbsd-x64 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/openbsd-x64/-/openbsd-x64-0.28.1.tgz |
-| @esbuild/openharmony-arm64 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/openharmony-arm64/-/openharmony-arm64-0.28.1.tgz |
-| @esbuild/sunos-x64 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/sunos-x64/-/sunos-x64-0.28.1.tgz |
-| @esbuild/win32-arm64 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/win32-arm64/-/win32-arm64-0.28.1.tgz |
-| @esbuild/win32-ia32 | 0.28.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@esbuild/win32-ia32/-/win32-ia32-0.28.1.tgz |
-| @esbuild/win32-x64 | 0.28.1 | MIT | https://github.com/evanw/esbuild.git |
-| @eslint-community/eslint-utils | 4.10.1 | MIT | https://github.com/eslint-community/eslint-utils |
-| @eslint-community/regexpp | 4.12.2 | MIT | https://github.com/eslint-community/regexpp |
-| @eslint/config-array | 0.23.5 | Apache-2.0 | https://github.com/eslint/rewrite.git |
-| @eslint/config-helpers | 0.7.0 | Apache-2.0 | https://github.com/eslint/rewrite.git |
-| @eslint/core | 1.2.1 | Apache-2.0 | https://github.com/eslint/rewrite.git |
-| @eslint/object-schema | 3.0.5 | Apache-2.0 | https://github.com/eslint/rewrite.git |
-| @eslint/plugin-kit | 0.7.2 | Apache-2.0 | https://github.com/eslint/rewrite.git |
-| @exodus/bytes | 1.15.0 | MIT | https://github.com/ExodusOSS/bytes.git |
-| @floating-ui/core | 1.8.0 | MIT | https://github.com/floating-ui/floating-ui.git |
-| @floating-ui/dom | 1.8.0 | MIT | https://github.com/floating-ui/floating-ui.git |
-| @floating-ui/react-dom | 2.1.9 | MIT | https://github.com/floating-ui/floating-ui.git |
-| @floating-ui/utils | 0.2.12 | MIT | https://github.com/floating-ui/floating-ui.git |
-| @fontsource-variable/inter | 5.3.0 | OFL-1.1 | https://github.com/fontsource/font-files.git |
-| @humanfs/core | 0.19.2 | Apache-2.0 | https://github.com/humanwhocodes/humanfs.git |
-| @humanfs/node | 0.16.8 | Apache-2.0 | https://github.com/humanwhocodes/humanfs.git |
-| @humanfs/types | 0.15.0 | Apache-2.0 | https://github.com/humanwhocodes/humanfs.git |
-| @humanwhocodes/module-importer | 1.0.1 | Apache-2.0 | https://github.com/humanwhocodes/module-importer.git |
-| @humanwhocodes/retry | 0.4.3 | Apache-2.0 | https://github.com/humanwhocodes/retry.git |
-| @jridgewell/gen-mapping | 0.3.13 | MIT | https://github.com/jridgewell/sourcemaps.git |
-| @jridgewell/remapping | 2.3.5 | MIT | https://github.com/jridgewell/sourcemaps.git |
-| @jridgewell/resolve-uri | 3.1.2 | MIT | https://github.com/jridgewell/resolve-uri |
-| @jridgewell/sourcemap-codec | 1.5.5 | MIT | https://github.com/jridgewell/sourcemaps.git |
-| @jridgewell/trace-mapping | 0.3.31 | MIT | https://github.com/jridgewell/sourcemaps.git |
-| @livekit/mutex | 1.1.1 | Apache-2.0 | git@github.com:livekit/ts-mutex.git |
-| @livekit/protocol | 1.46.6 | Apache-2.0 | https://github.com/livekit/protocol |
-| @nodelib/fs.scandir | 2.1.5 | MIT | https://github.com/nodelib/nodelib/tree/master/packages/fs/fs.scandir |
-| @nodelib/fs.stat | 2.0.5 | MIT | https://github.com/nodelib/nodelib/tree/master/packages/fs/fs.stat |
-| @nodelib/fs.walk | 1.2.8 | MIT | https://github.com/nodelib/nodelib/tree/master/packages/fs/fs.walk |
-| @playwright/test | 1.61.1 | Apache-2.0 | https://github.com/microsoft/playwright.git |
-| @radix-ui/number | 1.1.3 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/primitive | 1.1.7 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-accessible-icon | 1.1.15 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-accordion | 1.2.20 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-alert-dialog | 1.1.23 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-arrow | 1.1.15 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-aspect-ratio | 1.1.15 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-avatar | 1.2.6 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-checkbox | 1.3.11 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-collapsible | 1.1.20 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-collection | 1.1.15 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-compose-refs | 1.1.5 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-context | 1.2.2 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-context-menu | 2.3.7 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-dialog | 1.1.23 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-direction | 1.1.4 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-dismissable-layer | 1.1.19 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-dropdown-menu | 2.1.24 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-focus-guards | 1.1.6 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-focus-scope | 1.1.16 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-form | 0.1.16 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-hover-card | 1.1.23 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-id | 1.1.4 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-label | 2.1.15 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-menu | 2.1.24 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-menubar | 1.1.24 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-navigation-menu | 1.2.22 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-one-time-password-field | 0.1.16 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-password-toggle-field | 0.1.11 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-popover | 1.1.23 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-popper | 1.3.7 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-portal | 1.1.17 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-presence | 1.1.10 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-primitive | 2.1.10 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-progress | 1.1.16 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-radio-group | 1.4.7 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-roving-focus | 1.1.19 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-scroll-area | 1.2.18 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-select | 2.3.7 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-separator | 1.1.15 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-slider | 1.4.7 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-slot | 1.3.3 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-switch | 1.3.7 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-tabs | 1.1.21 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-toast | 1.2.23 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-toggle | 1.1.18 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-toggle-group | 1.1.19 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-toolbar | 1.1.19 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-tooltip | 1.2.16 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-use-callback-ref | 1.1.4 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-use-controllable-state | 1.2.6 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-use-effect-event | 0.0.5 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-use-escape-keydown | 1.1.5 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-use-is-hydrated | 0.1.3 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-use-layout-effect | 1.1.4 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-use-previous | 1.1.4 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-use-rect | 1.1.4 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-use-size | 1.1.4 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/react-visually-hidden | 1.2.11 | MIT | https://github.com/radix-ui/primitives.git |
-| @radix-ui/rect | 1.1.3 | MIT | https://github.com/radix-ui/primitives.git |
-| @rolldown/pluginutils | 1.0.0-beta.27 | MIT | https://github.com/rolldown/rolldown.git |
-| @rollup/rollup-android-arm-eabi | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-android-arm-eabi/-/rollup-android-arm-eabi-4.60.1.tgz |
-| @rollup/rollup-android-arm64 | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-android-arm64/-/rollup-android-arm64-4.60.1.tgz |
-| @rollup/rollup-darwin-arm64 | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-darwin-arm64/-/rollup-darwin-arm64-4.60.1.tgz |
-| @rollup/rollup-darwin-x64 | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-darwin-x64/-/rollup-darwin-x64-4.60.1.tgz |
-| @rollup/rollup-freebsd-arm64 | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-freebsd-arm64/-/rollup-freebsd-arm64-4.60.1.tgz |
-| @rollup/rollup-freebsd-x64 | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-freebsd-x64/-/rollup-freebsd-x64-4.60.1.tgz |
-| @rollup/rollup-linux-arm-gnueabihf | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-linux-arm-gnueabihf/-/rollup-linux-arm-gnueabihf-4.60.1.tgz |
-| @rollup/rollup-linux-arm-musleabihf | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-linux-arm-musleabihf/-/rollup-linux-arm-musleabihf-4.60.1.tgz |
-| @rollup/rollup-linux-arm64-gnu | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-linux-arm64-gnu/-/rollup-linux-arm64-gnu-4.60.1.tgz |
-| @rollup/rollup-linux-arm64-musl | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-linux-arm64-musl/-/rollup-linux-arm64-musl-4.60.1.tgz |
-| @rollup/rollup-linux-loong64-gnu | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-linux-loong64-gnu/-/rollup-linux-loong64-gnu-4.60.1.tgz |
-| @rollup/rollup-linux-loong64-musl | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-linux-loong64-musl/-/rollup-linux-loong64-musl-4.60.1.tgz |
-| @rollup/rollup-linux-ppc64-gnu | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-linux-ppc64-gnu/-/rollup-linux-ppc64-gnu-4.60.1.tgz |
-| @rollup/rollup-linux-ppc64-musl | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-linux-ppc64-musl/-/rollup-linux-ppc64-musl-4.60.1.tgz |
-| @rollup/rollup-linux-riscv64-gnu | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-linux-riscv64-gnu/-/rollup-linux-riscv64-gnu-4.60.1.tgz |
-| @rollup/rollup-linux-riscv64-musl | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-linux-riscv64-musl/-/rollup-linux-riscv64-musl-4.60.1.tgz |
-| @rollup/rollup-linux-s390x-gnu | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-linux-s390x-gnu/-/rollup-linux-s390x-gnu-4.60.1.tgz |
-| @rollup/rollup-linux-x64-gnu | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-linux-x64-gnu/-/rollup-linux-x64-gnu-4.60.1.tgz |
-| @rollup/rollup-linux-x64-musl | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-linux-x64-musl/-/rollup-linux-x64-musl-4.60.1.tgz |
-| @rollup/rollup-openbsd-x64 | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-openbsd-x64/-/rollup-openbsd-x64-4.60.1.tgz |
-| @rollup/rollup-openharmony-arm64 | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-openharmony-arm64/-/rollup-openharmony-arm64-4.60.1.tgz |
-| @rollup/rollup-win32-arm64-msvc | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-win32-arm64-msvc/-/rollup-win32-arm64-msvc-4.60.1.tgz |
-| @rollup/rollup-win32-ia32-msvc | 4.60.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@rollup/rollup-win32-ia32-msvc/-/rollup-win32-ia32-msvc-4.60.1.tgz |
-| @rollup/rollup-win32-x64-gnu | 4.60.1 | MIT | https://github.com/rollup/rollup.git |
-| @rollup/rollup-win32-x64-msvc | 4.60.1 | MIT | https://github.com/rollup/rollup.git |
-| @standard-schema/spec | 1.1.0 | MIT | https://github.com/standard-schema/standard-schema |
-| @tauri-apps/api | 2.11.1 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri.git |
-| @tauri-apps/cli | 2.10.1 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri.git |
-| @tauri-apps/cli-darwin-arm64 | 2.10.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@tauri-apps/cli-darwin-arm64/-/cli-darwin-arm64-2.10.1.tgz |
-| @tauri-apps/cli-darwin-x64 | 2.10.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@tauri-apps/cli-darwin-x64/-/cli-darwin-x64-2.10.1.tgz |
-| @tauri-apps/cli-linux-arm-gnueabihf | 2.10.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@tauri-apps/cli-linux-arm-gnueabihf/-/cli-linux-arm-gnueabihf-2.10.1.tgz |
-| @tauri-apps/cli-linux-arm64-gnu | 2.10.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@tauri-apps/cli-linux-arm64-gnu/-/cli-linux-arm64-gnu-2.10.1.tgz |
-| @tauri-apps/cli-linux-arm64-musl | 2.10.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@tauri-apps/cli-linux-arm64-musl/-/cli-linux-arm64-musl-2.10.1.tgz |
-| @tauri-apps/cli-linux-riscv64-gnu | 2.10.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@tauri-apps/cli-linux-riscv64-gnu/-/cli-linux-riscv64-gnu-2.10.1.tgz |
-| @tauri-apps/cli-linux-x64-gnu | 2.10.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@tauri-apps/cli-linux-x64-gnu/-/cli-linux-x64-gnu-2.10.1.tgz |
-| @tauri-apps/cli-linux-x64-musl | 2.10.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@tauri-apps/cli-linux-x64-musl/-/cli-linux-x64-musl-2.10.1.tgz |
-| @tauri-apps/cli-win32-arm64-msvc | 2.10.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@tauri-apps/cli-win32-arm64-msvc/-/cli-win32-arm64-msvc-2.10.1.tgz |
-| @tauri-apps/cli-win32-ia32-msvc | 2.10.1 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/@tauri-apps/cli-win32-ia32-msvc/-/cli-win32-ia32-msvc-2.10.1.tgz |
-| @tauri-apps/cli-win32-x64-msvc | 2.10.1 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri.git |
-| @tauri-apps/plugin-dialog | 2.7.2 | MIT OR Apache-2.0 | https://github.com/tauri-apps/plugins-workspace |
-| @testing-library/jest-dom | 6.9.1 | MIT | https://github.com/testing-library/jest-dom |
-| @types/babel__core | 7.20.5 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped.git |
-| @types/babel__generator | 7.27.0 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped.git |
-| @types/babel__template | 7.4.4 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped.git |
-| @types/babel__traverse | 7.28.0 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped.git |
-| @types/chai | 5.2.3 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped.git |
-| @types/deep-eql | 4.0.2 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped.git |
-| @types/dom-mediacapture-record | 1.0.22 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped.git |
-| @types/esrecurse | 4.3.1 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped.git |
-| @types/estree | 1.0.8 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped.git |
-| @types/json-schema | 7.0.15 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped.git |
-| @types/node | 25.5.0 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped.git |
-| @types/react | 19.2.14 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped.git |
-| @types/react-dom | 19.2.3 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped.git |
-| @types/simple-peer | 9.11.9 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped.git |
-| @typescript-eslint/parser | 8.65.0 | MIT | https://github.com/typescript-eslint/typescript-eslint.git |
-| @typescript-eslint/project-service | 8.65.0 | MIT | https://github.com/typescript-eslint/typescript-eslint.git |
-| @typescript-eslint/scope-manager | 8.65.0 | MIT | https://github.com/typescript-eslint/typescript-eslint.git |
-| @typescript-eslint/tsconfig-utils | 8.65.0 | MIT | https://github.com/typescript-eslint/typescript-eslint.git |
-| @typescript-eslint/types | 8.65.0 | MIT | https://github.com/typescript-eslint/typescript-eslint.git |
-| @typescript-eslint/typescript-estree | 8.65.0 | MIT | https://github.com/typescript-eslint/typescript-eslint.git |
-| @typescript-eslint/visitor-keys | 8.65.0 | MIT | https://github.com/typescript-eslint/typescript-eslint.git |
-| @vitejs/plugin-react | 4.7.0 | MIT | https://github.com/vitejs/vite-plugin-react.git |
-| @vitest/expect | 4.1.2 | MIT | https://github.com/vitest-dev/vitest.git |
-| @vitest/mocker | 4.1.2 | MIT | https://github.com/vitest-dev/vitest.git |
-| @vitest/pretty-format | 4.1.2 | MIT | https://github.com/vitest-dev/vitest.git |
-| @vitest/runner | 4.1.2 | MIT | https://github.com/vitest-dev/vitest.git |
-| @vitest/snapshot | 4.1.2 | MIT | https://github.com/vitest-dev/vitest.git |
-| @vitest/spy | 4.1.2 | MIT | https://github.com/vitest-dev/vitest.git |
-| @vitest/utils | 4.1.2 | MIT | https://github.com/vitest-dev/vitest.git |
-| acorn | 8.17.0 | MIT | https://github.com/acornjs/acorn.git |
-| acorn-jsx | 5.3.2 | MIT | https://github.com/acornjs/acorn-jsx |
-| ajv | 6.15.0 | MIT | https://github.com/ajv-validator/ajv.git |
-| any-promise | 1.3.0 | MIT | https://github.com/kevinbeaty/any-promise |
-| anymatch | 3.1.3 | ISC | https://github.com/micromatch/anymatch |
-| arg | 5.0.2 | MIT | vercel/arg |
-| aria-hidden | 1.2.6 | MIT | https://github.com/theKashey/aria-hidden.git |
-| aria-query | 5.3.2 | Apache-2.0 | https://github.com/A11yance/aria-query.git |
-| assertion-error | 2.0.1 | MIT | git@github.com:chaijs/assertion-error.git |
-| autoprefixer | 10.4.27 | MIT | postcss/autoprefixer |
-| axe-core | 4.12.1 | MPL-2.0 | https://github.com/dequelabs/axe-core.git |
-| babel-plugin-react-compiler | 1.0.0 | MIT | https://github.com/facebook/react.git |
-| balanced-match | 4.0.4 | MIT | git://github.com/juliangruber/balanced-match.git |
-| base64-js | 1.5.1 | MIT | git://github.com/beatgammit/base64-js.git |
-| baseline-browser-mapping | 2.10.12 | Apache-2.0 | https://github.com/web-platform-dx/baseline-browser-mapping.git |
-| bidi-js | 1.0.3 | MIT | https://github.com/lojjic/bidi-js.git |
-| binary-extensions | 2.3.0 | MIT | sindresorhus/binary-extensions |
-| brace-expansion | 5.0.8 | MIT | https://github.com/juliangruber/brace-expansion.git |
-| braces | 3.0.3 | MIT | micromatch/braces |
-| browserslist | 4.28.1 | MIT | browserslist/browserslist |
-| buffer | 6.0.3 | MIT | git://github.com/feross/buffer.git |
-| camelcase-css | 2.0.1 | MIT | stevenvachon/camelcase-css |
-| caniuse-lite | 1.0.30001782 | CC-BY-4.0 | browserslist/caniuse-lite |
-| chai | 6.2.2 | MIT | https://github.com/chaijs/chai |
-| chokidar | 3.6.0 | MIT | https://github.com/paulmillr/chokidar.git |
-| clsx | 2.1.1 | MIT | lukeed/clsx |
-| commander | 4.1.1 | MIT | https://github.com/tj/commander.js.git |
-| convert-source-map | 2.0.0 | MIT | git://github.com/thlorenz/convert-source-map.git |
-| cross-spawn | 7.0.6 | MIT | git@github.com:moxystudio/node-cross-spawn.git |
-| css-tree | 3.2.1 | MIT | csstree/csstree |
-| css.escape | 1.5.1 | MIT | https://github.com/mathiasbynens/CSS.escape.git |
-| cssesc | 3.0.0 | MIT | https://github.com/mathiasbynens/cssesc.git |
-| csstype | 3.2.3 | MIT | https://github.com/frenic/csstype |
-| data-urls | 7.0.0 | MIT | https://github.com/jsdom/data-urls.git |
-| date-fns | 4.1.0 | MIT | https://github.com/date-fns/date-fns |
-| debug | 4.4.3 | MIT | git://github.com/debug-js/debug.git |
-| decimal.js | 10.6.0 | MIT | https://github.com/MikeMcl/decimal.js.git |
-| deep-is | 0.1.4 | MIT | http://github.com/thlorenz/deep-is.git |
-| detect-node-es | 1.1.0 | MIT | https://github.com/thekashey/detect-node |
-| didyoumean | 1.2.2 | Apache-2.0 | https://github.com/dcporter/didyoumean.js.git |
-| dlv | 1.1.3 | MIT | developit/dlv |
-| dom-accessibility-api | 0.6.3 | MIT | https://github.com/eps1lon/dom-accessibility-api.git |
-| electron-to-chromium | 1.5.328 | ISC | https://github.com/Kilian/electron-to-chromium.git |
-| entities | 6.0.1 | BSD-2-Clause | git://github.com/fb55/entities.git |
-| err-code | 3.0.1 | MIT | git://github.com/IndigoUnited/js-err-code.git |
-| es-module-lexer | 2.0.0 | MIT | https://github.com/guybedford/es-module-lexer.git |
-| esbuild | 0.28.1 | MIT | https://github.com/evanw/esbuild.git |
-| escalade | 3.2.0 | MIT | lukeed/escalade |
-| escape-string-regexp | 4.0.0 | MIT | sindresorhus/escape-string-regexp |
-| eslint | 10.8.0 | MIT | eslint/eslint |
-| eslint-plugin-react-hooks | 7.1.1 | MIT | https://github.com/facebook/react.git |
-| eslint-scope | 9.1.2 | BSD-2-Clause | https://github.com/eslint/js.git |
-| eslint-visitor-keys | 3.4.3 | Apache-2.0 | eslint/eslint-visitor-keys |
-| eslint-visitor-keys | 5.0.1 | Apache-2.0 | https://github.com/eslint/js.git |
-| espree | 11.2.0 | BSD-2-Clause | https://github.com/eslint/js.git |
-| esquery | 1.7.0 | BSD-3-Clause | https://github.com/estools/esquery.git |
-| esrecurse | 4.3.0 | BSD-2-Clause | https://github.com/estools/esrecurse.git |
-| estraverse | 5.3.0 | BSD-2-Clause | http://github.com/estools/estraverse.git |
-| estree-walker | 3.0.3 | MIT | https://github.com/Rich-Harris/estree-walker |
-| esutils | 2.0.3 | BSD-2-Clause | http://github.com/estools/esutils.git |
-| events | 3.3.0 | MIT | git://github.com/Gozala/events.git |
-| expect-type | 1.3.0 | Apache-2.0 | https://github.com/mmkal/expect-type.git |
-| fast-deep-equal | 3.1.3 | MIT | https://github.com/epoberezkin/fast-deep-equal.git |
-| fast-glob | 3.3.3 | MIT | mrmlnc/fast-glob |
-| fast-json-stable-stringify | 2.1.0 | MIT | git://github.com/epoberezkin/fast-json-stable-stringify.git |
-| fast-levenshtein | 2.0.6 | MIT | https://github.com/hiddentao/fast-levenshtein.git |
-| fastq | 1.20.1 | ISC | https://github.com/mcollina/fastq.git |
-| fdir | 6.5.0 | MIT | https://github.com/thecodrr/fdir.git |
-| file-entry-cache | 8.0.0 | MIT | jaredwray/file-entry-cache |
-| fill-range | 7.1.1 | MIT | jonschlinkert/fill-range |
-| find-up | 5.0.0 | MIT | sindresorhus/find-up |
-| flat-cache | 4.0.1 | MIT | jaredwray/flat-cache |
-| flatted | 3.4.3 | ISC | https://github.com/WebReflection/flatted.git |
-| fraction.js | 5.3.4 | MIT | ssh://git@github.com/rawify/Fraction.js.git |
-| framer-motion | 12.38.0 | MIT | https://github.com/motiondivision/motion/ |
-| fsevents | 2.3.2 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/fsevents/-/fsevents-2.3.2.tgz |
-| fsevents | 2.3.3 | UNKNOWN - REVIEW REQUIRED | https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz |
-| function-bind | 1.1.2 | MIT | https://github.com/Raynos/function-bind.git |
-| gensync | 1.0.0-beta.2 | MIT | https://github.com/loganfsmyth/gensync.git |
-| get-browser-rtc | 1.1.0 | MIT | git://github.com/substack/get-browser-rtc.git |
-| get-nonce | 1.0.1 | MIT | git@github.com:theKashey/get-nonce.git |
-| glob-parent | 5.1.2 | ISC | gulpjs/glob-parent |
-| glob-parent | 6.0.2 | ISC | gulpjs/glob-parent |
-| hasown | 2.0.2 | MIT | https://github.com/inspect-js/hasOwn.git |
-| hermes-estree | 0.25.1 | MIT | git@github.com:facebook/hermes.git |
-| hermes-parser | 0.25.1 | MIT | git@github.com:facebook/hermes.git |
-| html-encoding-sniffer | 6.0.0 | MIT | https://github.com/jsdom/html-encoding-sniffer.git |
-| ieee754 | 1.2.1 | BSD-3-Clause | git://github.com/feross/ieee754.git |
-| ignore | 5.3.2 | MIT | git@github.com:kaelzhang/node-ignore.git |
-| imurmurhash | 0.1.4 | MIT | https://github.com/jensyt/imurmurhash-js |
-| indent-string | 4.0.0 | MIT | sindresorhus/indent-string |
-| inherits | 2.0.4 | ISC | git://github.com/isaacs/inherits |
-| is-binary-path | 2.1.0 | MIT | sindresorhus/is-binary-path |
-| is-core-module | 2.16.1 | MIT | https://github.com/inspect-js/is-core-module.git |
-| is-extglob | 2.1.1 | MIT | jonschlinkert/is-extglob |
-| is-glob | 4.0.3 | MIT | micromatch/is-glob |
-| is-number | 7.0.0 | MIT | jonschlinkert/is-number |
-| is-potential-custom-element-name | 1.0.1 | MIT | https://github.com/mathiasbynens/is-potential-custom-element-name.git |
-| isexe | 2.0.0 | ISC | https://github.com/isaacs/isexe.git |
-| jiti | 1.21.7 | MIT | unjs/jiti |
-| jose | 6.2.4 | MIT | panva/jose |
-| js-tokens | 4.0.0 | MIT | lydell/js-tokens |
-| jsdom | 29.0.1 | MIT | https://github.com/jsdom/jsdom.git |
-| jsesc | 3.1.0 | MIT | https://github.com/mathiasbynens/jsesc.git |
-| json-buffer | 3.0.1 | MIT | git://github.com/dominictarr/json-buffer.git |
-| json-schema-traverse | 0.4.1 | MIT | https://github.com/epoberezkin/json-schema-traverse.git |
-| json-stable-stringify-without-jsonify | 1.0.1 | MIT | git://github.com/samn/json-stable-stringify.git |
-| json5 | 2.2.3 | MIT | https://github.com/json5/json5.git |
-| keyv | 4.5.4 | MIT | https://github.com/jaredwray/keyv.git |
-| levn | 0.4.1 | MIT | git://github.com/gkz/levn.git |
-| lilconfig | 3.1.3 | MIT | https://github.com/antonk52/lilconfig |
-| lines-and-columns | 1.2.4 | MIT | https://github.com/eventualbuddha/lines-and-columns.git |
-| livekit-client | 2.20.2 | Apache-2.0 | git@github.com:livekit/client-sdk-js.git |
-| locate-path | 6.0.0 | MIT | sindresorhus/locate-path |
-| loglevel | 1.9.2 | MIT | git://github.com/pimterry/loglevel.git |
-| lru-cache | 11.2.7 | BlueOak-1.0.0 | ssh://git@github.com/isaacs/node-lru-cache.git |
-| lru-cache | 5.1.1 | ISC | git://github.com/isaacs/node-lru-cache.git |
-| lucide-react | 1.26.0 | ISC | https://github.com/lucide-icons/lucide.git |
-| magic-string | 0.30.21 | MIT | https://github.com/Rich-Harris/magic-string.git |
-| mdn-data | 2.27.1 | CC0-1.0 | https://github.com/mdn/data.git |
-| merge2 | 1.4.1 | MIT | git@github.com:teambition/merge2.git |
-| micromatch | 4.0.8 | MIT | micromatch/micromatch |
-| min-indent | 1.0.1 | MIT | https://github.com/thejameskyle/min-indent |
-| minimatch | 10.2.5 | BlueOak-1.0.0 | git@github.com:isaacs/minimatch |
-| motion-dom | 12.38.0 | MIT | https://github.com/motiondivision/motion |
-| motion-utils | 12.36.0 | MIT | https://github.com/motiondivision/motion |
-| ms | 2.1.3 | MIT | vercel/ms |
-| mz | 2.7.0 | MIT | normalize/mz |
-| nanoid | 3.3.16 | MIT | ai/nanoid |
-| nanoid | 5.1.7 | MIT | ai/nanoid |
-| natural-compare | 1.4.0 | MIT | git://github.com/litejs/natural-compare-lite.git |
-| node-releases | 2.0.36 | MIT | https://github.com/chicoxyzzy/node-releases.git |
-| normalize-path | 3.0.0 | MIT | jonschlinkert/normalize-path |
-| object-assign | 4.1.1 | MIT | sindresorhus/object-assign |
-| object-hash | 3.0.0 | MIT | https://github.com/puleos/object-hash |
-| obug | 2.1.1 | MIT | https://github.com/sxzz/obug.git |
-| optionator | 0.9.4 | MIT | git://github.com/gkz/optionator.git |
-| p-limit | 3.1.0 | MIT | sindresorhus/p-limit |
-| p-locate | 5.0.0 | MIT | sindresorhus/p-locate |
-| parse5 | 8.0.0 | MIT | git://github.com/inikulin/parse5.git |
-| path-exists | 4.0.0 | MIT | sindresorhus/path-exists |
-| path-key | 3.1.1 | MIT | sindresorhus/path-key |
-| path-parse | 1.0.7 | MIT | https://github.com/jbgutierrez/path-parse.git |
-| pathe | 2.0.3 | MIT | unjs/pathe |
-| picocolors | 1.1.1 | ISC | alexeyraspopov/picocolors |
-| picomatch | 2.3.2 | MIT | micromatch/picomatch |
-| picomatch | 4.0.4 | MIT | micromatch/picomatch |
-| pify | 2.3.0 | MIT | sindresorhus/pify |
-| pirates | 4.0.7 | MIT | https://github.com/danez/pirates.git |
-| playwright | 1.61.1 | Apache-2.0 | https://github.com/microsoft/playwright.git |
-| playwright-core | 1.61.1 | Apache-2.0 | https://github.com/microsoft/playwright.git |
-| postcss | 8.5.22 | MIT | postcss/postcss |
-| postcss-import | 15.1.0 | MIT | https://github.com/postcss/postcss-import.git |
-| postcss-js | 4.1.0 | MIT | postcss/postcss-js |
-| postcss-load-config | 6.0.1 | MIT | postcss/postcss-load-config |
-| postcss-nested | 6.2.0 | MIT | postcss/postcss-nested |
-| postcss-selector-parser | 6.1.2 | MIT | postcss/postcss-selector-parser |
-| postcss-value-parser | 4.2.0 | MIT | https://github.com/TrySound/postcss-value-parser.git |
-| prelude-ls | 1.2.1 | MIT | git://github.com/gkz/prelude-ls.git |
-| punycode | 2.3.1 | MIT | https://github.com/mathiasbynens/punycode.js.git |
-| queue-microtask | 1.2.3 | MIT | git://github.com/feross/queue-microtask.git |
-| radix-ui | 1.6.7 | MIT | https://github.com/radix-ui/primitives.git |
-| randombytes | 2.1.0 | MIT | git@github.com:crypto-browserify/randombytes.git |
-| react | 19.2.4 | MIT | https://github.com/facebook/react.git |
-| react-dom | 19.2.4 | MIT | https://github.com/facebook/react.git |
-| react-refresh | 0.17.0 | MIT | https://github.com/facebook/react.git |
-| react-remove-scroll | 2.7.2 | MIT | https://github.com/theKashey/react-remove-scroll |
-| react-remove-scroll-bar | 2.3.8 | MIT | https://github.com/theKashey/react-remove-scroll-bar |
-| react-style-singleton | 2.2.3 | MIT | https://github.com/theKashey/react-style-singleton |
-| read-cache | 1.0.0 | MIT | https://github.com/TrySound/read-cache.git |
-| readable-stream | 3.6.2 | MIT | git://github.com/nodejs/readable-stream |
-| readdirp | 3.6.0 | MIT | git://github.com/paulmillr/readdirp.git |
-| redent | 3.0.0 | MIT | sindresorhus/redent |
-| require-from-string | 2.0.2 | MIT | floatdrop/require-from-string |
-| resolve | 1.22.11 | MIT | ssh://github.com/browserify/resolve.git |
-| reusify | 1.1.0 | MIT | https://github.com/mcollina/reusify.git |
-| rollup | 4.60.1 | MIT | https://github.com/rollup/rollup.git |
-| run-parallel | 1.2.0 | MIT | git://github.com/feross/run-parallel.git |
-| rxjs | 7.8.2 | Apache-2.0 | https://github.com/reactivex/rxjs.git |
-| safe-buffer | 5.2.1 | MIT | git://github.com/feross/safe-buffer.git |
-| saxes | 6.0.0 | ISC | https://github.com/lddubeau/saxes.git |
-| scheduler | 0.27.0 | MIT | https://github.com/facebook/react.git |
-| sdp | 3.2.2 | MIT | https://github.com/fippo/sdp.git |
-| sdp-transform | 2.15.0 | MIT | clux/sdp-transform |
-| semver | 6.3.1 | ISC | https://github.com/npm/node-semver.git |
-| semver | 7.8.5 | ISC | https://github.com/npm/node-semver.git |
-| shebang-command | 2.0.0 | MIT | kevva/shebang-command |
-| shebang-regex | 3.0.0 | MIT | sindresorhus/shebang-regex |
-| siginfo | 2.0.0 | ISC | https://github.com/emilbayes/siginfo.git |
-| simple-peer | 9.11.1 | MIT | git://github.com/feross/simple-peer.git |
-| source-map-js | 1.2.1 | BSD-3-Clause | 7rulnik/source-map-js |
-| stackback | 0.0.2 | MIT | git://github.com/shtylman/node-stackback.git |
-| std-env | 4.0.0 | MIT | unjs/std-env |
-| string_decoder | 1.3.0 | MIT | git://github.com/nodejs/string_decoder.git |
-| strip-indent | 3.0.0 | MIT | sindresorhus/strip-indent |
-| sucrase | 3.35.1 | MIT | https://github.com/alangpierce/sucrase.git |
-| supports-preserve-symlinks-flag | 1.0.0 | MIT | https://github.com/inspect-js/node-supports-preserve-symlinks-flag.git |
-| symbol-tree | 3.2.4 | MIT | https://github.com/jsdom/js-symbol-tree.git |
-| tailwindcss | 3.4.19 | MIT | https://github.com/tailwindlabs/tailwindcss.git#v3 |
-| thenify | 3.3.1 | MIT | thenables/thenify |
-| thenify-all | 1.6.0 | MIT | thenables/thenify-all |
-| tinybench | 2.9.0 | MIT | tinylibs/tinybench |
-| tinyexec | 1.0.4 | MIT | https://github.com/tinylibs/tinyexec.git |
-| tinyglobby | 0.2.15 | MIT | https://github.com/SuperchupuDev/tinyglobby.git |
-| tinyrainbow | 3.1.0 | MIT | https://github.com/tinylibs/tinyrainbow.git |
-| tldts | 7.0.27 | MIT | ssh://git@github.com/remusao/tldts.git |
-| tldts-core | 7.0.27 | MIT | ssh://git@github.com/remusao/tldts.git |
-| to-regex-range | 5.0.1 | MIT | micromatch/to-regex-range |
-| tough-cookie | 6.0.1 | BSD-3-Clause | git://github.com/salesforce/tough-cookie.git |
-| tr46 | 6.0.0 | MIT | https://github.com/jsdom/tr46.git |
-| ts-api-utils | 2.5.0 | MIT | https://github.com/JoshuaKGoldberg/ts-api-utils |
-| ts-interface-checker | 0.1.13 | Apache-2.0 | https://github.com/gristlabs/ts-interface-checker |
-| tslib | 2.8.1 | 0BSD | https://github.com/Microsoft/tslib.git |
-| type-check | 0.4.0 | MIT | git://github.com/gkz/type-check.git |
-| typed-emitter | 2.1.0 | MIT | github:andywer/typed-emitter |
-| typescript | 5.8.3 | Apache-2.0 | https://github.com/microsoft/TypeScript.git |
-| undici | 7.28.0 | MIT | https://github.com/nodejs/undici.git |
-| undici-types | 7.18.2 | MIT | https://github.com/nodejs/undici.git |
-| update-browserslist-db | 1.2.3 | MIT | browserslist/update-db |
-| uri-js | 4.4.1 | BSD-2-Clause | http://github.com/garycourt/uri-js |
-| use-callback-ref | 1.3.3 | MIT | https://github.com/theKashey/use-callback-ref/ |
-| use-sidecar | 1.1.3 | MIT | https://github.com/theKashey/use-sidecar |
-| util-deprecate | 1.0.2 | MIT | git://github.com/TooTallNate/util-deprecate.git |
-| vite | 7.3.6 | MIT | https://github.com/vitejs/vite.git |
-| vitest | 4.1.2 | MIT | https://github.com/vitest-dev/vitest.git |
-| w3c-xmlserializer | 5.0.0 | MIT | jsdom/w3c-xmlserializer |
-| webidl-conversions | 8.0.1 | BSD-2-Clause | https://github.com/jsdom/webidl-conversions.git |
-| webrtc-adapter | 9.0.6 | BSD-3-Clause | https://github.com/webrtchacks/adapter.git |
-| whatwg-mimetype | 5.0.0 | MIT | jsdom/whatwg-mimetype |
-| whatwg-url | 16.0.1 | MIT | https://github.com/jsdom/whatwg-url.git |
-| which | 2.0.2 | ISC | git://github.com/isaacs/node-which.git |
-| why-is-node-running | 2.3.0 | MIT | https://github.com/mafintosh/why-is-node-running.git |
-| word-wrap | 1.2.5 | MIT | jonschlinkert/word-wrap |
-| xml-name-validator | 5.0.0 | Apache-2.0 | jsdom/xml-name-validator |
-| xmlchars | 2.2.0 | MIT | https://github.com/lddubeau/xmlchars.git |
-| yallist | 3.1.1 | ISC | https://github.com/isaacs/yallist.git |
-| yocto-queue | 0.1.0 | MIT | sindresorhus/yocto-queue |
-| zod | 4.4.3 | MIT | https://github.com/colinhacks/zod.git |
-| zod-validation-error | 4.0.2 | MIT | git://github.com/causaly/zod-validation-error.git |
-| zustand | 5.0.12 | MIT | https://github.com/pmndrs/zustand.git |
+| @adobe/css-tools | 4.4.4 | MIT | https://registry.npmjs.org/@adobe/css-tools/-/css-tools-4.4.4.tgz |
+| @alloc/quick-lru | 5.2.0 | MIT | https://registry.npmjs.org/@alloc/quick-lru/-/quick-lru-5.2.0.tgz |
+| @asamuzakjp/css-color | 5.1.1 | MIT | https://registry.npmjs.org/@asamuzakjp/css-color/-/css-color-5.1.1.tgz |
+| @asamuzakjp/dom-selector | 7.0.4 | MIT | https://registry.npmjs.org/@asamuzakjp/dom-selector/-/dom-selector-7.0.4.tgz |
+| @asamuzakjp/nwsapi | 2.3.9 | MIT | https://registry.npmjs.org/@asamuzakjp/nwsapi/-/nwsapi-2.3.9.tgz |
+| @axe-core/playwright | 4.12.1 | MPL-2.0 | https://registry.npmjs.org/@axe-core/playwright/-/playwright-4.12.1.tgz |
+| @babel/code-frame | 7.29.7 | MIT | https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.29.7.tgz |
+| @babel/compat-data | 7.29.7 | MIT | https://registry.npmjs.org/@babel/compat-data/-/compat-data-7.29.7.tgz |
+| @babel/core | 7.29.7 | MIT | https://registry.npmjs.org/@babel/core/-/core-7.29.7.tgz |
+| @babel/generator | 7.29.7 | MIT | https://registry.npmjs.org/@babel/generator/-/generator-7.29.7.tgz |
+| @babel/helper-compilation-targets | 7.29.7 | MIT | https://registry.npmjs.org/@babel/helper-compilation-targets/-/helper-compilation-targets-7.29.7.tgz |
+| @babel/helper-globals | 7.29.7 | MIT | https://registry.npmjs.org/@babel/helper-globals/-/helper-globals-7.29.7.tgz |
+| @babel/helper-module-imports | 7.29.7 | MIT | https://registry.npmjs.org/@babel/helper-module-imports/-/helper-module-imports-7.29.7.tgz |
+| @babel/helper-module-transforms | 7.29.7 | MIT | https://registry.npmjs.org/@babel/helper-module-transforms/-/helper-module-transforms-7.29.7.tgz |
+| @babel/helper-plugin-utils | 7.28.6 | MIT | https://registry.npmjs.org/@babel/helper-plugin-utils/-/helper-plugin-utils-7.28.6.tgz |
+| @babel/helper-string-parser | 7.29.7 | MIT | https://registry.npmjs.org/@babel/helper-string-parser/-/helper-string-parser-7.29.7.tgz |
+| @babel/helper-validator-identifier | 7.29.7 | MIT | https://registry.npmjs.org/@babel/helper-validator-identifier/-/helper-validator-identifier-7.29.7.tgz |
+| @babel/helper-validator-option | 7.29.7 | MIT | https://registry.npmjs.org/@babel/helper-validator-option/-/helper-validator-option-7.29.7.tgz |
+| @babel/helpers | 7.29.7 | MIT | https://registry.npmjs.org/@babel/helpers/-/helpers-7.29.7.tgz |
+| @babel/parser | 7.29.7 | MIT | https://registry.npmjs.org/@babel/parser/-/parser-7.29.7.tgz |
+| @babel/plugin-transform-react-jsx-self | 7.27.1 | MIT | https://registry.npmjs.org/@babel/plugin-transform-react-jsx-self/-/plugin-transform-react-jsx-self-7.27.1.tgz |
+| @babel/plugin-transform-react-jsx-source | 7.27.1 | MIT | https://registry.npmjs.org/@babel/plugin-transform-react-jsx-source/-/plugin-transform-react-jsx-source-7.27.1.tgz |
+| @babel/template | 7.29.7 | MIT | https://registry.npmjs.org/@babel/template/-/template-7.29.7.tgz |
+| @babel/traverse | 7.29.7 | MIT | https://registry.npmjs.org/@babel/traverse/-/traverse-7.29.7.tgz |
+| @babel/types | 7.29.7 | MIT | https://registry.npmjs.org/@babel/types/-/types-7.29.7.tgz |
+| @bramus/specificity | 2.4.2 | MIT | https://registry.npmjs.org/@bramus/specificity/-/specificity-2.4.2.tgz |
+| @bufbuild/protobuf | 1.10.1 | (Apache-2.0 AND BSD-3-Clause) | https://registry.npmjs.org/@bufbuild/protobuf/-/protobuf-1.10.1.tgz |
+| @csstools/color-helpers | 6.0.2 | MIT-0 | https://registry.npmjs.org/@csstools/color-helpers/-/color-helpers-6.0.2.tgz |
+| @csstools/css-calc | 3.1.1 | MIT | https://registry.npmjs.org/@csstools/css-calc/-/css-calc-3.1.1.tgz |
+| @csstools/css-color-parser | 4.0.2 | MIT | https://registry.npmjs.org/@csstools/css-color-parser/-/css-color-parser-4.0.2.tgz |
+| @csstools/css-parser-algorithms | 4.0.0 | MIT | https://registry.npmjs.org/@csstools/css-parser-algorithms/-/css-parser-algorithms-4.0.0.tgz |
+| @csstools/css-syntax-patches-for-csstree | 1.1.2 | MIT-0 | https://registry.npmjs.org/@csstools/css-syntax-patches-for-csstree/-/css-syntax-patches-for-csstree-1.1.2.tgz |
+| @csstools/css-tokenizer | 4.0.0 | MIT | https://registry.npmjs.org/@csstools/css-tokenizer/-/css-tokenizer-4.0.0.tgz |
+| @esbuild/aix-ppc64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/aix-ppc64/-/aix-ppc64-0.28.1.tgz |
+| @esbuild/android-arm | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/android-arm/-/android-arm-0.28.1.tgz |
+| @esbuild/android-arm64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/android-arm64/-/android-arm64-0.28.1.tgz |
+| @esbuild/android-x64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/android-x64/-/android-x64-0.28.1.tgz |
+| @esbuild/darwin-arm64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/darwin-arm64/-/darwin-arm64-0.28.1.tgz |
+| @esbuild/darwin-x64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/darwin-x64/-/darwin-x64-0.28.1.tgz |
+| @esbuild/freebsd-arm64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/freebsd-arm64/-/freebsd-arm64-0.28.1.tgz |
+| @esbuild/freebsd-x64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/freebsd-x64/-/freebsd-x64-0.28.1.tgz |
+| @esbuild/linux-arm | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/linux-arm/-/linux-arm-0.28.1.tgz |
+| @esbuild/linux-arm64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/linux-arm64/-/linux-arm64-0.28.1.tgz |
+| @esbuild/linux-ia32 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/linux-ia32/-/linux-ia32-0.28.1.tgz |
+| @esbuild/linux-loong64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/linux-loong64/-/linux-loong64-0.28.1.tgz |
+| @esbuild/linux-mips64el | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/linux-mips64el/-/linux-mips64el-0.28.1.tgz |
+| @esbuild/linux-ppc64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/linux-ppc64/-/linux-ppc64-0.28.1.tgz |
+| @esbuild/linux-riscv64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/linux-riscv64/-/linux-riscv64-0.28.1.tgz |
+| @esbuild/linux-s390x | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/linux-s390x/-/linux-s390x-0.28.1.tgz |
+| @esbuild/linux-x64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.28.1.tgz |
+| @esbuild/netbsd-arm64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/netbsd-arm64/-/netbsd-arm64-0.28.1.tgz |
+| @esbuild/netbsd-x64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/netbsd-x64/-/netbsd-x64-0.28.1.tgz |
+| @esbuild/openbsd-arm64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/openbsd-arm64/-/openbsd-arm64-0.28.1.tgz |
+| @esbuild/openbsd-x64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/openbsd-x64/-/openbsd-x64-0.28.1.tgz |
+| @esbuild/openharmony-arm64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/openharmony-arm64/-/openharmony-arm64-0.28.1.tgz |
+| @esbuild/sunos-x64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/sunos-x64/-/sunos-x64-0.28.1.tgz |
+| @esbuild/win32-arm64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/win32-arm64/-/win32-arm64-0.28.1.tgz |
+| @esbuild/win32-ia32 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/win32-ia32/-/win32-ia32-0.28.1.tgz |
+| @esbuild/win32-x64 | 0.28.1 | MIT | https://registry.npmjs.org/@esbuild/win32-x64/-/win32-x64-0.28.1.tgz |
+| @eslint-community/eslint-utils | 4.10.1 | MIT | https://registry.npmjs.org/@eslint-community/eslint-utils/-/eslint-utils-4.10.1.tgz |
+| @eslint-community/regexpp | 4.12.2 | MIT | https://registry.npmjs.org/@eslint-community/regexpp/-/regexpp-4.12.2.tgz |
+| @eslint/config-array | 0.23.5 | Apache-2.0 | https://registry.npmjs.org/@eslint/config-array/-/config-array-0.23.5.tgz |
+| @eslint/config-helpers | 0.7.0 | Apache-2.0 | https://registry.npmjs.org/@eslint/config-helpers/-/config-helpers-0.7.0.tgz |
+| @eslint/core | 1.2.1 | Apache-2.0 | https://registry.npmjs.org/@eslint/core/-/core-1.2.1.tgz |
+| @eslint/object-schema | 3.0.5 | Apache-2.0 | https://registry.npmjs.org/@eslint/object-schema/-/object-schema-3.0.5.tgz |
+| @eslint/plugin-kit | 0.7.2 | Apache-2.0 | https://registry.npmjs.org/@eslint/plugin-kit/-/plugin-kit-0.7.2.tgz |
+| @exodus/bytes | 1.15.0 | MIT | https://registry.npmjs.org/@exodus/bytes/-/bytes-1.15.0.tgz |
+| @floating-ui/core | 1.8.0 | MIT | https://registry.npmjs.org/@floating-ui/core/-/core-1.8.0.tgz |
+| @floating-ui/dom | 1.8.0 | MIT | https://registry.npmjs.org/@floating-ui/dom/-/dom-1.8.0.tgz |
+| @floating-ui/react-dom | 2.1.9 | MIT | https://registry.npmjs.org/@floating-ui/react-dom/-/react-dom-2.1.9.tgz |
+| @floating-ui/utils | 0.2.12 | MIT | https://registry.npmjs.org/@floating-ui/utils/-/utils-0.2.12.tgz |
+| @fontsource-variable/inter | 5.3.0 | OFL-1.1 | https://registry.npmjs.org/@fontsource-variable/inter/-/inter-5.3.0.tgz |
+| @humanfs/core | 0.19.2 | Apache-2.0 | https://registry.npmjs.org/@humanfs/core/-/core-0.19.2.tgz |
+| @humanfs/node | 0.16.8 | Apache-2.0 | https://registry.npmjs.org/@humanfs/node/-/node-0.16.8.tgz |
+| @humanfs/types | 0.15.0 | Apache-2.0 | https://registry.npmjs.org/@humanfs/types/-/types-0.15.0.tgz |
+| @humanwhocodes/module-importer | 1.0.1 | Apache-2.0 | https://registry.npmjs.org/@humanwhocodes/module-importer/-/module-importer-1.0.1.tgz |
+| @humanwhocodes/retry | 0.4.3 | Apache-2.0 | https://registry.npmjs.org/@humanwhocodes/retry/-/retry-0.4.3.tgz |
+| @jridgewell/gen-mapping | 0.3.13 | MIT | https://registry.npmjs.org/@jridgewell/gen-mapping/-/gen-mapping-0.3.13.tgz |
+| @jridgewell/remapping | 2.3.5 | MIT | https://registry.npmjs.org/@jridgewell/remapping/-/remapping-2.3.5.tgz |
+| @jridgewell/resolve-uri | 3.1.2 | MIT | https://registry.npmjs.org/@jridgewell/resolve-uri/-/resolve-uri-3.1.2.tgz |
+| @jridgewell/sourcemap-codec | 1.5.5 | MIT | https://registry.npmjs.org/@jridgewell/sourcemap-codec/-/sourcemap-codec-1.5.5.tgz |
+| @jridgewell/trace-mapping | 0.3.31 | MIT | https://registry.npmjs.org/@jridgewell/trace-mapping/-/trace-mapping-0.3.31.tgz |
+| @livekit/mutex | 1.1.1 | Apache-2.0 | https://registry.npmjs.org/@livekit/mutex/-/mutex-1.1.1.tgz |
+| @livekit/protocol | 1.46.6 | Apache-2.0 | https://registry.npmjs.org/@livekit/protocol/-/protocol-1.46.6.tgz |
+| @nodelib/fs.scandir | 2.1.5 | MIT | https://registry.npmjs.org/@nodelib/fs.scandir/-/fs.scandir-2.1.5.tgz |
+| @nodelib/fs.stat | 2.0.5 | MIT | https://registry.npmjs.org/@nodelib/fs.stat/-/fs.stat-2.0.5.tgz |
+| @nodelib/fs.walk | 1.2.8 | MIT | https://registry.npmjs.org/@nodelib/fs.walk/-/fs.walk-1.2.8.tgz |
+| @playwright/test | 1.61.1 | Apache-2.0 | https://registry.npmjs.org/@playwright/test/-/test-1.61.1.tgz |
+| @radix-ui/number | 1.1.3 | MIT | https://registry.npmjs.org/@radix-ui/number/-/number-1.1.3.tgz |
+| @radix-ui/primitive | 1.1.7 | MIT | https://registry.npmjs.org/@radix-ui/primitive/-/primitive-1.1.7.tgz |
+| @radix-ui/react-accessible-icon | 1.1.15 | MIT | https://registry.npmjs.org/@radix-ui/react-accessible-icon/-/react-accessible-icon-1.1.15.tgz |
+| @radix-ui/react-accordion | 1.2.20 | MIT | https://registry.npmjs.org/@radix-ui/react-accordion/-/react-accordion-1.2.20.tgz |
+| @radix-ui/react-alert-dialog | 1.1.23 | MIT | https://registry.npmjs.org/@radix-ui/react-alert-dialog/-/react-alert-dialog-1.1.23.tgz |
+| @radix-ui/react-arrow | 1.1.15 | MIT | https://registry.npmjs.org/@radix-ui/react-arrow/-/react-arrow-1.1.15.tgz |
+| @radix-ui/react-aspect-ratio | 1.1.15 | MIT | https://registry.npmjs.org/@radix-ui/react-aspect-ratio/-/react-aspect-ratio-1.1.15.tgz |
+| @radix-ui/react-avatar | 1.2.6 | MIT | https://registry.npmjs.org/@radix-ui/react-avatar/-/react-avatar-1.2.6.tgz |
+| @radix-ui/react-checkbox | 1.3.11 | MIT | https://registry.npmjs.org/@radix-ui/react-checkbox/-/react-checkbox-1.3.11.tgz |
+| @radix-ui/react-collapsible | 1.1.20 | MIT | https://registry.npmjs.org/@radix-ui/react-collapsible/-/react-collapsible-1.1.20.tgz |
+| @radix-ui/react-collection | 1.1.15 | MIT | https://registry.npmjs.org/@radix-ui/react-collection/-/react-collection-1.1.15.tgz |
+| @radix-ui/react-compose-refs | 1.1.5 | MIT | https://registry.npmjs.org/@radix-ui/react-compose-refs/-/react-compose-refs-1.1.5.tgz |
+| @radix-ui/react-context | 1.2.2 | MIT | https://registry.npmjs.org/@radix-ui/react-context/-/react-context-1.2.2.tgz |
+| @radix-ui/react-context-menu | 2.3.7 | MIT | https://registry.npmjs.org/@radix-ui/react-context-menu/-/react-context-menu-2.3.7.tgz |
+| @radix-ui/react-dialog | 1.1.23 | MIT | https://registry.npmjs.org/@radix-ui/react-dialog/-/react-dialog-1.1.23.tgz |
+| @radix-ui/react-direction | 1.1.4 | MIT | https://registry.npmjs.org/@radix-ui/react-direction/-/react-direction-1.1.4.tgz |
+| @radix-ui/react-dismissable-layer | 1.1.19 | MIT | https://registry.npmjs.org/@radix-ui/react-dismissable-layer/-/react-dismissable-layer-1.1.19.tgz |
+| @radix-ui/react-dropdown-menu | 2.1.24 | MIT | https://registry.npmjs.org/@radix-ui/react-dropdown-menu/-/react-dropdown-menu-2.1.24.tgz |
+| @radix-ui/react-focus-guards | 1.1.6 | MIT | https://registry.npmjs.org/@radix-ui/react-focus-guards/-/react-focus-guards-1.1.6.tgz |
+| @radix-ui/react-focus-scope | 1.1.16 | MIT | https://registry.npmjs.org/@radix-ui/react-focus-scope/-/react-focus-scope-1.1.16.tgz |
+| @radix-ui/react-form | 0.1.16 | MIT | https://registry.npmjs.org/@radix-ui/react-form/-/react-form-0.1.16.tgz |
+| @radix-ui/react-hover-card | 1.1.23 | MIT | https://registry.npmjs.org/@radix-ui/react-hover-card/-/react-hover-card-1.1.23.tgz |
+| @radix-ui/react-id | 1.1.4 | MIT | https://registry.npmjs.org/@radix-ui/react-id/-/react-id-1.1.4.tgz |
+| @radix-ui/react-label | 2.1.15 | MIT | https://registry.npmjs.org/@radix-ui/react-label/-/react-label-2.1.15.tgz |
+| @radix-ui/react-menu | 2.1.24 | MIT | https://registry.npmjs.org/@radix-ui/react-menu/-/react-menu-2.1.24.tgz |
+| @radix-ui/react-menubar | 1.1.24 | MIT | https://registry.npmjs.org/@radix-ui/react-menubar/-/react-menubar-1.1.24.tgz |
+| @radix-ui/react-navigation-menu | 1.2.22 | MIT | https://registry.npmjs.org/@radix-ui/react-navigation-menu/-/react-navigation-menu-1.2.22.tgz |
+| @radix-ui/react-one-time-password-field | 0.1.16 | MIT | https://registry.npmjs.org/@radix-ui/react-one-time-password-field/-/react-one-time-password-field-0.1.16.tgz |
+| @radix-ui/react-password-toggle-field | 0.1.11 | MIT | https://registry.npmjs.org/@radix-ui/react-password-toggle-field/-/react-password-toggle-field-0.1.11.tgz |
+| @radix-ui/react-popover | 1.1.23 | MIT | https://registry.npmjs.org/@radix-ui/react-popover/-/react-popover-1.1.23.tgz |
+| @radix-ui/react-popper | 1.3.7 | MIT | https://registry.npmjs.org/@radix-ui/react-popper/-/react-popper-1.3.7.tgz |
+| @radix-ui/react-portal | 1.1.17 | MIT | https://registry.npmjs.org/@radix-ui/react-portal/-/react-portal-1.1.17.tgz |
+| @radix-ui/react-presence | 1.1.10 | MIT | https://registry.npmjs.org/@radix-ui/react-presence/-/react-presence-1.1.10.tgz |
+| @radix-ui/react-primitive | 2.1.10 | MIT | https://registry.npmjs.org/@radix-ui/react-primitive/-/react-primitive-2.1.10.tgz |
+| @radix-ui/react-progress | 1.1.16 | MIT | https://registry.npmjs.org/@radix-ui/react-progress/-/react-progress-1.1.16.tgz |
+| @radix-ui/react-radio-group | 1.4.7 | MIT | https://registry.npmjs.org/@radix-ui/react-radio-group/-/react-radio-group-1.4.7.tgz |
+| @radix-ui/react-roving-focus | 1.1.19 | MIT | https://registry.npmjs.org/@radix-ui/react-roving-focus/-/react-roving-focus-1.1.19.tgz |
+| @radix-ui/react-scroll-area | 1.2.18 | MIT | https://registry.npmjs.org/@radix-ui/react-scroll-area/-/react-scroll-area-1.2.18.tgz |
+| @radix-ui/react-select | 2.3.7 | MIT | https://registry.npmjs.org/@radix-ui/react-select/-/react-select-2.3.7.tgz |
+| @radix-ui/react-separator | 1.1.15 | MIT | https://registry.npmjs.org/@radix-ui/react-separator/-/react-separator-1.1.15.tgz |
+| @radix-ui/react-slider | 1.4.7 | MIT | https://registry.npmjs.org/@radix-ui/react-slider/-/react-slider-1.4.7.tgz |
+| @radix-ui/react-slot | 1.3.3 | MIT | https://registry.npmjs.org/@radix-ui/react-slot/-/react-slot-1.3.3.tgz |
+| @radix-ui/react-switch | 1.3.7 | MIT | https://registry.npmjs.org/@radix-ui/react-switch/-/react-switch-1.3.7.tgz |
+| @radix-ui/react-tabs | 1.1.21 | MIT | https://registry.npmjs.org/@radix-ui/react-tabs/-/react-tabs-1.1.21.tgz |
+| @radix-ui/react-toast | 1.2.23 | MIT | https://registry.npmjs.org/@radix-ui/react-toast/-/react-toast-1.2.23.tgz |
+| @radix-ui/react-toggle | 1.1.18 | MIT | https://registry.npmjs.org/@radix-ui/react-toggle/-/react-toggle-1.1.18.tgz |
+| @radix-ui/react-toggle-group | 1.1.19 | MIT | https://registry.npmjs.org/@radix-ui/react-toggle-group/-/react-toggle-group-1.1.19.tgz |
+| @radix-ui/react-toolbar | 1.1.19 | MIT | https://registry.npmjs.org/@radix-ui/react-toolbar/-/react-toolbar-1.1.19.tgz |
+| @radix-ui/react-tooltip | 1.2.16 | MIT | https://registry.npmjs.org/@radix-ui/react-tooltip/-/react-tooltip-1.2.16.tgz |
+| @radix-ui/react-use-callback-ref | 1.1.4 | MIT | https://registry.npmjs.org/@radix-ui/react-use-callback-ref/-/react-use-callback-ref-1.1.4.tgz |
+| @radix-ui/react-use-controllable-state | 1.2.6 | MIT | https://registry.npmjs.org/@radix-ui/react-use-controllable-state/-/react-use-controllable-state-1.2.6.tgz |
+| @radix-ui/react-use-effect-event | 0.0.5 | MIT | https://registry.npmjs.org/@radix-ui/react-use-effect-event/-/react-use-effect-event-0.0.5.tgz |
+| @radix-ui/react-use-escape-keydown | 1.1.5 | MIT | https://registry.npmjs.org/@radix-ui/react-use-escape-keydown/-/react-use-escape-keydown-1.1.5.tgz |
+| @radix-ui/react-use-is-hydrated | 0.1.3 | MIT | https://registry.npmjs.org/@radix-ui/react-use-is-hydrated/-/react-use-is-hydrated-0.1.3.tgz |
+| @radix-ui/react-use-layout-effect | 1.1.4 | MIT | https://registry.npmjs.org/@radix-ui/react-use-layout-effect/-/react-use-layout-effect-1.1.4.tgz |
+| @radix-ui/react-use-previous | 1.1.4 | MIT | https://registry.npmjs.org/@radix-ui/react-use-previous/-/react-use-previous-1.1.4.tgz |
+| @radix-ui/react-use-rect | 1.1.4 | MIT | https://registry.npmjs.org/@radix-ui/react-use-rect/-/react-use-rect-1.1.4.tgz |
+| @radix-ui/react-use-size | 1.1.4 | MIT | https://registry.npmjs.org/@radix-ui/react-use-size/-/react-use-size-1.1.4.tgz |
+| @radix-ui/react-visually-hidden | 1.2.11 | MIT | https://registry.npmjs.org/@radix-ui/react-visually-hidden/-/react-visually-hidden-1.2.11.tgz |
+| @radix-ui/rect | 1.1.3 | MIT | https://registry.npmjs.org/@radix-ui/rect/-/rect-1.1.3.tgz |
+| @rolldown/pluginutils | 1.0.0-beta.27 | MIT | https://registry.npmjs.org/@rolldown/pluginutils/-/pluginutils-1.0.0-beta.27.tgz |
+| @rollup/rollup-android-arm-eabi | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-android-arm-eabi/-/rollup-android-arm-eabi-4.60.1.tgz |
+| @rollup/rollup-android-arm64 | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-android-arm64/-/rollup-android-arm64-4.60.1.tgz |
+| @rollup/rollup-darwin-arm64 | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-darwin-arm64/-/rollup-darwin-arm64-4.60.1.tgz |
+| @rollup/rollup-darwin-x64 | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-darwin-x64/-/rollup-darwin-x64-4.60.1.tgz |
+| @rollup/rollup-freebsd-arm64 | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-freebsd-arm64/-/rollup-freebsd-arm64-4.60.1.tgz |
+| @rollup/rollup-freebsd-x64 | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-freebsd-x64/-/rollup-freebsd-x64-4.60.1.tgz |
+| @rollup/rollup-linux-arm-gnueabihf | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-linux-arm-gnueabihf/-/rollup-linux-arm-gnueabihf-4.60.1.tgz |
+| @rollup/rollup-linux-arm-musleabihf | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-linux-arm-musleabihf/-/rollup-linux-arm-musleabihf-4.60.1.tgz |
+| @rollup/rollup-linux-arm64-gnu | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-linux-arm64-gnu/-/rollup-linux-arm64-gnu-4.60.1.tgz |
+| @rollup/rollup-linux-arm64-musl | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-linux-arm64-musl/-/rollup-linux-arm64-musl-4.60.1.tgz |
+| @rollup/rollup-linux-loong64-gnu | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-linux-loong64-gnu/-/rollup-linux-loong64-gnu-4.60.1.tgz |
+| @rollup/rollup-linux-loong64-musl | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-linux-loong64-musl/-/rollup-linux-loong64-musl-4.60.1.tgz |
+| @rollup/rollup-linux-ppc64-gnu | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-linux-ppc64-gnu/-/rollup-linux-ppc64-gnu-4.60.1.tgz |
+| @rollup/rollup-linux-ppc64-musl | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-linux-ppc64-musl/-/rollup-linux-ppc64-musl-4.60.1.tgz |
+| @rollup/rollup-linux-riscv64-gnu | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-linux-riscv64-gnu/-/rollup-linux-riscv64-gnu-4.60.1.tgz |
+| @rollup/rollup-linux-riscv64-musl | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-linux-riscv64-musl/-/rollup-linux-riscv64-musl-4.60.1.tgz |
+| @rollup/rollup-linux-s390x-gnu | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-linux-s390x-gnu/-/rollup-linux-s390x-gnu-4.60.1.tgz |
+| @rollup/rollup-linux-x64-gnu | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-linux-x64-gnu/-/rollup-linux-x64-gnu-4.60.1.tgz |
+| @rollup/rollup-linux-x64-musl | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-linux-x64-musl/-/rollup-linux-x64-musl-4.60.1.tgz |
+| @rollup/rollup-openbsd-x64 | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-openbsd-x64/-/rollup-openbsd-x64-4.60.1.tgz |
+| @rollup/rollup-openharmony-arm64 | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-openharmony-arm64/-/rollup-openharmony-arm64-4.60.1.tgz |
+| @rollup/rollup-win32-arm64-msvc | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-win32-arm64-msvc/-/rollup-win32-arm64-msvc-4.60.1.tgz |
+| @rollup/rollup-win32-ia32-msvc | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-win32-ia32-msvc/-/rollup-win32-ia32-msvc-4.60.1.tgz |
+| @rollup/rollup-win32-x64-gnu | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-win32-x64-gnu/-/rollup-win32-x64-gnu-4.60.1.tgz |
+| @rollup/rollup-win32-x64-msvc | 4.60.1 | MIT | https://registry.npmjs.org/@rollup/rollup-win32-x64-msvc/-/rollup-win32-x64-msvc-4.60.1.tgz |
+| @standard-schema/spec | 1.1.0 | MIT | https://registry.npmjs.org/@standard-schema/spec/-/spec-1.1.0.tgz |
+| @tauri-apps/api | 2.11.1 | Apache-2.0 OR MIT | https://registry.npmjs.org/@tauri-apps/api/-/api-2.11.1.tgz |
+| @tauri-apps/cli | 2.10.1 | Apache-2.0 OR MIT | https://registry.npmjs.org/@tauri-apps/cli/-/cli-2.10.1.tgz |
+| @tauri-apps/cli-darwin-arm64 | 2.10.1 | Apache-2.0 OR MIT | https://registry.npmjs.org/@tauri-apps/cli-darwin-arm64/-/cli-darwin-arm64-2.10.1.tgz |
+| @tauri-apps/cli-darwin-x64 | 2.10.1 | Apache-2.0 OR MIT | https://registry.npmjs.org/@tauri-apps/cli-darwin-x64/-/cli-darwin-x64-2.10.1.tgz |
+| @tauri-apps/cli-linux-arm-gnueabihf | 2.10.1 | Apache-2.0 OR MIT | https://registry.npmjs.org/@tauri-apps/cli-linux-arm-gnueabihf/-/cli-linux-arm-gnueabihf-2.10.1.tgz |
+| @tauri-apps/cli-linux-arm64-gnu | 2.10.1 | Apache-2.0 OR MIT | https://registry.npmjs.org/@tauri-apps/cli-linux-arm64-gnu/-/cli-linux-arm64-gnu-2.10.1.tgz |
+| @tauri-apps/cli-linux-arm64-musl | 2.10.1 | Apache-2.0 OR MIT | https://registry.npmjs.org/@tauri-apps/cli-linux-arm64-musl/-/cli-linux-arm64-musl-2.10.1.tgz |
+| @tauri-apps/cli-linux-riscv64-gnu | 2.10.1 | Apache-2.0 OR MIT | https://registry.npmjs.org/@tauri-apps/cli-linux-riscv64-gnu/-/cli-linux-riscv64-gnu-2.10.1.tgz |
+| @tauri-apps/cli-linux-x64-gnu | 2.10.1 | Apache-2.0 OR MIT | https://registry.npmjs.org/@tauri-apps/cli-linux-x64-gnu/-/cli-linux-x64-gnu-2.10.1.tgz |
+| @tauri-apps/cli-linux-x64-musl | 2.10.1 | Apache-2.0 OR MIT | https://registry.npmjs.org/@tauri-apps/cli-linux-x64-musl/-/cli-linux-x64-musl-2.10.1.tgz |
+| @tauri-apps/cli-win32-arm64-msvc | 2.10.1 | Apache-2.0 OR MIT | https://registry.npmjs.org/@tauri-apps/cli-win32-arm64-msvc/-/cli-win32-arm64-msvc-2.10.1.tgz |
+| @tauri-apps/cli-win32-ia32-msvc | 2.10.1 | Apache-2.0 OR MIT | https://registry.npmjs.org/@tauri-apps/cli-win32-ia32-msvc/-/cli-win32-ia32-msvc-2.10.1.tgz |
+| @tauri-apps/cli-win32-x64-msvc | 2.10.1 | Apache-2.0 OR MIT | https://registry.npmjs.org/@tauri-apps/cli-win32-x64-msvc/-/cli-win32-x64-msvc-2.10.1.tgz |
+| @tauri-apps/plugin-dialog | 2.7.2 | MIT OR Apache-2.0 | https://registry.npmjs.org/@tauri-apps/plugin-dialog/-/plugin-dialog-2.7.2.tgz |
+| @testing-library/jest-dom | 6.9.1 | MIT | https://registry.npmjs.org/@testing-library/jest-dom/-/jest-dom-6.9.1.tgz |
+| @types/babel__core | 7.20.5 | MIT | https://registry.npmjs.org/@types/babel__core/-/babel__core-7.20.5.tgz |
+| @types/babel__generator | 7.27.0 | MIT | https://registry.npmjs.org/@types/babel__generator/-/babel__generator-7.27.0.tgz |
+| @types/babel__template | 7.4.4 | MIT | https://registry.npmjs.org/@types/babel__template/-/babel__template-7.4.4.tgz |
+| @types/babel__traverse | 7.28.0 | MIT | https://registry.npmjs.org/@types/babel__traverse/-/babel__traverse-7.28.0.tgz |
+| @types/chai | 5.2.3 | MIT | https://registry.npmjs.org/@types/chai/-/chai-5.2.3.tgz |
+| @types/deep-eql | 4.0.2 | MIT | https://registry.npmjs.org/@types/deep-eql/-/deep-eql-4.0.2.tgz |
+| @types/dom-mediacapture-record | 1.0.22 | MIT | https://registry.npmjs.org/@types/dom-mediacapture-record/-/dom-mediacapture-record-1.0.22.tgz |
+| @types/esrecurse | 4.3.1 | MIT | https://registry.npmjs.org/@types/esrecurse/-/esrecurse-4.3.1.tgz |
+| @types/estree | 1.0.8 | MIT | https://registry.npmjs.org/@types/estree/-/estree-1.0.8.tgz |
+| @types/json-schema | 7.0.15 | MIT | https://registry.npmjs.org/@types/json-schema/-/json-schema-7.0.15.tgz |
+| @types/node | 25.5.0 | MIT | https://registry.npmjs.org/@types/node/-/node-25.5.0.tgz |
+| @types/react | 19.2.14 | MIT | https://registry.npmjs.org/@types/react/-/react-19.2.14.tgz |
+| @types/react-dom | 19.2.3 | MIT | https://registry.npmjs.org/@types/react-dom/-/react-dom-19.2.3.tgz |
+| @types/simple-peer | 9.11.9 | MIT | https://registry.npmjs.org/@types/simple-peer/-/simple-peer-9.11.9.tgz |
+| @typescript-eslint/parser | 8.65.0 | MIT | https://registry.npmjs.org/@typescript-eslint/parser/-/parser-8.65.0.tgz |
+| @typescript-eslint/project-service | 8.65.0 | MIT | https://registry.npmjs.org/@typescript-eslint/project-service/-/project-service-8.65.0.tgz |
+| @typescript-eslint/scope-manager | 8.65.0 | MIT | https://registry.npmjs.org/@typescript-eslint/scope-manager/-/scope-manager-8.65.0.tgz |
+| @typescript-eslint/tsconfig-utils | 8.65.0 | MIT | https://registry.npmjs.org/@typescript-eslint/tsconfig-utils/-/tsconfig-utils-8.65.0.tgz |
+| @typescript-eslint/types | 8.65.0 | MIT | https://registry.npmjs.org/@typescript-eslint/types/-/types-8.65.0.tgz |
+| @typescript-eslint/typescript-estree | 8.65.0 | MIT | https://registry.npmjs.org/@typescript-eslint/typescript-estree/-/typescript-estree-8.65.0.tgz |
+| @typescript-eslint/visitor-keys | 8.65.0 | MIT | https://registry.npmjs.org/@typescript-eslint/visitor-keys/-/visitor-keys-8.65.0.tgz |
+| @vitejs/plugin-react | 4.7.0 | MIT | https://registry.npmjs.org/@vitejs/plugin-react/-/plugin-react-4.7.0.tgz |
+| @vitest/expect | 4.1.2 | MIT | https://registry.npmjs.org/@vitest/expect/-/expect-4.1.2.tgz |
+| @vitest/mocker | 4.1.2 | MIT | https://registry.npmjs.org/@vitest/mocker/-/mocker-4.1.2.tgz |
+| @vitest/pretty-format | 4.1.2 | MIT | https://registry.npmjs.org/@vitest/pretty-format/-/pretty-format-4.1.2.tgz |
+| @vitest/runner | 4.1.2 | MIT | https://registry.npmjs.org/@vitest/runner/-/runner-4.1.2.tgz |
+| @vitest/snapshot | 4.1.2 | MIT | https://registry.npmjs.org/@vitest/snapshot/-/snapshot-4.1.2.tgz |
+| @vitest/spy | 4.1.2 | MIT | https://registry.npmjs.org/@vitest/spy/-/spy-4.1.2.tgz |
+| @vitest/utils | 4.1.2 | MIT | https://registry.npmjs.org/@vitest/utils/-/utils-4.1.2.tgz |
+| acorn | 8.17.0 | MIT | https://registry.npmjs.org/acorn/-/acorn-8.17.0.tgz |
+| acorn-jsx | 5.3.2 | MIT | https://registry.npmjs.org/acorn-jsx/-/acorn-jsx-5.3.2.tgz |
+| ajv | 6.15.0 | MIT | https://registry.npmjs.org/ajv/-/ajv-6.15.0.tgz |
+| any-promise | 1.3.0 | MIT | https://registry.npmjs.org/any-promise/-/any-promise-1.3.0.tgz |
+| anymatch | 3.1.3 | ISC | https://registry.npmjs.org/anymatch/-/anymatch-3.1.3.tgz |
+| arg | 5.0.2 | MIT | https://registry.npmjs.org/arg/-/arg-5.0.2.tgz |
+| aria-hidden | 1.2.6 | MIT | https://registry.npmjs.org/aria-hidden/-/aria-hidden-1.2.6.tgz |
+| aria-query | 5.3.2 | Apache-2.0 | https://registry.npmjs.org/aria-query/-/aria-query-5.3.2.tgz |
+| assertion-error | 2.0.1 | MIT | https://registry.npmjs.org/assertion-error/-/assertion-error-2.0.1.tgz |
+| autoprefixer | 10.4.27 | MIT | https://registry.npmjs.org/autoprefixer/-/autoprefixer-10.4.27.tgz |
+| axe-core | 4.12.1 | MPL-2.0 | https://registry.npmjs.org/axe-core/-/axe-core-4.12.1.tgz |
+| babel-plugin-react-compiler | 1.0.0 | MIT | https://registry.npmjs.org/babel-plugin-react-compiler/-/babel-plugin-react-compiler-1.0.0.tgz |
+| balanced-match | 4.0.4 | MIT | https://registry.npmjs.org/balanced-match/-/balanced-match-4.0.4.tgz |
+| base64-js | 1.5.1 | MIT | https://registry.npmjs.org/base64-js/-/base64-js-1.5.1.tgz |
+| baseline-browser-mapping | 2.10.12 | Apache-2.0 | https://registry.npmjs.org/baseline-browser-mapping/-/baseline-browser-mapping-2.10.12.tgz |
+| bidi-js | 1.0.3 | MIT | https://registry.npmjs.org/bidi-js/-/bidi-js-1.0.3.tgz |
+| binary-extensions | 2.3.0 | MIT | https://registry.npmjs.org/binary-extensions/-/binary-extensions-2.3.0.tgz |
+| brace-expansion | 5.0.8 | MIT | https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.8.tgz |
+| braces | 3.0.3 | MIT | https://registry.npmjs.org/braces/-/braces-3.0.3.tgz |
+| browserslist | 4.28.1 | MIT | https://registry.npmjs.org/browserslist/-/browserslist-4.28.1.tgz |
+| buffer | 6.0.3 | MIT | https://registry.npmjs.org/buffer/-/buffer-6.0.3.tgz |
+| camelcase-css | 2.0.1 | MIT | https://registry.npmjs.org/camelcase-css/-/camelcase-css-2.0.1.tgz |
+| caniuse-lite | 1.0.30001782 | CC-BY-4.0 | https://registry.npmjs.org/caniuse-lite/-/caniuse-lite-1.0.30001782.tgz |
+| chai | 6.2.2 | MIT | https://registry.npmjs.org/chai/-/chai-6.2.2.tgz |
+| chokidar | 3.6.0 | MIT | https://registry.npmjs.org/chokidar/-/chokidar-3.6.0.tgz |
+| clsx | 2.1.1 | MIT | https://registry.npmjs.org/clsx/-/clsx-2.1.1.tgz |
+| commander | 4.1.1 | MIT | https://registry.npmjs.org/commander/-/commander-4.1.1.tgz |
+| convert-source-map | 2.0.0 | MIT | https://registry.npmjs.org/convert-source-map/-/convert-source-map-2.0.0.tgz |
+| cross-spawn | 7.0.6 | MIT | https://registry.npmjs.org/cross-spawn/-/cross-spawn-7.0.6.tgz |
+| css-tree | 3.2.1 | MIT | https://registry.npmjs.org/css-tree/-/css-tree-3.2.1.tgz |
+| css.escape | 1.5.1 | MIT | https://registry.npmjs.org/css.escape/-/css.escape-1.5.1.tgz |
+| cssesc | 3.0.0 | MIT | https://registry.npmjs.org/cssesc/-/cssesc-3.0.0.tgz |
+| csstype | 3.2.3 | MIT | https://registry.npmjs.org/csstype/-/csstype-3.2.3.tgz |
+| data-urls | 7.0.0 | MIT | https://registry.npmjs.org/data-urls/-/data-urls-7.0.0.tgz |
+| date-fns | 4.1.0 | MIT | https://registry.npmjs.org/date-fns/-/date-fns-4.1.0.tgz |
+| debug | 4.4.3 | MIT | https://registry.npmjs.org/debug/-/debug-4.4.3.tgz |
+| decimal.js | 10.6.0 | MIT | https://registry.npmjs.org/decimal.js/-/decimal.js-10.6.0.tgz |
+| deep-is | 0.1.4 | MIT | https://registry.npmjs.org/deep-is/-/deep-is-0.1.4.tgz |
+| detect-node-es | 1.1.0 | MIT | https://registry.npmjs.org/detect-node-es/-/detect-node-es-1.1.0.tgz |
+| didyoumean | 1.2.2 | Apache-2.0 | https://registry.npmjs.org/didyoumean/-/didyoumean-1.2.2.tgz |
+| dlv | 1.1.3 | MIT | https://registry.npmjs.org/dlv/-/dlv-1.1.3.tgz |
+| dom-accessibility-api | 0.6.3 | MIT | https://registry.npmjs.org/dom-accessibility-api/-/dom-accessibility-api-0.6.3.tgz |
+| electron-to-chromium | 1.5.328 | ISC | https://registry.npmjs.org/electron-to-chromium/-/electron-to-chromium-1.5.328.tgz |
+| entities | 6.0.1 | BSD-2-Clause | https://registry.npmjs.org/entities/-/entities-6.0.1.tgz |
+| err-code | 3.0.1 | MIT | https://registry.npmjs.org/err-code/-/err-code-3.0.1.tgz |
+| es-module-lexer | 2.0.0 | MIT | https://registry.npmjs.org/es-module-lexer/-/es-module-lexer-2.0.0.tgz |
+| esbuild | 0.28.1 | MIT | https://registry.npmjs.org/esbuild/-/esbuild-0.28.1.tgz |
+| escalade | 3.2.0 | MIT | https://registry.npmjs.org/escalade/-/escalade-3.2.0.tgz |
+| escape-string-regexp | 4.0.0 | MIT | https://registry.npmjs.org/escape-string-regexp/-/escape-string-regexp-4.0.0.tgz |
+| eslint | 10.8.0 | MIT | https://registry.npmjs.org/eslint/-/eslint-10.8.0.tgz |
+| eslint-plugin-react-hooks | 7.1.1 | MIT | https://registry.npmjs.org/eslint-plugin-react-hooks/-/eslint-plugin-react-hooks-7.1.1.tgz |
+| eslint-scope | 9.1.2 | BSD-2-Clause | https://registry.npmjs.org/eslint-scope/-/eslint-scope-9.1.2.tgz |
+| eslint-visitor-keys | 3.4.3 | Apache-2.0 | https://registry.npmjs.org/eslint-visitor-keys/-/eslint-visitor-keys-3.4.3.tgz |
+| eslint-visitor-keys | 5.0.1 | Apache-2.0 | https://registry.npmjs.org/eslint-visitor-keys/-/eslint-visitor-keys-5.0.1.tgz |
+| espree | 11.2.0 | BSD-2-Clause | https://registry.npmjs.org/espree/-/espree-11.2.0.tgz |
+| esquery | 1.7.0 | BSD-3-Clause | https://registry.npmjs.org/esquery/-/esquery-1.7.0.tgz |
+| esrecurse | 4.3.0 | BSD-2-Clause | https://registry.npmjs.org/esrecurse/-/esrecurse-4.3.0.tgz |
+| estraverse | 5.3.0 | BSD-2-Clause | https://registry.npmjs.org/estraverse/-/estraverse-5.3.0.tgz |
+| estree-walker | 3.0.3 | MIT | https://registry.npmjs.org/estree-walker/-/estree-walker-3.0.3.tgz |
+| esutils | 2.0.3 | BSD-2-Clause | https://registry.npmjs.org/esutils/-/esutils-2.0.3.tgz |
+| events | 3.3.0 | MIT | https://registry.npmjs.org/events/-/events-3.3.0.tgz |
+| expect-type | 1.3.0 | Apache-2.0 | https://registry.npmjs.org/expect-type/-/expect-type-1.3.0.tgz |
+| fast-deep-equal | 3.1.3 | MIT | https://registry.npmjs.org/fast-deep-equal/-/fast-deep-equal-3.1.3.tgz |
+| fast-glob | 3.3.3 | MIT | https://registry.npmjs.org/fast-glob/-/fast-glob-3.3.3.tgz |
+| fast-json-stable-stringify | 2.1.0 | MIT | https://registry.npmjs.org/fast-json-stable-stringify/-/fast-json-stable-stringify-2.1.0.tgz |
+| fast-levenshtein | 2.0.6 | MIT | https://registry.npmjs.org/fast-levenshtein/-/fast-levenshtein-2.0.6.tgz |
+| fastq | 1.20.1 | ISC | https://registry.npmjs.org/fastq/-/fastq-1.20.1.tgz |
+| fdir | 6.5.0 | MIT | https://registry.npmjs.org/fdir/-/fdir-6.5.0.tgz |
+| file-entry-cache | 8.0.0 | MIT | https://registry.npmjs.org/file-entry-cache/-/file-entry-cache-8.0.0.tgz |
+| fill-range | 7.1.1 | MIT | https://registry.npmjs.org/fill-range/-/fill-range-7.1.1.tgz |
+| find-up | 5.0.0 | MIT | https://registry.npmjs.org/find-up/-/find-up-5.0.0.tgz |
+| flat-cache | 4.0.1 | MIT | https://registry.npmjs.org/flat-cache/-/flat-cache-4.0.1.tgz |
+| flatted | 3.4.3 | ISC | https://registry.npmjs.org/flatted/-/flatted-3.4.3.tgz |
+| fraction.js | 5.3.4 | MIT | https://registry.npmjs.org/fraction.js/-/fraction.js-5.3.4.tgz |
+| framer-motion | 12.38.0 | MIT | https://registry.npmjs.org/framer-motion/-/framer-motion-12.38.0.tgz |
+| fsevents | 2.3.2 | MIT | https://registry.npmjs.org/fsevents/-/fsevents-2.3.2.tgz |
+| fsevents | 2.3.3 | MIT | https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz |
+| function-bind | 1.1.2 | MIT | https://registry.npmjs.org/function-bind/-/function-bind-1.1.2.tgz |
+| gensync | 1.0.0-beta.2 | MIT | https://registry.npmjs.org/gensync/-/gensync-1.0.0-beta.2.tgz |
+| get-browser-rtc | 1.1.0 | MIT | https://registry.npmjs.org/get-browser-rtc/-/get-browser-rtc-1.1.0.tgz |
+| get-nonce | 1.0.1 | MIT | https://registry.npmjs.org/get-nonce/-/get-nonce-1.0.1.tgz |
+| glob-parent | 5.1.2 | ISC | https://registry.npmjs.org/glob-parent/-/glob-parent-5.1.2.tgz |
+| glob-parent | 6.0.2 | ISC | https://registry.npmjs.org/glob-parent/-/glob-parent-6.0.2.tgz |
+| hasown | 2.0.2 | MIT | https://registry.npmjs.org/hasown/-/hasown-2.0.2.tgz |
+| hermes-estree | 0.25.1 | MIT | https://registry.npmjs.org/hermes-estree/-/hermes-estree-0.25.1.tgz |
+| hermes-parser | 0.25.1 | MIT | https://registry.npmjs.org/hermes-parser/-/hermes-parser-0.25.1.tgz |
+| html-encoding-sniffer | 6.0.0 | MIT | https://registry.npmjs.org/html-encoding-sniffer/-/html-encoding-sniffer-6.0.0.tgz |
+| ieee754 | 1.2.1 | BSD-3-Clause | https://registry.npmjs.org/ieee754/-/ieee754-1.2.1.tgz |
+| ignore | 5.3.2 | MIT | https://registry.npmjs.org/ignore/-/ignore-5.3.2.tgz |
+| imurmurhash | 0.1.4 | MIT | https://registry.npmjs.org/imurmurhash/-/imurmurhash-0.1.4.tgz |
+| indent-string | 4.0.0 | MIT | https://registry.npmjs.org/indent-string/-/indent-string-4.0.0.tgz |
+| inherits | 2.0.4 | ISC | https://registry.npmjs.org/inherits/-/inherits-2.0.4.tgz |
+| is-binary-path | 2.1.0 | MIT | https://registry.npmjs.org/is-binary-path/-/is-binary-path-2.1.0.tgz |
+| is-core-module | 2.16.1 | MIT | https://registry.npmjs.org/is-core-module/-/is-core-module-2.16.1.tgz |
+| is-extglob | 2.1.1 | MIT | https://registry.npmjs.org/is-extglob/-/is-extglob-2.1.1.tgz |
+| is-glob | 4.0.3 | MIT | https://registry.npmjs.org/is-glob/-/is-glob-4.0.3.tgz |
+| is-number | 7.0.0 | MIT | https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz |
+| is-potential-custom-element-name | 1.0.1 | MIT | https://registry.npmjs.org/is-potential-custom-element-name/-/is-potential-custom-element-name-1.0.1.tgz |
+| isexe | 2.0.0 | ISC | https://registry.npmjs.org/isexe/-/isexe-2.0.0.tgz |
+| jiti | 1.21.7 | MIT | https://registry.npmjs.org/jiti/-/jiti-1.21.7.tgz |
+| jose | 6.2.4 | MIT | https://registry.npmjs.org/jose/-/jose-6.2.4.tgz |
+| js-tokens | 4.0.0 | MIT | https://registry.npmjs.org/js-tokens/-/js-tokens-4.0.0.tgz |
+| jsdom | 29.0.1 | MIT | https://registry.npmjs.org/jsdom/-/jsdom-29.0.1.tgz |
+| jsesc | 3.1.0 | MIT | https://registry.npmjs.org/jsesc/-/jsesc-3.1.0.tgz |
+| json-buffer | 3.0.1 | MIT | https://registry.npmjs.org/json-buffer/-/json-buffer-3.0.1.tgz |
+| json-schema-traverse | 0.4.1 | MIT | https://registry.npmjs.org/json-schema-traverse/-/json-schema-traverse-0.4.1.tgz |
+| json-stable-stringify-without-jsonify | 1.0.1 | MIT | https://registry.npmjs.org/json-stable-stringify-without-jsonify/-/json-stable-stringify-without-jsonify-1.0.1.tgz |
+| json5 | 2.2.3 | MIT | https://registry.npmjs.org/json5/-/json5-2.2.3.tgz |
+| keyv | 4.5.4 | MIT | https://registry.npmjs.org/keyv/-/keyv-4.5.4.tgz |
+| levn | 0.4.1 | MIT | https://registry.npmjs.org/levn/-/levn-0.4.1.tgz |
+| lilconfig | 3.1.3 | MIT | https://registry.npmjs.org/lilconfig/-/lilconfig-3.1.3.tgz |
+| lines-and-columns | 1.2.4 | MIT | https://registry.npmjs.org/lines-and-columns/-/lines-and-columns-1.2.4.tgz |
+| livekit-client | 2.20.2 | Apache-2.0 | https://registry.npmjs.org/livekit-client/-/livekit-client-2.20.2.tgz |
+| locate-path | 6.0.0 | MIT | https://registry.npmjs.org/locate-path/-/locate-path-6.0.0.tgz |
+| loglevel | 1.9.2 | MIT | https://registry.npmjs.org/loglevel/-/loglevel-1.9.2.tgz |
+| lru-cache | 11.2.7 | BlueOak-1.0.0 | https://registry.npmjs.org/lru-cache/-/lru-cache-11.2.7.tgz |
+| lru-cache | 5.1.1 | ISC | https://registry.npmjs.org/lru-cache/-/lru-cache-5.1.1.tgz |
+| lucide-react | 1.26.0 | ISC | https://registry.npmjs.org/lucide-react/-/lucide-react-1.26.0.tgz |
+| magic-string | 0.30.21 | MIT | https://registry.npmjs.org/magic-string/-/magic-string-0.30.21.tgz |
+| mdn-data | 2.27.1 | CC0-1.0 | https://registry.npmjs.org/mdn-data/-/mdn-data-2.27.1.tgz |
+| merge2 | 1.4.1 | MIT | https://registry.npmjs.org/merge2/-/merge2-1.4.1.tgz |
+| micromatch | 4.0.8 | MIT | https://registry.npmjs.org/micromatch/-/micromatch-4.0.8.tgz |
+| min-indent | 1.0.1 | MIT | https://registry.npmjs.org/min-indent/-/min-indent-1.0.1.tgz |
+| minimatch | 10.2.5 | BlueOak-1.0.0 | https://registry.npmjs.org/minimatch/-/minimatch-10.2.5.tgz |
+| motion-dom | 12.38.0 | MIT | https://registry.npmjs.org/motion-dom/-/motion-dom-12.38.0.tgz |
+| motion-utils | 12.36.0 | MIT | https://registry.npmjs.org/motion-utils/-/motion-utils-12.36.0.tgz |
+| ms | 2.1.3 | MIT | https://registry.npmjs.org/ms/-/ms-2.1.3.tgz |
+| mz | 2.7.0 | MIT | https://registry.npmjs.org/mz/-/mz-2.7.0.tgz |
+| nanoid | 3.3.16 | MIT | https://registry.npmjs.org/nanoid/-/nanoid-3.3.16.tgz |
+| nanoid | 5.1.7 | MIT | https://registry.npmjs.org/nanoid/-/nanoid-5.1.7.tgz |
+| natural-compare | 1.4.0 | MIT | https://registry.npmjs.org/natural-compare/-/natural-compare-1.4.0.tgz |
+| node-releases | 2.0.36 | MIT | https://registry.npmjs.org/node-releases/-/node-releases-2.0.36.tgz |
+| normalize-path | 3.0.0 | MIT | https://registry.npmjs.org/normalize-path/-/normalize-path-3.0.0.tgz |
+| object-assign | 4.1.1 | MIT | https://registry.npmjs.org/object-assign/-/object-assign-4.1.1.tgz |
+| object-hash | 3.0.0 | MIT | https://registry.npmjs.org/object-hash/-/object-hash-3.0.0.tgz |
+| obug | 2.1.1 | MIT | https://registry.npmjs.org/obug/-/obug-2.1.1.tgz |
+| optionator | 0.9.4 | MIT | https://registry.npmjs.org/optionator/-/optionator-0.9.4.tgz |
+| p-limit | 3.1.0 | MIT | https://registry.npmjs.org/p-limit/-/p-limit-3.1.0.tgz |
+| p-locate | 5.0.0 | MIT | https://registry.npmjs.org/p-locate/-/p-locate-5.0.0.tgz |
+| parse5 | 8.0.0 | MIT | https://registry.npmjs.org/parse5/-/parse5-8.0.0.tgz |
+| path-exists | 4.0.0 | MIT | https://registry.npmjs.org/path-exists/-/path-exists-4.0.0.tgz |
+| path-key | 3.1.1 | MIT | https://registry.npmjs.org/path-key/-/path-key-3.1.1.tgz |
+| path-parse | 1.0.7 | MIT | https://registry.npmjs.org/path-parse/-/path-parse-1.0.7.tgz |
+| pathe | 2.0.3 | MIT | https://registry.npmjs.org/pathe/-/pathe-2.0.3.tgz |
+| picocolors | 1.1.1 | ISC | https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz |
+| picomatch | 2.3.2 | MIT | https://registry.npmjs.org/picomatch/-/picomatch-2.3.2.tgz |
+| picomatch | 4.0.4 | MIT | https://registry.npmjs.org/picomatch/-/picomatch-4.0.4.tgz |
+| pify | 2.3.0 | MIT | https://registry.npmjs.org/pify/-/pify-2.3.0.tgz |
+| pirates | 4.0.7 | MIT | https://registry.npmjs.org/pirates/-/pirates-4.0.7.tgz |
+| playwright | 1.61.1 | Apache-2.0 | https://registry.npmjs.org/playwright/-/playwright-1.61.1.tgz |
+| playwright-core | 1.61.1 | Apache-2.0 | https://registry.npmjs.org/playwright-core/-/playwright-core-1.61.1.tgz |
+| postcss | 8.5.22 | MIT | https://registry.npmjs.org/postcss/-/postcss-8.5.22.tgz |
+| postcss-import | 15.1.0 | MIT | https://registry.npmjs.org/postcss-import/-/postcss-import-15.1.0.tgz |
+| postcss-js | 4.1.0 | MIT | https://registry.npmjs.org/postcss-js/-/postcss-js-4.1.0.tgz |
+| postcss-load-config | 6.0.1 | MIT | https://registry.npmjs.org/postcss-load-config/-/postcss-load-config-6.0.1.tgz |
+| postcss-nested | 6.2.0 | MIT | https://registry.npmjs.org/postcss-nested/-/postcss-nested-6.2.0.tgz |
+| postcss-selector-parser | 6.1.2 | MIT | https://registry.npmjs.org/postcss-selector-parser/-/postcss-selector-parser-6.1.2.tgz |
+| postcss-value-parser | 4.2.0 | MIT | https://registry.npmjs.org/postcss-value-parser/-/postcss-value-parser-4.2.0.tgz |
+| prelude-ls | 1.2.1 | MIT | https://registry.npmjs.org/prelude-ls/-/prelude-ls-1.2.1.tgz |
+| punycode | 2.3.1 | MIT | https://registry.npmjs.org/punycode/-/punycode-2.3.1.tgz |
+| queue-microtask | 1.2.3 | MIT | https://registry.npmjs.org/queue-microtask/-/queue-microtask-1.2.3.tgz |
+| radix-ui | 1.6.7 | MIT | https://registry.npmjs.org/radix-ui/-/radix-ui-1.6.7.tgz |
+| randombytes | 2.1.0 | MIT | https://registry.npmjs.org/randombytes/-/randombytes-2.1.0.tgz |
+| react | 19.2.4 | MIT | https://registry.npmjs.org/react/-/react-19.2.4.tgz |
+| react-dom | 19.2.4 | MIT | https://registry.npmjs.org/react-dom/-/react-dom-19.2.4.tgz |
+| react-refresh | 0.17.0 | MIT | https://registry.npmjs.org/react-refresh/-/react-refresh-0.17.0.tgz |
+| react-remove-scroll | 2.7.2 | MIT | https://registry.npmjs.org/react-remove-scroll/-/react-remove-scroll-2.7.2.tgz |
+| react-remove-scroll-bar | 2.3.8 | MIT | https://registry.npmjs.org/react-remove-scroll-bar/-/react-remove-scroll-bar-2.3.8.tgz |
+| react-style-singleton | 2.2.3 | MIT | https://registry.npmjs.org/react-style-singleton/-/react-style-singleton-2.2.3.tgz |
+| read-cache | 1.0.0 | MIT | https://registry.npmjs.org/read-cache/-/read-cache-1.0.0.tgz |
+| readable-stream | 3.6.2 | MIT | https://registry.npmjs.org/readable-stream/-/readable-stream-3.6.2.tgz |
+| readdirp | 3.6.0 | MIT | https://registry.npmjs.org/readdirp/-/readdirp-3.6.0.tgz |
+| redent | 3.0.0 | MIT | https://registry.npmjs.org/redent/-/redent-3.0.0.tgz |
+| require-from-string | 2.0.2 | MIT | https://registry.npmjs.org/require-from-string/-/require-from-string-2.0.2.tgz |
+| resolve | 1.22.11 | MIT | https://registry.npmjs.org/resolve/-/resolve-1.22.11.tgz |
+| reusify | 1.1.0 | MIT | https://registry.npmjs.org/reusify/-/reusify-1.1.0.tgz |
+| rollup | 4.60.1 | MIT | https://registry.npmjs.org/rollup/-/rollup-4.60.1.tgz |
+| run-parallel | 1.2.0 | MIT | https://registry.npmjs.org/run-parallel/-/run-parallel-1.2.0.tgz |
+| rxjs | 7.8.2 | Apache-2.0 | https://registry.npmjs.org/rxjs/-/rxjs-7.8.2.tgz |
+| safe-buffer | 5.2.1 | MIT | https://registry.npmjs.org/safe-buffer/-/safe-buffer-5.2.1.tgz |
+| saxes | 6.0.0 | ISC | https://registry.npmjs.org/saxes/-/saxes-6.0.0.tgz |
+| scheduler | 0.27.0 | MIT | https://registry.npmjs.org/scheduler/-/scheduler-0.27.0.tgz |
+| sdp | 3.2.2 | MIT | https://registry.npmjs.org/sdp/-/sdp-3.2.2.tgz |
+| sdp-transform | 2.15.0 | MIT | https://registry.npmjs.org/sdp-transform/-/sdp-transform-2.15.0.tgz |
+| semver | 6.3.1 | ISC | https://registry.npmjs.org/semver/-/semver-6.3.1.tgz |
+| semver | 7.8.5 | ISC | https://registry.npmjs.org/semver/-/semver-7.8.5.tgz |
+| shebang-command | 2.0.0 | MIT | https://registry.npmjs.org/shebang-command/-/shebang-command-2.0.0.tgz |
+| shebang-regex | 3.0.0 | MIT | https://registry.npmjs.org/shebang-regex/-/shebang-regex-3.0.0.tgz |
+| siginfo | 2.0.0 | ISC | https://registry.npmjs.org/siginfo/-/siginfo-2.0.0.tgz |
+| simple-peer | 9.11.1 | MIT | https://registry.npmjs.org/simple-peer/-/simple-peer-9.11.1.tgz |
+| source-map-js | 1.2.1 | BSD-3-Clause | https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.1.tgz |
+| stackback | 0.0.2 | MIT | https://registry.npmjs.org/stackback/-/stackback-0.0.2.tgz |
+| std-env | 4.0.0 | MIT | https://registry.npmjs.org/std-env/-/std-env-4.0.0.tgz |
+| string_decoder | 1.3.0 | MIT | https://registry.npmjs.org/string_decoder/-/string_decoder-1.3.0.tgz |
+| strip-indent | 3.0.0 | MIT | https://registry.npmjs.org/strip-indent/-/strip-indent-3.0.0.tgz |
+| sucrase | 3.35.1 | MIT | https://registry.npmjs.org/sucrase/-/sucrase-3.35.1.tgz |
+| supports-preserve-symlinks-flag | 1.0.0 | MIT | https://registry.npmjs.org/supports-preserve-symlinks-flag/-/supports-preserve-symlinks-flag-1.0.0.tgz |
+| symbol-tree | 3.2.4 | MIT | https://registry.npmjs.org/symbol-tree/-/symbol-tree-3.2.4.tgz |
+| tailwindcss | 3.4.19 | MIT | https://registry.npmjs.org/tailwindcss/-/tailwindcss-3.4.19.tgz |
+| thenify | 3.3.1 | MIT | https://registry.npmjs.org/thenify/-/thenify-3.3.1.tgz |
+| thenify-all | 1.6.0 | MIT | https://registry.npmjs.org/thenify-all/-/thenify-all-1.6.0.tgz |
+| tinybench | 2.9.0 | MIT | https://registry.npmjs.org/tinybench/-/tinybench-2.9.0.tgz |
+| tinyexec | 1.0.4 | MIT | https://registry.npmjs.org/tinyexec/-/tinyexec-1.0.4.tgz |
+| tinyglobby | 0.2.15 | MIT | https://registry.npmjs.org/tinyglobby/-/tinyglobby-0.2.15.tgz |
+| tinyrainbow | 3.1.0 | MIT | https://registry.npmjs.org/tinyrainbow/-/tinyrainbow-3.1.0.tgz |
+| tldts | 7.0.27 | MIT | https://registry.npmjs.org/tldts/-/tldts-7.0.27.tgz |
+| tldts-core | 7.0.27 | MIT | https://registry.npmjs.org/tldts-core/-/tldts-core-7.0.27.tgz |
+| to-regex-range | 5.0.1 | MIT | https://registry.npmjs.org/to-regex-range/-/to-regex-range-5.0.1.tgz |
+| tough-cookie | 6.0.1 | BSD-3-Clause | https://registry.npmjs.org/tough-cookie/-/tough-cookie-6.0.1.tgz |
+| tr46 | 6.0.0 | MIT | https://registry.npmjs.org/tr46/-/tr46-6.0.0.tgz |
+| ts-api-utils | 2.5.0 | MIT | https://registry.npmjs.org/ts-api-utils/-/ts-api-utils-2.5.0.tgz |
+| ts-interface-checker | 0.1.13 | Apache-2.0 | https://registry.npmjs.org/ts-interface-checker/-/ts-interface-checker-0.1.13.tgz |
+| tslib | 2.8.1 | 0BSD | https://registry.npmjs.org/tslib/-/tslib-2.8.1.tgz |
+| type-check | 0.4.0 | MIT | https://registry.npmjs.org/type-check/-/type-check-0.4.0.tgz |
+| typed-emitter | 2.1.0 | MIT | https://registry.npmjs.org/typed-emitter/-/typed-emitter-2.1.0.tgz |
+| typescript | 5.8.3 | Apache-2.0 | https://registry.npmjs.org/typescript/-/typescript-5.8.3.tgz |
+| undici | 7.28.0 | MIT | https://registry.npmjs.org/undici/-/undici-7.28.0.tgz |
+| undici-types | 7.18.2 | MIT | https://registry.npmjs.org/undici-types/-/undici-types-7.18.2.tgz |
+| update-browserslist-db | 1.2.3 | MIT | https://registry.npmjs.org/update-browserslist-db/-/update-browserslist-db-1.2.3.tgz |
+| uri-js | 4.4.1 | BSD-2-Clause | https://registry.npmjs.org/uri-js/-/uri-js-4.4.1.tgz |
+| use-callback-ref | 1.3.3 | MIT | https://registry.npmjs.org/use-callback-ref/-/use-callback-ref-1.3.3.tgz |
+| use-sidecar | 1.1.3 | MIT | https://registry.npmjs.org/use-sidecar/-/use-sidecar-1.1.3.tgz |
+| util-deprecate | 1.0.2 | MIT | https://registry.npmjs.org/util-deprecate/-/util-deprecate-1.0.2.tgz |
+| vite | 7.3.6 | MIT | https://registry.npmjs.org/vite/-/vite-7.3.6.tgz |
+| vitest | 4.1.2 | MIT | https://registry.npmjs.org/vitest/-/vitest-4.1.2.tgz |
+| w3c-xmlserializer | 5.0.0 | MIT | https://registry.npmjs.org/w3c-xmlserializer/-/w3c-xmlserializer-5.0.0.tgz |
+| webidl-conversions | 8.0.1 | BSD-2-Clause | https://registry.npmjs.org/webidl-conversions/-/webidl-conversions-8.0.1.tgz |
+| webrtc-adapter | 9.0.6 | BSD-3-Clause | https://registry.npmjs.org/webrtc-adapter/-/webrtc-adapter-9.0.6.tgz |
+| whatwg-mimetype | 5.0.0 | MIT | https://registry.npmjs.org/whatwg-mimetype/-/whatwg-mimetype-5.0.0.tgz |
+| whatwg-url | 16.0.1 | MIT | https://registry.npmjs.org/whatwg-url/-/whatwg-url-16.0.1.tgz |
+| which | 2.0.2 | ISC | https://registry.npmjs.org/which/-/which-2.0.2.tgz |
+| why-is-node-running | 2.3.0 | MIT | https://registry.npmjs.org/why-is-node-running/-/why-is-node-running-2.3.0.tgz |
+| word-wrap | 1.2.5 | MIT | https://registry.npmjs.org/word-wrap/-/word-wrap-1.2.5.tgz |
+| xml-name-validator | 5.0.0 | Apache-2.0 | https://registry.npmjs.org/xml-name-validator/-/xml-name-validator-5.0.0.tgz |
+| xmlchars | 2.2.0 | MIT | https://registry.npmjs.org/xmlchars/-/xmlchars-2.2.0.tgz |
+| yallist | 3.1.1 | ISC | https://registry.npmjs.org/yallist/-/yallist-3.1.1.tgz |
+| yocto-queue | 0.1.0 | MIT | https://registry.npmjs.org/yocto-queue/-/yocto-queue-0.1.0.tgz |
+| zod | 4.4.3 | MIT | https://registry.npmjs.org/zod/-/zod-4.4.3.tgz |
+| zod-validation-error | 4.0.2 | MIT | https://registry.npmjs.org/zod-validation-error/-/zod-validation-error-4.0.2.tgz |
+| zustand | 5.0.12 | MIT | https://registry.npmjs.org/zustand/-/zustand-5.0.12.tgz |
 
 ## Rust dependencies
 

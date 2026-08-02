@@ -181,6 +181,10 @@ jobs:
         working-directory: mesh
         run: npm run check:operations-contract
 
+      - name: Check third-party notices and licenses
+        working-directory: mesh
+        run: npm run check:third-party-notices
+
       - name: Check homeserver recovery scripts
         working-directory: mesh
         run: |
