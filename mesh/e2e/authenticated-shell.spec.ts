@@ -334,8 +334,13 @@ async function installAuthenticatedMatrixMock(
         case 'matrix_room_pins':
           return {
             roomId: String(args.roomId),
-            eventIds: [],
-            messages: [],
+            eventIds: ['$pinned-e2e'],
+            messages: [{
+              ...timeline[0],
+              id: '$pinned-e2e',
+              channelId: String(args.roomId),
+              content: 'Pinned guidance stays reachable at every supported width.',
+            }],
             unavailableEventIds: [],
             canManage: true,
           }
@@ -423,6 +428,31 @@ async function openAuthenticatedShell(
   await expect(page.getByRole('log', { name: `Messages in #${expectedRoomName}` })).toBeVisible({
     timeout: 10_000,
   })
+}
+
+async function expectCriticalConversationGeometry(
+  page: Page,
+  label: string,
+): Promise<void> {
+  const criticalElements = [
+    ['conversation header', page.locator('.mesh-conversation-header')],
+    ['message log', page.getByRole('log', { name: /Messages in #/ })],
+    ['pinned message', page.getByRole('button', { name: /Open pinned message from/ })],
+    ['composer', page.getByRole('textbox', { name: /^Message / })],
+    ['send control', page.getByRole('button', { name: 'Send message' })],
+  ] as const
+
+  const viewportWidth = await page.evaluate(() => window.innerWidth)
+  for (const [elementName, locator] of criticalElements) {
+    await expect(locator, `${label}: ${elementName} should be visible`).toBeVisible()
+    const box = await locator.boundingBox()
+    expect(box, `${label}: ${elementName} should have geometry`).not.toBeNull()
+    expect(box!.x, `${label}: ${elementName} starts before the viewport`).toBeGreaterThanOrEqual(-0.5)
+    expect(box!.x + box!.width, `${label}: ${elementName} ends after the viewport`).toBeLessThanOrEqual(viewportWidth + 0.5)
+    expect(box!.width, `${label}: ${elementName} should retain usable width`).toBeGreaterThanOrEqual(
+      elementName === 'send control' ? 40 : 44,
+    )
+  }
 }
 
 function ipcCalls(page: Page): Promise<IpcCall[]> {
@@ -634,7 +664,7 @@ test.describe('authenticated desktop shell', () => {
     await page.keyboard.press('End')
     await expect(pinsTab).toBeFocused()
     await expect(pinsTab).toHaveAttribute('aria-selected', 'true')
-    await expect(context.getByText('Nothing pinned yet')).toBeVisible()
+    await expect(context.getByText('Pinned guidance stays reachable at every supported width.')).toBeVisible()
     await page.keyboard.press('Home')
     await expect(peopleTab).toBeFocused()
     await expect(peopleTab).toHaveAttribute('aria-selected', 'true')
@@ -817,9 +847,14 @@ test.describe('authenticated narrow shell', () => {
   test('@a11y has no automated WCAG A/AA violations with navigation open', async ({ page }) => {
     await openAuthenticatedShell(page)
     await page.getByRole('button', { name: 'Open room navigation' }).click()
-    await expect(page.getByRole('button', { name: 'Close room navigation' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Close room navigation', exact: true })).toBeVisible()
     const navigationDrawer = page.locator('#mesh-context-sidebar')
     await expect(navigationDrawer).toHaveAttribute('aria-modal', 'true')
+    const closeDrawer = navigationDrawer.getByRole('button', { name: 'Close room navigation drawer' })
+    await expect(closeDrawer).toBeVisible()
+    const closeDrawerBox = await closeDrawer.boundingBox()
+    expect(closeDrawerBox?.width).toBeGreaterThanOrEqual(44)
+    expect(closeDrawerBox?.height).toBeGreaterThanOrEqual(44)
     expect(await navigationDrawer.evaluate((drawer) => drawer.contains(document.activeElement))).toBe(true)
     for (let index = 0; index < 10; index += 1) await page.keyboard.press('Tab')
     expect(await navigationDrawer.evaluate((drawer) => drawer.contains(document.activeElement))).toBe(true)
@@ -856,7 +891,7 @@ test.describe('authenticated narrow shell', () => {
     await expect(drawerButton).toHaveAttribute('aria-controls', 'mesh-context-sidebar')
 
     await drawerButton.click()
-    await expect(page.getByRole('button', { name: 'Close room navigation' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Close room navigation', exact: true })).toBeVisible()
     await expect(page.locator('#mesh-context-sidebar')).toHaveAttribute('data-open', 'true')
 
     await page.getByRole('button', { name: /Text room: random/ }).click()
@@ -871,11 +906,46 @@ test.describe('authenticated narrow shell', () => {
         .getByText('Hello from a narrow window'),
     ).toBeVisible()
 
-    const dimensions = await page.evaluate(() => ({
-      viewport: document.documentElement.clientWidth,
-      content: document.documentElement.scrollWidth,
-    }))
-    expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport)
+    await expectCriticalConversationGeometry(page, '390x844 compact conversation')
+  })
+
+  test('keeps critical conversation descendants inside every release layout', async ({ page }) => {
+    await openAuthenticatedShell(page)
+
+    const layouts = [
+      { width: 320, height: 844, label: '320x844 compact' },
+      { width: 390, height: 844, label: '390x844 compact' },
+      { width: 768, height: 1024, label: '768x1024 compact' },
+      { width: 1280, height: 800, label: '1280x800 desktop' },
+      { width: 640, height: 800, label: '200% zoom equivalent from 1280px' },
+      { width: 320, height: 800, label: '400% zoom equivalent from 1280px' },
+    ]
+
+    for (const layout of layouts) {
+      await page.setViewportSize({ width: layout.width, height: layout.height })
+      await expectCriticalConversationGeometry(page, layout.label)
+    }
+  })
+
+  test('does not restore desktop room context into a narrow launch and closes it on resize', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('mesh-layout-room-context-open', 'true')
+    })
+    await openAuthenticatedShell(page)
+
+    const context = page.getByRole('complementary', { name: 'Room context for general' })
+    const contextToggle = page.getByRole('button', { name: 'Show room context' })
+    await expect(context).toHaveCount(0)
+    await expect.poll(() => page.evaluate(() => (
+      localStorage.getItem('mesh-layout-room-context-open')
+    ))).toBe('false')
+
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await contextToggle.click()
+    await expect(context).toBeVisible()
+    await page.setViewportSize({ width: 390, height: 844 })
+    await expect(context).toHaveCount(0)
+    await expect(contextToggle).toBeFocused()
   })
 
   test('opens room context as a drawer and restores focus after Escape', async ({ page }) => {
@@ -887,6 +957,10 @@ test.describe('authenticated narrow shell', () => {
 
     const context = page.getByRole('complementary', { name: 'Room context for general' })
     await expect(context).toBeVisible()
+    const closeContext = context.getByRole('button', { name: 'Close room context' })
+    const closeContextBox = await closeContext.boundingBox()
+    expect(closeContextBox?.width).toBeGreaterThanOrEqual(44)
+    expect(closeContextBox?.height).toBeGreaterThanOrEqual(44)
     await expect(page.locator('.mesh-room-context-backdrop')).toBeVisible()
     expect(await context.evaluate((panel) => panel.contains(document.activeElement))).toBe(true)
     for (let index = 0; index < 8; index += 1) await page.keyboard.press('Tab')

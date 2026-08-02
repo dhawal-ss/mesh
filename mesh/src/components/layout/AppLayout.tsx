@@ -1,6 +1,7 @@
 import {
   lazy,
   Suspense,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -131,6 +132,14 @@ export function AppLayout() {
    */
   const isCompactViewport = useMediaQuery(COMPACT_VIEWPORT_QUERY)
   const drawerActive = contextNavigationOpen && isCompactViewport
+  const closeNavigationDrawer = useCallback((restoreFocus = true) => {
+    setOpenNavigationContextKey(null)
+    if (restoreFocus && typeof document !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        document.querySelector<HTMLButtonElement>('.mesh-compact-header button')?.focus()
+      })
+    }
+  }, [])
   // Naming the main landmark after the open conversation is far more useful for
   // landmark navigation than the previous static "Content area".
   const activeConversationLabel = isDmMode
@@ -357,10 +366,7 @@ export function AppLayout() {
       const nestedDialogOpen = openDialog != null && openDialog !== contextNavigationRef.current
       if (event.key === 'Escape' && !event.defaultPrevented && !nestedDialogOpen) {
         event.preventDefault()
-        setOpenNavigationContextKey(null)
-        window.requestAnimationFrame(() => {
-          document.querySelector<HTMLButtonElement>('.mesh-compact-header button')?.focus()
-        })
+        closeNavigationDrawer()
         return
       }
       if (event.key !== 'Tab') return
@@ -382,7 +388,7 @@ export function AppLayout() {
       window.cancelAnimationFrame(focusFirst)
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [drawerActive, setOpenNavigationContextKey])
+  }, [closeNavigationDrawer, drawerActive])
 
   useEffect(() => {
     const unlisten = matrixMode
@@ -477,7 +483,7 @@ export function AppLayout() {
           You’re offline. Messages marked Saved will send when Mesh reconnects.
         </div>
       )}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <nav
           className="mesh-community-rail flex min-h-0 flex-shrink-0 flex-col items-center overflow-y-auto border-r border-border-subtle bg-surface-sunken pt-2"
           aria-label="Communities and direct messages"
@@ -501,7 +507,7 @@ export function AppLayout() {
             type="button"
             className="mesh-nav-backdrop"
             aria-label="Dismiss room navigation"
-            onClick={() => setOpenNavigationContextKey(null)}
+            onClick={() => closeNavigationDrawer()}
           />
         )}
 
@@ -523,6 +529,21 @@ export function AppLayout() {
           role={drawerActive ? 'dialog' : undefined}
           aria-modal={drawerActive || undefined}
         >
+          {drawerActive && (
+            <div className="flex min-h-11 flex-shrink-0 items-center justify-between border-b border-border-subtle px-2">
+              <span className="min-w-0 truncate px-2 text-sm font-semibold text-secondary">
+                {isDmMode && directMessagesAvailable ? 'Conversations' : 'Rooms'}
+              </span>
+              <button
+                type="button"
+                className="flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
+                aria-label={isDmMode ? 'Close conversation navigation drawer' : 'Close room navigation drawer'}
+                onClick={() => closeNavigationDrawer()}
+              >
+                <Icon name="x" size="sm" />
+              </button>
+            </div>
+          )}
           <PanelResizeHandle
             label="Resize room navigation"
             side="right"
@@ -583,7 +604,7 @@ export function AppLayout() {
               {matrixMode ? 'Encrypted session' : 'Local Mesh session'}
             </span>
           </div>
-          <div className="flex min-h-0 flex-1 overflow-hidden">
+          <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
             {isDmMode && directMessagesAvailable ? (
               <ScopedErrorBoundary
                 name="Direct messages"

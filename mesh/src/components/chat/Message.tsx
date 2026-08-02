@@ -443,7 +443,7 @@ export const MessageComponent = memo(function MessageComponent({
           role="group"
           aria-label={messageAriaLabel}
           tabIndex={-1}
-          className={`group relative flex gap-3 py-0.5 pl-message-gutter pr-12 outline-none transition-opacity duration-fast hover:bg-surface-hover ${
+          className={`group relative flex min-w-0 max-w-full gap-3 py-0.5 pl-message-gutter pr-12 outline-none transition-opacity duration-fast hover:bg-surface-hover ${
             message.deliveryStatus === 'pending' ? 'opacity-60' : 'opacity-100'
           } ${!isGrouped ? 'mt-message-group' : ''}`}
           onMouseLeave={() => setShowReactions(false)}

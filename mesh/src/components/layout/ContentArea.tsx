@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useRef,
   useState,
   type CSSProperties,
 } from 'react'
@@ -29,6 +30,10 @@ import {
 } from '../../lib/layout-preferences'
 import { usePersistentPanelWidth } from '../../hooks/usePersistentPanelWidth'
 import { MemberListSkeleton, Skeleton } from '../ui/Skeleton'
+import {
+  ROOM_CONTEXT_COMPACT_QUERY,
+  useMediaQuery,
+} from '../../hooks/useMediaQuery'
 
 function createLazyRoomContextPanel() {
   return lazy(() =>
@@ -47,10 +52,12 @@ export function ContentArea() {
   const activeCommunityId = useCommunityStore((state) => state.activeCommunityId)
   const openServerModal = useShellStore((state) => state.openServerModal)
   const setDmMode = useDmStore((state) => state.setDmMode)
+  const compactRoomContext = useMediaQuery(ROOM_CONTEXT_COMPACT_QUERY)
 
   const [showContext, setShowContext] = useState(() => (
-    readStoredBoolean(ROOM_CONTEXT_OPEN_KEY, false)
+    readStoredBoolean(ROOM_CONTEXT_OPEN_KEY, false) && !compactRoomContext
   ))
+  const previousCompactRoomContext = useRef(compactRoomContext)
   const roomContextWidth = usePersistentPanelWidth({
     storageKey: ROOM_CONTEXT_WIDTH_KEY,
     defaultWidth: 260,
@@ -80,11 +87,15 @@ export function ContentArea() {
     writeStoredBoolean(ROOM_CONTEXT_OPEN_KEY, showContext)
   }, [showContext])
 
+  useEffect(() => {
+    const wasCompact = previousCompactRoomContext.current
+    previousCompactRoomContext.current = compactRoomContext
+    if (!wasCompact && compactRoomContext && showContext) closeContext()
+  }, [closeContext, compactRoomContext, showContext])
+
   useLayoutEffect(() => {
     if (!showContext) return
-    const compact = typeof window.matchMedia === 'function'
-      && window.matchMedia('(max-width: 1100px)').matches
-    if (!compact) return
+    if (!compactRoomContext) return
     const focusableSelector = [
       'button:not([disabled])',
       'a[href]',
@@ -136,7 +147,7 @@ export function ContentArea() {
       mountObserver.disconnect()
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [closeContext, showContext])
+  }, [closeContext, compactRoomContext, showContext])
 
   useEffect(() => {
     if (!activeTextRoomId || !isMatrixBackend()) {
@@ -235,7 +246,7 @@ export function ContentArea() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1">
+    <div className="flex min-h-0 min-w-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
         <ErrorBoundary scope="content">
           {activeChannel.channelType === 'voice' ? (
@@ -335,7 +346,7 @@ function RoomContextLoadingFallback({
   return (
     <aside
       id="mesh-room-context-panel"
-      className="mesh-room-context-panel relative flex flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-sidebar"
+      className="mesh-room-context-panel relative flex min-w-0 flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-sidebar"
       data-design-token-exception="user-resizable-persisted-room-context-width"
       style={{
         '--mesh-room-context-width': `${panelWidth}px`,
@@ -354,7 +365,7 @@ function RoomContextLoadingFallback({
         </span>
         <button
           type="button"
-          className="min-h-8 rounded-control px-2 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          className="min-h-11 min-w-11 rounded-control px-2 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           onClick={onClose}
         >
           Close

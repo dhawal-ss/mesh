@@ -1197,9 +1197,9 @@ export function ChatView({
   ])
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <div
-        className="mesh-conversation-header flex min-h-16 flex-shrink-0 items-center justify-between gap-4 border-b border-border-subtle px-4 py-2.5"
+        className="mesh-conversation-header flex min-h-16 min-w-0 flex-shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-3 py-2.5 sm:gap-4 sm:px-4"
         data-tauri-drag-region
       >
         <div className="min-w-0 flex-1">
@@ -1221,7 +1221,7 @@ export function ChatView({
           )}
         </div>
 
-        <div className="flex flex-shrink-0 items-center gap-1">
+        <div className="flex min-w-0 flex-shrink-0 items-center gap-1">
           <SearchBar label="Find" onNavigateToMessage={handleNavigateToMessage} />
 
           {matrixMode && onOpenContext && (
@@ -1288,7 +1288,7 @@ export function ChatView({
         <button
           type="button"
           onClick={() => onOpenContext('pins')}
-          className="mx-4 mt-3 flex min-h-12 flex-shrink-0 items-center gap-3 rounded-control border border-border-subtle bg-surface-sunken px-3 py-2 text-left transition-colors hover:border-border-emphasis hover:bg-surface-hover"
+          className="mx-3 mt-3 flex min-h-12 min-w-0 max-w-full flex-shrink-0 items-center gap-3 overflow-hidden rounded-control border border-border-subtle bg-surface-sunken px-3 py-2 text-left transition-colors hover:border-border-emphasis hover:bg-surface-hover sm:mx-4"
           aria-label={`Open pinned message from ${pinnedMessage.authorDisplayName}`}
         >
           <Icon name="pin" size="sm" className="flex-shrink-0 text-accent" />
@@ -1352,7 +1352,7 @@ export function ChatView({
         </div>
       )}
 
-      <div className="relative min-h-0 flex-1">
+      <div className="relative min-h-0 min-w-0 flex-1">
         <p className="sr-only" role="status" aria-live="polite">
           {jumpAnnouncement}
         </p>
@@ -1368,7 +1368,7 @@ export function ChatView({
         <div
           ref={scrollContainerRef}
           onScroll={(event) => void handleScroll(event.currentTarget)}
-          className="absolute inset-0 overflow-y-auto"
+          className="absolute inset-0 min-w-0 overflow-y-auto overflow-x-hidden"
           role="log"
           /*
             `role="log"` implies aria-live="polite", which is wrong here: this
@@ -1543,7 +1543,7 @@ export function ChatView({
 
       {/* Reply bar */}
       {!roomUpgradeReady || roomUpgrade ? null : replyingTo && (
-        <div className="flex items-center gap-2 border-t border-border-subtle bg-surface-sunken px-4 py-2">
+        <div className="flex min-w-0 items-center gap-2 border-t border-border-subtle bg-surface-sunken px-4 py-2">
           <Icon name="reply" size="sm" className="shrink-0 text-secondary" />
           <span className="text-sm text-secondary">
             Replying to <span className="font-medium text-primary">{replyingTo.authorDisplayName}</span>

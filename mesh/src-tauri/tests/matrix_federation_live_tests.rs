@@ -263,6 +263,13 @@ fn spawn_registration_admission_service() -> (String, std::thread::JoinHandle<()
                 }
             }
         };
+        // On Windows an accepted socket inherits the listener's nonblocking
+        // mode. Switch the connected stream back to blocking before applying
+        // the bounded read timeout so a just-arrived request cannot fail with
+        // WSAEWOULDBLOCK (10035).
+        stream
+            .set_nonblocking(false)
+            .expect("the admission test socket must support blocking reads");
         stream
             .set_read_timeout(Some(Duration::from_secs(5)))
             .expect("the admission test socket timeout must be configurable");

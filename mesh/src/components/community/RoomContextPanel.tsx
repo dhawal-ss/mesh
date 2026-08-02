@@ -153,7 +153,7 @@ export function RoomContextPanel({
   return (
     <aside
       id="mesh-room-context-panel"
-      className="mesh-room-context-panel relative flex flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-sidebar"
+      className="mesh-room-context-panel relative flex min-w-0 flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-sidebar"
       data-design-token-exception="user-resizable-persisted-room-context-width"
       style={{
         '--mesh-room-context-width': `${panelWidth}px`,
@@ -178,7 +178,7 @@ export function RoomContextPanel({
           </h2>
           <button
             type="button"
-            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
+            className="flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
             aria-label="Close room context"
             onClick={onClose}
           >

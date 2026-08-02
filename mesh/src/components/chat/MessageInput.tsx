@@ -805,13 +805,13 @@ function MessageInputContent({
   return (
     <div
       ref={rootRef}
-      className="-mt-1 mx-5 mb-4"
+      className="-mt-1 mx-3 mb-4 min-w-0 max-w-full sm:mx-5"
       onDragOver={disabled || disableAttachments ? undefined : handleDragOver}
       onDragLeave={disabled || disableAttachments ? undefined : handleDragLeave}
       onDrop={disabled || disableAttachments ? undefined : handleDrop}
     >
       <div
-        className={`rounded-panel border border-border-subtle transition-colors ${
+        className={`min-w-0 overflow-hidden rounded-panel border border-border-subtle transition-colors ${
           isDragOver
             ? 'bg-accent/10 ring-2 ring-accent/40'
             : 'bg-surface-raised'
@@ -871,7 +871,7 @@ function MessageInputContent({
         </div>
 
         {/* Input row */}
-        <div className="relative flex items-end gap-0 px-1">
+        <div className="relative flex min-w-0 items-end gap-0 px-1">
           {slashSuggestions.length > 0 && (
             <div
               id={`slash-suggestions-${channelId}`}
@@ -1039,7 +1039,7 @@ function MessageInputContent({
                 : undefined}
             rows={1}
             disabled={disabled || isUploading || isStaging}
-            className="min-h-control-lg max-h-composer w-full resize-none bg-transparent px-2 py-2.5 text-sm text-primary placeholder:text-muted focus:outline-none disabled:opacity-60"
+            className="min-h-control-lg max-h-composer min-w-0 flex-1 resize-none bg-transparent px-2 py-2.5 text-sm text-primary placeholder:text-muted focus:outline-none disabled:opacity-60"
           />
 
           {/*
