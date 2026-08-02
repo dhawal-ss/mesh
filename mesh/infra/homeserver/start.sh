@@ -42,6 +42,12 @@ until curl --fail --silent http://127.0.0.1:8008/health >/dev/null 2>&1; do
   sleep 2
 done
 
+# Provision and actively verify the dedicated admission schema before the
+# network-facing service can start. This fails closed if its runtime role can
+# read Synapse tables, create schema objects, or reach any table beyond the two
+# admission tables.
+sh ./provision-admission-database.sh
+
 : "${MESH_OPERATOR_LOCALPART:?MESH_OPERATOR_LOCALPART is required}"
 case "$MESH_OPERATOR_LOCALPART" in
   *[!a-z0-9._=-]*|'')

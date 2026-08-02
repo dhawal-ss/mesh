@@ -19,6 +19,7 @@ set +a
 : "${POSTGRES_DB:?POSTGRES_DB is required}"
 
 new_postgres_password="$(openssl rand -hex 32)"
+new_admission_db_password="$(openssl rand -hex 32)"
 new_registration_secret="$(openssl rand -hex 32)"
 new_macaroon_secret="$(openssl rand -hex 32)"
 new_form_secret="$(openssl rand -hex 32)"
@@ -32,11 +33,13 @@ printf "ALTER ROLE %s PASSWORD '%s';\n" \
 next_env="$(mktemp "$script_dir/.env.next.XXXXXX")"
 awk \
   -v postgres="$new_postgres_password" \
+  -v admission_db="$new_admission_db_password" \
   -v registration="$new_registration_secret" \
   -v macaroon="$new_macaroon_secret" \
   -v form="$new_form_secret" \
   '
   /^POSTGRES_PASSWORD=/ { print "POSTGRES_PASSWORD=" postgres; next }
+  /^MESH_ADMISSION_DB_PASSWORD=/ { print "MESH_ADMISSION_DB_PASSWORD=" admission_db; next }
   /^REGISTRATION_SHARED_SECRET=/ { print "REGISTRATION_SHARED_SECRET=" registration; next }
   /^MACAROON_SECRET_KEY=/ { print "MACAROON_SECRET_KEY=" macaroon; next }
   /^FORM_SECRET=/ { print "FORM_SECRET=" form; next }
@@ -47,6 +50,7 @@ mv "$next_env" .env
 
 unset \
   new_postgres_password \
+  new_admission_db_password \
   new_registration_secret \
   new_macaroon_secret \
   new_form_secret

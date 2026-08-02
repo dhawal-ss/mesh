@@ -14,6 +14,8 @@ const [
   homeserverCompose,
   spikeCompose,
   homeserverSetup,
+  admissionProvision,
+  homeserverCaddy,
   homeserverRestore,
   homeserverRestoreTest,
   spikeSetup,
@@ -30,6 +32,8 @@ const [
   read('infra/homeserver/docker-compose.yml'),
   read('infra/matrix-spike/docker-compose.yml'),
   read('infra/homeserver/setup.sh'),
+  read('infra/homeserver/provision-admission-database.sh'),
+  read('infra/homeserver/Caddyfile'),
   read('infra/homeserver/restore-drill.sh'),
   read('infra/homeserver/tests/restore-drill.integration.sh'),
   read('infra/matrix-spike/setup.ps1'),
@@ -101,4 +105,17 @@ for (const [name, source] of [
 assert.match(ciWorkflow, /npm run check:operations-contract/)
 assert.match(releaseWorkflow, /npm run check:operations-contract/)
 
-console.log('Operations contract passed: local-only crash marker, incident/T&S/sync boundaries, and pinned Synapse image.')
+const admissionBlock = homeserverCompose.match(/\n  admission:\n[\s\S]*?\n  caddy:\n/)?.[0] ?? ''
+assert.doesNotMatch(admissionBlock, /env_file:/)
+assert.doesNotMatch(admissionBlock, /REGISTRATION_SHARED_SECRET|MACAROON_SECRET_KEY|FORM_SECRET/)
+assert.match(admissionBlock, /POSTGRES_PASSWORD: "\$\{MESH_ADMISSION_DB_PASSWORD:/)
+assert.match(admissionBlock, /read_only: true/)
+assert.match(admissionBlock, /cap_drop:\s+- ALL/)
+assert.match(admissionBlock, /pids_limit: 64/)
+assert.match(admissionBlock, /- admission-db[\s\S]*- admission-control/)
+assert.match(admissionProvision, /CREATE ROLE mesh_admission_owner NOLOGIN/)
+assert.match(admissionProvision, /GRANT SELECT, INSERT, UPDATE, DELETE[\s\S]*mesh_admission_invitations[\s\S]*mesh_admission_openid_proofs/)
+assert.match(admissionProvision, /SELECT 1 FROM public\.users LIMIT 0/)
+assert.doesNotMatch(homeserverCaddy, /reverse_proxy admission/)
+
+console.log('Operations contract passed: crash/incident boundaries, pinned Synapse, and isolated admission runtime.')

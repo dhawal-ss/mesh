@@ -44,6 +44,7 @@ if [ ! -f .env ]; then
       'POSTGRES_USER=synapse' \
       'POSTGRES_DB=synapse'
     printf 'POSTGRES_PASSWORD=%s\n' "$postgres_password"
+    printf 'MESH_ADMISSION_DB_PASSWORD=%s\n' "$(openssl rand -hex 32)"
     printf 'REGISTRATION_SHARED_SECRET=%s\n' "$registration_secret"
     printf 'MACAROON_SECRET_KEY=%s\n' "$macaroon_secret"
     printf 'FORM_SECRET=%s\n' "$form_secret"
@@ -106,6 +107,20 @@ if ! grep -q '^MESH_ADMISSION_SERVICE_ACCESS_TOKEN=' .env; then
   printf '%s\n' 'MESH_ADMISSION_SERVICE_ACCESS_TOKEN=REPLACE_DURING_FIRST_START' >> .env
   chmod 600 .env
 fi
+admission_db_password="$(
+  sed -n 's/^MESH_ADMISSION_DB_PASSWORD=//p' .env | tail -n 1
+)"
+case "$admission_db_password" in
+  ""|REPLACE_*)
+    admission_db_password="$(openssl rand -hex 32)"
+    next_env="$(mktemp "$script_dir/.env.admission-db.XXXXXX")"
+    grep -v '^MESH_ADMISSION_DB_PASSWORD=' .env > "$next_env" || true
+    printf 'MESH_ADMISSION_DB_PASSWORD=%s\n' "$admission_db_password" >> "$next_env"
+    chmod 600 "$next_env"
+    mv "$next_env" .env
+    ;;
+esac
+unset admission_db_password
 
 set -a
 # shellcheck disable=SC1091
@@ -123,6 +138,7 @@ set +a
 : "${POSTGRES_USER:?POSTGRES_USER is required}"
 : "${POSTGRES_DB:?POSTGRES_DB is required}"
 : "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+: "${MESH_ADMISSION_DB_PASSWORD:?MESH_ADMISSION_DB_PASSWORD is required}"
 : "${REGISTRATION_SHARED_SECRET:?REGISTRATION_SHARED_SECRET is required}"
 : "${MACAROON_SECRET_KEY:?MACAROON_SECRET_KEY is required}"
 : "${FORM_SECRET:?FORM_SECRET is required}"

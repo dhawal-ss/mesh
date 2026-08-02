@@ -63,6 +63,25 @@ stores only opaque invitation/proof digests. It runs as the dedicated non-admin
 that each community explicitly gives that account. Never make it a Synapse
 server administrator.
 
+The admission HTTP process does not receive the operator `.env`. Compose passes
+an explicit allowlist and maps `MESH_ADMISSION_DB_PASSWORD` to a separate
+`mesh_admission` database login. `provision-admission-database.sh` owns schema
+migrations through the no-login `mesh_admission_owner` role, grants the runtime
+identity DML only on `mesh_admission_invitations` and
+`mesh_admission_openid_proofs`, then proves that it cannot read Synapse's
+`public.users` table or create schema objects. PostgreSQL, Synapse, admission,
+and Caddy use separate internal database/control networks; the admission
+container has no general internet-egress network. A future POST-capable
+identity verifier must use a reviewed bounded egress proxy rather than adding
+the admission process to `matrix-edge`.
+
+The checked-in Caddy routes for `/_mesh/admission/*` and `/invite/*` return 404.
+Do not replace those responses with a reverse proxy until the isolation checks
+pass on the target host and every secret previously visible to the old
+whole-`.env` container has been rotated with `rotate-runtime-secrets.sh`.
+Retain dated, sanitized rotation and negative-access evidence before public
+exposure.
+
 Production invitation creation and claim currently fail closed. A deployment
 must first provide both a reviewed POST-capable Matrix OpenID verifier and a
 narrowly scoped registration-token issuer. Stock Synapse validates OpenID
@@ -140,8 +159,10 @@ for key in \
   MESH_SERVER_NAME MESH_HOMESERVER_HOST MESH_RTC_HOST MESH_RTC_ENABLED \
   MESH_PUBLIC_ENABLED MESH_REGISTRATION_ENABLED MESH_ABUSE_EMAIL \
   MESH_OPERATOR_LOCALPART POSTGRES_USER POSTGRES_DB POSTGRES_PASSWORD \
+  MESH_ADMISSION_DB_PASSWORD \
   REGISTRATION_SHARED_SECRET MACAROON_SECRET_KEY FORM_SECRET \
-  MESH_ADMISSION_SIGNING_KEY MESH_ADMISSION_SERVICE_USER_ID +  MESH_ADMISSION_SERVICE_ACCESS_TOKEN ACME_EMAIL
+  MESH_ADMISSION_SIGNING_KEY MESH_ADMISSION_SERVICE_USER_ID \
+  MESH_ADMISSION_SERVICE_ACCESS_TOKEN ACME_EMAIL
 do
   printf '%s=%s\n' "$key" \
     "$(security find-generic-password -a "$key" -s 'Mesh Homeserver Runtime' -w)" \
@@ -224,7 +245,9 @@ device outside the home network:
 
 ```sh
 curl "https://${MESH_SERVER_NAME}/.well-known/matrix/client"
-curl "https://${MESH_SERVER_NAME}/_mesh/admission/healthz"
+# This route must remain 404 until the separate admission activation review.
+test "$(curl -s -o /dev/null -w '%{http_code}' \
+  "https://${MESH_SERVER_NAME}/_mesh/admission/healthz")" = 404
 curl "https://${MESH_HOMESERVER_HOST}/_matrix/client/versions"
 ```
 

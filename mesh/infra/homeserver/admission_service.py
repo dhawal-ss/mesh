@@ -244,9 +244,10 @@ class InvitationStore:
             connection = self.connect()
             try:
                 cursor = connection.cursor()
-                cursor.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS mesh_admission_invitations (
+                if self.sqlite:
+                    cursor.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS mesh_admission_invitations (
                         token_hash TEXT PRIMARY KEY,
                         creator_user_id TEXT NOT NULL,
                         room_id TEXT NOT NULL,
@@ -259,19 +260,25 @@ class InvitationStore:
                         claim_lease_until BIGINT,
                         claimed_at BIGINT
                     )
-                    """
-                )
-                cursor.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS mesh_admission_openid_proofs (
+                        """
+                    )
+                    cursor.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS mesh_admission_openid_proofs (
                         proof_hash TEXT PRIMARY KEY,
                         user_id TEXT NOT NULL,
                         audience TEXT NOT NULL,
                         used_at BIGINT NOT NULL,
                         expires_at BIGINT NOT NULL
                     )
-                    """
-                )
+                        """
+                    )
+                else:
+                    # Production schema creation and grants are an operator-owned
+                    # migration boundary. The runtime identity must never gain
+                    # CREATE authority merely because the service started.
+                    cursor.execute("SELECT 1 FROM mesh_admission_invitations LIMIT 0")
+                    cursor.execute("SELECT 1 FROM mesh_admission_openid_proofs LIMIT 0")
                 connection.commit()
                 self._initialized = True
             finally:
