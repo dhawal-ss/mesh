@@ -136,6 +136,7 @@ assert.match(admissionProvision, /SELECT 1 FROM public\.users LIMIT 0/)
 assert.doesNotMatch(homeserverCaddy, /reverse_proxy admission/)
 
 assert.match(spikeSetup, /Remove-MatrixSpikeRuntimeDirectory/)
+assert.match(spikeSetup, /--entrypoint sh \$synapseImage -c/)
 assert.match(spikeSetup, /find \/mesh-cleanup -mindepth 1 -maxdepth 1 -exec rm -rf/)
 assert.match(spikeSetup, /StartsWith\(\$runtimePrefix/)
 

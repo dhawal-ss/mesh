@@ -28,7 +28,7 @@ function Remove-MatrixSpikeRuntimeDirectory {
     # Use the already pinned test image only after the caller has proven that
     # Target is a direct child of this fixture's runtime directory.
     $mount = "type=bind,source=$Target,target=/mesh-cleanup"
-    & docker run --rm --user 0 --mount $mount $synapseImage sh -c `
+    & docker run --rm --user 0 --mount $mount --entrypoint sh $synapseImage -c `
         'find /mesh-cleanup -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +'
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to clean root-owned Matrix spike runtime data in $Target"
