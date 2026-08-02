@@ -1,5 +1,9 @@
 # Mesh — Competitive Audit & Production Implementation Plan — For ChatGPT Sol
 
+> **ARCHIVED 2026-07-31 PLAN.** Do not execute this file as a current handoff
+> and do not reuse its production assertions. Current source, `AGENTS.md`, and
+> the schema-v2 readiness ledger supersede it.
+
 **Date:** 2026-07-31
 **Branch:** `main`
 **Integrated implementation SHA:** `7effb0cea2eba0b92aa4a62d749aad12ddbfdbbe`

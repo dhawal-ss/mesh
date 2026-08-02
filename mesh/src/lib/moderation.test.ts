@@ -98,6 +98,6 @@ describe('moderation result summaries', () => {
 
     expect(summary.tone).toBe('warning')
     expect(summary.fullySucceeded).toBe(false)
-    expect(summary.message).toContain('audit record could not be saved')
+    expect(summary.message).toContain('does not currently provide an authoritative moderation history')
   })
 })

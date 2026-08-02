@@ -12,10 +12,16 @@ const SKIPPED_DIRECTORIES = new Set([
   'test-results',
 ])
 
-// This is intentionally empty. Adding a network AI dependency or endpoint
-// requires a security-reviewed change to this allowlist in the same patch.
-export const REVIEWED_NETWORK_AI_PACKAGES = new Set()
-export const REVIEWED_NETWORK_AI_HOSTS = new Set()
+const AI_BOUNDARY_MANIFEST = path.join('security', 'ai-boundary.json')
+const REQUIRED_FORBIDDEN_ACTIONS = new Set([
+  'network-request',
+  'send-message',
+  'create-invitation',
+  'remove-member',
+  'ban-member',
+  'change-role',
+  'moderate-content',
+])
 
 const NETWORK_AI_PACKAGE_PATTERNS = [
   /^openai$/i,
@@ -81,11 +87,47 @@ function normalizePath(value) {
   return value.split(path.sep).join('/')
 }
 
-function isNetworkAiPackage(packageName) {
+function isNetworkAiPackage(packageName, reviewedPackages) {
   return (
-    !REVIEWED_NETWORK_AI_PACKAGES.has(packageName)
+    !reviewedPackages.has(packageName)
     && NETWORK_AI_PACKAGE_PATTERNS.some((pattern) => pattern.test(packageName))
   )
+}
+
+function loadAiBoundaryManifest(rootDir) {
+  const manifestPath = path.join(rootDir, AI_BOUNDARY_MANIFEST)
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`missing ${AI_BOUNDARY_MANIFEST}`)
+  }
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+  if (manifest.schemaVersion !== 1) throw new Error('schemaVersion must be 1')
+  if (manifest.productionFeature !== 'disabled') {
+    throw new Error('productionFeature must remain disabled until owner approval')
+  }
+  const allowedPackages = manifest.network?.allowedPackages
+  const allowedHosts = manifest.network?.allowedHosts
+  if (!Array.isArray(allowedPackages) || !Array.isArray(allowedHosts)) {
+    throw new Error('network allowlists must be arrays')
+  }
+  if (allowedPackages.length > 0 || allowedHosts.length > 0) {
+    throw new Error('production AI network allowlists must remain empty')
+  }
+  const allowedActions = new Set(manifest.authority?.allowedActions ?? [])
+  const forbiddenActions = new Set(manifest.authority?.forbiddenActions ?? [])
+  if (allowedActions.size !== 1 || !allowedActions.has('draft-suggestion')) {
+    throw new Error('authority may allow only draft-suggestion')
+  }
+  if (
+    forbiddenActions.size !== REQUIRED_FORBIDDEN_ACTIONS.size
+    || [...REQUIRED_FORBIDDEN_ACTIONS].some((action) => !forbiddenActions.has(action))
+  ) {
+    throw new Error('authority must explicitly forbid every privileged action')
+  }
+  return {
+    manifestPath,
+    reviewedPackages: new Set(allowedPackages),
+    reviewedHosts: new Set(allowedHosts.map((host) => String(host).toLowerCase())),
+  }
 }
 
 function isAiModule(relativePath, source) {
@@ -339,9 +381,22 @@ function violation(rule, filePath, message) {
 export function analyzeAiBoundary(rootDir) {
   const absoluteRoot = path.resolve(rootDir)
   const violations = []
+  let reviewedPackages = new Set()
+  let reviewedHosts = new Set()
+  try {
+    const boundary = loadAiBoundaryManifest(absoluteRoot)
+    reviewedPackages = boundary.reviewedPackages
+    reviewedHosts = boundary.reviewedHosts
+  } catch (error) {
+    violations.push(violation(
+      'ai-boundary-manifest',
+      AI_BOUNDARY_MANIFEST,
+      error instanceof Error ? error.message : String(error),
+    ))
+  }
 
   for (const dependency of manifestPackages(absoluteRoot)) {
-    if (isNetworkAiPackage(dependency.packageName)) {
+    if (isNetworkAiPackage(dependency.packageName, reviewedPackages)) {
       violations.push(violation(
         'network-ai-dependency',
         path.relative(absoluteRoot, dependency.file),
@@ -356,7 +411,7 @@ export function analyzeAiBoundary(rootDir) {
     const uncommentedSource = sourceWithoutComments(source)
 
     for (const packageName of importedPackages(uncommentedSource)) {
-      if (isNetworkAiPackage(packageName)) {
+      if (isNetworkAiPackage(packageName, reviewedPackages)) {
         violations.push(violation(
           'network-ai-import',
           relativePath,
@@ -366,7 +421,7 @@ export function analyzeAiBoundary(rootDir) {
     }
 
     for (const host of urlHosts(uncommentedSource)) {
-      if (NETWORK_AI_HOSTS.has(host) && !REVIEWED_NETWORK_AI_HOSTS.has(host)) {
+      if (NETWORK_AI_HOSTS.has(host) && !reviewedHosts.has(host)) {
         violations.push(violation(
           'network-ai-endpoint',
           relativePath,

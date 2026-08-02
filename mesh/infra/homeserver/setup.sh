@@ -49,6 +49,8 @@ if [ ! -f .env ]; then
     printf 'MACAROON_SECRET_KEY=%s\n' "$macaroon_secret"
     printf 'FORM_SECRET=%s\n' "$form_secret"
     printf 'MESH_ADMISSION_SIGNING_KEY=%s\n' "$admission_signing_key"
+    printf 'MESH_ADMISSION_SIGNING_KEY_ID=%s\n' "$(printf '%s' "$admission_signing_key" | sha256sum | cut -c1-16)"
+    printf '%s\n' 'MESH_ADMISSION_PREVIOUS_SIGNING_KEYS='
     printf 'MESH_ADMISSION_SERVICE_USER_ID=@mesh-admission-service:%s\n' "$MESH_SERVER_NAME"
     printf '%s\n' 'MESH_ADMISSION_SERVICE_ACCESS_TOKEN=REPLACE_DURING_FIRST_START'
     printf 'ACME_EMAIL=%s\n' "$ACME_EMAIL"
@@ -89,9 +91,15 @@ mv "$next_env" .env
 admission_signing_key="$(
   sed -n 's/^MESH_ADMISSION_SIGNING_KEY=//p' .env | tail -n 1
 )"
+generated_admission_signing_key=0
 case "$admission_signing_key" in
   ""|REPLACE_*)
+    if grep -q '^MESH_ADMISSION_PREVIOUS_SIGNING_KEYS=.' .env; then
+      echo "Existing previous admission signing keys cannot be paired with a regenerated current key." >&2
+      exit 1
+    fi
     admission_signing_key="$(openssl rand -hex 32)"
+    generated_admission_signing_key=1
     next_env="$(mktemp "$script_dir/.env.admission.XXXXXX")"
     grep -v '^MESH_ADMISSION_SIGNING_KEY=' .env > "$next_env" || true
     printf 'MESH_ADMISSION_SIGNING_KEY=%s\n' "$admission_signing_key" >> "$next_env"
@@ -99,6 +107,36 @@ case "$admission_signing_key" in
     mv "$next_env" .env
     ;;
 esac
+admission_signing_key_id="$(
+  sed -n 's/^MESH_ADMISSION_SIGNING_KEY_ID=//p' .env | tail -n 1
+)"
+if [ "$generated_admission_signing_key" -eq 1 ]; then
+  admission_signing_key_id=""
+fi
+case "$admission_signing_key_id" in
+  ""|REPLACE_*)
+    next_env="$(mktemp "$script_dir/.env.admission-id.XXXXXX")"
+    awk \
+      -v signing_id="$(printf '%s' "$admission_signing_key" | sha256sum | cut -c1-16)" \
+      '
+      /^MESH_ADMISSION_SIGNING_KEY_ID=/ {
+        if (!saw_id) print "MESH_ADMISSION_SIGNING_KEY_ID=" signing_id
+        saw_id = 1
+        next
+      }
+      { print }
+      END {
+        if (!saw_id) print "MESH_ADMISSION_SIGNING_KEY_ID=" signing_id
+      }
+      ' .env > "$next_env"
+    chmod 600 "$next_env"
+    mv "$next_env" .env
+    ;;
+esac
+if ! grep -q '^MESH_ADMISSION_PREVIOUS_SIGNING_KEYS=' .env; then
+  printf '%s\n' 'MESH_ADMISSION_PREVIOUS_SIGNING_KEYS=' >> .env
+  chmod 600 .env
+fi
 if ! grep -q '^MESH_ADMISSION_SERVICE_USER_ID=' .env; then
   printf 'MESH_ADMISSION_SERVICE_USER_ID=@mesh-admission-service:%s\n' "$MESH_SERVER_NAME" >> .env
   chmod 600 .env

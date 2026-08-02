@@ -27,6 +27,7 @@ export function SearchBar({ onNavigateToMessage, label }: SearchBarProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const searchGenerationRef = useRef(0)
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
+  const activeCommunityRef = useRef(activeCommunityId)
   const channels = useChannelStore((s) => s.channels)
 
   const performSearch = useCallback(
@@ -34,6 +35,7 @@ export function SearchBar({ onNavigateToMessage, label }: SearchBarProps) {
       const generation = ++searchGenerationRef.current
       const normalizedQuery = searchQuery.trim()
       if (!normalizedQuery || !activeCommunityId) {
+        if (activeCommunityId) void bridge.cancelMessageSearch(activeCommunityId)
         setResults([])
         setIsSearching(false)
         setSearchFailed(false)
@@ -75,8 +77,11 @@ export function SearchBar({ onNavigateToMessage, label }: SearchBarProps) {
   }, [isOpen])
 
   useEffect(() => {
+    const previousCommunityId = activeCommunityRef.current
+    activeCommunityRef.current = activeCommunityId
     clearTimeout(debounceRef.current)
     searchGenerationRef.current += 1
+    if (previousCommunityId) void bridge.cancelMessageSearch(previousCommunityId)
     const frame = window.requestAnimationFrame(() => {
       setResults([])
       setActiveResultIndex(0)
@@ -87,7 +92,11 @@ export function SearchBar({ onNavigateToMessage, label }: SearchBarProps) {
   }, [activeCommunityId])
 
   useEffect(() => {
-    return () => clearTimeout(debounceRef.current)
+    return () => {
+      clearTimeout(debounceRef.current)
+      const communityId = useCommunityStore.getState().activeCommunityId
+      if (communityId) void bridge.cancelMessageSearch(communityId)
+    }
   }, [])
 
   const handleResultClick = (message: Message) => {
@@ -100,13 +109,14 @@ export function SearchBar({ onNavigateToMessage, label }: SearchBarProps) {
   }
 
   const closeSearch = useCallback((restoreFocus = true) => {
+    if (activeCommunityId) void bridge.cancelMessageSearch(activeCommunityId)
     setIsOpen(false)
     setQuery('')
     setResults([])
     setActiveResultIndex(0)
     setSearchFailed(false)
     if (restoreFocus) triggerRef.current?.focus()
-  }, [])
+  }, [activeCommunityId])
 
   useEffect(() => {
     if (!isOpen) return

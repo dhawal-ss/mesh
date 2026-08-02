@@ -12,6 +12,30 @@ $runningOnWindows = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPla
     [System.Runtime.InteropServices.OSPlatform]::Windows
 )
 
+function Remove-MatrixSpikeRuntimeDirectory {
+    param([Parameter(Mandatory = $true)][string]$Target)
+
+    try {
+        Remove-Item -LiteralPath $Target -Recurse -Force -ErrorAction Stop
+        return
+    } catch {
+        if ($runningOnWindows) {
+            throw
+        }
+    }
+
+    # Linux containers create Synapse store files as root in the bind mount.
+    # Use the already pinned test image only after the caller has proven that
+    # Target is a direct child of this fixture's runtime directory.
+    $mount = "type=bind,source=$Target,target=/mesh-cleanup"
+    & docker run --rm --user 0 --mount $mount $synapseImage sh -c `
+        'find /mesh-cleanup -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +'
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to clean root-owned Matrix spike runtime data in $Target"
+    }
+    Remove-Item -LiteralPath $Target -Recurse -Force -ErrorAction Stop
+}
+
 if ($Reset) {
     Push-Location $spikeRoot
     try {
@@ -32,7 +56,7 @@ if ($Reset) {
             throw "Refusing to reset path outside the Matrix spike runtime: $target"
         }
         if (Test-Path -LiteralPath $target) {
-            Remove-Item -LiteralPath $target -Recurse -Force
+            Remove-MatrixSpikeRuntimeDirectory -Target $target
         }
     }
 }

@@ -99,6 +99,7 @@ claudereview/
 # Generated local integration-test state
 **/infra/matrix-spike/runtime/
 **/infra/homeserver/runtime/
+**/infra/homeserver/rotation-evidence/
 
 # Local configuration and secrets
 .env

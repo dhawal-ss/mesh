@@ -468,7 +468,11 @@ pub struct BackendStatus {
     /// response within the backend's freshness window.
     pub sync_running: bool,
     pub durable_history: bool,
-    pub end_to_end_encryption: bool,
+    /// Backend capability. This does not claim that the current account has a
+    /// usable authenticated encryption session.
+    pub supports_e2ee: bool,
+    /// Health of the current account/device encryption session.
+    pub session_e2ee_ready: bool,
     pub warnings: Vec<String>,
 }
 
@@ -934,6 +938,42 @@ pub struct CreatedCommunity {
     pub space_id: String,
     pub channel_id: String,
     pub name: String,
+}
+
+/// A bounded, content-free diagnostic for an entity that was deliberately
+/// excluded from an enumeration. The renderer may explain that an item is
+/// unavailable, but must never use this record to read, preview, search, or
+/// open the quarantined room.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockedEntityDiagnostic {
+    pub entity_id: String,
+    pub entity_kind: BlockedEntityKind,
+    pub reason: BlockedEntityReason,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BlockedEntityKind {
+    Community,
+    Channel,
+    DirectMessage,
+    Upgrade,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BlockedEntityReason {
+    Unencrypted,
+    Inaccessible,
+    Unsupported,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityList<T> {
+    pub entities: Vec<T>,
+    pub blocked_entities: Vec<BlockedEntityDiagnostic>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1458,6 +1498,11 @@ pub trait MeshBackend: Send + Sync {
     ) -> BackendResult<MatrixPersonalDataExport> {
         Err(BackendError::Unsupported("personal data export"))
     }
+    async fn cancel_personal_data_export(&self) -> BackendResult<()> {
+        Err(BackendError::Unsupported(
+            "personal data export cancellation",
+        ))
+    }
     async fn deactivate_account(&self, _password: String, _erase_data: bool) -> BackendResult<()> {
         Err(BackendError::Unsupported("Matrix account deactivation"))
     }
@@ -1522,10 +1567,10 @@ pub trait MeshBackend: Send + Sync {
         name: String,
         description: String,
     ) -> BackendResult<CreatedCommunity>;
-    async fn list_communities(&self) -> BackendResult<Vec<CommunityDto>> {
+    async fn list_communities(&self) -> BackendResult<EntityList<CommunityDto>> {
         Err(BackendError::Unsupported("community listing"))
     }
-    async fn list_channels(&self, _community_id: String) -> BackendResult<Vec<ChannelDto>> {
+    async fn list_channels(&self, _community_id: String) -> BackendResult<EntityList<ChannelDto>> {
         Err(BackendError::Unsupported("channel listing"))
     }
     async fn create_channel(
@@ -1693,7 +1738,7 @@ pub trait MeshBackend: Send + Sync {
             "encrypted Matrix attachment cancellation",
         ))
     }
-    async fn dm_conversations(&self) -> BackendResult<Vec<DmConversationDto>> {
+    async fn dm_conversations(&self) -> BackendResult<EntityList<DmConversationDto>> {
         Err(BackendError::Unsupported("Matrix direct messages"))
     }
     async fn ensure_dm(&self, _recipient_user_id: String) -> BackendResult<DmConversationDto> {
@@ -1801,8 +1846,13 @@ pub trait MeshBackend: Send + Sync {
         _community_id: String,
         _query: String,
         _limit: u32,
+        _request_id: String,
+        _deadline_ms: u64,
     ) -> BackendResult<Vec<MessageDto>> {
         Err(BackendError::Unsupported("message search"))
+    }
+    async fn cancel_search(&self, _request_id: String) -> BackendResult<()> {
+        Err(BackendError::Unsupported("search cancellation"))
     }
     async fn wait_for_room_update(
         &self,
@@ -1856,6 +1906,8 @@ pub trait MeshBackend: Send + Sync {
         _query: String,
         _server: Option<String>,
         _limit: u32,
+        _request_id: String,
+        _deadline_ms: u64,
     ) -> BackendResult<Vec<CommunityDirectoryEntry>> {
         Err(BackendError::Unsupported("community directory"))
     }

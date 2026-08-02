@@ -45,7 +45,8 @@ impl MeshBackend for LegacyP2pBackend {
             homeserver: None,
             sync_running: false,
             durable_history: false,
-            end_to_end_encryption: true,
+            supports_e2ee: true,
+            session_e2ee_ready: false,
             warnings: vec![
                 "Legacy libp2p mode requires another Mesh peer for delivery and history".into(),
             ],

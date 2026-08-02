@@ -336,6 +336,7 @@ $dependencyReviewConfigPath = Join-Path $gitRoot ".github/dependency-review-conf
 $codeownersPath = Join-Path $gitRoot ".github/CODEOWNERS"
 $securityPolicyPath = Join-Path $gitRoot "SECURITY.md"
 $licensePolicyPath = Join-Path $gitRoot "LICENSE_POLICY.md"
+$securityDisclosureDrillPath = Join-Path $repoRoot "scripts/security-disclosure-drill.mjs"
 
 $packageConfig = Read-JsonFile $packagePath
 $tauriConfig = Read-JsonFile $tauriConfigPath
@@ -620,9 +621,12 @@ Assert-Condition ($dependencyReviewConfigText -match 'license-check:\s*true' -an
     "Dependency review must enforce the reviewed license and vulnerability policy."
 Assert-Condition ($codeownersText -match '/\.github/workflows/release-beta\.yml.+@dhawal-ss') `
     "CODEOWNERS must require owner review for release workflow changes."
-Assert-Condition ($securityPolicyText -match 'private vulnerability reporting' -and
+Assert-Condition ($securityPolicyText -match '(?is)confidential\s+route\s+status:\s+unavailable' -and
+    $securityPolicyText -match '(?is)private\s+vulnerability\s+reporting\s+is\s+currently\s+disabled' -and
+    (Test-Path -LiteralPath $securityDisclosureDrillPath -PathType Leaf) -and
+    $packageConfig.scripts.'check:security-disclosure' -match 'security-disclosure-drill\.mjs' -and
     $licensePolicyText -match 'AGPL-3\.0-only') `
-    "Security disclosure and dependency license policies must remain present."
+    "Security policy must state the unavailable confidential route, retain its disclosure drill, and preserve the dependency license policy."
 
 Assert-Condition ($matrixAcceptanceWorkflowText -match 'npm run setup:matrix-spike:reset') `
     "Matrix federation acceptance must reset the disposable homeservers before every run."

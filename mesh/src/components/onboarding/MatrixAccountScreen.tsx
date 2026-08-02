@@ -784,6 +784,11 @@ export function MatrixAccountScreen({
           </p>
         </header>
 
+        <p className="flex items-center justify-center gap-2 text-caption font-medium text-muted sm:hidden">
+          <span aria-hidden="true">↓</span>
+          More account service choices are below
+        </p>
+
         {savedAccounts.length > 0 ? (
           <SavedAccounts
             accounts={savedAccounts}

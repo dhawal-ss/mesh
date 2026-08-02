@@ -1,4 +1,4 @@
-import { lazy, Suspense, useRef, useState, type MouseEvent } from 'react'
+import { lazy, Suspense, useRef, type MouseEvent } from 'react'
 import { useIdentityStore } from '../../store/identity'
 import { Avatar } from '../ui/Avatar'
 import { matrixProfileIdentity, resolveSenderIdentity } from '../../lib/matrixIdentity'
@@ -6,12 +6,10 @@ import * as bridge from '../../lib/bridge'
 import { DialogErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
 import { useShellStore } from '../../store/shell'
-import { Modal, setNextModalRestoreFocusTarget } from '../ui/Modal'
-import { useActiveCommunity } from '../../store/communities'
+import { setNextModalRestoreFocusTarget } from '../ui/Modal'
 import { useChannelStore } from '../../store/channels'
 import { useDmStore } from '../../store/dms'
 import { isBackupReminderDue, useSettingsStore } from '../../store/settings'
-import { Spinner } from '../ui/Spinner'
 import { ModalLoadingFallback } from '../ui/ModalLoadingFallback'
 
 const DiagnosticsPanel = lazy(() =>
@@ -29,12 +27,6 @@ const SecurityDevicesPanel = lazy(() =>
     default: module.SecurityDevicesPanel,
   })),
 )
-const LegacyMigrationPanel = lazy(() =>
-  import('../community/LegacyMigrationPanel').then((module) => ({
-    default: module.LegacyMigrationPanel,
-  })),
-)
-
 export function UserPanel() {
   const storedIdentity = useIdentityStore((state) => state.identity)
   const setIdentity = useIdentityStore((state) => state.setIdentity)
@@ -47,9 +39,6 @@ export function UserPanel() {
   const setShowSecurity = useShellStore((state) => state.setSecurityOpen)
   const showDiagnostics = useShellStore((state) => state.diagnosticsOpen)
   const setShowDiagnostics = useShellStore((state) => state.setDiagnosticsOpen)
-  const [showImport, setShowImport] = useState(false)
-  const activeCommunity = useActiveCommunity()
-  const channels = useChannelStore((state) => state.channels)
   const activeChannelId = useChannelStore((state) => state.activeChannelId)
   const activeChannelName = useChannelStore((state) =>
     state.activeChannelId ? state.channelEntities[state.activeChannelId]?.name : undefined,
@@ -84,11 +73,6 @@ export function UserPanel() {
 
   const openDiagnostics = () => {
     setShowDiagnostics(true)
-  }
-
-  const openImport = () => {
-    setShowSettings(false)
-    setShowImport(true)
   }
 
   return (
@@ -138,7 +122,6 @@ export function UserPanel() {
               onOpenSecurity={openSecurity}
               backupReminderDue={backupReminderDue}
               onOpenDiagnostics={openDiagnostics}
-              onOpenImport={openImport}
               onTestNotification={async () => {
                 await bridge.sendTestNotification()
                 const notifications = useSettingsStore.getState().notifications
@@ -182,40 +165,6 @@ export function UserPanel() {
               backendKind={matrixMode ? 'matrix' : 'legacy-p2p'}
             />
           </Suspense>
-        )}
-      </DialogErrorBoundary>
-      <DialogErrorBoundary
-        open={showImport}
-        onClose={() => setShowImport(false)}
-        title="Import older Mesh data"
-      >
-        {showImport && (
-          <Modal open onClose={() => setShowImport(false)} title="Import older Mesh data">
-            <Suspense
-              fallback={
-                <div
-                  role="status"
-                  aria-label="Loading import tools"
-                  className="flex min-h-32 flex-col items-center justify-center gap-3 text-sm text-content-muted"
-                >
-                  <Spinner />
-                  <span>Loading import tools…</span>
-                </div>
-              }
-            >
-              {activeCommunity ? (
-                <LegacyMigrationPanel
-                  communityId={activeCommunity.id}
-                  channels={channels}
-                  canManage={activeCommunity.role === 'owner' || activeCommunity.role === 'admin'}
-                />
-              ) : (
-                <p className="text-sm text-content-secondary">
-                  Choose a server before importing older Mesh data.
-                </p>
-              )}
-            </Suspense>
-          </Modal>
         )}
       </DialogErrorBoundary>
     </>

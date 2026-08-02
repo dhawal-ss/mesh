@@ -36,7 +36,8 @@ function backendStatus(kind: 'matrix' | 'legacy-p2p'): BackendStatus {
     homeserver: matrix ? 'https://example.org' : null,
     syncRunning: matrix,
     durableHistory: true,
-    endToEndEncryption: true,
+      supportsE2ee: true,
+      sessionE2eeReady: true,
     warnings: [],
   }
 }

@@ -41,12 +41,6 @@ import type {
   MatrixRecoveryHealth,
   MatrixRecoverySetupResult,
   NotificationPresentationContext,
-  LegacyArchiveSummary,
-  LegacyDryRunReport,
-  LegacyExportRequest,
-  LegacyExportResult,
-  LegacyImportRequest,
-  LegacyImportResult,
   Channel,
   Message,
   Attachment,
@@ -66,6 +60,23 @@ import type {
   ServerEmoji,
   VoiceServiceStatus,
 } from '../types/ipc'
+
+export interface BlockedEntityDiagnostic {
+  entityId: string
+  entityKind: 'community' | 'channel' | 'direct-message' | 'upgrade'
+  reason: 'unencrypted' | 'inaccessible' | 'unsupported'
+}
+
+export interface EntityListResult<T> {
+  entities: T[]
+  blockedEntities: BlockedEntityDiagnostic[]
+}
+
+function reportBlockedEntities(operation: string, blocked: BlockedEntityDiagnostic[]) {
+  if (blocked.length > 0) {
+    console.warn(`${operation} quarantined ${blocked.length} protected-room entit${blocked.length === 1 ? 'y' : 'ies'}`, blocked)
+  }
+}
 
 export type { MatrixRecoveryHealth, MatrixRecoverySetupResult }
 
@@ -108,6 +119,7 @@ const LIGHTBOX_IMAGE_IPC_OPTIONS: TauriInvokeOptions = {
 }
 const MAX_LIGHTBOX_IMAGE_BYTES = 100 * 1024 * 1024
 const MAX_CUSTOM_EMOJI_BYTES = 512 * 1024
+const NATIVE_SEARCH_DEADLINE_MS = 10_000
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10] as const
 
 export interface ProtectedImage {
@@ -265,6 +277,57 @@ async function tauriInvoke<T>(
       showToast(`${description.title}. ${description.body}`, 'error')
     }
     throw error
+  }
+}
+
+interface ActiveNativeSearch {
+  requestId: string
+}
+
+const activeNativeSearches = new Map<string, ActiveNativeSearch>()
+
+async function cancelActiveNativeSearch(scope: string): Promise<void> {
+  const active = activeNativeSearches.get(scope)
+  if (!active) return
+  await Promise.resolve(invoke('matrix_cancel_search', { requestId: active.requestId }))
+  if (activeNativeSearches.get(scope)?.requestId === active.requestId) {
+    activeNativeSearches.delete(scope)
+  }
+}
+
+async function cancelAllActiveNativeSearches(): Promise<void> {
+  await Promise.allSettled([...activeNativeSearches.keys()].map(cancelActiveNativeSearch))
+}
+
+async function invokeNativeSearch<T>(
+  scope: string,
+  command: string,
+  args: Record<string, unknown>,
+): Promise<T> {
+  if (!isTauri()) throw tauriUnavailable()
+  await cancelActiveNativeSearch(scope)
+  const requestId = createMatrixTransactionId()
+  const active = { requestId }
+  activeNativeSearches.set(scope, active)
+  const invocation = Promise.resolve(invoke<T>(command, {
+    ...args,
+    requestId,
+    deadlineMs: NATIVE_SEARCH_DEADLINE_MS,
+  }))
+  let timeoutHandle: number | undefined
+  const timeout = new Promise<T>((_, reject) => {
+    timeoutHandle = window.setTimeout(() => {
+      reject(normalizeError(`IPC request "${command}" exceeded its native deadline`))
+      void Promise.resolve(invoke('matrix_cancel_search', { requestId })).catch(() => undefined)
+    }, NATIVE_SEARCH_DEADLINE_MS + 2_000)
+  })
+  try {
+    return await Promise.race([invocation, timeout])
+  } catch (cause) {
+    throw normalizeError(cause)
+  } finally {
+    if (timeoutHandle !== undefined) window.clearTimeout(timeoutHandle)
+    if (activeNativeSearches.get(scope) === active) activeNativeSearches.delete(scope)
   }
 }
 
@@ -443,7 +506,8 @@ export async function getBackendStatus(): Promise<BackendStatus> {
       homeserver: null,
       syncRunning: false,
       durableHistory: true,
-      endToEndEncryption: true,
+      supportsE2ee: true,
+      sessionE2eeReady: true,
       warnings: ['Tauri runtime unavailable'],
     }
     return cacheBackendStatus(status)
@@ -525,6 +589,7 @@ export async function matrixRestoreSession(): Promise<BackendStatus> {
 }
 
 export async function matrixLogout(): Promise<void> {
+  await cancelAllActiveNativeSearches()
   await tauriInvoke('matrix_logout')
   cachedBackendKind = 'matrix'
   cachedBackendStatus = null
@@ -554,6 +619,7 @@ export async function matrixRevokeDevice(deviceId: string, password: string): Pr
 }
 
 export async function matrixRemoveLocalAccount(): Promise<void> {
+  await cancelAllActiveNativeSearches()
   await tauriInvoke('matrix_remove_local_account')
   cachedBackendKind = 'matrix'
   cachedBackendStatus = null
@@ -561,6 +627,10 @@ export async function matrixRemoveLocalAccount(): Promise<void> {
 
 export async function matrixExportPersonalData(): Promise<MatrixPersonalDataExport | null> {
   return tauriInvoke('matrix_export_personal_data')
+}
+
+export async function matrixCancelPersonalDataExport(): Promise<void> {
+  return tauriInvoke('matrix_cancel_personal_data_export')
 }
 
 export async function matrixDeactivateAccount(password: string): Promise<void> {
@@ -582,6 +652,7 @@ export async function matrixUpdateProfileDisplayName(displayName: string): Promi
 }
 
 export async function matrixSwitchAccount(profileId: string): Promise<BackendStatus> {
+  await cancelAllActiveNativeSearches()
   const status = await tauriInvoke<BackendStatus>('matrix_switch_account', {
     profileId,
   })
@@ -704,18 +775,18 @@ export async function matrixCreateCommunity(name: string, description: string): 
   return created.community
 }
 
-export async function matrixListCommunities(): Promise<Community[]> {
+export async function matrixListCommunities(): Promise<EntityListResult<Community>> {
   return tauriInvoke('matrix_list_communities', undefined, READ_IPC_OPTIONS)
 }
 
-export async function matrixListChannels(communityId: string): Promise<Channel[]> {
-  const channels = await tauriInvoke<Channel[]>(
+export async function matrixListChannels(communityId: string): Promise<EntityListResult<Channel>> {
+  const result = await tauriInvoke<EntityListResult<Channel>>(
     'matrix_list_channels',
     { communityId },
     READ_IPC_OPTIONS,
   )
   const merged = new Map<string, Channel>()
-  for (const channel of channels) {
+  for (const channel of result.entities) {
     merged.set(channel.id, channel)
   }
   const unresolvedCreated: Channel[] = []
@@ -740,7 +811,7 @@ export async function matrixListChannels(communityId: string): Promise<Channel[]
   } else {
     matrixCreatedChannels.delete(communityId)
   }
-  return [...merged.values()]
+  return { entities: [...merged.values()], blockedEntities: result.blockedEntities }
 }
 
 export async function matrixCreateChannel(
@@ -1052,36 +1123,6 @@ export async function matrixRecover(recoveryKeyOrPassphrase: string): Promise<vo
   emitMatrixTrustChanged()
 }
 
-export async function exportLegacyArchive(
-  request: LegacyExportRequest = {},
-): Promise<LegacyExportResult> {
-  return tauriInvoke('export_legacy_archive', { request })
-}
-
-export async function inspectLegacyArchives(
-  archivePaths: string[],
-): Promise<LegacyArchiveSummary[]> {
-  return tauriInvoke('inspect_legacy_archives', { archivePaths }, READ_IPC_OPTIONS)
-}
-
-export async function dryRunLegacyImport(
-  request: LegacyImportRequest,
-): Promise<LegacyDryRunReport> {
-  return tauriInvoke('dry_run_legacy_import', { request })
-}
-
-export async function approveLegacyImport(
-  request: LegacyImportRequest,
-  approvalToken: string,
-  approvalPhrase: string,
-): Promise<LegacyImportResult> {
-  return tauriInvoke('approve_legacy_import', {
-    request,
-    approvalToken,
-    approvalPhrase,
-  })
-}
-
 // ─── Identity Commands ──────────────────────────────
 
 export async function generateIdentity(
@@ -1133,9 +1174,12 @@ export async function getCommunities(): Promise<Community[]> {
     return []
   }
 
-  return isMatrixBackend()
-    ? matrixListCommunities()
-    : tauriInvoke('get_communities', undefined, READ_IPC_OPTIONS)
+  if (isMatrixBackend()) {
+    const result = await matrixListCommunities()
+    reportBlockedEntities('Community listing', result.blockedEntities)
+    return result.entities
+  }
+  return tauriInvoke('get_communities', undefined, READ_IPC_OPTIONS)
 }
 
 export async function joinCommunity(inviteLink: string): Promise<Community> {
@@ -1233,14 +1277,14 @@ export async function searchCommunityDirectory(
   server?: string,
   limit = 20,
 ): Promise<CommunityDirectoryEntry[]> {
-  return tauriInvoke(
+  return invokeNativeSearch(
+    `directory:${server?.trim() || 'account-service'}`,
     'matrix_search_community_directory',
     {
       query,
       server: server?.trim() || null,
       limit,
     },
-    READ_IPC_OPTIONS,
   )
 }
 
@@ -1300,9 +1344,12 @@ export async function getChannels(communityId: string): Promise<Channel[]> {
     return []
   }
 
-  return isMatrixBackend()
-    ? matrixListChannels(communityId)
-    : tauriInvoke('get_channels', { communityId }, READ_IPC_OPTIONS)
+  if (isMatrixBackend()) {
+    const result = await matrixListChannels(communityId)
+    reportBlockedEntities('Channel listing', result.blockedEntities)
+    return result.entities
+  }
+  return tauriInvoke('get_channels', { communityId }, READ_IPC_OPTIONS)
 }
 
 export async function createChannel(
@@ -1483,9 +1530,18 @@ export async function searchMessages(
   limit: number = 50,
 ): Promise<Message[]> {
   if (isMatrixBackend()) {
-    return tauriInvoke('matrix_search_messages', { query, communityId, limit }, READ_IPC_OPTIONS)
+    return invokeNativeSearch(
+      `messages:${communityId}`,
+      'matrix_search_messages',
+      { query, communityId, limit },
+    )
   }
   return tauriInvoke('search_messages', { query, communityId, limit }, READ_IPC_OPTIONS)
+}
+
+export async function cancelMessageSearch(communityId: string): Promise<void> {
+  if (!isTauri() || !isMatrixBackend()) return
+  await cancelActiveNativeSearch(`messages:${communityId}`)
 }
 
 // ─── Channel Event Log ────────────────────────────
@@ -2115,7 +2171,15 @@ export async function sendDm(
 
 export async function getDmConversations(): Promise<DmConversation[]> {
   if (!isTauri()) return []
-  if (isMatrixBackend()) return tauriInvoke('matrix_dm_conversations', undefined, READ_IPC_OPTIONS)
+  if (isMatrixBackend()) {
+    const result = await tauriInvoke<EntityListResult<DmConversation>>(
+      'matrix_dm_conversations',
+      undefined,
+      READ_IPC_OPTIONS,
+    )
+    reportBlockedEntities('Direct-message listing', result.blockedEntities)
+    return result.entities
+  }
   return tauriInvoke('get_dm_conversations', undefined, READ_IPC_OPTIONS)
 }
 

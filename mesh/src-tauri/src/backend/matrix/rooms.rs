@@ -171,6 +171,136 @@ impl MatrixBackend {
         Ok(rooms)
     }
 
+    /// Enumeration-safe variant of upgrade traversal. A broken successor is
+    /// quarantined without removing the last verified room from the result.
+    async fn joined_room_upgrade_chain_quarantined(
+        &self,
+        client: &Client,
+        room: Room,
+        action: &str,
+    ) -> BackendResult<EntityList<Room>> {
+        let mut rooms = vec![room];
+        let mut blocked_entities = Vec::new();
+        let mut visited = BTreeSet::from([rooms[0].room_id().to_owned()]);
+
+        for _ in 0..Self::MAX_ROOM_UPGRADE_HOPS {
+            let current = rooms
+                .last()
+                .expect("the room upgrade chain always contains its starting room");
+            let current_room_id = current.room_id().to_owned();
+            let successor_room_id = match self.joined_successor_room_id(client, current).await {
+                Ok(Some(room_id)) => room_id,
+                Ok(None) => break,
+                Err(error) => {
+                    Self::quarantine_entity::<Room>(
+                        &mut rooms,
+                        &mut blocked_entities,
+                        current_room_id.to_string(),
+                        BlockedEntityKind::Upgrade,
+                        Err(error),
+                    )?;
+                    break;
+                }
+            };
+            if !visited.insert(successor_room_id.clone()) {
+                if blocked_entities.len() < MAX_BLOCKED_ENTITY_DIAGNOSTICS {
+                    blocked_entities.push(BlockedEntityDiagnostic {
+                        entity_id: successor_room_id.to_string(),
+                        entity_kind: BlockedEntityKind::Upgrade,
+                        reason: BlockedEntityReason::Unsupported,
+                    });
+                }
+                break;
+            }
+
+            let successor = match Self::protected_joined_room_if_available(
+                client,
+                &successor_room_id,
+                action,
+            )
+            .await
+            {
+                Ok(Some(successor)) => successor,
+                Ok(None) => {
+                    if blocked_entities.len() < MAX_BLOCKED_ENTITY_DIAGNOSTICS {
+                        blocked_entities.push(BlockedEntityDiagnostic {
+                            entity_id: successor_room_id.to_string(),
+                            entity_kind: BlockedEntityKind::Upgrade,
+                            reason: BlockedEntityReason::Inaccessible,
+                        });
+                    }
+                    break;
+                }
+                Err(error) => {
+                    Self::quarantine_entity::<Room>(
+                        &mut rooms,
+                        &mut blocked_entities,
+                        successor_room_id.to_string(),
+                        BlockedEntityKind::Upgrade,
+                        Err(error),
+                    )?;
+                    break;
+                }
+            };
+            if successor.is_space() {
+                if blocked_entities.len() < MAX_BLOCKED_ENTITY_DIAGNOSTICS {
+                    blocked_entities.push(BlockedEntityDiagnostic {
+                        entity_id: successor_room_id.to_string(),
+                        entity_kind: BlockedEntityKind::Upgrade,
+                        reason: BlockedEntityReason::Unsupported,
+                    });
+                }
+                break;
+            }
+            let mut valid_predecessor = successor
+                .predecessor_room()
+                .is_some_and(|predecessor| predecessor.room_id == current_room_id);
+            if !valid_predecessor {
+                valid_predecessor = self
+                    .verified_room_upgrades
+                    .read()
+                    .await
+                    .get(&current_room_id)
+                    .is_some_and(|replacement| replacement == successor.room_id());
+            }
+            if !valid_predecessor {
+                valid_predecessor = match self
+                    .cache_verified_room_upgrade(client, &successor, action)
+                    .await
+                {
+                    Ok(predecessor) => predecessor
+                        .is_some_and(|predecessor| predecessor == current_room_id),
+                    Err(error) => {
+                        Self::quarantine_entity::<Room>(
+                            &mut rooms,
+                            &mut blocked_entities,
+                            successor_room_id.to_string(),
+                            BlockedEntityKind::Upgrade,
+                            Err(error),
+                        )?;
+                        break;
+                    }
+                };
+            }
+            if !valid_predecessor {
+                if blocked_entities.len() < MAX_BLOCKED_ENTITY_DIAGNOSTICS {
+                    blocked_entities.push(BlockedEntityDiagnostic {
+                        entity_id: successor_room_id.to_string(),
+                        entity_kind: BlockedEntityKind::Upgrade,
+                        reason: BlockedEntityReason::Unsupported,
+                    });
+                }
+                break;
+            }
+            rooms.push(successor);
+        }
+
+        Ok(EntityList {
+            entities: rooms,
+            blocked_entities,
+        })
+    }
+
     async fn space_child_ids(&self, space: &Room) -> BackendResult<Vec<OwnedRoomId>> {
         let response = self
             .client()

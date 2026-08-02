@@ -620,7 +620,8 @@ export default function App() {
                       homeserver: 'https://preview.mesh',
                       syncRunning: true,
                       durableHistory: true,
-                      endToEndEncryption: true,
+                      supportsE2ee: true,
+                      sessionE2eeReady: true,
                       warnings: [],
                     }
                     setBackendStatus(status)
@@ -645,7 +646,8 @@ export default function App() {
                       homeserver: request.homeserver,
                       syncRunning: true,
                       durableHistory: true,
-                      endToEndEncryption: true,
+                      supportsE2ee: true,
+                      sessionE2eeReady: true,
                       warnings: [],
                     }
                     setBackendStatus(status)

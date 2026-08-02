@@ -26,7 +26,7 @@ export function summarizeModerationResult(
   )
   const auditWarning = result.auditRecorded
     ? ''
-    : ' The audit record could not be saved; try again after checking your connection.'
+    : ' Mesh does not currently provide an authoritative moderation history; review the per-channel outcomes now.'
 
   if (failures.length === 0 && result.auditRecorded) {
     return {

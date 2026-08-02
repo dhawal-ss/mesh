@@ -11,7 +11,8 @@ describe('support bundle privacy boundary', () => {
       deviceId: 'SECRET-DEVICE',
       homeserver: 'https://private.example.org',
       syncRunning: true,
-      endToEndEncryption: true,
+      supportsE2ee: true,
+      sessionE2eeReady: true,
       durableHistory: true,
       warnings: ['Room !private:example.org failed with access_token=secret'],
       voiceService: {

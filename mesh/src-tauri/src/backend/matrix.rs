@@ -148,11 +148,12 @@ use crate::types::{
 };
 
 use super::{
-    BackendError, BackendKind, BackendResult, BackendStatus, CommunityAccessResult,
-    CommunityAccessSettings, CommunityApplication, CommunityDirectoryEntry, CommunityMember,
-    CommunityPermissionProjection, ConversationPrivacyOverride, CreatedCommunity, CustomEmoji,
-    MatrixAccount, MatrixAttachmentSendRequest, MatrixBackendEvent, MatrixBackendEventCallback,
-    MatrixDevice, MatrixLogin, MatrixNotification, MatrixOidcAvailability, MatrixOidcStatus,
+    BackendError, BackendKind, BackendResult, BackendStatus, BlockedEntityDiagnostic,
+    BlockedEntityKind, BlockedEntityReason, CommunityAccessResult, CommunityAccessSettings,
+    CommunityApplication, CommunityDirectoryEntry, CommunityMember, CommunityPermissionProjection,
+    ConversationPrivacyOverride, CreatedCommunity, CustomEmoji, EntityList, MatrixAccount,
+    MatrixAttachmentSendRequest, MatrixBackendEvent, MatrixBackendEventCallback, MatrixDevice,
+    MatrixLogin, MatrixNotification, MatrixOidcAvailability, MatrixOidcStatus,
     MatrixPermissionStateChanged, MatrixPersonalDataExport, MatrixProfile,
     MatrixQueuedMessageState, MatrixQueuedMessageUpdate, MatrixRecoveryHealth,
     MatrixRecoverySecureStorageState, MatrixRecoverySetupResult, MatrixRecoveryVerificationState,
@@ -190,6 +191,12 @@ const RECOVERY_TEST_KEY: &str = "matrix-recovery-test-v1";
 const RECOVERY_CREDENTIAL_KEY: &str = "matrix-recovery-credential-v1";
 const PREFERENCES_EVENT_TYPE: &str = "org.mesh.preferences.v1";
 const MAX_PINNED_EVENTS: usize = 100;
+const MAX_BLOCKED_ENTITY_DIAGNOSTICS: usize = 128;
+const MAX_SEARCH_ROOMS: usize = 5_000;
+const MAX_SEARCH_EVENTS: usize = 50_000;
+const MAX_SEARCH_EVENTS_PER_ROOM: u32 = 250;
+const MAX_SEARCH_SCANNED_BYTES: usize = 32 * 1024 * 1024;
+const MAX_SEARCH_DEADLINE_MS: u64 = 15_000;
 const COMMUNITY_HOMESERVER_ENV: &str = "MESH_COMMUNITY_HOMESERVER";
 const COMMUNITY_SERVER_NAME_ENV: &str = "MESH_COMMUNITY_SERVER_NAME";
 const LOGIN_TIMEOUT_SECONDS: u64 = 45;
@@ -785,6 +792,8 @@ pub struct MatrixBackend {
     sent_typing_notices: Mutex<HashSet<String>>,
     typing_users: Arc<RwLock<HashMap<String, Vec<String>>>>,
     presence: Arc<RwLock<HashMap<String, String>>>,
+    search_operations: NativeSearchRegistry,
+    personal_export_operation: Mutex<Option<(CancellationToken, Arc<Notify>)>>,
     event_callback: Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
 }
 
@@ -802,8 +811,62 @@ include!("matrix/rooms.rs");
 include!("matrix/dm.rs");
 include!("matrix/emoji.rs");
 include!("matrix/personal_data.rs");
+include!("matrix/search.rs");
 
 impl MatrixBackend {
+    fn blocked_entity_reason(error: &BackendError) -> Option<BlockedEntityReason> {
+        match error {
+            BackendError::NotEncrypted(_) => Some(BlockedEntityReason::Unencrypted),
+            BackendError::Unsupported(_) | BackendError::InvalidConfiguration(_) => {
+                Some(BlockedEntityReason::Unsupported)
+            }
+            BackendError::NotFound(_)
+            | BackendError::PermissionDenied(_)
+            | BackendError::DecryptionFailed(_) => Some(BlockedEntityReason::Inaccessible),
+            BackendError::NotAuthenticated
+            | BackendError::Network(_)
+            | BackendError::RateLimited(_)
+            | BackendError::Crypto(_)
+            | BackendError::Serialization(_)
+            | BackendError::Cancelled(_)
+            | BackendError::CommunityHomeserverUnconfigured
+            | BackendError::UsernameUnavailable
+            | BackendError::RegistrationTermsRequired
+            | BackendError::RegistrationAdditionalAuthRequired
+            | BackendError::RegistrationInvitationRequired
+            | BackendError::RegistrationInvitationInvalid
+            | BackendError::RegistrationTimedOut(_)
+            | BackendError::Other(_)
+            | BackendError::LoginCancelled
+            | BackendError::LoginTimedOut(_) => None,
+        }
+    }
+
+    fn quarantine_entity<T>(
+        entities: &mut Vec<T>,
+        blocked_entities: &mut Vec<BlockedEntityDiagnostic>,
+        entity_id: String,
+        entity_kind: BlockedEntityKind,
+        result: BackendResult<T>,
+    ) -> BackendResult<()> {
+        match result {
+            Ok(entity) => entities.push(entity),
+            Err(error) => {
+                let Some(reason) = Self::blocked_entity_reason(&error) else {
+                    return Err(error);
+                };
+                if blocked_entities.len() < MAX_BLOCKED_ENTITY_DIAGNOSTICS {
+                    blocked_entities.push(BlockedEntityDiagnostic {
+                        entity_id,
+                        entity_kind,
+                        reason,
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn media_reservation_bytes(declared_size: u64) -> u64 {
         if declared_size > 0 {
             declared_size
@@ -896,6 +959,8 @@ impl MatrixBackend {
             sent_typing_notices: Mutex::new(HashSet::new()),
             typing_users: Arc::new(RwLock::new(HashMap::new())),
             presence: Arc::new(RwLock::new(HashMap::new())),
+            search_operations: NativeSearchRegistry::default(),
+            personal_export_operation: Mutex::new(None),
             event_callback: Arc::new(StdRwLock::new(None)),
         }
     }
@@ -944,6 +1009,8 @@ impl MatrixBackend {
             sent_typing_notices: Mutex::new(HashSet::new()),
             typing_users: Arc::new(RwLock::new(HashMap::new())),
             presence: Arc::new(RwLock::new(HashMap::new())),
+            search_operations: NativeSearchRegistry::default(),
+            personal_export_operation: Mutex::new(None),
             event_callback: Arc::new(StdRwLock::new(None)),
         }
     }
@@ -3482,6 +3549,7 @@ impl MeshBackend for MatrixBackend {
             .and_then(|client| client.device_id())
             .map(ToString::to_string);
         let authenticated = user_id.is_some();
+        let session_e2ee_ready = authenticated && device_id.is_some();
 
         let warnings = if !authenticated {
             vec!["Sign in to synchronize communities and messages".into()]
@@ -3503,7 +3571,8 @@ impl MeshBackend for MatrixBackend {
             homeserver: runtime.homeserver.clone(),
             sync_running,
             durable_history: true,
-            end_to_end_encryption: true,
+            supports_e2ee: true,
+            session_e2ee_ready,
             warnings,
         }
     }
@@ -4341,6 +4410,8 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn logout(&self) -> BackendResult<()> {
+        self.search_operations.cancel_all().await?;
+        <Self as MeshBackend>::cancel_personal_data_export(self).await?;
         let _account_transition = self.account_transition_gate.lock().await;
         let client = self.client().await?;
         let profile_id = self
@@ -4508,6 +4579,8 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn remove_local_account(&self) -> BackendResult<()> {
+        self.search_operations.cancel_all().await?;
+        <Self as MeshBackend>::cancel_personal_data_export(self).await?;
         let _account_transition = self.account_transition_gate.lock().await;
         let runtime_profile_id = self.runtime.read().await.profile_id.clone();
         let profile_id = match runtime_profile_id {
@@ -4557,7 +4630,46 @@ impl MeshBackend for MatrixBackend {
         &self,
         destination_root: PathBuf,
     ) -> BackendResult<MatrixPersonalDataExport> {
-        self.write_personal_data_export(destination_root).await
+        let cancellation = {
+            let mut active = self.personal_export_operation.lock().await;
+            if active.is_some() {
+                return Err(BackendError::Other(
+                    "A personal-data export is already running".into(),
+                ));
+            }
+            let cancellation = CancellationToken::new();
+            *active = Some((cancellation.clone(), Arc::new(Notify::new())));
+            cancellation
+        };
+        let result = self
+            .write_personal_data_export(destination_root, &cancellation)
+            .await;
+        if let Some((_, completed)) = self.personal_export_operation.lock().await.take() {
+            completed.notify_waiters();
+        }
+        result
+    }
+
+    async fn cancel_personal_data_export(&self) -> BackendResult<()> {
+        let Some((cancellation, completed)) = self
+            .personal_export_operation
+            .lock()
+            .await
+            .as_ref()
+            .cloned()
+        else {
+            return Ok(());
+        };
+        let completion = completed.notified();
+        cancellation.cancel();
+        tokio::time::timeout(Duration::from_secs(5), completion)
+            .await
+            .map_err(|_| {
+                BackendError::Other(
+                    "Personal-data export did not acknowledge cancellation within 5 seconds".into(),
+                )
+            })?;
+        Ok(())
     }
 
     async fn deactivate_account(
@@ -4657,6 +4769,8 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn switch_account(&self, profile_id: String) -> BackendResult<BackendStatus> {
+        self.search_operations.cancel_all().await?;
+        <Self as MeshBackend>::cancel_personal_data_export(self).await?;
         let _account_transition = self.account_transition_gate.lock().await;
         if self.runtime.read().await.profile_id.as_deref() == Some(profile_id.as_str()) {
             return Ok(self.status().await);
@@ -5109,10 +5223,11 @@ impl MeshBackend for MatrixBackend {
         })
     }
 
-    async fn list_communities(&self) -> BackendResult<Vec<CommunityDto>> {
+    async fn list_communities(&self) -> BackendResult<EntityList<CommunityDto>> {
         let client = self.client().await?;
         let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
         let mut communities = Vec::new();
+        let mut blocked_entities = Vec::new();
 
         for room in client
             .joined_rooms()
@@ -5122,33 +5237,43 @@ impl MeshBackend for MatrixBackend {
             if room.successor_room().is_some() {
                 continue;
             }
-            Self::require_protected_room(&room, "listing communities").await?;
-            let role = if room
-                .creators()
-                .is_some_and(|creators| creators.iter().any(|creator| creator == own_user_id))
-            {
-                "owner"
-            } else {
-                match room
-                    .get_member(own_user_id)
-                    .await
-                    .map_err(Self::map_error)?
-                    .map(|member| member.suggested_role_for_power_level())
+            let entity_id = room.room_id().to_string();
+            let projection = async {
+                Self::require_protected_room(&room, "listing communities").await?;
+                let role = if room
+                    .creators()
+                    .is_some_and(|creators| creators.iter().any(|creator| creator == own_user_id))
                 {
-                    Some(RoomMemberRole::Creator) => "owner",
-                    Some(RoomMemberRole::Administrator | RoomMemberRole::Moderator) => "admin",
-                    _ => "member",
-                }
-            };
-
-            communities.push(CommunityDto {
-                id: room.room_id().to_string(),
-                name: room.name().unwrap_or_else(|| "Unnamed community".into()),
-                description: room.topic().unwrap_or_default(),
-                member_count: room.joined_members_count().min(u32::MAX as u64) as u32,
-                role: role.into(),
-                joined_at: None,
-            });
+                    "owner"
+                } else {
+                    match room
+                        .get_member(own_user_id)
+                        .await
+                        .map_err(Self::map_error)?
+                        .map(|member| member.suggested_role_for_power_level())
+                    {
+                        Some(RoomMemberRole::Creator) => "owner",
+                        Some(RoomMemberRole::Administrator | RoomMemberRole::Moderator) => "admin",
+                        _ => "member",
+                    }
+                };
+                Ok(CommunityDto {
+                    id: entity_id.clone(),
+                    name: room.name().unwrap_or_else(|| "Unnamed community".into()),
+                    description: room.topic().unwrap_or_default(),
+                    member_count: room.joined_members_count().min(u32::MAX as u64) as u32,
+                    role: role.into(),
+                    joined_at: None,
+                })
+            }
+            .await;
+            Self::quarantine_entity(
+                &mut communities,
+                &mut blocked_entities,
+                entity_id,
+                BlockedEntityKind::Community,
+                projection,
+            )?;
         }
 
         communities.sort_by(|left, right| {
@@ -5157,10 +5282,13 @@ impl MeshBackend for MatrixBackend {
                 .cmp(&right.name.to_lowercase())
                 .then_with(|| left.id.cmp(&right.id))
         });
-        Ok(communities)
+        Ok(EntityList {
+            entities: communities,
+            blocked_entities,
+        })
     }
 
-    async fn list_channels(&self, community_id: String) -> BackendResult<Vec<ChannelDto>> {
+    async fn list_channels(&self, community_id: String) -> BackendResult<EntityList<ChannelDto>> {
         let client = self.client().await?;
         let space_id = matrix_sdk::ruma::RoomId::parse(&community_id).map_err(Self::map_error)?;
         let space =
@@ -5172,8 +5300,10 @@ impl MeshBackend for MatrixBackend {
         }
 
         let mut channels = Vec::new();
+        let mut blocked_entities = Vec::new();
         let mut listed_room_ids = BTreeSet::new();
         for child_id in self.space_child_ids(&space).await? {
+            let child_entity_id = child_id.to_string();
             let room = match Self::protected_joined_room(
                 &client,
                 &child_id,
@@ -5182,17 +5312,41 @@ impl MeshBackend for MatrixBackend {
             .await
             {
                 Ok(room) => room,
-                Err(BackendError::NotFound(_)) => continue,
-                Err(error) => return Err(error),
+                Err(error) => {
+                    Self::quarantine_entity::<ChannelDto>(
+                        &mut channels,
+                        &mut blocked_entities,
+                        child_entity_id,
+                        BlockedEntityKind::Channel,
+                        Err(error),
+                    )?;
+                    continue;
+                }
             };
             if room.is_space() {
+                Self::quarantine_entity::<ChannelDto>(
+                    &mut channels,
+                    &mut blocked_entities,
+                    child_entity_id,
+                    BlockedEntityKind::Channel,
+                    Err(BackendError::InvalidConfiguration(
+                        "nested Spaces are not supported as channels".into(),
+                    )),
+                )?;
                 continue;
             }
-            let room = self
-                .joined_room_upgrade_chain(&client, room, "opening this community channel")
-                .await?
+            let mut chain = self
+                .joined_room_upgrade_chain_quarantined(
+                    &client,
+                    room,
+                    "opening this community channel",
+                )
+                .await?;
+            blocked_entities.append(&mut chain.blocked_entities);
+            let room = chain
+                .entities
                 .pop()
-                .expect("the room upgrade chain always contains its starting room");
+                .expect("the room upgrade chain always contains its protected starting room");
             if !listed_room_ids.insert(room.room_id().to_owned()) {
                 continue;
             }
@@ -5221,7 +5375,11 @@ impl MeshBackend for MatrixBackend {
                 .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
                 .then_with(|| left.id.cmp(&right.id))
         });
-        Ok(channels)
+        blocked_entities.truncate(MAX_BLOCKED_ENTITY_DIAGNOSTICS);
+        Ok(EntityList {
+            entities: channels,
+            blocked_entities,
+        })
     }
 
     async fn create_channel(
@@ -6784,43 +6942,54 @@ impl MeshBackend for MatrixBackend {
         Ok(())
     }
 
-    async fn dm_conversations(&self) -> BackendResult<Vec<DmConversationDto>> {
+    async fn dm_conversations(&self) -> BackendResult<EntityList<DmConversationDto>> {
         let client = self.client().await?;
         let mut conversations = Vec::new();
+        let mut blocked_entities = Vec::new();
         for room in client.joined_rooms() {
             let targets = room.direct_targets();
             if targets.len() != 1 {
                 continue;
             }
-            Self::require_protected_room(&room, "listing direct messages").await?;
-            let Some(target) = targets.into_iter().next() else {
-                continue;
-            };
-            let Ok(user_id) = matrix_sdk::ruma::UserId::parse(target.as_str()) else {
-                continue;
-            };
-            let member = room.get_member(&user_id).await.map_err(Self::map_error)?;
-            let peer_display_name = member
-                .map(|member| member.name().to_owned())
-                .unwrap_or_else(|| user_id.localpart().to_owned());
-            let latest = self
-                .messages(room.room_id().to_string(), 1, None, None)
-                .await?
-                .into_iter()
-                .next();
-            let created_at = latest
-                .as_ref()
-                .map(|message| message.timestamp.clone())
-                .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
-            conversations.push(DmConversationDto {
-                id: room.room_id().to_string(),
-                peer_public_key: user_id.to_string(),
-                peer_display_name,
-                peer_avatar_color: Self::avatar_color(user_id.as_str()),
-                last_message_at: latest.map(|message| message.timestamp),
-                unread_count: room.num_unread_messages().min(i64::MAX as u64) as i64,
-                created_at,
-            });
+            let entity_id = room.room_id().to_string();
+            let projection = async {
+                Self::require_protected_room(&room, "listing direct messages").await?;
+                let target = targets.into_iter().next().ok_or_else(|| {
+                    BackendError::InvalidConfiguration("direct room has no peer".into())
+                })?;
+                let user_id =
+                    matrix_sdk::ruma::UserId::parse(target.as_str()).map_err(Self::map_error)?;
+                let member = room.get_member(&user_id).await.map_err(Self::map_error)?;
+                let peer_display_name = member
+                    .map(|member| member.name().to_owned())
+                    .unwrap_or_else(|| user_id.localpart().to_owned());
+                let latest = self
+                    .messages(entity_id.clone(), 1, None, None)
+                    .await?
+                    .into_iter()
+                    .next();
+                let created_at = latest
+                    .as_ref()
+                    .map(|message| message.timestamp.clone())
+                    .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+                Ok(DmConversationDto {
+                    id: entity_id.clone(),
+                    peer_public_key: user_id.to_string(),
+                    peer_display_name,
+                    peer_avatar_color: Self::avatar_color(user_id.as_str()),
+                    last_message_at: latest.map(|message| message.timestamp),
+                    unread_count: room.num_unread_messages().min(i64::MAX as u64) as i64,
+                    created_at,
+                })
+            }
+            .await;
+            Self::quarantine_entity(
+                &mut conversations,
+                &mut blocked_entities,
+                entity_id,
+                BlockedEntityKind::DirectMessage,
+                projection,
+            )?;
         }
         conversations.sort_by(|left, right| {
             right
@@ -6829,7 +6998,10 @@ impl MeshBackend for MatrixBackend {
                 .then_with(|| left.peer_display_name.cmp(&right.peer_display_name))
                 .then_with(|| left.id.cmp(&right.id))
         });
-        Ok(conversations)
+        Ok(EntityList {
+            entities: conversations,
+            blocked_entities,
+        })
     }
 
     async fn ensure_dm(&self, recipient_user_id: String) -> BackendResult<DmConversationDto> {
@@ -7387,31 +7559,86 @@ impl MeshBackend for MatrixBackend {
         community_id: String,
         query: String,
         limit: u32,
+        request_id: String,
+        deadline_ms: u64,
     ) -> BackendResult<Vec<MessageDto>> {
         let query = query.trim().to_lowercase();
         if query.is_empty() {
             return Ok(Vec::new());
         }
-        let mut result = Vec::new();
-        for channel in self.list_channels(community_id).await? {
-            result.extend(
-                self.messages(channel.id, 5_000, None, None)
-                    .await?
-                    .into_iter()
-                    .filter(|message| {
-                        message.deleted_at.is_none()
-                            && message.content.to_lowercase().contains(&query)
-                    }),
-            );
-        }
-        result.sort_by(|left, right| {
-            right
-                .timestamp
-                .cmp(&left.timestamp)
-                .then_with(|| right.id.cmp(&left.id))
-        });
-        result.truncate(limit.clamp(1, 500) as usize);
-        Ok(result)
+        let client = self.client().await?;
+        let account_id = client
+            .user_id()
+            .ok_or(BackendError::NotAuthenticated)?
+            .to_string();
+        let cancellation = self
+            .search_operations
+            .begin(&request_id, format!("{account_id}:messages"))
+            .await?;
+        let limit = limit.clamp(1, 500) as usize;
+        let search = async {
+            let channels = tokio::select! {
+                biased;
+                _ = cancellation.cancelled() => {
+                    return Err(BackendError::Cancelled("message search was superseded".into()))
+                }
+                result = self.list_channels(community_id) => result?.entities,
+            };
+            let mut results = Vec::with_capacity(limit);
+            let mut scanned_events = 0usize;
+            let mut scanned_bytes = 0usize;
+            for channel in channels.into_iter().take(MAX_SEARCH_ROOMS) {
+                if cancellation.is_cancelled() {
+                    return Err(BackendError::Cancelled(
+                        "message search was superseded".into(),
+                    ));
+                }
+                let messages = tokio::select! {
+                    biased;
+                    _ = cancellation.cancelled() => {
+                        return Err(BackendError::Cancelled("message search was superseded".into()))
+                    }
+                    result = self.messages(channel.id, MAX_SEARCH_EVENTS_PER_ROOM, None, None) => result?,
+                };
+                for message in messages {
+                    scanned_events = scanned_events.saturating_add(1);
+                    scanned_bytes = scanned_bytes.saturating_add(message.content.len());
+                    if scanned_events > MAX_SEARCH_EVENTS
+                        || scanned_bytes > MAX_SEARCH_SCANNED_BYTES
+                    {
+                        return Ok(results);
+                    }
+                    if cancellation.is_cancelled() {
+                        return Err(BackendError::Cancelled(
+                            "message search was superseded".into(),
+                        ));
+                    }
+                    if message.deleted_at.is_none()
+                        && message.content.to_lowercase().contains(&query)
+                    {
+                        insert_bounded_search_result(&mut results, message, limit);
+                    }
+                }
+            }
+            Ok(results)
+        };
+        let result = match tokio::time::timeout(
+            Duration::from_millis(deadline_ms.clamp(250, MAX_SEARCH_DEADLINE_MS)),
+            search,
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(BackendError::Cancelled(
+                "message search reached its native deadline".into(),
+            )),
+        };
+        self.search_operations.finish(&request_id).await;
+        result
+    }
+
+    async fn cancel_search(&self, request_id: String) -> BackendResult<()> {
+        self.search_operations.cancel(&request_id).await
     }
 
     async fn wait_for_room_update(&self, room_id: String, timeout_ms: u64) -> BackendResult<bool> {
@@ -7798,6 +8025,8 @@ impl MeshBackend for MatrixBackend {
         query: String,
         server: Option<String>,
         limit: u32,
+        request_id: String,
+        deadline_ms: u64,
     ) -> BackendResult<Vec<CommunityDirectoryEntry>> {
         let client = self.client().await?;
         let mut request = get_public_rooms_filtered::v3::Request::new();
@@ -7815,23 +8044,51 @@ impl MeshBackend for MatrixBackend {
             .transpose()
             .map_err(Self::map_error)?;
 
-        let response = client
-            .public_rooms_filtered(request)
-            .await
-            .map_err(Self::map_error)?;
-        Ok(response
-            .chunk
-            .into_iter()
-            .filter(|room| room.room_type == Some(RoomType::Space))
-            .map(|room| CommunityDirectoryEntry {
-                id: room.room_id.to_string(),
-                alias: room.canonical_alias.map(|alias| alias.to_string()),
-                name: room.name.unwrap_or_else(|| "Unnamed community".into()),
-                description: room.topic.unwrap_or_default(),
-                member_count: u64::from(room.num_joined_members).min(u32::MAX as u64) as u32,
-                join_rule: room.join_rule.as_str().to_owned(),
-            })
-            .collect())
+        let account_id = client
+            .user_id()
+            .ok_or(BackendError::NotAuthenticated)?
+            .to_string();
+        let cancellation = self
+            .search_operations
+            .begin(&request_id, format!("{account_id}:directory"))
+            .await?;
+
+        let search = async {
+            let response = tokio::select! {
+                biased;
+                _ = cancellation.cancelled() => {
+                    return Err(BackendError::Cancelled("community search was superseded".into()))
+                }
+                response = client.public_rooms_filtered(request) => response.map_err(Self::map_error)?,
+            };
+            Ok(response
+                .chunk
+                .into_iter()
+                .filter(|room| room.room_type == Some(RoomType::Space))
+                .take(50)
+                .map(|room| CommunityDirectoryEntry {
+                    id: room.room_id.to_string(),
+                    alias: room.canonical_alias.map(|alias| alias.to_string()),
+                    name: room.name.unwrap_or_else(|| "Unnamed community".into()),
+                    description: room.topic.unwrap_or_default(),
+                    member_count: u64::from(room.num_joined_members).min(u32::MAX as u64) as u32,
+                    join_rule: room.join_rule.as_str().to_owned(),
+                })
+                .collect())
+        };
+        let result = match tokio::time::timeout(
+            Duration::from_millis(deadline_ms.clamp(250, MAX_SEARCH_DEADLINE_MS)),
+            search,
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(BackendError::Cancelled(
+                "community search reached its native deadline".into(),
+            )),
+        };
+        self.search_operations.finish(&request_id).await;
+        result
     }
 
     async fn knock_community(
@@ -7881,6 +8138,7 @@ impl MeshBackend for MatrixBackend {
                 let community = self
                     .list_communities()
                     .await?
+                    .entities
                     .into_iter()
                     .find(|community| community.id == room_id.as_str());
                 return Ok(CommunityAccessResult {

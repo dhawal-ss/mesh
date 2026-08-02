@@ -68,6 +68,8 @@ class Config:
     sqlite_path: str | None
     bind_host: str
     bind_port: int
+    signing_key_id: str = "primary"
+    previous_signing_keys: dict[str, bytes] = field(default_factory=dict, repr=False)
 
     @classmethod
     def from_environment(cls) -> "Config":
@@ -95,6 +97,23 @@ class Config:
             raise SystemExit("MESH_ADMISSION_SIGNING_KEY must be hexadecimal") from error
         if len(signing_key) < 32:
             raise SystemExit("MESH_ADMISSION_SIGNING_KEY must contain at least 32 bytes")
+        signing_key_id = os.environ.get("MESH_ADMISSION_SIGNING_KEY_ID", "").strip()
+        if not signing_key_id:
+            signing_key_id = hashlib.sha256(signing_key).hexdigest()[:16]
+        validate_signing_key_id(signing_key_id)
+        previous_signing_keys: dict[str, bytes] = {}
+        for item in filter(None, os.environ.get("MESH_ADMISSION_PREVIOUS_SIGNING_KEYS", "").split(",")):
+            key_id, separator, key_hex = item.partition(":")
+            if not separator:
+                raise SystemExit("MESH_ADMISSION_PREVIOUS_SIGNING_KEYS is invalid")
+            validate_signing_key_id(key_id)
+            try:
+                previous_key = bytes.fromhex(key_hex)
+            except ValueError as error:
+                raise SystemExit("A previous admission signing key is not hexadecimal") from error
+            if len(previous_key) < 32 or key_id == signing_key_id:
+                raise SystemExit("Previous admission signing keys must be distinct 32-byte keys")
+            previous_signing_keys[key_id] = previous_key
 
         sqlite_path = os.environ.get("MESH_ADMISSION_SQLITE_PATH", "").strip() or None
         postgres_host = os.environ.get("POSTGRES_HOST", "postgres").strip() or None
@@ -122,6 +141,8 @@ class Config:
             sqlite_path=sqlite_path,
             bind_host=os.environ.get("MESH_ADMISSION_BIND", "0.0.0.0"),
             bind_port=integer_environment("MESH_ADMISSION_PORT", 8090, 1, 65535),
+            signing_key_id=signing_key_id,
+            previous_signing_keys=previous_signing_keys,
         )
 
 
@@ -141,6 +162,11 @@ def integer_environment(name: str, default: int, minimum: int, maximum: int) -> 
     if not minimum <= parsed <= maximum:
         raise SystemExit(f"{name} must be between {minimum} and {maximum}")
     return parsed
+
+
+def validate_signing_key_id(value: str) -> None:
+    if not re.fullmatch(r"[a-f0-9]{16}", value):
+        raise SystemExit("Admission signing key IDs must be 16 lowercase hexadecimal characters")
 
 
 def normalize_origin(value: str, allow_private_http: bool = False) -> str:
@@ -180,6 +206,19 @@ def registration_token(signing_key: bytes, admission_token: str) -> str:
         hashlib.sha256,
     ).digest()
     return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+
+def invitation_signing_key(config: Config, key_id: str) -> bytes:
+    if key_id == config.signing_key_id:
+        return config.signing_key
+    key = config.previous_signing_keys.get(key_id)
+    if key is None:
+        raise AdmissionError(
+            HTTPStatus.GONE,
+            "invitation_key_retired",
+            "This invitation was signed with a retired key. Ask for a new invitation.",
+        )
+    return key
 
 
 class Cursor(Protocol):
@@ -255,6 +294,7 @@ class InvitationStore:
                         via_json TEXT NOT NULL,
                         created_at BIGINT NOT NULL,
                         expires_at BIGINT NOT NULL,
+                        signing_key_id TEXT NOT NULL,
                         status TEXT NOT NULL,
                         claim_user_id TEXT,
                         claim_lease_until BIGINT,
@@ -262,6 +302,17 @@ class InvitationStore:
                     )
                         """
                     )
+                    columns = {
+                        row[1] for row in cursor.execute("PRAGMA table_info(mesh_admission_invitations)")
+                    }
+                    if "signing_key_id" not in columns:
+                        cursor.execute(
+                            "ALTER TABLE mesh_admission_invitations ADD COLUMN signing_key_id TEXT"
+                        )
+                        cursor.execute(
+                            "UPDATE mesh_admission_invitations SET signing_key_id = ? WHERE signing_key_id IS NULL",
+                            (self.config.signing_key_id,),
+                        )
                     cursor.execute(
                         """
                         CREATE TABLE IF NOT EXISTS mesh_admission_openid_proofs (
@@ -303,6 +354,7 @@ class InvitationStore:
         via: list[str],
         created_at: int,
         expires_at: int,
+        signing_key_id: str = "primary",
     ) -> None:
         self.initialize()
         marker = self.placeholder
@@ -313,8 +365,8 @@ class InvitationStore:
                 f"""
                 INSERT INTO mesh_admission_invitations (
                     token_hash, creator_user_id, room_id, service_url, via_json,
-                    created_at, expires_at, status
-                ) VALUES ({marker}, {marker}, {marker}, {marker}, {marker}, {marker}, {marker}, {marker})
+                    created_at, expires_at, signing_key_id, status
+                ) VALUES ({marker}, {marker}, {marker}, {marker}, {marker}, {marker}, {marker}, {marker}, {marker})
                 """,
                 (
                     digest,
@@ -324,6 +376,7 @@ class InvitationStore:
                     json.dumps(via, separators=(",", ":")),
                     created_at,
                     expires_at,
+                    signing_key_id,
                     "active",
                 ),
             )
@@ -385,7 +438,7 @@ class InvitationStore:
             cursor.execute(
                 f"""
                 SELECT creator_user_id, room_id, service_url, via_json,
-                       expires_at, status, claim_user_id, claim_lease_until
+                       expires_at, signing_key_id, status, claim_user_id, claim_lease_until
                 FROM mesh_admission_invitations
                 WHERE token_hash = {marker}
                 """,
@@ -404,9 +457,10 @@ class InvitationStore:
                 "service_url": row[2],
                 "via_json": row[3],
                 "expires_at": row[4],
-                "status": row[5],
-                "claim_user_id": row[6],
-                "claim_lease_until": row[7],
+                "signing_key_id": row[5],
+                "status": row[6],
+                "claim_user_id": row[7],
+                "claim_lease_until": row[8],
             }
             if int(values["expires_at"]) <= now_ms:
                 raise AdmissionError(
@@ -852,6 +906,7 @@ class AdmissionApplication:
                 [self.config.server_name],
                 now_ms,
                 expires_at,
+                self.config.signing_key_id,
             )
         except Exception:
             try:
@@ -873,7 +928,7 @@ class AdmissionApplication:
         return {
             "version": 4,
             "registration_token": registration_token(
-                self.config.signing_key,
+                invitation_signing_key(self.config, str(values["signing_key_id"])),
                 admission_token,
             ),
             "room_id": values["room_id"],
@@ -957,7 +1012,10 @@ class AdmissionApplication:
         try:
             self.registration_token_issuer(
                 "revoke",
-                registration_token(self.config.signing_key, admission_token),
+                registration_token(
+                    invitation_signing_key(self.config, str(values["signing_key_id"])),
+                    admission_token,
+                ),
                 int(values["expires_at"]),
             )
         except Exception:

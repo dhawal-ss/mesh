@@ -517,7 +517,6 @@ describe('UserSettingsPanel', () => {
 
   it('reveals operator tools only after the version easter egg', async () => {
     const openDiagnostics = vi.fn()
-    const openImport = vi.fn()
     await act(async () => {
       root.render(
         <UserSettingsPanel
@@ -532,7 +531,6 @@ describe('UserSettingsPanel', () => {
           matrixMode
           onOpenSecurity={() => {}}
           onOpenDiagnostics={openDiagnostics}
-          onOpenImport={openImport}
         />,
       )
     })
@@ -550,13 +548,9 @@ describe('UserSettingsPanel', () => {
     const diagnostics = Array.from(document.body.querySelectorAll('button')).find((button) =>
       button.textContent?.includes('System diagnostics'),
     )
-    const importButton = Array.from(document.body.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Import older Mesh data'),
-    )
     await act(async () => diagnostics?.click())
-    await act(async () => importButton?.click())
     expect(openDiagnostics).toHaveBeenCalledOnce()
-    expect(openImport).toHaveBeenCalledOnce()
+    expect(document.body.textContent).not.toContain('Import older Mesh data')
   })
 
   it('also unlocks Advanced with Ctrl+Shift+D and shows the backup warning dot', async () => {

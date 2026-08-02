@@ -60,7 +60,8 @@ async function installUnauthenticatedMatrixMock(
       homeserver: authenticated ? 'https://friends.example' : null,
       syncRunning: authenticated,
       durableHistory: true,
-      endToEndEncryption: true,
+      supportsE2ee: true,
+      sessionE2eeReady: true,
       warnings: [],
     })
 
@@ -124,7 +125,7 @@ async function installUnauthenticatedMatrixMock(
             avatarUrl: null,
           }
         case 'matrix_list_communities':
-          return []
+          return { entities: [], blockedEntities: [] }
         case 'matrix_user_preferences':
           return null
         case 'matrix_update_user_preferences':

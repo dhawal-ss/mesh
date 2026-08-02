@@ -169,7 +169,8 @@ function backendStatus() {
     homeserver: 'https://mesh.test',
     syncRunning: true,
     durableHistory: true,
-    endToEndEncryption: true,
+    supportsE2ee: true,
+    sessionE2eeReady: true,
     warnings: [],
   }
 }
@@ -185,11 +186,14 @@ function responseFor(command: string, args: PreviewIpcArgs): unknown | Promise<u
     case 'matrix_get_profile':
       return { userId: '@taylor:mesh.test', displayName: 'Taylor', avatarUrl: null }
     case 'matrix_list_communities':
-      return [community, secondCommunity]
+      return { entities: [community, secondCommunity], blockedEntities: [] }
     case 'matrix_list_channels':
-      return args.communityId === COMMUNITY_ID
-        ? channels
-        : [{ id: '!notes:mesh.test', communityId: secondCommunity.id, name: 'notes', channelType: 'text', unreadCount: 3 }]
+      return {
+        entities: args.communityId === COMMUNITY_ID
+          ? channels
+          : [{ id: '!notes:mesh.test', communityId: secondCommunity.id, name: 'notes', channelType: 'text', unreadCount: 3 }],
+        blockedEntities: [],
+      }
     case 'matrix_list_members':
       return people
     case 'matrix_get_messages':
