@@ -47,9 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc
-        with:
-          toolchain: 1.93.0
+      - uses: dtolnay/rust-toolchain@d0befba8b9ddf874327619e84c39b094edd58b66 # 1.93.0
       - name: Install Tauri system dependencies
         run: |
           sudo apt-get update
@@ -76,9 +74,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc
-        with:
-          toolchain: 1.93.0
+      - uses: dtolnay/rust-toolchain@d0befba8b9ddf874327619e84c39b094edd58b66 # 1.93.0
       - name: Install pinned Rust advisory scanner
         run: |
           cargo install cargo-audit --version 0.22.2 --locked
@@ -125,9 +121,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc
-        with:
-          toolchain: 1.93.0
+      - uses: dtolnay/rust-toolchain@d0befba8b9ddf874327619e84c39b094edd58b66 # 1.93.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22

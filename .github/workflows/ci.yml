@@ -24,9 +24,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc
+        uses: dtolnay/rust-toolchain@d0befba8b9ddf874327619e84c39b094edd58b66 # 1.93.0
         with:
-          toolchain: 1.93.0
           components: clippy, rustfmt
 
       - name: Install system dependencies (Linux)
@@ -82,9 +81,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc
-        with:
-          toolchain: 1.93.0
+        uses: dtolnay/rust-toolchain@d0befba8b9ddf874327619e84c39b094edd58b66 # 1.93.0
 
       - name: Install system dependencies
         run: |

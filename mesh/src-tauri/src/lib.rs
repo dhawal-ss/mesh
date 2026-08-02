@@ -36,9 +36,12 @@ use state::AppState;
 use tauri::{Emitter, Manager};
 use tracing_subscriber::EnvFilter;
 
+#[cfg(windows)]
 const PENDING_INVITATION_READY_EVENT: &str = "mesh-pending-invitation-ready";
+#[cfg(any(windows, test))]
 const MAX_NATIVE_INVITATION_URL_BYTES: usize = 8 * 1024;
 
+#[cfg(any(windows, test))]
 fn native_pending_invitation_from_args<I, S>(arguments: I) -> Option<String>
 where
     I: IntoIterator<Item = S>,
@@ -67,6 +70,7 @@ where
     invitations.next().is_none().then_some(invitation)
 }
 
+#[cfg(windows)]
 async fn persist_native_pending_invitation(app: &tauri::AppHandle, invitation: String) -> bool {
     let state = app.state::<AppState>();
     if state.backend.kind() == BackendKind::LegacyP2p {
@@ -88,6 +92,7 @@ async fn persist_native_pending_invitation(app: &tauri::AppHandle, invitation: S
     }
 }
 
+#[cfg(windows)]
 fn store_native_pending_invitation(app: tauri::AppHandle, invitation: String) {
     tauri::async_runtime::spawn(async move {
         if persist_native_pending_invitation(&app, invitation).await {
