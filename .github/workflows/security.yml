@@ -89,7 +89,7 @@ jobs:
           ./scripts/check-matrix-release-dependencies.ps1 `
             -ReportPath release/rust-dependency-report.json
       - name: Upload Rust dependency policy evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rust-dependency-policy-${{ github.sha }}
           path: mesh/release/rust-dependency-report.json
@@ -138,7 +138,7 @@ jobs:
         run: |
           cargo install cargo-cyclonedx --version 0.5.9 --locked
           cargo cyclonedx --format json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mesh-sboms-${{ github.sha }}
           path: |
