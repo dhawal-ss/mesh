@@ -139,17 +139,18 @@ async function installDmKeyboardActionsMock(page: Page): Promise<void> {
             homeserver: 'https://mesh.test',
             syncRunning: true,
             durableHistory: true,
-            endToEndEncryption: true,
+      supportsE2ee: true,
+      sessionE2eeReady: true,
             warnings: [],
           }
         case 'matrix_list_communities':
-          return [community]
+          return { entities: [community], blockedEntities: [] }
         case 'matrix_list_custom_emoji':
           return []
         case 'matrix_get_profile':
           return matrixProfile
         case 'matrix_list_channels':
-          return [channel]
+          return { entities: [channel], blockedEntities: [] }
         case 'matrix_list_members':
           return [
             {
@@ -178,7 +179,7 @@ async function installDmKeyboardActionsMock(page: Page): Promise<void> {
         case 'matrix_queued_messages':
           return []
         case 'matrix_dm_conversations':
-          return [conversation]
+          return { entities: [conversation], blockedEntities: [] }
         case 'matrix_dm_messages':
           return args.conversationId === conversation.id ? dmTimeline : []
         case 'matrix_load_composer_draft':

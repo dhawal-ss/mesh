@@ -886,6 +886,39 @@ async fn personal_data_export_fails_when_private_media_cache_cannot_be_inspected
     assert!(warnings.is_empty());
 }
 
+#[tokio::test]
+async fn personal_data_export_stream_rejects_global_json_cap_and_native_cancellation() {
+    let root = tempfile::tempdir().unwrap();
+    let output = root.path().join("export.partial");
+    let mut file = tokio::fs::File::create(&output).await.unwrap();
+    let cancellation = CancellationToken::new();
+    let mut exhausted = PersonalDataExportBudget {
+        serialized_bytes: MAX_PERSONAL_EXPORT_JSON_BYTES,
+        ..PersonalDataExportBudget::default()
+    };
+    assert!(MatrixBackend::write_personal_export_chunk(
+        &mut file,
+        b"x",
+        &cancellation,
+        &mut exhausted,
+    )
+    .await
+    .is_err());
+
+    let mut available = PersonalDataExportBudget::default();
+    cancellation.cancel();
+    assert!(MatrixBackend::write_personal_export_chunk(
+        &mut file,
+        b"x",
+        &cancellation,
+        &mut available,
+    )
+    .await
+    .is_err());
+    drop(file);
+    assert_eq!(tokio::fs::metadata(output).await.unwrap().len(), 0);
+}
+
 #[test]
 fn native_room_pins_are_unique_bounded_and_removable_at_capacity() {
     let first = matrix_sdk::ruma::EventId::parse("$first:example.org").unwrap();
@@ -3809,4 +3842,181 @@ fn native_message_limit_is_enforced_in_utf8_bytes_for_send_dm_edit_and_captions(
         .next()
         .unwrap();
     assert!(edit.contains("Self::validate_message_body"));
+}
+
+#[test]
+fn mixed_protected_entities_are_partitioned_without_hiding_valid_items() {
+    let mut entities = Vec::new();
+    let mut blocked = Vec::new();
+    let fixtures = [
+        ("!valid-a:example.org", Ok("valid-a")),
+        (
+            "!plain:example.org",
+            Err(BackendError::NotEncrypted("fixture".into())),
+        ),
+        (
+            "!unsupported:example.org",
+            Err(BackendError::InvalidConfiguration("fixture".into())),
+        ),
+        (
+            "!missing:example.org",
+            Err(BackendError::NotFound("fixture".into())),
+        ),
+        ("!valid-b:example.org", Ok("valid-b")),
+    ];
+    for (entity_id, result) in fixtures {
+        MatrixBackend::quarantine_entity(
+            &mut entities,
+            &mut blocked,
+            entity_id.into(),
+            BlockedEntityKind::Channel,
+            result,
+        )
+        .unwrap();
+    }
+    assert_eq!(entities, ["valid-a", "valid-b"]);
+    assert_eq!(blocked.len(), 3);
+    assert_eq!(blocked[0].reason, BlockedEntityReason::Unencrypted);
+    assert_eq!(blocked[1].reason, BlockedEntityReason::Unsupported);
+    assert_eq!(blocked[2].reason, BlockedEntityReason::Inaccessible);
+}
+
+#[test]
+fn blocked_entity_diagnostics_are_bounded() {
+    let mut entities = Vec::<()>::new();
+    let mut blocked = Vec::new();
+    for index in 0..(MAX_BLOCKED_ENTITY_DIAGNOSTICS + 50) {
+        MatrixBackend::quarantine_entity(
+            &mut entities,
+            &mut blocked,
+            format!("!blocked-{index}:example.org"),
+            BlockedEntityKind::DirectMessage,
+            Err(BackendError::NotFound("fixture".into())),
+        )
+        .unwrap();
+    }
+    assert_eq!(blocked.len(), MAX_BLOCKED_ENTITY_DIAGNOSTICS);
+}
+
+#[test]
+fn entity_quarantine_does_not_hide_global_backend_failures() {
+    let mut entities = Vec::<()>::new();
+    let mut blocked = Vec::new();
+    let error = MatrixBackend::quarantine_entity(
+        &mut entities,
+        &mut blocked,
+        "!room:example.org".into(),
+        BlockedEntityKind::Channel,
+        Err(BackendError::Network("fixture".into())),
+    )
+    .expect_err("network failures must remain visible to the caller");
+
+    assert!(matches!(error, BackendError::Network(_)));
+    assert!(entities.is_empty());
+    assert!(blocked.is_empty());
+}
+
+fn search_fixture(id: &str, timestamp: &str) -> MessageDto {
+    MessageDto {
+        id: id.into(),
+        channel_id: "!room:example.org".into(),
+        author_public_key: "@alice:example.org".into(),
+        author_display_name: "Alice".into(),
+        author_avatar_color: "#123456".into(),
+        content: "matching text".into(),
+        attachments: Vec::new(),
+        reactions: HashMap::new(),
+        timestamp: timestamp.into(),
+        signature: String::new(),
+        edited_at: None,
+        deleted_at: None,
+        reply_to_id: None,
+        thread_root_id: None,
+        transaction_id: None,
+        client_request_id: None,
+        delivery_status: Some("sent".into()),
+        undecryptable: None,
+    }
+}
+
+#[test]
+fn message_search_retains_only_bounded_top_k_results() {
+    let mut results = Vec::new();
+    for index in 0..1_000 {
+        insert_bounded_search_result(
+            &mut results,
+            search_fixture(
+                &format!("${index:04}"),
+                &format!("2026-08-02T00:{:02}:00Z", index % 60),
+            ),
+            20,
+        );
+        assert!(results.len() <= 20);
+    }
+    assert!(results.windows(2).all(|pair| {
+        pair[0].timestamp > pair[1].timestamp
+            || (pair[0].timestamp == pair[1].timestamp && pair[0].id > pair[1].id)
+    }));
+}
+
+#[tokio::test]
+async fn twenty_superseded_native_searches_never_run_concurrently() {
+    use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+
+    let registry = Arc::new(NativeSearchRegistry::default());
+    let active = Arc::new(AtomicUsize::new(0));
+    let peak = Arc::new(AtomicUsize::new(0));
+    let cancelled = Arc::new(AtomicUsize::new(0));
+    let mut tasks = Vec::new();
+    for index in 0..20 {
+        let registry = registry.clone();
+        let active = active.clone();
+        let peak = peak.clone();
+        let cancelled = cancelled.clone();
+        tasks.push(tokio::spawn(async move {
+            let request_id = format!("request-{index:02}");
+            let token = registry
+                .begin(&request_id, "@alice:example.org:messages".into())
+                .await
+                .unwrap();
+            let now = active.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+            peak.fetch_max(now, AtomicOrdering::SeqCst);
+            let was_cancelled = tokio::select! {
+                _ = token.cancelled() => true,
+                _ = tokio::time::sleep(Duration::from_millis(25)) => false,
+            };
+            if was_cancelled {
+                cancelled.fetch_add(1, AtomicOrdering::SeqCst);
+            }
+            active.fetch_sub(1, AtomicOrdering::SeqCst);
+            registry.finish(&request_id).await;
+        }));
+    }
+    for task in tasks {
+        task.await.unwrap();
+    }
+    assert_eq!(peak.load(AtomicOrdering::SeqCst), 1);
+    assert_eq!(cancelled.load(AtomicOrdering::SeqCst), 19);
+    assert_eq!(registry.active_count().await, 0);
+}
+
+#[tokio::test]
+async fn native_search_cancellation_acknowledges_zero_remaining_work() {
+    let registry = Arc::new(NativeSearchRegistry::default());
+    let worker_registry = registry.clone();
+    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+    let worker = tokio::spawn(async move {
+        let request_id = "request-timeout";
+        let token = worker_registry
+            .begin(request_id, "@alice:example.org:messages".into())
+            .await
+            .unwrap();
+        ready_tx.send(()).unwrap();
+        token.cancelled().await;
+        worker_registry.finish(request_id).await;
+    });
+    ready_rx.await.unwrap();
+    registry.cancel("request-timeout").await.unwrap();
+    worker.await.unwrap();
+    assert_eq!(registry.active_count().await, 0);
 }

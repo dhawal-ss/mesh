@@ -326,6 +326,19 @@ pub async fn matrix_export_personal_data(
 }
 
 #[tauri::command]
+pub async fn matrix_cancel_personal_data_export(
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .cancel_personal_data_export()
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
 pub async fn matrix_deactivate_account(
     password: String,
     state: State<'_, AppState>,
@@ -565,7 +578,7 @@ pub async fn matrix_create_community(
 #[tauri::command]
 pub async fn matrix_list_communities(
     state: State<'_, AppState>,
-) -> Result<Vec<CommunityDto>, CommandError> {
+) -> Result<crate::backend::EntityList<CommunityDto>, CommandError> {
     require_matrix(&state)?;
     state
         .backend
@@ -579,7 +592,7 @@ pub async fn matrix_list_communities(
 pub async fn matrix_list_channels(
     community_id: String,
     state: State<'_, AppState>,
-) -> Result<Vec<ChannelDto>, CommandError> {
+) -> Result<crate::backend::EntityList<ChannelDto>, CommandError> {
     require_matrix(&state)?;
     state
         .backend
@@ -903,7 +916,9 @@ pub async fn matrix_send_attachment(
     grants: State<'_, AttachmentGrantStore>,
 ) -> Result<MessageDto, CommandError> {
     require_matrix(&state)?;
-    let claimed = grants.claim(&attachment_grant).await?;
+    let claimed = grants
+        .claim_to_staging(&attachment_grant, &super::attachments::staging_root(&app)?)
+        .await?;
     let result = state
         .backend
         .backend()
@@ -925,7 +940,10 @@ pub async fn matrix_send_attachment(
         )
         .await;
     match result {
-        Ok(message) => Ok(message),
+        Ok(message) => {
+            claimed.cleanup().await;
+            Ok(message)
+        }
         Err(error) => {
             grants.restore(claimed).await;
             Err(map_error(error))
@@ -1007,7 +1025,7 @@ pub async fn matrix_cancel_attachment_download(
 #[tauri::command]
 pub async fn matrix_dm_conversations(
     state: State<'_, AppState>,
-) -> Result<Vec<DmConversationDto>, CommandError> {
+) -> Result<crate::backend::EntityList<DmConversationDto>, CommandError> {
     require_matrix(&state)?;
     state
         .backend
@@ -1086,7 +1104,9 @@ pub async fn matrix_send_dm_attachment(
     grants: State<'_, AttachmentGrantStore>,
 ) -> Result<DirectMessageDto, CommandError> {
     require_matrix(&state)?;
-    let claimed = grants.claim(&attachment_grant).await?;
+    let claimed = grants
+        .claim_to_staging(&attachment_grant, &super::attachments::staging_root(&app)?)
+        .await?;
     let result = state
         .backend
         .backend()
@@ -1108,7 +1128,10 @@ pub async fn matrix_send_dm_attachment(
         )
         .await;
     match result {
-        Ok(message) => Ok(message),
+        Ok(message) => {
+            claimed.cleanup().await;
+            Ok(message)
+        }
         Err(error) => {
             grants.restore(claimed).await;
             Err(map_error(error))
@@ -1316,13 +1339,29 @@ pub async fn matrix_search_messages(
     community_id: String,
     query: String,
     limit: u32,
+    request_id: String,
+    deadline_ms: u64,
     state: State<'_, AppState>,
 ) -> Result<Vec<MessageDto>, CommandError> {
     require_matrix(&state)?;
     state
         .backend
         .backend()
-        .search_messages(community_id, query, limit)
+        .search_messages(community_id, query, limit, request_id, deadline_ms)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_cancel_search(
+    request_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .cancel_search(request_id)
         .await
         .map_err(map_error)
 }
@@ -1435,13 +1474,15 @@ pub async fn matrix_search_community_directory(
     query: String,
     server: Option<String>,
     limit: u32,
+    request_id: String,
+    deadline_ms: u64,
     state: State<'_, AppState>,
 ) -> Result<Vec<CommunityDirectoryEntry>, CommandError> {
     require_matrix(&state)?;
     state
         .backend
         .backend()
-        .search_community_directory(query, server, limit)
+        .search_community_directory(query, server, limit, request_id, deadline_ms)
         .await
         .map_err(map_error)
 }

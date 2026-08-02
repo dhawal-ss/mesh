@@ -27,7 +27,8 @@ export function createMatrixSupportBundle(data: BackendStatus, now = new Date())
     health: {
       authenticated: data.authenticated,
       syncRunning: data.syncRunning,
-      endToEndEncryption: data.endToEndEncryption,
+      supportsE2ee: data.supportsE2ee,
+      sessionE2eeReady: data.sessionE2eeReady,
       durableHistory: data.durableHistory,
       warningCount: data.warnings.length,
       voiceAvailability: data.voiceService.availability,

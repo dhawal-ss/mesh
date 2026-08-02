@@ -1,18 +1,23 @@
 # Mesh: Production Beta Implementation Plan
 
+> **ARCHIVED EVIDENCE SNAPSHOT — NOT CURRENT RELEASE AUTHORITY.** This document
+> preserves dated implementation history. Current source, `AGENTS.md`, and the
+> schema-v2 ledger at `mesh/release/readiness.json` control every present-tense
+> release decision. Test counts, SHAs, workflow results, and “complete” claims
+> below must not be reused without fresh same-source verification.
+
 **Prepared:** 2026-07-29
 **Audience:** An autonomous coding agent (and human reviewers) picking up engineering work on Mesh
 **Purpose:** Translate a full-codebase production-readiness review into a prioritized, actionable backlog that moves Mesh from "first successful manual E2E run" to a real production beta.
 
 The machine-readable release gate ledger is [mesh/release/readiness.json](mesh/release/readiness.json), validated by `npm run check:readiness-ledger`. It is release evidence only; runtime security and capability authority remain in the typed backend boundary.
 
-Evidence binding rule: `releaseSha` names the exact source snapshot on which the
-evidence was collected. Because a tracked ledger cannot contain the commit SHA
-of the commit that contains that same ledger, the release workflow permits a
-final metadata-only commit that changes only `mesh/release/readiness.json` after
-the tested source snapshot. The validator rejects any source-code delta in that
-case. Never update the ledger SHA and application code together when preparing a
-release evidence snapshot.
+Evidence binding rule: schema v2 records both `sourceCommit` and
+`sourceTreeHash`; each passing item repeats them as `testedCommit` and
+`testedTreeHash`. A passing ledger therefore identifies one committed source
+tree, while a later metadata-only ledger commit may record that already-tested
+tree. Never treat a dirty worktree or a different tree at the same base commit
+as equivalent evidence.
 
 ---
 

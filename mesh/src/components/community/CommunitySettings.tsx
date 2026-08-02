@@ -506,7 +506,8 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
               </h3>
               <div className="space-y-3 border-b border-border-subtle pb-5">
                 <p className="text-xs text-muted">
-                  A protected record of administrator actions across this community.
+                  Mesh does not currently provide an authoritative administrator-action history.
+                  Live moderation results report per-channel outcomes at the time of the action.
                 </p>
                 {moderationAuditError != null && (
                   <ErrorState

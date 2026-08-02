@@ -5,6 +5,7 @@ compile_error!(
     "matrix-backend and legacy-p2p are mutually exclusive; build separate Mesh artifacts"
 );
 
+pub mod ai_boundary;
 #[cfg(feature = "legacy-p2p")]
 mod app_runtime;
 pub mod backend;
@@ -412,6 +413,7 @@ pub fn run() {
         commands::backend::matrix_revoke_device,
         commands::backend::matrix_remove_local_account,
         commands::backend::matrix_export_personal_data,
+        commands::backend::matrix_cancel_personal_data_export,
         commands::backend::matrix_deactivate_account,
         commands::backend::matrix_accounts,
         commands::backend::matrix_get_profile,
@@ -473,6 +475,7 @@ pub fn run() {
         commands::backend::matrix_set_typing,
         commands::backend::matrix_typing_users,
         commands::backend::matrix_search_messages,
+        commands::backend::matrix_cancel_search,
         commands::backend::matrix_wait_for_room_update,
         commands::backend::matrix_list_members,
         commands::backend::matrix_get_community_permission_projection,
@@ -529,6 +532,7 @@ pub fn run() {
         commands::backend::matrix_revoke_device,
         commands::backend::matrix_remove_local_account,
         commands::backend::matrix_export_personal_data,
+        commands::backend::matrix_cancel_personal_data_export,
         commands::backend::matrix_deactivate_account,
         commands::backend::matrix_accounts,
         commands::backend::matrix_get_profile,
@@ -590,6 +594,7 @@ pub fn run() {
         commands::backend::matrix_set_typing,
         commands::backend::matrix_typing_users,
         commands::backend::matrix_search_messages,
+        commands::backend::matrix_cancel_search,
         commands::backend::matrix_wait_for_room_update,
         commands::backend::matrix_list_members,
         commands::backend::matrix_get_community_permission_projection,
@@ -612,11 +617,6 @@ pub fn run() {
         commands::backend::matrix_sync_once,
         commands::backend::matrix_enable_recovery,
         commands::backend::matrix_recover,
-        // Provenance-preserving legacy archive migration
-        commands::migration::export_legacy_archive,
-        commands::migration::inspect_legacy_archives,
-        commands::migration::dry_run_legacy_import,
-        commands::migration::approve_legacy_import,
         // Identity
         commands::identity::create_identity,
         commands::identity::generate_identity,

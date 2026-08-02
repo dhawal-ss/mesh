@@ -64,7 +64,8 @@ async function installTauriMock(
         homeserver: null,
         syncRunning: true,
         durableHistory: true,
-        endToEndEncryption: true,
+      supportsE2ee: true,
+      sessionE2eeReady: true,
         warnings: [],
       },
       get_identity: {

@@ -1,7 +1,8 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "ledgerId": "mesh-production-readiness",
-  "releaseSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+  "sourceCommit": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+  "sourceTreeHash": "4b26d53809c673d5f97afe4fcf9290f999252eb5",
   "updatedAt": "2026-08-02T10:40:27Z",
   "gates": [
     {
@@ -11,7 +12,8 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedCommit": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedTreeHash": "4b26d53809c673d5f97afe4fcf9290f999252eb5",
         "command": "Protected CI run 30741296831: npm test (109 files, 781 tests passed)",
         "artifactPath": null,
         "environment": "Protected GitHub Actions Ubuntu runner; Node 22; Vitest v4.1.2; exact source SHA",
@@ -31,7 +33,8 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedCommit": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedTreeHash": "4b26d53809c673d5f97afe4fcf9290f999252eb5",
         "command": "Protected CI run 30741296831: npm run build:matrix; npm run check:bundle-size (entry 227.78 KiB; eager JS 447.14 KiB; all JS 1120.68 KiB; all assets 1554.36 KiB); exact-source local release preflight with -ExpectedSourceSha 42b87bf28288854f2ed18ccaf631c1180f7f44b6 -VerifyFrontendBundle",
         "artifactPath": null,
         "environment": "Protected GitHub Actions Ubuntu runner plus clean Windows exact-SHA preflight; Matrix text/community mode; version 0.1.0 remains release-blocked",
@@ -51,7 +54,8 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedCommit": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedTreeHash": "4b26d53809c673d5f97afe4fcf9290f999252eb5",
         "command": "Protected CI run 30741296831: Ubuntu Matrix suite 201 passed plus IPC/live-test contracts; Windows Matrix suite 200 passed plus IPC/live-test contracts",
         "artifactPath": null,
         "environment": "Protected GitHub Actions Ubuntu and Windows runners; Cargo 1.93.0; exact source SHA",
@@ -71,7 +75,8 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedCommit": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedTreeHash": "4b26d53809c673d5f97afe4fcf9290f999252eb5",
         "command": "Protected CI run 30741296831: legacy suite 219 passed; crypto contract 15 passed; 15 LAN network/soak and 3 live TURN tests ignored; 2 deterministic TURN tests passed",
         "artifactPath": null,
         "environment": "Protected GitHub Actions Ubuntu runner; Cargo 1.93.0; exact source SHA",
@@ -91,7 +96,8 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedCommit": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedTreeHash": "4b26d53809c673d5f97afe4fcf9290f999252eb5",
         "command": "Protected CI run 30741296831: npm run e2e (69 tests passed)",
         "artifactPath": null,
         "environment": "Protected GitHub Actions Ubuntu runner; pinned Playwright Chromium; runtime budget sourceSha bound to current commit",
@@ -111,7 +117,8 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedCommit": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedTreeHash": "4b26d53809c673d5f97afe4fcf9290f999252eb5",
         "command": "npm run check:ipc-contract (167 commands) and npm run check:ipc-types",
         "artifactPath": null,
         "environment": "Protected GitHub Actions Ubuntu and Windows runners; generated Rust-to-TypeScript contract; 167 commands; explicit renderer permission inventory active",
@@ -131,7 +138,8 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedCommit": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedTreeHash": "4b26d53809c673d5f97afe4fcf9290f999252eb5",
         "command": "Protected CI run 30741296831 and exact-SHA local gate: 22 Matrix and 13 legacy security-boundary tests passed",
         "artifactPath": null,
         "environment": "Protected GitHub Actions Ubuntu and Windows runners plus clean Windows local workspace; Cargo 1.93.0; serialized feature-set runs",
@@ -151,7 +159,8 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedCommit": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedTreeHash": "4b26d53809c673d5f97afe4fcf9290f999252eb5",
         "command": "Protected CI run 30741296831: npm run check:public-services and npm run check:public-site",
         "artifactPath": null,
         "environment": "Protected GitHub Actions Ubuntu runner; public HTTPS service discovery; public-site validation",
@@ -171,7 +180,8 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedCommit": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedTreeHash": "4b26d53809c673d5f97afe4fcf9290f999252eb5",
         "command": "Protected security run 30741296837: npm audit (0 high vulnerabilities); shipping Matrix graph 0 known vulnerabilities and 7 reviewed warnings; two Hickory findings confined to the non-shipping legacy graph; history secret scans passed. Protected CI run 30741296831: third-party notices are deterministic with 1260 resolved entries and 0 unknown licenses",
         "artifactPath": null,
         "environment": "Protected GitHub Actions Ubuntu runner plus clean Windows exact-SHA preflight; Cargo 1.93.0; exact source, lockfile, and dependency policy",
@@ -191,7 +201,8 @@
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
-        "commitSha": null,
+        "testedCommit": null,
+        "testedTreeHash": null,
         "command": null,
         "artifactPath": null,
         "environment": null,
@@ -211,7 +222,8 @@
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
-        "commitSha": null,
+        "testedCommit": null,
+        "testedTreeHash": null,
         "command": null,
         "artifactPath": null,
         "environment": null,
@@ -231,7 +243,8 @@
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
-        "commitSha": null,
+        "testedCommit": null,
+        "testedTreeHash": null,
         "command": null,
         "artifactPath": null,
         "environment": null,
@@ -251,7 +264,8 @@
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
-        "commitSha": null,
+        "testedCommit": null,
+        "testedTreeHash": null,
         "command": null,
         "artifactPath": null,
         "environment": null,
@@ -271,7 +285,8 @@
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
-        "commitSha": null,
+        "testedCommit": null,
+        "testedTreeHash": null,
         "command": null,
         "artifactPath": null,
         "environment": null,
@@ -291,7 +306,8 @@
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
-        "commitSha": null,
+        "testedCommit": null,
+        "testedTreeHash": null,
         "command": null,
         "artifactPath": null,
         "environment": null,
@@ -311,7 +327,8 @@
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
-        "commitSha": null,
+        "testedCommit": null,
+        "testedTreeHash": null,
         "command": null,
         "artifactPath": null,
         "environment": null,
@@ -331,7 +348,8 @@
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
-        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedCommit": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "testedTreeHash": "4b26d53809c673d5f97afe4fcf9290f999252eb5",
         "command": "Two independent npm run setup:matrix-spike:reset and npm run test:matrix-spike cycles (2/2 tests passed in each cycle with source_sha=42b87bf28288854f2ed18ccaf631c1180f7f44b6 and worktree=clean); two independent disposable backup/restore cycles passed",
         "artifactPath": null,
         "environment": "Windows local Docker/Synapse disposable two-homeserver stack; encrypted federation, restart recovery, fresh account registration, and second-device decryption; not public-provider or physical-device evidence",
@@ -351,7 +369,8 @@
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
-        "commitSha": null,
+        "testedCommit": null,
+        "testedTreeHash": null,
         "command": null,
         "artifactPath": null,
         "environment": null,
@@ -371,7 +390,8 @@
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
-        "commitSha": null,
+        "testedCommit": null,
+        "testedTreeHash": null,
         "command": null,
         "artifactPath": null,
         "environment": null,
@@ -391,7 +411,8 @@
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
-        "commitSha": null,
+        "testedCommit": null,
+        "testedTreeHash": null,
         "command": null,
         "artifactPath": null,
         "environment": null,
@@ -411,7 +432,8 @@
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
-        "commitSha": null,
+        "testedCommit": null,
+        "testedTreeHash": null,
         "command": null,
         "artifactPath": null,
         "environment": null,
@@ -431,7 +453,8 @@
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
-        "commitSha": null,
+        "testedCommit": null,
+        "testedTreeHash": null,
         "command": null,
         "artifactPath": null,
         "environment": null,
@@ -451,7 +474,8 @@
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
-        "commitSha": null,
+        "testedCommit": null,
+        "testedTreeHash": null,
         "command": null,
         "artifactPath": null,
         "environment": null,
@@ -471,7 +495,8 @@
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
-        "commitSha": null,
+        "testedCommit": null,
+        "testedTreeHash": null,
         "command": null,
         "artifactPath": null,
         "environment": null,

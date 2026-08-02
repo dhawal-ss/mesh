@@ -1,5 +1,9 @@
 # Mesh reference-repository production implementation plan
 
+> **ARCHIVED 2026-07-31 REFERENCE PLAN.** It is retained for provenance and
+> design history only. Current source, `AGENTS.md`, and the schema-v2 readiness
+> ledger supersede every dated readiness, SHA, and implementation assertion.
+
 **Prepared for:** the next ChatGPT Sol implementation agent
 **Snapshot date:** 2026-07-31
 **Repository:** `D:\Creations\Applications\mesh`

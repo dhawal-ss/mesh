@@ -230,9 +230,15 @@ function MatrixDiagnosticsContent({ data }: { data: BackendStatus }) {
             ok={data.syncRunning}
           />
           <StatusCell
-            label="Encryption"
-            value={data.endToEndEncryption ? 'Enabled' : 'Unavailable'}
-            ok={data.endToEndEncryption}
+            label="Encryption support"
+            value={data.supportsE2ee ? 'Supported' : 'Unavailable'}
+            ok={data.supportsE2ee}
+          />
+          <StatusCell
+            label="Session protection"
+            value={data.sessionE2eeReady ? 'Ready' : 'Not ready'}
+            ok={data.sessionE2eeReady}
+            warn={data.supportsE2ee && !data.sessionE2eeReady}
           />
           <StatusCell
             label="Durable history"

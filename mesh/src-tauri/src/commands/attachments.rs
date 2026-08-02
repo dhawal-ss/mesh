@@ -4,9 +4,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -35,7 +36,18 @@ struct AttachmentGrant {
     filename: String,
     size: u64,
     content_type: String,
+    sha256: [u8; 32],
+    staged_root: Option<PathBuf>,
     expires_at: Instant,
+}
+
+#[derive(Debug)]
+struct InspectedAttachment {
+    path: PathBuf,
+    filename: String,
+    size: u64,
+    content_type: String,
+    sha256: [u8; 32],
 }
 
 #[derive(Clone, Default)]
@@ -84,7 +96,7 @@ pub struct NativeAttachmentDropStart {
     pub position: NativeDropPosition,
 }
 
-fn staging_root(app: &AppHandle) -> Result<PathBuf, CommandError> {
+pub(crate) fn staging_root(app: &AppHandle) -> Result<PathBuf, CommandError> {
     Ok(app
         .path()
         .app_cache_dir()
@@ -193,9 +205,7 @@ fn content_type_for_filename(filename: &str) -> String {
     content_type.to_owned()
 }
 
-async fn inspect_native_path(
-    path: PathBuf,
-) -> Result<(PathBuf, String, u64, String), CommandError> {
+async fn inspect_native_path(path: PathBuf) -> Result<InspectedAttachment, CommandError> {
     let canonical = tokio::fs::canonicalize(path)
         .await
         .map_err(|error| CommandError::Validation(format!("Could not open that file: {error}")))?;
@@ -226,8 +236,38 @@ async fn inspect_native_path(
         &header[..header_len],
         MAX_ATTACHMENT_BYTES,
     )?;
+    let mut digest = Sha256::new();
+    digest.update(&header[..header_len]);
+    let mut observed_size = header_len as u64;
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer).await.map_err(|error| {
+            CommandError::Validation(format!("Could not read that file: {error}"))
+        })?;
+        if read == 0 {
+            break;
+        }
+        observed_size = observed_size.saturating_add(read as u64);
+        if observed_size > MAX_ATTACHMENT_BYTES {
+            return Err(CommandError::Validation(
+                "Attachment changed while Mesh was inspecting it".into(),
+            ));
+        }
+        digest.update(&buffer[..read]);
+    }
+    if observed_size != metadata.len() {
+        return Err(CommandError::Validation(
+            "Attachment changed while Mesh was inspecting it".into(),
+        ));
+    }
     let content_type = content_type_for_filename(&filename);
-    Ok((canonical, filename, metadata.len(), content_type))
+    Ok(InspectedAttachment {
+        path: canonical,
+        filename,
+        size: metadata.len(),
+        content_type,
+        sha256: digest.finalize().into(),
+    })
 }
 
 impl AttachmentGrantStore {
@@ -236,24 +276,34 @@ impl AttachmentGrantStore {
         tokio::spawn(async move {
             tokio::time::sleep(ttl).await;
             let mut grants = store.grants.lock().await;
-            if grants
+            let staged_root = if grants
                 .get(&token)
                 .is_some_and(|grant| grant.expires_at <= Instant::now())
             {
-                grants.remove(&token);
+                grants.remove(&token).and_then(|grant| grant.staged_root)
+            } else {
+                None
+            };
+            drop(grants);
+            if let Some(root) = staged_root {
+                let _ = tokio::fs::remove_dir_all(root).await;
             }
         });
     }
 
     async fn issue(
         &self,
-        path: PathBuf,
-        filename: String,
-        size: u64,
-        content_type: String,
+        inspected: InspectedAttachment,
         expose_legacy_path: bool,
         ttl: Duration,
     ) -> AttachmentGrantDto {
+        let InspectedAttachment {
+            path,
+            filename,
+            size,
+            content_type,
+            sha256,
+        } = inspected;
         let token = Uuid::new_v4().to_string();
         let grant = AttachmentGrant {
             token: token.clone(),
@@ -261,6 +311,8 @@ impl AttachmentGrantStore {
             filename: filename.clone(),
             size,
             content_type: content_type.clone(),
+            sha256,
+            staged_root: None,
             expires_at: Instant::now() + ttl,
         };
         let mut grants = self.grants.lock().await;
@@ -276,7 +328,11 @@ impl AttachmentGrantStore {
         }
     }
 
-    pub async fn claim(&self, token: &str) -> Result<ClaimedAttachment, CommandError> {
+    pub async fn claim_to_staging(
+        &self,
+        token: &str,
+        staging_base: &Path,
+    ) -> Result<ClaimedAttachment, CommandError> {
         Uuid::parse_str(token)
             .map_err(|_| CommandError::Validation("Invalid attachment grant".into()))?;
         let grant = self.grants.lock().await.remove(token).ok_or_else(|| {
@@ -289,17 +345,91 @@ impl AttachmentGrantStore {
                 "Attachment access expired; choose the file again".into(),
             ));
         }
-        let (canonical, filename, size, content_type) =
-            inspect_native_path(grant.path.clone()).await?;
-        if canonical != grant.path
-            || filename != grant.filename
-            || size != grant.size
-            || content_type != grant.content_type
+        let inspected = inspect_native_path(grant.path.clone()).await?;
+        if inspected.path != grant.path
+            || inspected.filename != grant.filename
+            || inspected.size != grant.size
+            || inspected.content_type != grant.content_type
+            || inspected.sha256 != grant.sha256
         {
             return Err(CommandError::Validation(
                 "The selected attachment changed; choose it again".into(),
             ));
         }
+        if grant.staged_root.is_some() {
+            return Ok(ClaimedAttachment { grant });
+        }
+        let staged_root = staging_base.join(token);
+        tokio::fs::create_dir_all(&staged_root)
+            .await
+            .map_err(|error| CommandError::Other(error.to_string()))?;
+        let staged_path = staged_root.join(&grant.filename);
+        let copy_result: Result<[u8; 32], CommandError> = async {
+            let mut source = tokio::fs::File::open(&inspected.path)
+                .await
+                .map_err(|error| {
+                    CommandError::Validation(format!("Could not read that file: {error}"))
+                })?;
+            let mut target = tokio::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&staged_path)
+                .await
+                .map_err(|error| CommandError::Other(error.to_string()))?;
+            let mut digest = Sha256::new();
+            let mut copied = 0_u64;
+            let mut buffer = [0_u8; 64 * 1024];
+            loop {
+                let read = source.read(&mut buffer).await.map_err(|error| {
+                    CommandError::Validation(format!("Could not read that file: {error}"))
+                })?;
+                if read == 0 {
+                    break;
+                }
+                copied = copied.saturating_add(read as u64);
+                if copied > grant.size {
+                    return Err(CommandError::Validation(
+                        "The selected attachment changed; choose it again".into(),
+                    ));
+                }
+                digest.update(&buffer[..read]);
+                target
+                    .write_all(&buffer[..read])
+                    .await
+                    .map_err(|error| CommandError::Other(error.to_string()))?;
+            }
+            target
+                .sync_all()
+                .await
+                .map_err(|error| CommandError::Other(error.to_string()))?;
+            if copied != grant.size {
+                return Err(CommandError::Validation(
+                    "The selected attachment changed; choose it again".into(),
+                ));
+            }
+            Ok(digest.finalize().into())
+        }
+        .await;
+        let staged_sha256 = match copy_result {
+            Ok(digest) if digest == grant.sha256 => digest,
+            Ok(_) => {
+                let _ = tokio::fs::remove_dir_all(&staged_root).await;
+                return Err(CommandError::Validation(
+                    "The selected attachment changed; choose it again".into(),
+                ));
+            }
+            Err(error) => {
+                let _ = tokio::fs::remove_dir_all(&staged_root).await;
+                return Err(error);
+            }
+        };
+        debug_assert_eq!(staged_sha256, grant.sha256);
+        let staged_path = tokio::fs::canonicalize(&staged_path)
+            .await
+            .map_err(|error| CommandError::Other(error.to_string()))?;
+        let mut grant = grant;
+        grant.path = staged_path;
+        grant.staged_root = Some(staged_root);
         Ok(ClaimedAttachment { grant })
     }
 
@@ -316,7 +446,15 @@ impl AttachmentGrantStore {
     pub async fn revoke(&self, token: &str) -> Result<(), CommandError> {
         Uuid::parse_str(token)
             .map_err(|_| CommandError::Validation("Invalid attachment grant".into()))?;
-        self.grants.lock().await.remove(token);
+        let staged_root = self
+            .grants
+            .lock()
+            .await
+            .remove(token)
+            .and_then(|grant| grant.staged_root);
+        if let Some(root) = staged_root {
+            let _ = tokio::fs::remove_dir_all(root).await;
+        }
         Ok(())
     }
 
@@ -369,6 +507,12 @@ impl ClaimedAttachment {
     pub fn content_type(&self) -> String {
         self.grant.content_type.clone()
     }
+
+    pub async fn cleanup(&self) {
+        if let Some(root) = &self.grant.staged_root {
+            let _ = tokio::fs::remove_dir_all(root).await;
+        }
+    }
 }
 
 async fn grant_native_paths(
@@ -382,12 +526,8 @@ async fn grant_native_paths(
     let selected_count = paths.len();
     for path in paths.into_iter().take(MAX_PENDING_ATTACHMENTS) {
         match inspect_native_path(path).await {
-            Ok((path, filename, size, content_type)) => {
-                files.push(
-                    store
-                        .issue(path, filename, size, content_type, expose_legacy_path, ttl)
-                        .await,
-                );
+            Ok(inspected) => {
+                files.push(store.issue(inspected, expose_legacy_path, ttl).await);
             }
             Err(error) => errors.push(error.to_string()),
         }
@@ -670,23 +810,16 @@ mod tests {
         let path = directory.path().join("report.txt");
         tokio::fs::write(&path, b"safe report").await.unwrap();
         let store = AttachmentGrantStore::default();
-        let (path, filename, size, content_type) = inspect_native_path(path).await.unwrap();
-        let dto = store
-            .issue(
-                path,
-                filename,
-                size,
-                content_type,
-                false,
-                ATTACHMENT_GRANT_TTL,
-            )
-            .await;
+        let inspected = inspect_native_path(path).await.unwrap();
+        let dto = store.issue(inspected, false, ATTACHMENT_GRANT_TTL).await;
 
-        let claimed = store.claim(&dto.grant).await.unwrap();
-        assert!(store.claim(&dto.grant).await.is_err());
+        let staging = directory.path().join("staging");
+        let claimed = store.claim_to_staging(&dto.grant, &staging).await.unwrap();
+        assert!(store.claim_to_staging(&dto.grant, &staging).await.is_err());
         store.restore(claimed).await;
-        assert!(store.claim(&dto.grant).await.is_ok());
-        assert!(store.claim(&dto.grant).await.is_err());
+        let claimed = store.claim_to_staging(&dto.grant, &staging).await.unwrap();
+        assert!(store.claim_to_staging(&dto.grant, &staging).await.is_err());
+        claimed.cleanup().await;
     }
 
     #[tokio::test]
@@ -695,22 +828,21 @@ mod tests {
         let path = directory.path().join("report.txt");
         tokio::fs::write(&path, b"safe report").await.unwrap();
         let store = AttachmentGrantStore::default();
-        let (path, filename, size, content_type) = inspect_native_path(path.clone()).await.unwrap();
-        let dto = store
-            .issue(
-                path,
-                filename,
-                size,
-                content_type,
-                false,
-                ATTACHMENT_GRANT_TTL,
-            )
-            .await;
-        tokio::fs::write(directory.path().join("report.txt"), b"changed report")
+        let inspected = inspect_native_path(path.clone()).await.unwrap();
+        let size = inspected.size;
+        let dto = store.issue(inspected, false, ATTACHMENT_GRANT_TTL).await;
+        tokio::fs::write(directory.path().join("report.txt"), b"evil report")
             .await
             .unwrap();
 
-        assert!(store.claim(&dto.grant).await.is_err());
+        assert_eq!(
+            size, 11,
+            "fixture replacement must preserve the selected size"
+        );
+        assert!(store
+            .claim_to_staging(&dto.grant, &directory.path().join("staging"))
+            .await
+            .is_err());
     }
 
     #[test]

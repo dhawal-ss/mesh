@@ -17,6 +17,7 @@ set +a
 : "${POSTGRES_USER:?POSTGRES_USER is required}"
 : "${POSTGRES_DB:?POSTGRES_DB is required}"
 : "${MESH_ADMISSION_DB_PASSWORD:?MESH_ADMISSION_DB_PASSWORD is required}"
+: "${MESH_ADMISSION_SIGNING_KEY_ID:?MESH_ADMISSION_SIGNING_KEY_ID is required}"
 
 case "$POSTGRES_USER" in
   *[!A-Za-z0-9_]*|'')
@@ -40,7 +41,8 @@ docker compose exec -T postgres \
     --set ON_ERROR_STOP=1 \
     --set admission_password="$MESH_ADMISSION_DB_PASSWORD" \
     --set database_name="$POSTGRES_DB" \
-    --set synapse_user="$POSTGRES_USER" <<'SQL'
+    --set synapse_user="$POSTGRES_USER" \
+    --set admission_signing_key_id="$MESH_ADMISSION_SIGNING_KEY_ID" <<'SQL'
 SELECT 'CREATE ROLE mesh_admission_owner NOLOGIN'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'mesh_admission_owner')
 \gexec
@@ -76,11 +78,19 @@ CREATE TABLE IF NOT EXISTS mesh_admission.mesh_admission_invitations (
   via_json TEXT NOT NULL,
   created_at BIGINT NOT NULL,
   expires_at BIGINT NOT NULL,
+  signing_key_id TEXT NOT NULL,
   status TEXT NOT NULL,
   claim_user_id TEXT,
   claim_lease_until BIGINT,
   claimed_at BIGINT
 );
+ALTER TABLE mesh_admission.mesh_admission_invitations
+  ADD COLUMN IF NOT EXISTS signing_key_id TEXT;
+UPDATE mesh_admission.mesh_admission_invitations
+SET signing_key_id = :'admission_signing_key_id'
+WHERE signing_key_id IS NULL;
+ALTER TABLE mesh_admission.mesh_admission_invitations
+  ALTER COLUMN signing_key_id SET NOT NULL;
 CREATE TABLE IF NOT EXISTS mesh_admission.mesh_admission_openid_proofs (
   proof_hash TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,

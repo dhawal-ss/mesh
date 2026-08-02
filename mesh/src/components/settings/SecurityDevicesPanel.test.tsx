@@ -35,6 +35,7 @@ vi.mock('../../lib/bridge', () => ({
   matrixLogout: vi.fn(),
   matrixRemoveLocalAccount: vi.fn(),
   matrixExportPersonalData: vi.fn(),
+  matrixCancelPersonalDataExport: vi.fn(() => Promise.resolve()),
   matrixDeactivateAccount: vi.fn(),
 }))
 
@@ -44,6 +45,7 @@ import {
   matrixDevices,
   matrixEnableRecovery,
   matrixExportPersonalData,
+  matrixCancelPersonalDataExport,
   matrixRemoveLocalAccount,
   matrixRevokeDevice,
   matrixSelectDeviceVerificationMethod,
@@ -80,7 +82,8 @@ const status: BackendStatus = {
   homeserver: 'https://matrix.example.org/',
   syncRunning: true,
   durableHistory: true,
-  endToEndEncryption: true,
+      supportsE2ee: true,
+      sessionE2eeReady: true,
   warnings: [],
 }
 
@@ -358,6 +361,31 @@ describe('SecurityDevicesPanel', () => {
     expect(document.body.textContent).toContain('14 messages across 2 conversations')
     expect(document.body.textContent).toContain('other people')
     expect(document.body.textContent).toContain('readable conversation content')
+  })
+
+  it('cancels an in-progress personal-data export without showing an error', async () => {
+    let rejectExport!: (reason: unknown) => void
+    vi.mocked(matrixExportPersonalData).mockImplementation(() => new Promise((_, reject) => {
+      rejectExport = reject
+    }))
+    vi.mocked(matrixCancelPersonalDataExport).mockImplementation(async () => {
+      rejectExport({ code: 'cancelled', detail: 'export cancelled', retryable: false })
+    })
+    await act(async () => {
+      root.render(<SecurityDevicesPanel open onClose={() => {}} />)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    act(() => findButton(document.body, 'Export my data').click())
+    await act(async () => Promise.resolve())
+    await act(async () => {
+      findButton(document.body, 'Cancel export').click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(matrixCancelPersonalDataExport).toHaveBeenCalledOnce()
+    expect(document.body.textContent).not.toContain('Action cancelled')
+    expect(findButton(document.body, 'Export my data').disabled).toBe(false)
   })
 
   it('keeps the export label truthful during an unrelated operation', async () => {

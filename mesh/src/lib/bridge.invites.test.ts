@@ -47,7 +47,8 @@ const MATRIX_STATUS = {
   homeserver: 'https://matrix.mesh.test',
   syncRunning: true,
   durableHistory: true,
-  endToEndEncryption: true,
+      supportsE2ee: true,
+      sessionE2eeReady: true,
   warnings: [],
 } as const
 

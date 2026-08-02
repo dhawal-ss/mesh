@@ -68,7 +68,7 @@ export function validateReadinessLedger(ledger, {
   milestone = null,
   requireLive = false,
   commitSha = null,
-  allowReleaseShaMismatch = false,
+  allowSourceCommitMismatch = false,
   enforceGateContract = false,
 } = {}) {
   const errors = []
@@ -77,14 +77,15 @@ export function validateReadinessLedger(ledger, {
   if (!ledger || typeof ledger !== 'object' || Array.isArray(ledger)) {
     return ['ledger must be an object']
   }
-  rejectUnknownKeys(ledger, ['schemaVersion', 'ledgerId', 'releaseSha', 'updatedAt', 'gates'], 'ledger', fail)
+  rejectUnknownKeys(ledger, ['schemaVersion', 'ledgerId', 'sourceCommit', 'sourceTreeHash', 'updatedAt', 'gates'], 'ledger', fail)
 
-  if (ledger.schemaVersion !== 1) fail('schemaVersion must be 1')
+  if (ledger.schemaVersion !== 2) fail('schemaVersion must be 2')
   if (ledger.ledgerId !== 'mesh-production-readiness') fail('ledgerId is invalid')
-  if (!SHA_PATTERN.test(ledger.releaseSha ?? '')) fail('releaseSha must be a lowercase 40-character SHA')
+  if (!SHA_PATTERN.test(ledger.sourceCommit ?? '')) fail('sourceCommit must be a lowercase 40-character SHA')
+  if (!SHA_PATTERN.test(ledger.sourceTreeHash ?? '')) fail('sourceTreeHash must be a lowercase 40-character Git tree hash')
   if (!isIsoDate(ledger.updatedAt)) fail('updatedAt must be an ISO UTC timestamp')
-  if (commitSha !== null && ledger.releaseSha !== commitSha && !allowReleaseShaMismatch) {
-    fail(`releaseSha ${ledger.releaseSha} does not match requested commit ${commitSha}`)
+  if (commitSha !== null && ledger.sourceCommit !== commitSha && !allowSourceCommitMismatch) {
+    fail(`sourceCommit ${ledger.sourceCommit} does not match requested commit ${commitSha}`)
   }
 
   const gates = Array.isArray(ledger.gates) ? ledger.gates : []
@@ -115,8 +116,9 @@ export function validateReadinessLedger(ledger, {
       fail(`${path}.evidence must be an object`)
       continue
     }
-    rejectUnknownKeys(evidence, ['commitSha', 'command', 'artifactPath', 'artifactUri', 'artifactSha256', 'environment', 'collectedAt', 'expiresAt'], `${path}.evidence`, fail)
-    if (evidence.commitSha !== null && !SHA_PATTERN.test(evidence.commitSha ?? '')) fail(`${path}.evidence.commitSha is invalid`)
+    rejectUnknownKeys(evidence, ['testedCommit', 'testedTreeHash', 'command', 'artifactPath', 'artifactUri', 'artifactSha256', 'environment', 'collectedAt', 'expiresAt'], `${path}.evidence`, fail)
+    if (evidence.testedCommit !== null && !SHA_PATTERN.test(evidence.testedCommit ?? '')) fail(`${path}.evidence.testedCommit is invalid`)
+    if (evidence.testedTreeHash !== null && !SHA_PATTERN.test(evidence.testedTreeHash ?? '')) fail(`${path}.evidence.testedTreeHash is invalid`)
     if (evidence.command !== null && !isNonEmptyString(evidence.command)) fail(`${path}.evidence.command must be a string or null`)
     if (evidence.artifactPath !== null && !pathIsInsideRepo(evidence.artifactPath)) fail(`${path}.evidence.artifactPath must be a relative path inside the repository`)
     if (evidence.artifactUri !== undefined && evidence.artifactUri !== null) {
@@ -135,8 +137,17 @@ export function validateReadinessLedger(ledger, {
     if (evidence.collectedAt !== null && !isIsoDate(evidence.collectedAt)) fail(`${path}.evidence.collectedAt must be an ISO UTC timestamp or null`)
     if (evidence.expiresAt !== null && !isIsoDate(evidence.expiresAt)) fail(`${path}.evidence.expiresAt must be an ISO UTC timestamp or null`)
 
+    if (gate.status === 'local-pass' || gate.status === 'live-pass') {
+      if (evidence.testedCommit !== ledger.sourceCommit) fail(`${path} ${gate.status} evidence must use sourceCommit`)
+      if (evidence.testedTreeHash !== ledger.sourceTreeHash) fail(`${path} ${gate.status} evidence must use sourceTreeHash`)
+      if (!isNonEmptyString(evidence.command)) fail(`${path} ${gate.status} evidence requires command`)
+      if (!isNonEmptyString(evidence.environment)) fail(`${path} ${gate.status} evidence requires environment`)
+      if (!isIsoDate(evidence.collectedAt)) fail(`${path} ${gate.status} evidence requires collectedAt`)
+      if (gate.blockReason !== null) fail(`${path} ${gate.status} cannot have blockReason`)
+      if (gate.waiver !== null) fail(`${path} ${gate.status} cannot have a waiver`)
+    }
+
     if (gate.status === 'live-pass') {
-      if (evidence.commitSha !== ledger.releaseSha) fail(`${path} live-pass evidence must use releaseSha`)
       const hasRepositoryArtifact = evidence.artifactPath !== null && evidence.artifactPath !== undefined
       const hasExternalArtifact = evidence.artifactUri !== null && evidence.artifactUri !== undefined
       if (hasRepositoryArtifact === hasExternalArtifact) fail(`${path} live-pass requires exactly one artifactPath or immutable artifactUri`)
@@ -151,8 +162,6 @@ export function validateReadinessLedger(ledger, {
       }
       if (evidence.collectedAt === null || evidence.expiresAt === null) fail(`${path} live-pass evidence requires collectedAt and expiresAt`)
       if (evidence.expiresAt !== null && Date.parse(evidence.expiresAt) <= now.getTime()) fail(`${path} live-pass evidence expired at ${evidence.expiresAt}`)
-      if (gate.blockReason !== null) fail(`${path} live-pass cannot have blockReason`)
-      if (gate.waiver !== null) fail(`${path} live-pass cannot have a waiver`)
     } else if (gate.status === 'waived') {
       const waiver = gate.waiver
       rejectUnknownKeys(waiver, ['approver', 'reason', 'expiresAt'], `${path}.waiver`, fail)
@@ -164,7 +173,8 @@ export function validateReadinessLedger(ledger, {
 
     if (gate.status === 'blocked' && !isNonEmptyString(gate.blockReason)) fail(`${path} blocked status requires blockReason`)
     if (gate.status !== 'waived' && gate.waiver !== null) fail(`${path} waiver is only valid for waived status`)
-    if (evidence.commitSha !== null && evidence.commitSha !== ledger.releaseSha) fail(`${path}.evidence.commitSha must equal releaseSha`)
+    if (evidence.testedCommit !== null && evidence.testedCommit !== ledger.sourceCommit) fail(`${path}.evidence.testedCommit must equal sourceCommit`)
+    if (evidence.testedTreeHash !== null && evidence.testedTreeHash !== ledger.sourceTreeHash) fail(`${path}.evidence.testedTreeHash must equal sourceTreeHash`)
 
     if (milestone !== null && milestoneRank(gate.milestone) <= milestoneRank(milestone) && gate.required && requireLive) {
       const satisfiesReleaseStatus = gate.releaseStatus === 'local-pass'
@@ -193,7 +203,7 @@ export function validateReadinessLedger(ledger, {
 }
 
 async function validateLedgerOnlyCommit(ledger, commitSha) {
-  if (ledger.releaseSha === commitSha) return []
+  if (ledger.sourceCommit === commitSha) return []
 
   let gitRoot
   try {
@@ -214,11 +224,11 @@ async function validateLedgerOnlyCommit(ledger, commitSha) {
       repoRoot,
       'merge-base',
       '--is-ancestor',
-      ledger.releaseSha,
+      ledger.sourceCommit,
       commitSha,
     ], { windowsHide: true })
   } catch {
-    return [`releaseSha ${ledger.releaseSha} must be an ancestor of requested commit ${commitSha}`]
+    return [`sourceCommit ${ledger.sourceCommit} must be an ancestor of requested commit ${commitSha}`]
   }
 
   let changedPaths
@@ -228,7 +238,7 @@ async function validateLedgerOnlyCommit(ledger, commitSha) {
       repoRoot,
       'diff',
       '--name-only',
-      `${ledger.releaseSha}..${commitSha}`,
+      `${ledger.sourceCommit}..${commitSha}`,
       '--',
     ], { windowsHide: true })
     changedPaths = result.stdout
@@ -236,18 +246,39 @@ async function validateLedgerOnlyCommit(ledger, commitSha) {
       .map((path) => path.trim())
       .filter(Boolean)
   } catch {
-    return [`could not inspect the source delta between ${ledger.releaseSha} and ${commitSha}`]
+    return [`could not inspect the source delta between ${ledger.sourceCommit} and ${commitSha}`]
   }
 
   const ledgerGitPath = ledgerPathFromGitRoot(gitRoot)
   const unexpectedPaths = changedPaths.filter((path) => path !== ledgerGitPath)
   if (unexpectedPaths.length > 0) {
     return [
-      `releaseSha ${ledger.releaseSha} is stale: the requested commit changed source files besides ${ledgerGitPath}: ${unexpectedPaths.join(', ')}`,
+      `sourceCommit ${ledger.sourceCommit} is stale: the requested commit changed source files besides ${ledgerGitPath}: ${unexpectedPaths.join(', ')}`,
     ]
   }
 
   return []
+}
+
+export async function validateSourceTreeBinding(ledger, runGit = execFileAsync) {
+  if (!SHA_PATTERN.test(ledger?.sourceCommit ?? '') || !SHA_PATTERN.test(ledger?.sourceTreeHash ?? '')) {
+    return []
+  }
+
+  try {
+    const result = await runGit('git', [
+      '-C',
+      repoRoot,
+      'rev-parse',
+      `${ledger.sourceCommit}^{tree}`,
+    ], { windowsHide: true })
+    const actualTreeHash = result.stdout.trim()
+    return actualTreeHash === ledger.sourceTreeHash
+      ? []
+      : [`sourceTreeHash ${ledger.sourceTreeHash} does not match Git tree ${actualTreeHash} for sourceCommit ${ledger.sourceCommit}`]
+  } catch {
+    return [`could not resolve the Git tree for sourceCommit ${ledger.sourceCommit}`]
+  }
 }
 
 function parseArgs(argv) {
@@ -277,14 +308,15 @@ export async function main(argv = process.argv.slice(2)) {
   JSON.parse(schemaText)
   const ledger = JSON.parse(ledgerText)
   let bindingErrors = []
-  let allowReleaseShaMismatch = false
+  let allowSourceCommitMismatch = false
   if (options.allowLedgerOnlyCommit && options.commitSha !== null) {
     bindingErrors = await validateLedgerOnlyCommit(ledger, options.commitSha)
-    allowReleaseShaMismatch = bindingErrors.length === 0
+    allowSourceCommitMismatch = bindingErrors.length === 0
   }
   const errors = [
+    ...await validateSourceTreeBinding(ledger),
     ...bindingErrors,
-    ...validateReadinessLedger(ledger, { ...options, allowReleaseShaMismatch, enforceGateContract: true }),
+    ...validateReadinessLedger(ledger, { ...options, allowSourceCommitMismatch, enforceGateContract: true }),
   ]
   if (errors.length > 0) {
     console.error('Mesh readiness ledger validation failed:')
@@ -293,7 +325,8 @@ export async function main(argv = process.argv.slice(2)) {
   }
   console.log(JSON.stringify({
     ledger: ledger.ledgerId,
-    releaseSha: ledger.releaseSha,
+    sourceCommit: ledger.sourceCommit,
+    sourceTreeHash: ledger.sourceTreeHash,
     gates: ledger.gates.length,
     requiredLiveThrough: options.requireLive ? options.milestone : null,
     status: 'valid',

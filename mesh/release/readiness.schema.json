@@ -1,14 +1,20 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:mesh:release:readiness-schema:v1",
+  "$id": "urn:mesh:release:readiness-schema:v2",
   "title": "Mesh production readiness ledger",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "ledgerId", "releaseSha", "updatedAt", "gates"],
+  "required": ["schemaVersion", "ledgerId", "sourceCommit", "sourceTreeHash", "updatedAt", "gates"],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "ledgerId": { "const": "mesh-production-readiness" },
-    "releaseSha": {
+    "sourceCommit": {
+      "description": "Commit that anchors the source snapshot. A dirty local snapshot is identified by this commit plus sourceTreeHash and is never clean-source release evidence.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sourceTreeHash": {
+      "description": "Git tree hash of the complete source snapshot represented by the ledger.",
       "type": "string",
       "pattern": "^[0-9a-f]{40}$"
     },
@@ -24,7 +30,8 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "commitSha",
+        "testedCommit",
+        "testedTreeHash",
         "command",
         "artifactPath",
         "environment",
@@ -32,7 +39,13 @@
         "expiresAt"
       ],
       "properties": {
-        "commitSha": {
+        "testedCommit": {
+          "description": "Commit checked out when this evidence was collected.",
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "testedTreeHash": {
+          "description": "Git tree hash of the exact files exercised by the evidence.",
           "type": ["string", "null"],
           "pattern": "^[0-9a-f]{40}$"
         },

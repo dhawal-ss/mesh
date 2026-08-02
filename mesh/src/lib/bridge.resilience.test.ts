@@ -134,38 +134,40 @@ describe('bridge IPC resilience', () => {
           unreadCount: 0,
         },
       })
-      .mockResolvedValueOnce([
-        {
-          id: '!general:mesh.test',
-          communityId: '!community:mesh.test',
-          name: 'unnamed',
-          channelType: 'text',
-          unreadCount: 4,
-        },
-      ])
-      .mockResolvedValueOnce([
-        {
-          id: '!general:mesh.test',
-          communityId: '!community:mesh.test',
-          name: 'announcements',
-          channelType: 'text',
-          unreadCount: 5,
-        },
-      ])
+      .mockResolvedValueOnce({
+        entities: [
+          {
+            id: '!general:mesh.test',
+            communityId: '!community:mesh.test',
+            name: 'unnamed',
+            channelType: 'text',
+            unreadCount: 4,
+          },
+        ],
+        blockedEntities: [],
+      })
+      .mockResolvedValueOnce({
+        entities: [
+          {
+            id: '!general:mesh.test',
+            communityId: '!community:mesh.test',
+            name: 'announcements',
+            channelType: 'text',
+            unreadCount: 5,
+          },
+        ],
+        blockedEntities: [],
+      })
 
     await matrixCreateCommunity('First Mesh', '')
-    await expect(matrixListChannels('!community:mesh.test')).resolves.toEqual([
-      expect.objectContaining({
-        name: 'general',
-        unreadCount: 4,
-      }),
-    ])
-    await expect(matrixListChannels('!community:mesh.test')).resolves.toEqual([
-      expect.objectContaining({
-        name: 'announcements',
-        unreadCount: 5,
-      }),
-    ])
+    await expect(matrixListChannels('!community:mesh.test')).resolves.toEqual({
+      entities: [expect.objectContaining({ name: 'general', unreadCount: 4 })],
+      blockedEntities: [],
+    })
+    await expect(matrixListChannels('!community:mesh.test')).resolves.toEqual({
+      entities: [expect.objectContaining({ name: 'announcements', unreadCount: 5 })],
+      blockedEntities: [],
+    })
   })
 
   it('carries stable delivery identifiers through message mutations', async () => {

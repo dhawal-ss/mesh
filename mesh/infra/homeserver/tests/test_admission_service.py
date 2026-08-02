@@ -194,6 +194,45 @@ class AdmissionServiceTests(unittest.TestCase):
         self.assertNotEqual(stored, code)
         self.assertNotEqual(stored, derived)
 
+    def test_signing_key_overlap_keeps_existing_invites_until_explicit_revocation(self) -> None:
+        code, _ = self.create()
+        old_key = self.config.signing_key
+        old_key_id = self.config.signing_key_id
+        new_key = bytes(reversed(range(32)))
+        rotated = dataclasses.replace(
+            self.config,
+            signing_key=new_key,
+            signing_key_id="0123456789abcdef",
+            previous_signing_keys={old_key_id: old_key},
+        )
+        rotated_application = admission.AdmissionApplication(
+            rotated,
+            admission.InvitationStore(rotated),
+            self.matrix,
+            lambda proof: str(proof["user_id"]),
+            lambda action, token, expires_at: self.issuer_calls.append(
+                (action, token, expires_at)
+            ),
+        )
+
+        resolved = rotated_application.resolve_invitation(code)
+        self.assertEqual(
+            resolved["registration_token"],
+            admission.registration_token(old_key, code),
+        )
+
+        retired = dataclasses.replace(rotated, previous_signing_keys={})
+        retired_application = admission.AdmissionApplication(
+            retired,
+            admission.InvitationStore(retired),
+            self.matrix,
+            lambda proof: str(proof["user_id"]),
+            lambda *_: None,
+        )
+        with self.assertRaises(admission.AdmissionError) as context:
+            retired_application.resolve_invitation(code)
+        self.assertEqual(context.exception.code, "invitation_key_retired")
+
     def test_service_identity_is_bound_to_the_configured_non_admin_bot(self) -> None:
         self.application.verify_service_identity()
         self.assertIn(

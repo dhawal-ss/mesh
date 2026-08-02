@@ -16,7 +16,16 @@ export type BackendStatus = { kind: BackendKind, capabilities: BackendCapabiliti
  * True only when the sync worker is alive and has received a successful
  * response within the backend's freshness window.
  */
-syncRunning: boolean, durableHistory: boolean, endToEndEncryption: boolean, warnings: Array<string>, };
+syncRunning: boolean, durableHistory: boolean,
+/**
+ * Backend capability. This does not claim that the current account has a
+ * usable authenticated encryption session.
+ */
+supportsE2ee: boolean,
+/**
+ * Health of the current account/device encryption session.
+ */
+sessionE2eeReady: boolean, warnings: Array<string>, };
 
 export type MatrixPersonalDataExport = { path: string, exportedAt: string, roomCount: number, messageCount: number, mediaFileCount: number, warnings: Array<string>, };
 

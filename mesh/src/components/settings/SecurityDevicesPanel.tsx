@@ -6,7 +6,7 @@ import { Icon } from '../ui/Icon'
 import { EmptyState } from '../ui/Primitives'
 import { StatusDot } from '../ui/StatusDot'
 import * as bridge from '../../lib/bridge'
-import { describeError } from '../../lib/errors'
+import { describeError, normalizeError } from '../../lib/errors'
 import { clearRegistrationContinuation } from '../../lib/registration-continuation'
 import { clearRendererAccountState } from '../../lib/account-transition'
 
@@ -296,9 +296,17 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
       const result = await bridge.matrixExportPersonalData()
       if (result) setExportResult(result)
     } catch (cause) {
-      setError(errorMessage(cause))
+      if (normalizeError(cause).code !== 'cancelled') setError(errorMessage(cause))
     } finally {
       setExporting(false)
+    }
+  }
+
+  const cancelPersonalDataExport = async () => {
+    try {
+      await bridge.matrixCancelPersonalDataExport()
+    } catch (cause) {
+      setError(errorMessage(cause))
     }
   }
 
@@ -350,7 +358,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
             />
             <Row
               label="Private messages"
-              value={status?.endToEndEncryption ? 'Protected' : 'Unavailable'}
+              value={status?.sessionE2eeReady ? 'Protected' : 'Unavailable'}
             />
           </dl>
           <p className="mt-3 text-xs leading-5 text-muted">
@@ -943,14 +951,21 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
               records.
             </p>
           </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={busy || exporting}
-            onClick={exportPersonalData}
-          >
-            {exporting ? 'Working…' : 'Export my data'}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy || exporting}
+              onClick={exportPersonalData}
+            >
+              {exporting ? 'Working…' : 'Export my data'}
+            </Button>
+            {exporting && (
+              <Button variant="secondary" size="sm" onClick={cancelPersonalDataExport}>
+                Cancel export
+              </Button>
+            )}
+          </div>
           {exportResult && (
             <div
               role="status"

@@ -717,7 +717,8 @@ async fn run_matrix_backend_registers_a_fresh_community_hosted_account() {
         Some(format!("@{username}:hs1.mesh.test").as_str())
     );
     assert!(status.durable_history);
-    assert!(status.end_to_end_encryption);
+    assert!(status.supports_e2ee);
+    assert!(status.session_e2ee_ready);
 
     let mut background_sync_started = false;
     for _ in 0..20 {
@@ -872,14 +873,14 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
     bob.sync_once().await.unwrap();
     bob_stale.sync_once().await.unwrap();
 
-    let bob_after_stale_write = bob.dm_conversations().await.unwrap();
+    let bob_after_stale_write = bob.dm_conversations().await.unwrap().entities;
     assert!(
         bob_after_stale_write
             .iter()
             .any(|conversation| conversation.id == bob_charlie_dm.id),
         "a stale device erased the valid Charlie DM mapping"
     );
-    let stale_after_reconciliation = bob_stale.dm_conversations().await.unwrap();
+    let stale_after_reconciliation = bob_stale.dm_conversations().await.unwrap().entities;
     assert!(
         stale_after_reconciliation
             .iter()
@@ -1240,6 +1241,8 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
                 format!("Federated spike {nonce}"),
                 Some("hs1.mesh.test".into()),
                 20,
+                format!("federation-directory-{nonce}"),
+                10_000,
             )
             .await
             .unwrap();
@@ -1308,15 +1311,19 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
     );
     bob.sync_once().await.unwrap();
 
-    let alice_communities = alice.list_communities().await.unwrap();
+    let alice_communities = alice.list_communities().await.unwrap().entities;
     assert!(alice_communities
         .iter()
         .any(|item| item.id == community.space_id));
-    let bob_communities = bob.list_communities().await.unwrap();
+    let bob_communities = bob.list_communities().await.unwrap().entities;
     assert!(bob_communities
         .iter()
         .any(|item| item.id == community.space_id));
-    let bob_channels = bob.list_channels(community.space_id.clone()).await.unwrap();
+    let bob_channels = bob
+        .list_channels(community.space_id.clone())
+        .await
+        .unwrap()
+        .entities;
     assert!(bob_channels
         .iter()
         .any(|item| item.id == community.channel_id));
@@ -1408,7 +1415,7 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
     assert!(bob_members
         .iter()
         .any(|member| member.public_key == bob_user && member.role == "admin"));
-    let bob_communities = bob.list_communities().await.unwrap();
+    let bob_communities = bob.list_communities().await.unwrap().entities;
     assert!(bob_communities.iter().any(|item| {
         item.id == community.space_id
             && item.name == updated_name
@@ -1781,7 +1788,13 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
     checkpoint!("relations, receipts, and typing verified");
 
     let search_results = alice
-        .search_messages(community.space_id.clone(), edited_body.clone(), 20)
+        .search_messages(
+            community.space_id.clone(),
+            edited_body.clone(),
+            20,
+            format!("federation-message-{nonce}"),
+            10_000,
+        )
         .await
         .unwrap();
     assert!(search_results
@@ -2026,6 +2039,7 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
         .dm_conversations()
         .await
         .unwrap()
+        .entities
         .into_iter()
         .find(|conversation| conversation.peer_public_key == alice_user)
         .expect("recovered second device should rediscover the Matrix DM");
@@ -2149,7 +2163,11 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
         bob_saw_upgrade,
         "the room tombstone did not federate to the other homeserver"
     );
-    let channels_before_follow = bob.list_channels(community.space_id.clone()).await.unwrap();
+    let channels_before_follow = bob
+        .list_channels(community.space_id.clone())
+        .await
+        .unwrap()
+        .entities;
     assert!(
         channels_before_follow
             .iter()
@@ -2166,7 +2184,11 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
     bob.join_room(replacement_channel_id.clone()).await.unwrap();
     let mut channels_after_follow = Vec::new();
     for _ in 0..20 {
-        channels_after_follow = bob.list_channels(community.space_id.clone()).await.unwrap();
+        channels_after_follow = bob
+            .list_channels(community.space_id.clone())
+            .await
+            .unwrap()
+            .entities;
         if channels_after_follow
             .iter()
             .any(|channel| channel.id == replacement_channel_id)
@@ -2203,6 +2225,7 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
             .list_channels(community.space_id.clone())
             .await
             .unwrap()
+            .entities
             .iter()
             .any(|channel| channel.id == replacement_channel_id);
         if alice_saw_replacement {
@@ -2220,6 +2243,7 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
             .list_channels(community.space_id.clone())
             .await
             .unwrap()
+            .entities
             .iter()
             .any(|channel| channel.id == replacement_channel_id);
         if second_device_saw_replacement {

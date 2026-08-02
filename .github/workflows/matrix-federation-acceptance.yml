@@ -82,20 +82,30 @@ jobs:
                   --unlock --components=secrets >/dev/null
                 npm run test:matrix-spike 2>&1 | tee "$MESH_ACCEPTANCE_LOG"
               '
+            docker compose -f infra/matrix-spike/docker-compose.yml \
+              down --volumes --remove-orphans 2>&1 |
+              tee "matrix-spike-logs/teardown-cycle-$cycle.log"
           done
 
           source_sha="$(git rev-parse HEAD)"
+          source_tree_hash="$(git rev-parse 'HEAD^{tree}')"
           cycle_1_sha="$(sha256sum matrix-spike-logs/acceptance-cycle-1.log | awk '{ print $1 }')"
           cycle_2_sha="$(sha256sum matrix-spike-logs/acceptance-cycle-2.log | awk '{ print $1 }')"
+          teardown_1_sha="$(sha256sum matrix-spike-logs/teardown-cycle-1.log | awk '{ print $1 }')"
+          teardown_2_sha="$(sha256sum matrix-spike-logs/teardown-cycle-2.log | awk '{ print $1 }')"
           printf '%s\n' \
             '{' \
             '  "schemaVersion": 1,' \
             "  \"sourceSha\": \"$source_sha\"," \
+            "  \"sourceTreeHash\": \"$source_tree_hash\"," \
+            "  \"workflowRunId\": \"${GITHUB_RUN_ID}\"," \
+            "  \"workflowRunAttempt\": \"${GITHUB_RUN_ATTEMPT}\"," \
+            "  \"workflowEvent\": \"${GITHUB_EVENT_NAME}\"," \
             '  "status": "passed",' \
             '  "independentResetTestCycles": 2,' \
             '  "cycles": [' \
-            "    { \"iteration\": 1, \"log\": \"acceptance-cycle-1.log\", \"sha256\": \"$cycle_1_sha\" }," \
-            "    { \"iteration\": 2, \"log\": \"acceptance-cycle-2.log\", \"sha256\": \"$cycle_2_sha\" }" \
+            "    { \"iteration\": 1, \"log\": \"acceptance-cycle-1.log\", \"sha256\": \"$cycle_1_sha\", \"teardownLog\": \"teardown-cycle-1.log\", \"teardownSha256\": \"$teardown_1_sha\" }," \
+            "    { \"iteration\": 2, \"log\": \"acceptance-cycle-2.log\", \"sha256\": \"$cycle_2_sha\", \"teardownLog\": \"teardown-cycle-2.log\", \"teardownSha256\": \"$teardown_2_sha\" }" \
             '  ]' \
             '}' > matrix-spike-logs/acceptance-report.json
 
@@ -118,7 +128,7 @@ jobs:
           name: matrix-federation-acceptance-${{ github.sha }}-${{ github.run_number }}
           path: mesh/matrix-spike-logs/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
 
       - name: Tear down disposable homeservers
         if: ${{ always() }}

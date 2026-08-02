@@ -1,5 +1,9 @@
 # Mesh production-readiness continuation
 
+> **ARCHIVED 2026-08-01 SNAPSHOT.** This is historical evidence, not a current
+> readiness assertion. Current source and the schema-v2 readiness ledger win;
+> rerun every named gate before reusing any count, SHA, or completion claim.
+
 Status: `ALL_LOCALLY_SPECIFIABLE_FINDINGS_COMPLETE_NOT_RELEASE_READY`
 
 Date: 2026-08-01

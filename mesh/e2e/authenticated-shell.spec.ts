@@ -188,13 +188,17 @@ async function installAuthenticatedMatrixMock(
             homeserver: 'https://mesh.test',
             syncRunning: true,
             durableHistory: true,
-            endToEndEncryption: true,
+      supportsE2ee: true,
+      sessionE2eeReady: true,
             warnings: [],
           }
         case 'matrix_list_communities':
-          return invitationJoined
-            ? [community, secondCommunity, invitedCommunity]
-            : [community, secondCommunity]
+          return {
+            entities: invitationJoined
+              ? [community, secondCommunity, invitedCommunity]
+              : [community, secondCommunity],
+            blockedEntities: [],
+          }
         case 'join_pending_invitation':
           if (args.handle !== pendingInvitationMetadata()?.handle) {
             throw new Error('Cold-start invitation handle was not forwarded correctly')
@@ -264,19 +268,22 @@ async function installAuthenticatedMatrixMock(
           matrixProfile.displayName = String(args.displayName)
           return { ...matrixProfile }
         case 'matrix_list_channels':
-          return args.communityId === invitedCommunity.id
-            ? [
-                {
-                  id: '!invited-general:mesh.test',
-                  communityId: invitedCommunity.id,
-                  name: 'welcome',
-                  channelType: 'text',
-                  unreadCount: 0,
-                },
-              ]
-            : args.communityId === secondCommunity.id
-            ? secondCommunityChannels
-            : channels
+          return {
+            entities: args.communityId === invitedCommunity.id
+              ? [
+                  {
+                    id: '!invited-general:mesh.test',
+                    communityId: invitedCommunity.id,
+                    name: 'welcome',
+                    channelType: 'text',
+                    unreadCount: 0,
+                  },
+                ]
+              : args.communityId === secondCommunity.id
+              ? secondCommunityChannels
+              : channels,
+            blockedEntities: [],
+          }
         case 'matrix_list_members':
           return [
             {
@@ -948,6 +955,71 @@ test.describe('authenticated narrow shell', () => {
         'utf8',
       )
     }
+  })
+
+  test('keeps pinned and sticky conversation surfaces opaque across release zooms', async ({ page }) => {
+    await openAuthenticatedShell(page)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    // Chromium does not expose desktop browser zoom through Playwright. Browser
+    // zoom reduces the CSS viewport, so exercise the equivalent 1280px release
+    // viewport at 200% and 400% instead of applying CSS `zoom`, which scales the
+    // desktop layout after media-query selection and can push it off-screen.
+    const scenarios = [
+      { width: 320, height: 844, label: '320px' },
+      { width: 390, height: 844, label: '390px' },
+      { width: 1280, height: 800, label: '1280px' },
+      { width: 640, height: 800, label: '200-percent-zoom-equivalent' },
+      { width: 320, height: 800, label: '400-percent-zoom-equivalent' },
+    ]
+    const evidenceDirectory = process.env.MESH_RESPONSIVE_EVIDENCE_DIR
+    if (evidenceDirectory) await mkdir(evidenceDirectory, { recursive: true })
+
+    for (const scenario of scenarios) {
+      await page.setViewportSize({ width: scenario.width, height: scenario.height })
+      const closeNavigation = page.getByRole('button', {
+        name: 'Close room navigation',
+        exact: true,
+      })
+      if (await closeNavigation.isVisible()) await closeNavigation.click()
+      const log = page.getByRole('log', { name: 'Messages in #general' })
+      await expect(log).toBeVisible()
+      await log.evaluate((element) => {
+        element.scrollTop = Math.max(1, element.scrollHeight / 3)
+      })
+      const divider = log.getByRole('separator').first()
+      await expect(divider).toBeVisible()
+      const surface = await divider.evaluate((element) => {
+        const style = getComputedStyle(element)
+        const bounds = element.getBoundingClientRect()
+        const parentBounds = element.parentElement?.getBoundingClientRect()
+        return {
+          background: style.backgroundColor,
+          opacity: style.opacity,
+          width: bounds.width,
+          parentWidth: parentBounds?.width ?? 0,
+        }
+      })
+      expect(surface.background, `${scenario.label} divider background`).not.toBe('rgba(0, 0, 0, 0)')
+      expect(surface.background, `${scenario.label} divider background`).not.toBe('transparent')
+      expect(surface.opacity, `${scenario.label} divider opacity`).toBe('1')
+      expect(surface.width, `${scenario.label} divider coverage`).toBeGreaterThanOrEqual(surface.parentWidth - 1)
+      await expect(page.getByRole('button', { name: /Open pinned message from/ })).toBeVisible()
+      if (evidenceDirectory) {
+        await page.screenshot({
+          path: join(evidenceDirectory, `sticky-legibility-${scenario.label}.png`),
+          fullPage: true,
+        })
+      }
+    }
+
+    await page.evaluate(() => {
+      document.documentElement.dataset.theme = 'high-contrast'
+    })
+    const highContrastDivider = page.getByRole('log', { name: 'Messages in #general' })
+      .getByRole('separator')
+      .first()
+    await expect(highContrastDivider).toBeVisible()
+    await expectNoWcagViolations(page, 'Sticky conversation surfaces in high contrast')
   })
 
   test('does not restore desktop room context into a narrow launch and closes it on resize', async ({ page }) => {

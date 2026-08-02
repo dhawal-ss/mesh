@@ -42,7 +42,8 @@ function status(overrides: Partial<BackendStatus> = {}): BackendStatus {
     homeserver: null,
     syncRunning: false,
     durableHistory: false,
-    endToEndEncryption: true,
+      supportsE2ee: true,
+      sessionE2eeReady: true,
     warnings: [],
     ...overrides,
   }

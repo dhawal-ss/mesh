@@ -34,7 +34,6 @@ interface UserSettingsPanelProps {
   backupReminderDue?: boolean
   onTestNotification?: () => Promise<void> | void
   onOpenDiagnostics?: () => void
-  onOpenImport?: () => void
 }
 
 const ACCENT_CHOICES = [
@@ -73,7 +72,6 @@ export function UserSettingsPanel({
   backupReminderDue = false,
   onTestNotification,
   onOpenDiagnostics,
-  onOpenImport,
 }: UserSettingsPanelProps) {
   const notifications = useSettingsStore((state) => state.notifications)
   const appearance = useSettingsStore((state) => state.appearance)
@@ -892,17 +890,12 @@ export function UserSettingsPanel({
               Advanced
             </p>
             <p className="mt-1 text-xs leading-5 text-muted">
-              Support and import tools for troubleshooting or moving older Mesh data.
+              Support tools for troubleshooting this Mesh installation.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               {onOpenDiagnostics && (
                 <Button variant="secondary" size="sm" onClick={onOpenDiagnostics}>
                   System diagnostics
-                </Button>
-              )}
-              {matrixMode && onOpenImport && (
-                <Button variant="secondary" size="sm" onClick={onOpenImport}>
-                  Import older Mesh data
                 </Button>
               )}
             </div>

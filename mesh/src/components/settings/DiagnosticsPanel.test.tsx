@@ -117,7 +117,8 @@ describe('DiagnosticsPanel', () => {
       homeserver: 'http://localhost:8008',
       syncRunning: true,
       durableHistory: true,
-      endToEndEncryption: true,
+      supportsE2ee: true,
+      sessionE2eeReady: true,
       warnings: [],
     })
 

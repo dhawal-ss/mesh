@@ -82,6 +82,31 @@ whole-`.env` container has been rotated with `rotate-runtime-secrets.sh`.
 Retain dated, sanitized rotation and negative-access evidence before public
 exposure.
 
+Runtime rotation is a four-phase operator transaction; the script never rotates
+on an argument-free invocation:
+
+1. `sh ./rotate-runtime-secrets.sh --stage` creates protected pending and
+   rollback environments plus a redacted, source-bound evidence record.
+2. Review that evidence, then set
+   `MESH_SECRET_ROTATION_CONFIRM=ACTIVATE:<rotation-id>` and run
+   `sh ./rotate-runtime-secrets.sh --activate <rotation-id>`. Database role
+   passwords change before the environment is promoted; setup, restart, and
+   health verification must all pass or the trap restores the prior roles and
+   environment.
+3. Keep the previous admission signing key during the overlap window. Existing
+   invitations carry their signing-key ID, so resolve, claim, and registration-
+   token revocation continue to use the key that issued them.
+4. After the active-old-key invitation count reaches zero, set
+   `MESH_SECRET_ROTATION_CONFIRM=REVOKE:<rotation-id>` and run
+   `sh ./rotate-runtime-secrets.sh --revoke-previous <rotation-id>`. This is the
+   explicit revocation step; it removes overlap and rollback material only after
+   health verification. Use `ROLLBACK:<rotation-id>` with `--rollback` before
+   revocation if activation needs to be reversed.
+
+The JSON files under `rotation-evidence/<rotation-id>/` contain no secrets and
+are made read-only. Copy them into the immutable operator evidence store with
+its approved retention policy; local mode bits alone are not immutable storage.
+
 Production invitation creation and claim currently fail closed. A deployment
 must first provide both a reviewed POST-capable Matrix OpenID verifier and a
 narrowly scoped registration-token issuer. Stock Synapse validates OpenID
