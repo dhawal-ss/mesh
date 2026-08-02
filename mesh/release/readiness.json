@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "ledgerId": "mesh-production-readiness",
-  "releaseSha": "9062083e350957df19d819e0226be431331b1d7e",
-  "updatedAt": "2026-08-02T08:08:26Z",
+  "releaseSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+  "updatedAt": "2026-08-02T10:40:27Z",
   "gates": [
     {
       "id": "r0.frontend-tests",
@@ -11,11 +11,11 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
-        "command": "Protected CI run 30738318302: npm test (109 files, 781 tests passed)",
+        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "command": "Protected CI run 30741296831: npm test (109 files, 781 tests passed)",
         "artifactPath": null,
         "environment": "Protected GitHub Actions Ubuntu runner; Node 22; Vitest v4.1.2; exact source SHA",
-        "collectedAt": "2026-08-02T07:48:12Z",
+        "collectedAt": "2026-08-02T09:28:40Z",
         "expiresAt": null
       },
       "owner": "Mesh client",
@@ -31,11 +31,11 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
-        "command": "Protected CI run 30738318302: npm run build:matrix; npm run check:bundle-size (entry 227.78 KiB; eager JS 447.14 KiB; all JS 1120.68 KiB; all assets 1554.36 KiB); clean local release preflight with -ExpectedSourceSha 9062083e350957df19d819e0226be431331b1d7e -VerifyFrontendBundle",
+        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "command": "Protected CI run 30741296831: npm run build:matrix; npm run check:bundle-size (entry 227.78 KiB; eager JS 447.14 KiB; all JS 1120.68 KiB; all assets 1554.36 KiB); exact-source local release preflight with -ExpectedSourceSha 42b87bf28288854f2ed18ccaf631c1180f7f44b6 -VerifyFrontendBundle",
         "artifactPath": null,
         "environment": "Protected GitHub Actions Ubuntu runner plus clean Windows exact-SHA preflight; Matrix text/community mode; version 0.1.0 remains release-blocked",
-        "collectedAt": "2026-08-02T07:48:12Z",
+        "collectedAt": "2026-08-02T09:28:40Z",
         "expiresAt": null
       },
       "owner": "Mesh client",
@@ -51,11 +51,11 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
-        "command": "Protected CI run 30738318302: Ubuntu Matrix suite 200 passed plus IPC/live-test contracts; Windows Matrix suite 199 passed plus IPC/live-test contracts",
+        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "command": "Protected CI run 30741296831: Ubuntu Matrix suite 201 passed plus IPC/live-test contracts; Windows Matrix suite 200 passed plus IPC/live-test contracts",
         "artifactPath": null,
         "environment": "Protected GitHub Actions Ubuntu and Windows runners; Cargo 1.93.0; exact source SHA",
-        "collectedAt": "2026-08-02T08:08:26Z",
+        "collectedAt": "2026-08-02T10:25:08Z",
         "expiresAt": null
       },
       "owner": "Mesh backend",
@@ -71,11 +71,11 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
-        "command": "Protected CI run 30738318302: legacy suite 219 passed; crypto contract 15 passed; 15 LAN network/soak and 3 live TURN tests ignored; 2 deterministic TURN tests passed",
+        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "command": "Protected CI run 30741296831: legacy suite 219 passed; crypto contract 15 passed; 15 LAN network/soak and 3 live TURN tests ignored; 2 deterministic TURN tests passed",
         "artifactPath": null,
         "environment": "Protected GitHub Actions Ubuntu runner; Cargo 1.93.0; exact source SHA",
-        "collectedAt": "2026-08-02T07:45:50Z",
+        "collectedAt": "2026-08-02T09:27:12Z",
         "expiresAt": null
       },
       "owner": "Mesh backend",
@@ -91,11 +91,11 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
-        "command": "Protected CI run 30738318302: npm run e2e (69 tests passed)",
+        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "command": "Protected CI run 30741296831: npm run e2e (69 tests passed)",
         "artifactPath": null,
         "environment": "Protected GitHub Actions Ubuntu runner; pinned Playwright Chromium; runtime budget sourceSha bound to current commit",
-        "collectedAt": "2026-08-02T07:48:12Z",
+        "collectedAt": "2026-08-02T09:28:40Z",
         "expiresAt": null
       },
       "owner": "Mesh client",
@@ -111,11 +111,11 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
+        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
         "command": "npm run check:ipc-contract (167 commands) and npm run check:ipc-types",
         "artifactPath": null,
         "environment": "Protected GitHub Actions Ubuntu and Windows runners; generated Rust-to-TypeScript contract; 167 commands; explicit renderer permission inventory active",
-        "collectedAt": "2026-08-02T08:08:26Z",
+        "collectedAt": "2026-08-02T10:25:08Z",
         "expiresAt": null
       },
       "owner": "Mesh client/backend boundary",
@@ -131,11 +131,11 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
-        "command": "Protected CI run 30738318302 and exact-SHA local gate: 22 Matrix and 13 legacy security-boundary tests passed",
+        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "command": "Protected CI run 30741296831 and exact-SHA local gate: 22 Matrix and 13 legacy security-boundary tests passed",
         "artifactPath": null,
         "environment": "Protected GitHub Actions Ubuntu and Windows runners plus clean Windows local workspace; Cargo 1.93.0; serialized feature-set runs",
-        "collectedAt": "2026-08-02T08:08:26Z",
+        "collectedAt": "2026-08-02T10:25:08Z",
         "expiresAt": null
       },
       "owner": "Mesh security",
@@ -151,11 +151,11 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
-        "command": "Protected CI run 30738318302: npm run check:public-services and npm run check:public-site",
+        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "command": "Protected CI run 30741296831: npm run check:public-services and npm run check:public-site",
         "artifactPath": null,
         "environment": "Protected GitHub Actions Ubuntu runner; public HTTPS service discovery; public-site validation",
-        "collectedAt": "2026-08-02T07:48:12Z",
+        "collectedAt": "2026-08-02T09:28:40Z",
         "expiresAt": null
       },
       "owner": "Mesh release",
@@ -171,11 +171,11 @@
       "releaseStatus": "local-pass",
       "status": "local-pass",
       "evidence": {
-        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
-        "command": "Protected security run 30738318299: npm audit (0 high vulnerabilities); shipping Matrix graph 0 known vulnerabilities and 7 reviewed warnings; two Hickory findings confined to the non-shipping legacy graph; history secret scans passed. Protected CI run 30738318302: third-party notices are deterministic with 1260 resolved entries and 0 unknown licenses",
+        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "command": "Protected security run 30741296837: npm audit (0 high vulnerabilities); shipping Matrix graph 0 known vulnerabilities and 7 reviewed warnings; two Hickory findings confined to the non-shipping legacy graph; history secret scans passed. Protected CI run 30741296831: third-party notices are deterministic with 1260 resolved entries and 0 unknown licenses",
         "artifactPath": null,
         "environment": "Protected GitHub Actions Ubuntu runner plus clean Windows exact-SHA preflight; Cargo 1.93.0; exact source, lockfile, and dependency policy",
-        "collectedAt": "2026-08-02T07:46:00Z",
+        "collectedAt": "2026-08-02T09:26:52Z",
         "expiresAt": null
       },
       "owner": "Mesh dependency security",
@@ -331,11 +331,11 @@
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
-        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
-        "command": "Two independent npm run setup:matrix-spike:reset and npm run test:matrix-spike cycles (2/2 tests passed in each cycle with source_sha=9062083e350957df19d819e0226be431331b1d7e and worktree=clean); two independent disposable backup/restore cycles passed",
+        "commitSha": "42b87bf28288854f2ed18ccaf631c1180f7f44b6",
+        "command": "Two independent npm run setup:matrix-spike:reset and npm run test:matrix-spike cycles (2/2 tests passed in each cycle with source_sha=42b87bf28288854f2ed18ccaf631c1180f7f44b6 and worktree=clean); two independent disposable backup/restore cycles passed",
         "artifactPath": null,
         "environment": "Windows local Docker/Synapse disposable two-homeserver stack; encrypted federation, restart recovery, fresh account registration, and second-device decryption; not public-provider or physical-device evidence",
-        "collectedAt": "2026-08-02T07:40:28Z",
+        "collectedAt": "2026-08-02T10:40:27Z",
         "expiresAt": null
       },
       "owner": "Mesh Matrix operations",
