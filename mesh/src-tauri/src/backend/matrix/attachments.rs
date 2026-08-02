@@ -521,6 +521,20 @@ impl MatrixBackend {
         Ok((parts.uri.to_string(), parts.headers))
     }
 
+    fn media_http_client() -> BackendResult<reqwest::Client> {
+        reqwest::Client::builder()
+            // Matrix media requests can carry an account access token. Never
+            // let an untrusted Location header choose its next destination or
+            // inherit those credentials. A caller can retry through fresh
+            // homeserver discovery instead of following redirects here.
+            .redirect(reqwest::redirect::Policy::none())
+            .min_tls_version(reqwest::tls::Version::TLS_1_2)
+            .connect_timeout(MEDIA_DOWNLOAD_CONNECT_TIMEOUT)
+            .read_timeout(MEDIA_DOWNLOAD_READ_TIMEOUT)
+            .build()
+            .map_err(|error| BackendError::Network(error.to_string()))
+    }
+
     async fn download_bounded_encrypted_media(
         client: &Client,
         encrypted_file: &EncryptedFile,
@@ -534,12 +548,7 @@ impl MatrixBackend {
             &supported_versions,
             &encrypted_file.url,
         )?;
-        let http = reqwest::Client::builder()
-            .min_tls_version(reqwest::tls::Version::TLS_1_2)
-            .connect_timeout(MEDIA_DOWNLOAD_CONNECT_TIMEOUT)
-            .read_timeout(MEDIA_DOWNLOAD_READ_TIMEOUT)
-            .build()
-            .map_err(|error| BackendError::Network(error.to_string()))?;
+        let http = Self::media_http_client()?;
         let response = http
             .get(url)
             .headers(headers)

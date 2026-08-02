@@ -3,6 +3,76 @@ use matrix_sdk::{authentication::SessionTokens, SessionMeta};
 use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+async fn spawn_media_http_server(
+    status: u16,
+    location: Option<String>,
+) -> (
+    String,
+    Arc<std::sync::Mutex<Vec<String>>>,
+    tokio::task::JoinHandle<()>,
+) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let origin = format!("http://{address}");
+    let location = location.map(|value| value.replace("{SELF}", &origin));
+    let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured = requests.clone();
+    let task = tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                break;
+            };
+            let captured = captured.clone();
+            let location = location.clone();
+            tokio::spawn(async move {
+                let mut request = Vec::with_capacity(2_048);
+                let mut chunk = [0_u8; 1_024];
+                loop {
+                    let Ok(read) = stream.read(&mut chunk).await else {
+                        return;
+                    };
+                    if read == 0 {
+                        return;
+                    }
+                    request.extend_from_slice(&chunk[..read]);
+                    if request.windows(4).any(|window| window == b"\r\n\r\n")
+                        || request.len() > 16 * 1024
+                    {
+                        break;
+                    }
+                }
+                captured
+                    .lock()
+                    .unwrap()
+                    .push(String::from_utf8_lossy(&request).into_owned());
+                let reason = match status {
+                    200 => "OK",
+                    301 => "Moved Permanently",
+                    302 => "Found",
+                    307 => "Temporary Redirect",
+                    308 => "Permanent Redirect",
+                    _ => "Test Response",
+                };
+                let location_header = location
+                    .map(|value| format!("Location: {value}\r\n"))
+                    .unwrap_or_default();
+                let body = if status == 200 {
+                    "mesh-media"
+                } else {
+                    "redirect denied"
+                };
+                let response = format!(
+                    "HTTP/1.1 {status} {reason}\r\n{location_header}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+                let _ = stream.shutdown().await;
+            });
+        }
+    });
+    (origin, requests, task)
+}
+
 async fn spawn_registration_capability_homeserver(
     availability_status: &'static str,
     availability_body: &'static str,
@@ -3247,6 +3317,79 @@ async fn matrix_attachment_download_accepts_streams_up_to_the_cap() {
             .await
             .is_err()
     );
+}
+
+#[tokio::test]
+async fn security_boundary_matrix_media_denies_every_redirect_status() {
+    for status in [301, 302, 307, 308] {
+        let (target, target_requests, target_task) = spawn_media_http_server(200, None).await;
+        let (source, source_requests, source_task) =
+            spawn_media_http_server(status, Some(format!("{target}/media"))).await;
+        let response = MatrixBackend::media_http_client()
+            .unwrap()
+            .get(format!("{source}/encrypted-media"))
+            .header("Authorization", "Bearer account-secret")
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status().as_u16(), status);
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        assert_eq!(source_requests.lock().unwrap().len(), 1);
+        assert!(target_requests.lock().unwrap().is_empty());
+        source_task.abort();
+        target_task.abort();
+    }
+}
+
+#[tokio::test]
+async fn security_boundary_matrix_media_denies_unsafe_redirect_destinations_and_loops() {
+    for location in [
+        "http://10.0.0.1/private",
+        "http://169.254.169.254/latest/meta-data",
+        "http://[::1]/loopback",
+        "http://[fe80::1]/link-local",
+        "http://user:password@example.invalid/credentialed",
+        "http://example.invalid/https-downgrade",
+        "https://unexpected.example.invalid/cross-origin",
+        "{SELF}/redirect-loop",
+    ] {
+        let (origin, requests, task) =
+            spawn_media_http_server(302, Some(location.to_owned())).await;
+        let response = MatrixBackend::media_http_client()
+            .unwrap()
+            .get(format!("{origin}/encrypted-media"))
+            .header("Authorization", "Bearer account-secret")
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status().as_u16(), 302, "redirect {location}");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 1, "redirect {location} was followed");
+        assert!(requests[0]
+            .to_ascii_lowercase()
+            .contains("authorization: bearer account-secret"));
+        drop(requests);
+        task.abort();
+    }
+}
+
+#[tokio::test]
+async fn security_boundary_matrix_media_allows_a_direct_same_origin_response() {
+    let (origin, requests, task) = spawn_media_http_server(200, None).await;
+    let response = MatrixBackend::media_http_client()
+        .unwrap()
+        .get(format!("{origin}/encrypted-media"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.bytes().await.unwrap(), b"mesh-media".as_slice());
+    assert_eq!(requests.lock().unwrap().len(), 1);
+    task.abort();
 }
 
 #[test]
