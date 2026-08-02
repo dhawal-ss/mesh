@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create the dedicated admission administrator and print a fresh access token.
+"""Create the dedicated least-privilege admission bot and print its access token.
 
 Passwords are read from stdin so they do not appear in the process list. The
 only stdout output is the service access token consumed by start.sh.
@@ -38,8 +38,9 @@ def request(
         with urllib.request.urlopen(operation, timeout=15) as response:
             payload = response.read(64 * 1024 + 1)
     except urllib.error.HTTPError as error:
-        detail = error.read(8 * 1024).decode("utf-8", "replace")
-        raise RuntimeError(f"Synapse returned HTTP {error.code}: {detail}") from None
+        # Upstream error bodies are untrusted and may reflect request secrets.
+        error.read(8 * 1024)
+        raise RuntimeError(f"Synapse returned HTTP {error.code}") from None
     if len(payload) > 64 * 1024:
         raise RuntimeError("Synapse returned an oversized response")
     return json.loads(payload or b"{}")
@@ -83,7 +84,10 @@ def main() -> None:
             f"/_synapse/admin/v2/users/{encoded_service_user}",
             {
                 "password": service_password,
-                "admin": True,
+                # This identity is intentionally not a Synapse administrator.
+                # Its authority is bounded by membership and power levels in
+                # the communities that explicitly add it.
+                "admin": False,
                 "deactivated": False,
                 "displayname": "Mesh admission service",
             },

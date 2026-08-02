@@ -9,12 +9,23 @@ interface ChannelsStore {
   /** Ordered compatibility snapshot for list consumers. */
   channels: Channel[]
   activeChannelId: string | null
+  refreshByCommunity: Record<string, CommunityRefreshState>
+  refreshRequests: Record<string, number>
   setChannels: (channels: Channel[]) => void
+  replaceCommunityChannels: (communityId: string, channels: Channel[]) => void
+  setCommunityRefresh: (communityId: string, state: CommunityRefreshState) => void
+  requestCommunityRefresh: (communityId: string) => void
   addChannel: (channel: Channel) => void
   upsertChannel: (channel: Channel) => void
   removeChannel: (id: string) => void
   patchChannel: (id: string, patch: Partial<Omit<Channel, 'id' | 'communityId'>>) => void
   setActiveChannel: (id: string | null) => void
+}
+
+export interface CommunityRefreshState {
+  status: 'idle' | 'loading' | 'loaded' | 'stale' | 'failed'
+  error: unknown | null
+  generation: number
 }
 
 function mergeChannel(existing: Channel | undefined, incoming: Channel): Channel {
@@ -48,6 +59,8 @@ export const useChannelStore = create<ChannelsStore>((set) => ({
   channelOrder: [],
   channels: [],
   activeChannelId: null,
+  refreshByCommunity: {},
+  refreshRequests: {},
 
   setChannels: (incoming) =>
     set((state) => {
@@ -65,6 +78,33 @@ export const useChannelStore = create<ChannelsStore>((set) => ({
       if (entitiesUnchanged && activeChannelId === state.activeChannelId) return state
       return { ...normalized, activeChannelId }
     }),
+
+  replaceCommunityChannels: (communityId, incoming) =>
+    set((state) => {
+      const retained = state.channels.filter((channel) => channel.communityId !== communityId)
+      const sanitized = incoming.filter((channel) => channel.communityId === communityId)
+      const normalized = normalizeChannels([...retained, ...sanitized], state.channelEntities)
+      const activeChannelId = state.activeChannelId
+        && normalized.channelEntities[state.activeChannelId]
+          ? state.activeChannelId
+          : normalized.channelOrder.find(
+              (id) => normalized.channelEntities[id].communityId === communityId,
+            ) ?? normalized.channelOrder[0] ?? null
+      return { ...normalized, activeChannelId }
+    }),
+
+  setCommunityRefresh: (communityId, refresh) =>
+    set((state) => ({
+      refreshByCommunity: { ...state.refreshByCommunity, [communityId]: refresh },
+    })),
+
+  requestCommunityRefresh: (communityId) =>
+    set((state) => ({
+      refreshRequests: {
+        ...state.refreshRequests,
+        [communityId]: (state.refreshRequests[communityId] ?? 0) + 1,
+      },
+    })),
 
   addChannel: (channel) =>
     set((state) => upsertChannelState(state, channel)),

@@ -99,7 +99,7 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
   return (
     <div className="space-y-8">
       <div className="space-y-2">
-        <p className="text-2xs uppercase tracking-eyebrow text-muted">
+        <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">
           {backendKind === 'matrix' ? 'Account setup' : 'Step 3 of 3'}
         </p>
         <h1 className="text-lg font-semibold tracking-tight text-primary">
@@ -189,13 +189,13 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
 
       <div className="flex items-center justify-between">
         {onBack && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={onBack}
-            className="text-sm text-secondary transition-colors hover:text-primary"
           >
-            &larr; Back to profile
-          </button>
+            Back to profile
+          </Button>
         )}
       </div>
     </div>

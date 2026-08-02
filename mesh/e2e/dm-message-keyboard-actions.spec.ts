@@ -273,7 +273,7 @@ async function openDirectMessage(page: Page): Promise<void> {
   await page.goto('/')
   await expect(page.getByRole('navigation', { name: 'Communities and direct messages' })).toBeVisible()
 
-  await page.getByRole('button', { name: 'Direct Messages', exact: true }).click()
+  await page.getByRole('button', { name: 'Direct messages', exact: true }).click()
   await expect(
     page.getByRole('complementary', { name: 'Direct message conversations' }),
   ).toBeVisible()

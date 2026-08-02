@@ -16,6 +16,8 @@ interface UseVirtualScrollOptions {
   overscanPx?: number
   /** Pixel threshold from bottom to consider "at bottom" */
   bottomThreshold?: number
+  /** Keep new or remeasured content pinned to the bottom. Message timelines use this; navigation lists do not. */
+  autoScrollToBottom?: boolean
 }
 
 export interface VirtualScrollState {
@@ -48,6 +50,7 @@ const DEFAULTS: Required<UseVirtualScrollOptions> = {
   estimatedGapHeight: 88,
   overscanPx: 600,
   bottomThreshold: 100,
+  autoScrollToBottom: true,
 }
 
 interface LayoutMemory {
@@ -130,17 +133,18 @@ export function useVirtualScroll(
     estimatedGapHeight,
     overscanPx,
     bottomThreshold,
+    autoScrollToBottom,
   } = { ...DEFAULTS, ...options }
 
   const scrollElementRef = useRef<HTMLDivElement | null>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
-  const isAtBottomRef = useRef(true)
+  const isAtBottomRef = useRef(autoScrollToBottom)
   const pendingAnchorRef = useRef<{ messageId: string; offset: number } | null>(null)
   const scrollFrameRef = useRef<number | null>(null)
 
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
-  const [isAtBottom, setIsAtBottom] = useState(true)
+  const [isAtBottom, setIsAtBottom] = useState(autoScrollToBottom)
   const [layoutMemory, setLayoutMemory] = useState<LayoutMemory>(() => ({
     items,
     measuredHeights: {},
@@ -253,6 +257,7 @@ export function useVirtualScroll(
   // --- Auto-scroll to bottom when at bottom ---
 
   useLayoutEffect(() => {
+    if (!autoScrollToBottom) return
     if (layoutItems.length === 0) return
     if (!isAtBottomRef.current) return
 
@@ -261,7 +266,7 @@ export function useVirtualScroll(
 
     el.scrollTop = el.scrollHeight
     setScrollTop(el.scrollTop)
-  }, [layoutItems.length, totalContentHeight])
+  }, [autoScrollToBottom, layoutItems.length, totalContentHeight])
 
   // --- Restore scroll anchor after prepend ---
 
@@ -414,8 +419,8 @@ export function useVirtualScroll(
   )
 
   const resetLayout = useCallback(() => {
-    isAtBottomRef.current = true
-    setIsAtBottom(true)
+    isAtBottomRef.current = autoScrollToBottom
+    setIsAtBottom(autoScrollToBottom)
     pendingAnchorRef.current = null
     setScrollTop(0)
     setViewportHeight(scrollElementRef.current?.clientHeight ?? 0)
@@ -423,7 +428,7 @@ export function useVirtualScroll(
       if (Object.keys(current.measuredHeights).length === 0) return current
       return { ...current, measuredHeights: {} }
     })
-  }, [])
+  }, [autoScrollToBottom])
 
   const setScrollAnchor = useCallback(
     (anchor: { messageId: string; offset: number } | null) => {

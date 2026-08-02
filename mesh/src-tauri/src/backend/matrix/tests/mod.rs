@@ -1,6 +1,150 @@
 use super::*;
 use matrix_sdk::{authentication::SessionTokens, SessionMeta};
 use serde_json::json;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+async fn spawn_media_http_server(
+    status: u16,
+    location: Option<String>,
+) -> (
+    String,
+    Arc<std::sync::Mutex<Vec<String>>>,
+    tokio::task::JoinHandle<()>,
+) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let origin = format!("http://{address}");
+    let location = location.map(|value| value.replace("{SELF}", &origin));
+    let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured = requests.clone();
+    let task = tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                break;
+            };
+            let captured = captured.clone();
+            let location = location.clone();
+            tokio::spawn(async move {
+                let mut request = Vec::with_capacity(2_048);
+                let mut chunk = [0_u8; 1_024];
+                loop {
+                    let Ok(read) = stream.read(&mut chunk).await else {
+                        return;
+                    };
+                    if read == 0 {
+                        return;
+                    }
+                    request.extend_from_slice(&chunk[..read]);
+                    if request.windows(4).any(|window| window == b"\r\n\r\n")
+                        || request.len() > 16 * 1024
+                    {
+                        break;
+                    }
+                }
+                captured
+                    .lock()
+                    .unwrap()
+                    .push(String::from_utf8_lossy(&request).into_owned());
+                let reason = match status {
+                    200 => "OK",
+                    301 => "Moved Permanently",
+                    302 => "Found",
+                    307 => "Temporary Redirect",
+                    308 => "Permanent Redirect",
+                    _ => "Test Response",
+                };
+                let location_header = location
+                    .map(|value| format!("Location: {value}\r\n"))
+                    .unwrap_or_default();
+                let body = if status == 200 {
+                    "mesh-media"
+                } else {
+                    "redirect denied"
+                };
+                let response = format!(
+                    "HTTP/1.1 {status} {reason}\r\n{location_header}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+                let _ = stream.shutdown().await;
+            });
+        }
+    });
+    (origin, requests, task)
+}
+
+async fn spawn_registration_capability_homeserver(
+    availability_status: &'static str,
+    availability_body: &'static str,
+) -> (
+    String,
+    Arc<std::sync::Mutex<Vec<String>>>,
+    tokio::task::JoinHandle<()>,
+) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured = requests.clone();
+    let task = tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                break;
+            };
+            let captured = captured.clone();
+            tokio::spawn(async move {
+                let mut request = Vec::with_capacity(2_048);
+                let mut chunk = [0_u8; 1_024];
+                loop {
+                    let Ok(read) = stream.read(&mut chunk).await else {
+                        return;
+                    };
+                    if read == 0 {
+                        return;
+                    }
+                    request.extend_from_slice(&chunk[..read]);
+                    if request.windows(4).any(|window| window == b"\r\n\r\n")
+                        || request.len() > 16 * 1024
+                    {
+                        break;
+                    }
+                }
+                let first_line = String::from_utf8_lossy(&request)
+                    .lines()
+                    .next()
+                    .unwrap_or_default()
+                    .to_owned();
+                captured.lock().unwrap().push(first_line.clone());
+                let (status, body) = if first_line.starts_with("GET /_matrix/client/versions ") {
+                    ("200 OK", r#"{"versions":["v1.11"]}"#)
+                } else if first_line.starts_with("GET /_matrix/client/v3/login ") {
+                    ("200 OK", r#"{"flows":[{"type":"m.login.password"}]}"#)
+                } else if first_line.starts_with("GET /_matrix/client/v3/register/available?") {
+                    (availability_status, availability_body)
+                } else if first_line.starts_with("GET /_matrix/media/v3/config ")
+                    || first_line.starts_with("GET /_matrix/client/v1/media/config ")
+                {
+                    ("200 OK", r#"{"m.upload.size":1048576}"#)
+                } else if first_line.starts_with("POST /_matrix/client/v3/register ") {
+                    // This deliberately permissive mutation endpoint makes an
+                    // accidental empty registration probe observable.
+                    (
+                        "200 OK",
+                        r#"{"user_id":"@unexpected:mock","access_token":"sentinel"}"#,
+                    )
+                } else {
+                    ("404 Not Found", r#"{"errcode":"M_NOT_FOUND"}"#)
+                };
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+                let _ = stream.shutdown().await;
+            });
+        }
+    });
+    (format!("http://{address}"), requests, task)
+}
 
 #[derive(Debug, serde::Deserialize)]
 struct CommunityInviteCorpusCase {
@@ -55,7 +199,7 @@ fn malformed_admission_error_bodies_preserve_http_diagnostics() {
     };
     assert!(detail.contains("HTTP 400"));
     assert!(detail.contains("malformed"));
-    assert!(detail.contains("service unavailable"));
+    assert!(!detail.contains("service unavailable"));
 
     let error = MatrixBackend::admission_error_response(
         reqwest::StatusCode::SERVICE_UNAVAILABLE,
@@ -65,7 +209,23 @@ fn malformed_admission_error_bodies_preserve_http_diagnostics() {
         panic!("malformed server error should remain a network error");
     };
     assert!(detail.contains("HTTP 503"));
-    assert!(detail.contains("not json"));
+    assert!(!detail.contains("not json"));
+}
+
+#[test]
+fn admission_errors_never_reflect_invitation_capabilities_to_ipc_or_logs() {
+    let sentinel = "sentinel-invitation-capability";
+    for body in [
+        format!(r#"{{"code":"bad","message":"reflected {sentinel}"}}"#),
+        format!("<html>{sentinel}</html>"),
+    ] {
+        let error = MatrixBackend::admission_error_response(
+            reqwest::StatusCode::BAD_REQUEST,
+            body.as_bytes(),
+        );
+        assert!(!format!("{error:?}").contains(sentinel));
+        assert!(!error.to_string().contains(sentinel));
+    }
 }
 
 #[test]
@@ -78,7 +238,7 @@ fn structured_admission_errors_keep_status_and_action_code() {
         panic!("invitation claiming should remain rate limited");
     };
     assert!(detail.contains("HTTP status 429"));
-    assert!(detail.contains("claim already in progress"));
+    assert!(!detail.contains("claim already in progress"));
 }
 
 #[test]
@@ -87,10 +247,13 @@ fn admission_invitation_parser_can_bind_local_links_without_restricting_received
     let code = "abcdefghijklmnopqrstuvwxyzABCDEFG_123456789";
 
     let public = MatrixBackend::parse_admission_invitation(
-        &format!("https://mesh.example/invite/{code}"),
+        &format!("https://mesh.example/invite#{code}"),
         Some(&expected),
     )
     .unwrap();
+    let debug = format!("{public:?}");
+    assert!(!debug.contains(code));
+    assert!(debug.contains("[REDACTED]"));
     assert_eq!(public.code, code);
     assert_eq!(public.api_origin.as_str(), "https://mesh.example/");
 
@@ -106,7 +269,7 @@ fn admission_invitation_parser_can_bind_local_links_without_restricting_received
             "mesh://join?v=5&kind=community&room=!garden%3Amesh.example&via=mesh.example\
              &community_service=https%3A%2F%2Fmatrix.mesh.example\
              &admission=https%3A%2F%2Fmesh.example&code={code}\
-             &resume=https%3A%2F%2Fmesh.example%2Finvite%2F{code}"
+             &resume=https%3A%2F%2Fmesh.example%2Finvite"
         ),
         Some(&expected),
     )
@@ -118,7 +281,7 @@ fn admission_invitation_parser_can_bind_local_links_without_restricting_received
 
     assert!(matches!(
         MatrixBackend::parse_admission_invitation(
-            &format!("https://other.example/invite/{code}"),
+            &format!("https://other.example/invite#{code}"),
             Some(&expected),
         ),
         Err(BackendError::PermissionDenied(_))
@@ -131,10 +294,15 @@ fn admission_invitation_parser_can_bind_local_links_without_restricting_received
     )
     .is_err());
     assert!(MatrixBackend::parse_admission_invitation(
-        &format!("https://other.example/invite/{code}"),
+        &format!("https://other.example/invite#{code}"),
         None,
     )
     .is_ok());
+    assert!(MatrixBackend::parse_admission_invitation(
+        &format!("https://mesh.example/invite/{code}"),
+        None,
+    )
+    .is_err());
 }
 
 #[test]
@@ -149,6 +317,52 @@ fn admission_invitation_origins_require_https_except_for_loopback_development() 
         ["sec", "ret"].concat()
     );
     assert!(MatrixBackend::normalize_admission_origin(&credentialed_origin).is_err());
+}
+
+#[test]
+fn admission_ssrf_policy_rejects_private_special_and_mapped_addresses() {
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    for address in [
+        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+        IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
+        IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1)),
+        IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+        IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254)),
+        IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)),
+        IpAddr::V4(Ipv4Addr::new(192, 88, 99, 1)),
+        IpAddr::V4(Ipv4Addr::new(224, 0, 0, 1)),
+        IpAddr::V6(Ipv6Addr::LOCALHOST),
+        "::192.168.1.1".parse().unwrap(),
+        "fc00::1".parse().unwrap(),
+        "fe80::1".parse().unwrap(),
+        "::ffff:127.0.0.1".parse().unwrap(),
+        "64:ff9b::192.168.1.1".parse().unwrap(),
+        "100::1".parse().unwrap(),
+        "2001:2::1".parse().unwrap(),
+        "2001:db8::1".parse().unwrap(),
+        "2002:c0a8:0101::1".parse().unwrap(),
+        "3fff::1".parse().unwrap(),
+        "4000::1".parse().unwrap(),
+    ] {
+        assert!(
+            MatrixBackend::unsafe_admission_address(address),
+            "unsafe address was accepted: {address}"
+        );
+    }
+    assert!(!MatrixBackend::unsafe_admission_address(IpAddr::V4(
+        Ipv4Addr::new(8, 8, 8, 8)
+    )));
+    assert!(!MatrixBackend::unsafe_admission_address(
+        "2606:4700:4700::1111".parse().unwrap()
+    ));
+
+    let source = include_str!("../admission.rs");
+    assert!(source.contains("resolve_to_addrs"));
+    assert!(source.contains("Policy::none"));
+    assert!(source.contains(".no_proxy()"));
+    assert!(source.contains("ADMISSION_DNS_TIMEOUT"));
+    assert!(source.contains("ADMISSION_REQUEST_TIMEOUT"));
 }
 
 #[test]
@@ -198,6 +412,71 @@ fn pending_invitation_metadata_is_bounded_opaque_and_secret_free() {
 }
 
 #[test]
+fn pending_invitation_metadata_suppresses_capabilities_duplicated_into_display_fields() {
+    let secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    let invite = format!(
+        "mesh://join?v=5&kind=community&room=%21{secret}%3Aexample.org\
+         &via={secret}.example.org\
+         &community_service=https%3A%2F%2F{secret}.example.org\
+         &admission=https%3A%2F%2Finvites.example.org%2F{secret}\
+         &code={secret}"
+    );
+    let metadata = MatrixBackend::pending_invitation_metadata(&invite, 42);
+    let renderer_metadata = serde_json::to_string(&metadata).unwrap();
+
+    assert_eq!(metadata.room_or_alias, None);
+    assert!(metadata.via.is_empty());
+    assert_eq!(metadata.service, None);
+    assert_eq!(metadata.admission_service, None);
+    assert!(!renderer_metadata
+        .to_ascii_lowercase()
+        .contains(&secret.to_ascii_lowercase()));
+}
+
+#[test]
+fn direct_invitation_parser_never_downgrades_admission_forms() {
+    let direct = MatrixBackend::parse_direct_community_invitation(
+        "mesh://join?v=5&kind=community&room=%21garden%3Aexample.org&via=example.org",
+    )
+    .unwrap();
+    assert_eq!(direct.0, "!garden:example.org");
+    assert_eq!(direct.1, vec!["example.org"]);
+
+    let secret = "abcdefghijklmnopqrstuvwxyzABCDEFG_123456789";
+    for unsafe_form in [
+        format!(
+            "mesh://join?v=5&kind=community&room=%21garden%3Aexample.org&via=example.org&admission=https%3A%2F%2Finvites.example.org&code={secret}"
+        ),
+        "mesh://join?v=5&kind=community&room=%21garden%3Aexample.org&via=example.org&admission=https%3A%2F%2Finvites.example.org".into(),
+        "mesh://join?v=5&kind=community&room=%21garden%3Aexample.org&via=example.org&code=invalid".into(),
+    ] {
+        assert!(MatrixBackend::parse_direct_community_invitation(&unsafe_form).is_err());
+    }
+}
+
+#[test]
+fn admission_response_streaming_limit_rejects_before_extending_the_buffer() {
+    let mut response = vec![0_u8; ADMISSION_RESPONSE_MAX_BYTES - 1];
+    MatrixBackend::append_admission_response_chunk(&mut response, &[1]).unwrap();
+    assert_eq!(response.len(), ADMISSION_RESPONSE_MAX_BYTES);
+
+    let error = MatrixBackend::append_admission_response_chunk(&mut response, &[2]).unwrap_err();
+    assert!(matches!(error, BackendError::Serialization(_)));
+    assert_eq!(response.len(), ADMISSION_RESPONSE_MAX_BYTES);
+
+    let source = include_str!("../admission.rs");
+    let reader = source
+        .split("async fn admission_response_bytes")
+        .nth(1)
+        .unwrap()
+        .split("fn admission_error_response")
+        .next()
+        .unwrap();
+    assert!(reader.contains(".chunk()"));
+    assert!(!reader.contains(".bytes()"));
+}
+
+#[test]
 fn pending_invitation_expiration_is_fail_closed_at_the_boundary() {
     let metadata = MatrixBackend::pending_invitation_metadata(
         "mesh://join?v=5&room=%21garden%3Acommunity.example",
@@ -212,6 +491,137 @@ fn pending_invitation_expiration_is_fail_closed_at_the_boundary() {
         &metadata,
         metadata.expires_at
     ));
+}
+
+#[tokio::test]
+async fn pending_invitation_initial_storage_survives_account_switches() {
+    let root = tempfile::tempdir().unwrap();
+    let backend = MatrixBackend::new(root.path().to_owned());
+    backend.runtime.write().await.profile_id = Some("first-account".into());
+    let first = backend.pending_invitation_write_storage();
+    backend.runtime.write().await.profile_id = Some("second-account".into());
+    let second = backend.pending_invitation_write_storage();
+
+    assert_eq!(first.store_root, root.path());
+    assert_eq!(first.profile_id, "default");
+    assert_eq!(first.store_root, second.store_root);
+    assert_eq!(first.key_namespace, second.key_namespace);
+
+    let source = include_str!("../../matrix.rs");
+    let registration = source
+        .split("async fn register_account(")
+        .nth(1)
+        .unwrap()
+        .split("async fn check_username_available")
+        .next()
+        .unwrap();
+    let join = source
+        .split("async fn join_pending_invitation(")
+        .nth(1)
+        .unwrap()
+        .split("async fn clear_pending_invitation")
+        .next()
+        .unwrap();
+    assert!(registration.contains("bound_profile_id = Some(profile_id.clone())"));
+    assert!(join.contains("bound_profile_id = Some(profile_id.clone())"));
+}
+
+#[tokio::test]
+async fn pending_invitation_ciphertext_read_is_bounded_before_decryption() {
+    let root = tempfile::tempdir().unwrap();
+    let backend = MatrixBackend::with_profile(root.path().to_owned(), "bounded-pending-store");
+    let storage = backend.storage_for_profile("default");
+    std::fs::write(
+        MatrixBackend::pending_invitation_path(&storage),
+        vec![0_u8; PENDING_INVITATION_MAX_CIPHERTEXT_BYTES + 1],
+    )
+    .unwrap();
+
+    let result = backend.read_pending_invitation_record(&storage).await;
+    let Err(BackendError::Crypto(message)) = result else {
+        panic!("oversized pending invitation ciphertext must fail before keychain/decryption");
+    };
+    assert!(message.contains("protected size limit"));
+
+    let source = include_str!("../../matrix.rs");
+    let reader = source
+        .split("async fn read_pending_invitation_record(")
+        .nth(1)
+        .unwrap()
+        .split("async fn write_pending_invitation_record")
+        .next()
+        .unwrap();
+    let writer = source
+        .split("async fn write_pending_invitation_record(")
+        .nth(1)
+        .unwrap()
+        .split("async fn remove_pending_invitation_record")
+        .next()
+        .unwrap();
+    assert!(reader.contains(".take((PENDING_INVITATION_MAX_CIPHERTEXT_BYTES + 1)"));
+    assert!(reader.contains("plaintext.zeroize()"));
+    assert!(writer.contains("plaintext.zeroize()"));
+}
+
+#[test]
+fn pending_invitation_join_is_serialized_against_account_transitions() {
+    let source = include_str!("../../matrix.rs");
+    let join = source
+        .split("async fn join_pending_invitation(")
+        .nth(1)
+        .unwrap()
+        .split("async fn clear_pending_invitation")
+        .next()
+        .unwrap();
+    assert!(join.contains("account_transition_gate.lock().await"));
+    assert!(join.contains("bound_profile_id"));
+    assert!(join.contains("joining_started_at"));
+    assert!(join.contains("if result.is_ok()"));
+
+    for transition in [
+        "async fn login(",
+        "async fn register_account(",
+        "async fn start_oidc_login(",
+        "async fn restore_session(",
+        "async fn logout(",
+        "async fn remove_local_account(",
+        "async fn switch_account(",
+    ] {
+        let implementation = source.split(transition).nth(1).unwrap();
+        assert!(
+            implementation
+                .lines()
+                .take(8)
+                .any(|line| line.contains("account_transition_gate.lock().await")),
+            "{transition} does not participate in the account-transition gate"
+        );
+    }
+}
+
+#[test]
+fn pending_invitation_preview_is_local_only_and_contact_starts_at_join() {
+    let source = include_str!("../../matrix.rs");
+    let preview = source
+        .split("async fn peek_pending_invitation(")
+        .nth(1)
+        .unwrap()
+        .split("async fn join_pending_invitation")
+        .next()
+        .unwrap();
+    assert!(preview.contains("find_pending_invitation_record"));
+    assert!(!preview.contains("self.client()"));
+    assert!(!preview.contains("resolve_admission_invitation"));
+    assert!(!preview.contains("claim_community_invite"));
+    assert!(!preview.contains("invite_details"));
+
+    let join = source
+        .split("async fn join_pending_invitation(")
+        .nth(1)
+        .unwrap()
+        .split("async fn clear_pending_invitation")
+        .next()
+        .unwrap();
+    assert!(join.contains("claim_community_invite"));
 }
 
 #[test]
@@ -246,6 +656,9 @@ fn community_invitation_response_does_not_select_the_users_account_service() {
         admission.community_service_display_name.as_deref(),
         Some("Mesh Community Service")
     );
+    let renderer_payload = serde_json::to_string(&admission).unwrap();
+    assert!(!renderer_payload.contains("registration-token"));
+    assert!(!renderer_payload.contains("registration_token"));
 
     let unsafe_service = AdmissionServiceResponse {
         version: 4,
@@ -261,6 +674,94 @@ fn community_invitation_response_does_not_select_the_users_account_service() {
         community_service_display_name: None,
     };
     assert!(MatrixBackend::validate_admission_response(unsafe_service, true).is_err());
+}
+
+#[test]
+fn registration_capability_discovery_never_submits_registration_data() {
+    let source = include_str!("../../matrix.rs");
+    let capability = source
+        .split("async fn service_capabilities(")
+        .nth(1)
+        .unwrap()
+        .split("async fn oidc_status")
+        .next()
+        .unwrap();
+    assert!(capability.contains("get_username_availability::v3::Request"));
+    assert!(capability.contains("MatrixRegistrationAvailability::Unknown"));
+    assert!(!capability.contains("RegistrationRequest"));
+    assert!(!capability.contains("matrix_auth().register"));
+    assert!(!capability.contains("register_account"));
+    assert!(!capability.contains("access_token"));
+}
+
+#[tokio::test]
+async fn registration_capability_probe_is_non_mutating_across_server_policies() {
+    let cases = [
+        (
+            "permissive",
+            "200 OK",
+            r#"{"available":true}"#,
+            MatrixRegistrationAvailability::Unknown,
+        ),
+        (
+            "disabled",
+            "403 Forbidden",
+            r#"{"errcode":"M_FORBIDDEN","error":"registration disabled"}"#,
+            MatrixRegistrationAvailability::Closed,
+        ),
+        (
+            "token-required",
+            "200 OK",
+            r#"{"available":true}"#,
+            MatrixRegistrationAvailability::Unknown,
+        ),
+        (
+            "unavailable",
+            "400 Bad Request",
+            r#"{"errcode":"M_UNKNOWN","error":"temporarily unavailable"}"#,
+            MatrixRegistrationAvailability::Unknown,
+        ),
+        (
+            "malformed",
+            "200 OK",
+            r#"{"available":"yes"}"#,
+            MatrixRegistrationAvailability::Unknown,
+        ),
+    ];
+
+    for (name, status, body, expected) in cases {
+        let (homeserver, requests, server) =
+            spawn_registration_capability_homeserver(status, body).await;
+        let root = tempfile::tempdir().unwrap();
+        let backend = MatrixBackend::new(root.path().to_owned());
+        let capabilities = backend
+            .service_capabilities(homeserver)
+            .await
+            .unwrap_or_else(|error| panic!("{name} mock capability probe failed: {error:?}"));
+        assert_eq!(capabilities.registration, expected, "case {name}");
+        let captured = requests.lock().unwrap().clone();
+        assert!(
+            captured
+                .iter()
+                .any(|request| request.starts_with("GET /_matrix/client/v3/register/available?")),
+            "case {name}: {captured:?}"
+        );
+        assert!(
+            captured
+                .iter()
+                .all(|request| !request.starts_with("POST /_matrix/client/v3/register ")),
+            "case {name} issued a mutating registration request: {captured:?}"
+        );
+        assert!(
+            captured.iter().all(|request| {
+                !request.contains("password=")
+                    && !request.contains("access_token=")
+                    && !request.contains("refresh_token=")
+            }),
+            "case {name} leaked account material into a request target: {captured:?}"
+        );
+        server.abort();
+    }
 }
 
 const MATRIX_PRODUCTION_SOURCES: &[(&str, &str)] = &[
@@ -457,11 +958,11 @@ fn wire_privacy_presence_requires_sharing_without_invisible_mode() {
     };
     let private = WirePrivacyPreferences {
         share_presence: false,
-        ..visible
+        ..visible.clone()
     };
     let invisible = WirePrivacyPreferences {
         invisible_mode: true,
-        ..visible
+        ..visible.clone()
     };
 
     assert_eq!(visible.presence(), PresenceState::Online);
@@ -498,13 +999,53 @@ fn typing_privacy_only_sends_opt_in_or_required_cleanup() {
     let private = WirePrivacyPreferences::default();
     let opted_in = WirePrivacyPreferences {
         send_typing_indicators: true,
-        ..private
+        ..private.clone()
     };
 
-    assert!(!private.should_send_typing_notice(false, true));
-    assert!(!private.should_send_typing_notice(false, false));
-    assert!(private.should_send_typing_notice(true, false));
-    assert!(opted_in.should_send_typing_notice(false, true));
+    assert!(!private.should_send_typing_notice("!room:example.org", false, true));
+    assert!(!private.should_send_typing_notice("!room:example.org", false, false));
+    assert!(private.should_send_typing_notice("!room:example.org", true, false));
+    assert!(opted_in.should_send_typing_notice("!room:example.org", false, true));
+}
+
+#[test]
+fn conversation_privacy_overrides_publication_and_reciprocal_display() {
+    let privacy = WirePrivacyPreferences {
+        read_receipt_mode: ReadReceiptMode::Private,
+        send_typing_indicators: true,
+        conversation_privacy: std::collections::BTreeMap::from([
+            (
+                "!private:example.org".into(),
+                ConversationPrivacyOverride {
+                    read_receipt_mode: Some(ReadReceiptMode::Off),
+                    send_typing_indicators: Some(false),
+                },
+            ),
+            (
+                "!public:example.org".into(),
+                ConversationPrivacyOverride {
+                    read_receipt_mode: Some(ReadReceiptMode::Public),
+                    send_typing_indicators: None,
+                },
+            ),
+        ]),
+        ..WirePrivacyPreferences::default()
+    };
+
+    assert_eq!(
+        privacy.read_receipt_mode_for("!private:example.org"),
+        ReadReceiptMode::Off
+    );
+    assert_eq!(
+        privacy.read_receipt_mode_for("!public:example.org"),
+        ReadReceiptMode::Public
+    );
+    assert_eq!(
+        privacy.read_receipt_mode_for("!inherited:example.org"),
+        ReadReceiptMode::Private
+    );
+    assert!(!privacy.sends_typing_for("!private:example.org"));
+    assert!(privacy.sends_typing_for("!inherited:example.org"));
 }
 
 fn password_session() -> MatrixSession {
@@ -1456,35 +1997,6 @@ fn mention_metadata_serializes_on_plain_messages_and_replies() {
 }
 
 #[test]
-fn oidc_client_id_configuration_fails_closed() {
-    assert_eq!(MatrixBackend::normalize_oidc_client_id(None).unwrap(), None);
-    assert_eq!(
-        MatrixBackend::normalize_oidc_client_id(Some("  mesh-desktop  ".into())).unwrap(),
-        Some("mesh-desktop".into())
-    );
-    assert!(MatrixBackend::normalize_oidc_client_id(Some("bad\nclient".into())).is_err());
-    assert!(MatrixBackend::normalize_oidc_client_id(Some("x".repeat(513))).is_err());
-}
-
-#[test]
-fn oidc_requires_every_native_authorization_capability() {
-    assert!(MatrixBackend::has_required_oidc_capabilities(
-        true, true, true, true, true
-    ));
-    for missing in 0..5 {
-        let mut capabilities = [true; 5];
-        capabilities[missing] = false;
-        assert!(!MatrixBackend::has_required_oidc_capabilities(
-            capabilities[0],
-            capabilities[1],
-            capabilities[2],
-            capabilities[3],
-            capabilities[4],
-        ));
-    }
-}
-
-#[test]
 fn persisted_sessions_record_auth_kind_and_migrate_password_v1() {
     let current = PersistedSession {
         homeserver: "https://matrix.example.org/".into(),
@@ -1799,7 +2311,6 @@ fn direct_room_lookups_are_limited_to_guard_or_prejoin_paths() {
     let allowed = [
         "protected_joined_room",
         "protected_joined_room_if_available",
-        "prejoin_invited_room_if_available",
         "room_for_cleanup_redaction",
         "matrix_room_is_encrypted",
         "knock_community",
@@ -2015,6 +2526,10 @@ fn production_accounts_use_stable_separate_store_and_key_namespaces() {
         MatrixBackend::recovery_test_key(&alice),
         MatrixBackend::recovery_test_key(&bob)
     );
+    assert_ne!(
+        MatrixBackend::recovery_credential_key(&alice),
+        MatrixBackend::recovery_credential_key(&bob)
+    );
     assert!(alice
         .store_root
         .starts_with(root.path().join("matrix").join("accounts")));
@@ -2087,6 +2602,7 @@ fn security_boundary_local_account_removal_erases_every_artifact_and_preserves_o
         MatrixBackend::store_passphrase_key(&other),
         MatrixBackend::trusted_devices_key(&other),
         MatrixBackend::recovery_test_key(&other),
+        MatrixBackend::recovery_credential_key(&other),
     ];
     let secrets = RefCell::new(
         target_keys
@@ -2161,6 +2677,32 @@ fn security_boundary_local_account_removal_fails_closed_when_keychain_erasure_is
     assert!(error
         .to_string()
         .contains("remained after local account cleanup"));
+}
+
+#[test]
+fn local_account_store_cleanup_retries_transient_windows_lock() {
+    let attempts = std::cell::Cell::new(0_u8);
+    let waits = std::cell::RefCell::new(Vec::new());
+    let path = std::path::Path::new("C:/temp/matrix-account");
+
+    MatrixBackend::remove_account_store_with_retry_with(
+        path,
+        |_| Ok(attempts.get() < 3),
+        |_| {
+            attempts.set(attempts.get() + 1);
+            if attempts.get() < 3 {
+                Err("sharing violation".into())
+            } else {
+                Ok(())
+            }
+        },
+        |delay| waits.borrow_mut().push(delay),
+    )
+    .unwrap();
+
+    assert_eq!(attempts.get(), 3);
+    assert_eq!(waits.borrow().len(), 2);
+    assert!(waits.borrow()[0] < waits.borrow()[1]);
 }
 
 #[test]
@@ -2442,7 +2984,6 @@ fn encrypted_matrix_attachment_projection_requires_encrypted_file_metadata() {
         resolved.encrypted_file.url.as_str(),
         "mxc://example.org/media"
     );
-    assert!(resolved.thumbnail.is_some());
     let attachment = resolved.metadata;
     assert_eq!(attachment.filename, "report.pdf");
     assert_eq!(attachment.size, 42);
@@ -2624,7 +3165,7 @@ fn matrix_media_filename_policy_rejects_executable_names() {
     assert!(MatrixBackend::safe_media_filename("scripts/run.ps1").is_err());
     assert_eq!(
         MatrixBackend::safe_media_filename(" ").unwrap(),
-        "attachment.bin"
+        "attachment"
     );
 }
 
@@ -2778,6 +3319,79 @@ async fn matrix_attachment_download_accepts_streams_up_to_the_cap() {
     );
 }
 
+#[tokio::test]
+async fn security_boundary_matrix_media_denies_every_redirect_status() {
+    for status in [301, 302, 307, 308] {
+        let (target, target_requests, target_task) = spawn_media_http_server(200, None).await;
+        let (source, source_requests, source_task) =
+            spawn_media_http_server(status, Some(format!("{target}/media"))).await;
+        let response = MatrixBackend::media_http_client()
+            .unwrap()
+            .get(format!("{source}/encrypted-media"))
+            .header("Authorization", "Bearer account-secret")
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status().as_u16(), status);
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        assert_eq!(source_requests.lock().unwrap().len(), 1);
+        assert!(target_requests.lock().unwrap().is_empty());
+        source_task.abort();
+        target_task.abort();
+    }
+}
+
+#[tokio::test]
+async fn security_boundary_matrix_media_denies_unsafe_redirect_destinations_and_loops() {
+    for location in [
+        "http://10.0.0.1/private",
+        "http://169.254.169.254/latest/meta-data",
+        "http://[::1]/loopback",
+        "http://[fe80::1]/link-local",
+        "http://user:password@example.invalid/credentialed",
+        "http://example.invalid/https-downgrade",
+        "https://unexpected.example.invalid/cross-origin",
+        "{SELF}/redirect-loop",
+    ] {
+        let (origin, requests, task) =
+            spawn_media_http_server(302, Some(location.to_owned())).await;
+        let response = MatrixBackend::media_http_client()
+            .unwrap()
+            .get(format!("{origin}/encrypted-media"))
+            .header("Authorization", "Bearer account-secret")
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status().as_u16(), 302, "redirect {location}");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 1, "redirect {location} was followed");
+        assert!(requests[0]
+            .to_ascii_lowercase()
+            .contains("authorization: bearer account-secret"));
+        drop(requests);
+        task.abort();
+    }
+}
+
+#[tokio::test]
+async fn security_boundary_matrix_media_allows_a_direct_same_origin_response() {
+    let (origin, requests, task) = spawn_media_http_server(200, None).await;
+    let response = MatrixBackend::media_http_client()
+        .unwrap()
+        .get(format!("{origin}/encrypted-media"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.bytes().await.unwrap(), b"mesh-media".as_slice());
+    assert_eq!(requests.lock().unwrap().len(), 1);
+    task.abort();
+}
+
 #[test]
 fn matrix_media_download_endpoint_prefers_authenticated_media() {
     let url = matrix_sdk::ruma::OwnedMxcUri::from("mxc://example.org/abc123");
@@ -2871,6 +3485,29 @@ async fn lightbox_image_scheduler_limits_full_image_reads() {
         backend.lightbox_image_loads.available_permits(),
         MAX_CONCURRENT_LIGHTBOX_IMAGE_LOADS
     );
+
+    let source = include_str!("../../matrix.rs");
+    let loader = source
+        .split("async fn load_attachment_image(")
+        .nth(1)
+        .unwrap()
+        .split("async fn cancel_attachment_download")
+        .next()
+        .unwrap();
+    assert!(loader.contains("acquire_media_transfer_permits"));
+    assert!(loader.contains("media_download_slots"));
+    assert!(loader.contains("media_inflight_bytes"));
+    assert!(loader.contains("Self::media_reservation_bytes"));
+    assert_eq!(MatrixBackend::media_reservation_bytes(1), 1);
+    assert_eq!(
+        MatrixBackend::media_reservation_bytes(MAX_ATTACHMENT_BYTES),
+        MAX_ATTACHMENT_BYTES
+    );
+    assert_eq!(
+        MatrixBackend::media_reservation_bytes(0),
+        MAX_ATTACHMENT_BYTES,
+        "unknown-length lightbox reads must reserve the full native transfer cap"
+    );
     let permit = backend.lightbox_image_loads.acquire().await.unwrap();
     assert_eq!(backend.lightbox_image_loads.available_permits(), 0);
     drop(permit);
@@ -2881,73 +3518,21 @@ async fn lightbox_image_scheduler_limits_full_image_reads() {
 }
 
 #[test]
-fn inline_thumbnail_sanitization_requires_exact_protected_metadata() {
-    let source = image::DynamicImage::new_rgb8(64, 32);
-    let mut encoded = Cursor::new(Vec::new());
-    source
-        .write_to(&mut encoded, image::ImageFormat::Png)
+fn received_encrypted_thumbnails_remain_outside_plaintext_loading() {
+    let source = include_str!("../../matrix.rs");
+    let loader = source
+        .split("async fn load_attachment_thumbnail(")
+        .nth(1)
+        .unwrap()
+        .split("async fn load_attachment_image")
+        .next()
         .unwrap();
-    let encoded = encoded.into_inner();
-    let metadata = AttachmentThumbnailDto {
-        file_hash: "matrix-sha256:protected-thumbnail".into(),
-        size: encoded.len() as u64,
-        width: 64,
-        height: 32,
-        content_type: "image/png".into(),
-    };
-
-    let sanitized = MatrixBackend::sanitize_inline_thumbnail(&encoded, &metadata).unwrap();
-    assert!(sanitized.starts_with(b"\x89PNG\r\n\x1a\n"));
-    assert!(sanitized.len() <= MAX_THUMBNAIL_BYTES);
-
-    let mut wrong_size = metadata.clone();
-    wrong_size.size += 1;
-    assert!(MatrixBackend::sanitize_inline_thumbnail(&encoded, &wrong_size).is_err());
-
-    let mut wrong_dimensions = metadata;
-    wrong_dimensions.width += 1;
-    assert!(MatrixBackend::sanitize_inline_thumbnail(&encoded, &wrong_dimensions).is_err());
-
-    let oversized_source = image::DynamicImage::new_rgb8(1024, 512);
-    let mut oversized = Cursor::new(Vec::new());
-    oversized_source
-        .write_to(&mut oversized, image::ImageFormat::Png)
-        .unwrap();
-    let oversized = oversized.into_inner();
-    let forged_metadata = AttachmentThumbnailDto {
-        file_hash: "matrix-sha256:forged-thumbnail".into(),
-        size: oversized.len() as u64,
-        width: 512,
-        height: 256,
-        content_type: "image/png".into(),
-    };
-    assert!(
-        MatrixBackend::sanitize_inline_thumbnail(&oversized, &forged_metadata).is_err(),
-        "received previews must never be resized into matching forged metadata"
-    );
-}
-
-#[tokio::test]
-async fn inline_thumbnail_scheduler_caps_concurrent_work() {
-    let backend = MatrixBackend::with_profile(
-        std::env::temp_dir().join("mesh-thumbnail-scheduler-test"),
-        "thumbnail-scheduler",
-    );
-    assert_eq!(
-        backend.thumbnail_loads.available_permits(),
-        MAX_CONCURRENT_THUMBNAIL_LOADS
-    );
-    let permits = backend
-        .thumbnail_loads
-        .acquire_many(MAX_CONCURRENT_THUMBNAIL_LOADS as u32)
-        .await
-        .unwrap();
-    assert!(backend.thumbnail_loads.try_acquire().is_err());
-    drop(permits);
-    assert_eq!(
-        backend.thumbnail_loads.available_permits(),
-        MAX_CONCURRENT_THUMBNAIL_LOADS
-    );
+    assert!(loader.contains("BackendError::Unsupported"));
+    assert!(loader.contains("remain encrypted"));
+    assert!(!loader.contains("download_bounded_encrypted_media"));
+    let attachment_source = include_str!("../attachments.rs");
+    assert!(!attachment_source.contains(&["resolve_protected_", "thumbnail"].concat()));
+    assert!(!attachment_source.contains(&["sanitize_inline_", "thumbnail"].concat()));
 }
 
 #[test]
@@ -3128,4 +3713,80 @@ fn matrix_transfer_failure_is_typed_as_restart_from_zero() {
     assert_eq!(serialized["state"], "failed");
     assert_eq!(serialized["retryMode"], "restart-from-zero");
     assert_eq!(serialized["totalBytes"], 100);
+}
+
+#[tokio::test]
+async fn media_scheduler_cancellation_releases_slots_and_byte_reservations() {
+    let slots = Arc::new(Semaphore::new(1));
+    let bytes = Arc::new(Semaphore::new(8));
+    let first_cancel = CancellationToken::new();
+    let first = MatrixBackend::acquire_media_transfer_permits(
+        slots.clone(),
+        bytes.clone(),
+        8,
+        &first_cancel,
+    )
+    .await
+    .unwrap();
+    assert_eq!(slots.available_permits(), 0);
+    assert_eq!(bytes.available_permits(), 0);
+
+    let waiting_cancel = CancellationToken::new();
+    waiting_cancel.cancel();
+    let waiting = MatrixBackend::acquire_media_transfer_permits(
+        slots.clone(),
+        bytes.clone(),
+        1,
+        &waiting_cancel,
+    )
+    .await;
+    assert!(waiting.is_err());
+
+    drop(first);
+    assert_eq!(slots.available_permits(), 1);
+    assert_eq!(bytes.available_permits(), 8);
+    let recovered = MatrixBackend::acquire_media_transfer_permits(
+        slots.clone(),
+        bytes.clone(),
+        8,
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    drop(recovered);
+    assert_eq!(slots.available_permits(), 1);
+    assert_eq!(bytes.available_permits(), 8);
+
+    let oversized = MatrixBackend::acquire_media_transfer_permits(
+        slots.clone(),
+        bytes.clone(),
+        MAX_ATTACHMENT_BYTES + MAX_THUMBNAIL_BYTES as u64 + 1,
+        &CancellationToken::new(),
+    )
+    .await;
+    assert!(matches!(
+        oversized,
+        Err(BackendError::InvalidConfiguration(_))
+    ));
+    assert_eq!(slots.available_permits(), 1);
+    assert_eq!(bytes.available_permits(), 8);
+}
+
+#[test]
+fn native_message_limit_is_enforced_in_utf8_bytes_for_send_dm_edit_and_captions() {
+    let at_limit = "é".repeat(MAX_MESSAGE_BODY_BYTES / 2);
+    assert_eq!(at_limit.len(), MAX_MESSAGE_BODY_BYTES);
+    assert!(MatrixBackend::validate_message_body(&at_limit, "message body").is_ok());
+    assert!(MatrixBackend::validate_message_body(&(at_limit + "é"), "message body").is_err());
+
+    let source = include_str!("../../matrix.rs");
+    assert!(source.matches("Self::validate_message_body(&body").count() >= 5);
+    let edit = source
+        .split("async fn edit_message(")
+        .nth(1)
+        .unwrap()
+        .split("async fn redact_message")
+        .next()
+        .unwrap();
+    assert!(edit.contains("Self::validate_message_body"));
 }

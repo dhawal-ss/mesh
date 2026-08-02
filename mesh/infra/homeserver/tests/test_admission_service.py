@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import dataclasses
 import importlib.util
+import io
 import sqlite3
 import sys
 import tempfile
 import time
 import unittest
+import urllib.error
+import urllib.parse
+import uuid
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "admission_service.py"
@@ -37,8 +43,8 @@ class FakeMatrix:
         if path == "/_matrix/client/v3/account/whoami":
             return {
                 "user_id": (
-                    "@creator:mesh.test"
-                    if token == "creator-token"
+                    "@mesh-admission-service:mesh.test"
+                    if token == "admission-bot-token"
                     else "@claimant:mesh.test"
                 )
             }
@@ -102,7 +108,8 @@ class AdmissionServiceTests(unittest.TestCase):
             homeserver_public_url="http://127.0.0.1:8008",
             homeserver_internal_url="http://synapse:8008",
             public_origin="http://127.0.0.1:8090",
-            admin_access_token="service-admin-token",
+            service_user_id="@mesh-admission-service:mesh.test",
+            service_access_token="admission-bot-token",
             signing_key=bytes(range(32)),
             postgres_host=None,
             postgres_port=5432,
@@ -114,11 +121,16 @@ class AdmissionServiceTests(unittest.TestCase):
             bind_port=8090,
         )
         self.matrix = FakeMatrix()
+        self.issuer_calls: list[tuple[str, str, int]] = []
         self.store = admission.InvitationStore(self.config)
         self.application = admission.AdmissionApplication(
             self.config,
             self.store,
             self.matrix,
+            lambda proof: str(proof["user_id"]),
+            lambda action, token, expires_at: self.issuer_calls.append(
+                (action, token, expires_at)
+            ),
         )
 
     def tearDown(self) -> None:
@@ -126,10 +138,37 @@ class AdmissionServiceTests(unittest.TestCase):
 
     def create(self) -> tuple[str, dict[str, Any]]:
         created = self.application.create_invitation(
-            "creator-token",
+            self.identity_proof(),
             "!community:mesh.test",
         )
-        return created["invite_url"].rsplit("/", 1)[1], created
+        return urllib.parse.urlsplit(created["invite_url"]).fragment, created
+
+    def identity_proof(self, **changes: Any) -> dict[str, Any]:
+        proof: dict[str, Any] = {
+            "proof_id": str(uuid.uuid4()),
+            "purpose": "create",
+            "subject": "!community:mesh.test",
+            "audience": self.config.public_origin,
+            "user_id": "@creator:mesh.test",
+            "access_token": "short-lived-openid-proof",
+            "token_type": "Bearer",
+            "matrix_server_name": "mesh.test",
+            "expires_in": 300,
+        }
+        proof.update(changes)
+        return proof
+
+    def claim_proof(self, code: str, user_id: str = "@claimant:public.test") -> dict[str, Any]:
+        return self.identity_proof(
+            purpose="claim",
+            subject=code,
+            user_id=user_id,
+            matrix_server_name=user_id.split(":", 1)[1],
+            access_token=f"short-lived-claim-openid-proof-{uuid.uuid4()}",
+        )
+
+    def claim(self, code: str, user_id: str = "@claimant:public.test") -> dict[str, Any]:
+        return self.application.claim_invitation(code, user_id, self.claim_proof(code, user_id))
 
     def test_create_resolve_stores_only_digests_and_derived_registration(self) -> None:
         code, created = self.create()
@@ -138,7 +177,7 @@ class AdmissionServiceTests(unittest.TestCase):
 
         self.assertEqual(
             created["invite_url"],
-            f"http://127.0.0.1:8090/invite/{code}",
+            f"http://127.0.0.1:8090/invite#{code}",
         )
         self.assertEqual(resolved["registration_token"], derived)
         self.assertEqual(resolved["room_id"], "!community:mesh.test")
@@ -155,13 +194,25 @@ class AdmissionServiceTests(unittest.TestCase):
         self.assertNotEqual(stored, code)
         self.assertNotEqual(stored, derived)
 
+    def test_service_identity_is_bound_to_the_configured_non_admin_bot(self) -> None:
+        self.application.verify_service_identity()
+        self.assertIn(
+            (
+                "GET",
+                "/_matrix/client/v3/account/whoami",
+                None,
+                "admission-bot-token",
+            ),
+            self.matrix.calls,
+        )
+
     def test_claim_invites_once_and_invalidates_resolution(self) -> None:
         code, _ = self.create()
         whoami_before_claim = len([
             call for call in self.matrix.calls
             if call[1] == "/_matrix/client/v3/account/whoami"
         ])
-        claimed = self.application.claim_invitation(code, "@claimant:public.test")
+        claimed = self.claim(code)
 
         self.assertEqual(claimed["room_id"], "!community:mesh.test")
         invite_calls = [
@@ -186,7 +237,7 @@ class AdmissionServiceTests(unittest.TestCase):
     def test_claim_rejects_an_invalid_account_without_consuming_the_invitation(self) -> None:
         code, _ = self.create()
         with self.assertRaises(admission.AdmissionError) as raised:
-            self.application.claim_invitation(code, "not-a-matrix-id")
+            self.application.claim_invitation(code, "not-a-matrix-id", {})
         self.assertEqual(raised.exception.code, "user_id_invalid")
         self.assertEqual(
             self.application.resolve_invitation(code)["room_id"],
@@ -198,13 +249,13 @@ class AdmissionServiceTests(unittest.TestCase):
         self.matrix.fail_next_invite = True
 
         with self.assertRaises(admission.AdmissionError):
-            self.application.claim_invitation(code, "@claimant:public.test")
+            self.claim(code)
         self.assertEqual(
             self.application.resolve_invitation(code)["room_id"],
             "!community:mesh.test",
         )
         self.assertEqual(
-            self.application.claim_invitation(code, "@claimant:public.test")["version"],
+            self.claim(code)["version"],
             4,
         )
 
@@ -215,7 +266,7 @@ class AdmissionServiceTests(unittest.TestCase):
             "%21general%3Amesh.test": "invite",
         }
 
-        self.application.claim_invitation(code, "@claimant:public.test")
+        self.claim(code)
         invite_calls = [
             call for call in self.matrix.calls if call[1].endswith("/invite")
         ]
@@ -229,7 +280,7 @@ class AdmissionServiceTests(unittest.TestCase):
         ]
 
         with self.assertRaises(admission.AdmissionError) as raised:
-            self.application.claim_invitation(code, "@claimant:public.test")
+            self.claim(code)
         self.assertEqual(raised.exception.code, "community_too_large")
         self.assertEqual(
             self.application.resolve_invitation(code)["room_id"],
@@ -245,18 +296,19 @@ class AdmissionServiceTests(unittest.TestCase):
             self.store.begin_claim(digest, "@second:mesh.test", now_ms)
         self.assertEqual(raised.exception.code, "invitation_claiming")
 
-    def test_html_opens_the_app_without_embedding_registration_admission(self) -> None:
+    def test_html_opens_the_app_without_sending_capability_in_http_path(self) -> None:
         code, _ = self.create()
-        payload = self.application.invitation_html(code).decode("utf-8")
+        payload = self.application.invitation_html().decode("utf-8")
         derived = admission.registration_token(self.config.signing_key, code)
 
-        self.assertIn("mesh://join?", payload)
-        self.assertIn("v=5", payload)
-        self.assertIn("kind=community", payload)
-        self.assertIn("room=%21community%3Amesh.test", payload)
-        self.assertIn(code, payload)
+        self.assertIn('new URL("mesh://join")', payload)
+        self.assertIn('window.location.hash.slice(1)', payload)
+        self.assertIn('history.replaceState', payload)
+        self.assertIn('target.searchParams.set("api"', payload)
+        self.assertNotIn(code, payload)
         self.assertNotIn(derived, payload)
         self.assertIn("default-src 'none'", payload)
+        self.assertIn("script-src 'nonce-", payload)
 
     def test_non_administrator_cannot_create_a_link(self) -> None:
         original = self.matrix
@@ -276,13 +328,195 @@ class AdmissionServiceTests(unittest.TestCase):
             self.config,
             self.store,
             insufficient_power,
+            lambda proof: str(proof["user_id"]),
+            lambda action, token, expires_at: self.issuer_calls.append(
+                (action, token, expires_at)
+            ),
         )
         with self.assertRaises(admission.AdmissionError) as raised:
             application.create_invitation(
-                "creator-token",
+                self.identity_proof(),
                 "!community:mesh.test",
             )
         self.assertEqual(raised.exception.code, "permission_denied")
+
+    def test_create_never_sends_the_client_credential_to_matrix_or_admission_storage(self) -> None:
+        proof = self.identity_proof(access_token="sentinel-client-openid-proof")
+        self.application.create_invitation(proof, "!community:mesh.test")
+
+        tokens = [call[3] for call in self.matrix.calls]
+        self.assertNotIn("sentinel-client-openid-proof", tokens)
+        room_checks = [
+            call for call in self.matrix.calls
+            if "/rooms/" in call[1] and "/state/" in call[1]
+        ]
+        self.assertTrue(room_checks)
+        self.assertTrue(all(call[3] == "admission-bot-token" for call in room_checks))
+        self.assertFalse(any("/_synapse/admin/" in call[1] for call in self.matrix.calls))
+        connection = sqlite3.connect(self.config.sqlite_path)
+        try:
+            stored = " ".join(
+                str(value)
+                for row in connection.execute(
+                    "SELECT proof_hash, user_id, audience FROM mesh_admission_openid_proofs"
+                )
+                for value in row
+            )
+        finally:
+            connection.close()
+        self.assertNotIn("sentinel-client-openid-proof", stored)
+
+    def test_openid_proof_is_one_use(self) -> None:
+        proof = self.identity_proof()
+        self.application.create_invitation(proof, "!community:mesh.test")
+        with self.assertRaises(admission.AdmissionError) as raised:
+            self.application.create_invitation(proof, "!community:mesh.test")
+        self.assertEqual(raised.exception.code, "identity_proof_replayed")
+
+    def test_openid_credential_cannot_replay_under_new_uuid_purpose_or_subject(self) -> None:
+        proof = self.identity_proof()
+        created = self.application.create_invitation(proof, "!community:mesh.test")
+        code = urllib.parse.urlsplit(created["invite_url"]).fragment
+        replay = self.claim_proof(code, "@creator:mesh.test")
+        replay["access_token"] = proof["access_token"]
+
+        self.assertNotEqual(replay["proof_id"], proof["proof_id"])
+        self.assertNotEqual(replay["purpose"], proof["purpose"])
+        self.assertNotEqual(replay["subject"], proof["subject"])
+        with self.assertRaises(admission.AdmissionError) as raised:
+            self.application.claim_invitation(
+                code,
+                "@creator:mesh.test",
+                replay,
+            )
+        self.assertEqual(raised.exception.code, "identity_proof_replayed")
+        self.assertEqual(
+            self.application.resolve_invitation(code)["room_id"],
+            "!community:mesh.test",
+        )
+
+    def test_openid_proof_cannot_cross_admission_services(self) -> None:
+        proof = self.identity_proof(audience="https://other-community.example")
+        with self.assertRaises(admission.AdmissionError) as raised:
+            self.application.create_invitation(proof, "!community:mesh.test")
+        self.assertEqual(raised.exception.code, "identity_proof_invalid")
+
+    def test_openid_verifier_must_confirm_the_claimed_user(self) -> None:
+        application = admission.AdmissionApplication(
+            self.config,
+            self.store,
+            self.matrix,
+            lambda _proof: "@different:mesh.test",
+            lambda action, token, expires_at: self.issuer_calls.append(
+                (action, token, expires_at)
+            ),
+        )
+        with self.assertRaises(admission.AdmissionError) as raised:
+            application.create_invitation(
+                self.identity_proof(),
+                "!community:mesh.test",
+            )
+        self.assertEqual(raised.exception.code, "identity_proof_mismatch")
+
+    def test_claim_requires_proof_for_the_same_user_and_operation(self) -> None:
+        code, _ = self.create()
+        wrong_user = self.claim_proof(code, "@different:public.test")
+        with self.assertRaises(admission.AdmissionError) as raised:
+            self.application.claim_invitation(
+                code,
+                "@claimant:public.test",
+                wrong_user,
+            )
+        self.assertEqual(raised.exception.code, "identity_proof_mismatch")
+        self.assertEqual(
+            self.application.resolve_invitation(code)["room_id"],
+            "!community:mesh.test",
+        )
+
+        create_proof = self.identity_proof(subject="!community:mesh.test")
+        with self.assertRaises(admission.AdmissionError) as raised:
+            self.application.claim_invitation(
+                code,
+                "@creator:mesh.test",
+                create_proof,
+            )
+        self.assertEqual(raised.exception.code, "identity_proof_invalid")
+
+    def test_claim_identity_proof_is_one_use(self) -> None:
+        code, _ = self.create()
+        proof = self.claim_proof(code)
+        self.application.claim_invitation(code, "@claimant:public.test", proof)
+        with self.assertRaises(admission.AdmissionError) as raised:
+            self.application.claim_invitation(code, "@claimant:public.test", proof)
+        self.assertEqual(raised.exception.code, "identity_proof_replayed")
+
+    def test_production_default_fails_closed_without_post_capable_verifier(self) -> None:
+        application = admission.AdmissionApplication(
+            self.config,
+            self.store,
+            self.matrix,
+        )
+        with self.assertRaises(admission.AdmissionError) as raised:
+            application.create_invitation(
+                self.identity_proof(),
+                "!community:mesh.test",
+            )
+        self.assertEqual(raised.exception.code, "identity_verifier_unavailable")
+
+    def test_registration_issuance_fails_closed_without_a_scoped_provider(self) -> None:
+        application = admission.AdmissionApplication(
+            self.config,
+            self.store,
+            self.matrix,
+            lambda proof: str(proof["user_id"]),
+        )
+        with self.assertRaises(admission.AdmissionError) as raised:
+            application.create_invitation(
+                self.identity_proof(),
+                "!community:mesh.test",
+            )
+        self.assertEqual(raised.exception.code, "registration_issuer_unavailable")
+        self.assertFalse(any("/_synapse/admin/" in call[1] for call in self.matrix.calls))
+
+    def test_configuration_and_upstream_errors_do_not_expose_credentials(self) -> None:
+        redacted = dataclasses.replace(
+            self.config,
+            service_access_token="sentinel-service-access-token",
+            signing_key=b"sentinel-signing-key-material",
+            postgres_password="sentinel-postgres-password",
+        )
+        representation = repr(redacted)
+        self.assertNotIn("sentinel-service-access-token", representation)
+        self.assertNotIn("sentinel-signing-key-material", representation)
+        self.assertNotIn("sentinel-postgres-password", representation)
+
+        reflected = b'{"error":"sentinel-reflected-credential"}'
+        upstream_error = urllib.error.HTTPError(
+            "http://synapse:8008/test",
+            HTTPStatus.FORBIDDEN,
+            "Forbidden",
+            {},
+            io.BytesIO(reflected),
+        )
+        with mock.patch.object(
+            admission.urllib.request,
+            "urlopen",
+            side_effect=upstream_error,
+        ):
+            with self.assertRaises(admission.AdmissionError) as raised:
+                self.application._matrix_request(
+                    "GET",
+                    "/test",
+                    None,
+                    "sentinel-service-access-token",
+                )
+        self.assertNotIn("sentinel-reflected-credential", str(raised.exception))
+        self.assertNotIn("sentinel-service-access-token", str(raised.exception))
+
+        bootstrap_source = (MODULE_PATH.parent / "bootstrap_admission_service.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("Synapse returned HTTP {error.code}: {detail}", bootstrap_source)
 
 
 if __name__ == "__main__":

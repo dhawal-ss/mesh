@@ -1,0 +1,488 @@
+{
+  "schemaVersion": 1,
+  "ledgerId": "mesh-production-readiness",
+  "releaseSha": "9062083e350957df19d819e0226be431331b1d7e",
+  "updatedAt": "2026-08-02T08:08:26Z",
+  "gates": [
+    {
+      "id": "r0.frontend-tests",
+      "milestone": "R0",
+      "required": true,
+      "releaseStatus": "local-pass",
+      "status": "local-pass",
+      "evidence": {
+        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
+        "command": "Protected CI run 30738318302: npm test (109 files, 781 tests passed)",
+        "artifactPath": null,
+        "environment": "Protected GitHub Actions Ubuntu runner; Node 22; Vitest v4.1.2; exact source SHA",
+        "collectedAt": "2026-08-02T07:48:12Z",
+        "expiresAt": null
+      },
+      "owner": "Mesh client",
+      "capability": "Run the frontend test suite",
+      "blockReason": null,
+      "nextAction": "Rerun after the next source change and attach same-SHA evidence before release.",
+      "waiver": null
+    },
+    {
+      "id": "r0.frontend-build",
+      "milestone": "R0",
+      "required": true,
+      "releaseStatus": "local-pass",
+      "status": "local-pass",
+      "evidence": {
+        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
+        "command": "Protected CI run 30738318302: npm run build:matrix; npm run check:bundle-size (entry 227.78 KiB; eager JS 447.14 KiB; all JS 1120.68 KiB; all assets 1554.36 KiB); clean local release preflight with -ExpectedSourceSha 9062083e350957df19d819e0226be431331b1d7e -VerifyFrontendBundle",
+        "artifactPath": null,
+        "environment": "Protected GitHub Actions Ubuntu runner plus clean Windows exact-SHA preflight; Matrix text/community mode; version 0.1.0 remains release-blocked",
+        "collectedAt": "2026-08-02T07:48:12Z",
+        "expiresAt": null
+      },
+      "owner": "Mesh client",
+      "capability": "Produce the Matrix frontend bundle",
+      "blockReason": null,
+      "nextAction": "Run npm run build and npm run check:bundle-size on this exact SHA.",
+      "waiver": null
+    },
+    {
+      "id": "r0.rust-matrix",
+      "milestone": "R0",
+      "required": true,
+      "releaseStatus": "local-pass",
+      "status": "local-pass",
+      "evidence": {
+        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
+        "command": "Protected CI run 30738318302: Ubuntu Matrix suite 200 passed plus IPC/live-test contracts; Windows Matrix suite 199 passed plus IPC/live-test contracts",
+        "artifactPath": null,
+        "environment": "Protected GitHub Actions Ubuntu and Windows runners; Cargo 1.93.0; exact source SHA",
+        "collectedAt": "2026-08-02T08:08:26Z",
+        "expiresAt": null
+      },
+      "owner": "Mesh backend",
+      "capability": "Run the Matrix Rust backend tests",
+      "blockReason": null,
+      "nextAction": "Run npm run test:rust:matrix with one Cargo job and record the result.",
+      "waiver": null
+    },
+    {
+      "id": "r0.rust-legacy",
+      "milestone": "R0",
+      "required": true,
+      "releaseStatus": "local-pass",
+      "status": "local-pass",
+      "evidence": {
+        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
+        "command": "Protected CI run 30738318302: legacy suite 219 passed; crypto contract 15 passed; 15 LAN network/soak and 3 live TURN tests ignored; 2 deterministic TURN tests passed",
+        "artifactPath": null,
+        "environment": "Protected GitHub Actions Ubuntu runner; Cargo 1.93.0; exact source SHA",
+        "collectedAt": "2026-08-02T07:45:50Z",
+        "expiresAt": null
+      },
+      "owner": "Mesh backend",
+      "capability": "Keep the separately compiled legacy backend healthy",
+      "blockReason": null,
+      "nextAction": "Run npm run test:rust:legacy with one Cargo job and record the result.",
+      "waiver": null
+    },
+    {
+      "id": "r0.browser-e2e",
+      "milestone": "R0",
+      "required": true,
+      "releaseStatus": "local-pass",
+      "status": "local-pass",
+      "evidence": {
+        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
+        "command": "Protected CI run 30738318302: npm run e2e (69 tests passed)",
+        "artifactPath": null,
+        "environment": "Protected GitHub Actions Ubuntu runner; pinned Playwright Chromium; runtime budget sourceSha bound to current commit",
+        "collectedAt": "2026-08-02T07:48:12Z",
+        "expiresAt": null
+      },
+      "owner": "Mesh client",
+      "capability": "Verify browser onboarding and messaging journeys",
+      "blockReason": null,
+      "nextAction": "Run npm run e2e with the pinned Playwright browser and retain the report artifact.",
+      "waiver": null
+    },
+    {
+      "id": "r0.ipc-contract",
+      "milestone": "R0",
+      "required": true,
+      "releaseStatus": "local-pass",
+      "status": "local-pass",
+      "evidence": {
+        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
+        "command": "npm run check:ipc-contract (167 commands) and npm run check:ipc-types",
+        "artifactPath": null,
+        "environment": "Protected GitHub Actions Ubuntu and Windows runners; generated Rust-to-TypeScript contract; 167 commands; explicit renderer permission inventory active",
+        "collectedAt": "2026-08-02T08:08:26Z",
+        "expiresAt": null
+      },
+      "owner": "Mesh client/backend boundary",
+      "capability": "Keep typed Tauri commands aligned",
+      "blockReason": null,
+      "nextAction": "Run npm run check:ipc-contract and npm run check:ipc-types.",
+      "waiver": null
+    },
+    {
+      "id": "r0.security-invariants",
+      "milestone": "R0",
+      "required": true,
+      "releaseStatus": "local-pass",
+      "status": "local-pass",
+      "evidence": {
+        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
+        "command": "Protected CI run 30738318302 and exact-SHA local gate: 22 Matrix and 13 legacy security-boundary tests passed",
+        "artifactPath": null,
+        "environment": "Protected GitHub Actions Ubuntu and Windows runners plus clean Windows local workspace; Cargo 1.93.0; serialized feature-set runs",
+        "collectedAt": "2026-08-02T08:08:26Z",
+        "expiresAt": null
+      },
+      "owner": "Mesh security",
+      "capability": "Enforce Matrix and legacy security boundaries",
+      "blockReason": null,
+      "nextAction": "Run npm run check:security-invariants and retain the serialized results.",
+      "waiver": null
+    },
+    {
+      "id": "r0.public-surfaces",
+      "milestone": "R0",
+      "required": true,
+      "releaseStatus": "local-pass",
+      "status": "local-pass",
+      "evidence": {
+        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
+        "command": "Protected CI run 30738318302: npm run check:public-services and npm run check:public-site",
+        "artifactPath": null,
+        "environment": "Protected GitHub Actions Ubuntu runner; public HTTPS service discovery; public-site validation",
+        "collectedAt": "2026-08-02T07:48:12Z",
+        "expiresAt": null
+      },
+      "owner": "Mesh release",
+      "capability": "Keep reviewed services and public documentation internally consistent",
+      "blockReason": null,
+      "nextAction": "Run npm run check:public-services and npm run check:public-site.",
+      "waiver": null
+    },
+    {
+      "id": "r0.dependency-advisory-policy",
+      "milestone": "R0",
+      "required": true,
+      "releaseStatus": "local-pass",
+      "status": "local-pass",
+      "evidence": {
+        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
+        "command": "Protected security run 30738318299: npm audit (0 high vulnerabilities); shipping Matrix graph 0 known vulnerabilities and 7 reviewed warnings; two Hickory findings confined to the non-shipping legacy graph; history secret scans passed. Protected CI run 30738318302: third-party notices are deterministic with 1260 resolved entries and 0 unknown licenses",
+        "artifactPath": null,
+        "environment": "Protected GitHub Actions Ubuntu runner plus clean Windows exact-SHA preflight; Cargo 1.93.0; exact source, lockfile, and dependency policy",
+        "collectedAt": "2026-08-02T07:46:00Z",
+        "expiresAt": null
+      },
+      "owner": "Mesh dependency security",
+      "capability": "Bind the exact Matrix shipping graph, reviewed warnings, legacy exclusions, and raw Rust advisory state to one policy",
+      "blockReason": null,
+      "nextAction": "Repeat the source/lock/policy-bound dependency report in protected same-SHA CI, retain Matrix-only artifact exclusion, and remove findings only when policy drift checks prove upstream resolution.",
+      "waiver": null
+    },
+    {
+      "id": "r1.admission-openid-verifier",
+      "milestone": "R1",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh identity and admission security",
+      "capability": "Verify short-lived Matrix identity proofs without putting credentials in URLs",
+      "blockReason": "The standardized Matrix OpenID userinfo flow places its assertion in a URL query. Mesh fails closed until a reviewed POST-capable verifier can validate the issuing service, user, audience, purpose, subject, expiry, and replay state.",
+      "nextAction": "Approve and implement a POST-capable verifier contract, then pass expired, replayed, malformed, wrong-user, wrong-service, cross-purpose, and credential-leak acceptance tests against a live independently hosted account.",
+      "waiver": null
+    },
+    {
+      "id": "r1.admission-service-authority",
+      "milestone": "R1",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh community-hosting operations",
+      "capability": "Issue one-use registration admission and invite users with least privilege",
+      "blockReason": "Synapse registration-token administration has no admission-only scope. Mesh will not give the admission service a server-admin credential; token issuance and the non-admin bot membership/power workflow therefore remain unavailable by default.",
+      "nextAction": "Approve a least-privilege issuer and bot-provisioning design, provision the bot only in admitted communities and child rooms, then pass live issue, revoke, expiry, room-membership, power, recovery, and credential-rotation tests.",
+      "waiver": null
+    },
+    {
+      "id": "r1.moderation-audit-authority",
+      "milestone": "R1",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh security and community governance",
+      "capability": "Provide private authoritative moderation audit history",
+      "blockReason": "Ordinary room events cannot prove historical moderator authority and are forgeable by members. Mesh no longer presents them as audit records and audit retrieval fails closed until an authoritative design is approved.",
+      "nextAction": "Approve an access-restricted append-only storage and federation threat model, then pass sender provenance, historical authorization, failed-outcome, forgery, demotion, cross-community, malformed-event, replay, retention, export, and unauthorized-reader tests.",
+      "waiver": null
+    },
+    {
+      "id": "r1.clean-device-onboarding",
+      "milestone": "R1",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh product and release",
+      "capability": "Install, open an invite, choose an account service, and enter a community",
+      "blockReason": "A clean supported device and provider-backed onboarding run have not been performed.",
+      "nextAction": "Run the R1 clean-device invite, service-choice, sign-in/create-account, and community-entry case.",
+      "waiver": null
+    },
+    {
+      "id": "r1.provider-identity-lifecycle",
+      "milestone": "R1",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh identity and release operations",
+      "capability": "Complete provider sign-in and session lifecycle against production registrations",
+      "blockReason": "Production OAuth registrations and same-SHA live callback, cancel/retry, refresh, account-removal, and provider-revocation evidence are not available. Local mocks and build-variable validation do not satisfy this gate.",
+      "nextAction": "Provision reviewed production registrations, then complete every provider.* case in release/external-acceptance.example.json against the signed release build and retain sanitized tamper-evident evidence.",
+      "waiver": null
+    },
+    {
+      "id": "r1.community-hosted-operations",
+      "milestone": "R1",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh community-hosting operations",
+      "capability": "Operate an advertised community-hosted service without coupling it to account hosting",
+      "blockReason": "Disposable Docker checks do not prove public DNS/TLS, independent-account federation, destructive restore, monitoring, rate limits, abuse handling, signing-key backup, migration material, incident response, or recovery on the optional community-hosted infrastructure.",
+      "nextAction": "Run every community-hosted.* external acceptance case on the owner-controlled service, including two independent destructive restore drills, while preserving Matrix.org and custom services as separate account-hosting choices.",
+      "waiver": null
+    },
+    {
+      "id": "r1.public-service-review",
+      "milestone": "R1",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh product and privacy review",
+      "capability": "Present only recently reviewed independent public account services",
+      "blockReason": "Matrix.org, tchncs.de, and quassel.io were live-checked during the audit, but no same-SHA durable acceptance artifact is attached and that review window expires on 2026-08-29.",
+      "nextAction": "Complete the three public-service.* cases, record operator/date/expiry and sanitized evidence, and re-review before 2026-08-29 or remove an expired service from release configuration.",
+      "waiver": null
+    },
+    {
+      "id": "r1.federation-recovery",
+      "milestone": "R1",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": "9062083e350957df19d819e0226be431331b1d7e",
+        "command": "Two independent npm run setup:matrix-spike:reset and npm run test:matrix-spike cycles (2/2 tests passed in each cycle with source_sha=9062083e350957df19d819e0226be431331b1d7e and worktree=clean); two independent disposable backup/restore cycles passed",
+        "artifactPath": null,
+        "environment": "Windows local Docker/Synapse disposable two-homeserver stack; encrypted federation, restart recovery, fresh account registration, and second-device decryption; not public-provider or physical-device evidence",
+        "collectedAt": "2026-08-02T07:40:28Z",
+        "expiresAt": null
+      },
+      "owner": "Mesh Matrix operations",
+      "capability": "Federate communities and recover encrypted account data",
+      "blockReason": "The disposable local two-homeserver federation/recovery run passed, but provider-backed, physical-device, and owner-operated recovery evidence remains external/live acceptance.",
+      "nextAction": "Repeat the same-SHA campaign in protected CI, then complete provider-backed physical-device and owner-operated recovery evidence against the signed candidate.",
+      "waiver": null
+    },
+    {
+      "id": "r2.signed-windows-beta",
+      "milestone": "R2",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh release operations",
+      "capability": "Complete signed installed acceptance on a clean Windows machine",
+      "blockReason": "The current application version is the placeholder 0.1.0, protected signing is not provisioned, and the 12 windows.* download/signature/install/invite/service/account/SSO/join/restart/update/uninstall/residue cases have not been live-proven.",
+      "nextAction": "Approve a non-placeholder version, configure protected signing, and complete every windows.* case in release/external-acceptance.example.json on a clean Windows machine.",
+      "waiver": null
+    },
+    {
+      "id": "r2.public-release",
+      "milestone": "R2",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh release operations",
+      "capability": "Publish verifiable release artifacts and a signed update path",
+      "blockReason": "Candidate automation can prepare a signed draft prerelease with checksums, SBOMs, provenance, and dependency evidence, but it intentionally contains no promotion path. The owner-controlled ordering for public prerelease verification, canonical routing, signed updater publication, rollback, legal approval, and post-public live-download evidence is not yet reviewed; the updater remains disabled.",
+      "nextAction": "Use the protected workflow only to create the signed draft candidate. Complete the pre-public public-release.* and Windows update cases, approve the promotion/post-public verification contract, and keep automatic updates disabled until its key, endpoint, rollback, and evidence ordering are reviewed.",
+      "waiver": null
+    },
+    {
+      "id": "r2.manual-accessibility-windows",
+      "milestone": "R2",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh product accessibility",
+      "capability": "Use the Windows beta with NVDA, WebView2, keyboard, zoom, text, motion, and contrast settings",
+      "blockReason": "Automated accessibility tests do not substitute for manual NVDA, WebView2, keyboard-only, 200% zoom, large-text, reduced-motion, and high-contrast acceptance on the signed Windows candidate.",
+      "nextAction": "Complete the R2 accessibility.* cases on the signed Windows candidate and retain sanitized evidence for each assistive-technology and display-setting combination.",
+      "waiver": null
+    },
+    {
+      "id": "r2.public-page-legal-approval",
+      "milestone": "R2",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh legal and release operations",
+      "capability": "Publish reviewed legal/support pages and the canonical download route",
+      "blockReason": "The Pages workflow requires explicit legal review, but owner approval and live public-route verification have not occurred.",
+      "nextAction": "Obtain owner/legal approval, complete public-release.legal-approval, deploy the exact reviewed public pages through the protected workflow, and attach same-SHA canonical-route and live-download evidence.",
+      "waiver": null
+    },
+    {
+      "id": "r3.voice-live",
+      "milestone": "R3",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh voice operations",
+      "capability": "Offer private calling only when MatrixRTC, SFU, TURN, federation, and media protection are verified",
+      "blockReason": "The client is correctly fail-closed; none of the required complete 23-case MatrixRTC/SFU/TURN/media-E2EE signed-build campaign is available as current same-SHA physical-device evidence.",
+      "nextAction": "Complete all 23 cases in infra/matrixrtc/acceptance-matrix.example.json on physical devices and hostile networks, then pass matrixrtc:preflight with -Production -RequireLiveAcceptance without modifying the tracked template.",
+      "waiver": null
+    },
+    {
+      "id": "r4.native-invitation-delivery",
+      "milestone": "R4",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh desktop release",
+      "capability": "Deliver native invitations through installed-protocol and cold-start paths on every supported desktop platform",
+      "blockReason": "Windows native invitation routing is implemented, but there is no installed-protocol or cold-start acceptance evidence for macOS or Linux. Windows evidence must not imply cross-platform support.",
+      "nextAction": "Package signed/notarized platform builds and complete native-invite.macos-* and native-invite.linux-* cases before advertising those platforms as supported.",
+      "waiver": null
+    },
+    {
+      "id": "r4.manual-accessibility-cross-platform",
+      "milestone": "R4",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh product accessibility",
+      "capability": "Use supported macOS and Linux builds with their native WebViews and screen readers",
+      "blockReason": "Windows accessibility evidence cannot prove VoiceOver/WKWebView or Orca/WebKitGTK behavior, and no signed supported macOS/Linux candidate exists for manual acceptance.",
+      "nextAction": "After signed platform candidates exist, complete accessibility.voiceover, accessibility.wkwebview, accessibility.orca, and accessibility.webkitgtk with physical assistive-technology evidence before advertising macOS or Linux support.",
+      "waiver": null
+    }
+  ]
+}

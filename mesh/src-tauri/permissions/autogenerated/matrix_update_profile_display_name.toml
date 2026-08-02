@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-update-profile-display-name"
+description = "Enables the matrix_update_profile_display_name command without any pre-configured scope."
+commands.allow = ["matrix_update_profile_display_name"]
+
+[[permission]]
+identifier = "deny-matrix-update-profile-display-name"
+description = "Denies the matrix_update_profile_display_name command without any pre-configured scope."
+commands.deny = ["matrix_update_profile_display_name"]

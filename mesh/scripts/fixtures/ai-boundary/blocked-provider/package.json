@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "dependencies": {
+    "openai": "0.0.0-fixture"
+  }
+}

@@ -23,6 +23,8 @@ export interface PublicService {
   operator: string
   jurisdiction: string
   registration: PublicServiceRegistration
+  /** Provider-owned account recovery page, when the service publishes one. */
+  accountHelpUrl?: string
   loginMethods: PublicServiceLoginMethod[]
   termsUrl: string
   privacyUrl: string
@@ -132,6 +134,12 @@ export function validatePublicServiceCatalog(value: unknown): PublicServiceCatal
       || !nonEmptyString(registration.label)
     ) {
       errors.push(`${path}.registration must provide a safe external HTTPS flow`)
+    }
+    if (
+      candidate.accountHelpUrl !== undefined
+      && !safeHttpsUrl(candidate.accountHelpUrl, { allowFragment: true })
+    ) {
+      errors.push(`${path}.accountHelpUrl must be undefined or a safe HTTPS URL`)
     }
 
     const loginMethods = candidate.loginMethods

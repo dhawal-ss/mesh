@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-start-oidc-login"
+description = "Enables the matrix_start_oidc_login command without any pre-configured scope."
+commands.allow = ["matrix_start_oidc_login"]
+
+[[permission]]
+identifier = "deny-matrix-start-oidc-login"
+description = "Denies the matrix_start_oidc_login command without any pre-configured scope."
+commands.deny = ["matrix_start_oidc_login"]

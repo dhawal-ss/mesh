@@ -45,6 +45,22 @@ describe('public-service catalog', () => {
     ]))
   })
 
+  it('validates provider-owned account help URLs when a service publishes one', () => {
+    const unsafe = {
+      ...PUBLIC_SERVICES[0],
+      id: 'unsafe-help',
+      accountDomain: 'unsafe-help.example',
+      accountHelpUrl: 'http://unsafe-help.example/login',
+      prominent: false,
+    }
+    const result = validatePublicServiceCatalog([PUBLIC_SERVICES[0], unsafe])
+
+    expect(result.services).toEqual([])
+    expect(result.errors).toContain(
+      'catalog[1].accountHelpUrl must be undefined or a safe HTTPS URL',
+    )
+  })
+
   it('requires legal, registration, and review metadata', () => {
     const incomplete = {
       ...PUBLIC_SERVICES[0],

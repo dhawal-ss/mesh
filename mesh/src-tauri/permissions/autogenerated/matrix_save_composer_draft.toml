@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-save-composer-draft"
+description = "Enables the matrix_save_composer_draft command without any pre-configured scope."
+commands.allow = ["matrix_save_composer_draft"]
+
+[[permission]]
+identifier = "deny-matrix-save-composer-draft"
+description = "Denies the matrix_save_composer_draft command without any pre-configured scope."
+commands.deny = ["matrix_save_composer_draft"]

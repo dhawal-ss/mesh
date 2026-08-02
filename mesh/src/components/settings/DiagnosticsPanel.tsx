@@ -9,12 +9,18 @@ import {
   type SchedulerStats,
   type IceServerProbeResult,
 } from '../../lib/bridge'
-import { Spinner } from '../ui/Spinner'
+import { Skeleton } from '../ui/Skeleton'
 import { ErrorState } from '../ui/ErrorState'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 import { Modal } from '../ui/Modal'
 import { StatusDot } from '../ui/StatusDot'
+import {
+  createLegacySupportBundle,
+  createMatrixSupportBundle,
+  saveSupportBundle,
+  serializeSupportBundle,
+} from '../../lib/support-bundle'
 
 interface DiagnosticsPanelProps {
   open: boolean
@@ -25,7 +31,7 @@ interface DiagnosticsPanelProps {
 /// Auto-refresh interval when the panel is open (milliseconds).
 const REFRESH_INTERVAL_MS = 3000
 
-/// Diagnostics panel — consumes the `get_diagnostics` command and renders a
+/// Diagnostics panel: consumes the `get_diagnostics` command and renders a
 /// compact operational health view. Designed for operators and support to
 /// answer "is the app working?" without parsing logs.
 export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: DiagnosticsPanelProps) {
@@ -36,6 +42,7 @@ export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: 
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [probeResults, setProbeResults] = useState<IceServerProbeResult[] | null>(null)
   const [probeLoading, setProbeLoading] = useState(false)
+  const [supportBundle, setSupportBundle] = useState<string | null>(null)
 
   const runIceProbe = useCallback(async () => {
     setProbeLoading(true)
@@ -98,7 +105,22 @@ export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: 
       size="lg"
       closeLabel="Close diagnostics"
     >
-      <div className="mb-4 flex min-h-8 items-center justify-end border-b border-border-subtle pb-3">
+      <div className="mb-4 flex min-h-8 flex-wrap items-center justify-end gap-2 border-b border-border-subtle pb-3">
+        {(matrixStatus || diagnostics) && (
+          <Button
+            onClick={() => {
+              const bundle = matrixStatus
+                ? createMatrixSupportBundle(matrixStatus)
+                : createLegacySupportBundle(diagnostics!)
+              setSupportBundle(serializeSupportBundle(bundle))
+            }}
+            variant="secondary"
+            size="sm"
+            className="min-h-8"
+          >
+            Review support bundle
+          </Button>
+        )}
         <Button
           onClick={refresh}
           disabled={loading}
@@ -113,6 +135,32 @@ export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: 
       </div>
 
       <div className="max-h-settings overflow-y-auto pr-1">
+        {supportBundle && (
+          <section
+            aria-labelledby="support-bundle-title"
+            className="mb-4 rounded-panel border border-border-subtle bg-surface-sunken p-3"
+          >
+            <h3 id="support-bundle-title" className="text-sm font-semibold text-primary">
+              Support bundle preview
+            </h3>
+            <p className="mt-1 text-xs leading-5 text-muted">
+              Review every field before saving. Mesh does not include account or room identifiers,
+              content, paths, credentials, or environment variables, and never uploads this file.
+              Delete the saved JSON when support no longer needs it.
+            </p>
+            <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-control bg-surface-base p-3 text-meta text-secondary">
+              {supportBundle}
+            </pre>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => saveSupportBundle(supportBundle)}>
+                Save reviewed bundle
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setSupportBundle(null)}>
+                Cancel
+              </Button>
+            </div>
+          </section>
+        )}
         {error != null && (
           <ErrorState
             error={error}
@@ -124,8 +172,15 @@ export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: 
         )}
 
         {!diagnostics && !matrixStatus && !error && (
-          <div className="flex h-32 items-center justify-center">
-            <Spinner />
+          <div
+            className="space-y-3 py-3"
+            role="status"
+            aria-label="Loading diagnostics"
+          >
+            <span className="sr-only">Loading diagnostics…</span>
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-4/5" />
           </div>
         )}
 
@@ -344,7 +399,7 @@ function DiagnosticsContent({
             label="Pending messages"
             value={data.pendingMessageCount.toString()}
             // Only flag as a problem if we have peers AND still have pending.
-            // Solo + pending is normal — they'll re-broadcast when peers arrive.
+            // Solo + pending is normal: they'll re-broadcast when peers arrive.
             ok={data.pendingMessageCount === 0 || !data.networkConnected}
           />
         </Grid>
@@ -352,7 +407,7 @@ function DiagnosticsContent({
           <p className="mt-2 text-xs text-muted">
             Running as a solo peer. Your messages, communities, and settings are
             stored locally and visible to you immediately. They'll automatically
-            sync to other peers when someone joins the mesh — either via a local
+            sync to other peers when someone joins the mesh: either via a local
             network (mDNS) or by configuring{' '}
             <code className="rounded-control bg-surface-sunken px-1">MESH_BOOTSTRAP_PEERS</code>.
           </p>
@@ -515,14 +570,13 @@ function StatusCell({
   ok: boolean
   warn?: boolean
 }) {
-  const color = warn ? 'text-status-warning' : ok ? 'text-status-success' : 'text-status-danger'
   const state = warn ? 'degraded' : ok ? 'connected' : 'disconnected'
   return (
     <div className="rounded-control bg-surface-sunken px-3 py-2">
       <div className="text-caption uppercase tracking-wide text-muted">{label}</div>
       <div className="mt-0.5 flex items-center gap-1.5 text-sm">
         <StatusDot state={state} label={`${label}: ${value}`} />
-        <span className={color}>{value}</span>
+        <span className="text-primary">{value}</span>
       </div>
     </div>
   )

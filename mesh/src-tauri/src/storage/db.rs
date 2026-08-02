@@ -261,6 +261,7 @@ impl Database {
     // ─── Control Log ─────────────────────────────────
 
     /// Insert a control-log event.
+    #[allow(clippy::too_many_arguments)]
     pub fn insert_control_event(
         &self,
         id: &str,
@@ -638,6 +639,7 @@ impl Database {
     // ─── Channel Event Log ──────────────────────────────
 
     /// Append an event to the channel's immutable log. Returns the assigned sequence number.
+    #[allow(clippy::too_many_arguments)]
     pub fn append_channel_event(
         &self,
         channel_id: &str,

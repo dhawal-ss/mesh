@@ -16,15 +16,15 @@ import { ChannelItem } from '../community/ChannelItem'
 import { UserPanel } from './UserPanel'
 import { DialogErrorBoundary, ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
+import { Avatar } from '../ui/Avatar'
 import { useShellStore } from '../../store/shell'
 import * as bridge from '../../lib/bridge'
-import { copyText, identityLabel, matrixRoomPermalink } from '../../lib/notifications'
+import { copyText, matrixRoomPermalink } from '../../lib/notifications'
 import { showToast } from '../ui/Toast'
 import type { Channel } from '../../types/ipc'
 import { useMatrixRtcMembershipSync } from '../../hooks/useMatrixRtcMembershipSync'
 import { canStartMatrixVoice, shouldActivateVoiceSession } from '../../lib/voice-runtime'
 import { ModalLoadingFallback } from '../ui/ModalLoadingFallback'
-import { useIdentityStore } from '../../store/identity'
 import { EmptyState } from '../ui/Primitives'
 import { useVirtualScroll, type VirtualItem } from '../../hooks/useVirtualScroll'
 import { IconButton } from '../ui/IconButton'
@@ -40,6 +40,7 @@ type RoomListEntry =
       roomType: 'text' | 'voice'
       label: string
       collapsed: boolean
+      collapsible: boolean
     }
   | {
       key: string
@@ -54,13 +55,16 @@ export function ChannelSidebar() {
   const activeChannelId = useChannelStore((state) => state.activeChannelId)
   const setActiveChannel = useChannelStore((state) => state.setActiveChannel)
   const patchChannel = useChannelStore((state) => state.patchChannel)
+  const activeRefresh = useChannelStore((state) => (
+    activeCommunityId ? state.refreshByCommunity[activeCommunityId] : undefined
+  ))
+  const requestCommunityRefresh = useChannelStore((state) => state.requestCommunityRefresh)
   const currentChannelId = useVoiceStore((state) => state.currentChannelId)
   const currentCommunityId = useVoiceStore((state) => state.currentCommunityId)
   const setCurrentVoiceSession = useVoiceStore((state) => state.setCurrentVoiceSession)
   const matrixRtcMembersByRoom = useVoiceStore((state) => state.matrixRtcMembersByRoom)
   const setProfileOpen = useShellStore((state) => state.setProfileOpen)
   const [showSettings, setShowSettings] = useState(false)
-  const [textCollapsed, setTextCollapsed] = useState(false)
   const [voiceCollapsed, setVoiceCollapsed] = useState(false)
   const [roomFocus, setRoomFocus] = useState({
     activeChannelId,
@@ -70,9 +74,7 @@ export function ChannelSidebar() {
   const typeaheadTimerRef = useRef<number | null>(null)
   const matrixMode = bridge.isMatrixBackend()
   const matrixVoiceReady = canStartMatrixVoice(bridge.getBackendStatusSnapshot())
-  const storedIdentity = useIdentityStore((state) => state.identity)
   const matrixAccountId = matrixMode ? bridge.getMatrixUserId() : null
-  const currentIdentityLabel = identityLabel(storedIdentity, matrixMode)
   const homeService = serviceName(
     bridge.getBackendStatusSnapshot()?.homeserver
       ?? (matrixAccountId?.split(':').slice(1).join(':') || null),
@@ -94,15 +96,32 @@ export function ChannelSidebar() {
   const roomListEntries = useMemo<RoomListEntry[]>(() => {
     const entries: RoomListEntry[] = []
     if (textChannels.length > 0) {
-      entries.push({
-        key: 'heading:text',
-        kind: 'heading',
-        roomType: 'text',
-        label: 'Rooms',
-        collapsed: textCollapsed,
-      })
-      if (!textCollapsed) {
-        for (const channel of textChannels) {
+      const startHere = textChannels.filter((channel) =>
+        ['welcome', 'announcements'].includes(channel.name.toLocaleLowerCase()),
+      )
+      const projects = textChannels.filter((channel) =>
+        channel.name.toLocaleLowerCase().startsWith('project-'),
+      )
+      const chat = textChannels.filter((channel) =>
+        !startHere.includes(channel) && !projects.includes(channel),
+      )
+      const sections = [
+        ['start-here', 'Start here', startHere],
+        ['chat', 'Chat', chat],
+        ['projects', 'Projects', projects],
+      ] as const
+
+      for (const [key, label, sectionChannels] of sections) {
+        if (sectionChannels.length === 0) continue
+        entries.push({
+          key: `heading:${key}`,
+          kind: 'heading',
+          roomType: 'text',
+          label,
+          collapsed: false,
+          collapsible: false,
+        })
+        for (const channel of sectionChannels) {
           entries.push({ key: `room:${channel.id}`, kind: 'room', channel })
         }
       }
@@ -114,6 +133,7 @@ export function ChannelSidebar() {
         roomType: 'voice',
         label: 'Voice rooms',
         collapsed: voiceCollapsed,
+        collapsible: true,
       })
       if (!voiceCollapsed) {
         for (const channel of voiceChannels) {
@@ -122,7 +142,7 @@ export function ChannelSidebar() {
       }
     }
     return entries
-  }, [textChannels, textCollapsed, voiceChannels, voiceCollapsed])
+  }, [textChannels, voiceChannels, voiceCollapsed])
   const virtualRoomItems = useMemo<VirtualItem[]>(() => roomListEntries.map((entry) => {
     if (entry.kind === 'heading') {
       return {
@@ -154,6 +174,7 @@ export function ChannelSidebar() {
     estimatedMessageHeight: 36,
     estimatedGapHeight: 32,
     overscanPx: 800,
+    autoScrollToBottom: false,
   })
   const visibleRoomEntries = useMemo(
     () => roomListEntries.length === 0
@@ -163,7 +184,7 @@ export function ChannelSidebar() {
   )
   useEffect(() => {
     resetLayout()
-  }, [activeCommunityId, resetLayout, textCollapsed, voiceCollapsed])
+  }, [activeCommunityId, resetLayout, voiceCollapsed])
   const navigableRooms = useMemo(
     () => roomListEntries.flatMap((entry) => entry.kind === 'room' ? [entry.channel] : []),
     [roomListEntries],
@@ -297,24 +318,36 @@ export function ChannelSidebar() {
   return (
     <>
       <div className="flex flex-col h-full">
-        <div className="flex min-h-conversation-header flex-shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-3 py-2">
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-semibold text-primary">
+        <div className="mesh-community-header relative flex min-h-28 flex-shrink-0 items-end justify-between gap-2 overflow-hidden border-b border-border-subtle px-4 pb-4 pt-5">
+          {activeCommunity.bannerUrl ? (
+            <img
+              src={activeCommunity.bannerUrl}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover opacity-45"
+            />
+          ) : null}
+          <span className="relative min-w-0 flex-1">
+            <span className="block truncate text-base font-semibold tracking-tight text-primary">
               {activeCommunity.name}
             </span>
-            <span className="mt-1 block truncate text-caption text-muted">
-              {homeService ?? (matrixMode ? 'Connected service' : 'Local community')}
-            </span>
-            <span className="mt-0.5 block truncate text-caption text-secondary">
-              Identity · {currentIdentityLabel}
+            <span className="mt-1 flex items-center gap-2 truncate text-caption text-secondary">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-status-success" aria-hidden="true" />
+                {activeCommunity.role === 'owner' ? 'Private' : 'Member'}
+              </span>
+              <span aria-hidden="true">·</span>
+              <span className="truncate">
+                {homeService ?? (matrixMode ? 'Connected' : 'Local community')}
+              </span>
             </span>
           </span>
           <IconButton
             size="sm"
             aria-label={`Open settings for ${activeCommunity.name}`}
+            className="relative"
             onClick={() => setShowSettings(true)}
           >
-            <Icon name="settings" size="sm" />
+            <Icon name="ellipsis" size="sm" />
           </IconButton>
         </div>
 
@@ -324,10 +357,29 @@ export function ChannelSidebar() {
           ref={scrollContainerRef}
           onScroll={() => void handleScroll()}
           onKeyDown={handleRoomListKeyDown}
-          className="flex-1 overflow-y-auto px-2 py-3"
+          className="mesh-room-list flex-1 overflow-y-auto px-2 py-3"
           role="navigation"
           aria-label="Community rooms"
         >
+          {activeRefresh && (activeRefresh.status === 'failed' || activeRefresh.status === 'stale') && (
+            <div
+              role="alert"
+              className="mb-2 rounded-control border border-status-warning/30 bg-status-warning/10 px-2 py-2 text-xs text-secondary"
+            >
+              <p>
+                {activeRefresh.status === 'stale'
+                  ? 'Rooms could not be refreshed. Showing the last update.'
+                  : 'Rooms could not be loaded.'}
+              </p>
+              <button
+                type="button"
+                className="mt-1 min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+                onClick={() => activeCommunityId && requestCommunityRefresh(activeCommunityId)}
+              >
+                Retry rooms
+              </button>
+            </div>
+          )}
           <div
             className="space-y-0.5"
             data-design-token-exception="data-driven-virtual-spacer-geometry"
@@ -339,18 +391,16 @@ export function ChannelSidebar() {
             {visibleRoomEntries.map((entry) => {
               if (entry.kind === 'heading') {
                 const collapsed = entry.collapsed
-                const toggle = entry.roomType === 'text'
-                  ? () => setTextCollapsed((current) => !current)
-                  : () => setVoiceCollapsed((current) => !current)
                 return (
                   <MeasuredRoomRow
                     key={entry.key}
                     rowKey={entry.key}
                     onHeightChange={handleMeasuredHeight}
                   >
-                    <h3 className={entry.roomType === 'voice' ? 'pt-3' : undefined}>
+                    <h3 className={entry.roomType === 'voice' || entry.label !== 'Start here' ? 'pt-3' : undefined}>
+                      {entry.collapsible ? (
                       <button
-                        onClick={toggle}
+                        onClick={() => setVoiceCollapsed((current) => !current)}
                         className="group flex min-h-8 w-full items-center gap-0.5 px-0.5 text-left"
                         aria-expanded={!collapsed}
                       >
@@ -363,6 +413,11 @@ export function ChannelSidebar() {
                           {entry.label}
                         </span>
                       </button>
+                      ) : (
+                        <span className="flex min-h-8 items-center px-1 text-meta font-semibold uppercase tracking-caption text-muted">
+                          {entry.label}
+                        </span>
+                      )}
                     </h3>
                   </MeasuredRoomRow>
                 )
@@ -469,14 +524,14 @@ export function ChannelSidebar() {
                             key={`${member.userId}:${member.deviceId}:${member.sessionId}`}
                             type="button"
                             onClick={joinChannel}
-                            className="flex w-full items-center gap-1.5 rounded-control px-1 py-0.5 text-left text-xs text-muted hover:bg-surface-hover hover:text-secondary"
+                            className="flex min-h-6 w-full items-center gap-1.5 rounded-control px-1 py-0.5 text-left text-xs text-muted hover:bg-surface-hover hover:text-secondary"
                           >
-                            <span
-                              className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-control bg-surface-active text-meta font-semibold text-secondary"
-                              aria-hidden="true"
-                            >
-                              {(member.displayName || member.userId).slice(0, 1).toUpperCase()}
-                            </span>
+                            <Avatar
+                              color="var(--avatar-violet)"
+                              size={16}
+                              name={member.displayName || member.userId}
+                              imageUrl={member.avatarUrl}
+                            />
                             <span className="truncate">
                               {member.displayName || member.userId}
                             </span>
@@ -496,7 +551,7 @@ export function ChannelSidebar() {
           </div>
         </div>
 
-        {/* User panel — Discord-style bottom bar */}
+        {/* User panel: Discord-style bottom bar */}
         <ScopedErrorBoundary
           name="User controls"
           description="Account controls could not be displayed."

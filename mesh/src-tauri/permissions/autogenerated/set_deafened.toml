@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-deafened"
+description = "Enables the set_deafened command without any pre-configured scope."
+commands.allow = ["set_deafened"]
+
+[[permission]]
+identifier = "deny-set-deafened"
+description = "Denies the set_deafened command without any pre-configured scope."
+commands.deny = ["set_deafened"]

@@ -155,12 +155,7 @@ impl MatrixBackend {
             &supported_versions,
             url,
         )?;
-        let response = reqwest::Client::builder()
-            .min_tls_version(reqwest::tls::Version::TLS_1_2)
-            .connect_timeout(MEDIA_DOWNLOAD_CONNECT_TIMEOUT)
-            .read_timeout(MEDIA_DOWNLOAD_READ_TIMEOUT)
-            .build()
-            .map_err(|error| BackendError::Network(error.to_string()))?
+        let response = Self::media_http_client()?
             .get(endpoint)
             .headers(headers)
             .send()

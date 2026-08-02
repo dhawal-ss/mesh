@@ -24,11 +24,11 @@
 	}
 
 	handle_path /_mesh/admission/* {
-		reverse_proxy admission:8090
+		respond "Community invitations are not available." 404
 	}
 
 	handle /invite/* {
-		reverse_proxy admission:8090
+		respond "Community invitations are not available." 404
 	}
 
 	handle {

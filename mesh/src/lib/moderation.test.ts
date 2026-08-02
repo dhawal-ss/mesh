@@ -48,6 +48,9 @@ describe('moderation result summaries', () => {
       serverSucceeded: true,
       fullySucceeded: true,
     })
+    expect(summary.message.toLowerCase()).not.toContain('security changed')
+    expect(summary.message.toLowerCase()).not.toContain('device')
+    expect(summary.message.toLowerCase()).not.toContain('recovery')
   })
 
   it('names partial failures without exposing protocol identifiers', () => {

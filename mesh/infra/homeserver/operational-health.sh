@@ -25,31 +25,6 @@ do
   esac
 done
 
-check_fresh_status() {
-  status_file="$1"
-  maximum_age="$2"
-  label="$3"
-  if [ ! -f "$status_file" ] || [ -L "$status_file" ]; then
-    echo "$label status is missing." >&2
-    return 1
-  fi
-  if ! grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' "$status_file"; then
-    echo "$label status is not healthy." >&2
-    return 1
-  fi
-  if ! grep -Eq '"lastSuccessfulAt"[[:space:]]*:[[:space:]]*"[^"]+"' "$status_file"; then
-    echo "$label status has no last-success timestamp." >&2
-    return 1
-  fi
-  now="$(date +%s)"
-  modified="$(file_mtime "$status_file")"
-  age=$((now - modified))
-  if [ "$age" -lt 0 ] || [ "$age" -gt "$maximum_age" ]; then
-    echo "$label status is stale (${age}s old)." >&2
-    return 1
-  fi
-}
-
 check_container() {
   service="$1"
   container_id="$(docker compose ps -q "$service")"
@@ -92,6 +67,11 @@ free_percent="$(
     awk 'NR == 2 { gsub(/%/, "", $5); print 100 - $5 }'
 )"
 if [ -z "$free_percent" ] || [ "$free_percent" -lt "$minimum_free_percent" ]; then
+  if grep -Eq '^MESH_REGISTRATION_ENABLED=1$' "$script_dir/.env" 2>/dev/null; then
+    if ! "$script_dir/registration-control.sh" close >&2; then
+      echo "Homeserver disk pressure was detected, but account creation could not be closed automatically." >&2
+    fi
+  fi
   echo "Homeserver disk has only ${free_percent:-unknown}% free." >&2
   exit 1
 fi

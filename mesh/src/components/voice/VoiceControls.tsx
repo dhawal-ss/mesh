@@ -5,7 +5,10 @@ import { useVoiceStore } from '../../store/voice'
 import { Tooltip } from '../ui/Tooltip'
 import { transitions } from '../../lib/motion'
 import { Icon } from '../ui/Icon'
-import { voiceConnectionLabel } from '../../lib/voice-runtime'
+import {
+  voiceConnectionLabel,
+  voiceMediaErrorMessage,
+} from '../../lib/voice-runtime'
 import { Popover } from '../ui/InteractivePrimitives'
 import { IconButton } from '../ui/IconButton'
 
@@ -81,13 +84,7 @@ export function VoiceControls({
         await onScreenShareChange(enabled)
       }
     } catch (error) {
-      setControlError(
-        error instanceof Error
-          ? error.message
-          : kind === 'camera'
-            ? 'The camera could not be changed.'
-            : 'Screen sharing could not be changed.',
-      )
+      setControlError(voiceMediaErrorMessage(error, kind))
     }
   }
 
@@ -142,7 +139,7 @@ export function VoiceControls({
             /*
              * Push-to-talk was pointer-only. The advertised "Hold Space"
              * fallback is a window listener that skips any interactive target,
-             * and a <button> is interactive — including this one — so a
+             * and a <button> is interactive: including this one: so a
              * keyboard-only user in PTT mode could not transmit at all.
              * Handling the keys on the button itself fixes that without
              * loosening the global guard that stops Space in the composer from
@@ -204,7 +201,7 @@ export function VoiceControls({
 
         {/*
           A disabled button is not focusable and swallows pointer events, so its
-          Tooltip can never open — the reason it is off was unreachable. The
+          Tooltip can never open: the reason it is off was unreachable. The
           reason now lives in the accessible name itself.
         */}
         <Tooltip
@@ -221,7 +218,7 @@ export function VoiceControls({
             onClick={() => void changeMedia('camera', !isCameraEnabled)}
             aria-label={
               !connected
-                ? 'Turn camera on — available once you are connected'
+                ? 'Turn camera on: available once you are connected'
                 : isCameraEnabled ? 'Turn camera off' : 'Turn camera on'
             }
             className={`flex h-11 w-11 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
@@ -248,7 +245,7 @@ export function VoiceControls({
             onClick={() => void changeMedia('screen', !isScreenSharing)}
             aria-label={
               !connected
-                ? 'Share screen — available once you are connected'
+                ? 'Share screen: available once you are connected'
                 : isScreenSharing ? 'Stop sharing screen' : 'Share screen'
             }
             className={`flex h-11 w-11 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${

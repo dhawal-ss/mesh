@@ -11,7 +11,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
-import html
 import ipaddress
 import json
 import os
@@ -23,7 +22,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable, Protocol
@@ -40,7 +40,7 @@ DEFAULT_EXPIRY_SECONDS = 7 * 24 * 60 * 60
 MIN_EXPIRY_SECONDS = 60 * 60
 MAX_EXPIRY_SECONDS = 30 * 24 * 60 * 60
 CLAIM_LEASE_SECONDS = 90
-IMPERSONATION_SECONDS = 120
+MAX_OPENID_PROOF_SECONDS = 60 * 60
 
 
 class AdmissionError(Exception):
@@ -57,12 +57,13 @@ class Config:
     homeserver_public_url: str
     homeserver_internal_url: str
     public_origin: str
-    admin_access_token: str
-    signing_key: bytes
+    service_user_id: str
+    service_access_token: str = field(repr=False)
+    signing_key: bytes = field(repr=False)
     postgres_host: str | None
     postgres_port: int
     postgres_user: str | None
-    postgres_password: str | None
+    postgres_password: str | None = field(repr=False)
     postgres_database: str | None
     sqlite_path: str | None
     bind_host: str
@@ -83,7 +84,10 @@ class Config:
             required("MESH_PUBLIC_ORIGIN"),
             allow_private_http=True,
         )
-        admin_access_token = required("MESH_ADMISSION_ADMIN_ACCESS_TOKEN")
+        service_user_id = required("MESH_ADMISSION_SERVICE_USER_ID")
+        service_access_token = required("MESH_ADMISSION_SERVICE_ACCESS_TOKEN")
+        if not USER_ID_PATTERN.fullmatch(service_user_id) or service_user_id.split(":", 1)[1] != server_name:
+            raise SystemExit("MESH_ADMISSION_SERVICE_USER_ID must be a local Matrix user ID")
         signing_key_text = required("MESH_ADMISSION_SIGNING_KEY")
         try:
             signing_key = bytes.fromhex(signing_key_text)
@@ -107,7 +111,8 @@ class Config:
             homeserver_public_url=homeserver_public_url,
             homeserver_internal_url=homeserver_internal_url,
             public_origin=public_origin,
-            admin_access_token=admin_access_token,
+            service_user_id=service_user_id,
+            service_access_token=service_access_token,
             signing_key=signing_key,
             postgres_host=postgres_host,
             postgres_port=integer_environment("POSTGRES_PORT", 5432, 1, 65535),
@@ -177,17 +182,6 @@ def registration_token(signing_key: bytes, admission_token: str) -> str:
     return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
-def bearer_token(value: str | None) -> str:
-    if value is None or len(value) > MAX_AUTHORIZATION_BYTES:
-        raise AdmissionError(HTTPStatus.UNAUTHORIZED, "not_authenticated", "Sign in to continue.")
-    scheme, separator, token = value.partition(" ")
-    if separator != " " or scheme.lower() != "bearer" or not token or any(
-        character.isspace() for character in token
-    ):
-        raise AdmissionError(HTTPStatus.UNAUTHORIZED, "not_authenticated", "Sign in to continue.")
-    return token
-
-
 class Cursor(Protocol):
     rowcount: int
 
@@ -250,9 +244,10 @@ class InvitationStore:
             connection = self.connect()
             try:
                 cursor = connection.cursor()
-                cursor.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS mesh_admission_invitations (
+                if self.sqlite:
+                    cursor.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS mesh_admission_invitations (
                         token_hash TEXT PRIMARY KEY,
                         creator_user_id TEXT NOT NULL,
                         room_id TEXT NOT NULL,
@@ -265,8 +260,25 @@ class InvitationStore:
                         claim_lease_until BIGINT,
                         claimed_at BIGINT
                     )
-                    """
-                )
+                        """
+                    )
+                    cursor.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS mesh_admission_openid_proofs (
+                        proof_hash TEXT PRIMARY KEY,
+                        user_id TEXT NOT NULL,
+                        audience TEXT NOT NULL,
+                        used_at BIGINT NOT NULL,
+                        expires_at BIGINT NOT NULL
+                    )
+                        """
+                    )
+                else:
+                    # Production schema creation and grants are an operator-owned
+                    # migration boundary. The runtime identity must never gain
+                    # CREATE authority merely because the service started.
+                    cursor.execute("SELECT 1 FROM mesh_admission_invitations LIMIT 0")
+                    cursor.execute("SELECT 1 FROM mesh_admission_openid_proofs LIMIT 0")
                 connection.commit()
                 self._initialized = True
             finally:
@@ -318,6 +330,48 @@ class InvitationStore:
             connection.commit()
         except Exception:
             connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def consume_identity_proof(
+        self,
+        digest: str,
+        user_id: str,
+        audience: str,
+        used_at: int,
+        expires_at: int,
+    ) -> None:
+        """Atomically records a one-use OpenID proof without retaining credentials."""
+        self.initialize()
+        marker = self.placeholder
+        connection = self.connect()
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"""
+                DELETE FROM mesh_admission_openid_proofs
+                WHERE expires_at <= {marker}
+                """,
+                (used_at,),
+            )
+            cursor.execute(
+                f"""
+                INSERT INTO mesh_admission_openid_proofs (
+                    proof_hash, user_id, audience, used_at, expires_at
+                ) VALUES ({marker}, {marker}, {marker}, {marker}, {marker})
+                """,
+                (digest, user_id, audience, used_at, expires_at),
+            )
+            connection.commit()
+        except Exception as error:
+            connection.rollback()
+            if "unique" in str(error).lower() or "duplicate" in str(error).lower():
+                raise AdmissionError(
+                    HTTPStatus.CONFLICT,
+                    "identity_proof_replayed",
+                    "This sign-in proof has already been used. Try again.",
+                ) from None
             raise
         finally:
             connection.close()
@@ -508,6 +562,8 @@ MatrixRequest = Callable[
     [str, str, dict[str, Any] | None, str | None],
     Any,
 ]
+OpenIdVerifier = Callable[[dict[str, Any]], str]
+RegistrationTokenIssuer = Callable[[str, str, int], None]
 
 
 class AdmissionApplication:
@@ -516,10 +572,59 @@ class AdmissionApplication:
         config: Config,
         store: InvitationStore,
         matrix_request: MatrixRequest | None = None,
+        openid_verifier: OpenIdVerifier | None = None,
+        registration_token_issuer: RegistrationTokenIssuer | None = None,
     ) -> None:
         self.config = config
         self.store = store
         self.matrix_request = matrix_request or self._matrix_request
+        self.openid_verifier = openid_verifier or self._unconfigured_openid_verifier
+        self.registration_token_issuer = (
+            registration_token_issuer or self._unconfigured_registration_token_issuer
+        )
+
+    @staticmethod
+    def _unconfigured_openid_verifier(_proof: dict[str, Any]) -> str:
+        # Matrix's standardized federation userinfo endpoint accepts the proof
+        # in a URL query. Mesh's boundary forbids credentials in URLs, so a
+        # production deployment must provide a reviewed POST-capable verifier.
+        raise AdmissionError(
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            "identity_verifier_unavailable",
+            "This community cannot verify invitation creators yet.",
+        )
+
+    @staticmethod
+    def _unconfigured_registration_token_issuer(
+        action: str,
+        _token: str,
+        _expires_at: int,
+    ) -> None:
+        if action == "revoke":
+            return
+        # Synapse's registration-token management API requires a server-admin
+        # account and offers no admission-only scope. Production must inject a
+        # reviewed least-privilege issuer instead of elevating this service.
+        raise AdmissionError(
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            "registration_issuer_unavailable",
+            "This community cannot issue new-account invitations yet.",
+        )
+
+    def verify_service_identity(self) -> None:
+        response = self.matrix_request(
+            "GET",
+            "/_matrix/client/v3/account/whoami",
+            None,
+            self.config.service_access_token,
+        )
+        actual_user = str(response.get("user_id", "")) if isinstance(response, dict) else ""
+        if actual_user != self.config.service_user_id:
+            raise AdmissionError(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                "service_identity_invalid",
+                "The admission service identity is not configured safely.",
+            )
 
     def _matrix_request(
         self,
@@ -552,17 +657,15 @@ class AdmissionApplication:
                     )
                 return json.loads(payload or b"{}")
         except urllib.error.HTTPError as error:
-            payload = error.read(8 * 1024)
-            try:
-                upstream = json.loads(payload)
-                detail = str(upstream.get("error", ""))
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                detail = ""
+            # Drain a bounded prefix but never reflect an upstream body. A
+            # malicious or misconfigured service could echo credentials from
+            # its request into that text.
+            error.read(8 * 1024)
             if error.code in (401, 403):
                 raise AdmissionError(
                     HTTPStatus.FORBIDDEN,
                     "permission_denied",
-                    detail or "The account does not have permission for this invitation.",
+                    "The account does not have permission for this invitation.",
                 ) from None
             if error.code == 404:
                 raise AdmissionError(
@@ -588,30 +691,94 @@ class AdmissionApplication:
                 "The account service is temporarily unavailable.",
             ) from None
 
-    def whoami(self, access_token: str) -> str:
-        response = self.matrix_request(
-            "GET",
-            "/_matrix/client/v3/account/whoami",
-            None,
-            access_token,
-        )
-        user_id = str(response.get("user_id", "")) if isinstance(response, dict) else ""
-        if not USER_ID_PATTERN.fullmatch(user_id):
+    def verify_identity_proof(
+        self,
+        proof: Any,
+        expected_purpose: str,
+        expected_subject: str,
+    ) -> str:
+        if not isinstance(proof, dict):
+            raise AdmissionError(
+                HTTPStatus.BAD_REQUEST,
+                "identity_proof_invalid",
+                "Sign in again before creating an invitation.",
+            )
+        proof_id = str(proof.get("proof_id", ""))
+        audience = str(proof.get("audience", ""))
+        claimed_user = str(proof.get("user_id", ""))
+        access_token = str(proof.get("access_token", ""))
+        token_type = str(proof.get("token_type", ""))
+        server_name = str(proof.get("matrix_server_name", ""))
+        purpose = str(proof.get("purpose", ""))
+        subject = str(proof.get("subject", ""))
+        expires_in = proof.get("expires_in")
+        try:
+            uuid.UUID(proof_id)
+        except (ValueError, AttributeError):
+            proof_id = ""
+        if (
+            not proof_id
+            or purpose != expected_purpose
+            or subject != expected_subject
+            or len(subject) > 512
+            or audience != self.config.public_origin
+            or not USER_ID_PATTERN.fullmatch(claimed_user)
+            or token_type.lower() != "bearer"
+            or not access_token
+            or len(access_token) > MAX_AUTHORIZATION_BYTES
+            or any(character.isspace() for character in access_token)
+            or server_name != claimed_user.split(":", 1)[1]
+            or isinstance(expires_in, bool)
+            or not isinstance(expires_in, int)
+            or not 0 < expires_in <= MAX_OPENID_PROOF_SECONDS
+        ):
+            raise AdmissionError(
+                HTTPStatus.BAD_REQUEST,
+                "identity_proof_invalid",
+                "Sign in again before creating an invitation.",
+            )
+        verified_user = self.openid_verifier(dict(proof))
+        if verified_user != claimed_user:
             raise AdmissionError(
                 HTTPStatus.UNAUTHORIZED,
-                "not_authenticated",
-                "Sign in to continue.",
+                "identity_proof_mismatch",
+                "The signed-in account did not match this invitation request.",
             )
-        return user_id
+        now_ms = int(time.time() * 1000)
+        expires_at = now_ms + expires_in * 1000
+        # The one-use identity is the credential itself, not the client-chosen
+        # proof envelope. Including proof_id, purpose, subject, or audience in
+        # this digest would let the same OpenID token replay under a new UUID or
+        # operation. The envelope is still validated above before consumption.
+        proof_hash = hmac.new(
+            self.config.signing_key,
+            (
+                "mesh-openid-credential-v1\0"
+                + server_name
+                + "\0"
+                + claimed_user
+                + "\0"
+                + access_token
+            ).encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        self.store.consume_identity_proof(
+            proof_hash,
+            claimed_user,
+            audience,
+            now_ms,
+            expires_at,
+        )
+        return claimed_user
 
-    def require_room_administrator(self, access_token: str, user_id: str, room_id: str) -> None:
+    def require_room_administrator(self, user_id: str, room_id: str) -> None:
         encoded_room = urllib.parse.quote(room_id, safe="")
         encoded_user = urllib.parse.quote(user_id, safe="")
         create = self.matrix_request(
             "GET",
             f"/_matrix/client/v3/rooms/{encoded_room}/state/m.room.create",
             None,
-            access_token,
+            self.config.service_access_token,
         )
         if create.get("type") != "m.space":
             raise AdmissionError(
@@ -623,7 +790,7 @@ class AdmissionApplication:
             "GET",
             f"/_matrix/client/v3/rooms/{encoded_room}/state/m.room.member/{encoded_user}",
             None,
-            access_token,
+            self.config.service_access_token,
         )
         if membership.get("membership") != "join":
             raise AdmissionError(
@@ -635,7 +802,7 @@ class AdmissionApplication:
             "GET",
             f"/_matrix/client/v3/rooms/{encoded_room}/state/m.room.power_levels",
             None,
-            access_token,
+            self.config.service_access_token,
         )
         users = power.get("users") if isinstance(power.get("users"), dict) else {}
         events = power.get("events") if isinstance(power.get("events"), dict) else {}
@@ -652,7 +819,7 @@ class AdmissionApplication:
 
     def create_invitation(
         self,
-        access_token: str,
+        identity_proof: dict[str, Any],
         room_id: str,
         expires_in_seconds: int = DEFAULT_EXPIRY_SECONDS,
     ) -> dict[str, Any]:
@@ -668,23 +835,14 @@ class AdmissionApplication:
                 "expiry_invalid",
                 "Invitation expiry is outside the supported range.",
             )
-        creator = self.whoami(access_token)
-        self.require_room_administrator(access_token, creator, room_id)
+        creator = self.verify_identity_proof(identity_proof, "create", room_id)
+        self.require_room_administrator(creator, room_id)
 
         admission_token = secrets.token_urlsafe(32)
         registration = registration_token(self.config.signing_key, admission_token)
         now_ms = int(time.time() * 1000)
         expires_at = now_ms + expires_in_seconds * 1000
-        self.matrix_request(
-            "POST",
-            "/_synapse/admin/v1/registration_tokens/new",
-            {
-                "token": registration,
-                "uses_allowed": 1,
-                "expiry_time": expires_at,
-            },
-            self.config.admin_access_token,
-        )
+        self.registration_token_issuer("issue", registration, expires_at)
         try:
             self.store.insert(
                 token_digest(admission_token),
@@ -697,19 +855,15 @@ class AdmissionApplication:
             )
         except Exception:
             try:
-                encoded = urllib.parse.quote(registration, safe="")
-                self.matrix_request(
-                    "DELETE",
-                    f"/_synapse/admin/v1/registration_tokens/{encoded}",
-                    None,
-                    self.config.admin_access_token,
-                )
+                self.registration_token_issuer("revoke", registration, expires_at)
             except Exception:
                 pass
             raise
 
         return {
-            "invite_url": f"{self.config.public_origin}/invite/{admission_token}",
+            # URL fragments are not included in HTTP request targets, proxy
+            # logs, referrers, or server access logs.
+            "invite_url": f"{self.config.public_origin}/invite#{admission_token}",
             "expires_at": expires_at,
         }
 
@@ -728,7 +882,12 @@ class AdmissionApplication:
             "expires_at": values["expires_at"],
         }
 
-    def claim_invitation(self, admission_token: str, claimant: str) -> dict[str, Any]:
+    def claim_invitation(
+        self,
+        admission_token: str,
+        claimant: str,
+        identity_proof: dict[str, Any],
+    ) -> dict[str, Any]:
         validate_admission_token(admission_token)
         if not USER_ID_PATTERN.fullmatch(claimant):
             raise AdmissionError(
@@ -736,40 +895,32 @@ class AdmissionApplication:
                 "user_id_invalid",
                 "Choose a valid signed-in account.",
             )
+        verified_claimant = self.verify_identity_proof(
+            identity_proof,
+            "claim",
+            admission_token,
+        )
+        if verified_claimant != claimant:
+            raise AdmissionError(
+                HTTPStatus.UNAUTHORIZED,
+                "identity_proof_mismatch",
+                "The signed-in account did not match this invitation claim.",
+            )
         now_ms = int(time.time() * 1000)
         digest = token_digest(admission_token)
         values = self.store.begin_claim(digest, claimant, now_ms)
-        impersonation_token = ""
         try:
-            creator = values["creator_user_id"]
-            encoded_creator = urllib.parse.quote(creator, safe="")
-            impersonation = self.matrix_request(
-                "POST",
-                f"/_synapse/admin/v1/users/{encoded_creator}/login",
-                {"valid_until_ms": now_ms + IMPERSONATION_SECONDS * 1000},
-                self.config.admin_access_token,
+            self.ensure_invited(
+                values["room_id"],
+                claimant,
+                self.config.service_access_token,
             )
-            if not isinstance(impersonation, dict):
-                raise AdmissionError(
-                    HTTPStatus.BAD_GATEWAY,
-                    "service_response_invalid",
-                    "The account service returned an invalid invitation authorization.",
-                )
-            impersonation_token = str(impersonation.get("access_token", ""))
-            if not impersonation_token:
-                raise AdmissionError(
-                    HTTPStatus.BAD_GATEWAY,
-                    "service_response_invalid",
-                    "The account service returned no temporary invitation authorization.",
-                )
-
-            self.ensure_invited(values["room_id"], claimant, impersonation_token)
             encoded_space = urllib.parse.quote(values["room_id"], safe="")
             state = self.matrix_request(
                 "GET",
                 f"/_matrix/client/v3/rooms/{encoded_space}/state",
                 None,
-                impersonation_token,
+                self.config.service_access_token,
             )
             if not isinstance(state, list):
                 raise AdmissionError(
@@ -791,7 +942,11 @@ class AdmissionApplication:
                         "This community has too many rooms for one invitation.",
                     )
             for child_room in child_rooms:
-                self.ensure_invited(child_room, claimant, impersonation_token)
+                self.ensure_invited(
+                    child_room,
+                    claimant,
+                    self.config.service_access_token,
+                )
             self.store.finish_claim(digest, claimant, int(time.time() * 1000))
         except Exception:
             try:
@@ -799,28 +954,11 @@ class AdmissionApplication:
             except Exception:
                 pass
             raise
-        finally:
-            if impersonation_token:
-                try:
-                    self.matrix_request(
-                        "POST",
-                        "/_matrix/client/v3/logout",
-                        {},
-                        impersonation_token,
-                    )
-                except Exception:
-                    pass
-
         try:
-            encoded_registration = urllib.parse.quote(
+            self.registration_token_issuer(
+                "revoke",
                 registration_token(self.config.signing_key, admission_token),
-                safe="",
-            )
-            self.matrix_request(
-                "DELETE",
-                f"/_synapse/admin/v1/registration_tokens/{encoded_registration}",
-                None,
-                self.config.admin_access_token,
+                int(values["expires_at"]),
             )
         except Exception:
             pass
@@ -863,39 +1001,15 @@ class AdmissionApplication:
                 inviter_token,
             )
 
-    def invitation_html(self, admission_token: str) -> bytes:
-        resolved = self.resolve_invitation(admission_token)
-        resume_url = f"{self.config.public_origin}/invite/{admission_token}"
-        deep_link = (
-            "mesh://join?"
-            + urllib.parse.urlencode(
-                {
-                    "v": "5",
-                    "kind": "community",
-                    "room": resolved["room_id"],
-                    "via": resolved["via"],
-                    "community_service": resolved["service"],
-                    "admission": self.config.public_origin,
-                    "code": admission_token,
-                    "resume": resume_url,
-                },
-                doseq=True,
-            )
-        )
-        escaped_link = html.escape(deep_link, quote=True)
-        escaped_expiry = html.escape(
-            time.strftime(
-                "%Y-%m-%d %H:%M UTC",
-                time.gmtime(int(resolved["expires_at"]) / 1000),
-            )
-        )
+    def invitation_html(self) -> bytes:
+        nonce = secrets.token_urlsafe(18)
+        origin = json.dumps(self.config.public_origin)
         return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="refresh" content="0; url={escaped_link}">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-{nonce}'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
   <title>Open Mesh invitation</title>
   <style>
     body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; background: #111318; color: #f5f7fb; font: 16px system-ui, sans-serif; }}
@@ -907,9 +1021,29 @@ class AdmissionApplication:
 <body>
   <main>
     <h1>Join this community in Mesh</h1>
-    <p>Mesh should open automatically. This private invitation expires {escaped_expiry}.</p>
-    <a href="{escaped_link}">Open Mesh</a>
+    <p id="status">Mesh should open automatically. The app will verify this private invitation.</p>
+    <a id="open" hidden>Open Mesh</a>
   </main>
+  <script nonce="{nonce}">
+    (() => {{
+      const capability = window.location.hash.slice(1);
+      window.history.replaceState(null, "", "/invite");
+      const status = document.getElementById("status");
+      const open = document.getElementById("open");
+      if (!/^[A-Za-z0-9_-]{{32,64}}$/.test(capability)) {{
+        status.textContent = "This invitation is incomplete. Ask for a new invitation link.";
+        return;
+      }}
+      const target = new URL("mesh://join");
+      target.searchParams.set("v", "4");
+      target.searchParams.set("kind", "managed");
+      target.searchParams.set("api", {origin});
+      target.searchParams.set("code", capability);
+      open.href = target.href;
+      open.hidden = false;
+      window.location.replace(target.href);
+    }})();
+  </script>
 </body>
 </html>
 """.encode("utf-8")
@@ -967,7 +1101,8 @@ class AdmissionHandler(BaseHTTPRequestHandler):
     limiter = RateLimiter()
 
     def log_message(self, _format: str, *_args: Any) -> None:
-        # Paths contain bearer invitation credentials and must never enter logs.
+        # Keep request logging disabled even though invitation capabilities are
+        # now fragment-only and therefore never reach this server.
         return
 
     def do_GET(self) -> None:  # noqa: N802
@@ -984,18 +1119,9 @@ class AdmissionHandler(BaseHTTPRequestHandler):
                     )
                 self.send_json(HTTPStatus.OK, {"status": "ok"})
                 return
-            match = re.fullmatch(r"/v1/invitations/([A-Za-z0-9_-]{32,64})", path.path)
-            if match:
-                self.limiter.require(self.client_key(), "resolve", 60)
-                self.send_json(
-                    HTTPStatus.OK,
-                    self.application.resolve_invitation(match.group(1)),
-                )
-                return
-            match = re.fullmatch(r"/invite/([A-Za-z0-9_-]{32,64})", path.path)
-            if match:
+            if path.path == "/invite":
                 self.limiter.require(self.client_key(), "html", 60)
-                payload = self.application.invitation_html(match.group(1))
+                payload = self.application.invitation_html()
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Cache-Control", "no-store")
@@ -1022,11 +1148,12 @@ class AdmissionHandler(BaseHTTPRequestHandler):
             path = urllib.parse.urlparse(self.path)
             if path.query or path.fragment:
                 raise AdmissionError(HTTPStatus.NOT_FOUND, "not_found", "Not found.")
-            if path.path == "/v1/invitations":
+            if path.path == "/_mesh/admission/v1/invitations/create":
                 self.limiter.require(self.client_key(), "create", 20)
-                access_token = bearer_token(self.headers.get("Authorization"))
+                self.reject_authorization()
                 body = self.read_json_body()
                 room_id = str(body.get("room_id", ""))
+                identity_proof = body.get("identity_proof")
                 expires = body.get("expires_in_seconds", DEFAULT_EXPIRY_SECONDS)
                 if isinstance(expires, bool) or not isinstance(expires, int):
                     raise AdmissionError(
@@ -1036,25 +1163,30 @@ class AdmissionHandler(BaseHTTPRequestHandler):
                     )
                 self.send_json(
                     HTTPStatus.CREATED,
-                    self.application.create_invitation(access_token, room_id, expires),
+                    self.application.create_invitation(identity_proof, room_id, expires),
                 )
                 return
-            match = re.fullmatch(
-                r"/v1/invitations/([A-Za-z0-9_-]{32,64})/claim",
-                path.path,
-            )
-            if match:
-                self.limiter.require(self.client_key(), "claim", 20)
+            if path.path == "/_mesh/admission/v1/invitations/resolve":
+                self.limiter.require(self.client_key(), "resolve", 60)
+                self.reject_authorization()
                 body = self.read_json_body()
-                claimant = str(body.get("user_id", ""))
-                if not claimant:
-                    # Compatibility for v4 clients. New clients never disclose
-                    # an account access token to a community admission service.
-                    access_token = bearer_token(self.headers.get("Authorization"))
-                    claimant = self.application.whoami(access_token)
                 self.send_json(
                     HTTPStatus.OK,
-                    self.application.claim_invitation(match.group(1), claimant),
+                    self.application.resolve_invitation(str(body.get("invitation", ""))),
+                )
+                return
+            if path.path == "/_mesh/admission/v1/invitations/claim":
+                self.limiter.require(self.client_key(), "claim", 20)
+                self.reject_authorization()
+                body = self.read_json_body()
+                claimant = str(body.get("user_id", ""))
+                self.send_json(
+                    HTTPStatus.OK,
+                    self.application.claim_invitation(
+                        str(body.get("invitation", "")),
+                        claimant,
+                        body.get("identity_proof"),
+                    ),
                 )
                 return
             raise AdmissionError(HTTPStatus.NOT_FOUND, "not_found", "Not found.")
@@ -1078,6 +1210,14 @@ class AdmissionHandler(BaseHTTPRequestHandler):
             except ValueError:
                 pass
         return self.client_address[0]
+
+    def reject_authorization(self) -> None:
+        if self.headers.get("Authorization") is not None:
+            raise AdmissionError(
+                HTTPStatus.BAD_REQUEST,
+                "client_credential_rejected",
+                "This service does not accept account access credentials.",
+            )
 
     def read_json_body(self, require_empty: bool = False) -> dict[str, Any]:
         content_length = self.headers.get("Content-Length")
@@ -1136,7 +1276,9 @@ def main() -> None:
     config = Config.from_environment()
     store = InvitationStore(config)
     store.initialize()
-    AdmissionHandler.application = AdmissionApplication(config, store)
+    application = AdmissionApplication(config, store)
+    application.verify_service_identity()
+    AdmissionHandler.application = application
     server = ThreadingHTTPServer((config.bind_host, config.bind_port), AdmissionHandler)
     server.daemon_threads = True
     server.serve_forever()

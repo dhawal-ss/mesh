@@ -686,13 +686,13 @@ pub(super) async fn handle_control_response(
                     event,
                     &owner_public_key,
                 );
-                if result.as_ref().map(|r| r.applied).unwrap_or(false) {
-                    if matches!(
+                if result.as_ref().map(|r| r.applied).unwrap_or(false)
+                    && matches!(
                         event.event_type.as_str(),
                         "member_join" | "member_leave" | "member_ban" | "community_delete"
-                    ) {
-                        had_membership_event = true;
-                    }
+                    )
+                {
+                    had_membership_event = true;
                 }
             }
             // Sync membership roster to swarm once after all events are applied.

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion } from '../../lib/lazy-motion'
 import { variants } from '../../lib/motion'
 
 export type ToastTone = 'success' | 'danger' | 'info' | 'warning'
@@ -36,7 +36,7 @@ export function ToastContainer() {
   /*
    * The live region must exist in the DOM *before* the message lands in it.
    * Returning null while empty meant the region and its content were inserted
-   * in the same tick, which screen readers generally do not announce — every
+   * in the same tick, which screen readers generally do not announce: every
    * moderation result, copy confirmation and error was silent.
    */
   return (

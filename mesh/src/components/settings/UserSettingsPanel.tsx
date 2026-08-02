@@ -3,11 +3,19 @@ import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { ErrorState } from '../ui/ErrorState'
-import { retryMatrixPreferenceSync, useSettingsStore } from '../../store/settings'
+import {
+  effectiveConversationPrivacy,
+  retryMatrixPreferenceSync,
+  useSettingsStore,
+} from '../../store/settings'
+import { sequenceCardProps, type SequenceCardPosition } from '../ui/SequenceCard'
+import { Icon } from '../ui/Icon'
+import { PixelMark } from '../ui/PixelMark'
 import type {
   AppearanceAccent,
   AppearanceDensity,
   AppearanceTheme,
+  AppearanceTransparency,
   NotificationSoundId,
   ReadReceiptMode,
 } from '../../store/settings'
@@ -19,6 +27,8 @@ interface UserSettingsPanelProps {
   identity: Identity
   matrixAccountId: string | null
   matrixMode: boolean
+  activeConversationId?: string | null
+  activeConversationName?: string | null
   onUpdateDisplayName?: (displayName: string) => Promise<void>
   onOpenSecurity: () => void
   backupReminderDue?: boolean
@@ -27,12 +37,37 @@ interface UserSettingsPanelProps {
   onOpenImport?: () => void
 }
 
+const ACCENT_CHOICES = [
+  { id: 'violet', label: 'Violet', description: 'Mesh default' },
+  { id: 'sand', label: 'Sand', description: 'Low-contrast warmth' },
+  { id: 'ocean', label: 'Ocean', description: 'Cool blue' },
+  { id: 'forest', label: 'Forest', description: 'Muted green' },
+  { id: 'ember', label: 'Ember', description: 'Burnt orange' },
+  { id: 'rose', label: 'Rose', description: 'Soft magenta' },
+] as const satisfies ReadonlyArray<{
+  id: AppearanceAccent
+  label: string
+  description: string
+}>
+
+type UserSettingsTab = 'account' | 'appearance' | 'notifications' | 'privacy' | 'devices'
+
+const SETTINGS_TABS = [
+  ['account', 'Account'],
+  ['appearance', 'Appearance'],
+  ['notifications', 'Notifications'],
+  ['privacy', 'Privacy'],
+  ['devices', 'Devices'],
+] as const satisfies ReadonlyArray<readonly [UserSettingsTab, string]>
+
 export function UserSettingsPanel({
   open,
   onClose,
   identity,
   matrixAccountId,
   matrixMode,
+  activeConversationId = null,
+  activeConversationName = null,
   onUpdateDisplayName,
   onOpenSecurity,
   backupReminderDue = false,
@@ -47,14 +82,22 @@ export function UserSettingsPanel({
   const setNotificationsEnabled = useSettingsStore((state) => state.setNotificationsEnabled)
   const setNotificationSound = useSettingsStore((state) => state.setNotificationSound)
   const setNotificationSoundId = useSettingsStore((state) => state.setNotificationSoundId)
+  const setShowMessageContent = useSettingsStore((state) => state.setShowMessageContent)
   const setDoNotDisturb = useSettingsStore((state) => state.setDoNotDisturb)
   const setQuietHoursEnabled = useSettingsStore((state) => state.setQuietHoursEnabled)
   const setQuietHours = useSettingsStore((state) => state.setQuietHours)
   const setAppearanceTheme = useSettingsStore((state) => state.setAppearanceTheme)
   const setAppearanceDensity = useSettingsStore((state) => state.setAppearanceDensity)
   const setAppearanceAccent = useSettingsStore((state) => state.setAppearanceAccent)
+  const setAppearanceTransparency = useSettingsStore((state) => state.setAppearanceTransparency)
   const setReadReceiptMode = useSettingsStore((state) => state.setReadReceiptMode)
   const setSendTypingIndicators = useSettingsStore((state) => state.setSendTypingIndicators)
+  const setConversationReadReceiptMode = useSettingsStore(
+    (state) => state.setConversationReadReceiptMode,
+  )
+  const setConversationTypingIndicators = useSettingsStore(
+    (state) => state.setConversationTypingIndicators,
+  )
   const setSharePresence = useSettingsStore((state) => state.setSharePresence)
   const setInvisibleMode = useSettingsStore((state) => state.setInvisibleMode)
   const [displayName, setDisplayName] = useState(identity.displayName)
@@ -63,11 +106,23 @@ export function UserSettingsPanel({
   const [profileSaved, setProfileSaved] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const [testingNotification, setTestingNotification] = useState(false)
-  const [testNotificationStatus, setTestNotificationStatus] = useState<
-    'sent' | 'failed' | null
-  >(null)
+  const [testNotificationStatus, setTestNotificationStatus] = useState<'sent' | 'failed' | null>(
+    null,
+  )
   const [advancedUnlocked, setAdvancedUnlocked] = useState(false)
+  const [activeTab, setActiveTab] = useState<UserSettingsTab>('appearance')
   const versionTapCount = useRef(0)
+  const settingsScrollRef = useRef<HTMLDivElement>(null)
+  const tabRefs = useRef<Partial<Record<UserSettingsTab, HTMLButtonElement>>>({})
+  const visibleSettingsTabs = matrixMode
+    ? SETTINGS_TABS
+    : SETTINGS_TABS.filter(([id]) => id !== 'privacy')
+  const conversationPrivacy = activeConversationId
+    ? privacy.conversationPrivacy[activeConversationId]
+    : undefined
+  const effectivePrivacy = activeConversationId
+    ? effectiveConversationPrivacy(privacy, activeConversationId)
+    : privacy
 
   const testNotification = async () => {
     if (!onTestNotification || testingNotification) return
@@ -94,6 +149,29 @@ export function UserSettingsPanel({
     document.addEventListener('keydown', unlockAdvanced)
     return () => document.removeEventListener('keydown', unlockAdvanced)
   }, [open])
+
+  const activateTab = (id: UserSettingsTab, focus = false) => {
+    if (focus) tabRefs.current[id]?.focus()
+    setActiveTab(id)
+    window.requestAnimationFrame(() => {
+      if (settingsScrollRef.current) settingsScrollRef.current.scrollTop = 0
+      const tab = tabRefs.current[id]
+      tab?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+    })
+  }
+
+  const navigateTabs = (event: React.KeyboardEvent<HTMLButtonElement>, current: UserSettingsTab) => {
+    const ids = visibleSettingsTabs.map(([id]) => id)
+    const currentIndex = ids.indexOf(current)
+    let nextIndex: number | null = null
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % ids.length
+    if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + ids.length) % ids.length
+    if (event.key === 'Home') nextIndex = 0
+    if (event.key === 'End') nextIndex = ids.length - 1
+    if (nextIndex === null) return
+    event.preventDefault()
+    activateTab(ids[nextIndex], true)
+  }
 
   const saveDisplayName = async (event?: FormEvent) => {
     event?.preventDefault()
@@ -127,8 +205,72 @@ export function UserSettingsPanel({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="User Settings">
-      <div className="max-h-settings space-y-3 overflow-y-auto pr-1">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="User Settings"
+      description="Make Mesh feel like yours."
+      size="lg"
+      className="overflow-hidden"
+      closeLabel="Close user settings"
+    >
+      <div className="-mx-4 border-b border-border-subtle px-4">
+        <label className="block py-2 text-xs font-medium text-secondary sm:hidden">
+          Settings section
+          <select
+            value={activeTab}
+            onChange={(event) => activateTab(event.target.value as UserSettingsTab)}
+            className="mt-1 block min-h-11 w-full rounded-control border border-border bg-surface-sunken px-3 text-sm text-primary"
+          >
+            {visibleSettingsTabs.map(([id, label]) => (
+              <option key={id} value={id}>{label}</option>
+            ))}
+          </select>
+        </label>
+        <div className="relative hidden sm:block">
+          <div
+            role="tablist"
+            aria-label="User settings"
+            className="flex min-w-0 gap-1 overflow-x-auto pr-8"
+          >
+          {visibleSettingsTabs.map(([id, label]) => (
+            <button
+              key={id}
+              ref={(element) => { tabRefs.current[id] = element ?? undefined }}
+              id={`user-settings-tab-${id}`}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === id}
+              aria-controls={`user-settings-panel-${id}`}
+              tabIndex={activeTab === id ? 0 : -1}
+              className={`relative min-h-11 flex-shrink-0 px-3 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
+                activeTab === id ? 'text-accent' : 'text-muted hover:text-primary'
+              }`}
+              onClick={() => activateTab(id)}
+              onKeyDown={(event) => navigateTabs(event, id)}
+            >
+              {label}
+              {activeTab === id && (
+                <span className="absolute inset-x-1 bottom-0 h-0.5 rounded-full bg-accent" aria-hidden="true" />
+              )}
+            </button>
+          ))}
+          </div>
+          <div
+            className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface-raised to-transparent"
+            aria-hidden="true"
+          />
+        </div>
+      </div>
+
+      <div ref={settingsScrollRef} className="mesh-settings-scroll overflow-y-auto py-5 pr-1">
+        <div
+          id={`user-settings-panel-${activeTab}`}
+          role="tabpanel"
+          aria-labelledby={`user-settings-tab-${activeTab}`}
+          tabIndex={0}
+        >
+        {activeTab === 'account' && (
         <section className="border-b border-border-subtle pb-5">
           <p className="text-2xs uppercase tracking-signal text-muted">Account</p>
           <div className="mt-3 min-w-0">
@@ -167,13 +309,20 @@ export function UserSettingsPanel({
                   {savingProfile ? 'Saving…' : 'Save display name'}
                 </Button>
                 {profileSaved && (
-                  <span role="status" aria-label="Display name save status" className="text-xs text-green">
+                  <span
+                    role="status"
+                    aria-label="Display name save status"
+                    className="text-xs text-green"
+                  >
                     Profile updated
                   </span>
                 )}
               </div>
               {profileValidation && (
-                <p role="alert" className="rounded-panel bg-status-danger/10 px-3 py-2 text-xs text-status-danger">
+                <p
+                  role="alert"
+                  className="rounded-panel bg-status-danger/10 px-3 py-2 text-xs text-status-danger"
+                >
                   {profileValidation}
                 </p>
               )}
@@ -192,9 +341,13 @@ export function UserSettingsPanel({
             </form>
           )}
         </section>
+        )}
 
+        {activeTab === 'appearance' && (
         <section
-          className="space-y-3 border-b border-border-subtle pb-5"
+          id="user-settings-panel-appearance"
+          role="tabpanel"
+          className="space-y-5"
           aria-labelledby="appearance-settings-heading"
         >
           <div>
@@ -202,13 +355,12 @@ export function UserSettingsPanel({
               Appearance
             </p>
             <p className="mt-1 text-xs leading-5 text-muted">
-              Choose how Mesh looks and how much space its controls use. These preferences are
-              saved on this device.
+              Changes preview instantly and stay on this device.
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            <AppearanceSelect
+          <div className="space-y-4">
+            <AppearanceSegmentedControl
               id="appearance-theme"
               label="Theme"
               value={appearance.theme}
@@ -219,7 +371,7 @@ export function UserSettingsPanel({
               ]}
               onChange={(value) => setAppearanceTheme(value as AppearanceTheme)}
             />
-            <AppearanceSelect
+            <AppearanceSegmentedControl
               id="appearance-density"
               label="Density"
               value={appearance.density}
@@ -230,24 +382,91 @@ export function UserSettingsPanel({
               ]}
               onChange={(value) => setAppearanceDensity(value as AppearanceDensity)}
             />
-            <AppearanceSelect
-              id="appearance-accent"
-              label="Accent"
-              value={appearance.accent}
+            <AppearanceSegmentedControl
+              id="appearance-transparency"
+              label="Window transparency"
+              value={appearance.transparency}
               options={[
-                ['sand', 'Sand'],
-                ['ocean', 'Ocean'],
-                ['violet', 'Violet'],
-                ['forest', 'Forest'],
-                ['ember', 'Ember'],
-                ['rose', 'Rose'],
+                ['readable', 'Subtle'],
+                ['opaque', 'Opaque'],
               ]}
-              onChange={(value) => setAppearanceAccent(value as AppearanceAccent)}
+              onChange={(value) => setAppearanceTransparency(value as AppearanceTransparency)}
             />
           </div>
-        </section>
 
-        {matrixMode && (
+          <fieldset>
+            <legend className="text-xs font-medium text-muted">Accent color</legend>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {ACCENT_CHOICES.map((choice) => {
+                const selected = appearance.accent === choice.id
+                return (
+                  <label
+                    key={choice.id}
+                    className={`group flex min-h-16 cursor-pointer items-center gap-3 rounded-control border px-3 py-2.5 transition-colors ${
+                      selected
+                        ? 'border-accent bg-accent/10'
+                        : 'border-border-subtle bg-surface-sunken hover:border-border-emphasis hover:bg-surface-hover'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="appearance-accent"
+                      value={choice.id}
+                      checked={selected}
+                      onChange={() => setAppearanceAccent(choice.id)}
+                      className="sr-only"
+                    />
+                    <span
+                      className="mesh-accent-choice flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-control"
+                      data-accent-preview={choice.id}
+                      aria-hidden="true"
+                    >
+                      <PixelMark variant="community" className="h-9 w-9" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-primary">{choice.label}</span>
+                      <span className="mt-0.5 block text-caption text-muted">{choice.description}</span>
+                    </span>
+                    {selected && (
+                      <span className="ml-auto flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-accent text-content-on-accent" aria-hidden="true">
+                        <Icon name="check" size="xs" />
+                      </span>
+                    )}
+                  </label>
+                )
+              })}
+            </div>
+            <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption leading-5 text-muted">
+              <span className="h-2 w-2 rounded-full bg-status-success" aria-hidden="true" />
+              Status colors stay consistent. Connected, warning, and destructive actions do not change with your accent.
+            </p>
+          </fieldset>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle pt-4">
+            <button
+              type="button"
+              className="min-h-9 rounded-control px-2 text-sm font-medium text-accent hover:bg-accent/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              onClick={() => {
+                setAppearanceTheme('dark')
+                setAppearanceDensity('default')
+                setAppearanceAccent('violet')
+                setAppearanceTransparency('readable')
+              }}
+            >
+              Reset to Mesh default
+            </button>
+            <div className="ml-auto flex items-center gap-3">
+              <span className="flex items-center gap-2 text-caption text-muted">
+                <span className="h-2 w-2 rounded-full bg-status-success" aria-hidden="true" />
+                Saved on this device
+              </span>
+              <Button variant="primary" onClick={onClose}>Done</Button>
+            </div>
+          </div>
+        </section>
+        )}
+
+        {matrixMode && activeTab === 'privacy' && (
           <section
             className="space-y-4 border-b border-border-subtle pb-5"
             aria-labelledby="privacy-center-heading"
@@ -257,8 +476,8 @@ export function UserSettingsPanel({
                 Privacy Center
               </p>
               <p className="mt-1 text-xs leading-5 text-muted">
-                Mesh protects message and file contents before they leave your device. Your
-                service still handles the information needed to connect you and deliver them.
+                Mesh protects message and file contents before they leave your device. Your service
+                still handles the information needed to connect you and deliver them.
               </p>
             </div>
 
@@ -308,9 +527,15 @@ export function UserSettingsPanel({
                 <caption className="sr-only">What your service can see</caption>
                 <thead className="bg-surface-hover text-muted">
                   <tr>
-                    <th scope="col" className="px-3 py-2 font-medium">Information</th>
-                    <th scope="col" className="px-3 py-2 font-medium">Can the service see it?</th>
-                    <th scope="col" className="px-3 py-2 font-medium">Why</th>
+                    <th scope="col" className="px-3 py-2 font-medium">
+                      Information
+                    </th>
+                    <th scope="col" className="px-3 py-2 font-medium">
+                      Can the service see it?
+                    </th>
+                    <th scope="col" className="px-3 py-2 font-medium">
+                      Why
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border-subtle text-secondary">
@@ -332,9 +557,13 @@ export function UserSettingsPanel({
                   />
                   <PrivacyVisibilityRow
                     information="Typing activity"
-                    visible={privacy.sendTypingIndicators ? 'Yes, while enabled' : 'No, disabled now'}
+                    visible={
+                      effectivePrivacy.sendTypingIndicators
+                        ? 'Yes, while enabled'
+                        : 'No, disabled now'
+                    }
                     explanation="Shared only when the typing control below is on."
-                    private={!privacy.sendTypingIndicators}
+                    private={!effectivePrivacy.sendTypingIndicators}
                   />
                   <PrivacyVisibilityRow
                     information="Network address"
@@ -350,54 +579,132 @@ export function UserSettingsPanel({
               </table>
             </div>
 
-            <div className="space-y-3" aria-label="Privacy controls">
+            <div className="sequence-card-group" aria-label="Privacy controls">
               <SelectRow
                 id="read-receipts"
                 label="Read receipts"
                 description="Choose whether people in a conversation can see when you have read their messages."
                 value={privacy.readReceiptMode}
                 options={[
-                  ['public', 'Public — show when I have read messages'],
-                  ['private', 'Private — keep receipts between my devices'],
-                  ['off', 'Off — do not send read receipts'],
+                  ['public', 'Public: show when I have read messages'],
+                  ['private', 'Private: keep receipts between my devices'],
+                  ['off', 'Off: do not send read receipts'],
                 ]}
                 onChange={(value) => setReadReceiptMode(value as ReadReceiptMode)}
+                sequencePosition="first"
               />
               <ToggleRow
                 label="Show when I am typing"
                 description="Lets people in the conversation see you composing; turning it off can make replies feel less immediate."
                 checked={privacy.sendTypingIndicators}
                 onChange={setSendTypingIndicators}
+                sequencePosition="middle"
               />
               <ToggleRow
                 label="Share my online status"
                 description="Lets people see when you are online; the service can still see connection times when this is off."
                 checked={privacy.sharePresence}
                 onChange={setSharePresence}
+                sequencePosition="middle"
               />
               <ToggleRow
                 label="Invisible mode"
                 description="Makes you appear offline without disconnecting and temporarily overrides online-status sharing."
                 checked={privacy.invisibleMode}
                 onChange={setInvisibleMode}
+                sequencePosition="last"
               />
             </div>
 
+            {activeConversationId && (
+              <div className="space-y-3 rounded-control border border-border-subtle bg-surface-sunken p-3">
+                <div>
+                  <p className="text-sm font-medium text-primary">
+                    This conversation
+                    {activeConversationName ? `: ${activeConversationName}` : ''}
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-muted">
+                    Override the account defaults only for this conversation. Inherit follows the
+                    controls above.
+                  </p>
+                </div>
+                <div
+                  className="sequence-card-group"
+                  aria-label="Current conversation privacy controls"
+                >
+                  <SelectRow
+                    id="conversation-read-receipts"
+                    label="Read receipts for this conversation"
+                    description="Controls what Mesh sends here and whether it displays other people's public receipts."
+                    value={conversationPrivacy?.readReceiptMode ?? ''}
+                    options={[
+                      ['', `Inherit account setting (${privacy.readReceiptMode})`],
+                      ['public', 'Public'],
+                      ['private', 'Private between my devices'],
+                      ['off', 'Off'],
+                    ]}
+                    onChange={(value) =>
+                      setConversationReadReceiptMode(
+                        activeConversationId,
+                        value ? (value as ReadReceiptMode) : null,
+                      )
+                    }
+                    sequencePosition="first"
+                  />
+                  <SelectRow
+                    id="conversation-typing"
+                    label="Typing status for this conversation"
+                    description="Controls whether Mesh tells people here when you are composing."
+                    value={
+                      conversationPrivacy?.sendTypingIndicators === undefined
+                        ? ''
+                        : conversationPrivacy.sendTypingIndicators
+                          ? 'on'
+                          : 'off'
+                    }
+                    options={[
+                      [
+                        '',
+                        `Inherit account setting (${privacy.sendTypingIndicators ? 'on' : 'off'})`,
+                      ],
+                      ['on', 'On'],
+                      ['off', 'Off'],
+                    ]}
+                    onChange={(value) =>
+                      setConversationTypingIndicators(
+                        activeConversationId,
+                        value === '' ? null : value === 'on',
+                      )
+                    }
+                    sequencePosition="last"
+                  />
+                </div>
+                <p className="text-xs leading-5 text-muted">
+                  Mesh can control only what it sends and shows. Other compatible apps may publish
+                  or display activity differently.
+                </p>
+              </div>
+            )}
+
             <div className="rounded-control bg-surface-hover px-3 py-3 text-xs leading-5 text-muted">
               <p>
-                Each conversation header checks its current protection and shows
-                “Protected end to end” before you send.
+                Each conversation header checks its current protection and shows “Protected end to
+                end” before you send.
               </p>
               <p className="mt-2">
-                Unlike standard Discord messages, Mesh keeps conversation content unreadable to
-                the service. Both services can still observe operational details such as network
+                Unlike standard Discord messages, Mesh keeps conversation content unreadable to the
+                service. Both services can still observe operational details such as network
                 addresses, devices, membership, and timing.
               </p>
             </div>
           </section>
         )}
 
-        <section className="space-y-3 border-b border-border-subtle pb-5" aria-labelledby="notification-settings-heading">
+        {activeTab === 'notifications' && (
+        <section
+          className="space-y-3 border-b border-border-subtle pb-5"
+          aria-labelledby="notification-settings-heading"
+        >
           <div>
             <p id="notification-settings-heading" className="text-sm font-medium text-primary">
               Notifications
@@ -419,6 +726,13 @@ export function UserSettingsPanel({
             checked={notifications.sound}
             disabled={!notifications.enabled}
             onChange={setNotificationSound}
+          />
+          <ToggleRow
+            label="Show message text"
+            description="Include message text in notifications. It may appear on lock screens, mirrored displays, and notification history."
+            checked={notifications.showMessageContent}
+            disabled={!notifications.enabled}
+            onChange={setShowMessageContent}
           />
           <label
             htmlFor="notification-sound"
@@ -499,7 +813,11 @@ export function UserSettingsPanel({
               {testingNotification ? 'Sending…' : 'Test notification'}
             </Button>
             {testNotificationStatus === 'sent' && (
-              <span role="status" aria-label="Test notification status" className="text-xs text-green">
+              <span
+                role="status"
+                aria-label="Test notification status"
+                className="text-xs text-green"
+              >
                 Test notification sent
               </span>
             )}
@@ -510,7 +828,8 @@ export function UserSettingsPanel({
             )}
           </div>
 
-          {(notifications.mutedChannels.length > 0 || notifications.mutedCommunities.length > 0) && (
+          {(notifications.mutedChannels.length > 0 ||
+            notifications.mutedCommunities.length > 0) && (
             <p className="rounded-control bg-surface-hover px-3 py-2 text-xs text-muted">
               Muted: {notifications.mutedCommunities.length} communit
               {notifications.mutedCommunities.length === 1 ? 'y' : 'ies'} and{' '}
@@ -519,8 +838,9 @@ export function UserSettingsPanel({
             </p>
           )}
         </section>
+        )}
 
-        {matrixMode && (
+        {matrixMode && activeTab === 'devices' && (
           <section className="border-b border-border-subtle pb-5">
             <div className="flex items-center gap-2">
               <p className="text-sm font-medium text-primary">Your devices</p>
@@ -542,7 +862,7 @@ export function UserSettingsPanel({
           </section>
         )}
 
-        {matrixMode && (
+        {matrixMode && activeTab === 'privacy' && (
           <section
             className="border-b border-border-subtle pb-5"
             aria-labelledby="call-privacy-heading"
@@ -551,21 +871,23 @@ export function UserSettingsPanel({
               Call privacy
             </p>
             <p className="mt-1 text-xs leading-5 text-muted">
-              Voice, video, and screen sharing are relayed through the call service. The
-              service can see who connects, network addresses, call timing, and traffic
-              volume.
+              Voice, video, and screen sharing are relayed through the call service. The service can
+              see who connects, network addresses, call timing, and traffic volume.
             </p>
             <p className="mt-2 text-xs leading-5 text-muted">
-              Mesh encrypts call media between participating devices only after call
-              encryption is verified. If verification or membership key rotation fails,
-              your microphone, camera, screen, and incoming media stay off. Call encryption
-              is newer and has a different security model from encrypted messages.
+              Mesh encrypts call media between participating devices only after call encryption is
+              verified. If verification or membership key rotation fails, your microphone, camera,
+              screen, and incoming media stay off. Call encryption is newer and has a different
+              security model from encrypted messages.
             </p>
           </section>
         )}
 
-        {advancedUnlocked && (
-          <section className="rounded-panel border border-border-subtle bg-surface-sunken p-4" aria-labelledby="advanced-settings-heading">
+        {activeTab === 'devices' && advancedUnlocked && (
+          <section
+            className="rounded-panel border border-border-subtle bg-surface-sunken p-4"
+            aria-labelledby="advanced-settings-heading"
+          >
             <p id="advanced-settings-heading" className="text-sm font-medium text-primary">
               Advanced
             </p>
@@ -587,6 +909,7 @@ export function UserSettingsPanel({
           </section>
         )}
 
+        {activeTab === 'devices' && (
         <button
           type="button"
           className="mx-auto flex min-h-8 items-center rounded-control px-2 text-caption text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
@@ -598,6 +921,19 @@ export function UserSettingsPanel({
         >
           Mesh 0.1.0
         </button>
+        )}
+        </div>
+        {visibleSettingsTabs
+          .filter(([id]) => id !== activeTab)
+          .map(([id]) => (
+            <div
+              key={id}
+              id={`user-settings-panel-${id}`}
+              role="tabpanel"
+              aria-labelledby={`user-settings-tab-${id}`}
+              hidden
+            />
+          ))}
       </div>
     </Modal>
   )
@@ -616,7 +952,9 @@ function PrivacyVisibilityRow({
 }) {
   return (
     <tr>
-      <th scope="row" className="px-3 py-2 font-medium text-primary">{information}</th>
+      <th scope="row" className="px-3 py-2 font-medium text-primary">
+        {information}
+      </th>
       <td className={`px-3 py-2 font-medium ${isPrivate ? 'text-green' : 'text-status-warning'}`}>
         {visible}
       </td>
@@ -625,7 +963,7 @@ function PrivacyVisibilityRow({
   )
 }
 
-function AppearanceSelect({
+function AppearanceSegmentedControl({
   id,
   label,
   value,
@@ -639,21 +977,35 @@ function AppearanceSelect({
   onChange: (value: string) => void
 }) {
   return (
-    <label htmlFor={id} className="block text-xs font-medium text-muted">
-      {label}
-      <select
+    <fieldset>
+      <legend className="text-xs font-medium text-primary">{label}</legend>
+      <div
         id={id}
-        className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
+        className="mt-2 grid overflow-hidden rounded-control border border-border-subtle bg-surface-sunken"
+        style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
       >
         {options.map(([optionValue, optionLabel]) => (
-          <option key={optionValue} value={optionValue}>
+          <label
+            key={optionValue}
+            className={`relative flex min-h-9 cursor-pointer items-center justify-center border-l border-border-subtle px-3 text-center text-xs font-medium first:border-l-0 ${
+              value === optionValue
+                ? 'bg-accent/10 text-accent outline outline-1 -outline-offset-1 outline-accent'
+                : 'text-muted hover:bg-surface-hover hover:text-primary'
+            }`}
+          >
+            <input
+              type="radio"
+              name={id}
+              value={optionValue}
+              checked={value === optionValue}
+              onChange={() => onChange(optionValue)}
+              className="sr-only"
+            />
             {optionLabel}
-          </option>
+          </label>
         ))}
-      </select>
-    </label>
+      </div>
+    </fieldset>
   )
 }
 
@@ -663,15 +1015,21 @@ function ToggleRow({
   checked,
   disabled = false,
   onChange,
+  sequencePosition,
 }: {
   label: string
   description: string
   checked: boolean
   disabled?: boolean
   onChange: (checked: boolean) => void
+  sequencePosition?: SequenceCardPosition
 }) {
+  const sequence = sequencePosition ? sequenceCardProps(sequencePosition) : null
   return (
-    <label className={`flex items-start justify-between gap-4 rounded-control bg-surface-hover px-3 py-3 ${disabled ? 'opacity-50' : 'cursor-pointer'}`}>
+    <label
+      data-sequence-position={sequence?.['data-sequence-position']}
+      className={`${sequence?.className ?? 'rounded-control bg-surface-hover'} flex items-start justify-between gap-4 px-3 py-3 ${disabled ? 'opacity-50' : 'cursor-pointer'}`}
+    >
       <span>
         <span className="block text-sm font-medium text-primary">{label}</span>
         <span className="mt-0.5 block text-xs leading-5 text-muted">{description}</span>
@@ -694,6 +1052,7 @@ function SelectRow({
   value,
   options,
   onChange,
+  sequencePosition,
 }: {
   id: string
   label: string
@@ -701,11 +1060,18 @@ function SelectRow({
   value: string
   options: Array<[string, string]>
   onChange: (value: string) => void
+  sequencePosition?: SequenceCardPosition
 }) {
+  const sequence = sequencePosition ? sequenceCardProps(sequencePosition) : null
   return (
-    <div className="flex items-start justify-between gap-4 rounded-control bg-surface-hover px-3 py-3">
+    <div
+      data-sequence-position={sequence?.['data-sequence-position']}
+      className={`${sequence?.className ?? 'rounded-control bg-surface-hover'} flex items-start justify-between gap-4 px-3 py-3`}
+    >
       <span>
-        <label htmlFor={id} className="block text-sm font-medium text-primary">{label}</label>
+        <label htmlFor={id} className="block text-sm font-medium text-primary">
+          {label}
+        </label>
         <span id={`${id}-description`} className="mt-0.5 block text-xs leading-5 text-muted">
           {description}
         </span>
@@ -718,7 +1084,9 @@ function SelectRow({
         onChange={(event) => onChange(event.target.value)}
       >
         {options.map(([optionValue, optionLabel]) => (
-          <option key={optionValue} value={optionValue}>{optionLabel}</option>
+          <option key={optionValue} value={optionValue}>
+            {optionLabel}
+          </option>
         ))}
       </select>
     </div>

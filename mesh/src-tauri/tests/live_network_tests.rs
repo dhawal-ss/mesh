@@ -3,7 +3,7 @@
 //! These tests spin up 2+ real `start_network` instances in-process on loopback
 //! TCP transport and validate actual network behavior: peer discovery via mDNS
 //! + direct dial, gossipsub message delivery, late-joiner connection, and
-//! graceful shutdown on channel close.
+//!   graceful shutdown on channel close.
 //!
 //! This is the first real multi-peer network test in the codebase. It exercises
 //! the full libp2p stack (TCP, noise, yamux, gossipsub, kademlia) without mocks
@@ -304,11 +304,11 @@ async fn count_peers_received_gossip(
             if received[i] {
                 continue;
             }
-            if let Ok(Some(event)) = timeout(per_peer_timeout, peer.event_rx.recv()).await {
-                if let NetworkEvent::GossipMessage { topic, data, .. } = &event {
-                    if topic.contains(topic_suffix) && data == expected_data {
-                        received[i] = true;
-                    }
+            if let Ok(Some(NetworkEvent::GossipMessage { topic, data, .. })) =
+                timeout(per_peer_timeout, peer.event_rx.recv()).await
+            {
+                if topic.contains(topic_suffix) && data == expected_data {
+                    received[i] = true;
                 }
             }
         }
@@ -413,9 +413,9 @@ async fn late_joiner_integrates_with_existing_mesh() {
     tokio::time::sleep(Duration::from_secs(3)).await;
 
     // Initial peers exchange some traffic
-    for i in 0..3 {
+    for (i, peer) in initial.iter().enumerate().take(3) {
         send_cmd(
-            &initial[i].handle,
+            &peer.handle,
             NetworkCommand::PublishMessage {
                 topic: topic.clone(),
                 data: format!("initial message {}", i).into_bytes(),

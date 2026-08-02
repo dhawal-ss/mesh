@@ -24,7 +24,7 @@ export function usePresence() {
   const identity = useIdentityStore((s) => s.identity)
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
   const activeCommunity = useActiveCommunity()
-  // Select raw members map — never call .filter() inside a Zustand selector
+  // Select raw members map: never call .filter() inside a Zustand selector
   // because it creates a new array reference on every call, causing infinite re-renders.
   const communityMembers = useCommunityMembers(activeCommunityId)
   const touchMember = useMembershipStore((s) => s.touchMember)

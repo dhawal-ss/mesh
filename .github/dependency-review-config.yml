@@ -1,0 +1,28 @@
+fail-on-severity: moderate
+license-check: true
+allow-licenses:
+  - 0BSD
+  - AGPL-3.0-only
+  - Apache-2.0
+  - BSD-1-Clause
+  - BSD-2-Clause
+  - BSD-3-Clause
+  - BlueOak-1.0.0
+  - BSL-1.0
+  - CC-BY-4.0
+  - CC0-1.0
+  - CDLA-Permissive-2.0
+  - ISC
+  - MIT
+  - MIT-0
+  - MPL-2.0
+  - OFL-1.1
+  - Unicode-3.0
+  - Unlicense
+  - Zlib
+vulnerability-check: true
+# These exact advisories are retained in the raw Cargo audit and are confined
+# to the legacy-p2p graph, which every shipping Matrix artifact excludes.
+allow-ghsas: GHSA-3v94-mw7p-v465, GHSA-q2qq-hmj6-3wpp
+show-openssf-scorecard: true
+warn-only: false

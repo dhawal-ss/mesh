@@ -24,9 +24,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc
+        uses: dtolnay/rust-toolchain@d0befba8b9ddf874327619e84c39b094edd58b66 # 1.93.0
         with:
-          toolchain: 1.93.0
           components: clippy, rustfmt
 
       - name: Install system dependencies (Linux)
@@ -82,9 +81,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc
-        with:
-          toolchain: 1.93.0
+        uses: dtolnay/rust-toolchain@d0befba8b9ddf874327619e84c39b094edd58b66 # 1.93.0
 
       - name: Install system dependencies
         run: |
@@ -109,7 +106,7 @@ jobs:
 
       - name: Check legacy LAN backend
         working-directory: mesh/src-tauri
-        run: cargo check --no-default-features --features legacy-p2p --locked
+        run: cargo check --no-default-features --features legacy-p2p --locked --jobs 1
 
       - name: Test legacy LAN backend
         working-directory: mesh/src-tauri
@@ -160,9 +157,33 @@ jobs:
         working-directory: mesh
         run: npm run check:public-services
 
+      - name: Check production readiness ledger
+        working-directory: mesh
+        run: |
+          node --test scripts/check-readiness-ledger.test.mjs
+          npm run check:readiness-ledger
+
+      - name: Check fail-closed external acceptance contract
+        working-directory: mesh
+        run: |
+          node --test scripts/check-external-acceptance.test.mjs
+          node scripts/check-external-acceptance.mjs
+
       - name: Check public site source
         working-directory: mesh
         run: npm run check:public-site
+
+      - name: Check beta product boundary
+        working-directory: mesh
+        run: npm run check:beta-contract
+
+      - name: Check production operations boundary
+        working-directory: mesh
+        run: npm run check:operations-contract
+
+      - name: Check third-party notices and licenses
+        working-directory: mesh
+        run: npm run check:third-party-notices
 
       - name: Check homeserver recovery scripts
         working-directory: mesh

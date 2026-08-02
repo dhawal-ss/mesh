@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-create-channel"
+description = "Enables the matrix_create_channel command without any pre-configured scope."
+commands.allow = ["matrix_create_channel"]
+
+[[permission]]
+identifier = "deny-matrix-create-channel"
+description = "Denies the matrix_create_channel command without any pre-configured scope."
+commands.deny = ["matrix_create_channel"]

@@ -1,10 +1,13 @@
 use super::*;
-use crate::backend::{CommunityModerationResult, ModerationRoomOutcome};
+use crate::backend::{
+    CommunityModerationResult, CommunityPermissionProjection, ModerationRoomOutcome,
+};
 
-const MODERATION_AUDIT_PREFIX: &str = "org.mesh.moderation.audit.v1:";
+mod permission_projection;
+
 const MAX_MODERATION_REASON_CHARS: usize = 500;
-const MAX_MODERATION_AUDIT_EVENTS: u32 = 200;
-const MAX_MODERATION_AUDIT_SCAN_EVENTS: usize = 2_000;
+const COMMUNITY_ROLE_POWER_LEVEL_OVERRIDE_JSON: &str = r#"{"events":{"m.room.power_levels":100}}"#;
+const MODERATION_AUDIT_UNAVAILABLE: &str = "A trustworthy moderation audit store is not configured. Room messages are not accepted as authoritative audit evidence.";
 
 // Direct room membership remains authoritative while MSC4284/MSC4204 policy
 // list semantics are unstable; importing them without verified enforcement
@@ -50,9 +53,18 @@ impl MatrixModerationAction {
         }
     }
 
+    fn role_power_level(&self) -> Option<matrix_sdk::ruma::Int> {
+        match self {
+            Self::RoleAdmin => Some(int!(50)),
+            Self::RoleMember => Some(int!(0)),
+            Self::Ban | Self::Kick => None,
+        }
+    }
+
     async fn apply(
         &self,
         room: &Room,
+        actor_user_id: &UserId,
         user_id: &UserId,
         reason: Option<&str>,
     ) -> BackendResult<()> {
@@ -65,21 +77,95 @@ impl MatrixModerationAction {
                 .kick_user(user_id, reason)
                 .await
                 .map_err(MatrixBackend::map_error),
-            Self::RoleAdmin => room
-                .update_power_levels(vec![(user_id, int!(50))])
+            Self::RoleAdmin | Self::RoleMember => {
+                let role_power_level = self.role_power_level().ok_or_else(|| {
+                    BackendError::InvalidConfiguration(
+                        "role action does not define a Matrix power level".into(),
+                    )
+                })?;
+                let creators = room.creators().ok_or_else(|| {
+                    BackendError::InvalidConfiguration(
+                        "This room does not expose enough creation state to change roles safely."
+                            .into(),
+                    )
+                })?;
+                let has_power_levels_event = room
+                    .get_state_event_static::<
+                        matrix_sdk::ruma::events::room::power_levels::RoomPowerLevelsEventContent,
+                    >()
+                    .await
+                    .map_err(MatrixBackend::map_error)?
+                    .is_some();
+                let mut power_levels = if has_power_levels_event {
+                    room.power_levels()
+                        .await
+                        .map_err(MatrixBackend::map_error)?
+                } else {
+                    room.power_levels_or_default().await
+                };
+                let joined_user_ids = room
+                    .members(RoomMemberships::JOIN)
+                    .await
+                    .map_err(MatrixBackend::map_error)?
+                    .into_iter()
+                    .map(|member| member.user_id().to_string())
+                    .collect();
+                let projected = permission_projection::project_power_levels(
+                    &power_levels,
+                    creators,
+                    joined_user_ids,
+                );
+                permission_projection::ensure_authoritative_role_change(
+                    &projected,
+                    actor_user_id,
+                    user_id,
+                    i64::from(role_power_level),
+                    &room.name().unwrap_or_else(|| "This room".into()),
+                )?;
+                power_levels
+                    .events
+                    .insert(StateEventType::RoomPowerLevels.into(), int!(100));
+                if role_power_level == power_levels.users_default {
+                    power_levels.users.remove(user_id);
+                } else {
+                    power_levels
+                        .users
+                        .insert(user_id.to_owned(), role_power_level);
+                }
+                room.send_state_event(
+                    matrix_sdk::ruma::events::room::power_levels::RoomPowerLevelsEventContent::try_from(
+                        power_levels,
+                    )
+                    .map_err(MatrixBackend::map_error)?,
+                )
                 .await
                 .map(|_| ())
-                .map_err(MatrixBackend::map_error),
-            Self::RoleMember => room
-                .update_power_levels(vec![(user_id, int!(0))])
-                .await
-                .map(|_| ())
-                .map_err(MatrixBackend::map_error),
+                .map_err(MatrixBackend::map_error)
+            }
         }
     }
 }
 
 impl MatrixBackend {
+    pub(super) fn community_role_power_level_override(
+    ) -> BackendResult<Raw<RoomPowerLevelsContentOverride>> {
+        Raw::from_json_string(COMMUNITY_ROLE_POWER_LEVEL_OVERRIDE_JSON.to_owned())
+            .map_err(Self::map_error)
+    }
+
+    pub(super) async fn community_permission_projection(
+        &self,
+        community_id: &str,
+        subject_user_id: &str,
+    ) -> BackendResult<CommunityPermissionProjection> {
+        permission_projection::read_community_permission_projection(
+            self,
+            community_id,
+            subject_user_id,
+        )
+        .await
+    }
+
     pub(super) async fn require_community_permission(
         &self,
         space: &Room,
@@ -165,31 +251,17 @@ impl MatrixBackend {
         }
     }
 
-    fn moderation_audit_body(entry: &ModerationAuditEntry) -> BackendResult<String> {
-        serde_json::to_string(entry)
-            .map(|json| format!("{MODERATION_AUDIT_PREFIX}{json}"))
-            .map_err(Self::map_error)
-    }
-
-    fn parse_moderation_audit_body(body: &str) -> Option<ModerationAuditEntry> {
-        let json = body.strip_prefix(MODERATION_AUDIT_PREFIX)?;
-        serde_json::from_str(json).ok()
-    }
-
     async fn record_moderation_audit(
-        space: &Room,
-        entry: &ModerationAuditEntry,
+        _space: &Room,
+        _entry: &ModerationAuditEntry,
     ) -> BackendResult<()> {
-        let body = Self::moderation_audit_body(entry)?;
-        let content = RoomMessageEventContent::notice_plain(body);
-        let transaction_id =
-            Self::validate_transaction_id(&format!("moderation-audit-{}", entry.id))?;
-        space
-            .send(content)
-            .with_transaction_id(transaction_id)
-            .await
-            .map(|_| ())
-            .map_err(Self::map_error)
+        // A normal room message can be forged by any current member, replayed
+        // after demotion, copied across communities, or edited/redacted. Until
+        // Mesh has an append-only service with authenticated actor provenance
+        // and historical authorization checks, recording must fail closed.
+        Err(BackendError::InvalidConfiguration(
+            MODERATION_AUDIT_UNAVAILABLE.into(),
+        ))
     }
 
     async fn moderation_space(&self, community_id: &str) -> BackendResult<Room> {
@@ -290,7 +362,7 @@ impl MatrixBackend {
 
         for room in rooms {
             let outcome = action
-                .apply(&room, &target_user_id, reason.as_deref())
+                .apply(&room, &actor_user_id, &target_user_id, reason.as_deref())
                 .await;
             room_outcomes.push(ModerationRoomOutcome {
                 room_id: room.room_id().to_string(),
@@ -321,46 +393,14 @@ impl MatrixBackend {
     pub(super) async fn moderation_audit(
         &self,
         community_id: &str,
-        limit: u32,
+        _limit: u32,
     ) -> BackendResult<Vec<ModerationAuditEntry>> {
         let space = self.moderation_space(community_id).await?;
         self.require_community_permission(&space, CommunityPermission::Admin)
             .await?;
-        let requested = limit.clamp(1, MAX_MODERATION_AUDIT_EVENTS) as usize;
-        let mut entries = Vec::with_capacity(requested);
-        let mut from = None;
-        let mut scanned = 0_usize;
-        while entries.len() < requested && scanned < MAX_MODERATION_AUDIT_SCAN_EVENTS {
-            let mut options = MessagesOptions::backward();
-            options.limit = 100_u32.into();
-            options.from = from;
-            let response = space.messages(options).await.map_err(Self::map_error)?;
-            if response.chunk.is_empty() {
-                break;
-            }
-            scanned += response.chunk.len();
-            entries.extend(
-                response
-                    .chunk
-                    .into_iter()
-                    .filter_map(|event| event.raw().deserialize_as::<serde_json::Value>().ok())
-                    .filter_map(|event| {
-                        let sender = event.get("sender").and_then(serde_json::Value::as_str)?;
-                        let entry = event
-                            .get("content")?
-                            .get("body")
-                            .and_then(serde_json::Value::as_str)
-                            .and_then(Self::parse_moderation_audit_body)?;
-                        (entry.actor_user_id == sender).then_some(entry)
-                    }),
-            );
-            let Some(next) = response.end else {
-                break;
-            };
-            from = Some(next);
-        }
-        entries.truncate(requested);
-        Ok(entries)
+        Err(BackendError::InvalidConfiguration(
+            MODERATION_AUDIT_UNAVAILABLE.into(),
+        ))
     }
 }
 
@@ -398,13 +438,62 @@ mod tests {
     }
 
     #[test]
-    fn audit_wire_body_round_trips_complete_room_outcomes() {
-        let expected = audit_entry();
-        let body = MatrixBackend::moderation_audit_body(&expected).unwrap();
-        assert_eq!(
-            MatrixBackend::parse_moderation_audit_body(&body),
-            Some(expected)
-        );
+    fn member_messages_are_never_treated_as_authoritative_audit_records() {
+        let source = include_str!("moderation.rs");
+        let implementation = source.split("#[cfg(test)]").next().unwrap();
+        assert!(!implementation.contains("RoomMessageEventContent::notice_plain"));
+        assert!(!implementation.contains("parse_moderation_audit_body"));
+        assert!(!implementation.contains("org.mesh.moderation.audit.v1:"));
+        assert!(implementation.contains("recording must fail closed"));
+        assert!(implementation.contains("historical authorization checks"));
+        let forged = serde_json::to_string(&audit_entry()).unwrap();
+        assert!(forged.contains("@owner:example.org"));
+        assert!(!implementation.contains("strip_prefix"));
+    }
+
+    #[test]
+    fn forged_former_demoted_cross_community_and_malformed_notices_are_untrusted() {
+        let untrusted = [
+            serde_json::json!({"sender":"@member:example.org","content":{"body":"forged"}}),
+            serde_json::json!({"sender":"@former-mod:example.org","content":{"body":"replayed"}}),
+            serde_json::json!({"sender":"@demoted:example.org","content":{"body":"historical-role-unknown"}}),
+            serde_json::json!({"room_id":"!other:example.org","content":{"body":"copied"}}),
+            serde_json::json!({"content":{"body":{"not":"text"}}}),
+        ];
+        let source = include_str!("moderation.rs");
+        let audit_reader = source
+            .split("pub(super) async fn moderation_audit")
+            .nth(1)
+            .unwrap()
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(!audit_reader.contains(".messages("));
+        assert!(!audit_reader.contains("content"));
+        assert!(audit_reader.contains("MODERATION_AUDIT_UNAVAILABLE"));
+        for event in untrusted {
+            assert!(event.is_object());
+            assert!(!audit_reader.contains(&event.to_string()));
+        }
+    }
+
+    #[test]
+    fn moderation_audit_readers_are_denied_before_the_fail_closed_store_error() {
+        let source = include_str!("moderation.rs");
+        let audit_reader = source
+            .split("pub(super) async fn moderation_audit")
+            .nth(1)
+            .unwrap()
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let permission = audit_reader
+            .find("require_community_permission")
+            .expect("moderator permission guard");
+        let unavailable = audit_reader
+            .find("MODERATION_AUDIT_UNAVAILABLE")
+            .expect("fail-closed audit error");
+        assert!(permission < unavailable);
     }
 
     #[test]
@@ -431,6 +520,42 @@ mod tests {
     }
 
     #[test]
+    fn role_templates_keep_permission_management_owner_only() {
+        assert_eq!(
+            MatrixModerationAction::RoleAdmin.role_power_level(),
+            Some(int!(50))
+        );
+        assert_eq!(
+            MatrixModerationAction::RoleMember.role_power_level(),
+            Some(int!(0))
+        );
+        assert!(int!(100) > int!(50));
+    }
+
+    #[test]
+    fn role_updates_harden_the_power_levels_event_before_assigning_an_admin() {
+        let source = include_str!("moderation.rs");
+        let apply = source
+            .split("async fn apply(")
+            .nth(1)
+            .expect("moderation apply implementation exists")
+            .split("impl MatrixBackend")
+            .next()
+            .expect("moderation action implementation is bounded");
+        assert!(apply.contains("StateEventType::RoomPowerLevels"));
+        assert!(apply.contains("int!(100)"));
+        assert!(apply.contains("send_state_event"));
+        assert!(!apply.contains("update_power_levels"));
+    }
+
+    #[test]
+    fn new_room_override_protects_role_management_from_level_fifty_members() {
+        let raw = MatrixBackend::community_role_power_level_override().unwrap();
+        let content = raw.deserialize_as_unchecked::<serde_json::Value>().unwrap();
+        assert_eq!(content["events"]["m.room.power_levels"], 100);
+    }
+
+    #[test]
     fn every_matrix_moderation_operation_uses_the_permission_guard() {
         let source = include_str!("moderation.rs");
         let operation = source
@@ -443,5 +568,40 @@ mod tests {
             .nth(1)
             .unwrap();
         assert!(audit.contains("require_community_permission"));
+    }
+
+    #[test]
+    fn ban_and_recovery_use_distinct_matrix_wire_paths() {
+        let moderation_source = include_str!("moderation.rs");
+        let moderation_apply = moderation_source
+            .split("async fn apply(")
+            .nth(1)
+            .expect("moderation apply implementation exists")
+            .split("impl MatrixBackend")
+            .next()
+            .expect("moderation action implementation is bounded");
+        assert!(moderation_apply.contains("Self::Ban => room"));
+        assert!(moderation_apply.contains(".ban_user(user_id, reason)"));
+        assert!(!moderation_apply.contains(".recovery()"));
+
+        let matrix_source = include_str!("../matrix.rs");
+        let recovery_test = matrix_source
+            .split("async fn test_recovery(")
+            .nth(1)
+            .expect("recovery test implementation exists")
+            .split("async fn start_device_verification")
+            .next()
+            .expect("recovery test implementation is bounded");
+        assert!(recovery_test.contains("verify_recovery_credential"));
+        let recovery_wire_path = matrix_source
+            .split("async fn verify_recovery_credential(")
+            .nth(1)
+            .expect("recovery credential verifier exists")
+            .split("fn account_registry_key")
+            .next()
+            .expect("recovery credential verifier is bounded");
+        assert!(recovery_wire_path.contains(".recovery()"));
+        assert!(recovery_wire_path.contains(".recover(recovery_key_or_passphrase.trim())"));
+        assert!(!recovery_test.contains(".ban_user("));
     }
 }

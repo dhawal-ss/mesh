@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-search-community-directory"
+description = "Enables the matrix_search_community_directory command without any pre-configured scope."
+commands.allow = ["matrix_search_community_directory"]
+
+[[permission]]
+identifier = "deny-matrix-search-community-directory"
+description = "Denies the matrix_search_community_directory command without any pre-configured scope."
+commands.deny = ["matrix_search_community_directory"]

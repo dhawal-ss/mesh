@@ -1,6 +1,11 @@
 [CmdletBinding()]
 param(
     [string]$Tag = "",
+    [string]$ReleaseVersion = "",
+    [switch]$RequireCleanSource,
+    [string]$ExpectedSourceSha = "",
+    [switch]$RequireProtectedMainAncestry,
+    [string]$ProtectedMainRef = "refs/remotes/origin/main",
     [switch]$RequireSigningEnvironment,
     [switch]$VerifyFrontendBundle,
     [string]$FrontendRoot = "",
@@ -283,54 +288,27 @@ function Assert-MatrixFrontendBundleBoundary {
                 Test-SimplePeerImplementation (Read-Utf8Text $_.FullName)
             }
     )
-    foreach ($legacyChunk in $legacyChunks) {
-        Assert-Condition (-not $eagerAssets.Contains($legacyChunk.FullName)) `
-            "Legacy SimplePeer chunk is statically reachable from the Matrix entry: $($legacyChunk.FullName)"
+    $legacyChunkNames = @($legacyChunks | ForEach-Object { $_.Name }) -join ", "
+    Assert-Condition ($legacyChunks.Count -eq 0) `
+        "Matrix frontend bundle must exclude the legacy SimplePeer implementation entirely; found: $legacyChunkNames"
 
-        $escapedName = [regex]::Escape($legacyChunk.Name)
-        $javascriptChunks = @(
-            Get-ChildItem -LiteralPath $Root -Recurse -File -Filter "*.js"
-        )
-        $staticImporters = @(
-            $javascriptChunks |
-                Where-Object { $_.FullName -ne $legacyChunk.FullName } |
-                Where-Object {
-                    $importerRoot = Split-Path -Parent $_.FullName
-                    @(
-                        Get-StaticJavaScriptImports (Read-Utf8Text $_.FullName) |
-                            ForEach-Object {
-                                [IO.Path]::GetFullPath((Join-Path $importerRoot $_))
-                            } |
-                            Where-Object {
-                                $_ -eq $legacyChunk.FullName
-                            }
-                    ).Count -gt 0
-                }
-        )
-        $staticImporterNames = @($staticImporters | ForEach-Object { $_.FullName }) -join ', '
-        Assert-Condition ($staticImporters.Count -eq 0) `
-            "Legacy SimplePeer code is statically imported by: $staticImporterNames"
+    $matrixVoiceChunks = @(
+        Get-ChildItem -LiteralPath $Root -Recurse -File |
+            Where-Object { $_.Name -match '(?i)livekit|e2ee-worker' }
+    )
+    $matrixVoiceChunkNames = @($matrixVoiceChunks | ForEach-Object { $_.Name }) -join ", "
+    Assert-Condition ($matrixVoiceChunks.Count -eq 0) `
+        "The Windows text/community beta must exclude dormant Matrix voice code; found: $matrixVoiceChunkNames"
 
-        $dynamicImporters = @(
-            $javascriptChunks |
-                Where-Object {
-                    (Read-Utf8Text $_.FullName) -match "import\(\s*[`"']\./$escapedName[`"']\s*\)"
-                }
-        )
-        Assert-Condition ($dynamicImporters.Count -gt 0) `
-            "Legacy SimplePeer code must be isolated in an explicitly lazy chunk: $($legacyChunk.FullName)"
-    }
-
-    Write-Host "Frontend boundary: Matrix entry and module preloads exclude the SimplePeer implementation."
-    if ($legacyChunks.Count -gt 0) {
-        Write-Host "Frontend boundary: legacy voice remains isolated in $($legacyChunks.Count) guarded lazy chunk(s)."
-    }
+    Write-Host "Frontend boundary: the Matrix text/community bundle excludes SimplePeer and LiveKit implementations."
 }
 
 $packagePath = Join-Path $repoRoot "package.json"
 $cargoPath = Join-Path $tauriRoot "Cargo.toml"
 $tauriConfigPath = Join-Path $tauriRoot "tauri.conf.json"
 $capabilitiesPath = Join-Path $tauriRoot "capabilities/default.json"
+$applicationPermissionPath = Join-Path $tauriRoot "permissions/mesh-main.toml"
+$tauriBuildPath = Join-Path $tauriRoot "build.rs"
 $nestedWorkflowRoot = Join-Path $repoRoot ".github/workflows"
 $ciWorkflowPath = Join-Path $gitRoot ".github/workflows/ci.yml"
 $nightlyWorkflowPath = Join-Path $gitRoot ".github/workflows/nightly-soak.yml"
@@ -340,11 +318,31 @@ $matrixAcceptanceWorkflowPath = Join-Path $gitRoot ".github/workflows/matrix-fed
 $developerPreviewWorkflowPath = Join-Path $gitRoot ".github/workflows/developer-preview.yml"
 $pagesWorkflowPath = Join-Path $gitRoot ".github/workflows/pages.yml"
 $matrixSpikeComposePath = Join-Path $repoRoot "infra/matrix-spike/docker-compose.yml"
+$matrixRtcPreflightPath = Join-Path $repoRoot "scripts/matrixrtc-preflight.ps1"
+$matrixRtcEvidenceModulePath = Join-Path $repoRoot "infra/matrixrtc/MatrixRtcEvidence.psm1"
+$matrixRtcEvidenceTestPath = Join-Path $repoRoot "infra/matrixrtc/test-evidence-validation.ps1"
+$matrixDependencyBoundaryPath = Join-Path $repoRoot "scripts/check-matrix-release-dependencies.ps1"
+$releaseArtifactScanPath = Join-Path $repoRoot "scripts/scan-release-artifacts.ps1"
+$resourceProbePath = Join-Path $repoRoot "scripts/resource-budget-probe.ps1"
+$rustDependencyPolicyPath = Join-Path $repoRoot "scripts/rust-dependency-policy.json"
+$externalAcceptanceCheckerPath = Join-Path $repoRoot "scripts/check-external-acceptance.mjs"
+$externalAcceptanceTestPath = Join-Path $repoRoot "scripts/check-external-acceptance.test.mjs"
+$externalAcceptanceTemplatePath = Join-Path $repoRoot "release/external-acceptance.example.json"
+$externalAcceptanceSchemaPath = Join-Path $repoRoot "release/external-acceptance.schema.json"
+$betaContractPath = Join-Path $repoRoot "release/beta-contract.json"
+$operationsContractCheckerPath = Join-Path $repoRoot "scripts/check-operations-contract.mjs"
+$dependabotPath = Join-Path $gitRoot ".github/dependabot.yml"
+$dependencyReviewConfigPath = Join-Path $gitRoot ".github/dependency-review-config.yml"
+$codeownersPath = Join-Path $gitRoot ".github/CODEOWNERS"
+$securityPolicyPath = Join-Path $gitRoot "SECURITY.md"
+$licensePolicyPath = Join-Path $gitRoot "LICENSE_POLICY.md"
 
 $packageConfig = Read-JsonFile $packagePath
 $tauriConfig = Read-JsonFile $tauriConfigPath
 $cargoText = Read-Utf8Text $cargoPath
 $capabilitiesText = Read-Utf8Text $capabilitiesPath
+$applicationPermissionText = Read-Utf8Text $applicationPermissionPath
+$tauriBuildText = Read-Utf8Text $tauriBuildPath
 $ciWorkflowText = Read-Utf8Text $ciWorkflowPath
 $nightlyWorkflowText = Read-Utf8Text $nightlyWorkflowPath
 $releaseWorkflowText = Read-Utf8Text $releaseWorkflowPath
@@ -353,6 +351,24 @@ $matrixAcceptanceWorkflowText = Read-Utf8Text $matrixAcceptanceWorkflowPath
 $developerPreviewWorkflowText = Read-Utf8Text $developerPreviewWorkflowPath
 $pagesWorkflowText = Read-Utf8Text $pagesWorkflowPath
 $matrixSpikeComposeText = Read-Utf8Text $matrixSpikeComposePath
+$matrixRtcPreflightText = Read-Utf8Text $matrixRtcPreflightPath
+$matrixRtcEvidenceModuleText = Read-Utf8Text $matrixRtcEvidenceModulePath
+$matrixRtcEvidenceTestText = Read-Utf8Text $matrixRtcEvidenceTestPath
+$matrixDependencyBoundaryText = Read-Utf8Text $matrixDependencyBoundaryPath
+$releaseArtifactScanText = Read-Utf8Text $releaseArtifactScanPath
+$resourceProbeText = Read-Utf8Text $resourceProbePath
+$rustDependencyPolicyText = Read-Utf8Text $rustDependencyPolicyPath
+$externalAcceptanceCheckerText = Read-Utf8Text $externalAcceptanceCheckerPath
+$externalAcceptanceTestText = Read-Utf8Text $externalAcceptanceTestPath
+$externalAcceptanceTemplateText = Read-Utf8Text $externalAcceptanceTemplatePath
+$externalAcceptanceSchemaText = Read-Utf8Text $externalAcceptanceSchemaPath
+$betaContract = Read-JsonFile $betaContractPath
+$operationsContractCheckerText = Read-Utf8Text $operationsContractCheckerPath
+$dependabotText = Read-Utf8Text $dependabotPath
+$dependencyReviewConfigText = Read-Utf8Text $dependencyReviewConfigPath
+$codeownersText = Read-Utf8Text $codeownersPath
+$securityPolicyText = Read-Utf8Text $securityPolicyPath
+$licensePolicyText = Read-Utf8Text $licensePolicyPath
 
 if (Test-Path -LiteralPath $nestedWorkflowRoot -PathType Container) {
     $nestedWorkflows = @(
@@ -371,9 +387,42 @@ Assert-Condition ($packageVersion -eq $tauriVersion) `
     "Version mismatch: package.json is $packageVersion but tauri.conf.json is $tauriVersion."
 Assert-Condition ($cargoVersion -eq $tauriVersion) `
     "Version mismatch: Cargo.toml is $cargoVersion but tauri.conf.json is $tauriVersion."
+if (-not [string]::IsNullOrWhiteSpace($ReleaseVersion)) {
+    $normalizedReleaseVersion = $ReleaseVersion.Trim()
+    if ($normalizedReleaseVersion.StartsWith("v", [StringComparison]::OrdinalIgnoreCase)) {
+        $normalizedReleaseVersion = $normalizedReleaseVersion.Substring(1)
+    }
+    Assert-Condition ($normalizedReleaseVersion -match '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$') `
+        "ReleaseVersion must be an explicit semantic version."
+    Assert-Condition ($normalizedReleaseVersion -eq $tauriVersion) `
+        "ReleaseVersion $normalizedReleaseVersion does not match the application version $tauriVersion."
+    Assert-Condition ($normalizedReleaseVersion -ne "0.1.0") `
+        "Version 0.1.0 is a placeholder and cannot be published as a Matrix beta."
+}
 Assert-Condition ($tauriConfig.identifier -eq "com.mesh.desktop") `
     "The production application identifier must remain com.mesh.desktop."
+Assert-Condition ($capabilitiesText -match '"mesh-main"' -and
+    $applicationPermissionText -match 'identifier\s*=\s*"mesh-main"' -and
+    $applicationPermissionText -match 'commands\.allow' -and
+    $tauriBuildText -match 'AppManifest::new\(\)\.commands\(application_commands\(\)\)' -and
+    $tauriBuildText -match 'include_str!\("permissions/mesh-main\.toml"\)') `
+    "Tauri application commands must remain behind the reviewed mesh-main renderer permission."
 Assert-WindowsOnlyBundleTargets -TauriConfig $tauriConfig
+Assert-Condition ($betaContract.releaseState -eq "developer-preview" -and
+    $betaContract.candidate.platform -eq "windows" -and
+    $betaContract.candidate.backend -eq "matrix") `
+    "The checked beta contract must describe the Windows Matrix developer-preview candidate."
+$excludedBetaCapabilities = @($betaContract.candidate.excludedCapabilities | ForEach-Object { [string]$_ })
+foreach ($excludedCapability in @("matrix-voice", "legacy-p2p", "automatic-updates")) {
+    Assert-Condition ($excludedBetaCapabilities -contains $excludedCapability) `
+        "The text/community beta contract must exclude $excludedCapability."
+}
+Assert-Condition (-not [bool]$betaContract.claims.consumerBeta -and
+    -not [bool]$betaContract.claims.productionReady -and
+    -not [bool]$betaContract.claims.voiceReady -and
+    [bool]$betaContract.claims.communityHostingOptional -and
+    [bool]$betaContract.claims.accountHostingIndependent) `
+    "The beta contract must remain honest about readiness, voice, and independent optional hosting."
 
 $defaultFeatures = [regex]::Match(
     $cargoText,
@@ -387,8 +436,22 @@ Assert-Condition ($releaseWorkflowText -match '(?m)^\s*--draft\s*`?\s*$') `
     "The beta workflow must create a draft release so evidence can be reviewed before publication."
 Assert-Condition ($releaseWorkflowText -match '(?m)^\s*--prerelease\s*`?\s*$') `
     "The beta workflow must mark releases as prereleases."
+Assert-Condition ($releaseWorkflowText -notmatch 'gh release edit' -and
+    $releaseWorkflowText -notmatch '--draft[=:]false' -and
+    $releaseWorkflowText -match 'Candidate factory only') `
+    "The candidate workflow must contain no public promotion path."
 Assert-Condition ($releaseWorkflowText -match 'npm run tauri -- build --features matrix-backend -- --no-default-features --locked --jobs 1') `
     "The beta workflow must build the locked Matrix-only feature set."
+Assert-Condition ($releaseWorkflowText -match '(?m)^\s*release_version:\s*$') `
+    "The beta workflow must require an explicit release_version input for manual runs."
+Assert-Condition ($releaseWorkflowText -match '(?m)^\s*release_tag:\s*$') `
+    "The beta workflow must expose an optional explicit tag for manual publication."
+Assert-Condition ($releaseWorkflowText -match 'ReleaseVersion') `
+    "The beta workflow must pass its explicit version to source preflight."
+Assert-Condition ($releaseWorkflowText -match 'MESH_OAUTH_CLIENT_REGISTRATIONS_JSON:\s*\$\{\{\s*vars\.MESH_OAUTH_CLIENT_REGISTRATIONS_JSON\s*\}\}') `
+    "The beta workflow must pass the reviewed public issuer registration registry as a build input."
+Assert-Condition ($releaseWorkflowText -notmatch 'MESH_OAUTH_CLIENT_ID') `
+    "The beta workflow must not use one global OAuth client ID across unrelated issuers."
 
 Assert-NoUpdaterConfiguration `
     -TauriConfig $tauriConfig `
@@ -408,10 +471,122 @@ Assert-PinnedActions `
     -WorkflowText $developerPreviewWorkflowText
 Assert-PinnedActions -WorkflowName "pages.yml" -WorkflowText $pagesWorkflowText
 
+Assert-Condition ($releaseWorkflowText -match 'git merge-base --is-ancestor') `
+    "The beta workflow must prove that a release tag is contained in protected origin/main."
+Assert-Condition ($releaseWorkflowText -match "needs\.quality-gate\.outputs\.create_candidate == 'true'") `
+    "Manual release workflow runs must remain validation-only unless a proper tag was validated."
+Assert-Condition ($releaseWorkflowText -match '(?m)^\s*environment:\s*matrix-beta\s*$') `
+    "Release publication must remain bound to the protected matrix-beta environment."
+Assert-Condition ($releaseWorkflowText -match 'actions/download-artifact@[0-9a-fA-F]{40}') `
+    "The signing job must consume the exact-source quality evidence artifact."
+Assert-Condition ($releaseWorkflowText -match 'path:\s*\$\{\{ runner\.temp \}\}/matrix-beta-quality' -and
+    $releaseWorkflowText -match 'Verify and import exact-source quality evidence' -and
+    $releaseWorkflowText -match '\$bundle\.sourceSha -ne \$env:MESH_SOURCE_SHA' -and
+    $releaseWorkflowText -match '\$dependency\.sourceSha -ne \$env:MESH_SOURCE_SHA' -and
+    $releaseWorkflowText -match 'cargoLockSha256 -ne \$lockSha' -and
+    $releaseWorkflowText -match 'policySha256 -ne \$policySha') `
+    "Downloaded quality evidence must stay outside the checkout until clean-source validation and exact-SHA verification pass."
+
 Assert-Condition ($releaseWorkflowText -match 'npm run check:public-services') `
     "The beta workflow must validate the reviewed public-service catalog."
 Assert-Condition ($releaseWorkflowText -match 'npm run check:public-site') `
     "The beta workflow must validate the public site source."
+Assert-Condition ($releaseWorkflowText -match 'npm run check:beta-contract') `
+    "The beta workflow must validate the machine-readable product boundary."
+Assert-Condition ($releaseWorkflowText -match 'npm run check:operations-contract' -and
+    $ciWorkflowText -match 'npm run check:operations-contract' -and
+    $operationsContractCheckerText -match 'crash_report\.rs' -and
+    $operationsContractCheckerText -match 'sync-performance-decision\.rst') `
+    "CI and release workflows must validate the privacy, incident, trust and safety, sync, and Synapse operations contract."
+Assert-Condition ($releaseWorkflowText -match 'check:readiness-ledger.+--commit-sha.+--allow-ledger-only-commit') `
+    "The beta workflow must bind readiness evidence to the tested source or an explicit ledger-only metadata commit."
+Assert-Condition ($releaseWorkflowText -match 'check:readiness-ledger.+--milestone R0.+--require-live' -and
+    $releaseWorkflowText -notmatch 'check:readiness-ledger.+--milestone R2') `
+    "Signed draft candidate creation must require exact-SHA R0 readiness without circularly requiring post-build R2 acceptance."
+Assert-Condition ($releaseWorkflowText -match 'matrixrtc-preflight\.ps1') `
+    "The beta workflow must validate pinned MatrixRTC configuration and the physical/network acceptance contract."
+Assert-Condition ($releaseWorkflowText -match 'test-evidence-validation\.ps1') `
+    "The beta workflow must run the MatrixRTC evidence validator positive and negative tests."
+Assert-Condition ($releaseWorkflowText -match 'check-external-acceptance\.test\.mjs' -and
+    $releaseWorkflowText -match 'check-external-acceptance\.mjs') `
+    "The beta workflow must validate the fail-closed external acceptance template and checker tests."
+Assert-Condition ($externalAcceptanceCheckerText -match 'REQUIRED_EXTERNAL_ACCEPTANCE_IDS' -and
+    $externalAcceptanceCheckerText -match 'live external acceptance requires a clean tracked and untracked source worktree' -and
+    $externalAcceptanceCheckerText -match 'SHA-256 does not match' -and
+    $externalAcceptanceTestText -match 'does not accept the template as live evidence' -and
+    $externalAcceptanceTemplateText -match 'native-invite\.macos-cold-start' -and
+    $externalAcceptanceTemplateText -match 'native-invite\.linux-cold-start' -and
+    $externalAcceptanceSchemaText -match 'external-acceptance') `
+    "External acceptance evidence must remain complete, exact-SHA-bound, tamper-evident, cross-platform, and fail-closed."
+Assert-Condition ($releaseWorkflowText -match 'operator-smoke\.ps1') `
+    "The beta workflow must validate the secret-free operator-smoke configuration before building release artifacts."
+Assert-Condition ($matrixRtcPreflightText -match '\[switch\]\$RequireLiveAcceptance') `
+    "MatrixRTC preflight must retain an explicit complete-live-acceptance evidence gate."
+Assert-Condition ($matrixRtcPreflightText -match 'acceptance-matrix\.example\.json') `
+    "MatrixRTC preflight must validate the checked physical/network acceptance matrix."
+Assert-Condition ($matrixRtcEvidenceModuleText -match 'sourceSha must equal the current') `
+    "Complete MatrixRTC evidence must remain bound to the exact current source SHA."
+Assert-Condition ($matrixRtcEvidenceModuleText -match '--untracked-files=all') `
+    "Complete MatrixRTC evidence must reject tracked and untracked worktree changes."
+Assert-Condition ($matrixRtcEvidenceModuleText -match 'Get-FileHash.+SHA256') `
+    "Complete MatrixRTC evidence must verify artifact SHA-256 digests."
+Assert-Condition ($matrixRtcEvidenceModuleText -match 'resolves outside the explicit evidence root') `
+    "Complete MatrixRTC evidence must reject canonical path and symlink escape."
+Assert-Condition ($matrixRtcEvidenceTestText -match 'dirty source is rejected' -and
+    $matrixRtcEvidenceTestText -match 'changed hash is rejected' -and
+    $matrixRtcEvidenceTestText -match 'unknown evidence reference is rejected' -and
+    $matrixRtcEvidenceTestText -match 'wrong device is rejected' -and
+    $matrixRtcEvidenceTestText -match 'missing TURN relay observation is rejected' -and
+    $matrixRtcEvidenceTestText -match 'missing media E2EE observation is rejected' -and
+    $matrixRtcEvidenceTestText -match 'generic cross-case evidence is rejected' -and
+    $matrixRtcEvidenceTestText -match 'missing network result is rejected') `
+    "MatrixRTC evidence tests must retain source, artifact, device, TURN, media-E2EE, and case-binding rejection coverage."
+Assert-Condition ($nightlyWorkflowText -match 'browser-resource-budget' -and
+    $nightlyWorkflowText -match 'runtime-budgets\.spec\.ts' -and
+    $nightlyWorkflowText -match 'resource-budget-browser\.json') `
+    "Nightly CI must retain controlled repeated browser resource evidence."
+Assert-Condition ($nightlyWorkflowText -match 'for iteration in 1 2' -and
+    $nightlyWorkflowText -match 'independentRestoreCycles' -and
+    $nightlyWorkflowText -match 'restore-drill-report\.json') `
+    "Nightly CI must retain two independently executed restore logs and an exact-SHA evidence report."
+Assert-Condition ($resourceProbeText -match 'idle-text-sync' -and
+    $resourceProbeText -match 'active-voice' -and
+    $resourceProbeText -match 'screen-share' -and
+    $resourceProbeText -match 'contextSwitchesPerSecond' -and
+    $resourceProbeText -match 'standardDeviation' -and
+    $resourceProbeText -match 'sourceSha') `
+    "Native resource evidence must retain all scenarios, wakeup-pressure sampling, variance, and exact-SHA provenance."
+Assert-Condition ($releaseWorkflowText -match 'check-matrix-release-dependencies\.ps1') `
+    "The beta workflow must mechanically prove the Matrix and legacy dependency boundary."
+Assert-Condition ($matrixDependencyBoundaryText -match 'rust-dependency-policy\.json' -and
+    $matrixDependencyBoundaryText -match 'cargo audit.+--json' -and
+    $matrixDependencyBoundaryText -match 'sourceSha' -and
+    $matrixDependencyBoundaryText -match 'cargoLockSha256' -and
+    $rustDependencyPolicyText -match 'nonShippingVulnerabilities' -and
+    $rustDependencyPolicyText -match 'shippingRuntimeWarnings' -and
+    $rustDependencyPolicyText -match 'expectedRawWarningCounts' -and
+    $rustDependencyPolicyText -match 'serde_with') `
+    "Rust advisory counts, legacy exclusions, and minimum versions must come from one reviewed policy."
+Assert-Condition ($releaseWorkflowText -match 'Report raw Rust advisory status' -and
+    $releaseWorkflowText -match 'check-matrix-release-dependencies\.ps1' -and
+    $releaseWorkflowText -match 'ReportPath release/rust-dependency-report\.json') `
+    "The beta workflow must report raw and Matrix release-scoped Rust audit results separately."
+Assert-Condition ($releaseWorkflowText -match 'check:bundle-size.+--report' -and
+    $releaseWorkflowText -match 'bundle-report\.json' -and
+    (Read-Utf8Text (Join-Path $repoRoot "scripts/check-bundle-size.mjs")) -match 'sourceSha') `
+    "Release evidence must include a generated bundle-budget report without raising budgets."
+Assert-Condition ($releaseWorkflowText -match 'scan-release-artifacts\.ps1') `
+    "The beta workflow must scan generated release artifacts for configured secrets."
+Assert-Condition ($releaseArtifactScanText -match 'WINDOWS_CERTIFICATE_PASSWORD' -and
+    $releaseArtifactScanText -match 'Test-ByteSequence') `
+    "Release artifact scanning must check configured secret values without printing them."
+Assert-Condition ($releaseWorkflowText -match 'mesh/SHA256SUMS\.txt' -and
+    $releaseWorkflowText -match '(?ms)Attest signed release provenance.*?mesh/SHA256SUMS\.txt') `
+    "Release checksums must be part of the attested candidate evidence set."
+Assert-Condition ($releaseWorkflowText -notmatch '-Exportable' -and
+    $releaseWorkflowText -match 'Remove imported signing certificate' -and
+    $releaseWorkflowText -match 'if:\s*always\(\)') `
+    "The signing certificate must remain non-exportable and be removed from the ephemeral store even after failure."
 Assert-Condition ($developerPreviewWorkflowText -match '(?m)^\s*workflow_dispatch:\s*$') `
     "Unsigned developer previews must be owner-triggered, not published automatically."
 Assert-Condition ($developerPreviewWorkflowText -notmatch '(?m)^\s*gh release create\b') `
@@ -428,11 +603,36 @@ Assert-Condition ($pagesWorkflowText -match 'confirm_legal_review') `
     "Public page deployment must require an explicit legal-review confirmation."
 Assert-Condition ($pagesWorkflowText -match 'actions/deploy-pages@[0-9a-fA-F]{40}') `
     "Public page deployment must use the pinned GitHub Pages action."
+Assert-Condition ($securityWorkflowText -match 'github/codeql-action/init@[0-9a-fA-F]{40}' -and
+    $securityWorkflowText -match 'github/codeql-action/analyze@[0-9a-fA-F]{40}') `
+    "Security CI must retain immutable CodeQL SAST actions."
+Assert-Condition ($securityWorkflowText -match '(?ms)Assert Matrix production tree excludes libp2p.*?set -o pipefail.*?cargo tree' -and
+    $developerPreviewWorkflowText -match '(?ms)Verify Matrix-only dependency tree.*?set -o pipefail.*?cargo tree') `
+    "Matrix dependency-tree exclusion checks must fail if cargo tree itself fails."
+Assert-Condition ($securityWorkflowText -match 'actions/dependency-review-action@[0-9a-fA-F]{40}') `
+    "Pull requests must retain immutable dependency review."
+Assert-Condition ($dependabotText -match 'package-ecosystem:\s*github-actions' -and
+    $dependabotText -match 'package-ecosystem:\s*npm' -and
+    $dependabotText -match 'package-ecosystem:\s*cargo') `
+    "Dependabot must cover workflows, npm, and Cargo on a schedule."
+Assert-Condition ($dependencyReviewConfigText -match 'license-check:\s*true' -and
+    $dependencyReviewConfigText -match 'fail-on-severity:\s*moderate') `
+    "Dependency review must enforce the reviewed license and vulnerability policy."
+Assert-Condition ($codeownersText -match '/\.github/workflows/release-beta\.yml.+@dhawal-ss') `
+    "CODEOWNERS must require owner review for release workflow changes."
+Assert-Condition ($securityPolicyText -match 'private vulnerability reporting' -and
+    $licensePolicyText -match 'AGPL-3\.0-only') `
+    "Security disclosure and dependency license policies must remain present."
 
 Assert-Condition ($matrixAcceptanceWorkflowText -match 'npm run setup:matrix-spike:reset') `
     "Matrix federation acceptance must reset the disposable homeservers before every run."
 Assert-Condition ($matrixAcceptanceWorkflowText -match 'npm run test:matrix-spike') `
     "Matrix federation acceptance must run the supported live test command."
+Assert-Condition ($matrixAcceptanceWorkflowText -match 'for cycle in 1 2' -and
+    $matrixAcceptanceWorkflowText -match 'independentResetTestCycles' -and
+    $matrixAcceptanceWorkflowText -match 'acceptance-report\.json' -and
+    $matrixAcceptanceWorkflowText -match 'matrix-federation-acceptance-\$\{\{ github\.sha \}\}') `
+    "Matrix federation acceptance must retain two independent reset/test logs and an exact-SHA evidence report."
 Assert-Condition ($matrixAcceptanceWorkflowText -match '(?ms)if:\s*\$\{\{\s*always\(\)\s*\}\}.*?docker compose .*? down') `
     "Matrix federation acceptance must always tear down its disposable homeservers."
 
@@ -452,6 +652,48 @@ if (-not [string]::IsNullOrWhiteSpace($Tag)) {
     $expectedTag = "v$tauriVersion"
     Assert-Condition ($Tag -eq $expectedTag) `
         "Release tag $Tag does not match the application version $expectedTag."
+    Assert-Condition ($Tag -ne "v0.1.0") `
+        "Tag v0.1.0 is a placeholder and cannot publish a Matrix beta."
+}
+
+$currentSourceSha = ""
+if ($RequireCleanSource -or -not [string]::IsNullOrWhiteSpace($ExpectedSourceSha)) {
+    $currentSourceSha = (& git -C $gitRoot rev-parse HEAD).Trim()
+    Assert-Condition ($currentSourceSha -match '^[0-9a-f]{40}$') `
+        "Could not resolve the exact release source SHA."
+}
+if (-not [string]::IsNullOrWhiteSpace($ExpectedSourceSha)) {
+    Assert-Condition ($ExpectedSourceSha -match '^[0-9a-f]{40}$') `
+        "ExpectedSourceSha must be a 40-character Git SHA."
+    Assert-Condition ($ExpectedSourceSha -eq $currentSourceSha) `
+        "Release source SHA $currentSourceSha does not match ExpectedSourceSha $ExpectedSourceSha."
+}
+if ($RequireCleanSource) {
+    $worktreeState = [string]::Join(
+        "`n",
+        @(& git -C $gitRoot status --porcelain --untracked-files=all)
+    ).Trim()
+    Assert-Condition ([string]::IsNullOrWhiteSpace($worktreeState)) `
+        "Release source must have a clean tracked and untracked worktree."
+    Write-Host "Clean release source verified at $currentSourceSha."
+}
+
+if ($RequireProtectedMainAncestry) {
+    Assert-Condition (-not [string]::IsNullOrWhiteSpace($Tag)) `
+        "Protected-main ancestry validation requires an explicit release tag."
+    Assert-Condition ($ProtectedMainRef -match '^refs/remotes/origin/main$') `
+        "ProtectedMainRef must be refs/remotes/origin/main."
+    & git -C $gitRoot show-ref --verify --quiet $ProtectedMainRef
+    Assert-Condition ($LASTEXITCODE -eq 0) `
+        "Protected origin/main is unavailable. Fetch it before release validation."
+    $tagSourceSha = (& git -C $gitRoot rev-parse "${Tag}^{commit}").Trim()
+    $currentSourceSha = (& git -C $gitRoot rev-parse HEAD).Trim()
+    Assert-Condition ($tagSourceSha -eq $currentSourceSha) `
+        "Release tag $Tag does not resolve to the checked-out source $currentSourceSha."
+    & git -C $gitRoot merge-base --is-ancestor $tagSourceSha $ProtectedMainRef
+    Assert-Condition ($LASTEXITCODE -eq 0) `
+        "Release tag $Tag is not contained in protected origin/main."
+    Write-Host "Protected-main release ancestry verified for $Tag at $tagSourceSha."
 }
 
 if ($RequireSigningEnvironment) {
@@ -465,6 +707,30 @@ if ($RequireSigningEnvironment) {
     }
     Assert-Condition ($missingVariables.Count -eq 0) `
         "Missing required release secrets: $($missingVariables -join ', ')."
+
+    $oidcRegistrationJson = [Environment]::GetEnvironmentVariable(
+        "MESH_OAUTH_CLIENT_REGISTRATIONS_JSON"
+    )
+    Assert-Condition (-not [string]::IsNullOrWhiteSpace($oidcRegistrationJson)) `
+        "MESH_OAUTH_CLIENT_REGISTRATIONS_JSON is required as a reviewed non-secret release build input."
+    try {
+        $oidcRegistrations = $oidcRegistrationJson | ConvertFrom-Json -Depth 8 -ErrorAction Stop
+    } catch {
+        throw "MESH_OAUTH_CLIENT_REGISTRATIONS_JSON is not valid JSON."
+    }
+    Assert-Condition ($oidcRegistrations.version -eq 1) `
+        "MESH_OAUTH_CLIENT_REGISTRATIONS_JSON must use schema version 1."
+    Assert-Condition (@($oidcRegistrations.registrations).Count -gt 0) `
+        "MESH_OAUTH_CLIENT_REGISTRATIONS_JSON must contain at least one reviewed issuer registration."
+    foreach ($registration in @($oidcRegistrations.registrations)) {
+        Assert-Condition (-not [string]::IsNullOrWhiteSpace([string]$registration.issuer)) `
+            "Every OAuth registration must name an exact issuer."
+        Assert-Condition (-not [string]::IsNullOrWhiteSpace([string]$registration.clientId)) `
+            "Every OAuth registration must include its public desktop client ID."
+        Assert-Condition (
+            [string]$registration.redirectUri -eq "http://127.0.0.1:8418/oauth/callback"
+        ) "Every OAuth registration must use the fixed Mesh loopback callback."
+    }
 
     $normalizedThumbprint = $env:WINDOWS_CERTIFICATE_THUMBPRINT.Replace(" ", "").ToUpperInvariant()
     Assert-Condition ($normalizedThumbprint -match '^[0-9A-F]{40}$') `
@@ -522,7 +788,7 @@ if ($RequireSigningEnvironment) {
 
 Write-Host "Source preflight passed for Mesh v$tauriVersion."
 Write-Host "Updater status: disabled (no plugin, capability, endpoint, key, or updater manifest)."
-Write-Host "Release status: Matrix-only, draft prerelease, signed Windows artifacts required."
+Write-Host "Release status: Matrix-only signed candidate, draft prerelease only; no promotion path."
 
 if ($VerifyFrontendBundle) {
     $resolvedFrontendRoot = Resolve-RepoChildPath `

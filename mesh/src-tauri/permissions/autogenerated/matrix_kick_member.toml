@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-kick-member"
+description = "Enables the matrix_kick_member command without any pre-configured scope."
+commands.allow = ["matrix_kick_member"]
+
+[[permission]]
+identifier = "deny-matrix-kick-member"
+description = "Denies the matrix_kick_member command without any pre-configured scope."
+commands.deny = ["matrix_kick_member"]

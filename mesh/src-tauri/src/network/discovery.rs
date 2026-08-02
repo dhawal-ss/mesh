@@ -1,19 +1,19 @@
-/// Peer discovery mechanisms.
-/// Mesh uses three complementary discovery methods:
-///
-/// 1. **mDNS** — Finds peers on the local network automatically.
-///    Zero-configuration, works instantly on the same WiFi/LAN.
-///
-/// 2. **DHT (Kademlia)** — Finds peers across the internet.
-///    Requires at least one bootstrap seed node to join the DHT.
-///    Once connected, peers can find each other globally.
-///
-/// 3. **Relay (libp2p Circuit Relay v2)** — For peers behind strict NAT.
-///    Relay nodes provide temporary connectivity until DCUtR hole-punching
-///    establishes a direct connection.
-///
-/// Both methods feed discovered peers into gossipsub and kademlia routing tables.
-/// The swarm event handler in `swarm.rs` handles both discovery event types.
+//! Peer discovery mechanisms.
+//! Mesh uses three complementary discovery methods:
+//!
+//! 1. **mDNS** — Finds peers on the local network automatically.
+//!    Zero-configuration, works instantly on the same WiFi/LAN.
+//!
+//! 2. **DHT (Kademlia)** — Finds peers across the internet.
+//!    Requires at least one bootstrap seed node to join the DHT.
+//!    Once connected, peers can find each other globally.
+//!
+//! 3. **Relay (libp2p Circuit Relay v2)** — For peers behind strict NAT.
+//!    Relay nodes provide temporary connectivity until DCUtR hole-punching
+//!    establishes a direct connection.
+//!
+//! Both methods feed discovered peers into gossipsub and kademlia routing tables.
+//! The swarm event handler in `swarm.rs` handles both discovery event types.
 
 /// Default public IPFS bootstrap peers.
 /// These are well-known, stable nodes that participate in the

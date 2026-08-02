@@ -133,6 +133,19 @@ if (
 fi
 grep -qi 'manifest' "$test_root/restore-tampered.log"
 
+if (
+  PATH="$restore_fake_bin:$PATH" \
+  MESH_RESTORE_POSTGRES_PASSWORD=unit-test-postgres \
+  MESH_RESTORE_DRILL_RUNTIME_ROOT=relative/runtime \
+    sh "$homeserver_dir/restore-drill.sh" "$valid_fixture" \
+    > "$test_root/restore-relative-runtime.log" 2>&1
+); then
+  echo "restore-drill accepted a relative runtime root." >&2
+  exit 1
+fi
+grep -qi 'runtime root must be an absolute path' \
+  "$test_root/restore-relative-runtime.log"
+
 backup_tool="$test_root/backup-tool"
 mkdir -p \
   "$backup_tool/fake-bin" \

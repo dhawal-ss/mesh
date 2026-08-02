@@ -2,11 +2,12 @@
 
 use std::{
     ffi::{OsStr, OsString},
+    future::Future,
     io::{Cursor, Read, Write},
-    net::{SocketAddr, TcpStream},
+    net::{SocketAddr, TcpListener, TcpStream},
     path::PathBuf,
     process::Command,
-    time::Duration,
+    time::{Duration, Instant as StdInstant},
 };
 
 use matrix_sdk::{
@@ -23,9 +24,195 @@ use matrix_sdk::{
     Client,
 };
 use mesh_lib::backend::{
-    MatrixBackend, MatrixLogin, MatrixRegistration, MatrixRoomNotificationMode, MeshBackend,
-    ReadReceiptMode, UserPreferences,
+    BackendError, MatrixBackend, MatrixLogin, MatrixRegistration, MatrixRoomNotificationMode,
+    MeshBackend, ReadReceiptMode, UserPreferences,
 };
+use tokio::time::Instant as TokioInstant;
+
+const REGISTRATION_TEST_OUTER_LIMIT: Duration = Duration::from_secs(2 * 60);
+const FEDERATION_TEST_OUTER_LIMIT: Duration = Duration::from_secs(14 * 60);
+
+#[derive(Clone, Copy)]
+struct PresenceWaitPolicy {
+    total: Duration,
+    sync_attempt: Duration,
+    observation: Duration,
+    poll: Duration,
+    max_rate_limit_backoff: Duration,
+    max_attempts: usize,
+}
+
+const LIVE_PRESENCE_WAIT_POLICY: PresenceWaitPolicy = PresenceWaitPolicy {
+    // Five presence transitions are exercised by the live suite. Each one is
+    // capped at 20 seconds, instead of nesting a 30-second sync inside 90 tries.
+    // Twelve polls at this cadence cover roughly 18 seconds, so the attempt cap
+    // remains useful without accidentally shrinking the wall-clock deadline.
+    total: Duration::from_secs(20),
+    sync_attempt: Duration::from_secs(2),
+    observation: Duration::from_secs(1),
+    poll: Duration::from_millis(1_500),
+    max_rate_limit_backoff: Duration::from_secs(3),
+    max_attempts: 12,
+};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct MemberPresenceSnapshot {
+    membership: String,
+    ban_status: String,
+    online: Option<bool>,
+}
+
+impl MemberPresenceSnapshot {
+    fn missing() -> Self {
+        Self {
+            membership: "missing".into(),
+            ban_status: "unknown".into(),
+            online: None,
+        }
+    }
+
+    fn summary(&self) -> String {
+        format!(
+            "membership={} ban={} online={}",
+            sanitized_state_label(&self.membership),
+            sanitized_state_label(&self.ban_status),
+            self.online
+                .map(|online| online.to_string())
+                .unwrap_or_else(|| "unknown".into())
+        )
+    }
+}
+
+struct LiveTestRunRecord {
+    test: &'static str,
+    source_sha: String,
+    worktree_state: &'static str,
+    started: StdInstant,
+    result: &'static str,
+}
+
+impl LiveTestRunRecord {
+    fn start(test: &'static str, outer_limit: Duration) -> Self {
+        let source_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let source_sha = git_output(&source_root, &["rev-parse", "HEAD"])
+            .filter(|value| value.len() == 40)
+            .unwrap_or_else(|| "unavailable".into());
+        let worktree_state = match git_output(
+            &source_root,
+            &["status", "--porcelain", "--untracked-files=all"],
+        ) {
+            Some(value) if value.is_empty() => "clean",
+            Some(_) => "dirty",
+            None => "unavailable",
+        };
+        eprintln!(
+            "[matrix-spike] run_start test={test} timestamp={} source_sha={source_sha} worktree={worktree_state} outer_deadline_seconds={}",
+            chrono::Utc::now().to_rfc3339(),
+            outer_limit.as_secs()
+        );
+        Self {
+            test,
+            source_sha,
+            worktree_state,
+            started: StdInstant::now(),
+            result: "failed-or-cancelled",
+        }
+    }
+
+    fn set_result(&mut self, result: &'static str) {
+        self.result = result;
+    }
+}
+
+impl Drop for LiveTestRunRecord {
+    fn drop(&mut self) {
+        eprintln!(
+            "[matrix-spike] run_end test={} timestamp={} source_sha={} worktree={} elapsed_ms={} result={}",
+            self.test,
+            chrono::Utc::now().to_rfc3339(),
+            self.source_sha,
+            self.worktree_state,
+            self.started.elapsed().as_millis(),
+            self.result
+        );
+    }
+}
+
+fn git_output(source_root: &std::path::Path, args: &[&str]) -> Option<String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(source_root)
+        .args(args)
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+fn sanitized_state_label(value: &str) -> String {
+    let sanitized = value
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+        .take(32)
+        .collect::<String>();
+    if sanitized.is_empty() {
+        "unknown".into()
+    } else {
+        sanitized
+    }
+}
+
+fn sanitized_backend_error(error: &BackendError) -> &'static str {
+    match error {
+        BackendError::NotAuthenticated => "not-authenticated",
+        BackendError::Network(_) => "network",
+        BackendError::RateLimited(_) => "rate-limited",
+        BackendError::PermissionDenied(_) => "permission-denied",
+        BackendError::NotFound(_) => "not-found",
+        BackendError::Crypto(_) => "crypto",
+        BackendError::Serialization(_) => "serialization",
+        BackendError::NotEncrypted(_) => "not-encrypted",
+        BackendError::DecryptionFailed(_) => "decryption-failed",
+        BackendError::Cancelled(_) => "cancelled",
+        BackendError::Unsupported(_) => "unsupported",
+        BackendError::InvalidConfiguration(_) => "invalid-configuration",
+        BackendError::CommunityHomeserverUnconfigured => "community-service-unconfigured",
+        BackendError::UsernameUnavailable => "username-unavailable",
+        BackendError::RegistrationTermsRequired => "registration-terms-required",
+        BackendError::RegistrationAdditionalAuthRequired => "registration-additional-auth-required",
+        BackendError::RegistrationInvitationRequired => "registration-invitation-required",
+        BackendError::RegistrationInvitationInvalid => "registration-invitation-invalid",
+        BackendError::RegistrationTimedOut(_) => "registration-timed-out",
+        BackendError::Other(_) => "other",
+        BackendError::LoginCancelled => "login-cancelled",
+        BackendError::LoginTimedOut(_) => "login-timed-out",
+    }
+}
+
+fn retry_after_from_rate_limit(error: &BackendError) -> Option<Duration> {
+    let BackendError::RateLimited(detail) = error else {
+        return None;
+    };
+    parse_unsigned_after_marker(detail, "retry_after_ms").map(Duration::from_millis)
+}
+
+fn parse_unsigned_after_marker(detail: &str, marker: &str) -> Option<u64> {
+    let normalized = detail.to_ascii_lowercase();
+    let marker_offset = normalized.find(marker)? + marker.len();
+    let suffix = &normalized[marker_offset..];
+    let digits = suffix
+        .trim_start_matches(|character: char| {
+            character.is_ascii_whitespace() || matches!(character, '"' | '\'' | ':' | '=')
+        })
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>();
+    (!digits.is_empty())
+        .then(|| digits.parse::<u64>().ok())
+        .flatten()
+}
 
 struct EnvironmentOverride {
     name: &'static str,
@@ -48,6 +235,71 @@ impl Drop for EnvironmentOverride {
             std::env::remove_var(self.name);
         }
     }
+}
+
+fn spawn_registration_admission_service() -> (String, std::thread::JoinHandle<()>) {
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .expect("a loopback admission test listener must be available");
+    let address = listener
+        .local_addr()
+        .expect("the admission test listener must have an address");
+    listener
+        .set_nonblocking(true)
+        .expect("the admission test listener must support a bounded wait");
+    let origin = format!("http://{address}");
+    let server = std::thread::spawn(move || {
+        let deadline = StdInstant::now() + Duration::from_secs(10);
+        let (mut stream, _) = loop {
+            match listener.accept() {
+                Ok(connection) => break connection,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::WouldBlock
+                        && StdInstant::now() < deadline =>
+                {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => {
+                    panic!("registration must resolve the native pending invitation: {error}")
+                }
+            }
+        };
+        // On Windows an accepted socket inherits the listener's nonblocking
+        // mode. Switch the connected stream back to blocking before applying
+        // the bounded read timeout so a just-arrived request cannot fail with
+        // WSAEWOULDBLOCK (10035).
+        stream
+            .set_nonblocking(false)
+            .expect("the admission test socket must support blocking reads");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("the admission test socket timeout must be configurable");
+        let mut request = [0u8; 4_096];
+        let received = stream
+            .read(&mut request)
+            .expect("the admission request must be readable");
+        let request = String::from_utf8_lossy(&request[..received]);
+        assert!(request.starts_with("POST /_mesh/admission/v1/invitations/resolve HTTP/1.1"));
+        assert!(!request.contains("mesh-registration-passphrase"));
+
+        let body = serde_json::json!({
+            "version": 4,
+            "registration_token": "mesh-spike-registration",
+            "room_id": "!registration:hs1.mesh.test",
+            "service": "http://localhost:8008",
+            "via": ["hs1.mesh.test"],
+            "community_name": "Registration acceptance"
+        })
+        .to_string();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        stream
+            .write_all(response.as_bytes())
+            .expect("the admission response must be writable");
+    });
+    (origin, server)
 }
 
 struct PausedSynapse {
@@ -162,6 +414,7 @@ fn privacy_preferences_with_receipt_mode(
         notification_sound: true,
         notification_sound_id: Some("mesh".into()),
         do_not_disturb: false,
+        show_notification_content: false,
         quiet_hours_enabled: false,
         quiet_hours_start: Some("22:00".into()),
         quiet_hours_end: Some("08:00".into()),
@@ -173,33 +426,225 @@ fn privacy_preferences_with_receipt_mode(
         send_read_receipts: read_receipt_mode == ReadReceiptMode::Private,
         read_receipt_mode: Some(read_receipt_mode),
         send_typing_indicators,
+        conversation_privacy: std::collections::BTreeMap::new(),
         share_presence,
         invisible_mode,
         updated_at: String::new(),
     }
 }
 
+async fn wait_for_member_presence_with<Sync, SyncFuture, Observe, ObserveFuture>(
+    phase: &'static str,
+    expected_online: bool,
+    policy: PresenceWaitPolicy,
+    mut sync: Sync,
+    mut observe: Observe,
+) -> Result<(), String>
+where
+    Sync: FnMut() -> SyncFuture,
+    SyncFuture: Future<Output = Result<(), BackendError>>,
+    Observe: FnMut() -> ObserveFuture,
+    ObserveFuture: Future<Output = Result<MemberPresenceSnapshot, BackendError>>,
+{
+    let started = TokioInstant::now();
+    let deadline = started + policy.total;
+    let mut attempts = 0usize;
+    let mut last_state = MemberPresenceSnapshot::missing();
+    let mut last_error = "none".to_owned();
+
+    eprintln!(
+        "[matrix-spike] phase={phase} state=started deadline_ms={}",
+        policy.total.as_millis()
+    );
+
+    while attempts < policy.max_attempts && TokioInstant::now() < deadline {
+        attempts += 1;
+        let remaining = deadline.saturating_duration_since(TokioInstant::now());
+        if remaining.is_zero() {
+            break;
+        }
+
+        let sync_budget = policy.sync_attempt.min(remaining);
+        let mut retry_delay = policy.poll;
+        match tokio::time::timeout(sync_budget, sync()).await {
+            Ok(Ok(())) => {
+                last_error = "none".into();
+            }
+            Ok(Err(error)) => {
+                let category = sanitized_backend_error(&error);
+                if let Some(server_delay) = retry_after_from_rate_limit(&error) {
+                    retry_delay = server_delay.min(policy.max_rate_limit_backoff);
+                    last_error = format!(
+                        "{category}(server_retry_after_ms={},bounded_retry_ms={})",
+                        server_delay.as_millis(),
+                        retry_delay.as_millis()
+                    );
+                } else {
+                    last_error = category.into();
+                }
+            }
+            Err(_) => {
+                last_error = format!("sync-timeout({}ms)", sync_budget.as_millis());
+            }
+        }
+
+        let remaining = deadline.saturating_duration_since(TokioInstant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        let observation_budget = policy.observation.min(remaining);
+        match tokio::time::timeout(observation_budget, observe()).await {
+            Ok(Ok(observed)) => {
+                last_state = observed;
+                if last_state.online == Some(expected_online) {
+                    eprintln!(
+                        "[matrix-spike] phase={phase} state=complete attempts={attempts} elapsed_ms={} last_observation={}",
+                        started.elapsed().as_millis(),
+                        last_state.summary()
+                    );
+                    return Ok(());
+                }
+            }
+            Ok(Err(error)) => {
+                last_error = format!("observation-{}", sanitized_backend_error(&error));
+            }
+            Err(_) => {
+                last_error = format!("observation-timeout({}ms)", observation_budget.as_millis());
+            }
+        }
+
+        eprintln!(
+            "[matrix-spike] phase={phase} state=waiting attempt={attempts} elapsed_ms={} last_observation={} last_error={last_error}",
+            started.elapsed().as_millis(),
+            last_state.summary()
+        );
+
+        let remaining = deadline.saturating_duration_since(TokioInstant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        tokio::time::sleep(retry_delay.min(remaining)).await;
+    }
+
+    Err(format!(
+        "phase={phase} timed out after {}ms (attempts={attempts}, expected_online={expected_online}, last_observation={}, last_error={last_error})",
+        started.elapsed().as_millis(),
+        last_state.summary()
+    ))
+}
+
 async fn wait_for_member_presence(
+    phase: &'static str,
     observer: &MatrixBackend,
     community_id: &str,
     user_id: &str,
     expected_online: bool,
-) -> bool {
-    for _ in 0..90 {
-        observer.sync_once().await.unwrap();
-        if observer
-            .list_members(community_id.to_owned())
-            .await
-            .unwrap()
-            .iter()
-            .find(|member| member.public_key == user_id)
-            .is_some_and(|member| member.online == expected_online)
-        {
-            return true;
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-    false
+) -> Result<(), String> {
+    wait_for_member_presence_with(
+        phase,
+        expected_online,
+        LIVE_PRESENCE_WAIT_POLICY,
+        || observer.sync_once(),
+        || async {
+            observer
+                .list_members(community_id.to_owned())
+                .await
+                .map(|members| {
+                    members
+                        .iter()
+                        .find(|member| member.public_key == user_id)
+                        .map(|member| MemberPresenceSnapshot {
+                            membership: member.join_status.clone(),
+                            ban_status: member.ban_status.clone(),
+                            online: Some(member.online),
+                        })
+                        .unwrap_or_else(MemberPresenceSnapshot::missing)
+                })
+        },
+    )
+    .await
+}
+
+#[tokio::test(start_paused = true)]
+async fn member_presence_wait_reports_phase_and_last_state_when_progress_stalls() {
+    let policy = PresenceWaitPolicy {
+        total: Duration::from_millis(40),
+        sync_attempt: Duration::from_millis(5),
+        observation: Duration::from_millis(5),
+        poll: Duration::from_millis(10),
+        max_rate_limit_backoff: Duration::from_millis(20),
+        max_attempts: 3,
+    };
+    let error = wait_for_member_presence_with(
+        "forced-no-progress",
+        true,
+        policy,
+        || async { Ok::<(), BackendError>(()) },
+        || async {
+            Ok::<MemberPresenceSnapshot, BackendError>(MemberPresenceSnapshot {
+                membership: "joined".into(),
+                ban_status: "none".into(),
+                online: Some(false),
+            })
+        },
+    )
+    .await
+    .expect_err("a stalled observation must fail closed");
+    assert!(error.contains("phase=forced-no-progress"));
+    assert!(error.contains("membership=joined ban=none online=false"));
+    assert!(error.contains("attempts=3"));
+    assert!(error.contains("timed out after 30ms"));
+}
+
+#[tokio::test]
+async fn member_presence_wait_honors_bounded_server_retry_after() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+
+    let policy = PresenceWaitPolicy {
+        total: Duration::from_secs(4),
+        sync_attempt: Duration::from_millis(100),
+        observation: Duration::from_millis(100),
+        poll: Duration::from_millis(10),
+        max_rate_limit_backoff: Duration::from_secs(2),
+        max_attempts: 3,
+    };
+    let sync_attempts = Arc::new(AtomicUsize::new(0));
+    let observe_attempts = Arc::clone(&sync_attempts);
+    let started = TokioInstant::now();
+    wait_for_member_presence_with(
+        "rate-limited-presence",
+        true,
+        policy,
+        || {
+            let attempt = sync_attempts.fetch_add(1, Ordering::SeqCst);
+            async move {
+                if attempt == 0 {
+                    Err(BackendError::RateLimited(
+                        r#"M_LIMIT_EXCEEDED {"retry_after_ms":1250}"#.into(),
+                    ))
+                } else {
+                    Ok(())
+                }
+            }
+        },
+        || {
+            let online = observe_attempts.load(Ordering::SeqCst) >= 2;
+            async move {
+                Ok::<MemberPresenceSnapshot, BackendError>(MemberPresenceSnapshot {
+                    membership: "joined".into(),
+                    ban_status: "none".into(),
+                    online: Some(online),
+                })
+            }
+        },
+    )
+    .await
+    .expect("the second attempt should observe online presence");
+    assert!(started.elapsed() >= Duration::from_millis(1_250));
+    assert!(started.elapsed() < Duration::from_secs(2));
 }
 
 async fn wait_for_room_notification_mode(
@@ -221,41 +666,50 @@ async fn wait_for_room_notification_mode(
 }
 
 async fn erase_live_test_account(label: &str, backend: &MatrixBackend) {
-    if let Err(error) = backend.remove_local_account().await {
-        let detail = error.to_string();
-        assert!(
-            detail.contains("account store") && !detail.contains("keychain"),
-            "{label} secure-store cleanup failed: {detail}"
-        );
-        eprintln!(
-            "[matrix-spike] {label} secure keys erased; temporary SDK store cleanup deferred: {detail}"
-        );
-    }
+    backend
+        .remove_local_account()
+        .await
+        .unwrap_or_else(|error| panic!("{label} local account cleanup failed: {error}"));
 }
 
 /// A fresh consumer account must be creatable through Mesh itself using the
 /// invitation token provisioned by the federation fixture, not only through
 /// the Synapse operator CLI used to prepare that fixture.
-#[tokio::test]
-#[ignore = "requires infra/matrix-spike"]
-async fn matrix_backend_registers_a_fresh_community_hosted_account() {
+async fn run_matrix_backend_registers_a_fresh_community_hosted_account() {
     let _homeserver =
         EnvironmentOverride::new("MESH_COMMUNITY_HOMESERVER", "http://localhost:8008");
     let _server_name = EnvironmentOverride::new("MESH_COMMUNITY_SERVER_NAME", "hs1.mesh.test");
+    let _loopback_invitations =
+        EnvironmentOverride::new("MESH_ALLOW_INSECURE_LOOPBACK_INVITATIONS", "1");
     let store = tempfile::tempdir().unwrap();
     let nonce = uuid::Uuid::new_v4().simple().to_string();
     let username = format!("meshreg{}", &nonce[..12]);
     let backend = MatrixBackend::with_profile(store.path().to_owned(), "matrix-spike-registration");
+    let (admission_origin, admission_server) = spawn_registration_admission_service();
+    let invite = format!(
+        "mesh://join?v=5&kind=community&room=%21registration%3Ahs1.mesh.test&via=hs1.mesh.test&community_service=http%3A%2F%2Flocalhost%3A8008&admission={}&code={}",
+        urlencoding::encode(&admission_origin),
+        "registration-acceptance-code-000001"
+    );
+    let pending = backend
+        .store_pending_invitation(invite)
+        .await
+        .expect("the native pending invitation must be stored opaquely");
 
-    let status = backend
+    let registration = backend
         .register_account(MatrixRegistration {
             homeserver: "http://localhost:8008".into(),
             username: username.clone(),
             password: "mesh-registration-passphrase".into(),
-            registration_token: Some("mesh-spike-registration".into()),
+            pending_invitation_handle: Some(pending.handle),
             device_name: Some("mesh-spike-registration".into()),
         })
-        .await
+        .await;
+    let admission_result = admission_server
+        .join()
+        .map_err(|_| "the admission test service panicked");
+    admission_result.expect("the admission test service must finish cleanly");
+    let status = registration
         .expect("Mesh account registration must succeed on the community-hosted local service");
     assert!(status.authenticated);
     assert_eq!(
@@ -294,11 +748,33 @@ async fn matrix_backend_registers_a_fresh_community_hosted_account() {
         .expect("the registration verification account must be erased locally");
 }
 
+#[tokio::test]
+#[ignore = "requires infra/matrix-spike"]
+async fn matrix_backend_registers_a_fresh_community_hosted_account() {
+    let mut run = LiveTestRunRecord::start(
+        "matrix_backend_registers_a_fresh_community_hosted_account",
+        REGISTRATION_TEST_OUTER_LIMIT,
+    );
+    match tokio::time::timeout(
+        REGISTRATION_TEST_OUTER_LIMIT,
+        run_matrix_backend_registers_a_fresh_community_hosted_account(),
+    )
+    .await
+    {
+        Ok(()) => run.set_result("passed"),
+        Err(_) => {
+            run.set_result("timed-out");
+            panic!(
+                "registration live test exceeded its {} second outer deadline",
+                REGISTRATION_TEST_OUTER_LIMIT.as_secs()
+            );
+        }
+    }
+}
+
 /// Two real Synapse homeservers, real federation, E2EE, offline catch-up, and
 /// same-device session restoration. Run through `npm run test:matrix-spike`.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "requires infra/matrix-spike"]
-async fn matrix_backend_federates_and_recovers_offline_history_once() {
+async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
     macro_rules! checkpoint {
         ($message:literal) => {
             eprintln!("[matrix-spike] {}", $message);
@@ -636,6 +1112,17 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
     );
 
     alice.set_typing(alice_dm.id.clone(), true).await.unwrap();
+    assert!(
+        bob.typing_users(alice_dm.id.clone())
+            .await
+            .unwrap()
+            .is_empty(),
+        "typing activity was displayed before the observing account opted in"
+    );
+    bob.update_user_preferences(privacy_preferences(true, true, false, false))
+        .await
+        .unwrap();
+    alice.set_typing(alice_dm.id.clone(), true).await.unwrap();
     let mut saw_alice_dm_typing = false;
     for _ in 0..20 {
         let typing_users = bob.typing_users(alice_dm.id.clone()).await.unwrap();
@@ -844,42 +1331,61 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
     }));
     checkpoint!("federated community, channel, and roster projections verified");
 
-    assert!(
-        wait_for_member_presence(&bob, &community.space_id, &alice_user, true).await,
-        "presence sharing did not publish Alice as online"
-    );
+    // Alice enabled sharing before Bob joined the federated community.
+    // Synapse does not reliably replay that pre-existing remote presence to a
+    // newly shared room, so begin with an explicit post-membership transition.
     alice
         .update_user_preferences(privacy_preferences(true, true, true, true))
         .await
         .unwrap();
-    assert!(
-        wait_for_member_presence(&bob, &community.space_id, &alice_user, false).await,
-        "invisible mode did not publish Alice as offline"
-    );
+    wait_for_member_presence(
+        "presence-invisible-offline",
+        &bob,
+        &community.space_id,
+        &alice_user,
+        false,
+    )
+    .await
+    .expect("invisible mode did not publish Alice as offline");
     alice
         .update_user_preferences(privacy_preferences(true, true, true, false))
         .await
         .unwrap();
-    assert!(
-        wait_for_member_presence(&bob, &community.space_id, &alice_user, true).await,
-        "disabling invisible mode did not restore Alice's online presence"
-    );
+    wait_for_member_presence(
+        "presence-visible-online",
+        &bob,
+        &community.space_id,
+        &alice_user,
+        true,
+    )
+    .await
+    .expect("disabling invisible mode did not restore Alice's online presence");
     alice
         .update_user_preferences(privacy_preferences(true, true, false, false))
         .await
         .unwrap();
-    assert!(
-        wait_for_member_presence(&bob, &community.space_id, &alice_user, false).await,
-        "presence opt-out did not publish Alice as offline"
-    );
+    wait_for_member_presence(
+        "presence-opt-out-offline",
+        &bob,
+        &community.space_id,
+        &alice_user,
+        false,
+    )
+    .await
+    .expect("presence opt-out did not publish Alice as offline");
     alice
         .update_user_preferences(privacy_preferences(true, true, true, false))
         .await
         .unwrap();
-    assert!(
-        wait_for_member_presence(&bob, &community.space_id, &alice_user, true).await,
-        "restoring presence sharing did not publish Alice as online"
-    );
+    wait_for_member_presence(
+        "presence-restored-online",
+        &bob,
+        &community.space_id,
+        &alice_user,
+        true,
+    )
+    .await
+    .expect("restoring presence sharing did not publish Alice as online");
     checkpoint!("presence sharing and invisible-mode wire behavior verified");
 
     alice
@@ -1470,10 +1976,19 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
     checkpoint!("offline catch-up verified");
 
     let recovery_passphrase = format!("mesh-recovery-{nonce}");
-    let recovery_key = bob
+    let recovery_setup = bob
         .enable_recovery(Some(recovery_passphrase))
         .await
         .unwrap();
+    assert_eq!(
+        recovery_setup.secure_storage_state,
+        mesh_lib::backend::MatrixRecoverySecureStorageState::Saved
+    );
+    assert_eq!(
+        recovery_setup.verification_state,
+        mesh_lib::backend::MatrixRecoveryVerificationState::Verified
+    );
+    let recovery_key = recovery_setup.recovery_key;
 
     let bob_second_store = tempfile::tempdir().unwrap();
     let bob_second = MatrixBackend::with_profile(
@@ -1755,6 +2270,7 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
             notification_sound: true,
             notification_sound_id: Some("mesh".into()),
             do_not_disturb: true,
+            show_notification_content: false,
             quiet_hours_enabled: true,
             quiet_hours_start: Some("22:00".into()),
             quiet_hours_end: Some("07:00".into()),
@@ -1775,6 +2291,13 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
             send_read_receipts: false,
             read_receipt_mode: Some(ReadReceiptMode::Off),
             send_typing_indicators: true,
+            conversation_privacy: std::collections::BTreeMap::from([(
+                community.channel_id.clone(),
+                mesh_lib::backend::ConversationPrivacyOverride {
+                    read_receipt_mode: Some(ReadReceiptMode::Public),
+                    send_typing_indicators: Some(false),
+                },
+            )]),
             share_presence: false,
             invisible_mode: true,
             updated_at: String::new(),
@@ -1791,7 +2314,11 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
     assert_eq!(second_device_preferences, saved_preferences);
     checkpoint!("Matrix account-data preferences propagated across devices");
 
-    bob.pause_sync().await;
+    // Model a real process restart: abort every task that owns an SDK Client
+    // before constructing a replacement backend over the same Windows store.
+    // Pausing sync alone leaves the session and room-update tasks detached and
+    // their SQLite handles remain live after the backend value is dropped.
+    bob.shutdown_for_test().await;
     drop(bob);
     let restored = MatrixBackend::with_profile(bob_store.path().to_owned(), bob_profile);
     restored.restore_session().await.unwrap();
@@ -1821,7 +2348,10 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
         )
         .await
         .unwrap();
-    assert!(moderation.audit_recorded);
+    assert!(
+        !moderation.audit_recorded,
+        "moderation must not claim an authoritative audit record until a trustworthy store is configured"
+    );
     assert_eq!(moderation.audit.actor_user_id, alice_user);
     assert_eq!(moderation.audit.target_user_id, bob_user);
     assert_eq!(moderation.audit.action, "Banned member");
@@ -1841,13 +2371,17 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
             .iter()
             .any(|outcome| outcome.room_id == *room_id && outcome.succeeded));
     }
-    let moderation_audit = alice
+    let moderation_audit_error = alice
         .list_moderation_audit(community.space_id.clone(), 20)
         .await
-        .unwrap();
-    assert!(moderation_audit
-        .iter()
-        .any(|entry| entry == &moderation.audit));
+        .unwrap_err();
+    let BackendError::InvalidConfiguration(audit_warning) = moderation_audit_error else {
+        panic!("unavailable authoritative audit storage must fail closed with an actionable configuration warning");
+    };
+    assert!(audit_warning.contains("trustworthy moderation audit store is not configured"));
+    assert!(
+        audit_warning.contains("Room messages are not accepted as authoritative audit evidence")
+    );
     tokio::time::sleep(Duration::from_secs(2)).await;
     alice.sync_once().await.unwrap();
     let final_members = alice
@@ -1870,11 +2404,35 @@ async fn matrix_backend_federates_and_recovers_offline_history_once() {
             "banned member rejoined a server channel"
         );
     }
-    checkpoint!("server-wide ban and protected moderation audit verified");
+    checkpoint!("server-wide ban enforced; authoritative moderation audit correctly unavailable");
 
     erase_live_test_account("Alice", &alice).await;
     erase_live_test_account("Bob", &restored).await;
     erase_live_test_account("Bob stale device", &bob_stale).await;
     erase_live_test_account("Charlie", &charlie).await;
     erase_live_test_account("Bob recovered device", &bob_second).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "requires infra/matrix-spike"]
+async fn matrix_backend_federates_and_recovers_offline_history_once() {
+    let mut run = LiveTestRunRecord::start(
+        "matrix_backend_federates_and_recovers_offline_history_once",
+        FEDERATION_TEST_OUTER_LIMIT,
+    );
+    match tokio::time::timeout(
+        FEDERATION_TEST_OUTER_LIMIT,
+        run_matrix_backend_federates_and_recovers_offline_history_once(),
+    )
+    .await
+    {
+        Ok(()) => run.set_result("passed"),
+        Err(_) => {
+            run.set_result("timed-out");
+            panic!(
+                "federation/recovery live test exceeded its {} second outer deadline",
+                FEDERATION_TEST_OUTER_LIMIT.as_secs()
+            );
+        }
+    }
 }

@@ -73,11 +73,8 @@ fn parse_ice_url(url: &str) -> Option<(&'static str, String, Option<u16>)> {
             // Likely IPv6 without brackets; treat whole thing as host
             Some((scheme, host_port.to_string(), None))
         } else {
-            let port = port_str.parse::<u16>().ok();
-            if port.is_none() {
-                return None; // malformed port
-            }
-            Some((scheme, host.to_string(), port))
+            let port = port_str.parse::<u16>().ok()?;
+            Some((scheme, host.to_string(), Some(port)))
         }
     } else {
         // host only, no port
@@ -187,19 +184,17 @@ pub struct IceServerProbeResult {
     pub port: u16,
     /// Outcome classification that distinguishes the real failure mode.
     /// One of:
-    ///   - "ok"               — server reachable and speaks STUN
-    ///   - "allocation_ok"    — TURN server accepted credentials and
-    ///                          allocated a relay (full RFC 5766 handshake)
-    ///   - "stun_reachable"   — TURN server answered STUN Binding but
-    ///                          failed the TURN Allocate step
-    ///   - "auth_rejected"    — TURN server spoke but rejected credentials
-    ///   - "turn_protocol_err"— TURN server responded with unexpected semantics
-    ///   - "malformed"        — URL couldn't be parsed
-    ///   - "dns_failed"       — hostname doesn't resolve
-    ///   - "unreachable"      — resolves but TCP/UDP connect fails
-    ///   - "no_credentials"   — TURN URL without username/credential
-    ///   - "timeout"          — connect attempt timed out
-    ///   - "tls_error"        — TLS handshake failed (for stuns/turns)
+    /// - "ok" — server reachable and speaks STUN
+    /// - "allocation_ok" — TURN server accepted credentials and allocated a relay (full RFC 5766 handshake)
+    /// - "stun_reachable" — TURN server answered STUN Binding but failed the TURN Allocate step
+    /// - "auth_rejected" — TURN server spoke but rejected credentials
+    /// - "turn_protocol_err" — TURN server responded with unexpected semantics
+    /// - "malformed" — URL couldn't be parsed
+    /// - "dns_failed" — hostname doesn't resolve
+    /// - "unreachable" — resolves but TCP/UDP connect fails
+    /// - "no_credentials" — TURN URL without username/credential
+    /// - "timeout" — connect attempt timed out
+    /// - "tls_error" — TLS handshake failed (for stuns/turns)
     pub outcome: String,
     pub detail: String,
     pub resolved_addrs: Vec<String>,
@@ -477,7 +472,7 @@ fn compute_message_integrity(message_with_adjusted_length: &[u8], key: &[u8]) ->
 
 /// Parse a STUN attribute of a given type from a message body, returning
 /// the attribute value bytes if found.
-fn parse_attr<'a>(attrs: &'a [u8], target_type: u16) -> Option<&'a [u8]> {
+fn parse_attr(attrs: &[u8], target_type: u16) -> Option<&[u8]> {
     let mut i = 0;
     while i + 4 <= attrs.len() {
         let attr_type = u16::from_be_bytes([attrs[i], attrs[i + 1]]);
@@ -1486,6 +1481,7 @@ fn emit_voice_session_event(app_handle: &AppHandle, event: &VoiceSessionEvent) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn schedule_voice_heartbeat(
     app_handle: AppHandle,
     voice_state: std::sync::Arc<crate::state::voice_state::VoiceState>,
@@ -1741,7 +1737,7 @@ mod stun_parser_tests {
         // IP 203.0.113.1 XORed with the magic cookie bytes
         let cookie_bytes = STUN_MAGIC_COOKIE.to_be_bytes();
         msg.push(203 ^ cookie_bytes[0]);
-        msg.push(0 ^ cookie_bytes[1]);
+        msg.push(cookie_bytes[1]);
         msg.push(113 ^ cookie_bytes[2]);
         msg.push(1 ^ cookie_bytes[3]);
 
@@ -1798,7 +1794,7 @@ mod stun_parser_tests {
         attrs.extend_from_slice(&xport.to_be_bytes());
         let cookie_bytes = STUN_MAGIC_COOKIE.to_be_bytes();
         attrs.push(192 ^ cookie_bytes[0]);
-        attrs.push(0 ^ cookie_bytes[1]);
+        attrs.push(cookie_bytes[1]);
         attrs.push(2 ^ cookie_bytes[2]);
         attrs.push(1 ^ cookie_bytes[3]);
 

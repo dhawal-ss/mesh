@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-ice-servers"
+description = "Enables the get_ice_servers command without any pre-configured scope."
+commands.allow = ["get_ice_servers"]
+
+[[permission]]
+identifier = "deny-get-ice-servers"
+description = "Denies the get_ice_servers command without any pre-configured scope."
+commands.deny = ["get_ice_servers"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-upload-dm-file"
+description = "Enables the upload_dm_file command without any pre-configured scope."
+commands.allow = ["upload_dm_file"]
+
+[[permission]]
+identifier = "deny-upload-dm-file"
+description = "Denies the upload_dm_file command without any pre-configured scope."
+commands.deny = ["upload_dm_file"]

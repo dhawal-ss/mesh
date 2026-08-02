@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-ice-servers"
+description = "Enables the set_ice_servers command without any pre-configured scope."
+commands.allow = ["set_ice_servers"]
+
+[[permission]]
+identifier = "deny-set-ice-servers"
+description = "Denies the set_ice_servers command without any pre-configured scope."
+commands.deny = ["set_ice_servers"]

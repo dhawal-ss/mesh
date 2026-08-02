@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "releaseState": "developer-preview",
+  "candidate": {
+    "platform": "windows",
+    "backend": "matrix",
+    "capabilities": [
+      "account-service-choice",
+      "community-invitations",
+      "encrypted-text",
+      "encrypted-attachments",
+      "direct-messages",
+      "device-management",
+      "recovery"
+    ],
+    "excludedCapabilities": [
+      "matrix-voice",
+      "legacy-p2p",
+      "automatic-updates"
+    ]
+  },
+  "supportTiers": {
+    "candidate": ["windows"],
+    "acceptancePending": ["macos", "linux"],
+    "unsupported": ["ios", "android", "web"]
+  },
+  "claims": {
+    "consumerBeta": false,
+    "productionReady": false,
+    "communityHostingOptional": true,
+    "accountHostingIndependent": true,
+    "voiceReady": false
+  }
+}

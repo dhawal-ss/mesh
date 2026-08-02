@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-device-verification-status"
+description = "Enables the matrix_device_verification_status command without any pre-configured scope."
+commands.allow = ["matrix_device_verification_status"]
+
+[[permission]]
+identifier = "deny-matrix-device-verification-status"
+description = "Denies the matrix_device_verification_status command without any pre-configured scope."
+commands.deny = ["matrix_device_verification_status"]

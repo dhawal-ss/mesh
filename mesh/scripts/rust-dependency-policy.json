@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "shipping": {
+    "feature": "matrix-backend",
+    "target": "x86_64-pc-windows-msvc",
+    "excludedFeatures": [
+      "legacy-p2p"
+    ]
+  },
+  "engineeringVisibility": {
+    "feature": "legacy-p2p"
+  },
+  "minimumVersions": [
+    {
+      "package": "serde_with",
+      "version": "3.21.0",
+      "reason": "Keep Tauri serialization tooling on the current reviewed release."
+    }
+  ],
+  "resolvedByLibp2p056": [
+    "RUSTSEC-2025-0009",
+    "RUSTSEC-2026-0098",
+    "RUSTSEC-2026-0099",
+    "RUSTSEC-2026-0104"
+  ],
+  "nonShippingVulnerabilities": [
+    {
+      "id": "RUSTSEC-2026-0118",
+      "package": "hickory-proto",
+      "version": "0.25.2",
+      "scope": "legacy-p2p-only",
+      "status": "upstream-no-fixed-release",
+      "remediation": "Upgrade when libp2p-mdns supports a Hickory release containing a fix; keep legacy-p2p excluded from every release artifact."
+    },
+    {
+      "id": "RUSTSEC-2026-0119",
+      "package": "hickory-proto",
+      "version": "0.25.2",
+      "scope": "legacy-p2p-only",
+      "status": "awaiting-compatible-upstream",
+      "remediation": "Upgrade when libp2p-mdns supports hickory-proto 0.26.1 or newer; keep legacy-p2p excluded from every release artifact."
+    }
+  ],
+  "denyWarningKindsInShipping": [
+    "unsound",
+    "yanked"
+  ],
+  "expectedRawWarningCounts": {
+    "unmaintained": 22,
+    "unsound": 2,
+    "yanked": 1
+  },
+  "shippingRuntimeWarnings": [
+    {
+      "kind": "unmaintained",
+      "id": "RUSTSEC-2025-0057",
+      "package": "fxhash",
+      "version": "0.2.1",
+      "status": "reviewed-transitive-warning",
+      "remediation": "Remove when the Matrix runtime dependency chain no longer resolves fxhash 0.2.1."
+    },
+    {
+      "kind": "unmaintained",
+      "id": "RUSTSEC-2026-0173",
+      "package": "proc-macro-error2",
+      "version": "2.0.1",
+      "status": "reviewed-transitive-warning",
+      "remediation": "Remove when upstream procedural-macro dependencies migrate from proc-macro-error2."
+    },
+    {
+      "kind": "unmaintained",
+      "id": "RUSTSEC-2025-0081",
+      "package": "unic-char-property",
+      "version": "0.9.0",
+      "status": "reviewed-transitive-warning",
+      "remediation": "Remove with the upstream migration away from the unmaintained unic family."
+    },
+    {
+      "kind": "unmaintained",
+      "id": "RUSTSEC-2025-0075",
+      "package": "unic-char-range",
+      "version": "0.9.0",
+      "status": "reviewed-transitive-warning",
+      "remediation": "Remove with the upstream migration away from the unmaintained unic family."
+    },
+    {
+      "kind": "unmaintained",
+      "id": "RUSTSEC-2025-0080",
+      "package": "unic-common",
+      "version": "0.9.0",
+      "status": "reviewed-transitive-warning",
+      "remediation": "Remove with the upstream migration away from the unmaintained unic family."
+    },
+    {
+      "kind": "unmaintained",
+      "id": "RUSTSEC-2025-0100",
+      "package": "unic-ucd-ident",
+      "version": "0.9.0",
+      "status": "reviewed-transitive-warning",
+      "remediation": "Remove with the upstream migration away from the unmaintained unic family."
+    },
+    {
+      "kind": "unmaintained",
+      "id": "RUSTSEC-2025-0098",
+      "package": "unic-ucd-version",
+      "version": "0.9.0",
+      "status": "reviewed-transitive-warning",
+      "remediation": "Remove with the upstream migration away from the unmaintained unic family."
+    }
+  ],
+  "nonRuntimeBuildWarnings": [
+    {
+      "id": "RUSTSEC-2026-0097",
+      "package": "rand",
+      "version": "0.7.3",
+      "scope": "tauri-html-build-tool-only",
+      "remediation": "Remove when tauri-utils no longer resolves the legacy phf_generator build chain; the crate is absent from the Windows Matrix runtime graph."
+    },
+    {
+      "id": "RUSTSEC-2024-0429",
+      "package": "glib",
+      "version": "0.18.5",
+      "platforms": [
+        "linux"
+      ],
+      "scope": "tauri-linux-host-build-tool-only",
+      "remediation": "Remove when Tauri's Linux host build chain no longer resolves glib 0.18.5; the crate is absent from the Windows Matrix runtime graph and release artifacts."
+    }
+  ]
+}

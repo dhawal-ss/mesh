@@ -6,7 +6,7 @@ import react from "@vitejs/plugin-react";
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
-export default defineConfig(async () => ({
+export default defineConfig(async ({ mode }) => ({
   plugins: [
     react({
       babel: {
@@ -20,6 +20,16 @@ export default defineConfig(async () => ({
     // Force simple-peer/readable-stream onto the browser EventEmitter package
     // instead of Vite's empty shim for the Node built-in `events` module.
     alias: [
+      ...(mode === "matrix-voice" || mode === "test"
+        ? []
+        : [
+            {
+              find: "../lib/livekit-voice",
+              replacement: fileURLToPath(
+                new URL("./src/lib/livekit-voice.disabled.ts", import.meta.url),
+              ),
+            },
+          ]),
       {
         find: /^events$/,
         replacement: fileURLToPath(
@@ -32,6 +42,16 @@ export default defineConfig(async () => ({
   // identifier. Tauri's WebView only provides globalThis/window.
   define: {
     global: "globalThis",
+    // Replaced at compile time so Rollup can make the production Matrix graph
+    // incapable of resolving the legacy voice engine. The explicitly separate
+    // LAN build opts in with `--mode legacy-p2p`.
+    __MESH_LEGACY_FRONTEND__: JSON.stringify(mode === "legacy-p2p"),
+    // The public Matrix text/community beta does not ship dormant media code.
+    // Matrix voice has a separate opt-in build mode until physical acceptance
+    // and release authorization are complete.
+    __MESH_MATRIX_VOICE_FRONTEND__: JSON.stringify(
+      mode === "matrix-voice" || mode === "test",
+    ),
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
@@ -65,8 +85,15 @@ export default defineConfig(async () => ({
       output: {
         // Keep slow-changing framework code cacheable and keep the interactive
         // application shell below Vite's large-chunk threshold.
-        manualChunks: {
-          motion: ["framer-motion"],
+        manualChunks(id) {
+          const normalizedId = id.replaceAll("\\", "/");
+          if (
+            normalizedId.includes("/node_modules/react/")
+            || normalizedId.includes("/node_modules/react-dom/")
+            || normalizedId.includes("/node_modules/scheduler/")
+          ) {
+            return "framework";
+          }
         },
       },
     },

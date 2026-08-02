@@ -90,11 +90,10 @@ pub async fn inspect_legacy_archives(
 pub async fn dry_run_legacy_import(
     request: LegacyImportRequest,
 ) -> Result<LegacyDryRunReport, CommandError> {
-    Ok(
-        tokio::task::spawn_blocking(move || migration::dry_run(&request))
-            .await
-            .map_err(|error| CommandError::Other(format!("legacy dry run failed: {error}")))?,
-    )
+    let report = tokio::task::spawn_blocking(move || migration::dry_run(&request))
+        .await
+        .map_err(|error| CommandError::Other(format!("legacy dry run failed: {error}")))?;
+    Ok(report)
 }
 
 #[tauri::command]

@@ -61,6 +61,18 @@ describe('DmSidebar conversation containment', () => {
     vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(false)
     vi.spyOn(bridge, 'onDmReceived').mockResolvedValue(() => {})
     vi.spyOn(bridge, 'markDmRead').mockResolvedValue(undefined)
+    useDmStore.setState({
+      conversationEntities: {},
+      conversationOrder: [],
+      conversations: [],
+      messageEntities: {},
+      messageOrder: {},
+      messages: {},
+      activeConversationId: null,
+      isDmMode: true,
+      conversationLoad: { status: 'idle', error: null, generation: 0 },
+      messageLoads: {},
+    })
   })
 
   afterEach(async () => {
@@ -99,5 +111,29 @@ describe('DmSidebar conversation containment', () => {
     expect(finalConversation).not.toBeNull()
     finalConversation?.focus()
     expect(document.activeElement).toBe(finalConversation)
+  })
+
+  it('shows a retry instead of an empty state when loading fails', async () => {
+    vi.spyOn(bridge, 'getDmConversations')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce([])
+
+    await act(async () => {
+      root.render(<DmSidebar />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Conversations could not be loaded')
+    expect(container.textContent).not.toContain('No conversations yet')
+
+    const retry = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Retry conversations')
+    await act(async () => {
+      retry?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(container.textContent).toContain('No conversations yet')
   })
 })

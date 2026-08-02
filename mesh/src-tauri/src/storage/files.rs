@@ -48,6 +48,7 @@ impl Database {
     }
 
     /// Upsert a download session to persist progress across restarts.
+    #[allow(clippy::too_many_arguments)]
     pub fn upsert_download_session(
         &self,
         file_hash: &str,

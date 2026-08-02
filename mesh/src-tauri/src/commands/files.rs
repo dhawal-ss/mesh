@@ -11,7 +11,7 @@ use crate::crypto::identity::Identity;
 use crate::network::envelope::{EnvelopeBuilder, FileAnnouncedPayload};
 use crate::network::events::NetworkCommand;
 use crate::network::gossip::channel_messages_topic;
-use crate::security::has_blocked_attachment_extension;
+use crate::security::{classify_attachment, AttachmentDisposition};
 use crate::state::download_scheduler::DownloadScheduler;
 use crate::state::file_downloads::CHUNK_SIZE_BYTES;
 use crate::state::rate_limits::RateLimitBucket;
@@ -54,16 +54,23 @@ pub async fn upload_file(
         )));
     }
 
-    // S6: Blocked file type validation
-    if has_blocked_attachment_extension(&path) {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(&path).map_err(|e| CommandError::Other(e.to_string()))?;
+    let mut prefix = [0_u8; 4 * 1024];
+    let prefix_len = file
+        .read(&mut prefix)
+        .map_err(|e| CommandError::Other(e.to_string()))?;
+    if classify_attachment(&file_name, None, &prefix[..prefix_len]).disposition
+        == AttachmentDisposition::Active
+    {
         return Err(CommandError::Validation(
             "This executable or script file type cannot be attached".into(),
         ));
     }
+    file.seek(SeekFrom::Start(0))
+        .map_err(|e| CommandError::Other(e.to_string()))?;
 
     // Compute SHA-256 content hash and per-chunk hashes in a single pass
-    use std::io::Read;
-    let mut file = std::fs::File::open(&path).map_err(|e| CommandError::Other(e.to_string()))?;
     let mut hasher = Sha256::new();
     let mut chunk_hashes: Vec<String> = Vec::new();
     let chunk_size = CHUNK_SIZE_BYTES as usize;
@@ -158,7 +165,7 @@ pub async fn upload_file(
         .channel_id(&channel_id)
         .payload_typed(&FileAnnouncedPayload {
             file_hash: file_hash.clone(),
-            file_name: file_name,
+            file_name,
             size,
             chunks,
             source_peer_id: local_peer_id,
@@ -262,15 +269,23 @@ pub async fn upload_dm_file(
         )));
     }
 
-    if has_blocked_attachment_extension(&path) {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(&path).map_err(|e| CommandError::Other(e.to_string()))?;
+    let mut prefix = [0_u8; 4 * 1024];
+    let prefix_len = file
+        .read(&mut prefix)
+        .map_err(|e| CommandError::Other(e.to_string()))?;
+    if classify_attachment(&file_name, None, &prefix[..prefix_len]).disposition
+        == AttachmentDisposition::Active
+    {
         return Err(CommandError::Validation(
             "This executable or script file type cannot be attached".into(),
         ));
     }
+    file.seek(SeekFrom::Start(0))
+        .map_err(|e| CommandError::Other(e.to_string()))?;
 
     // Compute SHA-256 content hash
-    use std::io::Read;
-    let mut file = std::fs::File::open(&path).map_err(|e| CommandError::Other(e.to_string()))?;
     let mut hasher = Sha256::new();
     let chunk_size = CHUNK_SIZE_BYTES as usize;
     let mut buffer = vec![0; chunk_size];
@@ -330,6 +345,7 @@ pub async fn upload_dm_file(
     Ok(file_hash)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn request_file(
     file_hash: String,

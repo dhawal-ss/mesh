@@ -9,6 +9,7 @@ compile_error!(
 mod app_runtime;
 pub mod backend;
 mod commands;
+mod crash_report;
 pub mod crypto;
 #[cfg(feature = "legacy-p2p")]
 pub mod migration;
@@ -35,6 +36,75 @@ use state::AppState;
 use tauri::{Emitter, Manager};
 use tracing_subscriber::EnvFilter;
 
+#[cfg(windows)]
+const PENDING_INVITATION_READY_EVENT: &str = "mesh-pending-invitation-ready";
+#[cfg(any(windows, test))]
+const MAX_NATIVE_INVITATION_URL_BYTES: usize = 8 * 1024;
+
+#[cfg(any(windows, test))]
+fn native_pending_invitation_from_args<I, S>(arguments: I) -> Option<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut invitations = arguments.into_iter().filter_map(|argument| {
+        let argument = argument.as_ref();
+        if argument.len() > MAX_NATIVE_INVITATION_URL_BYTES
+            || argument.chars().any(char::is_control)
+        {
+            return None;
+        }
+        let parsed = url::Url::parse(argument).ok()?;
+        (parsed.scheme() == "mesh"
+            && parsed.host_str() == Some("join")
+            && parsed.username().is_empty()
+            && parsed.password().is_none()
+            && parsed.port().is_none()
+            && matches!(parsed.path(), "" | "/")
+            && parsed.fragment().is_none())
+        .then(|| parsed.to_string())
+    });
+    let invitation = invitations.next()?;
+    // Multiple invitation capabilities in one process launch are ambiguous.
+    // Reject all of them rather than choosing a secret by argument order.
+    invitations.next().is_none().then_some(invitation)
+}
+
+#[cfg(windows)]
+async fn persist_native_pending_invitation(app: &tauri::AppHandle, invitation: String) -> bool {
+    let state = app.state::<AppState>();
+    if state.backend.kind() == BackendKind::LegacyP2p {
+        return false;
+    }
+    match state
+        .backend
+        .backend()
+        .store_pending_invitation(invitation)
+        .await
+    {
+        Ok(_) => true,
+        Err(_) => {
+            // Never format backend errors here: a future parser regression
+            // must not turn an invitation capability into log output.
+            tracing::warn!("Could not securely store a native invitation");
+            false
+        }
+    }
+}
+
+#[cfg(windows)]
+fn store_native_pending_invitation(app: tauri::AppHandle, invitation: String) {
+    tauri::async_runtime::spawn(async move {
+        if persist_native_pending_invitation(&app, invitation).await {
+            // The payload is deliberately empty. The renderer can only
+            // re-peek the native store's non-secret metadata.
+            if let Err(error) = app.emit(PENDING_INVITATION_READY_EVENT, ()) {
+                tracing::warn!("Could not notify Mesh about a stored invitation: {error}");
+            }
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize structured logging
@@ -49,10 +119,16 @@ pub fn run() {
     let mut builder = tauri::Builder::default();
     #[cfg(desktop)]
     {
-        // Single-instance must be registered before deep-link so an invitation
-        // opened while Mesh is running is delivered to this process.
+        // Production invitation URLs are consumed from the secondary process
+        // arguments here, never forwarded through the deep-link webview event.
         builder = builder.plugin(tauri_plugin_single_instance::init(
-            |app, _arguments, _working_directory| {
+            |app, arguments, _working_directory| {
+                #[cfg(windows)]
+                if let Some(invitation) = native_pending_invitation_from_args(arguments) {
+                    store_native_pending_invitation(app.clone(), invitation);
+                }
+                #[cfg(not(windows))]
+                let _ = arguments;
                 if let Some(window) = app.get_webview_window("main") {
                     if let Err(error) = window.unminimize() {
                         tracing::warn!("Could not restore Mesh for an invitation: {error}");
@@ -68,7 +144,6 @@ pub fn run() {
         ));
     }
     let builder = builder
-        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .on_webview_event(|webview, event| {
@@ -115,17 +190,12 @@ pub fn run() {
         });
     let builder = builder.plugin(tauri_plugin_notification::init());
     let builder = builder.setup(|app| {
-        #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
-        {
-            use tauri_plugin_deep_link::DeepLinkExt;
-            app.deep_link().register_all()?;
-        }
-
         // Initialize SQLite database
         let app_data_dir = app
             .path()
             .app_data_dir()
             .expect("failed to resolve app data dir");
+        crash_report::install(&app_data_dir, &app.package_info().version.to_string());
         app.manage(commands::attachments::AttachmentGrantStore::default());
         commands::attachments::schedule_startup_cleanup(app.handle().clone());
         #[cfg(feature = "legacy-p2p")]
@@ -176,6 +246,30 @@ pub fn run() {
                 commands::notifications::handle_matrix_backend_event(&notification_app, event);
             })));
         app.manage(app_state);
+
+        #[cfg(windows)]
+        if let Some(invitation) = native_pending_invitation_from_args(
+            std::env::args_os().filter_map(|argument| argument.into_string().ok()),
+        ) {
+            // Setup completes before the renderer initializes. Persisting the
+            // cold-start capability here removes the race between the first
+            // renderer peek, the empty-payload event listener, and a spawned
+            // filesystem/keychain task.
+            let app_handle = app.handle().clone();
+            let persisted = std::thread::scope(|scope| {
+                scope
+                    .spawn(move || {
+                        tauri::async_runtime::block_on(persist_native_pending_invitation(
+                            &app_handle,
+                            invitation,
+                        ))
+                    })
+                    .join()
+            });
+            if persisted.is_err() {
+                tracing::warn!("Could not securely store a cold-start native invitation");
+            }
+        }
 
         #[cfg(feature = "legacy-p2p")]
         if backend_kind == BackendKind::LegacyP2p {
@@ -291,18 +385,15 @@ pub fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::attachments::pick_attachment_grants,
         commands::attachments::accept_attachment_drop_grants,
-        commands::attachments::stage_attachment_bytes,
         commands::attachments::discard_attachment_grant,
         commands::attachments::discard_staged_attachment,
         commands::attachments::open_downloaded_file,
+        commands::external::open_external_url,
         commands::backend::get_backend_status,
         commands::notifications::set_notification_context,
         commands::notifications::send_test_notification,
-        commands::pending_invitation::store_pending_invitation,
-        commands::pending_invitation::read_pending_invitation,
-        commands::pending_invitation::take_pending_invitation,
         commands::pending_invitation::peek_pending_invitation,
-        commands::pending_invitation::resolve_pending_invitation,
+        commands::pending_invitation::join_pending_invitation,
         commands::pending_invitation::clear_pending_invitation,
         commands::backend::matrix_room_is_encrypted,
         commands::backend::matrix_room_upgrade,
@@ -328,6 +419,7 @@ pub fn run() {
         commands::backend::matrix_switch_account,
         commands::backend::matrix_recovery_health,
         commands::backend::matrix_test_recovery,
+        commands::backend::matrix_test_stored_recovery,
         commands::backend::matrix_start_device_verification,
         commands::backend::matrix_device_verification_status,
         commands::backend::matrix_select_device_verification_method,
@@ -360,7 +452,6 @@ pub fn run() {
         commands::backend::matrix_send_attachment,
         commands::backend::matrix_cancel_attachment_upload,
         commands::backend::matrix_download_attachment,
-        commands::backend::matrix_load_attachment_thumbnail,
         commands::backend::matrix_load_attachment_image,
         commands::backend::matrix_cancel_attachment_download,
         commands::backend::matrix_dm_conversations,
@@ -384,10 +475,9 @@ pub fn run() {
         commands::backend::matrix_search_messages,
         commands::backend::matrix_wait_for_room_update,
         commands::backend::matrix_list_members,
+        commands::backend::matrix_get_community_permission_projection,
         commands::backend::matrix_invite_to_community,
         commands::backend::matrix_create_community_invite,
-        commands::backend::matrix_resolve_community_invite,
-        commands::backend::matrix_claim_community_invite,
         commands::backend::matrix_community_access_settings,
         commands::backend::matrix_update_community_access,
         commands::backend::matrix_search_community_directory,
@@ -411,19 +501,16 @@ pub fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::attachments::pick_attachment_grants,
         commands::attachments::accept_attachment_drop_grants,
-        commands::attachments::stage_attachment_bytes,
         commands::attachments::discard_attachment_grant,
         commands::attachments::discard_staged_attachment,
         commands::attachments::open_downloaded_file,
+        commands::external::open_external_url,
         // Backend / Matrix architecture spike
         commands::backend::get_backend_status,
         commands::notifications::set_notification_context,
         commands::notifications::send_test_notification,
-        commands::pending_invitation::store_pending_invitation,
-        commands::pending_invitation::read_pending_invitation,
-        commands::pending_invitation::take_pending_invitation,
         commands::pending_invitation::peek_pending_invitation,
-        commands::pending_invitation::resolve_pending_invitation,
+        commands::pending_invitation::join_pending_invitation,
         commands::pending_invitation::clear_pending_invitation,
         commands::backend::matrix_room_is_encrypted,
         commands::backend::matrix_room_upgrade,
@@ -449,6 +536,7 @@ pub fn run() {
         commands::backend::matrix_switch_account,
         commands::backend::matrix_recovery_health,
         commands::backend::matrix_test_recovery,
+        commands::backend::matrix_test_stored_recovery,
         commands::backend::matrix_start_device_verification,
         commands::backend::matrix_device_verification_status,
         commands::backend::matrix_select_device_verification_method,
@@ -481,7 +569,6 @@ pub fn run() {
         commands::backend::matrix_send_attachment,
         commands::backend::matrix_cancel_attachment_upload,
         commands::backend::matrix_download_attachment,
-        commands::backend::matrix_load_attachment_thumbnail,
         commands::backend::matrix_load_attachment_image,
         commands::backend::matrix_cancel_attachment_download,
         commands::backend::matrix_dm_conversations,
@@ -505,10 +592,9 @@ pub fn run() {
         commands::backend::matrix_search_messages,
         commands::backend::matrix_wait_for_room_update,
         commands::backend::matrix_list_members,
+        commands::backend::matrix_get_community_permission_projection,
         commands::backend::matrix_invite_to_community,
         commands::backend::matrix_create_community_invite,
-        commands::backend::matrix_resolve_community_invite,
-        commands::backend::matrix_claim_community_invite,
         commands::backend::matrix_community_access_settings,
         commands::backend::matrix_update_community_access,
         commands::backend::matrix_search_community_directory,
@@ -598,4 +684,70 @@ pub fn run() {
     builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod native_invitation_tests {
+    use super::*;
+
+    #[test]
+    fn accepts_exactly_one_valid_mesh_join_argument_without_inspecting_other_args() {
+        let secret = "sentinel-invitation-secret";
+        let invitation =
+            format!("mesh://join?v=5&kind=community&room=%21community%3Aexample.org&code={secret}");
+        assert_eq!(
+            native_pending_invitation_from_args(["mesh.exe", "--flag", invitation.as_str()]),
+            Some(invitation)
+        );
+    }
+
+    #[test]
+    fn rejects_ambiguous_or_non_join_urls() {
+        let first = "mesh://join?v=5&code=first";
+        let second = "mesh://join?v=5&code=second";
+        assert_eq!(native_pending_invitation_from_args([first, second]), None);
+        assert_eq!(
+            native_pending_invitation_from_args(["https://example.org/invite/secret"]),
+            None
+        );
+        assert_eq!(
+            native_pending_invitation_from_args(["mesh://user:password@join?v=5&code=secret"]),
+            None
+        );
+        assert_eq!(
+            native_pending_invitation_from_args(["mesh://join/path?v=5&code=secret"]),
+            None
+        );
+    }
+
+    #[test]
+    fn runtime_never_initializes_raw_deep_link_delivery() {
+        let source = include_str!("lib.rs");
+        let implementation = source.split("#[cfg(test)]").next().unwrap();
+        assert!(!implementation.contains(&["tauri_plugin_deep_link", "::init()"].concat()));
+        assert!(!implementation.contains(&["Deep", "LinkExt"].concat()));
+        assert!(!implementation.contains(&["deep-link://", "new-url"].concat()));
+        assert!(implementation.contains("PENDING_INVITATION_READY_EVENT, ()"));
+        assert!(!implementation.contains("app.emit(PENDING_INVITATION_READY_EVENT, invitation"));
+        let native_persist = implementation
+            .split("async fn persist_native_pending_invitation")
+            .nth(1)
+            .unwrap()
+            .split("fn store_native_pending_invitation")
+            .next()
+            .unwrap();
+        assert!(native_persist.contains("Err(_) =>"));
+        assert!(!native_persist.contains("Err(error) =>"));
+        assert!(!native_persist.contains("tracing::warn!(invitation"));
+        assert!(implementation.contains("#[cfg(not(windows))]\n                let _ = arguments;"));
+        assert!(implementation.contains("block_on(persist_native_pending_invitation("));
+        assert!(!implementation.contains("#[cfg(not(windows))]\n        if let Some(invitation)"));
+        for raw_command in [
+            ["commands::backend::matrix_resolve_community_", "invite"].concat(),
+            ["commands::backend::matrix_claim_community_", "invite"].concat(),
+            ["commands::pending_invitation::store_pending_", "invitation"].concat(),
+        ] {
+            assert!(!implementation.contains(&raw_command));
+        }
+    }
 }

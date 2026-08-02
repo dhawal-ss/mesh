@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-dm-blocked"
+description = "Enables the matrix_dm_blocked command without any pre-configured scope."
+commands.allow = ["matrix_dm_blocked"]
+
+[[permission]]
+identifier = "deny-matrix-dm-blocked"
+description = "Denies the matrix_dm_blocked command without any pre-configured scope."
+commands.deny = ["matrix_dm_blocked"]

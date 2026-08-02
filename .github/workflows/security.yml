@@ -11,31 +11,62 @@ permissions:
   contents: read
 
 jobs:
+  codeql:
+    name: CodeQL JavaScript and TypeScript SAST
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@18420e3271f74589575af831a523c833acda327f # codeql-bundle-v2.26.2
+        with:
+          languages: javascript-typescript
+          build-mode: none
+      - name: Analyze JavaScript and TypeScript
+        uses: github/codeql-action/analyze@18420e3271f74589575af831a523c833acda327f # codeql-bundle-v2.26.2
+        with:
+          category: /language:javascript-typescript
+
+  dependency-review:
+    name: Dependency and license review
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          config-file: ./.github/dependency-review-config.yml
+
   feature-matrix:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc
-        with:
-          toolchain: 1.93.0
+      - uses: dtolnay/rust-toolchain@d0befba8b9ddf874327619e84c39b094edd58b66 # 1.93.0
       - name: Install Tauri system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libsqlcipher-dev
       - name: Check Matrix production artifact
         working-directory: mesh/src-tauri
-        run: cargo check --no-default-features --features matrix-backend --locked
+        run: cargo check --no-default-features --features matrix-backend --locked --jobs 1
       - name: Assert Matrix production tree excludes libp2p
         working-directory: mesh/src-tauri
         shell: bash
         run: |
+          set -o pipefail
           if cargo tree --no-default-features --features matrix-backend -e normal,build --locked | grep -Eq '(^| )libp2p v'; then
             echo 'Matrix production dependency tree unexpectedly contains libp2p.' >&2
             exit 1
           fi
       - name: Check experimental LAN artifact
         working-directory: mesh/src-tauri
-        run: cargo check --no-default-features --features legacy-p2p --locked
+        run: cargo check --no-default-features --features legacy-p2p --locked --jobs 1
 
   dependency-and-secret-audit:
     runs-on: ubuntu-latest
@@ -43,48 +74,37 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc
-        with:
-          toolchain: 1.93.0
-      - name: Verify dependency advisory boundaries
-        working-directory: mesh/src-tauri
-        shell: bash
-        run: |
-          production_tree="$(cargo tree --target all --no-default-features --features matrix-backend --locked)"
-          for crate in \
-            'hickory-proto v0.24.4' \
-            'quick-xml v0.37.5' \
-            'ring v0.16.20' \
-            'rustls-webpki v0.101.7'
-          do
-            if grep -Fq "$crate" <<<"$production_tree"; then
-              echo "Legacy advisory crate unexpectedly entered Matrix production: $crate" >&2
-              exit 1
-            fi
-          done
-          if grep -Fq 'quick-xml v0.37.5' <<<"$production_tree"; then
-            echo 'Vulnerable legacy notification XML parser entered Matrix production.' >&2
-            exit 1
-          fi
-      - name: Audit Matrix production dependencies
+      - uses: dtolnay/rust-toolchain@d0befba8b9ddf874327619e84c39b094edd58b66 # 1.93.0
+      - name: Install pinned Rust advisory scanner
         run: |
           cargo install cargo-audit --version 0.22.2 --locked
-          # cargo-audit scans the whole lockfile and is not feature-aware.
-          # These advisories are confined to the optional legacy-p2p graph,
-          # whose exclusion from Matrix production is asserted above.
-          cargo audit --file mesh/src-tauri/Cargo.lock \
-            --ignore RUSTSEC-2026-0119 \
-            --ignore RUSTSEC-2025-0009 \
-            --ignore RUSTSEC-2026-0098 \
-            --ignore RUSTSEC-2026-0099 \
-            --ignore RUSTSEC-2026-0104 \
-            --ignore RUSTSEC-2026-0194 \
-            --ignore RUSTSEC-2026-0195
+      - name: Report raw Rust advisory status without suppressing legacy findings
+        continue-on-error: true
+        run: |
+          cargo audit --file mesh/src-tauri/Cargo.lock
+      - name: Enforce Matrix shipping and legacy visibility policy
+        working-directory: mesh
+        shell: pwsh
+        run: |
+          ./scripts/check-matrix-release-dependencies.ps1 `
+            -ReportPath release/rust-dependency-report.json
+      - name: Upload Rust dependency policy evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rust-dependency-policy-${{ github.sha }}
+          path: mesh/release/rust-dependency-report.json
+          if-no-files-found: error
+          retention-days: 30
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: mesh/package-lock.json
+      - name: Enforce the on-device and non-autonomous AI boundary
+        working-directory: mesh
+        run: |
+          node --test scripts/check-ai-boundary.test.mjs
+          node scripts/check-ai-boundary.mjs
       - name: Audit JavaScript dependencies
         working-directory: mesh
         run: npm audit --audit-level=high
@@ -101,9 +121,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc
-        with:
-          toolchain: 1.93.0
+      - uses: dtolnay/rust-toolchain@d0befba8b9ddf874327619e84c39b094edd58b66 # 1.93.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
@@ -122,7 +140,9 @@ jobs:
           cargo cyclonedx --format json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: mesh-sboms
+          name: mesh-sboms-${{ github.sha }}
           path: |
             mesh/mesh-node.cdx.json
             mesh/src-tauri/*.cdx.json
+          if-no-files-found: error
+          retention-days: 30

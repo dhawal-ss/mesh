@@ -1,4 +1,4 @@
-import type { MatrixCommunityAdmission, PendingInvitationMetadata } from '../../types/ipc'
+import type { PendingInvitationMetadata } from '../../types/ipc'
 import { describeJoinRule, joinRuleRequiresApproval } from '../../lib/community-access'
 import { displayServiceAddress } from './matrixSignIn'
 import { Avatar } from '../ui/Avatar'
@@ -9,56 +9,38 @@ import { Spinner } from '../ui/Spinner'
 
 interface InvitationConfirmationProps {
   pending: PendingInvitationMetadata
-  admission?: MatrixCommunityAdmission | null
-  resolving?: boolean
-  resolutionError?: unknown
   confirming?: boolean
   confirmationError?: unknown
   onConfirm: () => void
-  onRetryResolution?: () => void
   onDiscard: () => void
 }
 
-function invitationCommunityName(
-  pending: PendingInvitationMetadata,
-  admission?: MatrixCommunityAdmission | null,
-): string {
-  return admission?.communityName?.trim()
-    || pending.communityName?.trim()
+function invitationCommunityName(pending: PendingInvitationMetadata): string {
+  return pending.communityName?.trim()
     || 'Invited community'
 }
 
-function invitationServiceName(
-  pending: PendingInvitationMetadata,
-  admission?: MatrixCommunityAdmission | null,
-): string | null {
-  const explicitName = admission?.communityServiceDisplayName?.trim()
-    || pending.communityServiceDisplayName?.trim()
+function invitationServiceName(pending: PendingInvitationMetadata): string | null {
+  const explicitName = pending.communityServiceDisplayName?.trim()
   if (explicitName) return explicitName
 
-  const address = admission?.service?.trim() || pending.service?.trim()
+  const address = pending.service?.trim()
   return address ? displayServiceAddress(address) : null
 }
 
 export function InvitationConfirmation({
   pending,
-  admission = null,
-  resolving = false,
-  resolutionError = null,
   confirming = false,
   confirmationError = null,
   onConfirm,
-  onRetryResolution,
   onDiscard,
 }: InvitationConfirmationProps) {
-  const communityName = invitationCommunityName(pending, admission)
-  const inviterName = admission?.inviterDisplayName?.trim()
-    || pending.inviterDisplayName?.trim()
-  const inviterId = admission?.inviterUserId?.trim() || pending.inviterUserId?.trim()
-  const joinRule = admission?.joinRule ?? pending.joinRule
+  const communityName = invitationCommunityName(pending)
+  const inviterName = pending.inviterDisplayName?.trim()
+  const inviterId = pending.inviterUserId?.trim()
+  const joinRule = pending.joinRule
   const requiresApproval = joinRuleRequiresApproval(joinRule)
-  const serviceName = invitationServiceName(pending, admission)
-  const awaitingVerifiedDetails = Boolean(pending.admissionService && !admission && resolving)
+  const serviceName = invitationServiceName(pending)
 
   return (
     <Modal
@@ -83,20 +65,7 @@ export function InvitationConfirmation({
           </div>
         </div>
 
-        {awaitingVerifiedDetails ? (
-          <div className="flex items-center gap-2 text-sm text-secondary" role="status">
-            <Spinner size={16} />
-            <span>Checking invitation details…</span>
-          </div>
-        ) : resolutionError ? (
-          <ErrorState
-            error={resolutionError}
-            context={{ operation: 'check invitation details', resource: 'invitation' }}
-            onAction={onRetryResolution}
-            actionLabel="Try again"
-          />
-        ) : (
-          <dl className="grid gap-3 text-sm">
+        <dl className="grid gap-3 text-sm">
             <div className="rounded-panel bg-surface-hover p-3">
               <dt className="font-medium text-primary">What happens next</dt>
               <dd className="mt-1 text-secondary">
@@ -113,8 +82,7 @@ export function InvitationConfirmation({
                 {serviceName ?? 'No account service is suggested.'}
               </dd>
             </div>
-          </dl>
-        )}
+        </dl>
 
         <p className="text-sm leading-6 text-secondary">
           Your account service and this community are separate. You can keep your current
@@ -135,7 +103,7 @@ export function InvitationConfirmation({
           <Button
             variant="primary"
             onClick={onConfirm}
-            disabled={confirming || awaitingVerifiedDetails || Boolean(resolutionError)}
+            disabled={confirming}
           >
             {confirming ? <Spinner size={16} /> : null}
             {requiresApproval ? 'Request to join' : 'Confirm and continue'}

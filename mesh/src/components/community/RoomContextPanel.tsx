@@ -1,15 +1,19 @@
 import {
   useMemo,
+  useState,
   type CSSProperties,
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
-import type { Channel, Message } from '../../types/ipc'
+import type { Channel, MatrixPermissionRoomStatus, Message } from '../../types/ipc'
 import type { RoomTrustSnapshot } from '../../hooks/useRoomTrust'
 import { useMessageStore } from '../../store/messages'
 import { useRoomPinStore } from '../../store/room-pins'
 import { useMessageNavigationStore } from '../../store/message-navigation'
 import { useShellStore } from '../../store/shell'
+import { useCommunityStore } from '../../store/communities'
+import { useIdentityStore } from '../../store/identity'
+import { useCommunityPermissionProjection } from '../../hooks/useCommunityPermissionProjection'
 import { copyText, matrixRoomPermalink } from '../../lib/notifications'
 import { formatFederatedTimestamp } from '../../lib/federated-time'
 import { showToast } from '../ui/Toast'
@@ -19,6 +23,7 @@ import { EmptyState } from '../ui/Primitives'
 import { Button } from '../ui/Button'
 import { Spinner } from '../ui/Spinner'
 import { StatusDot } from '../ui/StatusDot'
+import { Modal } from '../ui/Modal'
 import { PanelResizeHandle } from '../layout/PanelResizeHandle'
 
 export type RoomContextTab = 'people' | 'ledger' | 'files' | 'pins'
@@ -60,6 +65,9 @@ export function RoomContextPanel({
   onResizeStart,
   onResizeBy,
 }: RoomContextPanelProps) {
+  const activeCommunityId = useCommunityStore((state) => state.activeCommunityId)
+  const matrixSessionKey = useIdentityStore((state) => state.identity?.publicKey ?? null)
+  const [permissionDiagnosticsOpen, setPermissionDiagnosticsOpen] = useState(false)
   const messages = useMessageStore((state) => state.messages[channel.id] ?? EMPTY_MESSAGES)
   const pinnedMessages = useRoomPinStore((state) => (
     state.roomId === channel.id ? state.messages : EMPTY_MESSAGES
@@ -79,6 +87,11 @@ export function RoomContextPanel({
   const loadRoomPins = useRoomPinStore((state) => state.load)
   const setSecurityOpen = useShellStore((state) => state.setSecurityOpen)
   const requestNavigation = useMessageNavigationStore((state) => state.requestNavigation)
+  const permissions = useCommunityPermissionProjection({
+    communityId: activeCommunityId,
+    enabled: trust.matrixMode && activeTab === 'people',
+    sessionKey: matrixSessionKey,
+  })
   const files = useMemo(
     () => messages.flatMap((message) => (
       (message.attachments ?? []).map((attachment) => ({ attachment, message }))
@@ -97,6 +110,13 @@ export function RoomContextPanel({
         { id: 'people', label: 'People' },
         { id: 'files', label: 'Files' },
       ]
+  const contextTitle = activeTab === 'people'
+    ? 'People here'
+    : activeTab === 'ledger'
+      ? 'Room ledger'
+      : activeTab === 'files'
+        ? 'Shared files'
+        : 'Pinned messages'
 
   const copyRoomLink = async () => {
     try {
@@ -133,12 +153,13 @@ export function RoomContextPanel({
   return (
     <aside
       id="mesh-room-context-panel"
-      className="mesh-room-context-panel relative flex flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-sidebar"
+      className="mesh-room-context-panel relative flex min-w-0 flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-sidebar"
       data-design-token-exception="user-resizable-persisted-room-context-width"
       style={{
         '--mesh-room-context-width': `${panelWidth}px`,
       } as CSSProperties}
       aria-label={`Room context for ${channel.name}`}
+      data-mesh-region
       tabIndex={-1}
     >
       <PanelResizeHandle
@@ -150,17 +171,22 @@ export function RoomContextPanel({
         onPointerDown={onResizeStart}
         onResizeBy={onResizeBy}
       />
-      <div className="flex h-conversation-header flex-shrink-0 items-center gap-1 border-b border-border-subtle px-2">
-        <button
-          type="button"
-          className="order-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
-          aria-label="Close room context"
-          onClick={onClose}
-        >
-          <Icon name="x" size="sm" />
-        </button>
+      <div className="flex-shrink-0 border-b border-border-subtle">
+        <div className="flex h-conversation-header items-center gap-2 px-3">
+          <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-primary">
+            {contextTitle}
+          </h2>
+          <button
+            type="button"
+            className="flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
+            aria-label="Close room context"
+            onClick={onClose}
+          >
+            <Icon name="x" size="sm" />
+          </button>
+        </div>
         <div
-          className="order-1 flex min-w-0 flex-1"
+          className="flex min-w-0 overflow-x-auto px-2"
           role="tablist"
           aria-label="Room context"
           onKeyDown={handleTabKeyDown}
@@ -174,7 +200,7 @@ export function RoomContextPanel({
               tabIndex={activeTab === tab.id ? 0 : -1}
               aria-selected={activeTab === tab.id}
               aria-controls={`room-context-${tab.id}`}
-              className={`min-h-control-sm flex-1 border-b-2 border-transparent px-1 text-xs font-medium transition-colors ${
+              className={`min-h-8 flex-1 border-b-2 border-transparent px-2 text-caption font-medium transition-colors ${
                 activeTab === tab.id
                   ? 'border-accent text-primary'
                   : 'text-muted hover:bg-surface-hover hover:text-secondary'
@@ -194,15 +220,24 @@ export function RoomContextPanel({
           aria-labelledby="room-context-tab-people"
           className="flex min-h-0 flex-1 flex-col"
         >
-          <div className="border-b border-border-subtle px-4 py-3">
-            <p className="text-xs font-medium text-primary">
-              {members.length} {members.length === 1 ? 'person' : 'people'}
+          <div className="px-4 pb-1 pt-4">
+            <p className="text-meta font-semibold uppercase tracking-caption text-muted">
+              In this room · {members.length}
             </p>
             <p className="mt-1 text-caption text-muted">
-              {members.filter((member) => member.online).length} here now
+              {members.filter((member) => member.online).length} online now
             </p>
           </div>
-          <MemberList embedded isOpen onClose={onClose} members={members} />
+          <MemberList
+            embedded
+            isOpen
+            onClose={onClose}
+            members={members}
+            rolePermissionProjection={permissions.projection ?? undefined}
+            rolePermissionsLoading={permissions.loading}
+            onRetryRolePermissions={() => void permissions.refresh()}
+            onOpenPermissionDiagnostics={() => setPermissionDiagnosticsOpen(true)}
+          />
         </div>
       )}
 
@@ -515,6 +550,65 @@ export function RoomContextPanel({
           )}
         </div>
       )}
+      <Modal
+        open={permissionDiagnosticsOpen}
+        onClose={() => setPermissionDiagnosticsOpen(false)}
+        title="Permission diagnostics"
+        description="Authoritative room state used for role changes."
+        size="sm"
+      >
+        <div className="space-y-3">
+          {permissions.error ? (
+            <p className="rounded-panel border border-status-danger/30 bg-status-danger/10 px-3 py-2 text-xs leading-5 text-status-danger">
+              {permissions.error}
+            </p>
+          ) : null}
+          {permissions.projection?.discoveryFailureReason ? (
+            <p className="rounded-panel border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs leading-5 text-status-warning">
+              {permissions.projection.discoveryFailureReason}
+            </p>
+          ) : null}
+          {permissions.projection?.rooms.length ? (
+            <ul className="space-y-2" aria-label="Room permission state">
+              {permissions.projection.rooms.map((room) => (
+                <li
+                  key={room.roomId}
+                  className="rounded-panel border border-border-subtle bg-surface-sunken px-3 py-2"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium text-primary">{room.roomName}</p>
+                      <p className="mt-0.5 text-caption capitalize text-muted">{room.roomKind}</p>
+                    </div>
+                    <span className="text-caption font-medium text-secondary">
+                      {permissionRoomStatusLabel(room.status)}
+                    </span>
+                  </div>
+                  {room.failureReason ? (
+                    <p className="mt-2 text-caption leading-5 text-muted">{room.failureReason}</p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs leading-5 text-muted">
+              {permissions.loading
+                ? 'Checking the community rooms now.'
+                : 'No authoritative room results are available yet.'}
+            </p>
+          )}
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={permissions.loading}
+              onClick={() => void permissions.refresh()}
+            >
+              {permissions.loading ? 'Checking…' : 'Check again'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </aside>
   )
 }
@@ -555,6 +649,14 @@ function protectionLabel(state: RoomTrustSnapshot['protection']) {
   if (state === 'unencrypted') return 'Messages in this room are not end-to-end encrypted'
   if (state === 'checking') return 'Checking room protection'
   return 'Protection details are temporarily unavailable'
+}
+
+function permissionRoomStatusLabel(status: MatrixPermissionRoomStatus) {
+  if (status === 'loaded') return 'Loaded'
+  if (status === 'matrix-default') return 'Matrix default'
+  if (status === 'inaccessible') return 'Not accessible'
+  if (status === 'unsupported') return 'Unsupported'
+  return 'Failed'
 }
 
 function formatFileSize(bytes: number) {

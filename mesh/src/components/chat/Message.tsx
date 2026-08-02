@@ -48,6 +48,16 @@ interface MessageProps {
   onReact?: (message: MessageType, emoji: string) => void | Promise<void>
 }
 
+type MutationStatus = 'pending' | 'success' | 'failed' | 'retrying' | 'superseded'
+type MutationState = {
+  kind: 'edit' | 'reaction' | 'timeout' | 'kick' | 'ban' | 'delete' | 'pin'
+  label: string
+  status: MutationStatus
+  error: unknown | null
+  attempt: number
+  retry: () => Promise<boolean>
+}
+
 export const MessageComponent = memo(function MessageComponent({
   message,
   isGrouped,
@@ -74,9 +84,13 @@ export const MessageComponent = memo(function MessageComponent({
   const [editContent, setEditContent] = useState('')
   const [confirmBan, setConfirmBan] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
+  const [mutation, setMutation] = useState<MutationState | null>(null)
   const [activeImageAttachmentIndex, setActiveImageAttachmentIndex] = useState<number | null>(null)
   const rowRef = useRef<HTMLDivElement>(null)
   const reactButtonRef = useRef<HTMLButtonElement>(null)
+  const mutationAttemptRef = useRef(0)
+  const mutationInFlightRef = useRef(false)
+  const mutationMessageIdRef = useRef(message.id)
   const matrixMode = bridge.isMatrixBackend()
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
   const communityMembers = useCommunityMembers(activeCommunityId)
@@ -102,6 +116,7 @@ export const MessageComponent = memo(function MessageComponent({
   const isUndecryptable = !!undecryptable
   const isQueued =
     message.deliveryStatus === 'pending' || message.deliveryStatus === 'failed'
+  const mutationBusy = mutation?.status === 'pending' || mutation?.status === 'retrying'
   const canPinMessage =
     surface === 'channel'
     && matrixMode
@@ -135,42 +150,95 @@ export const MessageComponent = memo(function MessageComponent({
     setContextMenuOpen(true)
   }
 
+  const runMutation = async (
+    kind: MutationState['kind'],
+    label: string,
+    operation: () => Promise<void>,
+    onSuccess?: () => void,
+  ): Promise<boolean> => {
+    const execute = async (retrying: boolean): Promise<boolean> => {
+      if (mutationInFlightRef.current) return false
+      mutationInFlightRef.current = true
+      const attempt = ++mutationAttemptRef.current
+      const retry = () => execute(true)
+      setMutation({
+        kind,
+        label,
+        status: retrying ? 'retrying' : 'pending',
+        error: null,
+        attempt,
+        retry,
+      })
+      try {
+        await operation()
+        if (mutationAttemptRef.current !== attempt) return false
+        setMutation((current) => current?.attempt === attempt
+          ? { ...current, status: 'success', error: null }
+          : current)
+        onSuccess?.()
+        return true
+      } catch (error) {
+        if (mutationAttemptRef.current !== attempt) return false
+        setMutation((current) => current?.attempt === attempt
+          ? { ...current, status: 'failed', error }
+          : current)
+        return false
+      } finally {
+        if (mutationAttemptRef.current === attempt) {
+          mutationInFlightRef.current = false
+        }
+      }
+    }
+    return execute(false)
+  }
+
+  useEffect(() => {
+    if (mutationMessageIdRef.current === message.id) return
+    mutationMessageIdRef.current = message.id
+    if (!mutationInFlightRef.current) return
+    mutationAttemptRef.current += 1
+    mutationInFlightRef.current = false
+    setMutation((current) => current && (
+      current.status === 'pending' || current.status === 'retrying'
+    ) ? { ...current, status: 'superseded' } : current)
+  }, [message.id])
+
+  useEffect(() => () => {
+    mutationAttemptRef.current += 1
+    mutationInFlightRef.current = false
+  }, [])
+
   const handleBan = async () => {
-    if (!activeCommunityId) return
-    try {
+    if (!activeCommunityId || mutationInFlightRef.current) return
+    await runMutation('ban', `Ban ${message.authorDisplayName}`, async () => {
       const result = await bridge.banUser(activeCommunityId, message.authorPublicKey)
       const summary = summarizeModerationResult(result, `${message.authorDisplayName} was banned`)
       showToast(summary.message, summary.tone)
-    } catch (e) {
-      console.error('Failed to ban:', e)
-    }
+    })
     setContextMenuOpen(false)
     setConfirmBan(false)
   }
 
-  const handleKick = useCallback(async () => {
-    if (!activeCommunityId) return
-    try {
+  const handleKick = async () => {
+    if (!activeCommunityId || mutationInFlightRef.current) return
+    await runMutation('kick', `Remove ${message.authorDisplayName}`, async () => {
       const result = await bridge.kickUser(activeCommunityId, message.authorPublicKey)
       const summary = summarizeModerationResult(result, `${message.authorDisplayName} was removed`)
       showToast(summary.message, summary.tone)
-    } catch (e) {
-      console.error('Kick failed:', e)
-    }
+    })
     setContextMenuOpen(false)
-  }, [activeCommunityId, message.authorDisplayName, message.authorPublicKey])
+  }
 
-  const handleTimeout = useCallback(async () => {
-    if (!activeCommunityId) return
-    try {
+  const handleTimeout = async () => {
+    if (!activeCommunityId || mutationInFlightRef.current) return
+    await runMutation('timeout', `Timeout ${message.authorDisplayName}`, async () => {
       await bridge.timeoutUser(activeCommunityId, message.authorPublicKey, 60)
-    } catch (e) {
-      console.error('Timeout failed:', e)
-    }
+    })
     setContextMenuOpen(false)
-  }, [activeCommunityId, message.authorPublicKey])
+  }
 
   const handleStartEdit = useCallback(() => {
+    if (mutationInFlightRef.current) return
     setEditContent(message.content)
     setIsEditing(true)
     setContextMenuOpen(false)
@@ -182,16 +250,16 @@ export const MessageComponent = memo(function MessageComponent({
     return () => window.cancelAnimationFrame(frame)
   }, [editRequestToken, handleStartEdit, isDeleted, isOwnMessage, isQueued])
 
-  const handleSaveEdit = useCallback(async () => {
+  const handleSaveEdit = async () => {
+    if (mutationInFlightRef.current) return
     const trimmed = editContent.trim()
     if (!trimmed || trimmed === message.content) {
       setIsEditing(false)
       return
     }
-    try {
+    await runMutation('edit', 'Save edit', async () => {
       if (onEdit) {
         await onEdit(message, trimmed)
-        setIsEditing(false)
         return
       }
       const channelId = activeChannelId ?? message.channelId
@@ -199,22 +267,19 @@ export const MessageComponent = memo(function MessageComponent({
       if (channelId) {
         editMessage(channelId, message.id, trimmed, new Date().toISOString())
       }
-    } catch (e) {
-      console.error('Failed to edit message:', e)
-    }
-    setIsEditing(false)
-  }, [activeChannelId, editContent, editMessage, message, onEdit])
+    }, () => setIsEditing(false))
+  }
 
   const handleCancelEdit = useCallback(() => {
     setIsEditing(false)
     setEditContent('')
   }, [])
 
-  const handleDelete = useCallback(async () => {
-    try {
+  const handleDelete = async () => {
+    if (mutationInFlightRef.current) return
+    const deleted = await runMutation('delete', 'Delete message', async () => {
       if (onDelete) {
         await onDelete(message)
-        setContextMenuOpen(false)
         return
       }
       const channelId = activeChannelId ?? message.channelId
@@ -222,30 +287,29 @@ export const MessageComponent = memo(function MessageComponent({
       if (channelId) {
         deleteMessage(channelId, message.id)
       }
-    } catch (e) {
-      console.error('Failed to delete message:', e)
-    }
+    })
     setContextMenuOpen(false)
+    if (!deleted) rowRef.current?.focus()
     // No rowRef.current?.focus() here, unlike ban/kick/timeout: deleting
     // removes this row from the DOM, so there's nothing sensible to focus.
-  }, [activeChannelId, deleteMessage, message, onDelete])
+  }
 
-  const handleEditKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault()
-        void handleSaveEdit()
-      } else if (e.key === 'Escape') {
-        handleCancelEdit()
-      }
-    },
-    [handleSaveEdit, handleCancelEdit],
-  )
+  const handleEditKeyDown = (e: React.KeyboardEvent) => {
+    if (mutationInFlightRef.current) return
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      void handleSaveEdit()
+    } else if (e.key === 'Escape') {
+      handleCancelEdit()
+    }
+  }
 
   const handleReaction = async (emoji: string) => {
-    if (isUndecryptable) return
+    if (isUndecryptable || mutationInFlightRef.current) return
     if (onReact) {
-      await onReact(message, emoji)
+      await runMutation('reaction', `Update ${emoji} reaction`, async () => {
+        await onReact(message, emoji)
+      })
       return
     }
     const channelId = activeChannelId ?? message.channelId
@@ -258,19 +322,21 @@ export const MessageComponent = memo(function MessageComponent({
       updateReaction(channelId, message.id, emoji, myPublicKey, verb as 'add' | 'remove')
     }
 
-    try {
+    await runMutation('reaction', `Update ${emoji} reaction`, async () => {
       await bridge.addReaction(message.id, emoji, channelId)
-    } catch (e) {
-      if (myPublicKey) {
-        const revertVerb = verb === 'add' ? 'remove' : 'add'
-        updateReaction(channelId, message.id, emoji, myPublicKey, revertVerb as 'add' | 'remove')
-      }
-      console.error('Failed to add reaction:', e)
-    }
+    }).then((succeeded) => {
+      if (succeeded || !myPublicKey) return
+      const revertVerb = verb === 'add' ? 'remove' : 'add'
+      updateReaction(channelId, message.id, emoji, myPublicKey, revertVerb as 'add' | 'remove')
+    })
   }
 
   const handlePin = async () => {
-    await toggleRoomPin(message.channelId, message)
+    if (mutationInFlightRef.current) return
+    await runMutation('pin', isPinned ? 'Unpin message' : 'Pin message', async () => {
+      const updated = await toggleRoomPin(message.channelId, message)
+      if (!updated) throw new Error('The room did not accept the pin update.')
+    })
     setContextMenuOpen(false)
   }
 
@@ -365,7 +431,7 @@ export const MessageComponent = memo(function MessageComponent({
       <ContextMenu
         label="Message actions"
         items={contextMenuItems}
-        disabled={isQueued}
+        disabled={isQueued || mutationBusy}
         open={contextMenuOpen}
         onOpenChange={(open) => {
           setContextMenuOpen(open)
@@ -377,13 +443,13 @@ export const MessageComponent = memo(function MessageComponent({
           role="group"
           aria-label={messageAriaLabel}
           tabIndex={-1}
-          className={`group relative flex gap-3 py-0.5 pl-message-gutter pr-12 outline-none transition-opacity duration-fast hover:bg-surface-hover ${
+          className={`group relative flex min-w-0 max-w-full gap-3 py-0.5 pl-message-gutter pr-12 outline-none transition-opacity duration-fast hover:bg-surface-hover ${
             message.deliveryStatus === 'pending' ? 'opacity-60' : 'opacity-100'
           } ${!isGrouped ? 'mt-message-group' : ''}`}
           onMouseLeave={() => setShowReactions(false)}
           onKeyDown={handleRowKeyDown}
         >
-          {/* Avatar — absolute positioned in left gutter */}
+          {/* Avatar: absolute positioned in left gutter */}
           <div className="absolute left-4 top-0.5 w-8">
             {!isGrouped ? (
               <Avatar color={message.authorAvatarColor} size={32} name={message.authorDisplayName} />
@@ -402,11 +468,6 @@ export const MessageComponent = memo(function MessageComponent({
             {!isGrouped && (
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
                 <span className="text-sm font-semibold text-primary">{message.authorDisplayName}</span>
-                {matrixMode && message.authorPublicKey.startsWith('@') && (
-                  <span className="identifier max-w-full truncate font-mono text-caption text-muted">
-                    {message.authorPublicKey}
-                  </span>
-                )}
                 <MessageTime
                   value={message.timestamp}
                   variant="full"
@@ -454,7 +515,31 @@ export const MessageComponent = memo(function MessageComponent({
               </motion.div>
             )}
 
-            {/* Reply preview — makes a reply readable as a reply. Clicking it
+            {mutation && mutation.status !== 'success' && mutation.status !== 'superseded' && (
+              <div
+                role={mutation.status === 'failed' ? 'alert' : 'status'}
+                className={`mt-1 flex flex-wrap items-center gap-2 text-meta ${
+                  mutation.status === 'failed' ? 'text-status-danger' : 'text-status-warning'
+                }`}
+              >
+                <span>
+                  {mutation.status === 'failed'
+                    ? `${mutation.label} failed. Your message and controls are unchanged.`
+                    : `${mutation.label}...`}
+                </span>
+                {mutation.status === 'failed' && (
+                  <button
+                    type="button"
+                    className="min-h-control-sm rounded-control bg-status-danger/10 px-2 font-medium hover:bg-status-danger/20"
+                    onClick={() => void mutation.retry()}
+                  >
+                    Retry
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Reply preview: makes a reply readable as a reply. Clicking it
                 jumps to the message being answered, so a conversation can be
                 followed backwards without scrolling blind. */}
             {replyPreview && !isUndecryptable && !isDeleted && (
@@ -492,7 +577,9 @@ export const MessageComponent = memo(function MessageComponent({
             ) : isEditing ? (
               <div className="mt-1 space-y-2">
                 <textarea
+                  aria-label={`Edit message from ${message.authorDisplayName}`}
                   value={editContent}
+                  disabled={mutationBusy}
                   onChange={(e) => setEditContent(e.target.value)}
                   onKeyDown={handleEditKeyDown}
                   className="w-full resize-none rounded-control border border-border bg-surface-sunken px-3 py-2 text-sm text-primary outline-none focus:border-accent"
@@ -502,14 +589,24 @@ export const MessageComponent = memo(function MessageComponent({
                 <div className="flex items-center gap-2 text-meta text-muted">
                   <span>
                     escape to{' '}
-                    <button onClick={handleCancelEdit} className="text-text-link hover:underline">
+                    <button
+                      type="button"
+                      disabled={mutationBusy}
+                      onClick={handleCancelEdit}
+                      className="text-text-link hover:underline disabled:opacity-60"
+                    >
                       cancel
                     </button>
                   </span>
                   <span>•</span>
                   <span>
                     enter to{' '}
-                    <button onClick={() => void handleSaveEdit()} className="text-text-link hover:underline">
+                    <button
+                      type="button"
+                      disabled={mutationBusy}
+                      onClick={() => void handleSaveEdit()}
+                      className="text-text-link hover:underline disabled:opacity-60"
+                    >
                       save
                     </button>
                   </span>
@@ -523,6 +620,13 @@ export const MessageComponent = memo(function MessageComponent({
                   customEmoji={surface === 'dm' ? [] : customEmoji}
                   ownUserId={myPublicKey ?? null}
                 />
+                {import.meta.env.DEV && message.designPreviewImageUrl ? (
+                  <img
+                    src={message.designPreviewImageUrl}
+                    alt={`${message.authorDisplayName} shared concept art`}
+                    className="mt-2 max-h-44 w-full max-w-2xl rounded-panel border border-border-subtle object-cover"
+                  />
+                ) : null}
                 {message.editedAt && (
                   <span
                     className="ml-1 text-caption text-muted"
@@ -534,7 +638,7 @@ export const MessageComponent = memo(function MessageComponent({
               </>
             )}
 
-            {/* File attachments — a redaction removes the body, so the
+            {/* File attachments: a redaction removes the body, so the
                 attachments that came with it must not survive it. */}
             {!isDeleted && message.attachments && message.attachments.length > 0 && (
               <div className="mt-2 flex flex-col gap-2">
@@ -586,6 +690,7 @@ export const MessageComponent = memo(function MessageComponent({
                     <button
                       key={emoji}
                       type="button"
+                      disabled={mutationBusy}
                       onClick={() => handleReaction(emoji)}
                       aria-pressed={mine}
                       aria-label={`${emojiName}, ${users.length} ${users.length === 1 ? 'reaction' : 'reactions'}${mine ? ', you reacted' : ''}`}
@@ -618,12 +723,12 @@ export const MessageComponent = memo(function MessageComponent({
             )}
           </div>
 
-          {/* Action bar — always mounted (not just on hover) so Tab can reach it;
+          {/* Action bar: always mounted (not just on hover) so Tab can reach it;
             group-hover/group-focus-within reveal it visually, matching the
             volume-slider pattern in VoicePeerGrid.tsx. pointer-events-none at
             rest keeps the invisible bar from intercepting clicks meant for
             the grouped message rendered underneath it (-top-4 overlap). */}
-          {!contextMenuOpen && !isEditing && !isDeleted && !isQueued && !isUndecryptable && (
+          {!contextMenuOpen && !isEditing && !isDeleted && !isQueued && !isUndecryptable && !mutationBusy && (
             <div className="mesh-message-actions pointer-events-none absolute -top-4 right-4 z-sticky flex items-center rounded-panel border border-border-subtle bg-surface-overlay opacity-0 shadow-overlay transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
               <Popover
                 open={showReactions}

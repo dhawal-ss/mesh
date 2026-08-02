@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-list-members"
+description = "Enables the matrix_list_members command without any pre-configured scope."
+commands.allow = ["matrix_list_members"]
+
+[[permission]]
+identifier = "deny-matrix-list-members"
+description = "Denies the matrix_list_members command without any pre-configured scope."
+commands.deny = ["matrix_list_members"]

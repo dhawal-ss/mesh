@@ -36,13 +36,37 @@ export function canStartMatrixVoice(status: BackendStatus | null): boolean {
  */
 export function isPermissionDeniedError(error: unknown): boolean {
   if (typeof DOMException !== 'undefined' && error instanceof DOMException) {
-    return error.name === 'NotAllowedError' || error.name === 'SecurityError'
+    return (
+      error.name === 'NotAllowedError' ||
+      error.name === 'PermissionDeniedError' ||
+      error.name === 'SecurityError'
+    )
   }
   if (error && typeof error === 'object' && 'name' in error) {
     const name = (error as { name?: unknown }).name
-    return name === 'NotAllowedError' || name === 'SecurityError'
+    return (
+      name === 'NotAllowedError' ||
+      name === 'PermissionDeniedError' ||
+      name === 'SecurityError'
+    )
   }
   return false
+}
+
+export function voiceMediaErrorMessage(
+  error: unknown,
+  kind: 'camera' | 'screen',
+): string {
+  if (isPermissionDeniedError(error)) {
+    const label = kind === 'camera' ? 'camera' : 'screen sharing'
+    return `Mesh can’t access ${label}. Allow ${label} access for Mesh in your system settings, then try again.`
+  }
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim()
+  }
+  return kind === 'camera'
+    ? 'The camera could not be changed.'
+    : 'Screen sharing could not be changed.'
 }
 
 const PUSH_TO_TALK_INTERACTIVE_SELECTOR = [

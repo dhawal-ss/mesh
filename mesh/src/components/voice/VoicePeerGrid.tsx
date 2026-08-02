@@ -4,6 +4,7 @@ import { useVoiceStore } from '../../store/voice'
 import { transitions } from '../../lib/motion'
 import { Icon } from '../ui/Icon'
 import { Button } from '../ui/Button'
+import { Avatar } from '../ui/Avatar'
 import type { Peer } from '../../types/ipc'
 
 export function VoicePeerGrid({
@@ -194,15 +195,12 @@ function VoicePeerTile({
             }`}
           />
         ) : (
-          <div
-            className={`flex h-20 w-20 items-center justify-center rounded-full text-lg font-semibold text-content-on-avatar ${
-              peer.speaking ? 'ring-2 ring-accent' : ''
-            }`}
-            data-design-token-exception="Member-selected avatar color is stored profile data."
-            style={{ backgroundColor: peer.avatarColor }}
-          >
-            {peer.displayName.slice(0, 1).toUpperCase()}
-          </div>
+          <Avatar
+            color={peer.avatarColor}
+            size={80}
+            name={peer.displayName}
+            className={`!rounded-full ${peer.speaking ? 'ring-2 ring-accent' : ''}`}
+          />
         )}
 
         <div className={`z-10 mt-4 space-y-1 ${visibleVideo ? 'rounded-control bg-overlay/80 px-3 py-2 text-content-on-media-overlay' : ''}`}>

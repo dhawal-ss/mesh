@@ -5,6 +5,7 @@ import { Avatar } from '../ui/Avatar'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Icon } from '../ui/Icon'
+import { PixelMark } from '../ui/PixelMark'
 import { transitions } from '../../lib/motion'
 import { describeError } from '../../lib/errors'
 import { DEFAULT_AVATAR_COLORS } from './types'
@@ -57,7 +58,7 @@ export function JoinScreen({
   return (
     <form className="space-y-8" onSubmit={handleSubmit}>
       <div className="space-y-2">
-        <p className="text-2xs uppercase tracking-eyebrow text-muted">Step 2 of 3</p>
+        <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">Step 2 of 3</p>
         <h1 className="text-lg font-semibold tracking-tight text-primary">
           Set your profile
         </h1>
@@ -90,7 +91,7 @@ export function JoinScreen({
         />
 
         <div className="space-y-3">
-          <label className="text-2xs uppercase tracking-eyebrow text-muted">Avatar color</label>
+          <label className="text-2xs uppercase tracking-eyebrow text-muted">Default pixel profile</label>
           <div className="grid grid-cols-5 gap-2">
             {palette.map((color) => {
               const selected = avatarColor === color
@@ -100,14 +101,16 @@ export function JoinScreen({
                   type="button"
                   onClick={() => setAvatarColor(color)}
                   className={clsx(
-                    'h-10 rounded-control border-2 transition-transform duration-150',
+                    'mesh-profile-choice flex h-11 items-center justify-center rounded-control border bg-surface-sunken transition-[border-color,transform,box-shadow] duration-fast',
                     selected
-                      ? 'border-accent ring-2 ring-accent/30'
-                      : 'border-transparent hover:scale-[1.03] hover:border-border'
+                      ? 'border-accent ring-2 ring-accent/20'
+                      : 'border-border-subtle hover:-translate-y-px hover:border-border-emphasis'
                   )}
-                  style={{ backgroundColor: color }}
+                  style={{ color }}
                   aria-label={`Select avatar color ${color}`}
-                />
+                >
+                  <PixelMark variant="profile" className="h-9 w-9" />
+                </button>
               )
             })}
           </div>

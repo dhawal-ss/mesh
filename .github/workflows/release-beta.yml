@@ -1,10 +1,24 @@
-name: Publish Matrix beta
+name: Build signed Matrix beta candidate
+
+# Candidate factory only. This workflow may create a signed draft prerelease
+# for external acceptance, but it must never publish or promote that draft.
+# Public promotion remains a separate owner-controlled lifecycle decision.
 
 on:
   push:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      release_version:
+        description: Exact non-placeholder application version to release
+        required: true
+        type: string
+      release_tag:
+        description: Optional existing v* tag for a signed draft candidate; leave empty for validation-only
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -13,13 +27,77 @@ concurrency:
   group: matrix-beta-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  MESH_RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.release_version || github.ref_name }}
+  MESH_RELEASE_TAG: ${{ inputs.release_tag }}
+  # Public desktop OAuth registrations are build inputs, not credentials.
+  # Each entry is bound to one exact discovered issuer and the fixed loopback callback.
+  MESH_OAUTH_CLIENT_REGISTRATIONS_JSON: ${{ vars.MESH_OAUTH_CLIENT_REGISTRATIONS_JSON }}
+
 jobs:
   quality-gate:
     name: Matrix beta quality gate
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      create_candidate: ${{ steps.release-context.outputs.create_candidate }}
+      release_tag: ${{ steps.release-context.outputs.release_tag }}
+      source_sha: ${{ steps.release-context.outputs.source_sha }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
+
+      - name: Validate release source and protected-main ancestry
+        id: release-context
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD)"
+          release_tag=""
+          create_candidate=false
+
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
+              echo "Tagged candidate runs require a v* tag." >&2
+              exit 1
+            fi
+            release_tag="$GITHUB_REF_NAME"
+            create_candidate=true
+          elif [[ -n "$MESH_RELEASE_TAG" ]]; then
+            release_tag="$MESH_RELEASE_TAG"
+            create_candidate=true
+          fi
+
+          git fetch --no-tags origin \
+            +refs/heads/main:refs/remotes/origin/main
+
+          if [[ "$create_candidate" == "true" ]]; then
+            if [[ ! "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+              echo "Release tag must be an explicit v-prefixed semantic version." >&2
+              exit 1
+            fi
+            git fetch --force origin \
+              "refs/tags/$release_tag:refs/tags/$release_tag"
+            tag_sha="$(git rev-parse "$release_tag^{commit}")"
+            if [[ "$tag_sha" != "$source_sha" ]]; then
+              echo "Checked-out source $source_sha does not match tag $release_tag at $tag_sha." >&2
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor \
+              "$tag_sha" refs/remotes/origin/main; then
+              echo "Release tag $release_tag is not contained in protected origin/main." >&2
+              exit 1
+            fi
+          fi
+
+          echo "create_candidate=$create_candidate" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "MESH_CREATE_CANDIDATE=$create_candidate" >> "$GITHUB_ENV"
+          echo "MESH_RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
+          echo "MESH_SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -29,9 +107,8 @@ jobs:
           cache-dependency-path: mesh/package-lock.json
 
       - name: Install Rust 1.93 with Clippy
-        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc
+        uses: dtolnay/rust-toolchain@d0befba8b9ddf874327619e84c39b094edd58b66 # 1.93.0
         with:
-          toolchain: 1.93.0
           components: clippy
 
       - name: Install Tauri system dependencies
@@ -49,12 +126,37 @@ jobs:
         working-directory: mesh
         run: |
           npm audit --audit-level=high
-          pwsh -NoProfile -File ./scripts/beta-release-preflight.ps1
+          if [[ "$MESH_CREATE_CANDIDATE" == "true" ]]; then
+            pwsh -NoProfile -File ./scripts/beta-release-preflight.ps1 \
+              -Tag "$MESH_RELEASE_TAG" \
+              -ReleaseVersion "$MESH_RELEASE_VERSION" \
+              -ExpectedSourceSha "$MESH_SOURCE_SHA" \
+              -RequireProtectedMainAncestry
+          else
+            pwsh -NoProfile -File ./scripts/beta-release-preflight.ps1 \
+              -ReleaseVersion "$MESH_RELEASE_VERSION"
+          fi
+          pwsh -NoProfile -File ./infra/matrixrtc/test-evidence-validation.ps1
+          pwsh -NoProfile -File ./scripts/matrixrtc-preflight.ps1
+          node --test ./scripts/check-external-acceptance.test.mjs
+          node ./scripts/check-external-acceptance.mjs
+          pwsh -NoProfile -File ./scripts/operator-smoke.ps1
           npm run check:public-services
+          npm run check:beta-contract
+          npm run check:operations-contract
+          npm run check:third-party-notices
+          # Evidence is collected on the tested source commit. A final release
+          # metadata-only commit may update readiness.json afterward; the
+          # validator allows that one-file delta and rejects source drift.
+          # The signed candidate must exist before R2 clean-device and manual
+          # acceptance can be collected. Candidate creation therefore requires
+          # exact-SHA R0 readiness; R2 stays blocked until genuine live evidence
+          # is collected from this signed draft.
+          npm run check:readiness-ledger -- --milestone R0 --require-live --commit-sha "$MESH_SOURCE_SHA" --allow-ledger-only-commit
           npm run check:public-site
           npm test -- --maxWorkers=4
           npm run build
-          npm run check:bundle-size
+          npm run check:bundle-size -- --report release/bundle-report.json
           pwsh -NoProfile -File ./scripts/beta-release-preflight.ps1 -VerifyFrontendBundle
           npm run e2e -- --workers=1
 
@@ -63,35 +165,60 @@ jobs:
         run: |
           cargo test --no-default-features --features matrix-backend --locked --jobs 1
           cargo clippy --no-default-features --features matrix-backend --all-targets --locked --jobs 1 -- -D warnings
-          if cargo tree --no-default-features --features matrix-backend -e normal,build --locked | grep -Eq '(^| )libp2p v'; then
-            echo 'Release dependency tree unexpectedly contains legacy libp2p.' >&2
-            exit 1
-          fi
 
-      - name: Audit locked Rust dependencies
+      - name: Install pinned Rust advisory scanner
         run: |
           cargo install cargo-audit --version 0.22.2 --locked
-          cargo audit --file mesh/src-tauri/Cargo.lock \
-            --ignore RUSTSEC-2026-0119 \
-            --ignore RUSTSEC-2025-0009 \
-            --ignore RUSTSEC-2026-0098 \
-            --ignore RUSTSEC-2026-0099 \
-            --ignore RUSTSEC-2026-0104 \
-            --ignore RUSTSEC-2026-0194 \
-            --ignore RUSTSEC-2026-0195
+
+      - name: Report raw Rust advisory status
+        continue-on-error: true
+        run: |
+          cargo audit --file mesh/src-tauri/Cargo.lock
+
+      - name: Enforce Matrix shipping and legacy visibility policy
+        working-directory: mesh
+        shell: pwsh
+        run: |
+          ./scripts/check-matrix-release-dependencies.ps1 `
+            -ReportPath release/rust-dependency-report.json
+
+      - name: Upload exact-source quality evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: matrix-beta-quality-${{ steps.release-context.outputs.source_sha }}
+          path: |
+            mesh/release/bundle-report.json
+            mesh/release/rust-dependency-report.json
+          if-no-files-found: error
+          retention-days: 90
 
   windows:
-    name: Signed Windows Matrix beta
+    name: Signed Windows Matrix beta candidate
     needs: quality-gate
+    if: ${{ needs.quality-gate.outputs.create_candidate == 'true' }}
     runs-on: windows-latest
     timeout-minutes: 90
     environment: matrix-beta
+    env:
+      MESH_RELEASE_TAG: ${{ needs.quality-gate.outputs.release_tag }}
+      MESH_SOURCE_SHA: ${{ needs.quality-gate.outputs.source_sha }}
     permissions:
       contents: write
       id-token: write
       attestations: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.quality-gate.outputs.source_sha }}
+
+      - name: Download exact-source quality evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: matrix-beta-quality-${{ needs.quality-gate.outputs.source_sha }}
+          # Keep downloaded evidence outside the checkout until the clean-source
+          # gate has run. Import only the verified reports afterward.
+          path: ${{ runner.temp }}/matrix-beta-quality
 
       - name: Validate release tag and signing configuration
         shell: pwsh
@@ -100,13 +227,9 @@ jobs:
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
         run: |
-          if ($env:GITHUB_REF_TYPE -ne "tag") {
-            throw "Run this workflow from a v* tag. Branch builds cannot publish a beta."
-          }
-
           $version = (Get-Content mesh/src-tauri/tauri.conf.json | ConvertFrom-Json).version
-          if ($env:GITHUB_REF_NAME -ne "v$version") {
-            throw "Tag $env:GITHUB_REF_NAME does not match Tauri version v$version."
+          if ($env:MESH_RELEASE_TAG -ne "v$version") {
+            throw "Tag $env:MESH_RELEASE_TAG does not match Tauri version v$version."
           }
 
           $missing = @(
@@ -121,8 +244,54 @@ jobs:
           }
 
           & ./mesh/scripts/beta-release-preflight.ps1 `
-            -Tag $env:GITHUB_REF_NAME `
+            -Tag $env:MESH_RELEASE_TAG `
+            -ReleaseVersion $env:MESH_RELEASE_VERSION `
+            -RequireCleanSource `
+            -ExpectedSourceSha $env:MESH_SOURCE_SHA `
+            -RequireProtectedMainAncestry `
             -RequireSigningEnvironment
+
+      - name: Verify and import exact-source quality evidence
+        shell: pwsh
+        run: |
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP "matrix-beta-quality"
+          $bundlePath = Join-Path $evidenceRoot "bundle-report.json"
+          $dependencyPath = Join-Path $evidenceRoot "rust-dependency-report.json"
+          $bundle = Get-Content -LiteralPath $bundlePath -Raw | ConvertFrom-Json
+          $dependency = Get-Content -LiteralPath $dependencyPath -Raw | ConvertFrom-Json
+
+          if ($bundle.sourceSha -ne $env:MESH_SOURCE_SHA -or $bundle.status -ne "pass") {
+            throw "Bundle evidence is not a passing report for the validated source SHA."
+          }
+          if ($dependency.sourceSha -ne $env:MESH_SOURCE_SHA -or
+              $dependency.matrixReleaseVulnerabilityCount -ne 0 -or
+              $dependency.rawAuditVulnerabilityCount -ne $dependency.excludedNonShippingVulnerabilityCount) {
+            throw "Rust dependency evidence is not the reviewed Matrix shipping policy for the validated source SHA."
+          }
+          $lockSha = (Get-FileHash -LiteralPath mesh/src-tauri/Cargo.lock -Algorithm SHA256).Hash.ToLowerInvariant()
+          $policySha = (Get-FileHash -LiteralPath mesh/scripts/rust-dependency-policy.json -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($dependency.cargoLockSha256 -ne $lockSha -or $dependency.policySha256 -ne $policySha) {
+            throw "Rust dependency evidence does not match the checked-out lockfile and policy."
+          }
+          $policy = Get-Content -LiteralPath mesh/scripts/rust-dependency-policy.json -Raw | ConvertFrom-Json
+          $windowsBuildWarnings = @($policy.nonRuntimeBuildWarnings | Where-Object {
+            -not ($_.PSObject.Properties.Name -contains "platforms") -or
+              @($_.platforms) -contains "windows"
+          })
+          if ($dependency.matrixRuntimeWarningCount -ne @($policy.shippingRuntimeWarnings).Count -or
+              $dependency.hostPlatform -ne "windows" -or
+              $dependency.nonRuntimeBuildWarningCount -ne $windowsBuildWarnings.Count -or
+              $dependency.excludedNonShippingVulnerabilityCount -ne @($policy.nonShippingVulnerabilities).Count) {
+            throw "Rust dependency evidence counts do not match the checked-out policy."
+          }
+          foreach ($expectedWarningCount in $policy.expectedRawWarningCounts.PSObject.Properties) {
+            if ($dependency.rawAuditWarningCounts.($expectedWarningCount.Name) -ne $expectedWarningCount.Value) {
+              throw "Rust dependency raw warning counts do not match the checked-out policy."
+            }
+          }
+
+          New-Item -ItemType Directory -Force -Path mesh/release-evidence | Out-Null
+          Copy-Item -LiteralPath $bundlePath, $dependencyPath -Destination mesh/release-evidence
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -132,9 +301,7 @@ jobs:
           cache-dependency-path: mesh/package-lock.json
 
       - name: Install Rust 1.93
-        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc
-        with:
-          toolchain: 1.93.0
+        uses: dtolnay/rust-toolchain@d0befba8b9ddf874327619e84c39b094edd58b66 # 1.93.0
 
       - name: Install frontend dependencies
         working-directory: mesh
@@ -148,17 +315,21 @@ jobs:
           WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
         run: |
           $certificatePath = Join-Path $env:RUNNER_TEMP "mesh-release.pfx"
-          [IO.File]::WriteAllBytes(
-            $certificatePath,
-            [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
-          )
-          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
-          Import-PfxCertificate `
-            -FilePath $certificatePath `
-            -CertStoreLocation Cert:\CurrentUser\My `
-            -Password $password `
-            -Exportable | Out-Null
-          Remove-Item -LiteralPath $certificatePath -Force
+          try {
+            [IO.File]::WriteAllBytes(
+              $certificatePath,
+              [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
+            )
+            $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+            Import-PfxCertificate `
+              -FilePath $certificatePath `
+              -CertStoreLocation Cert:\CurrentUser\My `
+              -Password $password | Out-Null
+          } finally {
+            if (Test-Path -LiteralPath $certificatePath) {
+              Remove-Item -LiteralPath $certificatePath -Force
+            }
+          }
 
           $thumbprint = $env:WINDOWS_CERTIFICATE_THUMBPRINT.Replace(" ", "").ToUpperInvariant()
           $certificate = Get-Item "Cert:\CurrentUser\My\$thumbprint" -ErrorAction Stop
@@ -177,15 +348,10 @@ jobs:
           } | ConvertTo-Json -Depth 4 -Compress
           "TAURI_CONFIG=$tauriConfig" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Verify Matrix production dependency boundary
-        working-directory: mesh/src-tauri
-        shell: bash
+      - name: Verify Matrix production dependency compile
+        shell: pwsh
         run: |
-          cargo check --no-default-features --features matrix-backend --locked --jobs 1
-          if cargo tree --no-default-features --features matrix-backend -e normal,build --locked | grep -Eq '(^| )libp2p v'; then
-            echo 'Release dependency tree unexpectedly contains legacy libp2p.' >&2
-            exit 1
-          fi
+          cargo check --manifest-path mesh/src-tauri/Cargo.toml --no-default-features --features matrix-backend --locked --jobs 1
 
       - name: Generate release SBOMs
         shell: pwsh
@@ -194,7 +360,29 @@ jobs:
           npm sbom --sbom-format=cyclonedx | Out-File mesh-node.cdx.json -Encoding utf8
           Pop-Location
           cargo install cargo-cyclonedx --version 0.5.9 --locked
-          cargo cyclonedx --manifest-path mesh/src-tauri/Cargo.toml --format json
+          cargo cyclonedx --manifest-path mesh/src-tauri/Cargo.toml --no-default-features --features matrix-backend --format json
+
+      - name: Record clean-source build provenance
+        shell: pwsh
+        run: |
+          $sourceSha = (& git rev-parse HEAD).Trim()
+          if ($sourceSha -ne $env:MESH_SOURCE_SHA) {
+            throw "Build source SHA does not match the validated release source SHA."
+          }
+          $provenance = [ordered]@{
+            schemaVersion = 1
+            sourceSha = $sourceSha
+            releaseVersion = $env:MESH_RELEASE_VERSION.TrimStart("v")
+            matrixBackendOnly = $true
+            legacyP2pIncluded = $false
+            workflowRepository = $env:GITHUB_REPOSITORY
+            workflowRunId = $env:GITHUB_RUN_ID
+            workflowRunAttempt = $env:GITHUB_RUN_ATTEMPT
+            generatedAt = [DateTimeOffset]::UtcNow.ToString("o")
+          }
+          $provenance |
+            ConvertTo-Json -Depth 4 |
+            Out-File mesh/build-provenance.json -Encoding utf8
 
       - name: Build signed Matrix installers
         working-directory: mesh
@@ -206,10 +394,15 @@ jobs:
           WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
         run: |
           & ./mesh/scripts/beta-release-preflight.ps1 `
-            -Tag $env:GITHUB_REF_NAME `
+            -Tag $env:MESH_RELEASE_TAG `
             -VerifyFrontendBundle `
             -VerifyArtifacts `
             -BundleRoot mesh/src-tauri/target/release/bundle
+
+      - name: Record release bundle budget evidence
+        working-directory: mesh
+        shell: pwsh
+        run: npm run check:bundle-size -- --report bundle-report.json
 
       - name: Generate release checksums
         shell: pwsh
@@ -224,9 +417,12 @@ jobs:
           $sboms = @(
             Get-Item mesh/mesh-node.cdx.json
             Get-Item mesh/src-tauri/mesh.cdx.json
+            Get-Item mesh/build-provenance.json
+            Get-Item mesh/bundle-report.json
+            Get-Item mesh/release-evidence/rust-dependency-report.json
           )
           $evidence = @($installers) + $sboms
-          $checksumPath = Join-Path $env:RUNNER_TEMP "SHA256SUMS.txt"
+          $checksumPath = Join-Path $PWD "mesh/SHA256SUMS.txt"
           $evidence |
             ForEach-Object {
               $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -244,15 +440,34 @@ jobs:
             mesh/src-tauri/target/release/bundle/**/*.exe
             mesh/mesh-node.cdx.json
             mesh/src-tauri/mesh.cdx.json
+            mesh/build-provenance.json
+            mesh/bundle-report.json
+            mesh/release-evidence/rust-dependency-report.json
+            mesh/SHA256SUMS.txt
 
-      - name: Create reviewed draft prerelease
+      - name: Scan release artifacts for secrets
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          & ./mesh/scripts/scan-release-artifacts.ps1 -Path @(
+            "mesh/src-tauri/target/release/bundle",
+            "mesh/mesh-node.cdx.json",
+            "mesh/src-tauri/mesh.cdx.json",
+            "mesh/build-provenance.json",
+            "mesh/bundle-report.json",
+            "mesh/release-evidence/rust-dependency-report.json",
+            $env:MESH_CHECKSUM_PATH
+          )
+
+      - name: Create reviewed candidate as a draft prerelease
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release view $env:GITHUB_REF_NAME --json tagName *> $null
+          gh release view $env:MESH_RELEASE_TAG --json tagName *> $null
           if ($LASTEXITCODE -eq 0) {
-            throw "A release already exists for $env:GITHUB_REF_NAME. Refusing to mutate an existing version."
+            throw "A release already exists for $env:MESH_RELEASE_TAG. Refusing to mutate an existing version."
           }
 
           $bundleRoot = "mesh/src-tauri/target/release/bundle"
@@ -266,19 +481,38 @@ jobs:
             $env:MESH_CHECKSUM_PATH
             (Resolve-Path mesh/mesh-node.cdx.json).Path
             (Resolve-Path mesh/src-tauri/mesh.cdx.json).Path
+            (Resolve-Path mesh/build-provenance.json).Path
+            (Resolve-Path mesh/bundle-report.json).Path
+            (Resolve-Path mesh/release-evidence/rust-dependency-report.json).Path
           )
 
           $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.txt"
           @"
-          Matrix-only production beta build. Legacy libp2p is not included.
+          Signed Matrix-only beta candidate for external acceptance. Legacy libp2p is not included.
+
+          This draft is not a public release and must not be promoted until the owner-controlled R2 acceptance and publication lifecycle is reviewed and complete.
 
           Verify downloads against ``SHA256SUMS.txt`` and inspect the attached CycloneDX SBOMs.
 
           Automatic updates are intentionally disabled until Mesh has a provisioned signed-update endpoint and updater public key. Install this beta only in a controlled test environment.
           "@ | Out-File $notesPath -Encoding utf8
 
-          gh release create $env:GITHUB_REF_NAME @assets `
+          gh release create $env:MESH_RELEASE_TAG @assets `
             --draft `
             --prerelease `
-            --title "Mesh $env:GITHUB_REF_NAME beta" `
+            --title "Mesh $env:MESH_RELEASE_TAG signed beta candidate" `
             --notes-file $notesPath
+
+      - name: Remove imported signing certificate
+        if: always()
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+        run: |
+          if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_THUMBPRINT)) {
+            $thumbprint = $env:WINDOWS_CERTIFICATE_THUMBPRINT.Replace(" ", "").ToUpperInvariant()
+            $certificatePath = "Cert:\CurrentUser\My\$thumbprint"
+            if (Test-Path -LiteralPath $certificatePath) {
+              Remove-Item -LiteralPath $certificatePath -Force
+            }
+          }

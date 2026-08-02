@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-subscribe-channel"
+description = "Enables the subscribe_channel command without any pre-configured scope."
+commands.allow = ["subscribe_channel"]
+
+[[permission]]
+identifier = "deny-subscribe-channel"
+description = "Denies the subscribe_channel command without any pre-configured scope."
+commands.deny = ["subscribe_channel"]

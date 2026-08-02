@@ -42,6 +42,12 @@ until curl --fail --silent http://127.0.0.1:8008/health >/dev/null 2>&1; do
   sleep 2
 done
 
+# Provision and actively verify the dedicated admission schema before the
+# network-facing service can start. This fails closed if its runtime role can
+# read Synapse tables, create schema objects, or reach any table beyond the two
+# admission tables.
+sh ./provision-admission-database.sh
+
 : "${MESH_OPERATOR_LOCALPART:?MESH_OPERATOR_LOCALPART is required}"
 case "$MESH_OPERATOR_LOCALPART" in
   *[!a-z0-9._=-]*|'')
@@ -69,7 +75,8 @@ if ! security find-generic-password -a "$admin_user" -s "$admin_service" -w >/de
   echo "Created the local Mesh operator account and stored its password in macOS Keychain."
 fi
 
-admission_token="${MESH_ADMISSION_ADMIN_ACCESS_TOKEN:-}"
+admission_service_user="@mesh-admission-service:${MESH_SERVER_NAME}"
+admission_token="${MESH_ADMISSION_SERVICE_ACCESS_TOKEN:-}"
 admission_token_is_valid() {
   printf '%s' "$admission_token" |
     docker compose exec -T synapse python -c '
@@ -88,7 +95,7 @@ try:
         payload = json.load(response)
 except Exception:
     raise SystemExit(1)
-expected = "@mesh-admission-service:" + os.environ["MESH_SERVER_NAME"]
+expected = os.environ["MESH_ADMISSION_SERVICE_USER_ID"]
 raise SystemExit(0 if payload.get("user_id") == expected else 1)
 ' >/dev/null 2>&1
 }
@@ -121,13 +128,14 @@ if ! admission_token_is_valid; then
   esac
 
   next_env="$(mktemp "$script_dir/.env.admission-token.XXXXXX")"
-  grep -v '^MESH_ADMISSION_ADMIN_ACCESS_TOKEN=' .env > "$next_env" || true
-  printf 'MESH_ADMISSION_ADMIN_ACCESS_TOKEN=%s\n' "$admission_token" >> "$next_env"
+  grep -Ev '^(MESH_ADMISSION_ADMIN_ACCESS_TOKEN|MESH_ADMISSION_SERVICE_USER_ID|MESH_ADMISSION_SERVICE_ACCESS_TOKEN)=' .env > "$next_env" || true
+  printf 'MESH_ADMISSION_SERVICE_USER_ID=%s\n' "$admission_service_user" >> "$next_env"
+  printf 'MESH_ADMISSION_SERVICE_ACCESS_TOKEN=%s\n' "$admission_token" >> "$next_env"
   chmod 600 "$next_env"
   mv "$next_env" .env
   echo "Provisioned the dedicated Mesh admission service account."
 fi
-unset admission_token
+unset admission_service_user admission_token
 
 docker compose up -d admission
 deadline=$(( $(date +%s) + 120 ))

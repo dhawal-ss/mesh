@@ -974,7 +974,7 @@ mod tests {
         assert_eq!(result[0].content, "Hello everyone!"); // Edited
         assert!(result[0].edited_at.is_some());
         // Only ❤️ remains (👋 was removed)
-        assert!(result[0].reactions.get("👋").is_none());
+        assert!(!result[0].reactions.contains_key("👋"));
         assert_eq!(
             result[0].reactions.get("❤️").unwrap(),
             &vec!["carol".to_string()]
@@ -1397,7 +1397,7 @@ mod tests {
     fn peer_missing_an_event_diverges_until_synced() {
         // alice has all 5 events, bob is missing event 3 (an edit).
         // Their states should differ until bob receives the missing event.
-        let events = vec![
+        let events = [
             make_event(
                 1,
                 "message",

@@ -5,9 +5,10 @@ services:
     image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
     restart: unless-stopped
     stop_grace_period: 60s
-    env_file:
-      - .env
     environment:
+      POSTGRES_USER: "${POSTGRES_USER:?POSTGRES_USER is required}"
+      POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB is required}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
     volumes:
       - ./runtime/postgres:/var/lib/postgresql/data
@@ -27,17 +28,16 @@ services:
         max-size: 20m
         max-file: "5"
     networks:
-      - backend
+      - synapse-db
+      - admission-db
 
   synapse:
-    image: matrixdotorg/synapse:v1.157.0@sha256:53a686c52cdfca5fdb0adff5ef10b276b1d0971931b09815a9eb6b48d7188a1a
+    image: matrixdotorg/synapse:v1.157.1@sha256:d1fce43d7501428c461f2758dc10342555b946dc9f1d03c1b1b8aec1a4e8d130
     restart: unless-stopped
     stop_grace_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
-    env_file:
-      - .env
     environment:
       SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
       UID: "${MESH_RUNTIME_UID:?Run setup.sh to record the host runtime UID}"
@@ -69,10 +69,12 @@ services:
         max-size: 20m
         max-file: "5"
     networks:
-      - backend
+      - synapse-db
+      - admission-control
+      - matrix-edge
 
   admission:
-    image: matrixdotorg/synapse:v1.157.0@sha256:53a686c52cdfca5fdb0adff5ef10b276b1d0971931b09815a9eb6b48d7188a1a
+    image: matrixdotorg/synapse:v1.157.1@sha256:d1fce43d7501428c461f2758dc10342555b946dc9f1d03c1b1b8aec1a4e8d130
     restart: unless-stopped
     stop_grace_period: 30s
     depends_on:
@@ -82,12 +84,19 @@ services:
         condition: service_healthy
     entrypoint: ["python", "/mesh/admission_service.py"]
     user: "${MESH_RUNTIME_UID:?Run setup.sh to record the host runtime UID}:${MESH_RUNTIME_GID:?Run setup.sh to record the host runtime GID}"
-    env_file:
-      - .env
     environment:
+      MESH_SERVER_NAME: "${MESH_SERVER_NAME:?MESH_SERVER_NAME is required}"
       MESH_HOMESERVER_PUBLIC_URL: "https://${MESH_HOMESERVER_HOST}"
       MESH_HOMESERVER_INTERNAL_URL: "http://synapse:8008"
       MESH_PUBLIC_ORIGIN: "https://${MESH_SERVER_NAME}"
+      MESH_ADMISSION_SERVICE_USER_ID: "${MESH_ADMISSION_SERVICE_USER_ID:?MESH_ADMISSION_SERVICE_USER_ID is required}"
+      MESH_ADMISSION_SERVICE_ACCESS_TOKEN: "${MESH_ADMISSION_SERVICE_ACCESS_TOKEN:?MESH_ADMISSION_SERVICE_ACCESS_TOKEN is required}"
+      MESH_ADMISSION_SIGNING_KEY: "${MESH_ADMISSION_SIGNING_KEY:?MESH_ADMISSION_SIGNING_KEY is required}"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: mesh_admission
+      POSTGRES_PASSWORD: "${MESH_ADMISSION_DB_PASSWORD:?MESH_ADMISSION_DB_PASSWORD is required}"
+      POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB is required}"
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:
       - ./admission_service.py:/mesh/admission_service.py:ro
@@ -104,6 +113,13 @@ services:
       retries: 12
       start_period: 20s
     mem_limit: 256m
+    cpus: "0.50"
+    pids_limit: 64
+    read_only: true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=16m,mode=1770,noexec,nosuid,nodev
     security_opt:
       - no-new-privileges:true
     logging:
@@ -112,7 +128,8 @@ services:
         max-size: 20m
         max-file: "5"
     networks:
-      - backend
+      - admission-db
+      - admission-control
 
   caddy:
     image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
@@ -120,12 +137,12 @@ services:
     restart: unless-stopped
     stop_grace_period: 30s
     depends_on:
-      admission:
-        condition: service_healthy
       synapse:
         condition: service_healthy
-    env_file:
-      - .env
+    environment:
+      ACME_EMAIL: "${ACME_EMAIL:?ACME_EMAIL is required}"
+      MESH_SERVER_NAME: "${MESH_SERVER_NAME:?MESH_SERVER_NAME is required}"
+      MESH_HOMESERVER_HOST: "${MESH_HOMESERVER_HOST:?MESH_HOMESERVER_HOST is required}"
     ports:
       - "80:80/tcp"
       - "443:443/tcp"
@@ -148,9 +165,18 @@ services:
         max-size: 20m
         max-file: "5"
     networks:
-      - backend
+      - matrix-edge
 
 networks:
-  backend:
+  synapse-db:
+    driver: bridge
+    internal: true
+  admission-db:
+    driver: bridge
+    internal: true
+  admission-control:
+    driver: bridge
+    internal: true
+  matrix-edge:
     driver: bridge
     internal: false

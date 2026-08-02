@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-send-dm"
+description = "Enables the send_dm command without any pre-configured scope."
+commands.allow = ["send_dm"]
+
+[[permission]]
+identifier = "deny-send-dm"
+description = "Denies the send_dm command without any pre-configured scope."
+commands.deny = ["send_dm"]

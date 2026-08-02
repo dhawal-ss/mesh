@@ -213,10 +213,14 @@ export function LegacyMigrationPanel({
 
             {archivedCommunities.length > 0 && (
               <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase text-muted">
+                <label
+                  htmlFor="legacy-community"
+                  className="mb-1.5 block text-xs font-semibold uppercase text-muted"
+                >
                   Legacy community
                 </label>
                 <select
+                  id="legacy-community"
                   value={legacyCommunityId}
                   onChange={(event) => selectLegacyCommunity(
                     archivedCommunities.find((community) => community.id === event.target.value),
@@ -234,10 +238,14 @@ export function LegacyMigrationPanel({
 
             {selectedLegacyCommunity?.channels.map((legacyChannel) => (
               <div key={legacyChannel.id}>
-                <label className="mb-1.5 block text-xs font-semibold uppercase text-muted">
+                <label
+                  htmlFor={`legacy-channel-target-${legacyChannel.id}`}
+                  className="mb-1.5 block text-xs font-semibold uppercase text-muted"
+                >
                   #{legacyChannel.name} target
                 </label>
                 <select
+                  id={`legacy-channel-target-${legacyChannel.id}`}
                   value={channelRooms[legacyChannel.id] ?? ''}
                   onChange={(event) => {
                     setChannelRooms((current) => ({

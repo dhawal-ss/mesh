@@ -18,8 +18,7 @@ export function DmSidebar() {
   const activeConversationId = useDmStore((state) => state.activeConversationId)
   const setActiveConversation = useDmStore((state) => state.setActiveConversation)
   const loadConversations = useDmStore((state) => state.loadConversations)
-  const setConversations = useDmStore((state) => state.setConversations)
-  const patchConversation = useDmStore((state) => state.patchConversation)
+  const conversationLoad = useDmStore((state) => state.conversationLoad)
   const storedIdentity = useIdentityStore((state) => state.identity)
   const notifications = useSettingsStore((state) => state.notifications)
   const matrixMode = bridge.isMatrixBackend()
@@ -71,8 +70,7 @@ export function DmSidebar() {
         key: 'matrix-dm-conversations',
         intervalMs: 5_000,
         run: async () => {
-          const conversations = await bridge.getDmConversations()
-          if (active) setConversations(conversations)
+          if (active) await loadConversations()
         },
         pauseWhenHidden: true,
         backoffOnError: true,
@@ -82,21 +80,19 @@ export function DmSidebar() {
         unregisterPoll()
       }
     }
-    void loadConversations()
-  }, [loadConversations, setConversations])
+    void loadConversations().catch(() => {})
+  }, [loadConversations])
 
   useEffect(() => {
     const unsub = bridge.onDmReceived((_msg) => {
-      void loadConversations()
+      void loadConversations().catch(() => {})
     })
     return () => { unsub.then((fn) => fn()) }
   }, [loadConversations])
 
   const handleSelect = useCallback(async (conversationId: string) => {
     setActiveConversation(conversationId)
-    await bridge.markDmRead(conversationId)
-    patchConversation(conversationId, { unreadCount: 0 })
-  }, [setActiveConversation, patchConversation])
+  }, [setActiveConversation])
 
   return (
     <div className="flex flex-col h-full">
@@ -129,7 +125,26 @@ export function DmSidebar() {
         role="list"
         aria-label="Direct message conversations"
       >
-        {filteredConversations.length === 0 ? (
+        {(conversationLoad.status === 'idle' || conversationLoad.status === 'loading')
+        && conversations.length === 0 ? (
+          <div role="status" className="px-2 py-4 text-center text-xs text-muted">
+            Loading conversations...
+          </div>
+        ) : conversationLoad.status === 'failed' && conversations.length === 0 ? (
+          <div
+            role="alert"
+            className="rounded-control border border-status-warning/30 bg-status-warning/10 px-3 py-3 text-xs text-secondary"
+          >
+            <p>Conversations could not be loaded.</p>
+            <button
+              type="button"
+              className="mt-2 min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+              onClick={() => void loadConversations().catch(() => {})}
+            >
+              Retry conversations
+            </button>
+          </div>
+        ) : filteredConversations.length === 0 ? (
           <EmptyState
             variant="compact"
             icon={<Icon name={conversations.length === 0 ? 'messageCircle' : 'search'} size="lg" />}
@@ -197,6 +212,21 @@ export function DmSidebar() {
           </div>
         )}
       </div>
+      {conversationLoad.status === 'failed' && conversations.length > 0 && (
+        <div
+          role="alert"
+          className="mx-2 mb-2 rounded-control border border-status-warning/30 bg-status-warning/10 px-2 py-2 text-xs text-secondary"
+        >
+          <span>Could not refresh conversations. Showing the last update.</span>{' '}
+          <button
+            type="button"
+            className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+            onClick={() => void loadConversations().catch(() => {})}
+          >
+            Retry
+          </button>
+        </div>
+      )}
       <ScopedErrorBoundary
         name="User controls"
         description="Account controls could not be displayed."

@@ -312,6 +312,17 @@ export function useVoiceEngine() {
       void destroyLegacyEngine()
       setSessionSnapshot(null)
 
+      // This compile-time boundary is false in the public text/community beta.
+      // Rollup removes the LiveKit implementation from that artifact entirely;
+      // a separately named Matrix voice build is reserved for physical acceptance.
+      const matrixVoiceFrontendEnabled = typeof __MESH_MATRIX_VOICE_FRONTEND__ === 'undefined'
+        ? import.meta.env.MODE === 'test'
+        : __MESH_MATRIX_VOICE_FRONTEND__
+      if (!matrixVoiceFrontendEnabled) {
+        setConnectionState('disconnected', 'Calling is not included in this text beta build.')
+        return
+      }
+
       if (!matrixVoiceReady) {
         setConnectionState('disconnected', voiceService.reason ?? 'Calling is unavailable')
         return
@@ -642,7 +653,10 @@ export function useVoiceEngine() {
       }
     }
 
-    if (!legacyVoiceReady) {
+    // This compile-time boundary is false in every production Matrix build.
+    // Rollup therefore removes this entire branch and never resolves or emits
+    // the SimplePeer-backed module. Only the separately named LAN build opts in.
+    if (!__MESH_LEGACY_FRONTEND__ || !legacyVoiceReady) {
       setSessionSnapshot(null)
       setConnectionState('disconnected', voiceService.reason ?? 'Calling is unavailable')
       return
@@ -748,7 +762,7 @@ export function useVoiceEngine() {
    * the engine did not actually reach.
    *
    * Previously these effects wrote optimistically to the store and only
-   * console.error'd on failure, with no rollback — so a failed unmute could
+   * console.error'd on failure, with no rollback: so a failed unmute could
    * leave the pill reading "muted" while the track was still publishing, or
    * vice versa. Now the last value the engine confirmed is tracked, and a
    * failure reverts the store to it and tells the user.

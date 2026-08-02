@@ -9,6 +9,7 @@ pub mod diagnostics;
 #[cfg(feature = "legacy-p2p")]
 pub mod dm;
 pub mod error;
+pub mod external;
 #[cfg(feature = "legacy-p2p")]
 pub mod files;
 #[cfg(feature = "legacy-p2p")]

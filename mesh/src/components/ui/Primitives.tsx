@@ -25,8 +25,8 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
       ref={ref}
       aria-invalid={error || undefined}
       className={clsx(
-        'w-full resize-y rounded-md border border-border bg-surface-sunken text-content placeholder:text-content-muted',
-        'transition-colors duration-fast focus:border-accent focus:outline-none',
+        'mesh-input w-full resize-y rounded-control border border-border-control bg-surface-sunken text-content placeholder:text-content-muted',
+        'transition-[border-color,box-shadow,background-color] duration-fast hover:border-border-emphasis focus:border-accent focus:bg-surface-base focus:outline-none',
         error && 'border-status-danger focus:border-status-danger',
         size === 'sm' && 'min-h-20 px-2.5 py-1.5 text-xs',
         size === 'md' && 'min-h-24 px-3 py-2 text-sm',
@@ -70,8 +70,8 @@ export function Field({ label, htmlFor, hint, error, required, children, classNa
     : children
 
   return (
-    <div className={clsx('flex flex-col gap-1.5', className)}>
-      <label htmlFor={htmlFor} className="text-xs font-medium text-content-secondary">
+    <div className={clsx('flex flex-col gap-2', className)}>
+      <label htmlFor={htmlFor} className="text-caption font-semibold text-content-secondary">
         {label}
         {required && (
           <span className="ml-1 text-status-danger" aria-hidden="true">

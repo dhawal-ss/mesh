@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-room-is-encrypted"
+description = "Enables the matrix_room_is_encrypted command without any pre-configured scope."
+commands.allow = ["matrix_room_is_encrypted"]
+
+[[permission]]
+identifier = "deny-matrix-room-is-encrypted"
+description = "Denies the matrix_room_is_encrypted command without any pre-configured scope."
+commands.deny = ["matrix_room_is_encrypted"]

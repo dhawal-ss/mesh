@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-accounts"
+description = "Enables the matrix_accounts command without any pre-configured scope."
+commands.allow = ["matrix_accounts"]
+
+[[permission]]
+identifier = "deny-matrix-accounts"
+description = "Denies the matrix_accounts command without any pre-configured scope."
+commands.deny = ["matrix_accounts"]

@@ -80,6 +80,18 @@ const socialCard = await stat(join(siteRoot, 'og.png')).catch(() => null)
 record(Boolean(socialCard?.isFile()), 'site/og.png is required')
 record((socialCard?.size ?? 0) <= 2 * 1024 * 1024, 'site/og.png must stay below 2 MB')
 
+const supportPage = await readFile(join(siteRoot, 'support', 'index.html'), 'utf8')
+for (const statement of [
+  'Windows is the only candidate platform',
+  'Voice is not included in the text and community beta',
+  'Automatic updates remain disabled',
+  'macOS and Linux are not advertised as supported',
+  'Mesh cannot promise a universal appeal',
+  'Mesh does not upload crash diagnostics automatically',
+]) {
+  record(supportPage.includes(statement), `support page is missing beta boundary: ${statement}`)
+}
+
 if (errors.length > 0) {
   console.error('Public-site validation failed:')
   for (const error of errors) console.error(`- ${error}`)

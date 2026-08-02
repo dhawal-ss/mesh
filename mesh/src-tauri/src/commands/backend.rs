@@ -9,13 +9,13 @@ use tauri_plugin_dialog::DialogExt;
 use crate::backend::{
     BackendError, BackendKind, BackendStatus, CommunityAccessResult, CommunityAccessSettings,
     CommunityApplication, CommunityDirectoryEntry, CommunityMember, CommunityModerationResult,
-    CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest, MatrixCommunityAdmission,
+    CommunityPermissionProjection, CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest,
     MatrixDevice, MatrixLogin, MatrixOidcStatus, MatrixPersonalDataExport, MatrixProfile,
-    MatrixRecoveryHealth, MatrixRegistration, MatrixRoomNotificationMode, MatrixRoomPins,
-    MatrixRoomUpgrade, MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyLease,
-    MatrixRtcMember, MatrixServiceCapabilities, MatrixTransferObserver,
-    MatrixTransferProgressCallback, MatrixVerificationSession, ModerationAuditEntry, TypingUser,
-    UserPreferences, MATRIX_TRANSFER_PROGRESS_EVENT,
+    MatrixRecoveryHealth, MatrixRecoverySetupResult, MatrixRegistration,
+    MatrixRoomNotificationMode, MatrixRoomPins, MatrixRoomUpgrade, MatrixRtcJoinResult,
+    MatrixRtcMediaKey, MatrixRtcMediaKeyLease, MatrixRtcMember, MatrixServiceCapabilities,
+    MatrixTransferObserver, MatrixTransferProgressCallback, MatrixVerificationSession,
+    ModerationAuditEntry, TypingUser, UserPreferences, MATRIX_TRANSFER_PROGRESS_EVENT,
 };
 use crate::state::AppState;
 use crate::types::{
@@ -414,6 +414,19 @@ pub async fn matrix_test_recovery(
         .backend
         .backend()
         .test_recovery(recovery_key_or_passphrase)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_test_stored_recovery(
+    state: State<'_, AppState>,
+) -> Result<MatrixRecoveryHealth, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .test_stored_recovery()
         .await
         .map_err(map_error)
 }
@@ -961,23 +974,6 @@ pub async fn matrix_download_attachment(
 }
 
 #[tauri::command]
-pub async fn matrix_load_attachment_thumbnail(
-    room_id: String,
-    event_id: String,
-    attachment_index: u32,
-    state: State<'_, AppState>,
-) -> Result<tauri::ipc::Response, CommandError> {
-    require_matrix(&state)?;
-    state
-        .backend
-        .backend()
-        .load_attachment_thumbnail(room_id, event_id, attachment_index)
-        .await
-        .map(tauri::ipc::Response::new)
-        .map_err(map_error)
-}
-
-#[tauri::command]
 pub async fn matrix_load_attachment_image(
     room_id: String,
     event_id: String,
@@ -1361,6 +1357,21 @@ pub async fn matrix_list_members(
 }
 
 #[tauri::command]
+pub async fn matrix_get_community_permission_projection(
+    community_id: String,
+    subject_user_id: String,
+    state: State<'_, AppState>,
+) -> Result<CommunityPermissionProjection, CommandError> {
+    require_matrix(&state)?;
+    state
+        .backend
+        .backend()
+        .community_permission_projection(community_id, subject_user_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
 pub async fn matrix_invite_to_community(
     community_id: String,
     username: String,
@@ -1385,34 +1396,6 @@ pub async fn matrix_create_community_invite(
         .backend
         .backend()
         .create_community_invite(community_id)
-        .await
-        .map_err(map_error)
-}
-
-#[tauri::command]
-pub async fn matrix_resolve_community_invite(
-    invite_url: String,
-    state: State<'_, AppState>,
-) -> Result<MatrixCommunityAdmission, CommandError> {
-    require_matrix(&state)?;
-    state
-        .backend
-        .backend()
-        .resolve_community_invite(invite_url)
-        .await
-        .map_err(map_error)
-}
-
-#[tauri::command]
-pub async fn matrix_claim_community_invite(
-    invite_url: String,
-    state: State<'_, AppState>,
-) -> Result<CommunityDto, CommandError> {
-    require_matrix(&state)?;
-    state
-        .backend
-        .backend()
-        .claim_community_invite(invite_url)
         .await
         .map_err(map_error)
 }
@@ -1642,7 +1625,7 @@ pub async fn matrix_sync_once(state: State<'_, AppState>) -> Result<(), CommandE
 pub async fn matrix_enable_recovery(
     passphrase: Option<String>,
     state: State<'_, AppState>,
-) -> Result<String, CommandError> {
+) -> Result<MatrixRecoverySetupResult, CommandError> {
     require_matrix(&state)?;
     state
         .backend

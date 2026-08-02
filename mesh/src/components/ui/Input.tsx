@@ -32,9 +32,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     }
 
     return (
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-2">
         {label && (
-          <label htmlFor={inputId} className="text-xs font-medium text-content-secondary">
+          <label htmlFor={inputId} className="text-caption font-semibold text-content-secondary">
             {label}
           </label>
         )}
@@ -45,12 +45,12 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           aria-invalid={error ? true : undefined}
           aria-describedby={descriptionIds}
           className={clsx(
-            'w-full rounded-md border border-border-control bg-surface-sunken text-content placeholder:text-content-muted',
-            'transition-colors duration-fast focus:border-accent focus:outline-none',
+            'mesh-input w-full rounded-control border border-border-control bg-surface-sunken text-content placeholder:text-content-muted',
+            'transition-[border-color,box-shadow,background-color] duration-fast hover:border-border-emphasis focus:border-accent focus:bg-surface-base focus:outline-none',
             error && 'border-status-danger focus:border-status-danger',
-            size === 'sm' && 'px-2.5 py-1.5 text-xs',
-            size === 'md' && 'px-3 py-2 text-sm',
-            size === 'lg' && 'px-3.5 py-2.5 text-base',
+            size === 'sm' && 'min-h-8 px-2.5 py-1.5 text-xs',
+            size === 'md' && 'min-h-10 px-3 py-2 text-sm',
+            size === 'lg' && 'min-h-11 px-3.5 py-2.5 text-base',
             className,
           )}
           {...props}

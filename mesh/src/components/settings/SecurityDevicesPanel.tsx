@@ -7,6 +7,8 @@ import { EmptyState } from '../ui/Primitives'
 import { StatusDot } from '../ui/StatusDot'
 import * as bridge from '../../lib/bridge'
 import { describeError } from '../../lib/errors'
+import { clearRegistrationContinuation } from '../../lib/registration-continuation'
+import { clearRendererAccountState } from '../../lib/account-transition'
 
 interface SecurityDevicesPanelProps {
   open: boolean
@@ -22,7 +24,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
   const [exporting, setExporting] = useState(false)
   const [recoveryInput, setRecoveryInput] = useState('')
   const [recoveryTestInput, setRecoveryTestInput] = useState('')
-  const [newRecoveryKey, setNewRecoveryKey] = useState<string | null>(null)
+  const [newRecovery, setNewRecovery] = useState<bridge.MatrixRecoverySetupResult | null>(null)
   const [recoveryHealth, setRecoveryHealth] = useState<bridge.MatrixRecoveryHealth | null>(null)
   const [verification, setVerification] = useState<bridge.MatrixVerificationSession | null>(null)
   const [revokeTarget, setRevokeTarget] = useState<bridge.MatrixDevice | null>(null)
@@ -50,8 +52,31 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
     }
   }
 
-  const loadRecoveryHealth = async () => {
-    setRecoveryHealth(await bridge.matrixRecoveryHealth())
+  const loadRecoveryHealth = async (verifyStoredIfDue = false) => {
+    const health = await bridge.matrixRecoveryHealth()
+    const testedAt = health.lastSuccessfulTestAt
+      ? Date.parse(health.lastSuccessfulTestAt)
+      : Number.NaN
+    const testIsDue =
+      !Number.isFinite(testedAt) || testedAt < Date.now() - 90 * 24 * 60 * 60 * 1_000
+    if (verifyStoredIfDue && health.secureStorageState === 'saved' && testIsDue) {
+      try {
+        const verified = await bridge.matrixTestStoredRecovery()
+        setRecoveryHealth(verified)
+        return
+      } catch {
+        setRecoveryHealth({
+          ...health,
+          healthy: false,
+          warnings: [
+            ...health.warnings,
+            'The saved backup code could not be verified. Open Your devices and try again.',
+          ],
+        })
+        return
+      }
+    }
+    setRecoveryHealth(health)
   }
 
   useEffect(() => {
@@ -61,7 +86,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
       .then(async (nextStatus) => {
         setStatus(nextStatus)
         if (nextStatus.authenticated && nextStatus.capabilities.deviceManagement) {
-          await Promise.all([loadDevices(), loadRecoveryHealth()])
+          await Promise.all([loadDevices(), loadRecoveryHealth(true)])
         } else {
           setDevices([])
         }
@@ -72,7 +97,13 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
   }, [open])
 
   useEffect(() => {
-    if (!open || !verificationId || verificationPhase === 'done' || verificationPhase === 'cancelled') return
+    if (
+      !open ||
+      !verificationId ||
+      verificationPhase === 'done' ||
+      verificationPhase === 'cancelled'
+    )
+      return
     const interval = window.setInterval(() => {
       void bridge
         .matrixDeviceVerificationStatus(verificationId)
@@ -92,7 +123,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
     setBusy(true)
     setError(null)
     try {
-      setNewRecoveryKey(await bridge.matrixEnableRecovery())
+      setNewRecovery(await bridge.matrixEnableRecovery())
       await loadRecoveryHealth()
     } catch (cause) {
       setError(errorMessage(cause))
@@ -130,6 +161,18 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
     }
   }
 
+  const testStoredRecovery = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      setRecoveryHealth(await bridge.matrixTestStoredRecovery())
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const startVerification = async (device: bridge.MatrixDevice) => {
     setBusy(true)
     setError(null)
@@ -147,7 +190,9 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
     setBusy(true)
     setError(null)
     try {
-      setVerification(await bridge.matrixConfirmDeviceVerification(verification.verificationId, matches))
+      setVerification(
+        await bridge.matrixConfirmDeviceVerification(verification.verificationId, matches),
+      )
     } catch (cause) {
       setError(errorMessage(cause))
     } finally {
@@ -160,7 +205,9 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
     setBusy(true)
     setError(null)
     try {
-      setVerification(await bridge.matrixSelectDeviceVerificationMethod(verification.verificationId, method))
+      setVerification(
+        await bridge.matrixSelectDeviceVerificationMethod(verification.verificationId, method),
+      )
     } catch (cause) {
       setError(errorMessage(cause))
     } finally {
@@ -214,22 +261,31 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
 
   const removeAccount = async () => {
     if (
-      localRemovalPhrase.trim().toUpperCase() !== 'REMOVE LOCAL DATA'
-      || !localRemovalAcknowledged
+      localRemovalPhrase.trim().toUpperCase() !== 'REMOVE LOCAL DATA' ||
+      !localRemovalAcknowledged
     ) {
       return
     }
     setBusy(true)
     setError(null)
+    const removedAccountId = status?.userId ?? bridge.getMatrixUserId()
     try {
       await bridge.matrixRemoveLocalAccount()
+    } catch (cause) {
+      setError(errorMessage(cause))
+      setBusy(false)
+      return
+    }
+    try {
+      clearRegistrationContinuation()
+      clearRendererAccountState(removedAccountId)
+    } catch (cleanupError) {
+      console.warn('The account was removed, but optional renderer cleanup was incomplete.', cleanupError)
+    } finally {
       setLocalRemovalPhrase('')
       setLocalRemovalAcknowledged(false)
       onClose()
       window.location.reload()
-    } catch (cause) {
-      setError(errorMessage(cause))
-      setBusy(false)
     }
   }
 
@@ -248,23 +304,31 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
 
   const deactivateAccount = async () => {
     if (
-      !deactivationPassword
-      || deactivationPhrase.trim().toUpperCase() !== 'DELETE MY ACCOUNT'
-      || !deactivationAcknowledged
+      !deactivationPassword ||
+      deactivationPhrase.trim().toUpperCase() !== 'DELETE MY ACCOUNT' ||
+      !deactivationAcknowledged
     ) {
       return
     }
     setBusy(true)
     setError(null)
+    const removedAccountId = status?.userId ?? bridge.getMatrixUserId()
     try {
       await bridge.matrixDeactivateAccount(deactivationPassword)
-      setDeactivationPassword('')
-      onClose()
-      window.location.reload()
     } catch (cause) {
       setDeactivationPassword('')
       setError(errorMessage(cause))
       setBusy(false)
+      return
+    }
+    try {
+      clearRendererAccountState(removedAccountId)
+    } catch (cleanupError) {
+      console.warn('The account was deactivated, but optional renderer cleanup was incomplete.', cleanupError)
+    } finally {
+      setDeactivationPassword('')
+      onClose()
+      window.location.reload()
     }
   }
 
@@ -279,11 +343,19 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
           <p className="text-2xs uppercase tracking-signal text-muted">This device</p>
           <dl className="mt-3 space-y-2 text-sm">
             <Row label="Account" value={status ? (status.userId ?? 'Not signed in') : 'Loading…'} />
-            <Row label="Device code" value={status ? (status.deviceId ?? 'Unavailable') : 'Loading…'} mono />
-            <Row label="Private messages" value={status?.endToEndEncryption ? 'Protected' : 'Unavailable'} />
+            <Row
+              label="Device code"
+              value={status ? (status.deviceId ?? 'Unavailable') : 'Loading…'}
+              mono
+            />
+            <Row
+              label="Private messages"
+              value={status?.endToEndEncryption ? 'Protected' : 'Unavailable'}
+            />
           </dl>
           <p className="mt-3 text-xs leading-5 text-muted">
-            Mesh protects message contents while they travel between your devices and the people you talk with.
+            Mesh protects message contents while they travel between your devices and the people you
+            talk with.
           </p>
         </section>
 
@@ -300,16 +372,30 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
             >
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs font-medium text-primary">
-                  {recoveryHealth.healthy ? 'Message backup is ready' : 'Message backup needs attention'}
+                  {recoveryHealth.healthy
+                    ? 'Message backup is ready'
+                    : 'Message backup needs attention'}
                 </p>
-                <Button variant="ghost" size="sm" disabled={busy} onClick={() => void loadRecoveryHealth()}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void loadRecoveryHealth()}
+                >
                   Check again
                 </Button>
               </div>
               <dl className="mt-2 space-y-1 text-xs">
                 <Row label="Backup setup" value={recoveryHealth.recoveryState} />
                 <Row label="Message copy" value={recoveryHealth.backupState} />
-                <Row label="Saved online" value={recoveryHealth.backupExistsOnServer ? 'Confirmed' : 'Not confirmed'} />
+                <Row
+                  label="Saved online"
+                  value={recoveryHealth.backupExistsOnServer ? 'Confirmed' : 'Not confirmed'}
+                />
+                <Row
+                  label="Saved on this device"
+                  value={recoveryStorageLabel(recoveryHealth.secureStorageState)}
+                />
                 <Row
                   label="Last tested"
                   value={
@@ -321,8 +407,8 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
               </dl>
               {recoveryHealth.warnings.length > 0 && (
                 <p className="mt-2 text-xs leading-5 text-muted">
-                  Mesh found a problem with this backup. Check again, or use your saved backup code before relying on a
-                  new device.
+                  Mesh found a problem with this backup. Check again, or use your saved backup code
+                  before relying on a new device.
                 </p>
               )}
             </div>
@@ -335,12 +421,33 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
           >
             Create backup code
           </Button>
-          {newRecoveryKey && (
-            <div role="status" className="rounded-panel border border-status-warning/40 bg-status-warning/10 p-3">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy || recoveryHealth?.secureStorageState !== 'saved'}
+            onClick={testStoredRecovery}
+          >
+            Test saved copy
+          </Button>
+          {newRecovery && (
+            <div
+              role="status"
+              className="rounded-panel border border-status-warning/40 bg-status-warning/10 p-3"
+            >
               <p className="text-xs font-medium text-primary">
                 Save this backup code somewhere private. It is shown here once.
               </p>
-              <p className="mt-2 break-all font-mono text-xs text-secondary">{newRecoveryKey}</p>
+              <p className="mt-2 break-all font-mono text-xs text-secondary">
+                {newRecovery.recoveryKey}
+              </p>
+              <p className="mt-2 text-xs leading-5 text-muted">
+                {newRecovery.secureStorageState === 'saved'
+                  ? "Mesh also saved a copy in this device's protected credential store."
+                  : "Mesh could not save a copy in this device's protected credential store. Copy this code before closing this panel."}
+                {newRecovery.verificationState === 'verified'
+                  ? ' The code was verified against your encrypted backup.'
+                  : ' The backup check did not finish; keep the code and test it again before relying on a new device.'}
+              </p>
             </div>
           )}
           <Input
@@ -351,7 +458,12 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
             onChange={setRecoveryInput}
             autoComplete="off"
           />
-          <Button variant="secondary" size="sm" disabled={busy || !recoveryInput.trim()} onClick={recover}>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy || !recoveryInput.trim()}
+            onClick={recover}
+          >
             Restore messages
           </Button>
           <div className="space-y-2 border-t border-border-subtle pt-3">
@@ -366,7 +478,12 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
               onChange={setRecoveryTestInput}
               autoComplete="off"
             />
-            <Button variant="secondary" size="sm" disabled={busy || !recoveryTestInput.trim()} onClick={testRecovery}>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy || !recoveryTestInput.trim()}
+              onClick={testRecovery}
+            >
               Check backup code
             </Button>
           </div>
@@ -380,8 +497,8 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                 Review the places where your Mesh account is signed in.
               </p>
               <p className="mt-2 text-xs leading-5 text-muted">
-                Mesh shares new private-message keys only with trusted devices. A device marked “Not verified yet”
-                needs a check before it can receive new encrypted messages.
+                Mesh shares new private-message keys only with trusted devices. A device marked “Not
+                verified yet” needs a check before it can receive new encrypted messages.
               </p>
             </div>
             <span className="font-mono text-meta text-content-muted">
@@ -420,15 +537,20 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                   Sign out a lost device
                 </h3>
                 <p id="revoke-device-description" className="mt-1 text-xs leading-5 text-muted">
-                  This signs that device out. It cannot delete messages, screenshots, or downloaded files already saved
-                  on it.
+                  This signs that device out. It cannot delete messages, screenshots, or downloaded
+                  files already saved on it.
                 </p>
               </div>
 
               <ol className="list-decimal space-y-2 pl-5 text-xs leading-5 text-muted">
                 <li>Select the device you no longer control.</li>
-                <li>Make sure your message backup is ready before moving to a replacement device.</li>
-                <li>Sign out the lost device. Only trust devices you still have and can compare directly.</li>
+                <li>
+                  Make sure your message backup is ready before moving to a replacement device.
+                </li>
+                <li>
+                  Sign out the lost device. Only trust devices you still have and can compare
+                  directly.
+                </li>
               </ol>
 
               <div
@@ -446,7 +568,9 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
 
               {revocableDevices.length > 0 ? (
                 <fieldset className="space-y-2">
-                  <legend className="text-xs font-medium text-primary">Which device was lost?</legend>
+                  <legend className="text-xs font-medium text-primary">
+                    Which device was lost?
+                  </legend>
                   {revocableDevices.map((device) => (
                     <label
                       key={device.deviceId}
@@ -464,16 +588,20 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                         className="mt-0.5 h-4 w-4 accent-accent"
                       />
                       <span>
-                        <span className="block font-medium text-primary">{device.displayName || 'Unnamed device'}</span>
-                        <span className="block break-all font-mono text-meta text-muted">{device.deviceId}</span>
+                        <span className="block font-medium text-primary">
+                          {device.displayName || 'Unnamed device'}
+                        </span>
+                        <span className="block break-all font-mono text-meta text-muted">
+                          {device.deviceId}
+                        </span>
                       </span>
                     </label>
                   ))}
                 </fieldset>
               ) : (
                 <p className="text-xs leading-5 text-muted">
-                  No other device is available to sign out. Check your account website if the lost device is missing
-                  from this list.
+                  No other device is available to sign out. Check your account website if the lost
+                  device is missing from this list.
                 </p>
               )}
 
@@ -485,8 +613,8 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                     onChange={(event) => setLostDeviceAcknowledged(event.target.checked)}
                     className="mt-0.5 h-4 w-4 accent-accent"
                   />
-                  I understand that this signs the selected device out but cannot erase anything already saved on it or
-                  guarantee that older messages can be restored.
+                  I understand that this signs the selected device out but cannot erase anything
+                  already saved on it or guarantee that older messages can be restored.
                 </label>
               )}
 
@@ -521,12 +649,15 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
           )}
 
           {warningDevices.length > 0 && (
-            <div role="alert" className="rounded-panel border border-status-warning/50 bg-status-warning/10 p-3">
+            <div
+              role="alert"
+              className="rounded-panel border border-status-warning/50 bg-status-warning/10 p-3"
+            >
               <p className="text-xs font-medium text-primary">Is this you?</p>
               <p className="mt-1 text-xs leading-5 text-muted">
                 {warningDevices.length} new or changed sign-in
-                {warningDevices.length === 1 ? '' : 's'} need your attention. Trust the ones you recognize and sign out
-                anything you do not.
+                {warningDevices.length === 1 ? '' : 's'} need your attention. Trust the ones you
+                recognize and sign out anything you do not.
               </p>
             </div>
           )}
@@ -574,13 +705,17 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                         {device.current && <span className="text-accent">(this device)</span>}
                       </p>
                     </div>
-                    <p className="mt-1 break-all font-mono text-meta text-muted">{device.deviceId}</p>
+                    <p className="mt-1 break-all font-mono text-meta text-muted">
+                      {device.deviceId}
+                    </p>
                     <p className="mt-1 text-xs text-muted">
                       {trustLabel(device)} · Last seen {formatLastSeen(device.lastSeenAt)}
                       {device.lastSeenIp ? ` from ${device.lastSeenIp}` : ''}
                     </p>
                     {device.firstSeenAt && (
-                      <p className="mt-1 text-xs text-muted">First seen by Mesh {formatLastSeen(device.firstSeenAt)}</p>
+                      <p className="mt-1 text-xs text-muted">
+                        First seen by Mesh {formatLastSeen(device.firstSeenAt)}
+                      </p>
                     )}
                     {device.identityChanged && (
                       <p className="mt-2 text-xs font-medium text-status-danger">
@@ -588,7 +723,9 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                       </p>
                     )}
                     {!device.identityChanged && device.newDevice && (
-                      <p className="mt-2 text-xs font-medium text-status-warning">New sign-in. Is this you?</p>
+                      <p className="mt-2 text-xs font-medium text-status-warning">
+                        New sign-in. Is this you?
+                      </p>
                     )}
                   </div>
                   {!device.current && (
@@ -640,14 +777,20 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                       <span aria-hidden="true" className="block text-md">
                         {emoji.symbol}
                       </span>
-                      <span className="mt-1 block text-caption text-muted">{emoji.description}</span>
+                      <span className="mt-1 block text-caption text-muted">
+                        {emoji.description}
+                      </span>
                     </li>
                   ))}
                 </ol>
               )}
-              {verification.phase === 'compare' && verification.emojis.length === 0 && verification.decimals && (
-                <p className="font-mono text-lg tracking-widest text-primary">{verification.decimals.join(' · ')}</p>
-              )}
+              {verification.phase === 'compare' &&
+                verification.emojis.length === 0 &&
+                verification.decimals && (
+                  <p className="font-mono text-lg tracking-widest text-primary">
+                    {verification.decimals.join(' · ')}
+                  </p>
+                )}
               {verification.phase === 'qr-show' && verification.qrSvg && (
                 <div className="mx-auto w-full max-w-64 rounded-control bg-surface-qr p-3">
                   <img
@@ -660,7 +803,11 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
               <div className="flex flex-wrap gap-2">
                 {verification.phase === 'choose-method' && (
                   <>
-                    <Button size="sm" disabled={busy} onClick={() => void selectVerificationMethod('sas')}>
+                    <Button
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void selectVerificationMethod('sas')}
+                    >
                       Compare emoji
                     </Button>
                     <Button
@@ -675,7 +822,11 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                 )}
                 {verification.phase === 'compare' && (
                   <>
-                    <Button size="sm" disabled={busy} onClick={() => void confirmVerification(true)}>
+                    <Button
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void confirmVerification(true)}
+                    >
                       Yes, that's me
                     </Button>
                     <Button
@@ -690,7 +841,11 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                 )}
                 {verification.phase === 'qr-scanned' && (
                   <>
-                    <Button size="sm" disabled={busy} onClick={() => void confirmVerification(true)}>
+                    <Button
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void confirmVerification(true)}
+                    >
                       Confirm scan
                     </Button>
                     <Button
@@ -704,7 +859,12 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                   </>
                 )}
                 {verification.phase !== 'done' && verification.phase !== 'cancelled' && (
-                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => void cancelVerification()}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => void cancelVerification()}
+                  >
                     Cancel check
                   </Button>
                 )}
@@ -724,9 +884,9 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                   Sign out {revokeTarget.displayName || revokeTarget.deviceId}?
                 </p>
                 <p className="mt-1 text-xs leading-5 text-muted">
-                  This signs that device out. It cannot delete what is already saved on it. Confirm your account
-                  password to continue; Mesh does not save it. If you normally sign in through a browser, you can also
-                  use your account website.
+                  This signs that device out. It cannot delete what is already saved on it. Confirm
+                  your account password to continue; Mesh does not save it. If you normally sign in
+                  through a browser, you can also use your account website.
                 </p>
               </div>
               <Input
@@ -739,10 +899,20 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                 autoComplete="current-password"
               />
               <div className="flex gap-2">
-                <Button tone="danger" size="sm" disabled={busy || !accountPassword} onClick={revokeDevice}>
+                <Button
+                  tone="danger"
+                  size="sm"
+                  disabled={busy || !accountPassword}
+                  onClick={revokeDevice}
+                >
                   Sign out device
                 </Button>
-                <Button variant="ghost" size="sm" disabled={busy} onClick={() => setRevokeTarget(null)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => setRevokeTarget(null)}
+                >
                   Cancel
                 </Button>
               </div>
@@ -751,17 +921,26 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
         </section>
 
         {error && (
-          <p role="alert" className="rounded-panel bg-status-danger/10 px-3 py-2 text-sm text-status-danger">
+          <p
+            role="alert"
+            className="rounded-panel bg-status-danger/10 px-3 py-2 text-sm text-status-danger"
+          >
             {error}
           </p>
         )}
 
-        <section className="space-y-3 border-t border-border-subtle pt-4" aria-labelledby="personal-data-heading">
+        <section
+          className="space-y-3 border-t border-border-subtle pt-4"
+          aria-labelledby="personal-data-heading"
+        >
           <div>
-            <p id="personal-data-heading" className="text-sm font-medium text-primary">Your personal data</p>
+            <p id="personal-data-heading" className="text-sm font-medium text-primary">
+              Your personal data
+            </p>
             <p className="mt-1 text-xs leading-5 text-muted">
-              Save messages you authored and local copies of their already-downloaded attachments. The export excludes
-              other people's messages, account secrets, and service activity records.
+              Save messages you authored and local copies of their already-downloaded attachments.
+              The export excludes other people's messages, account secrets, and service activity
+              records.
             </p>
           </div>
           <Button
@@ -773,17 +952,25 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
             {exporting ? 'Working…' : 'Export my data'}
           </Button>
           {exportResult && (
-            <div role="status" className="rounded-panel border border-status-success/40 bg-status-success/10 p-3">
+            <div
+              role="status"
+              className="rounded-panel border border-status-success/40 bg-status-success/10 p-3"
+            >
               <p className="text-xs font-medium text-primary">Your export is ready</p>
               <p className="mt-1 break-all font-mono text-meta text-muted">{exportResult.path}</p>
               <p className="mt-2 text-xs leading-5 text-muted">
-                {exportResult.messageCount} message{exportResult.messageCount === 1 ? '' : 's'} across{' '}
-                {exportResult.roomCount} conversation{exportResult.roomCount === 1 ? '' : 's'}, with{' '}
-                {exportResult.mediaFileCount} local media file{exportResult.mediaFileCount === 1 ? '' : 's'}.
+                {exportResult.messageCount} message
+                {exportResult.messageCount === 1 ? '' : 's'} across {exportResult.roomCount}{' '}
+                conversation
+                {exportResult.roomCount === 1 ? '' : 's'}, with {exportResult.mediaFileCount} local
+                media file
+                {exportResult.mediaFileCount === 1 ? '' : 's'}.
               </p>
               {exportResult.warnings.length > 0 && (
                 <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-status-warning">
-                  {exportResult.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                  {exportResult.warnings.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
                 </ul>
               )}
               <p className="mt-2 text-xs leading-5 text-muted">
@@ -793,13 +980,18 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
           )}
         </section>
 
-        <section className="space-y-3 border-t border-border-subtle pt-4" aria-labelledby="deactivate-account-heading">
+        <section
+          className="space-y-3 border-t border-border-subtle pt-4"
+          aria-labelledby="deactivate-account-heading"
+        >
           <div>
-            <p id="deactivate-account-heading" className="text-sm font-medium text-primary">Delete your Mesh account</p>
+            <p id="deactivate-account-heading" className="text-sm font-medium text-primary">
+              Delete your Mesh account
+            </p>
             <p className="mt-1 text-xs leading-5 text-muted">
-              This permanently disables the account and asks your service to erase its data where possible. Messages
-              already shared may remain in conversation history, backups, exports, screenshots, or other people's
-              downloaded files.
+              This permanently disables the account and asks your service to erase its data where
+              possible. Messages already shared may remain in conversation history, backups,
+              exports, screenshots, or other people's downloaded files.
             </p>
           </div>
           {!deactivationOpen ? (
@@ -822,8 +1014,8 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
             <div className="space-y-3 rounded-panel border border-status-danger/40 bg-status-danger/5 p-3">
               <p className="text-xs font-medium text-status-danger">This cannot be undone.</p>
               <p id="deactivation-description" className="text-xs leading-5 text-muted">
-                Export anything you want to keep first. Mesh will also remove this account's local store and saved
-                sign-in from this device after the service confirms deletion.
+                Export anything you want to keep first. Mesh will also remove this account's local
+                store and saved sign-in from this device after the service confirms deletion.
               </p>
               <Input
                 label="Account password"
@@ -839,8 +1031,8 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                 id="deactivation-confirmation"
                 aria-describedby="deactivation-description"
                 aria-invalid={
-                  deactivationPhrase.length > 0
-                  && deactivationPhrase.trim().toUpperCase() !== 'DELETE MY ACCOUNT'
+                  deactivationPhrase.length > 0 &&
+                  deactivationPhrase.trim().toUpperCase() !== 'DELETE MY ACCOUNT'
                 }
                 value={deactivationPhrase}
                 onChange={setDeactivationPhrase}
@@ -853,21 +1045,22 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                   onChange={(event) => setDeactivationAcknowledged(event.target.checked)}
                   className="mt-0.5 h-4 w-4 accent-accent"
                 />
-                I understand that shared copies may remain and that I will not be able to sign in again.
+                I understand that shared copies may remain and that I will not be able to sign in
+                again.
               </label>
               <p className="text-xs leading-5 text-muted">
-                If you normally sign in through a browser, complete deletion from your account website until browser
-                confirmation is available in Mesh.
+                If you normally sign in through a browser, complete deletion from your account
+                website until browser confirmation is available in Mesh.
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button
                   tone="danger"
                   size="sm"
                   disabled={
-                    busy
-                    || !deactivationPassword
-                    || deactivationPhrase.trim().toUpperCase() !== 'DELETE MY ACCOUNT'
-                    || !deactivationAcknowledged
+                    busy ||
+                    !deactivationPassword ||
+                    deactivationPhrase.trim().toUpperCase() !== 'DELETE MY ACCOUNT' ||
+                    !deactivationAcknowledged
                   }
                   onClick={deactivateAccount}
                 >
@@ -895,8 +1088,10 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
           <div>
             <p className="text-sm font-medium text-primary">Account on this device</p>
             <p className="mt-1 text-xs leading-5 text-muted">
-              Sign out removes this account from Mesh but keeps downloaded messages on this device. Removing the account
-              also deletes Mesh account data saved here.
+              Sign out removes this account from Mesh but keeps downloaded messages on this device.
+              Removing the account also deletes only this account's Mesh data saved here. Neither
+              action deletes the account at its service or erases message history already shared
+              with other people and services.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -921,16 +1116,17 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
             ) : (
               <div className="w-full space-y-3 rounded-panel border border-status-danger/40 bg-status-danger/5 p-3">
                 <p id="local-removal-description" className="text-xs leading-5 text-muted">
-                  This cannot be undone. Mesh will sign this device out and delete its saved account data. If that
-                  sign-out cannot finish, use another trusted device or your account website.
+                  This cannot be undone. Mesh will sign this device out and delete its saved account
+                  data. If that sign-out cannot finish, use another trusted device or your account
+                  website.
                 </p>
                 <Input
                   label='Type "REMOVE LOCAL DATA" to confirm'
                   id="local-removal-confirmation"
                   aria-describedby="local-removal-description"
                   aria-invalid={
-                    localRemovalPhrase.length > 0
-                    && localRemovalPhrase.trim().toUpperCase() !== 'REMOVE LOCAL DATA'
+                    localRemovalPhrase.length > 0 &&
+                    localRemovalPhrase.trim().toUpperCase() !== 'REMOVE LOCAL DATA'
                   }
                   value={localRemovalPhrase}
                   onChange={setLocalRemovalPhrase}
@@ -943,16 +1139,17 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
                     onChange={(event) => setLocalRemovalAcknowledged(event.target.checked)}
                     className="mt-0.5 h-4 w-4 accent-accent"
                   />
-                  I understand that this permanently deletes this account's messages and settings saved on this device.
+                  I understand that this permanently deletes this account's messages and settings
+                  saved on this device.
                 </label>
                 <div className="flex gap-2">
                   <Button
                     tone="danger"
                     size="sm"
                     disabled={
-                      busy
-                      || localRemovalPhrase.trim().toUpperCase() !== 'REMOVE LOCAL DATA'
-                      || !localRemovalAcknowledged
+                      busy ||
+                      localRemovalPhrase.trim().toUpperCase() !== 'REMOVE LOCAL DATA' ||
+                      !localRemovalAcknowledged
                     }
                     onClick={removeAccount}
                   >
@@ -989,6 +1186,17 @@ function Row({ label, value, mono = false }: { label: string; value: string; mon
   )
 }
 
+function recoveryStorageLabel(state: bridge.MatrixRecoveryHealth['secureStorageState']): string {
+  switch (state) {
+    case 'saved':
+      return 'Protected copy saved'
+    case 'missing':
+      return 'No protected copy'
+    case 'unavailable':
+      return 'Protected storage unavailable'
+  }
+}
+
 function trustLabel(device: bridge.MatrixDevice): string {
   if (device.identityChanged || device.newDevice) return 'Not verified yet'
   if (device.crossSigned || device.verified) return 'Trusted'
@@ -1014,7 +1222,9 @@ function verificationMessage(session: bridge.MatrixVerificationSession): string 
     case 'done':
       return 'This device is now trusted.'
     case 'cancelled':
-      return session.cancellationReason ? 'The check was cancelled by the other device.' : 'The check was cancelled.'
+      return session.cancellationReason
+        ? 'The check was cancelled by the other device.'
+        : 'The check was cancelled.'
   }
 }
 

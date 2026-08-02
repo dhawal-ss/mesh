@@ -71,6 +71,9 @@ describe('UserPanel Matrix profile editing', () => {
     await act(async () => {
       await import('../settings/UserSettingsPanel')
     })
+    const accountTab = Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+      .find((button) => button.textContent === 'Account')
+    await act(async () => accountTab?.click())
 
     const input = document.body.querySelector<HTMLInputElement>('input[autocomplete="nickname"]')
     await act(async () => {
@@ -113,6 +116,9 @@ describe('UserPanel Matrix profile editing', () => {
       settingsButton?.click()
       await import('../settings/UserSettingsPanel')
     })
+    const devicesTab = Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+      .find((button) => button.textContent === 'Devices')
+    await act(async () => devicesTab?.click())
 
     const openSecurityButton = [...document.body.querySelectorAll('button')].find(
       (button) => button.textContent === 'Open your devices',

@@ -14,6 +14,9 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
+#[path = "oidc/configuration.rs"]
+pub(super) mod configuration;
+
 pub(super) const CALLBACK_ADDRESS: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 8418);
 pub(super) const CALLBACK_PATH: &str = "/oauth/callback";
 pub(super) const MAX_CALLBACK_REQUEST_BYTES: usize = 8 * 1024;
@@ -247,10 +250,8 @@ fn parse_callback_request(request: &[u8]) -> Result<Url, CallbackError> {
         .ok_or(CallbackError::InvalidRequest)?;
     let headers =
         std::str::from_utf8(&request[..header_end]).map_err(|_| CallbackError::InvalidRequest)?;
-    let request_line = headers
-        .split("\r\n")
-        .next()
-        .ok_or(CallbackError::InvalidRequest)?;
+    let mut header_lines = headers.split("\r\n");
+    let request_line = header_lines.next().ok_or(CallbackError::InvalidRequest)?;
     let mut parts = request_line.split(' ');
     let method = parts.next().ok_or(CallbackError::InvalidRequest)?;
     let target = parts.next().ok_or(CallbackError::InvalidRequest)?;
@@ -264,6 +265,31 @@ fn parse_callback_request(request: &[u8]) -> Result<Url, CallbackError> {
     if !target.starts_with('/') || target.starts_with("//") {
         return Err(CallbackError::InvalidRequest);
     }
+
+    let mut callback_host = None;
+    for header in header_lines {
+        if header.is_empty() || header.starts_with([' ', '\t']) {
+            return Err(CallbackError::InvalidRequest);
+        }
+        let (name, value) = header
+            .split_once(':')
+            .ok_or(CallbackError::InvalidRequest)?;
+        if name.is_empty()
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        {
+            return Err(CallbackError::InvalidRequest);
+        }
+        if name.eq_ignore_ascii_case("host") && callback_host.replace(value.trim()).is_some() {
+            return Err(CallbackError::InvalidRequest);
+        }
+    }
+    let expected_host = CALLBACK_ADDRESS.to_string();
+    if callback_host != Some(expected_host.as_str()) {
+        return Err(CallbackError::InvalidRequest);
+    }
+
     let callback = Url::parse(&format!("http://{CALLBACK_ADDRESS}{target}"))
         .map_err(|_| CallbackError::InvalidRequest)?;
     if callback.path() != CALLBACK_PATH {
@@ -297,29 +323,49 @@ mod tests {
     #[test]
     fn callback_parser_accepts_only_the_exact_get_path() {
         let parsed = parse_callback_request(
-            b"GET /oauth/callback?code=opaque&state=opaque HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+            b"GET /oauth/callback?code=opaque&state=opaque HTTP/1.1\r\nHost: 127.0.0.1:8418\r\n\r\n",
         )
         .unwrap();
         assert_eq!(parsed.path(), CALLBACK_PATH);
         assert_eq!(parsed.query(), Some("code=opaque&state=opaque"));
         let denial = parse_callback_request(
-            b"GET /oauth/callback?error=access_denied&state=opaque HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+            b"GET /oauth/callback?error=access_denied&state=opaque HTTP/1.1\r\nHost: 127.0.0.1:8418\r\n\r\n",
         )
         .unwrap();
         assert_eq!(denial.query(), Some("error=access_denied&state=opaque"));
 
         assert!(matches!(
             parse_callback_request(
-                b"POST /oauth/callback?code=opaque HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+                b"POST /oauth/callback?code=opaque HTTP/1.1\r\nHost: 127.0.0.1:8418\r\n\r\n"
             ),
             Err(CallbackError::InvalidMethod)
         ));
         assert!(matches!(
             parse_callback_request(
-                b"GET /oauth/callback/other?code=opaque HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+                b"GET /oauth/callback/other?code=opaque HTTP/1.1\r\nHost: 127.0.0.1:8418\r\n\r\n"
             ),
             Err(CallbackError::InvalidPath)
         ));
+    }
+
+    #[test]
+    fn callback_parser_requires_the_exact_loopback_host_and_port() {
+        for request in [
+            b"GET /oauth/callback?code=opaque HTTP/1.1\r\nHost: localhost:8418\r\n\r\n"
+                .as_slice(),
+            b"GET /oauth/callback?code=opaque HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+                .as_slice(),
+            b"GET /oauth/callback?code=opaque HTTP/1.1\r\nHost: 127.0.0.1:8419\r\n\r\n"
+                .as_slice(),
+            b"GET /oauth/callback?code=opaque HTTP/1.1\r\n\r\n".as_slice(),
+            b"GET /oauth/callback?code=opaque HTTP/1.1\r\nHost: 127.0.0.1:8418\r\nHost: 127.0.0.1:8418\r\n\r\n"
+                .as_slice(),
+        ] {
+            assert!(matches!(
+                parse_callback_request(request),
+                Err(CallbackError::InvalidRequest)
+            ));
+        }
     }
 
     #[tokio::test]
@@ -342,7 +388,7 @@ mod tests {
         valid
             .write_all(
                 format!(
-                    "GET /oauth/callback?code=real&state={TEST_STATE} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+                    "GET /oauth/callback?code=real&state={TEST_STATE} HTTP/1.1\r\nHost: 127.0.0.1:8418\r\n\r\n"
                 )
                 .as_bytes(),
             )
@@ -372,7 +418,7 @@ mod tests {
         invalid
             .write_all(
                 format!(
-                    "GET /oauth/callback?code=attacker&state={WRONG_TEST_STATE} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+                    "GET /oauth/callback?code=attacker&state={WRONG_TEST_STATE} HTTP/1.1\r\nHost: 127.0.0.1:8418\r\n\r\n"
                 )
                 .as_bytes(),
             )
@@ -386,7 +432,7 @@ mod tests {
         valid
             .write_all(
                 format!(
-                    "GET /oauth/callback?code=real&state={TEST_STATE} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+                    "GET /oauth/callback?code=real&state={TEST_STATE} HTTP/1.1\r\nHost: 127.0.0.1:8418\r\n\r\n"
                 )
                 .as_bytes(),
             )
@@ -399,6 +445,37 @@ mod tests {
         let callback = receive.await.unwrap().unwrap();
         let expected_query = format!("code=real&state={TEST_STATE}");
         assert_eq!(callback.query(), Some(expected_query.as_str()));
+    }
+
+    #[tokio::test]
+    async fn valid_callback_is_consumed_once_and_replay_cannot_reconnect() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let receive = tokio::spawn(receive_callback(
+            listener,
+            CancellationToken::new(),
+            TEST_STATE,
+        ));
+
+        let mut valid = TcpStream::connect(address).await.unwrap();
+        valid
+            .write_all(
+                format!(
+                    "GET /oauth/callback?code=real&state={TEST_STATE} HTTP/1.1\r\nHost: 127.0.0.1:8418\r\n\r\n"
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        let mut response = Vec::new();
+        valid.read_to_end(&mut response).await.unwrap();
+        assert!(String::from_utf8_lossy(&response).starts_with("HTTP/1.1 200"));
+        receive.await.unwrap().unwrap();
+
+        assert!(
+            TcpStream::connect(address).await.is_err(),
+            "the one-use callback listener must close after the valid response"
+        );
     }
 
     #[tokio::test]
@@ -420,7 +497,7 @@ mod tests {
         valid
             .write_all(
                 format!(
-                    "GET /oauth/callback?code=real&state={TEST_STATE} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+                    "GET /oauth/callback?code=real&state={TEST_STATE} HTTP/1.1\r\nHost: 127.0.0.1:8418\r\n\r\n"
                 )
                 .as_bytes(),
             )

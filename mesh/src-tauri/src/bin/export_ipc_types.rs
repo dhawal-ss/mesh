@@ -1,14 +1,19 @@
 use std::{fs, path::PathBuf};
 
 use mesh_lib::backend::{
-    BackendCapabilities, BackendKind, BackendStatus, CommunityModerationResult, CustomEmoji,
-    MatrixCommunityAdmission, MatrixNotification, MatrixPersonalDataExport,
-    MatrixQueuedMessageState, MatrixQueuedMessageUpdate, MatrixRoomNotificationMode,
-    MatrixRoomPins, MatrixRoomPinsUpdate, MatrixRoomUpgrade, MatrixRtcJoinResult,
-    MatrixRtcMediaKey, MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause,
-    MatrixRtcMember, MatrixRtcMembershipUpdate, MatrixUnreadUpdate, ModerationAuditEntry,
-    ModerationRoomOutcome, NotificationPresentationContext, PendingInvitationMetadata,
-    ReadReceiptMode, UserPreferences, VoiceProvider, VoiceServiceAvailability, VoiceServiceStatus,
+    BackendCapabilities, BackendKind, BackendStatus, CommunityModerationResult,
+    CommunityPermissionAggregate, CommunityPermissionAggregateStatus, CommunityPermissionId,
+    CommunityPermissionProjection, ConversationPrivacyOverride, CustomEmoji,
+    MatrixCommunityAdmission, MatrixNotification, MatrixPermissionRoomStatus,
+    MatrixPermissionStateChanged, MatrixPersonalDataExport, MatrixQueuedMessageState,
+    MatrixQueuedMessageUpdate, MatrixRecoveryHealth, MatrixRecoverySecureStorageState,
+    MatrixRecoverySetupResult, MatrixRecoveryVerificationState, MatrixRoomNotificationMode,
+    MatrixRoomPermissionProjection, MatrixRoomPins, MatrixRoomPinsUpdate,
+    MatrixRoomPowerLevelProjection, MatrixRoomUpgrade, MatrixRtcJoinResult, MatrixRtcMediaKey,
+    MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember,
+    MatrixRtcMembershipUpdate, MatrixUnreadUpdate, ModerationAuditEntry, ModerationRoomOutcome,
+    NotificationPresentationContext, PendingInvitationMetadata, ReadReceiptMode, UserPreferences,
+    VoiceProvider, VoiceServiceAvailability, VoiceServiceStatus,
 };
 use mesh_lib::types::{
     community::{ChannelDto, CommunityDto},
@@ -47,6 +52,14 @@ fn generated_contract() -> String {
     output.push_str(&declaration::<MatrixPersonalDataExport>());
     output.push_str(&declaration::<MatrixNotification>());
     output.push_str(&declaration::<MatrixUnreadUpdate>());
+    output.push_str(&declaration::<MatrixPermissionRoomStatus>());
+    output.push_str(&declaration::<CommunityPermissionAggregateStatus>());
+    output.push_str(&declaration::<CommunityPermissionId>());
+    output.push_str(&declaration::<MatrixRoomPowerLevelProjection>());
+    output.push_str(&declaration::<MatrixRoomPermissionProjection>());
+    output.push_str(&declaration::<CommunityPermissionAggregate>());
+    output.push_str(&declaration::<CommunityPermissionProjection>());
+    output.push_str(&declaration::<MatrixPermissionStateChanged>());
     output.push_str(&declaration::<MatrixQueuedMessageState>());
     output.push_str(&declaration::<MatrixQueuedMessageUpdate>());
     output.push_str(&declaration::<MatrixRoomNotificationMode>());
@@ -61,7 +74,12 @@ fn generated_contract() -> String {
     output.push_str(&declaration::<MatrixRtcMediaKeyLease>());
     output.push_str(&declaration::<MatrixRtcJoinResult>());
     output.push_str(&declaration::<NotificationPresentationContext>());
+    output.push_str(&declaration::<MatrixRecoverySecureStorageState>());
+    output.push_str(&declaration::<MatrixRecoveryVerificationState>());
+    output.push_str(&declaration::<MatrixRecoveryHealth>());
+    output.push_str(&declaration::<MatrixRecoverySetupResult>());
     output.push_str(&declaration::<ReadReceiptMode>());
+    output.push_str(&declaration::<ConversationPrivacyOverride>());
     output.push_str(&declaration::<UserPreferences>());
     output.push_str(&declaration::<CustomEmoji>());
     output.push_str(&declaration::<ModerationRoomOutcome>());

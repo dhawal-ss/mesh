@@ -8,21 +8,70 @@ fi
 
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 homeserver_dir="$(CDPATH= cd -- "$script_dir/.." && pwd)"
+# shellcheck source=infra/homeserver/docker-cli.sh
+. "$homeserver_dir/docker-cli.sh"
 postgres_image="postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193"
-synapse_image="matrixdotorg/synapse:v1.157.0@sha256:53a686c52cdfca5fdb0adff5ef10b276b1d0971931b09815a9eb6b48d7188a1a"
+synapse_image="matrixdotorg/synapse:v1.157.1@sha256:d1fce43d7501428c461f2758dc10342555b946dc9f1d03c1b1b8aec1a4e8d130"
 
+iteration="${MESH_RESTORE_DRILL_ITERATION:-standalone}"
+case "$iteration" in
+  standalone|1|2) ;;
+  *)
+    echo "MESH_RESTORE_DRILL_ITERATION must be 1, 2, or unset." >&2
+    exit 2
+    ;;
+esac
 test_root="$(mktemp -d)"
-resource_suffix="mesh-source-$$"
+test_root_docker="$(mesh_docker_bind_path "$test_root")"
+homeserver_dir_docker="$(mesh_docker_bind_path "$homeserver_dir")"
+restore_runtime="$test_root/restore-runtime"
+resource_suffix="mesh-source-$iteration-$$"
 network="$resource_suffix"
 volume="$resource_suffix"
 postgres_container="$resource_suffix-postgres"
 synapse_container="$resource_suffix-synapse"
 
 cleanup() {
-  docker rm -f "$synapse_container" "$postgres_container" >/dev/null 2>&1 || true
-  docker volume rm "$volume" >/dev/null 2>&1 || true
-  docker network rm "$network" >/dev/null 2>&1 || true
-  rm -rf -- "${test_root:?}"
+  original_status=$?
+  trap - EXIT HUP INT TERM
+  set +e
+  cleanup_status=0
+
+  mesh_docker rm -f "$synapse_container" "$postgres_container" >/dev/null 2>&1 || :
+  mesh_docker volume rm "$volume" >/dev/null 2>&1 || :
+  mesh_docker network rm "$network" >/dev/null 2>&1 || :
+
+  # Synapse deliberately runs as UID 991. Return disposable bind-mount files
+  # to the invoking host identity before removal so a useful failure is not
+  # hidden by a second permission-denied cleanup error.
+  if [ -d "$test_root" ] && mesh_docker image inspect "$synapse_image" >/dev/null 2>&1; then
+    # Expansion must happen inside the container.
+    # shellcheck disable=SC2016
+    mesh_docker run --rm \
+      --entrypoint sh \
+      --user 0:0 \
+      -e "MESH_CLEANUP_UID=$(id -u)" \
+      -e "MESH_CLEANUP_GID=$(id -g)" \
+      -v "$test_root_docker:/mesh-restore-cleanup" \
+      "$synapse_image" \
+      -c 'chown -R "$MESH_CLEANUP_UID:$MESH_CLEANUP_GID" /mesh-restore-cleanup' \
+      >/dev/null 2>&1 || cleanup_status=1
+  fi
+  rm -rf -- "${test_root:?}" || cleanup_status=1
+
+  if [ "$original_status" -ne 0 ]; then
+    if [ "$cleanup_status" -ne 0 ]; then
+      echo "Restore integration failed with exit code $original_status; disposable cleanup also failed." >&2
+    else
+      echo "Restore integration failed with exit code $original_status; disposable cleanup completed." >&2
+    fi
+    exit "$original_status"
+  fi
+  if [ "$cleanup_status" -ne 0 ]; then
+    echo "Restore integration passed, but disposable cleanup failed." >&2
+    exit "$cleanup_status"
+  fi
+  exit 0
 }
 trap cleanup EXIT
 trap 'exit 129' HUP
@@ -36,38 +85,50 @@ postgres_password="restore-test-postgres-password"
 registration_secret="restore-test-registration-secret"
 macaroon_secret="restore-test-macaroon-secret"
 form_secret="restore-test-form-secret"
+abuse_email="${MESH_ABUSE_EMAIL:-abuse@mesh.restore.test}"
 
 mkdir -p "$test_root/synapse" "$test_root/backup"
-docker pull "$postgres_image" >/dev/null
-docker pull "$synapse_image" >/dev/null
+mesh_docker pull "$postgres_image" >/dev/null
+mesh_docker pull "$synapse_image" >/dev/null
 
-docker run --rm \
+mesh_docker run --rm \
   -e "SYNAPSE_SERVER_NAME=$server_name" \
   -e SYNAPSE_REPORT_STATS=no \
   -e UID=991 \
   -e GID=991 \
-  -v "$test_root/synapse:/data" \
+  -v "$test_root_docker/synapse:/data" \
   "$synapse_image" generate >/dev/null
 
-docker run --rm \
+# The generated configuration and all subsequent Synapse state are owned by
+# the image's documented runtime identity. This makes the test independent of
+# the hosted runner's umask and bind-mount ownership defaults.
+mesh_docker run --rm \
+  --entrypoint sh \
+  --user 0:0 \
+  -v "$test_root_docker/synapse:/data" \
+  "$synapse_image" \
+  -c 'chown -R 991:991 /data && chmod -R u+rwX /data'
+
+mesh_docker run --rm \
   --entrypoint python \
   --user 991:991 \
   -e "MESH_SERVER_NAME=$server_name" \
   -e MESH_HOMESERVER_HOST=matrix.mesh.restore.test \
+  -e "MESH_ABUSE_EMAIL=$abuse_email" \
   -e "POSTGRES_USER=$postgres_user" \
   -e "POSTGRES_DB=$postgres_db" \
   -e "POSTGRES_PASSWORD=$postgres_password" \
   -e "REGISTRATION_SHARED_SECRET=$registration_secret" \
   -e "MACAROON_SECRET_KEY=$macaroon_secret" \
   -e "FORM_SECRET=$form_secret" \
-  -v "$test_root/synapse:/data" \
-  -v "$homeserver_dir/configure_synapse.py:/configure_synapse.py:ro" \
+  -v "$test_root_docker/synapse:/data" \
+  -v "$homeserver_dir_docker/configure_synapse.py:/configure_synapse.py:ro" \
   "$synapse_image" \
   /configure_synapse.py /data/homeserver.yaml
 
-docker network create "$network" >/dev/null
-docker volume create "$volume" >/dev/null
-docker run -d \
+mesh_docker network create "$network" >/dev/null
+mesh_docker volume create "$volume" >/dev/null
+mesh_docker run -d \
   --name "$postgres_container" \
   --network "$network" \
   --network-alias postgres \
@@ -79,7 +140,7 @@ docker run -d \
   "$postgres_image" >/dev/null
 
 attempt=0
-until docker exec "$postgres_container" \
+until mesh_docker exec "$postgres_container" \
   pg_isready --username "$postgres_user" --dbname "$postgres_db" >/dev/null 2>&1
 do
   attempt=$((attempt + 1))
@@ -90,37 +151,37 @@ do
   sleep 2
 done
 
-docker run -d \
+mesh_docker run -d \
   --name "$synapse_container" \
   --network "$network" \
   -e UID=991 \
   -e GID=991 \
   -e SYNAPSE_CONFIG_PATH=/data/homeserver.yaml \
-  -v "$test_root/synapse:/data" \
+  -v "$test_root_docker/synapse:/data" \
   "$synapse_image" >/dev/null
 
 attempt=0
-until docker exec "$synapse_container" python -c \
+until mesh_docker exec "$synapse_container" python -c \
   "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8008/health', timeout=3).read()" \
   >/dev/null 2>&1
 do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 90 ]; then
     echo "Source Synapse did not become healthy." >&2
-    docker logs --tail 50 "$synapse_container" >&2 || true
+    mesh_docker logs --tail 50 "$synapse_container" >&2 || true
     exit 1
   fi
   sleep 2
 done
 
-docker exec "$synapse_container" register_new_matrix_user \
+mesh_docker exec "$synapse_container" register_new_matrix_user \
   -c /data/homeserver.yaml \
   http://127.0.0.1:8008 \
   -u restore-test \
   -p restore-test-account-password \
   -a >/dev/null
 
-docker exec "$postgres_container" \
+mesh_docker exec "$postgres_container" \
   pg_dump \
     --username "$postgres_user" \
     --dbname "$postgres_db" \
@@ -161,7 +222,8 @@ EOF
 sh "$homeserver_dir/verify-backup.sh" "$test_root/backup" >/dev/null
 cp "$test_root/backup/manifest.sha256" "$test_root/backup/manifest.valid"
 printf 'tampered manifest entry\n' >> "$test_root/backup/manifest.sha256"
-if MESH_RESTORE_POSTGRES_PASSWORD="$postgres_password" \
+if MESH_RESTORE_DRILL_RUNTIME_ROOT="$restore_runtime" \
+  MESH_RESTORE_POSTGRES_PASSWORD="$postgres_password" \
   sh "$homeserver_dir/restore-drill.sh" "$test_root/backup" \
   > "$test_root/tampered-restore.log" 2>&1
 then
@@ -175,8 +237,9 @@ fi
 mv "$test_root/backup/manifest.valid" "$test_root/backup/manifest.sha256"
 MESH_RESTORE_RUNTIME_UID=991 \
 MESH_RESTORE_RUNTIME_GID=991 \
+MESH_RESTORE_DRILL_RUNTIME_ROOT="$restore_runtime" \
 MESH_RESTORE_POSTGRES_PASSWORD="$postgres_password" \
   sh "$homeserver_dir/restore-drill.sh" "$test_root/backup"
-test -s "$homeserver_dir/runtime/status/restore-drill-status.json"
+test -s "$restore_runtime/status/restore-drill-status.json"
 
-echo "Disposable PostgreSQL and Synapse restore integration test passed."
+echo "Disposable PostgreSQL and Synapse restore integration test passed (iteration $iteration)."

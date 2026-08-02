@@ -30,3 +30,6 @@ export function useMediaQuery(query: string): boolean {
 
 /** The breakpoint below which room navigation collapses into a drawer. */
 export const COMPACT_VIEWPORT_QUERY = '(max-width: 799px)'
+
+/** The breakpoint below which room context is presented as a modal drawer. */
+export const ROOM_CONTEXT_COMPACT_QUERY = '(max-width: 1100px)'

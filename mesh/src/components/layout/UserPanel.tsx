@@ -9,21 +9,30 @@ import { useShellStore } from '../../store/shell'
 import { Modal, setNextModalRestoreFocusTarget } from '../ui/Modal'
 import { useActiveCommunity } from '../../store/communities'
 import { useChannelStore } from '../../store/channels'
+import { useDmStore } from '../../store/dms'
 import { isBackupReminderDue, useSettingsStore } from '../../store/settings'
 import { Spinner } from '../ui/Spinner'
 import { ModalLoadingFallback } from '../ui/ModalLoadingFallback'
 
 const DiagnosticsPanel = lazy(() =>
-  import('../settings/DiagnosticsPanel').then((module) => ({ default: module.DiagnosticsPanel })),
+  import('../settings/DiagnosticsPanel').then((module) => ({
+    default: module.DiagnosticsPanel,
+  })),
 )
 const UserSettingsPanel = lazy(() =>
-  import('../settings/UserSettingsPanel').then((module) => ({ default: module.UserSettingsPanel })),
+  import('../settings/UserSettingsPanel').then((module) => ({
+    default: module.UserSettingsPanel,
+  })),
 )
 const SecurityDevicesPanel = lazy(() =>
-  import('../settings/SecurityDevicesPanel').then((module) => ({ default: module.SecurityDevicesPanel })),
+  import('../settings/SecurityDevicesPanel').then((module) => ({
+    default: module.SecurityDevicesPanel,
+  })),
 )
 const LegacyMigrationPanel = lazy(() =>
-  import('../community/LegacyMigrationPanel').then((module) => ({ default: module.LegacyMigrationPanel })),
+  import('../community/LegacyMigrationPanel').then((module) => ({
+    default: module.LegacyMigrationPanel,
+  })),
 )
 
 export function UserPanel() {
@@ -36,10 +45,24 @@ export function UserPanel() {
   const setShowSettings = useShellStore((state) => state.setProfileOpen)
   const showSecurity = useShellStore((state) => state.securityOpen)
   const setShowSecurity = useShellStore((state) => state.setSecurityOpen)
-  const [showDiagnostics, setShowDiagnostics] = useState(false)
+  const showDiagnostics = useShellStore((state) => state.diagnosticsOpen)
+  const setShowDiagnostics = useShellStore((state) => state.setDiagnosticsOpen)
   const [showImport, setShowImport] = useState(false)
   const activeCommunity = useActiveCommunity()
   const channels = useChannelStore((state) => state.channels)
+  const activeChannelId = useChannelStore((state) => state.activeChannelId)
+  const activeChannelName = useChannelStore((state) =>
+    state.activeChannelId ? state.channelEntities[state.activeChannelId]?.name : undefined,
+  )
+  const isDmMode = useDmStore((state) => state.isDmMode)
+  const activeConversationId = useDmStore((state) => state.activeConversationId)
+  const activeConversationName = useDmStore((state) =>
+    state.activeConversationId
+      ? state.conversationEntities[state.activeConversationId]?.peerDisplayName
+      : undefined,
+  )
+  const activePrivacyRoomId = isDmMode ? activeConversationId : activeChannelId
+  const activePrivacyRoomName = isDmMode ? activeConversationName : activeChannelName
   const backupReminderDue = useSettingsStore((state) => isBackupReminderDue(state.backup))
   const settingsTriggerRef = useRef<HTMLButtonElement | null>(null)
 
@@ -77,7 +100,12 @@ export function UserPanel() {
           onClick={openSettings}
           aria-label={`User settings for ${identity.displayName}`}
         >
-          <Avatar color={identity.avatarColor} size={32} name={identity.displayName} />
+          <Avatar
+            color={identity.avatarColor}
+            size={32}
+            name={identity.displayName}
+            imageUrl={identity.avatarUrl}
+          />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium leading-tight text-primary">
               {identity.displayName}
@@ -90,19 +118,19 @@ export function UserPanel() {
         </button>
       </div>
 
-      <DialogErrorBoundary
-        open={showSettings}
-        onClose={closeSettings}
-        title="User Settings"
-      >
+      <DialogErrorBoundary open={showSettings} onClose={closeSettings} title="User Settings">
         {showSettings && (
-          <Suspense fallback={<ModalLoadingFallback title="User Settings" label="Loading settings" />}>
+          <Suspense
+            fallback={<ModalLoadingFallback title="User Settings" label="Loading settings" />}
+          >
             <UserSettingsPanel
               open
               onClose={closeSettings}
               identity={identity}
               matrixAccountId={matrixAccountId}
               matrixMode={matrixMode}
+              activeConversationId={activePrivacyRoomId}
+              activeConversationName={activePrivacyRoomName ?? null}
               onUpdateDisplayName={async (displayName) => {
                 const profile = await bridge.matrixUpdateProfileDisplayName(displayName)
                 setIdentity(matrixProfileIdentity(profile))
@@ -128,7 +156,11 @@ export function UserPanel() {
         title="Security & Devices"
       >
         {showSecurity && (
-          <Suspense fallback={<ModalLoadingFallback title="Security & Devices" label="Loading security settings" />}>
+          <Suspense
+            fallback={
+              <ModalLoadingFallback title="Security & Devices" label="Loading security settings" />
+            }
+          >
             <SecurityDevicesPanel open onClose={() => setShowSecurity(false)} />
           </Suspense>
         )}
@@ -139,7 +171,11 @@ export function UserPanel() {
         title="System diagnostics"
       >
         {showDiagnostics && (
-          <Suspense fallback={<ModalLoadingFallback title="System diagnostics" label="Loading diagnostics" />}>
+          <Suspense
+            fallback={
+              <ModalLoadingFallback title="System diagnostics" label="Loading diagnostics" />
+            }
+          >
             <DiagnosticsPanel
               open
               onClose={() => setShowDiagnostics(false)}
@@ -155,7 +191,18 @@ export function UserPanel() {
       >
         {showImport && (
           <Modal open onClose={() => setShowImport(false)} title="Import older Mesh data">
-            <Suspense fallback={<div role="status" aria-label="Loading import tools" className="flex min-h-32 flex-col items-center justify-center gap-3 text-sm text-content-muted"><Spinner /><span>Loading import tools…</span></div>}>
+            <Suspense
+              fallback={
+                <div
+                  role="status"
+                  aria-label="Loading import tools"
+                  className="flex min-h-32 flex-col items-center justify-center gap-3 text-sm text-content-muted"
+                >
+                  <Spinner />
+                  <span>Loading import tools…</span>
+                </div>
+              }
+            >
               {activeCommunity ? (
                 <LegacyMigrationPanel
                   communityId={activeCommunity.id}

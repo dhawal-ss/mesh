@@ -3,7 +3,10 @@ param(
     [switch]$Production,
     [switch]$Online,
     [string]$EnvironmentFile,
-    [string]$WellKnownFile
+    [string]$WellKnownFile,
+    [string]$AcceptanceEvidenceFile,
+    [string]$EvidenceRoot,
+    [switch]$RequireLiveAcceptance
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,12 +15,27 @@ $repoRoot = Split-Path -Parent $scriptRoot
 $infraRoot = Join-Path $repoRoot "infra\matrixrtc"
 $composePath = Join-Path $infraRoot "docker-compose.yml"
 $nginxPath = Join-Path $infraRoot "nginx.example.conf"
+$runbookPath = Join-Path $infraRoot "RUNBOOK.rst"
+$acceptanceTemplatePath = Join-Path $infraRoot "acceptance-matrix.example.json"
+$evidenceModulePath = Join-Path $infraRoot "MatrixRtcEvidence.psm1"
+$packagePath = Join-Path $repoRoot "package.json"
+$viteConfigPath = Join-Path $repoRoot "vite.config.ts"
+$voiceHookPath = Join-Path $repoRoot "src\hooks\useVoiceEngine.ts"
+$disabledVoicePath = Join-Path $repoRoot "src\lib\livekit-voice.disabled.ts"
+$betaContractPath = Join-Path $repoRoot "release\beta-contract.json"
+$sourceRoot = Split-Path -Parent $repoRoot
+Import-Module $evidenceModulePath -Force
 
 if (-not $EnvironmentFile) {
     $EnvironmentFile = Join-Path $infraRoot ".env.example"
 }
 if (-not $WellKnownFile) {
     $WellKnownFile = Join-Path $infraRoot "well-known.matrix-client.example.json"
+}
+if (-not $AcceptanceEvidenceFile) {
+    $AcceptanceEvidenceFile = $acceptanceTemplatePath
+} elseif (-not [IO.Path]::IsPathRooted($AcceptanceEvidenceFile)) {
+    $AcceptanceEvidenceFile = Join-Path $repoRoot $AcceptanceEvidenceFile
 }
 
 $failures = [System.Collections.Generic.List[string]]::new()
@@ -89,7 +107,20 @@ function Test-MatrixServerName([string]$Value) {
     return -not $portMatch.Success -or [int]$portMatch.Groups[1].Value -le 65535
 }
 
-foreach ($path in @($composePath, $nginxPath, $EnvironmentFile, $WellKnownFile)) {
+foreach ($path in @(
+    $composePath,
+    $nginxPath,
+    $runbookPath,
+    $evidenceModulePath,
+    $packagePath,
+    $viteConfigPath,
+    $voiceHookPath,
+    $disabledVoicePath,
+    $betaContractPath,
+    $EnvironmentFile,
+    $WellKnownFile,
+    $AcceptanceEvidenceFile
+)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         Add-Failure "Required file does not exist: $path"
     }
@@ -135,6 +166,20 @@ if (Test-Path -LiteralPath $composePath) {
     if ($compose -notmatch [regex]::Escape('${MATRIXRTC_TURN_TLS_BIND:-127.0.0.1}:5349:5349/tcp')) {
         Add-Failure "The plaintext hop behind the TURN/TLS terminator must default to loopback."
     }
+    foreach ($requiredMediaPort in @(
+        '"7881:7881/tcp"',
+        '"3478:3478/udp"',
+        '"50000-50100:50000-50100/udp"'
+    )) {
+        if ($compose -notmatch [regex]::Escape($requiredMediaPort)) {
+            Add-Failure "MatrixRTC Compose is missing required bounded media port $requiredMediaPort."
+        }
+    }
+    if ($compose -notmatch "(?ms)turn:\s*\r?\n\s+enabled:\s*true" -or
+        $compose -notmatch "external_tls:\s*true" -or
+        $compose -notmatch 'domain:\s+\$\{LIVEKIT_TURN_DOMAIN:\?') {
+        Add-Failure "LiveKit must retain explicit UDP TURN and externally terminated TURN/TLS configuration."
+    }
     if ([regex]::Matches($compose, "(?ms)cap_drop:\s*\r?\n\s+- ALL").Count -lt 2 -or
         [regex]::Matches($compose, "no-new-privileges:true").Count -lt 2) {
         Add-Failure "Both MatrixRTC containers must drop Linux capabilities and forbid privilege escalation."
@@ -148,6 +193,40 @@ if (Test-Path -LiteralPath $composePath) {
     }
     if ($failures.Count -eq $composeFailureCount) {
         Add-Pass "Pinned images and fail-closed Compose policy are present."
+    }
+}
+
+if ((Test-Path -LiteralPath $packagePath) -and
+    (Test-Path -LiteralPath $viteConfigPath) -and
+    (Test-Path -LiteralPath $voiceHookPath) -and
+    (Test-Path -LiteralPath $disabledVoicePath) -and
+    (Test-Path -LiteralPath $betaContractPath)) {
+    $buildFailureCount = $failures.Count
+    $package = Get-Content -LiteralPath $packagePath -Raw | ConvertFrom-Json
+    $viteConfig = Get-Content -LiteralPath $viteConfigPath -Raw
+    $voiceHook = Get-Content -LiteralPath $voiceHookPath -Raw
+    $disabledVoice = Get-Content -LiteralPath $disabledVoicePath -Raw
+    $betaContract = Get-Content -LiteralPath $betaContractPath -Raw | ConvertFrom-Json
+    if ([string]$package.scripts.'build:matrix' -notmatch '--mode matrix(?:\s|$)') {
+        Add-Failure "The public Matrix build must retain its text/community-only mode."
+    }
+    if ([string]$package.scripts.'build:matrix-voice' -notmatch '--mode matrix-voice(?:\s|$)') {
+        Add-Failure "Physical MatrixRTC acceptance needs the separately named matrix-voice build."
+    }
+    if ($viteConfig -notmatch '__MESH_MATRIX_VOICE_FRONTEND__' -or
+        $viteConfig -notmatch 'livekit-voice\.disabled\.ts') {
+        Add-Failure "Vite must exclude the LiveKit implementation from builds that have not passed physical acceptance."
+    }
+    if ($voiceHook -notmatch 'Calling is not included in this text beta build' -or
+        $disabledVoice -notmatch 'Calling is not included in this Mesh build') {
+        Add-Failure "The renderer must fail closed when the Matrix media implementation is absent."
+    }
+    if (@($betaContract.candidate.excludedCapabilities) -notcontains 'matrix-voice' -or
+        [bool]$betaContract.claims.voiceReady) {
+        Add-Failure "The beta contract must keep Matrix voice excluded until live acceptance passes."
+    }
+    if ($failures.Count -eq $buildFailureCount) {
+        Add-Pass "Text beta and physical MatrixRTC acceptance builds are mechanically separated."
     }
 }
 
@@ -178,6 +257,52 @@ if (Test-Path -LiteralPath $nginxPath) {
     if ($failures.Count -eq $nginxFailureCount) {
         Add-Pass "Reverse-proxy routes include bounded auth traffic and WebSocket signalling."
     }
+}
+
+if (Test-Path -LiteralPath $runbookPath) {
+    $runbookFailureCount = $failures.Count
+    $runbook = Get-Content -LiteralPath $runbookPath -Raw
+    foreach ($requiredRunbookText in @(
+        "LIVEKIT_API_KEY",
+        "LIVEKIT_API_SECRET",
+        "--force-recreate",
+        "matrixrtc-preflight.ps1",
+        "operator-smoke.ps1",
+        "MESH_RTC_ENABLED=0",
+        "no uptime",
+        "SLA",
+        "3478",
+        "5349",
+        "50000-50100",
+        "Resolve-DnsName",
+        "Test-NetConnection",
+        "caseId",
+        "mediaE2eeActive",
+        "mediaE2eeFailureClosed"
+    )) {
+        if ($runbook -notmatch [regex]::Escape($requiredRunbookText)) {
+            Add-Failure "MatrixRTC runbook is missing required procedure text: $requiredRunbookText"
+        }
+    }
+    if ($failures.Count -eq $runbookFailureCount) {
+        Add-Pass "MatrixRTC restart, secret-rotation, rollback, and fail-closed runbook is present."
+    }
+}
+
+$evidenceValidation = Test-MatrixRtcAcceptanceEvidence `
+    -Path $AcceptanceEvidenceFile `
+    -EvidenceRoot $EvidenceRoot `
+    -SourceRoot $sourceRoot `
+    -TrackedTemplatePath $acceptanceTemplatePath `
+    -RequireComplete:$RequireLiveAcceptance
+foreach ($message in $evidenceValidation.Passes) {
+    Add-Pass $message
+}
+foreach ($message in $evidenceValidation.Failures) {
+    Add-Failure $message
+}
+if ($RequireLiveAcceptance -and (-not $Production -or -not $Online)) {
+    Add-Failure "-RequireLiveAcceptance requires both -Production and -Online."
 }
 
 $environment = Get-EnvironmentMap $EnvironmentFile
@@ -408,6 +533,31 @@ if ($Online -and $failures.Count -eq 0) {
         Add-Failure "Public Matrix discovery failed: $($_.Exception.Message)"
     }
 
+    try {
+        $turnDomain = $environment["LIVEKIT_TURN_DOMAIN"]
+        $turnAddresses = [System.Net.Dns]::GetHostAddresses($turnDomain)
+        if ($turnAddresses.Count -lt 1) {
+            throw "hostname resolved without an address"
+        }
+        Add-Pass "TURN/TLS hostname resolves through trusted DNS."
+
+        $turnTcp = [System.Net.Sockets.TcpClient]::new()
+        $connectTask = $turnTcp.ConnectAsync($turnDomain, 5349)
+        if (-not $connectTask.Wait([TimeSpan]::FromSeconds(10))) {
+            throw "TCP 5349 connection timed out"
+        }
+        $turnTls = [System.Net.Security.SslStream]::new(
+            $turnTcp.GetStream(),
+            $false
+        )
+        $turnTls.AuthenticateAsClient($turnDomain)
+        Add-Pass "TURN/TLS listener presented a trusted certificate for the configured hostname."
+        $turnTls.Dispose()
+        $turnTcp.Dispose()
+    } catch {
+        Add-Failure "TURN/TLS DNS, TCP 5349, or trusted-certificate probe failed: $($_.Exception.Message)"
+    }
+
     $warnings.Add(
         "Online preflight does not prove OpenID token exchange, authorization-to-SFU API credentials, media reachability, or TURN. Run the real two-party/federated call and TURN acceptance gates."
     )
@@ -436,5 +586,5 @@ if ($Production -and $Online) {
 } elseif ($Production) {
     Write-Host "MatrixRTC single-node operator configuration passed offline beta preflight. Run again with -Online after deployment; resilience is not certified." -ForegroundColor Green
 } else {
-    Write-Host "MatrixRTC tracked templates passed offline preflight. This does not authorize production deployment." -ForegroundColor Green
+    Write-Host "MatrixRTC configuration validated; no live evidence collected. This does not authorize production deployment." -ForegroundColor Green
 }

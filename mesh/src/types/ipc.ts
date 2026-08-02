@@ -25,6 +25,10 @@ export type {
   BackendStatus,
   ChannelDto,
   CommunityDto,
+  CommunityPermissionAggregate,
+  CommunityPermissionAggregateStatus,
+  CommunityPermissionId,
+  CommunityPermissionProjection,
   CommunityModerationResult,
   CustomEmoji,
   DirectMessageDto,
@@ -34,6 +38,8 @@ export type {
   ModerationAuditEntry,
   ModerationRoomOutcome,
   MatrixNotification,
+  MatrixPermissionRoomStatus,
+  MatrixPermissionStateChanged,
   MatrixCommunityAdmission,
   MatrixPersonalDataExport,
   PendingInvitationMetadata,
@@ -43,6 +49,12 @@ export type {
   MatrixRoomUpgrade,
   MatrixRoomPins,
   MatrixRoomPinsUpdate,
+  MatrixRecoveryHealth,
+  MatrixRecoverySecureStorageState,
+  MatrixRecoverySetupResult,
+  MatrixRecoveryVerificationState,
+  MatrixRoomPermissionProjection,
+  MatrixRoomPowerLevelProjection,
   MatrixUnreadUpdate,
   NetworkStatusDto,
   NotificationPresentationContext,
@@ -59,7 +71,11 @@ export interface Identity extends IdentityDto {
   avatarUrl?: string | null
 }
 
-export type Community = CommunityDto
+export interface Community extends CommunityDto {
+  /** Optional renderer enrichment for services that expose community artwork. */
+  iconUrl?: string | null
+  bannerUrl?: string | null
+}
 
 export type ServerEmoji = CustomEmoji
 
@@ -96,7 +112,10 @@ export interface Channel extends ChannelDto {
   unreadMentions?: number
 }
 
-export type Message = MessageDto
+export interface Message extends MessageDto {
+  /** Development-only artwork used by the authenticated design preview. */
+  designPreviewImageUrl?: string | null
+}
 export type Attachment = AttachmentDto
 export type AttachmentThumbnail = AttachmentThumbnailDto
 
@@ -154,7 +173,8 @@ export interface MatrixTransferProgress {
   error?: string | null
 }
 
-export type VoiceConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'degraded' | 'disconnected'
+export type VoiceConnectionState =
+  'idle' | 'connecting' | 'connected' | 'reconnecting' | 'degraded' | 'disconnected'
 export type VoiceTopology = 'mesh' | 'relay-election'
 
 export interface VoiceRelayElection {
@@ -243,7 +263,7 @@ export interface VoiceSignalPayload {
 }
 
 export interface Peer extends PeerDto {
-  stream?: MediaStream       // Local frontend reference to active WebRTC stream
+  stream?: MediaStream // Local frontend reference to active WebRTC stream
   cameraStream?: MediaStream
   screenShareStream?: MediaStream
   screenShareAudioStream?: MediaStream
@@ -284,7 +304,9 @@ export interface BanEvent {
   bannedPublicKey: string
 }
 
-export type DmConversation = DmConversationDto
+export interface DmConversation extends DmConversationDto {
+  unreadMentions?: number
+}
 export type DirectMessage = Omit<DirectMessageDto, 'attachments' | 'reactions'> & {
   // Rust defaults omitted collections when accepting optimistic/local records.
   attachments?: Attachment[]
@@ -292,12 +314,7 @@ export type DirectMessage = Omit<DirectMessageDto, 'attachments' | 'reactions'> 
 }
 
 export type LegacyRecordKind =
-  | 'community'
-  | 'channel'
-  | 'membership'
-  | 'message'
-  | 'control_event'
-  | 'file'
+  'community' | 'channel' | 'membership' | 'message' | 'control_event' | 'file'
 
 export interface LegacyChannelSummary {
   id: string

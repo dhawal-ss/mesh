@@ -31,6 +31,7 @@ import type { RoomTrustSnapshot } from '../../hooks/useRoomTrust'
 import type { RoomContextTab } from '../community/RoomContextPanel'
 import { RoomTrustSummary } from './RoomTrustSummary'
 import { EmptyState } from '../ui/Primitives'
+import { useRoomPinStore } from '../../store/room-pins'
 
 interface ChatViewProps {
   channel: Channel
@@ -64,6 +65,10 @@ export function ChatView({
   onOpenContext,
 }: ChatViewProps) {
   const channelMessages = useMessageStore((state) => state.messages[channel.id] ?? EMPTY_MESSAGES)
+  const pinnedMessages = useRoomPinStore((state) => (
+    state.roomId === channel.id ? state.messages : EMPTY_MESSAGES
+  ))
+  const pinnedMessage = pinnedMessages[0] ?? null
   const replaceMessages = useMessageStore((state) => state.replaceMessages)
   const prependMessages = useMessageStore((state) => state.prependMessages)
   const addMessage = useMessageStore((state) => state.addMessage)
@@ -83,11 +88,22 @@ export function ChatView({
   const communityName = useCommunityStore(
     (state) => state.communityEntities[channel.communityId]?.name,
   )
+  const studioVoiceRoom = useChannelStore((state) =>
+    state.channels.find(
+      (candidate) =>
+        candidate.communityId === channel.communityId &&
+        candidate.channelType === 'voice' &&
+        candidate.name.toLocaleLowerCase() === 'studio',
+    ) ?? state.channels.find(
+      (candidate) =>
+        candidate.communityId === channel.communityId && candidate.channelType === 'voice',
+    ),
+  )
   const setCommunities = useCommunityStore((state) => state.setCommunities)
   const setActiveCommunity = useCommunityStore((state) => state.setActiveCommunity)
   const communityMembers = useCommunityMembers(channel.communityId)
   const patchChannel = useChannelStore((state) => state.patchChannel)
-  const setChannels = useChannelStore((state) => state.setChannels)
+  const replaceCommunityChannels = useChannelStore((state) => state.replaceCommunityChannels)
   const setActiveChannel = useChannelStore((state) => state.setActiveChannel)
   const navigationRequest = useMessageNavigationStore((state) => (
     state.pending?.message.channelId === channel.id ? state.pending : null
@@ -101,7 +117,13 @@ export function ChatView({
   const scrollSeenRequestRef = useRef<Promise<void> | null>(null)
   const windowLoadRef = useRef<Promise<void>>(Promise.resolve())
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadedChannelId, setLoadedChannelId] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<{
+    channelId: string
+    error: unknown
+  } | null>(null)
+  const [markReadErrors, setMarkReadErrors] = useState<Record<string, unknown>>({})
   const [showNewMessages, setShowNewMessages] = useState(false)
   const [replyingTo, setReplyingTo] = useState<MessageType | null>(null)
   const [threadReplyRoot, setThreadReplyRoot] = useState<MessageType | null>(null)
@@ -122,7 +144,11 @@ export function ChatView({
     upgrade: MatrixRoomUpgrade | null
   }>({ roomId: '', checked: !matrixMode, upgrade: null })
   const [isFollowingRoomUpgrade, setIsFollowingRoomUpgrade] = useState(false)
-  const [roomUpgradeError, setRoomUpgradeError] = useState<string | null>(null)
+  const [roomUpgradeError, setRoomUpgradeError] = useState<{
+    roomId: string
+    message: string
+  } | null>(null)
+  const [roomUpgradeAttempt, setRoomUpgradeAttempt] = useState(0)
   const previousChannelIdRef = useRef(channel.id)
   const legacyPublicKey = useIdentityStore((state) => state.identity?.publicKey)
   const ownAuthorId = matrixMode
@@ -142,6 +168,15 @@ export function ChatView({
   const activeUnreadBoundary = unreadBoundary?.channelId === channel.id
     ? unreadBoundary
     : null
+  const activeLoadError = loadError?.channelId === channel.id ? loadError.error : null
+  const activeMarkReadError = Object.prototype.hasOwnProperty.call(markReadErrors, channel.id)
+  const activeRoomUpgradeError = roomUpgradeState.roomId === channel.id
+    && roomUpgradeState.checked
+    && roomUpgradeError?.roomId === channel.id
+      ? roomUpgradeError.message
+      : null
+  const awaitingFirstLoad = loadedChannelId !== channel.id && activeLoadError == null
+  const sendingProtectionUnavailable = matrixMode && trust?.protection !== 'protected'
 
   const beginThreadReply = useCallback((root: MessageType, target: MessageType = root) => {
     setOpenThreadId(root.id)
@@ -282,8 +317,19 @@ export function ChatView({
   )
 
   const markChannelSeen = useCallback(async () => {
-    await bridge.markChannelRead(channel.id)
-    patchChannel(channel.id, { unreadCount: 0 })
+    try {
+      await bridge.markChannelRead(channel.id)
+      patchChannel(channel.id, { unreadCount: 0 })
+      setMarkReadErrors((current) => {
+        if (!Object.prototype.hasOwnProperty.call(current, channel.id)) return current
+        const next = { ...current }
+        delete next[channel.id]
+        return next
+      })
+    } catch (error) {
+      setMarkReadErrors((current) => ({ ...current, [channel.id]: error }))
+      throw error
+    }
   }, [channel.id, patchChannel])
 
   const markChannelSeenFromScroll = useCallback(() => {
@@ -361,7 +407,7 @@ export function ChatView({
     }
 
     if (generation === loadGenerationRef.current) {
-      await markChannelSeen()
+      await markChannelSeen().catch(() => {})
     }
   }, [
     channel.id,
@@ -372,6 +418,23 @@ export function ChatView({
     replaceMessages,
     scrollToBottom,
   ])
+
+  const loadLatestMessages = useCallback(async () => {
+    setIsLoading(true)
+    setLoadError((current) => current?.channelId === channel.id ? null : current)
+    const pendingLoad = resetToLatestWindow()
+    windowLoadRef.current = pendingLoad
+    const generation = loadGenerationRef.current
+    try {
+      await pendingLoad
+      if (generation === loadGenerationRef.current) setLoadedChannelId(channel.id)
+    } catch (error) {
+      if (generation === loadGenerationRef.current) setLoadError({ channelId: channel.id, error })
+      throw error
+    } finally {
+      if (generation === loadGenerationRef.current) setIsLoading(false)
+    }
+  }, [channel.id, resetToLatestWindow])
 
   // Read room-upgrade state before loading a Matrix room.
   useEffect(() => {
@@ -386,48 +449,33 @@ export function ChatView({
         if (!active) return
         const channelUpgrade = channelResult.status === 'fulfilled' ? channelResult.value : null
         const communityUpgrade = communityResult.status === 'fulfilled' ? communityResult.value : null
-        setRoomUpgradeError(null)
+        const failed = [channelResult, communityResult].some((result) => result.status === 'rejected')
+        setRoomUpgradeError(failed ? {
+          roomId: channel.id,
+          message: 'Room upgrade information could not be refreshed. Retry by reopening this room.',
+        } : null)
         setRoomUpgradeState({
           roomId: channel.id,
           checked: true,
           upgrade: communityUpgrade?.replacementRoomId ? communityUpgrade : channelUpgrade,
         })
       })
-      .catch((error) => {
-        if (!active) return
-        console.error('Failed to read Matrix room upgrade state:', error)
-        setRoomUpgradeError(null)
-        setRoomUpgradeState({ roomId: channel.id, checked: true, upgrade: null })
-      })
 
     return () => { active = false }
-  }, [channel.communityId, channel.id, matrixMode])
+  }, [channel.communityId, channel.id, matrixMode, roomUpgradeAttempt])
 
   // Load messages on channel switch
   useEffect(() => {
     if (!roomUpgradeReady || roomUpgrade) {
       return
     }
-    const loadMessages = async () => {
-      setIsLoading(true)
-      const pendingLoad = resetToLatestWindow()
-      windowLoadRef.current = pendingLoad
-      const generation = loadGenerationRef.current
-      try {
-        await pendingLoad
-      } catch (err) {
-        console.error('Failed to load messages:', err)
-      } finally {
-        if (generation === loadGenerationRef.current) {
-          setIsLoading(false)
-        }
-      }
-    }
-    void loadMessages()
+    void Promise.resolve().then(() => loadLatestMessages()).catch((error) => {
+      console.error('Failed to load messages:', error)
+    })
     return () => {
       loadGenerationRef.current += 1
     }
-  }, [resetToLatestWindow, roomUpgrade, roomUpgradeReady])
+  }, [loadLatestMessages, roomUpgrade, roomUpgradeReady])
 
   // Search can target another channel or a message outside the bounded hot
   // window. Wait for the channel-switch load first, then merge older context
@@ -523,14 +571,16 @@ export function ChatView({
     let active = true
     const refresh = async () => {
       if (hydratingLatestRef.current) return
+      const generation = loadGenerationRef.current
       try {
         const existing = useMessageStore.getState().messages[channel.id] ?? []
         const existingIds = new Set(existing.map((message) => message.id))
         const latest = await bridge.getMessages(channel.id, 50)
-        if (!active) return
+        if (!active || generation !== loadGenerationRef.current) return
 
         const hasNewMessage = latest.some((message) => !existingIds.has(message.id))
         replaceMessages(channel.id, latest)
+        setLoadError((current) => current?.channelId === channel.id ? null : current)
         if (hasNewMessage) {
           if (getIsAtBottom()) {
             requestAnimationFrame(scrollToBottom)
@@ -539,6 +589,8 @@ export function ChatView({
           }
         }
       } catch (error) {
+        if (!active || generation !== loadGenerationRef.current) return
+        setLoadError({ channelId: channel.id, error })
         console.error('Failed to refresh Matrix timeline:', error)
       }
     }
@@ -758,7 +810,7 @@ export function ChatView({
   /**
    * Announce genuinely new messages, once each. Driven off the tail of the
    * timeline rather than off DOM insertion, so virtualization and history
-   * pagination never trigger it. Own messages are skipped — the sender already
+   * pagination never trigger it. Own messages are skipped: the sender already
    * knows what they sent.
    */
   /*
@@ -1105,11 +1157,10 @@ export function ChatView({
           ...currentCommunities.filter((candidate) => candidate.id !== channel.communityId),
           replacementCommunity,
         ])
-        const currentChannels = useChannelStore.getState().channels
-        setChannels([
-          ...currentChannels.filter((candidate) => candidate.communityId !== channel.communityId),
-          ...replacementChannels,
-        ])
+        if (replacementCommunity.id !== channel.communityId) {
+          replaceCommunityChannels(channel.communityId, [])
+        }
+        replaceCommunityChannels(replacementCommunity.id, replacementChannels)
         setActiveCommunity(replacementCommunity.id)
         setActiveChannel(replacementChannels[0]?.id ?? null)
         return
@@ -1118,11 +1169,7 @@ export function ChatView({
       await bridge.matrixJoinRoom(replacementRoomId)
       await bridge.matrixSyncOnce()
       const replacementChannels = await bridge.getChannels(channel.communityId)
-      const currentChannels = useChannelStore.getState().channels
-      setChannels([
-        ...currentChannels.filter((candidate) => candidate.communityId !== channel.communityId),
-        ...replacementChannels,
-      ])
+      replaceCommunityChannels(channel.communityId, replacementChannels)
       const replacement = replacementChannels.find((candidate) => candidate.id === replacementRoomId)
       if (!replacement) {
         throw new Error('The new room is not available in this community yet.')
@@ -1130,38 +1177,42 @@ export function ChatView({
       setActiveChannel(replacement.id)
     } catch (error) {
       console.error('Failed to open the replacement Matrix room:', error)
-      setRoomUpgradeError('The new room could not be opened yet. Try again in a moment.')
+      setRoomUpgradeError({
+        roomId: channel.id,
+        message: 'The new room could not be opened yet. Try again in a moment.',
+      })
     } finally {
       setIsFollowingRoomUpgrade(false)
     }
   }, [
     channel.communityId,
+    channel.id,
     isFollowingRoomUpgrade,
     roomUpgrade,
     roomUpgradeIsCommunity,
     setActiveCommunity,
     setActiveChannel,
     setCommunities,
-    setChannels,
+    replaceCommunityChannels,
   ])
 
   return (
-    <div className="flex h-full flex-1 flex-col">
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <div
-        className="mesh-conversation-header flex flex-shrink-0 items-center justify-between gap-4 border-b border-border-subtle px-4 py-2"
+        className="mesh-conversation-header flex min-h-16 min-w-0 flex-shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-3 py-2.5 sm:gap-4 sm:px-4"
         data-tauri-drag-region
       >
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-baseline gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <span className="flex min-w-0 items-center gap-1.5">
               <Icon name="hash" size="sm" className="flex-shrink-0 text-muted" />
-              <span className="truncate text-sm font-semibold text-primary">{channel.name}</span>
+              <span className="truncate text-lg font-semibold tracking-tight text-primary">{channel.name}</span>
             </span>
-            <span className="hidden truncate text-caption text-muted sm:block">
+          </div>
+          <div className="mt-0.5 hidden truncate text-caption text-muted sm:block">
               {channel.name.toLocaleLowerCase() === 'general'
                 ? `Anything and everything ${communityName ?? 'Mesh'}`
-                : `Conversation in ${communityName ?? 'this community'}`}
-            </span>
+                : `Share work, swap feedback, and stay close in ${communityName ?? 'this community'}.`}
           </div>
           {matrixMode && trust && onOpenContext && (
             <div className="mt-1">
@@ -1170,29 +1221,88 @@ export function ChatView({
           )}
         </div>
 
-        <div className="flex flex-shrink-0 items-center gap-1">
-          <SearchBar onNavigateToMessage={handleNavigateToMessage} />
+        <div className="flex min-w-0 flex-shrink-0 items-center gap-1">
+          <SearchBar label="Find" onNavigateToMessage={handleNavigateToMessage} />
+
+          {matrixMode && onOpenContext && (
+            <Tooltip content="Pinned messages" side="bottom">
+              <button
+                type="button"
+                onClick={() => onOpenContext('pins')}
+                aria-label="Show pinned messages"
+                aria-pressed={Boolean(isContextOpen && activeContextTab === 'pins')}
+                className={`flex h-8 items-center gap-1.5 rounded-control px-2 text-xs font-medium transition-colors ${
+                  isContextOpen && activeContextTab === 'pins'
+                    ? 'bg-surface-selected text-primary'
+                    : 'text-muted hover:bg-surface-hover hover:text-secondary'
+                }`}
+              >
+                <Icon name="pin" size="sm" />
+                <span className="hidden xl:inline">Pins</span>
+              </button>
+            </Tooltip>
+          )}
 
           {showContextToggle && (
             <Tooltip content={isContextOpen ? 'Hide room context' : 'Show room context'} side="bottom">
               <button
                 id="mesh-room-context-toggle"
-                onClick={onToggleContext}
-                aria-label={isContextOpen ? 'Hide room context' : 'Show room context'}
+                onClick={() => {
+                  if (isContextOpen && activeContextTab === 'people') onToggleContext?.()
+                  else onOpenContext?.('people')
+                }}
+                aria-label={
+                  isContextOpen && activeContextTab === 'people'
+                    ? 'Hide room context'
+                    : 'Show room context'
+                }
                 aria-controls="mesh-room-context-panel"
                 aria-expanded={isContextOpen}
-                className={`flex h-8 w-8 items-center justify-center rounded-control transition-colors ${
-                  isContextOpen
+                className={`flex h-8 items-center justify-center gap-1.5 rounded-control px-2 text-xs font-medium transition-colors ${
+                  isContextOpen && activeContextTab === 'people'
                     ? 'bg-surface-selected text-primary'
                     : 'text-muted hover:bg-surface-hover hover:text-secondary'
                 }`}
               >
-                <Icon name={activeContextTab === 'ledger' ? 'shieldCheck' : 'panelRight'} size="sm" />
+                <Icon name="users" size="sm" />
+                <span className="hidden xl:inline">People</span>
               </button>
             </Tooltip>
           )}
+
+          {studioVoiceRoom && (
+            <button
+              type="button"
+              onClick={() => setActiveChannel(studioVoiceRoom.id)}
+              className="ml-1 hidden min-h-9 items-center gap-2 rounded-control bg-accent px-3 text-xs font-semibold text-content-on-accent transition-colors hover:bg-accent-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent md:flex"
+              aria-label={`Open voice room ${studioVoiceRoom.name}`}
+            >
+              <Icon name="volume" size="sm" />
+              Open {studioVoiceRoom.name}
+            </button>
+          )}
         </div>
       </div>
+
+      {pinnedMessage && onOpenContext && (
+        <button
+          type="button"
+          onClick={() => onOpenContext('pins')}
+          className="mx-3 mt-3 flex min-h-12 min-w-0 max-w-full flex-shrink-0 items-center gap-3 overflow-hidden rounded-control border border-border-subtle bg-surface-sunken px-3 py-2 text-left transition-colors hover:border-border-emphasis hover:bg-surface-hover sm:mx-4"
+          aria-label={`Open pinned message from ${pinnedMessage.authorDisplayName}`}
+        >
+          <Icon name="pin" size="sm" className="flex-shrink-0 text-accent" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-caption font-medium text-muted">
+              Pinned by {pinnedMessage.authorDisplayName}
+            </span>
+            <span className="block truncate text-sm text-secondary">
+              {pinnedMessage.content || 'Pinned attachment'}
+            </span>
+          </span>
+          <span className="hidden text-caption font-semibold text-accent sm:block">View pins</span>
+        </button>
+      )}
 
       {matrixMode && trust && !trust.loadingAccountTrust && trust.devicesNeedReview > 0 && (
         <button
@@ -1210,7 +1320,39 @@ export function ChatView({
         </button>
       )}
 
-      <div className="relative flex-1">
+      {activeRoomUpgradeError && !roomUpgrade && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-status-warning/20 bg-status-warning/10 px-4 py-2 text-xs text-secondary"
+        >
+          <span>{activeRoomUpgradeError}</span>
+          <button
+            type="button"
+            className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+            onClick={() => setRoomUpgradeAttempt((attempt) => attempt + 1)}
+          >
+            Retry room status
+          </button>
+        </div>
+      )}
+
+      {activeMarkReadError && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-status-warning/20 bg-status-warning/10 px-4 py-2 text-xs text-secondary"
+        >
+          <span>This room could not be marked as read.</span>
+          <button
+            type="button"
+            className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+            onClick={() => void markChannelSeen().catch(() => {})}
+          >
+            Retry read status
+          </button>
+        </div>
+      )}
+
+      <div className="relative min-h-0 min-w-0 flex-1">
         <p className="sr-only" role="status" aria-live="polite">
           {jumpAnnouncement}
         </p>
@@ -1226,7 +1368,7 @@ export function ChatView({
         <div
           ref={scrollContainerRef}
           onScroll={(event) => void handleScroll(event.currentTarget)}
-          className="flex-1 overflow-y-auto"
+          className="absolute inset-0 min-w-0 overflow-y-auto overflow-x-hidden"
           role="log"
           /*
             `role="log"` implies aria-live="polite", which is wrong here: this
@@ -1243,11 +1385,27 @@ export function ChatView({
             <RoomUpgradeSignpost
               roomName={channel.name}
               reason={roomUpgrade.reason}
-              error={roomUpgradeError}
+              error={activeRoomUpgradeError}
               isFollowing={isFollowingRoomUpgrade}
               onFollow={() => void handleFollowRoomUpgrade()}
             />
-          ) : !roomUpgradeReady || isLoading ? (
+          ) : activeLoadError != null && visibleMessages.length === 0 ? (
+            <div className="flex h-full items-center justify-center px-4">
+              <div
+                role="alert"
+                className="max-w-sm rounded-panel border border-status-warning/30 bg-status-warning/10 p-4 text-center text-sm text-secondary"
+              >
+                <p>Messages could not be loaded. This room has not been marked as read.</p>
+                <button
+                  type="button"
+                  className="mt-3 min-h-8 rounded-control px-3 font-semibold text-text-link hover:bg-surface-hover"
+                  onClick={() => void loadLatestMessages().catch(() => {})}
+                >
+                  Retry messages
+                </button>
+              </div>
+            </div>
+          ) : !roomUpgradeReady || awaitingFirstLoad || (isLoading && visibleMessages.length === 0) ? (
             <div className="space-y-1 pt-4">
               {Array.from({ length: 8 }).map((_, i) => (
                 <MessageSkeleton key={i} />
@@ -1324,6 +1482,8 @@ export function ChatView({
                     <VirtualMessageRow
                       key={item.key}
                       rowKey={item.key}
+                      position={messageIndex + 1}
+                      setSize={visibleMessages.length}
                       message={message}
                       isGrouped={shouldGroupMessage(
                         message,
@@ -1354,6 +1514,22 @@ export function ChatView({
           )}
         </div>
 
+        {activeLoadError != null && visibleMessages.length > 0 && (
+          <div
+            role="alert"
+            className="absolute inset-x-4 bottom-3 z-sticky flex flex-wrap items-center justify-between gap-2 rounded-control border border-status-warning/30 bg-surface-overlay px-3 py-2 text-xs text-secondary shadow-overlay"
+          >
+            <span>Could not refresh messages. Showing the last update.</span>
+            <button
+              type="button"
+              className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+              onClick={() => void loadLatestMessages().catch(() => {})}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
         {/* New messages banner */}
         {showNewMessages && (
           <button
@@ -1367,7 +1543,7 @@ export function ChatView({
 
       {/* Reply bar */}
       {!roomUpgradeReady || roomUpgrade ? null : replyingTo && (
-        <div className="flex items-center gap-2 border-t border-border-subtle bg-surface-sunken px-4 py-2">
+        <div className="flex min-w-0 items-center gap-2 border-t border-border-subtle bg-surface-sunken px-4 py-2">
           <Icon name="reply" size="sm" className="shrink-0 text-secondary" />
           <span className="text-sm text-secondary">
             Replying to <span className="font-medium text-primary">{replyingTo.authorDisplayName}</span>
@@ -1388,6 +1564,18 @@ export function ChatView({
 
       {!roomUpgradeReady || roomUpgrade ? null : (
         <>
+          {sendingProtectionUnavailable && (
+            <div
+              role="status"
+              className="border-t border-status-warning/30 bg-status-warning/10 px-4 py-2 text-xs text-secondary"
+            >
+              {trust?.protection === 'checking'
+                ? "Checking this room's protection before sending."
+                : trust?.protection === 'unencrypted'
+                  ? 'Sending is unavailable because this room is not protected end to end.'
+                  : "Sending is unavailable until this room's protection can be verified."}
+            </div>
+          )}
           <TypingIndicator channelId={channel.id} />
           <MessageInput
             channelId={channel.id}
@@ -1396,6 +1584,7 @@ export function ChatView({
             communityId={channel.communityId}
             members={communityMembers}
             disableAttachments={matrixMode && !bridge.getBackendCapabilities().encryptedAttachments}
+            disabled={sendingProtectionUnavailable}
             onEditLastMessage={() => {
               const ownMessage = [...channelMessages]
                 .reverse()
@@ -1463,6 +1652,8 @@ export function RoomUpgradeSignpost({
 
 interface VirtualMessageRowProps {
   rowKey: string
+  position: number
+  setSize: number
   message: MessageType
   isGrouped: boolean
   hasGap: boolean
@@ -1484,6 +1675,8 @@ interface VirtualMessageRowProps {
 
 const VirtualMessageRow = memo(function VirtualMessageRow({
   rowKey,
+  position,
+  setSize,
   message,
   isGrouped,
   hasGap,
@@ -1533,6 +1726,9 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
       ref={rowRef}
       data-message-id={message.id}
       data-jump-highlighted={isHighlighted ? 'true' : undefined}
+      role="article"
+      aria-posinset={position}
+      aria-setsize={setSize}
       aria-current={isHighlighted ? 'true' : undefined}
       tabIndex={isHighlighted ? -1 : undefined}
       className={

@@ -337,7 +337,7 @@ pub fn spawn_voice_sweeper(app_handle: AppHandle) {
                 std::sync::atomic::AtomicU32::new(0);
             let tick_count =
                 SEEDER_SWEEP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if tick_count % 60 == 0 {
+            if tick_count.is_multiple_of(60) {
                 if let Some(db) = app_handle.try_state::<Database>() {
                     match db.sweep_stale_file_seeders(15) {
                         // 15 minutes

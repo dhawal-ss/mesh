@@ -1,9 +1,9 @@
 /**
  * Integration tests for the VoiceEngine using FakeVoicePeerFactory.
  *
- * These tests drive the full VoiceEngine state machine — peer creation,
+ * These tests drive the full VoiceEngine state machine: peer creation,
  * signal handling, connection lifecycle, relay rebuilds, and disconnect
- * recovery — without requiring a real browser WebRTC stack.
+ * recovery: without requiring a real browser WebRTC stack.
  *
  * The FakeVoicePeer lets tests emit peer events (connect/stream/error/close)
  * directly to assert on the engine's response, and records every method
@@ -11,12 +11,18 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { VoiceEngine, type VoiceEngineHandlers } from './voice-engine'
-import { createFakePeerFactory, type FakeVoicePeerFactory } from './voice-peer'
+import {
+  createFakePeerFactory,
+  type FakeVoicePeer,
+  type FakeVoicePeerFactory,
+} from './voice-peer'
 import type { VoiceSessionSnapshot, VoiceMemberSnapshot } from '../types/ipc'
+
+const sendVoiceSignalMock = vi.hoisted(() => vi.fn(() => Promise.resolve()))
 
 // Mock bridge functions that the engine calls during start().
 // The integration tests bypass start() by calling initForTesting(), so
-// these mocks are defensive — they prevent accidental calls from leaking
+// these mocks are defensive: they prevent accidental calls from leaking
 // into real IPC.
 vi.mock('./bridge', () => ({
   getIdentity: vi.fn(() => Promise.resolve(null)),
@@ -24,15 +30,20 @@ vi.mock('./bridge', () => ({
   isTauriRuntime: () => false,
   joinVoice: vi.fn(() => Promise.resolve(null)),
   leaveVoice: vi.fn(() => Promise.resolve()),
-  sendVoiceSignal: vi.fn(() => Promise.resolve()),
+  sendVoiceSignal: sendVoiceSignalMock,
 }))
 
 // jsdom does not provide AudioContext. The engine's speaking-detection
 // path instantiates AudioContext when a stream arrives. Provide a minimal
 // stub that satisfies the constructor and the analyser graph the engine
-// builds — we only need the methods, not actual audio analysis.
+// builds: we only need the methods, not actual audio analysis.
 class FakeAudioContext {
-  state = 'running'
+  static instances: FakeAudioContext[] = []
+  state: AudioContextState = 'running'
+
+  constructor() {
+    FakeAudioContext.instances.push(this)
+  }
   createMediaStreamSource() {
     return { connect: () => {}, disconnect: () => {} }
   }
@@ -55,7 +66,7 @@ class FakeAudioContext {
 }
 ;(globalThis as unknown as { AudioContext: unknown }).AudioContext = FakeAudioContext
 // Also stub setInterval/clearInterval clearing for the speaking detection
-// interval — the engine uses window.setInterval which jsdom provides.
+// interval: the engine uses window.setInterval which jsdom provides.
 
 const COMMUNITY_ID = 'test-community'
 const CHANNEL_ID = 'test-channel'
@@ -100,6 +111,9 @@ describe('VoiceEngine integration (with FakeVoicePeer)', () => {
   let engine: VoiceEngine
 
   beforeEach(() => {
+    FakeAudioContext.instances = []
+    sendVoiceSignalMock.mockReset()
+    sendVoiceSignalMock.mockResolvedValue(undefined)
     factory = createFakePeerFactory()
     peerRemoveCalls = []
     peerUpsertCalls = []
@@ -191,7 +205,7 @@ describe('VoiceEngine integration (with FakeVoicePeer)', () => {
     const firstPeer = factory.latest()
     expect(firstPeer).toBeDefined()
 
-    // New epoch triggers topology reset — the engine tears down all peers
+    // New epoch triggers topology reset: the engine tears down all peers
     engine.applySessionSnapshot(snapshot([LOCAL_KEY, 'remote-1'], 2))
     expect(firstPeer!.destroyCalls).toBeGreaterThan(0)
   })
@@ -220,7 +234,7 @@ describe('VoiceEngine integration (with FakeVoicePeer)', () => {
     expect(factory.count()).toBe(2)
     const peers = [factory.createdPeers[0], factory.createdPeers[1]]
 
-    // Destroy the engine — all peers should be destroyed
+    // Destroy the engine: all peers should be destroyed
     await engine.destroy()
 
     for (const peer of peers) {
@@ -329,6 +343,28 @@ describe('VoiceEngine integration (with FakeVoicePeer)', () => {
     expect(Array.isArray(peer?.options.iceServers)).toBe(true)
   })
 
+  it('surfaces outgoing signaling failures as a connection warning', async () => {
+    const warnings: string[] = []
+    const localEngine = new VoiceEngine(
+      COMMUNITY_ID,
+      CHANNEL_ID,
+      { onConnectionWarning: (message) => warnings.push(message) },
+      factory,
+    )
+    localEngine.initForTesting(LOCAL_KEY)
+    localEngine.applySessionSnapshot(snapshot([LOCAL_KEY, 'remote-warning']))
+    sendVoiceSignalMock.mockRejectedValueOnce({
+      code: 'network_unavailable',
+      detail: 'signaling offline',
+      retryable: true,
+    })
+
+    factory.latest()?.emitSignal({ type: 'offer', sdp: 'warning-sdp' } as never)
+    await vi.waitFor(() => expect(warnings).toContain(
+      "Connection interrupted. Mesh couldn't send voice signaling data. Check your connection and try again.",
+    ))
+  })
+
   // ─── Media-path simulation ────────────────────────
   //
   // These tests simulate the full signal → connect → stream lifecycle
@@ -375,7 +411,7 @@ describe('VoiceEngine integration (with FakeVoicePeer)', () => {
     )
     expect(connectedSeen).toBe(true)
 
-    // Step 3: remote stream arrives — the engine should upsert with the stream
+    // Step 3: remote stream arrives: the engine should upsert with the stream
     const mockTrack = {
       stop: () => {},
       kind: 'audio',
@@ -404,6 +440,125 @@ describe('VoiceEngine integration (with FakeVoicePeer)', () => {
     expect(engine.getPeerKeysForTesting()).not.toContain('remote-err')
   })
 
+  it('recreates a closed AudioContext before attaching a replacement stream', () => {
+    engine.applySessionSnapshot(snapshot([LOCAL_KEY, 'remote-audio']))
+    const peer = factory.latest()
+    const firstTrack = {
+      stop: vi.fn(),
+      kind: 'audio',
+    } as unknown as MediaStreamTrack
+    const firstStream = {
+      getAudioTracks: () => [firstTrack],
+      getTracks: () => [firstTrack],
+    } as unknown as MediaStream
+    peer!.emitStream(firstStream)
+    expect(FakeAudioContext.instances).toHaveLength(1)
+
+    FakeAudioContext.instances[0].state = 'closed'
+    const replacementTrack = {
+      stop: vi.fn(),
+      kind: 'audio',
+    } as unknown as MediaStreamTrack
+    const replacementStream = {
+      getAudioTracks: () => [replacementTrack],
+      getTracks: () => [replacementTrack],
+    } as unknown as MediaStream
+    peer!.emitStream(replacementStream)
+
+    expect(FakeAudioContext.instances).toHaveLength(2)
+    expect(FakeAudioContext.instances[1].state).toBe('running')
+  })
+
+  it('uses public addTrack forwarding and stops a relay stream once on repeated disconnect', async () => {
+    vi.useFakeTimers()
+    try {
+      const relaySnapshot = snapshot([
+        LOCAL_KEY,
+        'remote-source',
+        'remote-target',
+        'remote-3',
+        'remote-4',
+        'remote-5',
+        'remote-6',
+        'remote-7',
+        'remote-8',
+      ])
+      relaySnapshot.relay = {
+        relayRequired: true,
+        relayCandidatePublicKey: LOCAL_KEY,
+      }
+      engine.applySessionSnapshot(relaySnapshot)
+      await vi.advanceTimersByTimeAsync(200)
+      const sourcePeer = engine.getPeerForTesting('remote-source')
+      const targetPeer = engine.getPeerForTesting('remote-target')
+      expect(sourcePeer).toBeDefined()
+      expect(targetPeer).toBeDefined()
+
+      const stop = vi.fn()
+      const track = { stop, kind: 'audio' } as unknown as MediaStreamTrack
+      const stream = {
+        getAudioTracks: () => [track],
+        getTracks: () => [track],
+      } as unknown as MediaStream
+      ;(sourcePeer as FakeVoicePeer).emitStream(stream)
+
+      expect((targetPeer as FakeVoicePeer).addedTracks).toContainEqual({
+        track,
+        stream,
+      })
+      expect('negotiate' in (targetPeer as object)).toBe(false)
+
+      ;(sourcePeer as FakeVoicePeer).emitError(new Error('relay source lost'))
+      ;(sourcePeer as FakeVoicePeer).emitClose()
+      expect(stop).toHaveBeenCalledTimes(1)
+    } finally {
+      await engine.destroy()
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops every retained relay track during full teardown', async () => {
+    vi.useFakeTimers()
+    try {
+      const relaySnapshot = snapshot([
+        LOCAL_KEY,
+        'remote-source',
+        'remote-target',
+        'remote-3',
+        'remote-4',
+        'remote-5',
+        'remote-6',
+        'remote-7',
+        'remote-8',
+      ])
+      relaySnapshot.relay = {
+        relayRequired: true,
+        relayCandidatePublicKey: LOCAL_KEY,
+      }
+      engine.applySessionSnapshot(relaySnapshot)
+      await vi.advanceTimersByTimeAsync(200)
+      const sourcePeer = engine.getPeerForTesting('remote-source')
+      const stopA = vi.fn()
+      const stopB = vi.fn()
+      const tracks = [
+        { stop: stopA, kind: 'audio' },
+        { stop: stopB, kind: 'audio' },
+      ] as unknown as MediaStreamTrack[]
+      const stream = {
+        getAudioTracks: () => tracks,
+        getTracks: () => tracks,
+      } as unknown as MediaStream
+      ;(sourcePeer as FakeVoicePeer).emitStream(stream)
+
+      await engine.destroy()
+
+      expect(stopA).toHaveBeenCalledOnce()
+      expect(stopB).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('stream emitted after peer close is safely ignored (no crash)', () => {
     engine.applySessionSnapshot(snapshot([LOCAL_KEY, 'remote-late']))
     const peer = factory.latest()
@@ -412,7 +567,7 @@ describe('VoiceEngine integration (with FakeVoicePeer)', () => {
     // Close the peer first
     peer!.emitClose()
 
-    // Then try to emit a stream — the fake peer's emitStream is a no-op
+    // Then try to emit a stream: the fake peer's emitStream is a no-op
     // after destroy, so this must not crash
     const mockStream = {
       getAudioTracks: () => [],

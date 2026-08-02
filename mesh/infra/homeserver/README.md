@@ -10,6 +10,13 @@ The stack contains Synapse, PostgreSQL, a bounded one-use invitation service,
 and Caddy. Public registration is never open: account creation is either
 disabled or requires an operator-issued registration token.
 
+Synapse is pinned to the reviewed multi-architecture ``v1.157.1`` image index
+digest in Compose, setup, and restore tooling. Treat every version change as an
+operator upgrade: review the upstream release notes, back up first, run the
+daemon-free configuration and admission tests, then complete two independent
+disposable federation cycles before changing a live service. Never replace the
+digest with ``latest`` or infer live safety from a successful image pull.
+
 ## Permanent identity decision
 
 Choose the Matrix server name before creating the first account. It becomes
@@ -51,9 +58,43 @@ output before relying on this example.
 `MESH_REGISTRATION_ENABLED=1` permits token-gated account creation only.
 `enable_registration_without_verification` remains false and
 `registration_requires_token` remains true. The community invitation service
-stores only an opaque invitation digest and derives a one-use Synapse
-registration token. A person who chooses another account service never sends
-that token there.
+stores only opaque invitation/proof digests. It runs as the dedicated non-admin
+`MESH_ADMISSION_SERVICE_USER_ID`; its token has only the membership and power
+that each community explicitly gives that account. Never make it a Synapse
+server administrator.
+
+The admission HTTP process does not receive the operator `.env`. Compose passes
+an explicit allowlist and maps `MESH_ADMISSION_DB_PASSWORD` to a separate
+`mesh_admission` database login. `provision-admission-database.sh` owns schema
+migrations through the no-login `mesh_admission_owner` role, grants the runtime
+identity DML only on `mesh_admission_invitations` and
+`mesh_admission_openid_proofs`, then proves that it cannot read Synapse's
+`public.users` table or create schema objects. PostgreSQL, Synapse, admission,
+and Caddy use separate internal database/control networks; the admission
+container has no general internet-egress network. A future POST-capable
+identity verifier must use a reviewed bounded egress proxy rather than adding
+the admission process to `matrix-edge`.
+
+The checked-in Caddy routes for `/_mesh/admission/*` and `/invite/*` return 404.
+Do not replace those responses with a reverse proxy until the isolation checks
+pass on the target host and every secret previously visible to the old
+whole-`.env` container has been rotated with `rotate-runtime-secrets.sh`.
+Retain dated, sanitized rotation and negative-access evidence before public
+exposure.
+
+Production invitation creation and claim currently fail closed. A deployment
+must first provide both a reviewed POST-capable Matrix OpenID verifier and a
+narrowly scoped registration-token issuer. Stock Synapse validates OpenID
+proofs through a credential-bearing query URL and manages registration tokens
+through its server-admin API, so the reference service deliberately implements
+neither unsafe fallback. Replay state is keyed to the issuing server, verified
+user, and credential itself, so changing a client-supplied proof UUID, purpose,
+subject, or audience does not make a token reusable. The exact proof, replay,
+SSRF, bot-membership, and
+moderation-audit boundaries are documented in
+`docs/security/PHASE1_NATIVE_SECURITY_BOUNDARIES.md`. A person who chooses
+another account service never sends an account credential or registration
+token to this community service.
 
 Close account creation immediately without disabling existing accounts:
 
@@ -83,7 +124,9 @@ Stock Synapse does not provide the per-user storage quota required for an
 unattended public service. Until a reviewed quota mechanism and alert exist,
 operators must monitor disk growth, limit admissions, and treat disk pressure
 as a reason to close registration. `operational-health.sh` fails below 15% free
-space. This is a known limitation, not an implied unlimited-storage promise.
+space and, when token-gated account creation is open, invokes
+`registration-control.sh close` before reporting the failure. Existing accounts
+remain usable. This is a known limitation, not an implied unlimited-storage promise.
 
 The operator must keep `MESH_ABUSE_EMAIL` current and publish it with the
 community's rules. The reference configuration sends no usage statistics,
@@ -118,8 +161,10 @@ for key in \
   MESH_SERVER_NAME MESH_HOMESERVER_HOST MESH_RTC_HOST MESH_RTC_ENABLED \
   MESH_PUBLIC_ENABLED MESH_REGISTRATION_ENABLED MESH_ABUSE_EMAIL \
   MESH_OPERATOR_LOCALPART POSTGRES_USER POSTGRES_DB POSTGRES_PASSWORD \
+  MESH_ADMISSION_DB_PASSWORD \
   REGISTRATION_SHARED_SECRET MACAROON_SECRET_KEY FORM_SECRET \
-  MESH_ADMISSION_SIGNING_KEY MESH_ADMISSION_ADMIN_ACCESS_TOKEN ACME_EMAIL
+  MESH_ADMISSION_SIGNING_KEY MESH_ADMISSION_SERVICE_USER_ID \
+  MESH_ADMISSION_SERVICE_ACCESS_TOKEN ACME_EMAIL
 do
   printf '%s=%s\n' "$key" \
     "$(security find-generic-password -a "$key" -s 'Mesh Homeserver Runtime' -w)" \
@@ -165,8 +210,10 @@ Schedule `sh ./restore-drill.sh` at least quarterly. The drill uses isolated
 Docker resources, validates the manifest and database, requires the restore
 password through `MESH_RESTORE_POSTGRES_PASSWORD`, starts the restored server
 without public traffic, and writes dated evidence to
-`runtime/status/restore-drill-status.json`. The operational health check
-requires each successful status file to contain a `lastSuccessfulAt` value.
+`runtime/status/restore-drill-status.json`. The operational health check requires
+each successful status file to contain a valid UTC ISO `lastSuccessfulAt` value.
+Freshness is calculated from that value, not the file modification time;
+invalid, future, duplicate-field, and stale status documents fail closed.
 
 For a real loss, restore onto a clean host:
 
@@ -202,7 +249,9 @@ device outside the home network:
 
 ```sh
 curl "https://${MESH_SERVER_NAME}/.well-known/matrix/client"
-curl "https://${MESH_SERVER_NAME}/_mesh/admission/healthz"
+# This route must remain 404 until the separate admission activation review.
+test "$(curl -s -o /dev/null -w '%{http_code}' \
+  "https://${MESH_SERVER_NAME}/_mesh/admission/healthz")" = 404
 curl "https://${MESH_HOMESERVER_HOST}/_matrix/client/versions"
 ```
 

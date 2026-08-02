@@ -27,6 +27,7 @@ pub const MATRIX_RTC_MEMBERSHIP_EVENT: &str = "matrix:rtc-membership";
 pub const MATRIX_RTC_MEDIA_KEY_EVENT: &str = "matrix:rtc-media-key";
 pub const MATRIX_RTC_MEDIA_KEY_FAILURE_EVENT: &str = "matrix:rtc-media-key-failure";
 pub const MATRIX_RTC_MEDIA_KEY_PAUSE_EVENT: &str = "matrix:rtc-media-key-pause";
+pub const MATRIX_PERMISSION_STATE_CHANGED_EVENT: &str = "matrix:permission-state-changed";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -172,6 +173,104 @@ pub struct MatrixUnreadUpdate {
     pub unread_mentions: i64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum MatrixPermissionRoomStatus {
+    Loaded,
+    MatrixDefault,
+    Inaccessible,
+    Unsupported,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum CommunityPermissionAggregateStatus {
+    GrantedEverywhere,
+    GrantedSomeRooms,
+    NotGranted,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum CommunityPermissionId {
+    Participate,
+    Invite,
+    Redact,
+    Remove,
+    Ban,
+    RoomState,
+    Roles,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixRoomPowerLevelProjection {
+    #[ts(type = "{ [key in string]?: number }")]
+    pub users: std::collections::BTreeMap<String, i64>,
+    #[ts(type = "number")]
+    pub users_default: i64,
+    #[ts(type = "{ [key in string]?: number }")]
+    pub events: std::collections::BTreeMap<String, i64>,
+    #[ts(type = "number")]
+    pub events_default: i64,
+    #[ts(type = "number")]
+    pub state_default: i64,
+    #[ts(type = "number")]
+    pub ban: i64,
+    #[ts(type = "number")]
+    pub kick: i64,
+    #[ts(type = "number")]
+    pub invite: i64,
+    #[ts(type = "number")]
+    pub redact: i64,
+    #[ts(type = "{ [key in string]?: number }")]
+    pub notifications: std::collections::BTreeMap<String, i64>,
+    pub creator_user_ids: Vec<String>,
+    pub privileged_creator_user_ids: Vec<String>,
+    pub joined_user_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixRoomPermissionProjection {
+    pub room_id: String,
+    pub room_name: String,
+    #[ts(type = "\"space\" | \"room\"")]
+    pub room_kind: String,
+    pub status: MatrixPermissionRoomStatus,
+    pub policy: Option<MatrixRoomPowerLevelProjection>,
+    pub failure_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunityPermissionAggregate {
+    pub permission_id: CommunityPermissionId,
+    pub status: CommunityPermissionAggregateStatus,
+    pub granted_room_count: usize,
+    pub verified_room_count: usize,
+    pub total_room_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunityPermissionProjection {
+    pub community_id: String,
+    pub subject_user_id: String,
+    pub discovery_complete: bool,
+    pub discovery_failure_reason: Option<String>,
+    pub rooms: Vec<MatrixRoomPermissionProjection>,
+    pub aggregate: Vec<CommunityPermissionAggregate>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixPermissionStateChanged {
+    pub room_id: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct MatrixRoomUpgrade {
@@ -214,6 +313,7 @@ pub enum MatrixBackendEvent {
     RtcMediaKey(MatrixRtcMediaKey),
     RtcMediaKeyFailure(MatrixRtcMediaKeyFailure),
     RtcMediaKeyPause(MatrixRtcMediaKeyPause),
+    PermissionStateChanged(MatrixPermissionStateChanged),
 }
 
 pub type MatrixBackendEventCallback = Arc<dyn Fn(MatrixBackendEvent) + Send + Sync>;
@@ -253,6 +353,10 @@ pub struct NotificationPresentationContext {
     pub notifications_enabled: bool,
     pub do_not_disturb: bool,
     pub quiet_hours_active: bool,
+    /// Explicit account-scoped opt-in for showing bounded message text in
+    /// native notifications. Missing values fail closed for older clients.
+    #[serde(default)]
+    pub show_message_content: bool,
     #[serde(default)]
     pub muted_room_ids: Vec<String>,
 }
@@ -614,7 +718,7 @@ impl BackendCapabilities {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MatrixLogin {
     pub homeserver: String,
@@ -623,14 +727,44 @@ pub struct MatrixLogin {
     pub device_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl std::fmt::Debug for MatrixLogin {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MatrixLogin")
+            .field("homeserver", &self.homeserver)
+            .field("username", &self.username)
+            .field("password", &"[REDACTED]")
+            .field("device_name", &self.device_name)
+            .finish()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MatrixRegistration {
     pub homeserver: String,
     pub username: String,
     pub password: String,
-    pub registration_token: Option<String>,
+    /// Opaque native invitation handle. Registration admission remains in the
+    /// encrypted native store and never crosses renderer IPC.
+    pub pending_invitation_handle: Option<String>,
     pub device_name: Option<String>,
+}
+
+impl std::fmt::Debug for MatrixRegistration {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MatrixRegistration")
+            .field("homeserver", &self.homeserver)
+            .field("username", &self.username)
+            .field("password", &"[REDACTED]")
+            .field(
+                "pending_invitation_handle_present",
+                &self.pending_invitation_handle.is_some(),
+            )
+            .field("device_name", &self.device_name)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -638,6 +772,7 @@ pub struct MatrixRegistration {
 pub enum MatrixRegistrationAvailability {
     Open,
     Closed,
+    InvitationOnly,
     Unknown,
 }
 
@@ -736,7 +871,22 @@ pub struct MatrixProfile {
     pub avatar_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum MatrixRecoverySecureStorageState {
+    Saved,
+    Missing,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum MatrixRecoveryVerificationState {
+    Verified,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct MatrixRecoveryHealth {
     pub recovery_state: String,
@@ -746,7 +896,16 @@ pub struct MatrixRecoveryHealth {
     pub healthy: bool,
     pub checked_at: String,
     pub last_successful_test_at: Option<String>,
+    pub secure_storage_state: MatrixRecoverySecureStorageState,
     pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixRecoverySetupResult {
+    pub recovery_key: String,
+    pub secure_storage_state: MatrixRecoverySecureStorageState,
+    pub verification_state: MatrixRecoveryVerificationState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -869,10 +1028,13 @@ pub struct CommunityAccessResult {
     pub community: Option<CommunityDto>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct MatrixCommunityAdmission {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Native-only one-use account admission. This field must never serialize
+    /// into an IPC response or generated renderer type.
+    #[serde(default, skip_serializing, skip_deserializing)]
+    #[ts(skip)]
     pub registration_token: Option<String>,
     pub room_id: String,
     pub service: String,
@@ -890,6 +1052,30 @@ pub struct MatrixCommunityAdmission {
     pub join_rule: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub community_service_display_name: Option<String>,
+}
+
+impl std::fmt::Debug for MatrixCommunityAdmission {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MatrixCommunityAdmission")
+            .field(
+                "registration_token_present",
+                &self.registration_token.is_some(),
+            )
+            .field("room_id", &self.room_id)
+            .field("service", &self.service)
+            .field("via", &self.via)
+            .field("expires_at", &self.expires_at)
+            .field("community_name", &self.community_name)
+            .field("inviter_display_name", &self.inviter_display_name)
+            .field("inviter_user_id", &self.inviter_user_id)
+            .field("join_rule", &self.join_rule)
+            .field(
+                "community_service_display_name",
+                &self.community_service_display_name,
+            )
+            .finish()
+    }
 }
 
 /// Metadata for an invitation held by the native pending-invitation store.
@@ -950,6 +1136,10 @@ pub struct UserPreferences {
     pub notification_sound_id: Option<String>,
     #[serde(default)]
     pub do_not_disturb: bool,
+    /// Whether bounded message text may appear in native notifications.
+    /// Fresh and migrated accounts remain private unless the user opts in.
+    #[serde(default)]
+    pub show_notification_content: bool,
     #[serde(default)]
     pub quiet_hours_enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -974,6 +1164,10 @@ pub struct UserPreferences {
     pub read_receipt_mode: Option<ReadReceiptMode>,
     #[serde(default)]
     pub send_typing_indicators: bool,
+    /// Optional per-conversation privacy choices, keyed by Matrix room ID.
+    /// Missing fields inherit the account-level choice above.
+    #[serde(default)]
+    pub conversation_privacy: std::collections::BTreeMap<String, ConversationPrivacyOverride>,
     #[serde(default)]
     pub share_presence: bool,
     #[serde(default)]
@@ -982,7 +1176,8 @@ pub struct UserPreferences {
 }
 
 impl UserPreferences {
-    pub const SCHEMA_VERSION: u32 = 4;
+    pub const SCHEMA_VERSION: u32 = 6;
+    pub const MAX_CONVERSATION_PRIVACY_OVERRIDES: usize = 256;
 
     pub fn effective_read_receipt_mode(&self) -> ReadReceiptMode {
         self.read_receipt_mode
@@ -1002,9 +1197,35 @@ impl UserPreferences {
         self.muted_channels.dedup();
         self.muted_communities.sort();
         self.muted_communities.dedup();
+        self.conversation_privacy = self.normalized_conversation_privacy();
         self.updated_at = chrono::Utc::now().to_rfc3339();
         self
     }
+
+    pub fn normalized_conversation_privacy(
+        &self,
+    ) -> std::collections::BTreeMap<String, ConversationPrivacyOverride> {
+        self.conversation_privacy
+            .iter()
+            .filter(|(room_id, value)| {
+                room_id.starts_with('!')
+                    && room_id.len() <= 255
+                    && !room_id.chars().any(char::is_whitespace)
+                    && (value.read_receipt_mode.is_some() || value.send_typing_indicators.is_some())
+            })
+            .take(Self::MAX_CONVERSATION_PRIVACY_OVERRIDES)
+            .map(|(room_id, value)| (room_id.clone(), value.clone()))
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationPrivacyOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_receipt_mode: Option<ReadReceiptMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub send_typing_indicators: Option<bool>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -1154,19 +1375,13 @@ pub trait MeshBackend: Send + Sync {
     ) -> BackendResult<PendingInvitationMetadata> {
         Err(BackendError::Unsupported("pending invitations"))
     }
-    async fn read_pending_invitation(&self) -> BackendResult<Option<String>> {
-        Err(BackendError::Unsupported("pending invitations"))
-    }
-    async fn take_pending_invitation(&self) -> BackendResult<Option<String>> {
-        Err(BackendError::Unsupported("pending invitations"))
-    }
     async fn peek_pending_invitation(&self) -> BackendResult<Option<PendingInvitationMetadata>> {
         Err(BackendError::Unsupported("pending invitations"))
     }
-    async fn resolve_pending_invitation(&self) -> BackendResult<Option<MatrixCommunityAdmission>> {
+    async fn join_pending_invitation(&self, _handle: String) -> BackendResult<CommunityDto> {
         Err(BackendError::Unsupported("pending invitations"))
     }
-    async fn clear_pending_invitation(&self) -> BackendResult<()> {
+    async fn clear_pending_invitation(&self, _handle: String) -> BackendResult<()> {
         Err(BackendError::Unsupported("pending invitations"))
     }
     fn set_matrix_event_callback(&self, _callback: Option<MatrixBackendEventCallback>) {}
@@ -1269,6 +1484,9 @@ pub trait MeshBackend: Send + Sync {
         _recovery_key_or_passphrase: String,
     ) -> BackendResult<MatrixRecoveryHealth> {
         Err(BackendError::Unsupported("Matrix recovery test"))
+    }
+    async fn test_stored_recovery(&self) -> BackendResult<MatrixRecoveryHealth> {
+        Err(BackendError::Unsupported("stored Matrix recovery test"))
     }
     async fn start_device_verification(
         &self,
@@ -1682,6 +1900,13 @@ pub trait MeshBackend: Send + Sync {
     ) -> BackendResult<()> {
         Err(BackendError::Unsupported("community metadata"))
     }
+    async fn community_permission_projection(
+        &self,
+        _community_id: String,
+        _subject_user_id: String,
+    ) -> BackendResult<CommunityPermissionProjection> {
+        Err(BackendError::Unsupported("community permission projection"))
+    }
     async fn update_member_role(
         &self,
         _community_id: String,
@@ -1725,7 +1950,10 @@ pub trait MeshBackend: Send + Sync {
     async fn invite_user(&self, room_id: String, user_id: String) -> BackendResult<()>;
     async fn join_room(&self, room_id: String) -> BackendResult<()>;
     async fn recent_texts(&self, room_id: String, limit: u32) -> BackendResult<Vec<String>>;
-    async fn enable_recovery(&self, passphrase: Option<String>) -> BackendResult<String>;
+    async fn enable_recovery(
+        &self,
+        passphrase: Option<String>,
+    ) -> BackendResult<MatrixRecoverySetupResult>;
     async fn recover(&self, recovery_key_or_passphrase: String) -> BackendResult<()>;
     async fn sync_once(&self) -> BackendResult<()>;
     /// Persist one provenance event from an explicitly approved legacy import.
@@ -1747,6 +1975,7 @@ pub struct BackendManager {
 }
 
 impl BackendManager {
+    #[allow(clippy::needless_return)]
     pub fn from_environment(app_data_dir: PathBuf) -> Self {
         #[cfg(not(feature = "matrix-backend"))]
         let _ = &app_data_dir;
@@ -1852,6 +2081,47 @@ mod tests {
     }
 
     #[test]
+    fn secret_bearing_matrix_types_redact_debug_output() {
+        let login = MatrixLogin {
+            homeserver: "https://matrix.example".into(),
+            username: "alice".into(),
+            password: "sentinel-login-password".into(),
+            device_name: Some("Mesh desktop".into()),
+        };
+        let registration = MatrixRegistration {
+            homeserver: "https://matrix.example".into(),
+            username: "alice".into(),
+            password: "sentinel-registration-password".into(),
+            pending_invitation_handle: Some("sentinel-pending-handle".into()),
+            device_name: Some("Mesh desktop".into()),
+        };
+        let admission = MatrixCommunityAdmission {
+            registration_token: Some("sentinel-registration-token".into()),
+            room_id: "!community:example.org".into(),
+            service: "https://matrix.example".into(),
+            via: vec!["example.org".into()],
+            expires_at: None,
+            community_name: None,
+            inviter_display_name: None,
+            inviter_user_id: None,
+            join_rule: None,
+            community_service_display_name: None,
+        };
+
+        let rendered = format!("{login:?}\n{registration:?}\n{admission:?}");
+        for secret in [
+            "sentinel-login-password",
+            "sentinel-registration-password",
+            "sentinel-pending-handle",
+            "sentinel-registration-token",
+        ] {
+            assert!(!rendered.contains(secret));
+        }
+        assert!(rendered.contains("[REDACTED]"));
+        assert!(rendered.contains("registration_token_present: true"));
+    }
+
+    #[test]
     fn matrix_room_notification_modes_use_renderer_wire_values() {
         assert_eq!(
             serde_json::to_string(&MatrixRoomNotificationMode::All).unwrap(),
@@ -1886,6 +2156,7 @@ mod tests {
         assert!(!preferences.send_typing_indicators);
         assert!(!preferences.share_presence);
         assert!(!preferences.invisible_mode);
+        assert!(!preferences.show_notification_content);
     }
 
     #[test]
@@ -1896,6 +2167,7 @@ mod tests {
             notification_sound: false,
             notification_sound_id: Some("chime".into()),
             do_not_disturb: true,
+            show_notification_content: true,
             quiet_hours_enabled: true,
             quiet_hours_start: Some("22:00".into()),
             quiet_hours_end: Some("07:00".into()),
@@ -1916,6 +2188,22 @@ mod tests {
             send_read_receipts: false,
             read_receipt_mode: Some(ReadReceiptMode::Off),
             send_typing_indicators: true,
+            conversation_privacy: std::collections::BTreeMap::from([
+                (
+                    "!room:example.org".into(),
+                    ConversationPrivacyOverride {
+                        read_receipt_mode: Some(ReadReceiptMode::Public),
+                        send_typing_indicators: Some(true),
+                    },
+                ),
+                (
+                    "not-a-room".into(),
+                    ConversationPrivacyOverride {
+                        read_receipt_mode: Some(ReadReceiptMode::Public),
+                        send_typing_indicators: None,
+                    },
+                ),
+            ]),
             share_presence: false,
             invisible_mode: true,
             updated_at: "stale".into(),
@@ -1923,7 +2211,13 @@ mod tests {
         .normalized();
 
         assert_eq!(preferences.schema_version, UserPreferences::SCHEMA_VERSION);
+        assert!(preferences.show_notification_content);
         assert_eq!(preferences.read_receipt_mode, Some(ReadReceiptMode::Off));
+        assert_eq!(preferences.conversation_privacy.len(), 1);
+        assert_eq!(
+            preferences.conversation_privacy["!room:example.org"].read_receipt_mode,
+            Some(ReadReceiptMode::Public)
+        );
         assert_eq!(preferences.muted_channels, vec!["!b:example.org"]);
         assert_eq!(
             preferences.channel_notification_levels["!b:example.org"],

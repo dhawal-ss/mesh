@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-validate-ice-servers"
+description = "Enables the validate_ice_servers command without any pre-configured scope."
+commands.allow = ["validate_ice_servers"]
+
+[[permission]]
+identifier = "deny-validate-ice-servers"
+description = "Denies the validate_ice_servers command without any pre-configured scope."
+commands.deny = ["validate_ice_servers"]

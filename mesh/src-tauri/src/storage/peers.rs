@@ -1,6 +1,8 @@
 use crate::storage::Database;
 use rusqlite::params;
 
+type PeerRecord = (String, String, String, Vec<String>);
+
 impl Database {
     /// Upsert a known peer into the address book.
     #[allow(dead_code)]
@@ -27,10 +29,7 @@ impl Database {
 
     /// Get known peers for a community.
     #[allow(dead_code)]
-    pub fn get_peers_for_community(
-        &self,
-        community_id: &str,
-    ) -> anyhow::Result<Vec<(String, String, String, Vec<String>)>> {
+    pub fn get_peers_for_community(&self, community_id: &str) -> anyhow::Result<Vec<PeerRecord>> {
         let conn = self
             .conn
             .lock()

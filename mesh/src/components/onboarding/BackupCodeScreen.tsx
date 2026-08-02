@@ -1,5 +1,9 @@
 import { useId, useMemo, useState } from 'react'
 import { Button } from '../ui/Button'
+import type {
+  MatrixRecoverySecureStorageState,
+  MatrixRecoveryVerificationState,
+} from '../../types/ipc'
 
 export interface BackupCodeReminderSignal {
   kind: 'backup-code-reminder'
@@ -8,20 +12,22 @@ export interface BackupCodeReminderSignal {
 
 export interface BackupCodeScreenProps {
   backupCode: string
+  secureStorageState?: MatrixRecoverySecureStorageState
+  verificationState?: MatrixRecoveryVerificationState
   onCopy: (backupCode: string) => void | Promise<void>
-  onSaveFile: (backupCode: string) => void | Promise<void>
   onPrint: (backupCode: string) => void | Promise<void>
   onContinue: () => void
   onSkip: (signal: BackupCodeReminderSignal) => void
   challengeIndices?: readonly [number, number, number]
 }
 
-type ActionName = 'copy' | 'save' | 'print'
+type ActionName = 'copy' | 'print'
 
 export function BackupCodeScreen({
   backupCode,
+  secureStorageState,
+  verificationState,
   onCopy,
-  onSaveFile,
   onPrint,
   onContinue,
   onSkip,
@@ -32,8 +38,9 @@ export function BackupCodeScreen({
   const confirmationHelpId = `${generatedId}-confirmation-help`
   const segments = useMemo(() => backupSegments(backupCode), [backupCode])
   const challenge = useMemo(
-    () => validateChallenge(challengeIndices, segments.length)
-      ?? deterministicChallenge(backupCode, segments.length),
+    () =>
+      validateChallenge(challengeIndices, segments.length) ??
+      deterministicChallenge(backupCode, segments.length),
     [backupCode, challengeIndices, segments.length],
   )
   const [confirming, setConfirming] = useState(false)
@@ -69,11 +76,13 @@ export function BackupCodeScreen({
   }
 
   return (
-    /* Was <main>, nested inside the shell's own <main> — two main landmarks is
+    /* Was <main>, nested inside the shell's own <main>: two main landmarks is
        invalid and broke landmark navigation on the most safety-critical screen. */
     <section aria-labelledby={titleId} className="space-y-6">
       <header className="space-y-2">
-        <p className="text-caption uppercase tracking-eyebrow text-content-muted">Protect your messages</p>
+        <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">
+          Protect your messages
+        </p>
         <h1 id={titleId} className="text-lg font-semibold tracking-tight text-content">
           Save your backup code
         </h1>
@@ -82,6 +91,31 @@ export function BackupCodeScreen({
           means if you lose this device, this code is the only way back in.
         </p>
       </header>
+
+      {secureStorageState && (
+        <div
+          role="status"
+          className={`rounded-panel border px-3 py-3 text-sm leading-6 ${
+            secureStorageState === 'saved'
+              ? 'border-status-success/40 bg-status-success/10 text-content-secondary'
+              : 'border-status-warning/40 bg-status-warning/10 text-content-secondary'
+          }`}
+        >
+          {secureStorageState === 'saved'
+            ? "Mesh saved an additional copy in this device's protected credential store."
+            : "Mesh could not save a copy in this device's protected credential store. Keep this screen open until you copy, save, or print the code."}
+          {verificationState === 'verified' && (
+            <span> Mesh also verified the code against your encrypted message backup.</span>
+          )}
+          {verificationState === 'failed' && (
+            <span>
+              {' '}
+              Mesh could not complete the backup check. Keep the code and check it again in Your
+              devices before relying on a new device.
+            </span>
+          )}
+        </div>
+      )}
 
       <section aria-label="Your backup code" className="space-y-4">
         <output
@@ -102,18 +136,15 @@ export function BackupCodeScreen({
           <Button
             variant="secondary"
             disabled={busyAction !== null}
-            onClick={() => void runAction('save', onSaveFile, 'Backup code file saved.')}
-          >
-            Save as file
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={busyAction !== null}
             onClick={() => void runAction('print', onPrint, 'Backup code ready to print.')}
           >
             Print
           </Button>
         </div>
+        <p className="text-xs leading-5 text-content-muted">
+          For safety, Mesh does not download an unencrypted backup file. Use the protected copy on
+          this device when available, or keep a copied or printed code private.
+        </p>
         <p role="status" aria-live="polite" className="min-h-5 text-xs text-content-secondary">
           {announcement}
         </p>
@@ -122,15 +153,16 @@ export function BackupCodeScreen({
       {!confirming ? (
         <div className="space-y-3">
           <Button className="w-full" onClick={() => setConfirming(true)}>
-            I saved it — continue
+            I saved it: continue
           </Button>
-          <button
+          <Button
             type="button"
-            className="w-full rounded-md px-3 py-2 text-sm text-content-secondary transition-colors hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            variant="ghost"
+            className="w-full"
             onClick={() => onSkip({ kind: 'backup-code-reminder', recurringWarning: true })}
           >
             Remind me later (you could lose your messages)
-          </button>
+          </Button>
         </div>
       ) : (
         <form
@@ -141,7 +173,9 @@ export function BackupCodeScreen({
           }}
         >
           <fieldset className="space-y-3" aria-describedby={confirmationHelpId}>
-            <legend className="text-base font-semibold text-content">Confirm your backup code</legend>
+            <legend className="text-base font-semibold text-content">
+              Confirm your backup code
+            </legend>
             <p id={confirmationHelpId} className="text-sm leading-6 text-content-secondary">
               Enter the three requested parts to make sure your saved copy is readable.
             </p>
@@ -175,7 +209,10 @@ export function BackupCodeScreen({
           </fieldset>
 
           {attempted && !complete && (
-            <p role="alert" className="rounded-control border border-status-danger/30 bg-status-danger/10 px-3 py-2 text-sm text-status-danger">
+            <p
+              role="alert"
+              className="rounded-control border border-status-danger/30 bg-status-danger/10 px-3 py-2 text-sm text-status-danger"
+            >
               Those parts do not match. Check your saved copy and try again.
             </p>
           )}
@@ -213,9 +250,9 @@ function validateChallenge(
   segmentCount: number,
 ): readonly [number, number, number] | null {
   if (
-    !indices
-    || new Set(indices).size !== 3
-    || indices.some((index) => !Number.isInteger(index) || index < 0 || index >= segmentCount)
+    !indices ||
+    new Set(indices).size !== 3 ||
+    indices.some((index) => !Number.isInteger(index) || index < 0 || index >= segmentCount)
   ) {
     return null
   }
@@ -228,7 +265,7 @@ function deterministicChallenge(
 ): readonly [number, number, number] {
   let seed = 0
   for (const character of backupCode) {
-    seed = ((seed * 31) + character.charCodeAt(0)) >>> 0
+    seed = (seed * 31 + character.charCodeAt(0)) >>> 0
   }
 
   const selected: number[] = []

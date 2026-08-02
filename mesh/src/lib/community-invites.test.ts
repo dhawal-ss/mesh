@@ -112,6 +112,22 @@ describe('Matrix community invites', () => {
   })
 
   it.each([
+    ['live occupancy', 'occupancy=7'],
+    ['member identities', 'members=alice%2Cbob'],
+    ['access token', 'access_token=fixture-token'],
+    ['recovery material', 'recovery_key=fixture-recovery'],
+    ['raw device key', 'device_key=fixture-device-key'],
+    ['voice credential', 'turn_password=fixture-voice-credential'],
+    ['private history', 'history=fixture-private-history'],
+  ])('rejects version 5 metadata that could leak %s', (_label, field) => {
+    const link =
+      'mesh://join?v=5&kind=community&room=!garden%3Acommunity.example'
+      + `&via=community.example&${field}`
+
+    expect(parseCommunityInviteV5(link)).toBeNull()
+  })
+
+  it.each([
     'http://mesh.example/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789',
     `https://${['user', 'secret'].join(':')}@mesh.example/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789`,
     'https://mesh.example/invite/too-short',

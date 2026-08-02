@@ -13,53 +13,53 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-fixture="$test_root/fixture"
-mkdir -p "$fixture"
-printf 'status fixture\n' > "$fixture/status.json"
-
-# The native stat command covers the platform running this test. The helper
-# must return one numeric timestamp rather than filesystem-summary output.
 # shellcheck source=infra/homeserver/operational-health-lib.sh
 . "$homeserver_dir/operational-health-lib.sh"
-native_mtime="$(file_mtime "$fixture/status.json")"
-case "$native_mtime" in
-  ''|*[!0-9]*)
-    echo "Native stat helper returned a non-numeric timestamp: $native_mtime" >&2
-    exit 1
-    ;;
-esac
 
-fake_bin="$test_root/bin"
-mkdir -p "$fake_bin"
-printf '%s\n' "$native_mtime" > "$fake_bin/fallback-mtime"
-cat > "$fake_bin/stat" <<'EOF'
-#!/bin/sh
-case "$1" in
-  -c)
-    printf 'GNU stat filesystem summary\n'
-    exit 1
-    ;;
-  -f)
-    cat "$FAKE_STAT_MTIME_FILE"
-    exit 0
-    ;;
-  *)
-    echo "unexpected stat invocation" >&2
-    exit 1
-    ;;
-esac
-EOF
-chmod 700 "$fake_bin/stat"
+now=1785646800
+export MESH_HEALTH_NOW_EPOCH="$now"
+status_file="$test_root/status.json"
 
-fallback_mtime="$(PATH="$fake_bin:$PATH" FAKE_STAT_MTIME_FILE="$fake_bin/fallback-mtime" file_mtime "$fixture/status.json")"
-if [ "$fallback_mtime" != "$native_mtime" ]; then
-  echo "BSD stat fallback returned $fallback_mtime; expected $native_mtime." >&2
-  exit 1
+expect_rejected() {
+  description="$1"
+  if check_fresh_status "$status_file" 3600 "Test backup" >/dev/null 2>&1; then
+    echo "Operational health accepted $description." >&2
+    exit 1
+  fi
+}
+
+printf '%s\n' '{"status":"ok","lastSuccessfulAt":"2026-08-02T04:30:00Z"}' > "$status_file"
+check_fresh_status "$status_file" 3600 "Test backup"
+
+# A fresh file modification must not make a stale embedded timestamp healthy.
+printf '%s\n' '{"status":"ok","lastSuccessfulAt":"2026-08-01T00:00:00Z"}' > "$status_file"
+expect_rejected "a stale embedded timestamp"
+
+printf '%s\n' '{"status":"ok","lastSuccessfulAt":"2026-08-02T05:00:01Z"}' > "$status_file"
+expect_rejected "a future embedded timestamp"
+
+for timestamp in \
+  'not-a-date' \
+  '2026-02-30T00:00:00Z' \
+  '2026-08-02T05:00:00' \
+  '2026-08-02 05:00:00Z' \
+  '2026-08-02T05:00:00+00:00'
+do
+  printf '{"status":"ok","lastSuccessfulAt":"%s"}\n' "$timestamp" > "$status_file"
+  expect_rejected "invalid timestamp $timestamp"
+done
+
+printf '%s\n' '{"status":"failed","lastSuccessfulAt":"2026-08-02T04:30:00Z"}' > "$status_file"
+expect_rejected "an unhealthy status"
+
+printf '%s\n' '{"status":"failed","status":"ok","lastSuccessfulAt":"2026-08-02T04:30:00Z"}' > "$status_file"
+expect_rejected "duplicate tampered status fields"
+
+printf '%s\n' '{"status":"ok","lastSuccessfulAt":"2026-08-02T04:30:00Z"}' > "$test_root/target.json"
+rm -f "$status_file"
+ln -s "$test_root/target.json" "$status_file"
+if [ -L "$status_file" ]; then
+  expect_rejected "a symlinked status file"
 fi
 
-if file_mtime "$fixture/missing.json" >/dev/null 2>&1; then
-  echo "file_mtime accepted a missing file." >&2
-  exit 1
-fi
-
-echo "Operational health mtime portability tests passed."
+echo "Operational health embedded-timestamp tests passed."

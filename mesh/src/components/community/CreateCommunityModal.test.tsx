@@ -7,7 +7,6 @@ const bridgeMocks = vi.hoisted(() => ({
   createCommunity: vi.fn(),
   createChannel: vi.fn(),
   getChannels: vi.fn(),
-  storePendingInvitation: vi.fn(),
   joinOrRequestCommunity: vi.fn(),
 }))
 
@@ -16,7 +15,6 @@ vi.mock('../../lib/bridge', () => ({
   createCommunity: bridgeMocks.createCommunity,
   createChannel: bridgeMocks.createChannel,
   getChannels: bridgeMocks.getChannels,
-  storePendingInvitation: bridgeMocks.storePendingInvitation,
   joinOrRequestCommunity: bridgeMocks.joinOrRequestCommunity,
   searchCommunityDirectory: vi.fn(),
   requestCommunityAccess: vi.fn(),
@@ -32,7 +30,7 @@ describe('CreateCommunityModal', () => {
     root = createRoot(container)
     bridgeMocks.createCommunity.mockReset().mockResolvedValue({
       id: '!server:example.org',
-      name: '🎮 Design Club',
+      name: 'Design Club',
       description: '',
       memberCount: 1,
       role: 'owner',
@@ -48,16 +46,17 @@ describe('CreateCommunityModal', () => {
       }),
     )
     bridgeMocks.getChannels.mockReset().mockResolvedValue([])
-    bridgeMocks.storePendingInvitation.mockReset().mockResolvedValue({
-      handle: 'pending-1',
-      roomOrAlias: '!server:example.org',
-      via: ['example.org'],
-      service: null,
-      admissionService: null,
-      storedAt: 1_752_000_000_000,
-      expiresAt: 1_754_592_000_000,
+    bridgeMocks.joinOrRequestCommunity.mockReset().mockResolvedValue({
+      status: 'joined',
+      community: {
+        id: '!server:example.org',
+        name: 'Design Club',
+        description: '',
+        memberCount: 2,
+        role: 'member',
+        joinedAt: null,
+      },
     })
-    bridgeMocks.joinOrRequestCommunity.mockReset()
   })
 
   afterEach(() => {
@@ -66,7 +65,7 @@ describe('CreateCommunityModal', () => {
     document.body.querySelectorAll('[data-radix-portal]').forEach((portal) => portal.remove())
   })
 
-  it('creates from a two-step icon and template flow', async () => {
+  it('creates from a two-step identity and template flow', async () => {
     await act(async () => {
       root.render(<CreateCommunityModal isOpen onClose={() => {}} />)
     })
@@ -83,9 +82,6 @@ describe('CreateCommunityModal', () => {
       const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
       setValue?.call(nameInput, 'Design Club')
       nameInput?.dispatchEvent(new Event('input', { bubbles: true }))
-      Array.from(document.body.querySelectorAll('button'))
-        .find((button) => button.textContent === '🎮')
-        ?.click()
     })
 
     const next = Array.from(document.body.querySelectorAll('button'))
@@ -105,7 +101,7 @@ describe('CreateCommunityModal', () => {
       await Promise.resolve()
     })
 
-    expect(bridgeMocks.createCommunity).toHaveBeenCalledWith('🎮 Design Club', '')
+    expect(bridgeMocks.createCommunity).toHaveBeenCalledWith('Design Club', '')
     expect(bridgeMocks.createChannel).toHaveBeenCalledWith('!server:example.org', 'squad-up', 'text')
     expect(bridgeMocks.createChannel).toHaveBeenCalledWith('!server:example.org', 'clips', 'text')
   })
@@ -145,7 +141,159 @@ describe('CreateCommunityModal', () => {
     expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
   })
 
-  it('stores a Matrix invitation for review instead of joining immediately', async () => {
+  it('finishes a partial community idempotently without duplicating completed rooms', async () => {
+    const rooms: Array<{
+      id: string
+      communityId: string
+      name: string
+      channelType: 'text'
+      unreadCount: number
+    }> = []
+    let plansAttempt = 0
+    bridgeMocks.getChannels.mockImplementation(async () => [...rooms])
+    bridgeMocks.createChannel.mockImplementation(async (
+      communityId: string,
+      name: string,
+    ) => {
+      if (name === 'plans' && plansAttempt++ === 0) {
+        throw new Error('room service unavailable')
+      }
+      const created = {
+        id: `!${name}:example.org`,
+        communityId,
+        name,
+        channelType: 'text' as const,
+        unreadCount: 0,
+      }
+      rooms.push(created)
+      return created
+    })
+
+    await act(async () => {
+      root.render(<CreateCommunityModal isOpen onClose={() => {}} />)
+    })
+    const nameInput = document.body.querySelector<HTMLInputElement>(
+      'input[placeholder="e.g. Design Club"]',
+    )
+    await act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setValue?.call(nameInput, 'Design Club')
+      nameInput?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      [...document.body.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'Next')
+        ?.click()
+    })
+    await act(async () => {
+      [...document.body.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'Create Community')
+        ?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(document.body.textContent).toContain('exists. Retry will add only missing rooms')
+    expect(bridgeMocks.createCommunity).toHaveBeenCalledTimes(1)
+    expect(bridgeMocks.createChannel).toHaveBeenCalledWith(
+      '!server:example.org',
+      'photos',
+      'text',
+    )
+
+    await act(async () => {
+      [...document.body.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'Finish setup')
+        ?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(bridgeMocks.createCommunity).toHaveBeenCalledTimes(1)
+    expect(bridgeMocks.createChannel.mock.calls.filter((call) => call[1] === 'photos')).toHaveLength(1)
+    expect(bridgeMocks.createChannel.mock.calls.filter((call) => call[1] === 'plans')).toHaveLength(2)
+    expect(rooms.map((room) => room.name).sort()).toEqual(['photos', 'plans'])
+  })
+
+  it('does not treat Enter inside the description textarea as Next', async () => {
+    await act(async () => {
+      root.render(<CreateCommunityModal isOpen onClose={() => {}} />)
+    })
+    const nameInput = document.body.querySelector<HTMLInputElement>(
+      'input[placeholder="e.g. Design Club"]',
+    )
+    const description = document.body.querySelector<HTMLTextAreaElement>(
+      '#create-community-description',
+    )
+    await act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setValue?.call(nameInput, 'Design Club')
+      nameInput?.dispatchEvent(new Event('input', { bubbles: true }))
+      description?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    expect(document.body.textContent).toContain('Name and identity')
+    expect(document.body.textContent).not.toContain('Choose a starting layout')
+  })
+
+  it('retries refresh after creation without recreating the community or starter rooms', async () => {
+    const rooms: Array<{
+      id: string
+      communityId: string
+      name: string
+      channelType: 'text'
+      unreadCount: number
+    }> = []
+    let listAttempt = 0
+    bridgeMocks.getChannels.mockImplementation(async () => {
+      listAttempt += 1
+      if (listAttempt === 2) throw new Error('refresh timed out')
+      return [...rooms]
+    })
+    bridgeMocks.createChannel.mockImplementation(async (communityId: string, name: string) => {
+      const created = {
+        id: `!${name}:example.org`,
+        communityId,
+        name,
+        channelType: 'text' as const,
+        unreadCount: 0,
+      }
+      rooms.push(created)
+      return created
+    })
+
+    await act(async () => {
+      root.render(<CreateCommunityModal isOpen onClose={() => {}} />)
+    })
+    const nameInput = document.body.querySelector<HTMLInputElement>(
+      'input[placeholder="e.g. Design Club"]',
+    )
+    await act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setValue?.call(nameInput, 'Design Club')
+      nameInput?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      [...document.body.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'Next')
+        ?.click()
+    })
+    await act(async () => {
+      [...document.body.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'Create Community')
+        ?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(document.body.textContent).toContain('Finish setup')
+
+    await act(async () => {
+      [...document.body.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'Finish setup')
+        ?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(bridgeMocks.createCommunity).toHaveBeenCalledTimes(1)
+    expect(bridgeMocks.createChannel).toHaveBeenCalledTimes(2)
+  })
+
+  it('joins a standard Matrix community invitation directly', async () => {
     const onClose = vi.fn()
 
     await act(async () => {
@@ -166,10 +314,9 @@ describe('CreateCommunityModal', () => {
       await Promise.resolve()
     })
 
-    expect(bridgeMocks.storePendingInvitation).toHaveBeenCalledWith(
+    expect(bridgeMocks.joinOrRequestCommunity).toHaveBeenCalledWith(
       'mesh://join?v=3&kind=matrix&room=!server:example.org&via=example.org',
     )
-    expect(bridgeMocks.joinOrRequestCommunity).not.toHaveBeenCalled()
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 })

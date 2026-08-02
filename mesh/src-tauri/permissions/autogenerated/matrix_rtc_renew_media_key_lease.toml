@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-rtc-renew-media-key-lease"
+description = "Enables the matrix_rtc_renew_media_key_lease command without any pre-configured scope."
+commands.allow = ["matrix_rtc_renew_media_key_lease"]
+
+[[permission]]
+identifier = "deny-matrix-rtc-renew-media-key-lease"
+description = "Denies the matrix_rtc_renew_media_key_lease command without any pre-configured scope."
+commands.deny = ["matrix_rtc_renew_media_key_lease"]

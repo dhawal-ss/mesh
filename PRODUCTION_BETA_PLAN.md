@@ -4,11 +4,71 @@
 **Audience:** An autonomous coding agent (and human reviewers) picking up engineering work on Mesh
 **Purpose:** Translate a full-codebase production-readiness review into a prioritized, actionable backlog that moves Mesh from "first successful manual E2E run" to a real production beta.
 
+The machine-readable release gate ledger is [mesh/release/readiness.json](mesh/release/readiness.json), validated by `npm run check:readiness-ledger`. It is release evidence only; runtime security and capability authority remain in the typed backend boundary.
+
+Evidence binding rule: `releaseSha` names the exact source snapshot on which the
+evidence was collected. Because a tracked ledger cannot contain the commit SHA
+of the commit that contains that same ledger, the release workflow permits a
+final metadata-only commit that changes only `mesh/release/readiness.json` after
+the tested source snapshot. The validator rejects any source-code delta in that
+case. Never update the ledger SHA and application code together when preparing a
+release evidence snapshot.
+
 ---
 
-## Current verified readiness ledger
+## 2026-08-01 active implementation handoff
 
-**Evidence date:** 2026-07-30
+**Verdict:** `ALL_LOCALLY_SPECIFIABLE_FINDINGS_COMPLETE_NOT_RELEASE_READY`
+
+The implementation and continuation reports remain the detailed source of truth:
+[MESH_IMPLEMENTATION_COMPLETION_REPORT_2026-08-01.md](MESH_IMPLEMENTATION_COMPLETION_REPORT_2026-08-01.md).
+It maps every Phase 1-4 finding to its root cause, implementation, regression
+evidence, exact local verification, and remaining external owner. The combined
+implementation has now been reviewed, recorded on `main`, and verified from a
+clean worktree. The readiness ledger must be rebound in a final ledger-only
+commit to the clean tested source snapshot before exact-SHA evidence is used.
+
+The final adversarial continuation closed additional local gaps that were not
+captured by the earlier snapshots below:
+
+- malformed admission links cannot downgrade into direct joins, invitation
+  presentation metadata suppresses duplicated capabilities, and admission
+  responses are bounded while streaming;
+- cross-community room selection repairs before network refresh, late
+  mark-read/upgrade errors stay room-scoped, failed pin mutations expose a
+  real retry, and browser/OIDC readiness is generation-bound to the selected
+  service;
+- candidate evidence no longer dirties the checkout before clean-source
+  validation, dependency evidence is re-bound to the checked-out lockfile and
+  policy, checksums are attested, signing material is failure-safely cleaned,
+  and the disposable federation workflow requires two independently reset,
+  separately hashed cycles.
+
+The readiness ledger now has 24 gates. The 58-case external campaign is split
+without reducing scope: 50 Windows/provider/community/publication cases are R2,
+while four macOS/Linux assistive-technology combinations and four installed
+native-invitation cases are explicit R4 gates. R0 exact-SHA dependency evidence
+is required. Local clean-source evidence does not substitute for protected
+same-SHA CI or production acceptance.
+
+Current clean-source local evidence includes 107 Vitest files / 774 tests,
+67/67 Chromium cases, passing Matrix and legacy Rust feature graphs,
+Matrix/legacy security filters at 19/13, strict Matrix and legacy Clippy,
+formatting, TypeScript, clean ESLint, zero npm vulnerabilities, daemon-free
+homeserver recovery checks, and live public-service discovery checks. The final
+Matrix bundle remains inside every tightened budget: 227.31 KiB entry,
+446.67 KiB eager JavaScript, 1,112.08 KiB all JavaScript, and 1,544.88 KiB all
+production assets. These local results do not satisfy protected same-SHA,
+signed-build, operator, accessibility, publication, or physical MatrixRTC gates.
+
+Rebind `releaseSha` only through the ledger-only evidence commit described
+above. Do not publish or promote a draft candidate, enable the updater, enable
+MatrixRTC, provision admission, or claim authoritative moderation audit until
+the named external contracts and campaigns in the completion report pass.
+
+## Earlier verified readiness snapshots
+
+**Evidence date:** 2026-07-31
 **Branch:** `main`
 **Phase 0 implementation SHA:** `67b1ec80d90d9f1e4d016fea8984a14b06b2d37a`
 **Phase 0 main merge SHA:** `12f451dca133f4d7658e42a7930614691b27a299`
@@ -19,10 +79,281 @@ protected checks and two independently reset federation/recovery runs passed on
 the exact Z1-Z8 implementation SHA. Public beta publication remains gated on
 the owner-operated and external approvals listed below.
 
-This section is the current source of truth. The detailed workstream review below
-is retained as the original `2ca3dcc` audit baseline, so statements there that
+This section is retained as a historical clean-SHA snapshot. The detailed
+workstream review below is the original `2ca3dcc` audit baseline, so statements there that
 describe invitations, deep links, account removal, export, rate-limit cleanup,
 or test counts as missing are historical rather than current.
+
+### 2026-07-31 continuation: clean-source audit refresh
+
+The authoritative application source snapshot for the current local evidence is
+`4824d3baf7a6c179b90c60ece69e122118774edd`; `71b59ba78ecf5e88bd921bba13228da3e42060b8`
+is the final readiness-ledger-only commit on `main`. The worktree is clean. The
+ledger is valid when checked against that metadata commit with the documented
+ledger-only exception.
+
+The current local gates are green: 98 Vitest files / 707 tests, 170 Matrix Rust
+tests, 206 legacy Rust tests, 66 Chromium browser tests, 173 IPC commands,
+Matrix/legacy security filters at 19/13, strict Matrix and legacy Clippy,
+formatting, TypeScript, ESLint, npm audit, MatrixRTC offline preflight, public
+service/site validation, design-token/icon checks, and the on-device AI boundary.
+The production bundle remains within every configured budget.
+
+The raw Rust lockfile audit still reports five unresolved advisories in the
+full dependency graph (`hickory-proto`, `ring`, and `rustls-webpki`). The
+workflow-equivalent Matrix release-scoped audit passes because the affected
+legacy dependency versions are excluded from the Matrix graph; these findings
+must remain documented as legacy dependency debt, not described as fixed.
+
+No new Matrix wire event, signed invitation contract, permission extension,
+channel-lifetime scheduler, or voice capability flag was invented during this
+refresh. The remaining release blockers are live/provider onboarding, two-
+homeserver recovery, signed public Windows artifacts, MatrixRTC physical/network
+acceptance, manual assistive-technology/target-WebView testing, and owner/legal
+publication and operator restore evidence.
+
+### 2026-07-31 security, privacy, voice, and accessibility tranche
+
+**Verdict:** `LOCALLY_INTEGRATED_NOT_RELEASE_READY`.
+
+This tranche was verified in an uncommitted `main` worktree based on
+`b2427b637b659939bebb11ba620c8c434243acc9`. The base SHA is exact, but it
+does not identify the uncommitted integration changes; protected same-source
+CI and release evidence therefore remain unavailable.
+
+Delivered locally:
+
+- Native notifications now default to a safe sender plus `New message`, remove
+  remote avatars, and expose bounded sanitized message text only after an
+  explicit account-scoped opt-in. Settings warn about lock screens, mirrored
+  displays, and notification history; fresh, migrated, and switched accounts
+  default the preference to off.
+- Ban and recovery remain separate Matrix boundaries, invitation v5 tests
+  reject occupancy and secret-bearing metadata, and a behavior-oriented CI
+  guard rejects network AI providers, silent model downloads, and AI
+  send/invite/role/moderation authority.
+- Voice engine cleanup, MatrixRTC evidence validation, fail-closed voice
+  capability state, lazy UI boundaries, semantic design roles, command
+  palette scopes, sequence-card list semantics, F6 region navigation, reduced
+  motion/transparency controls, and account-scoped room tabs were integrated
+  from the companion lanes. Voice remains unavailable.
+
+Final serialized local evidence:
+
+- `npm ci` installed and audited 406 packages; `npm audit --audit-level=high`
+  found 0 vulnerabilities. ESLint and TypeScript passed with zero errors or
+  warnings.
+- Vitest passed 98 files / 700 tests with one worker. Playwright passed 66/66
+  Chromium tests with one worker. Design-token, icon, 173-command IPC,
+  generated DTO, AI-boundary, public-service, and nine-page public-site checks
+  passed.
+- The production build passed. Bundle budgets passed at 249.69 KiB entry,
+  438.36 KiB eager JavaScript, 1,879.86 KiB all JavaScript, 80.41 KiB CSS,
+  332.28 KiB fonts, and 2,292.55 KiB total assets.
+- Matrix and legacy security filters passed 19 and 13 tests. Formatting and
+  Matrix all-target Clippy passed with warnings denied. The complete Matrix
+  command passed 169 library tests, one generated-contract test, and two
+  deterministic live-harness helpers; the complete legacy command passed 206
+  library tests, one generated-contract test, 15 crypto tests, and two
+  deterministic TURN outcomes.
+- Two independently reset disposable federation/recovery cycles each passed
+  2/2: 179,020 ms plus 7,030 ms fresh registration, then 181,548 ms plus
+  6,871 ms fresh registration. Both covered encrypted cross-service history,
+  offline exactly-once delivery, fresh-device room/DM recovery, account-data
+  propagation, room upgrades, bans, and moderation audit. Windows deferred
+  deletion of one temporary SDK store after each successful cycle because an
+  SDK file remained locked; secure-key erasure completed and no repository or
+  production data was involved.
+
+Release blockers retained:
+
+- The strict Matrix frontend bundle gate fails closed because the 116.71 KiB
+  legacy `voice-engine` SimplePeer chunk is still emitted.
+- Recovery-key OS secure-store persistence/canary proof, typed other-user
+  recovery advisories, reciprocal per-conversation typing/read controls, and
+  a cryptographically signed/revocable invitation payload remain incomplete.
+- MatrixRTC still requires owner-approved infrastructure and 23/23 physical
+  device/network evidence. NVDA, VoiceOver, Orca, target-webview, manual zoom,
+  text-scaling, and high-contrast sessions remain unrun.
+- Protected CI on a committed integrated SHA, production OIDC/provider
+  lifecycle, DNS/TLS/operator exercises, signing, legal approval, publication,
+  and canonical public-download verification remain external gates.
+
+### 2026-07-31 verdict follow-up
+
+**Verdict:** `ALL_LOCALLY_SPECIFIABLE_FINDINGS_COMPLETE_NOT_RELEASE_READY`.
+
+This follow-up supersedes the fixed blocker statements in the preceding
+historical tranche. It remains an uncommitted `main` worktree based on
+`b2427b637b659939bebb11ba620c8c434243acc9`, so protected same-source CI and
+release evidence are not claimed.
+
+Delivered locally:
+
+- Upgraded `event-listener` to 5.4.2 and made the security workflow deny
+  unsound advisories, with documented target/feature-scoped exceptions for
+  pre-existing transitive dependencies.
+- Split the Matrix and LAN frontend build modes. The Matrix release bundle now
+  excludes the SimplePeer implementation entirely; the explicit LAN build
+  retains it under a separate Tauri configuration.
+- Corrected Ctrl/Meta room-tab navigation, Alt+Shift reordering, account-scoped
+  tab cleanup, restored-tab reconciliation, and authoritative mention counts.
+- Extended the AI manifest guard to parse hyphenated, renamed, target, dev, and
+  build dependency declarations.
+- Added account-scoped protected storage for the one-time recovery credential,
+  typed saved/missing/unavailable and verified/failed states, bounded canary
+  proof, manual saved-copy testing, and five-credential local-account erasure.
+- Added bounded per-conversation typing and receipt overrides, effective
+  backend publication policy, reciprocal display gating, account-data sync,
+  generation-safe account switching, and focused settings controls.
+- Replaced the Windows live-test pause-only restart with complete SDK runtime
+  shutdown before reopening the same store. Local account deletion now drops
+  the logged-out client before erasing the account store.
+
+Final local evidence:
+
+- TypeScript, ESLint, formatting, Matrix all-target Clippy with warnings
+  denied, generated IPC (173 commands), design/icon checks, the AI guard, and
+  public-service/public-site checks passed.
+- Vitest passed 98 files / 702 tests; Playwright passed 66/66. Complete Matrix
+  and legacy Rust suites, Matrix/legacy security filters, the admission-service
+  tests, `npm audit --audit-level=high`, and the workflow-equivalent
+  `cargo audit` policy passed.
+- The Matrix production build and strict release-bundle boundary passed with no
+  SimplePeer implementation. The explicit LAN build emitted the expected
+  116.71 KiB legacy voice-engine chunk.
+- Two independent post-fix reset cycles each passed the disposable Matrix live
+  suite 2/2, including encrypted cross-service history, fresh-device room/DM
+  recovery, protected recovery state, per-conversation privacy, account-data
+  propagation, moderation, registration, and strict Windows cleanup. The final
+  rerun finished in 211.72 seconds with no deferred-deletion warning.
+
+Remaining hard stops and external gates:
+
+- No typed other-user recovery advisory or cryptographically signed/revocable
+  invitation schema was invented. Both require a reviewed Matrix-compatible
+  event/product contract; signed invitations additionally require coordinated
+  admission-service, backend, fallback-site, and offline behavior.
+- Backend-authoritative community onboarding, advanced permission semantics,
+  and channel lifecycle scheduling/retention require explicit protocol,
+  persistence, authorization, and operator-policy decisions.
+- MatrixRTC still requires owner-approved infrastructure and 23/23 physical
+  device/network evidence. Manual assistive-technology and target-webview
+  sessions remain external acceptance work.
+- Protected CI on a committed integrated SHA, production OIDC/provider
+  lifecycle, DNS/TLS/operator exercises, signing, legal approval, publication,
+  and canonical public-download verification remain owner/external gates.
+
+### 2026-07-31 wave-two final integration barrier
+
+**Verdict:** `LOCALLY_INTEGRATED_NOT_RELEASE_READY`.
+
+The barrier was first verified in a dirty `main` integration worktree based on
+`72f093c84621183073ec43e233cfe0a26a1ca5f2`. Unified code commit
+`7effb0cea2eba0b92aa4a62d749aad12ddbfdbbe` records the reviewed source
+state, and a documentation-only follow-up records the final clean-commit live
+results below. Local verification and a clean commit do not substitute for
+protected same-SHA CI, signing, deployment, or public-download evidence.
+
+Integrated result:
+
+- External registration preserves the explicitly selected account service and
+  opaque pending invitation across restart. Continuation state is bounded,
+  replay-resistant, expires, and is consumed only after authentication
+  succeeds.
+- Browser sign-in now selects a public desktop client registration by the exact
+  canonical issuer discovered from the selected service. The fixed callback is
+  `http://127.0.0.1:8418/oauth/callback`; one global client ID, issuer aliases,
+  dynamic fallback, and callback variation are rejected. The local build has no
+  embedded production registrations, so browser sign-in remains fail-closed.
+- Account switching clears rooms, DMs, drafts, downloads, notification and
+  privacy preferences, recovery state, voice state, selection state, and
+  identity-scoped caches before the next bootstrap. In-flight preference reads
+  are generation-invalidated; device-local appearance and the native pending
+  invitation are preserved.
+- Agent 3's authoritative community permission reader is now part of the shared
+  backend/IPC contract. Renderer reads are coalesced, generation-guarded, and
+  refreshed after role changes plus relevant `m.room.power_levels` and
+  `m.space.child` sync events. Role Apply stays disabled without current
+  authority, and diagnostics list bounded per-room status and plain failure
+  reasons.
+- Agent 2's explicit Matrix presence publication/rollback, one-second bounded
+  `sync_once`, live-test diagnostics, MatrixRTC evidence controls, release
+  provenance, dependency split, and signing checks were preserved. Voice
+  remains unavailable and all 23 physical/network MatrixRTC cases remain
+  `not-run`.
+- The release workflow accepts the reviewed non-secret
+  `MESH_OAUTH_CLIENT_REGISTRATIONS_JSON` repository variable, but no provider
+  IDs, signing keys, secrets, or production values were invented.
+- C1 guided entry, C2 forums/events, C3 integrations, C4 expression features,
+  and C5 cache/i18n/mobile work remain not started; they were not smuggled
+  through the C0 integration barrier.
+
+Final serialized evidence from the integrated worktree:
+
+- `npm ci` audited 406 packages; `npm audit` reported 0 vulnerabilities.
+  ESLint passed with zero warnings and TypeScript passed with no errors.
+- Vitest passed 91 files and 648 tests with one worker. Playwright passed 64 of
+  64 browser/WCAG scenarios with one worker. The independent integration
+  verification runtime sample was 160 ms ready, 97 DOM nodes, 12,700,000 heap
+  bytes, 0 ms long tasks, and 3,614,755 transferred bytes.
+- The production build passed. Bundle budgets passed at 201.80 KiB entry,
+  514.13 KiB eager JavaScript, 1,967.16 KiB all JavaScript, 74.52 KiB CSS,
+  332.28 KiB fonts, and 2,373.96 KiB total assets.
+- Design-token, central-icon, 172-command IPC, generated Rust-to-TypeScript DTO,
+  three reviewed public-service, nine-page public-site, and `git diff --check`
+  gates passed.
+- Matrix formatting and all-target Clippy passed with warnings denied. The
+  Matrix tree passed 164 library tests, one generated-contract test, and two
+  deterministic live-harness helper tests; three environment-backed tests were
+  explicitly ignored. The legacy tree passed 203 library tests, one
+  generated-contract test, 15 crypto integration tests, and two deterministic
+  TURN outcomes; 19 live/soak/environment cases were explicitly ignored.
+- Security-invariant filters passed 19 Matrix and 13 legacy behavior tests.
+
+Clean-commit live evidence:
+
+- After the unified code commit, two independently reset local
+  federation/recovery cycles ran on clean source SHA
+  `7effb0cea2eba0b92aa4a62d749aad12ddbfdbbe`. Each cycle passed two tests
+  with zero failures: 180,916 ms plus 6,942 ms fresh registration, then
+  179,894 ms plus 6,734 ms fresh registration.
+- Both clean-commit cycles covered encrypted cross-service DMs and communities,
+  stale `m.direct` reconciliation, room discovery/knock/join, explicit
+  federated presence transitions, power levels, custom emoji/media/reactions,
+  encrypted messages and pins, offline delivery and catch-up, fresh-device
+  historical decryption, notification and account-data reconciliation, room
+  upgrades, same-device restoration, server-wide bans, and moderation audit.
+  The disposable Docker containers and network were removed after the second
+  run.
+- Windows deferred deletion of one disposable SDK store after each successful
+  cycle because an SDK file remained temporarily locked. Both paths were under
+  the operating-system temp directory, outside the repository; no real account
+  or production service was used.
+- Agent 2's earlier two pre-integration cycles also passed against the observed
+  base HEAD after its final presence fix: 179,634 ms plus 7,012 ms fresh
+  registration, then 179,408 ms plus 6,892 ms fresh registration. Those runs
+  remain supporting history rather than final-source evidence.
+- Agent 2's RTC evidence validator passed 15 positive/negative cases, and its
+  local voice checks passed 42 frontend tests plus the Rust boundary. Those are
+  validator and fail-closed implementation results, not live media acceptance.
+- Physical MatrixRTC, signing, public-download, and production-operator cases
+  were not run. Agent 3's compatible-client acceptance also remains open.
+
+External gates still block release readiness:
+
+- reviewed provider-owned client registrations and redirect approval;
+  first-login, refresh, restart, revocation, logout-everywhere, recovery, and
+  clean installed-app OIDC evidence;
+- protected CI/security evidence for the exact unified integration commit;
+- trusted LiveKit authorization/SFU/TURN, active media E2EE and key rotation,
+  revocation, physical devices, a reviewed compatible client, and the 23-case
+  MatrixRTC acceptance matrix;
+- production DNS/TLS/federation, Mac mini or other operator deployment,
+  backup/restore, monitoring, quotas, incident, and rollback exercises;
+- non-placeholder release version, publisher identity, signing certificate,
+  signed installers, SBOM/provenance/attestation review, draft release, legal
+  approval, public pages, and canonical public-download verification.
 
 ### Phase 0 implementation
 

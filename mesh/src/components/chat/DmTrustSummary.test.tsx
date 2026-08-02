@@ -25,6 +25,7 @@ const trust: RoomTrustSnapshot = {
     healthy: true,
     checkedAt: '2026-07-25T12:00:00.000Z',
     lastSuccessfulTestAt: '2026-07-25T12:00:00.000Z',
+    secureStorageState: 'saved',
     warnings: [],
   },
   accountId: '@me:mesh.im',
@@ -38,11 +39,7 @@ function TrustToSecurityHarness() {
 
   return (
     <>
-      <DmTrustSummary
-        trust={trust}
-        peerName="Ana"
-        onReviewDevices={() => setSecurityOpen(true)}
-      />
+      <DmTrustSummary trust={trust} peerName="Ana" onReviewDevices={() => setSecurityOpen(true)} />
       {securityOpen && (
         <Modal open onClose={() => setSecurityOpen(false)} title="Your devices">
           <p>Device security</p>
@@ -61,16 +58,21 @@ describe('DmTrustSummary', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-    vi.stubGlobal('ResizeObserver', class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    })
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
   })
 
   afterEach(async () => {
     await act(async () => root.unmount())
-    document.body.querySelectorAll('[data-radix-popper-content-wrapper]').forEach((element) => element.remove())
+    document.body
+      .querySelectorAll('[data-radix-popper-content-wrapper]')
+      .forEach((element) => element.remove())
     container.remove()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
@@ -79,13 +81,7 @@ describe('DmTrustSummary', () => {
   it('keeps detailed trust information behind a compact, actionable status', async () => {
     const onReviewDevices = vi.fn()
     await act(async () => {
-      root.render(
-        <DmTrustSummary
-          trust={trust}
-          peerName="Ana"
-          onReviewDevices={onReviewDevices}
-        />,
-      )
+      root.render(<DmTrustSummary trust={trust} peerName="Ana" onReviewDevices={onReviewDevices} />)
     })
 
     const trigger = container.querySelector<HTMLButtonElement>(

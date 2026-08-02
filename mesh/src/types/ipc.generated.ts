@@ -24,6 +24,22 @@ export type MatrixNotification = { roomId: string, eventId: string, sender: stri
 
 export type MatrixUnreadUpdate = { roomId: string, unreadMessages: number, unreadMentions: number, };
 
+export type MatrixPermissionRoomStatus = "loaded" | "matrix-default" | "inaccessible" | "unsupported" | "failed";
+
+export type CommunityPermissionAggregateStatus = "granted-everywhere" | "granted-some-rooms" | "not-granted" | "unknown";
+
+export type CommunityPermissionId = "participate" | "invite" | "redact" | "remove" | "ban" | "roomState" | "roles";
+
+export type MatrixRoomPowerLevelProjection = { users: { [key in string]?: number }, usersDefault: number, events: { [key in string]?: number }, eventsDefault: number, stateDefault: number, ban: number, kick: number, invite: number, redact: number, notifications: { [key in string]?: number }, creatorUserIds: Array<string>, privilegedCreatorUserIds: Array<string>, joinedUserIds: Array<string>, };
+
+export type MatrixRoomPermissionProjection = { roomId: string, roomName: string, roomKind: "space" | "room", status: MatrixPermissionRoomStatus, policy: MatrixRoomPowerLevelProjection | null, failureReason: string | null, };
+
+export type CommunityPermissionAggregate = { permissionId: CommunityPermissionId, status: CommunityPermissionAggregateStatus, grantedRoomCount: number, verifiedRoomCount: number, totalRoomCount: number, };
+
+export type CommunityPermissionProjection = { communityId: string, subjectUserId: string, discoveryComplete: boolean, discoveryFailureReason: string | null, rooms: Array<MatrixRoomPermissionProjection>, aggregate: Array<CommunityPermissionAggregate>, };
+
+export type MatrixPermissionStateChanged = { roomId: string, };
+
 export type MatrixQueuedMessageState = "pending" | "failed" | "sent" | "cancelled";
 
 export type MatrixQueuedMessageUpdate = { roomId: string, transactionId: string, state: MatrixQueuedMessageState, eventId?: string | null, message?: MessageDto | null, };
@@ -50,16 +66,41 @@ export type MatrixRtcMediaKeyLease = { roomId: string, sessionId: string, member
 
 export type MatrixRtcJoinResult = { roomId: string, sessionId: string, memberId: string, url: string, token: string, roomName: string, participantIdentity: string, mediaE2eeVerified: boolean, mediaKey: MatrixRtcMediaKey, };
 
-export type NotificationPresentationContext = { activeRoomId: string | null, notificationsEnabled: boolean, doNotDisturb: boolean, quietHoursActive: boolean, mutedRoomIds: Array<string>, };
+export type NotificationPresentationContext = { activeRoomId: string | null, notificationsEnabled: boolean, doNotDisturb: boolean, quietHoursActive: boolean,
+/**
+ * Explicit account-scoped opt-in for showing bounded message text in
+ * native notifications. Missing values fail closed for older clients.
+ */
+showMessageContent: boolean, mutedRoomIds: Array<string>, };
+
+export type MatrixRecoverySecureStorageState = "saved" | "missing" | "unavailable";
+
+export type MatrixRecoveryVerificationState = "verified" | "failed";
+
+export type MatrixRecoveryHealth = { recoveryState: string, backupState: string, backupExistsOnServer: boolean, backupEnabled: boolean, healthy: boolean, checkedAt: string, lastSuccessfulTestAt: string | null, secureStorageState: MatrixRecoverySecureStorageState, warnings: Array<string>, };
+
+export type MatrixRecoverySetupResult = { recoveryKey: string, secureStorageState: MatrixRecoverySecureStorageState, verificationState: MatrixRecoveryVerificationState, };
 
 export type ReadReceiptMode = "public" | "private" | "off";
 
-export type UserPreferences = { schemaVersion: number, notificationsEnabled: boolean, notificationSound: boolean, notificationSoundId?: string | null, doNotDisturb: boolean, quietHoursEnabled: boolean, quietHoursStart?: string | null, quietHoursEnd?: string | null, mutedChannels: Array<string>, mutedCommunities: Array<string>, mutedChannelUntil: { [key in string]?: string | null }, mutedCommunityUntil: { [key in string]?: string | null }, channelNotificationLevels: { [key in string]?: MatrixRoomNotificationMode }, sendReadReceipts: boolean,
+export type ConversationPrivacyOverride = { readReceiptMode?: ReadReceiptMode | null, sendTypingIndicators?: boolean | null, };
+
+export type UserPreferences = { schemaVersion: number, notificationsEnabled: boolean, notificationSound: boolean, notificationSoundId?: string | null, doNotDisturb: boolean,
+/**
+ * Whether bounded message text may appear in native notifications.
+ * Fresh and migrated accounts remain private unless the user opts in.
+ */
+showNotificationContent: boolean, quietHoursEnabled: boolean, quietHoursStart?: string | null, quietHoursEnd?: string | null, mutedChannels: Array<string>, mutedCommunities: Array<string>, mutedChannelUntil: { [key in string]?: string | null }, mutedCommunityUntil: { [key in string]?: string | null }, channelNotificationLevels: { [key in string]?: MatrixRoomNotificationMode }, sendReadReceipts: boolean,
 /**
  * Explicit receipt visibility. Missing values are migrated from the
  * legacy boolean: true meant private-only and false meant off.
  */
-readReceiptMode?: ReadReceiptMode | null, sendTypingIndicators: boolean, sharePresence: boolean, invisibleMode: boolean, updatedAt: string, };
+readReceiptMode?: ReadReceiptMode | null, sendTypingIndicators: boolean,
+/**
+ * Optional per-conversation privacy choices, keyed by Matrix room ID.
+ * Missing fields inherit the account-level choice above.
+ */
+conversationPrivacy: { [key in string]?: ConversationPrivacyOverride }, sharePresence: boolean, invisibleMode: boolean, updatedAt: string, };
 
 export type CustomEmoji = { shortcode: string, body: string, mxcUri: string, contentType: string, width: number, height: number, sizeBytes: number, };
 
@@ -69,7 +110,7 @@ export type ModerationAuditEntry = { id: string, actorUserId: string, actorDispl
 
 export type CommunityModerationResult = { audit: ModerationAuditEntry, auditRecorded: boolean, };
 
-export type MatrixCommunityAdmission = { registrationToken?: string | null, roomId: string, service: string, via: Array<string>, expiresAt?: number | null, communityName?: string | null, inviterDisplayName?: string | null, inviterUserId?: string | null, joinRule?: string | null, communityServiceDisplayName?: string | null, };
+export type MatrixCommunityAdmission = { roomId: string, service: string, via: Array<string>, expiresAt?: number | null, communityName?: string | null, inviterDisplayName?: string | null, inviterUserId?: string | null, joinRule?: string | null, communityServiceDisplayName?: string | null, };
 
 export type PendingInvitationMetadata = { handle: string, roomOrAlias: string | null, via: Array<string>, service: string | null, admissionService: string | null, communityName?: string | null, inviterDisplayName?: string | null, inviterUserId?: string | null, joinRule?: string | null, communityServiceDisplayName?: string | null, storedAt: number, expiresAt: number, };
 

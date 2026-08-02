@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-kick-user"
+description = "Enables the kick_user command without any pre-configured scope."
+commands.allow = ["kick_user"]
+
+[[permission]]
+identifier = "deny-kick-user"
+description = "Denies the kick_user command without any pre-configured scope."
+commands.deny = ["kick_user"]

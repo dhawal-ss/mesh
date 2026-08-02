@@ -332,7 +332,7 @@ async fn handle_swarm_event(
         }
         SwarmEvent::Behaviour(MeshBehaviourEvent::FileSharing(event)) => {
             match event {
-                libp2p::request_response::Event::Message { peer, message } => {
+                libp2p::request_response::Event::Message { peer, message, .. } => {
                     match message {
                         libp2p::request_response::Message::Request {
                             request, channel, ..
@@ -484,7 +484,7 @@ async fn handle_swarm_event(
             }
         }
         SwarmEvent::Behaviour(MeshBehaviourEvent::MessageHistory(event)) => match event {
-            libp2p::request_response::Event::Message { peer, message } => match message {
+            libp2p::request_response::Event::Message { peer, message, .. } => match message {
                 libp2p::request_response::Message::Request {
                     request, channel, ..
                 } => {
@@ -540,7 +540,7 @@ async fn handle_swarm_event(
             }
         },
         SwarmEvent::Behaviour(MeshBehaviourEvent::ControlLog(event)) => match event {
-            libp2p::request_response::Event::Message { peer, message } => match message {
+            libp2p::request_response::Event::Message { peer, message, .. } => match message {
                 libp2p::request_response::Message::Request {
                     request, channel, ..
                 } => {
@@ -622,8 +622,8 @@ async fn handle_command(
         }
         NetworkCommand::UnsubscribeTopic { topic } => {
             let topic_hash = gossipsub::IdentTopic::new(&topic);
-            if let Err(e) = swarm.behaviour_mut().gossipsub.unsubscribe(&topic_hash) {
-                warn!("Failed to unsubscribe from topic {}: {}", topic, e);
+            if !swarm.behaviour_mut().gossipsub.unsubscribe(&topic_hash) {
+                warn!("Topic was not subscribed during unsubscribe: {}", topic);
             }
         }
         NetworkCommand::SubscribeChannel {
@@ -649,8 +649,11 @@ async fn handle_command(
         } => {
             let topic = crate::network::gossip::channel_messages_topic(&community_id, &channel_id);
             let topic_hash = gossipsub::IdentTopic::new(&topic);
-            if let Err(e) = swarm.behaviour_mut().gossipsub.unsubscribe(&topic_hash) {
-                warn!("Failed to unsubscribe from channel topic {}: {}", topic, e);
+            if !swarm.behaviour_mut().gossipsub.unsubscribe(&topic_hash) {
+                warn!(
+                    "Channel topic was not subscribed during unsubscribe: {}",
+                    topic
+                );
             } else {
                 info!("Unsubscribed from channel topic: {}", topic);
             }
@@ -665,7 +668,7 @@ async fn handle_command(
                 Ok(_) => {
                     // Published successfully to at least one peer
                 }
-                Err(gossipsub::PublishError::InsufficientPeers) => {
+                Err(gossipsub::PublishError::NoPeersSubscribedToTopic) => {
                     // Running solo — we're the only subscriber. The message
                     // is already stored in our local DB by send_message, so
                     // the user sees it. We silently drop the gossip publish
@@ -1019,8 +1022,8 @@ fn collect_dialable_addresses(
         addrs.extend(
             swarm
                 .listeners()
-                .cloned()
-                .filter(|addr| !is_unspecified_addr(addr)),
+                .filter(|addr| !is_unspecified_addr(addr))
+                .cloned(),
         );
     }
 

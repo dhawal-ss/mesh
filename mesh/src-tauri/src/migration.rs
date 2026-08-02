@@ -588,7 +588,7 @@ pub fn export_legacy_archive(
         files.push(file);
     }
 
-    records.sort_by(|left, right| record_sort_key(left).cmp(&record_sort_key(right)));
+    records.sort_by_key(record_sort_key);
     let mut archive = LegacyArchive {
         schema_version: LEGACY_ARCHIVE_SCHEMA_VERSION,
         archive_id: uuid::Uuid::new_v4().to_string(),
@@ -949,6 +949,7 @@ pub fn store_import_receipt(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn make_record(
     kind: LegacyRecordKind,
     entity_id: String,

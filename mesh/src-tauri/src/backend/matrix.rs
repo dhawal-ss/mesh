@@ -52,10 +52,14 @@ use matrix_sdk::{
                     AuthorizationServerMetadata, CodeChallengeMethod, GrantType, ResponseMode,
                     ResponseType,
                 },
+                presence::set_presence::v3::Request as SetPresenceRequest,
                 push::{delete_pushrule, get_pushrules_all, set_pushrule},
                 receipt::create_receipt::v3::ReceiptType as MatrixReceiptType,
                 room::{
-                    create_room::v3::{CreationContent, Request as CreateRoomRequest, RoomPreset},
+                    create_room::{
+                        v3::{CreationContent, Request as CreateRoomRequest, RoomPreset},
+                        RoomPowerLevelsContentOverride,
+                    },
                     Visibility,
                 },
                 rtc::{transports::v1::Request as MatrixRtcTransportsRequest, RtcTransport},
@@ -86,11 +90,15 @@ use matrix_sdk::{
                     RoomMessageEventContent, RoomMessageEventContentWithoutRelation,
                 },
                 pinned_events::{OriginalSyncRoomPinnedEventsEvent, RoomPinnedEventsEventContent},
+                power_levels::OriginalSyncRoomPowerLevelsEvent,
                 tombstone::RoomTombstoneEventContent,
                 EncryptedFile, EncryptedFileHash, EncryptedFileHashAlgorithm, ImageInfo,
                 MediaSource, ThumbnailInfo,
             },
-            space::{child::SpaceChildEventContent, parent::SpaceParentEventContent},
+            space::{
+                child::{OriginalSyncSpaceChildEvent, SpaceChildEventContent},
+                parent::SpaceParentEventContent,
+            },
             typing::SyncTypingEvent,
             AnyGlobalAccountDataEventContent, AnyInitialStateEvent, AnyMessageLikeEventContent,
             AnyStateEvent, AnyStateEventContent, AnyToDeviceEvent, AnyToDeviceEventContent,
@@ -120,14 +128,16 @@ use qrcode::render::svg;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tokio::io::AsyncWriteExt;
-use tokio::sync::{Mutex, Notify, RwLock, Semaphore};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::{Mutex, Notify, OwnedSemaphorePermit, RwLock, Semaphore};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::crypto::keychain;
-use crate::security::{create_private_dir, has_blocked_attachment_extension, open_private_file};
+use crate::security::{
+    classify_attachment, create_private_dir, open_private_file, AttachmentDisposition,
+};
 use crate::types::{
     community::{ChannelDto, CommunityDto},
     dm::{DirectMessageDto, DmConversationDto, ReadReceiptDto},
@@ -140,11 +150,13 @@ use crate::types::{
 use super::{
     BackendError, BackendKind, BackendResult, BackendStatus, CommunityAccessResult,
     CommunityAccessSettings, CommunityApplication, CommunityDirectoryEntry, CommunityMember,
-    CreatedCommunity, CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest, MatrixBackendEvent,
-    MatrixBackendEventCallback, MatrixDevice, MatrixLogin, MatrixNotification,
-    MatrixOidcAvailability, MatrixOidcStatus, MatrixPersonalDataExport, MatrixProfile,
-    MatrixQueuedMessageState, MatrixQueuedMessageUpdate, MatrixRecoveryHealth, MatrixRegistration,
-    MatrixRegistrationAvailability, MatrixRoomNotificationMode, MatrixRoomPins,
+    CommunityPermissionProjection, ConversationPrivacyOverride, CreatedCommunity, CustomEmoji,
+    MatrixAccount, MatrixAttachmentSendRequest, MatrixBackendEvent, MatrixBackendEventCallback,
+    MatrixDevice, MatrixLogin, MatrixNotification, MatrixOidcAvailability, MatrixOidcStatus,
+    MatrixPermissionStateChanged, MatrixPersonalDataExport, MatrixProfile,
+    MatrixQueuedMessageState, MatrixQueuedMessageUpdate, MatrixRecoveryHealth,
+    MatrixRecoverySecureStorageState, MatrixRecoverySetupResult, MatrixRecoveryVerificationState,
+    MatrixRegistration, MatrixRegistrationAvailability, MatrixRoomNotificationMode, MatrixRoomPins,
     MatrixRoomPinsUpdate, MatrixRoomUpgrade, MatrixRtcJoinResult, MatrixRtcMediaKey,
     MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember,
     MatrixRtcMembershipUpdate, MatrixServiceCapabilities, MatrixTransferDirection,
@@ -158,6 +170,10 @@ use super::{
 mod moderation;
 mod oidc;
 use moderation::MatrixModerationAction;
+use oidc::configuration::{
+    NativeOidcCapabilities, OidcClientRegistration, OidcClientRegistry, OidcRegistrationError,
+    NATIVE_REDIRECT_URI,
+};
 
 const SESSION_KEY: &str = "matrix-session-v1";
 const STORE_PASSPHRASE_KEY: &str = "matrix-store-passphrase-v1";
@@ -165,9 +181,13 @@ const ACCOUNT_REGISTRY_KEY: &str = "matrix-account-registry-v1";
 const PENDING_INVITATION_KEY: &str = "matrix-pending-invitation-key-v1";
 const PENDING_INVITATION_FILE: &str = "pending-invitation-v1.bin";
 const PENDING_INVITATION_MAX_BYTES: usize = 8 * 1024;
+// ChaCha20-Poly1305 adds a 12-byte nonce and 16-byte authentication tag.
+const PENDING_INVITATION_MAX_CIPHERTEXT_BYTES: usize = PENDING_INVITATION_MAX_BYTES + 28;
 const PENDING_INVITATION_MAX_AGE_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
+const PENDING_INVITATION_JOIN_LEASE_MS: u64 = 90 * 1_000;
 const TRUSTED_DEVICES_KEY: &str = "matrix-trusted-devices-v1";
 const RECOVERY_TEST_KEY: &str = "matrix-recovery-test-v1";
+const RECOVERY_CREDENTIAL_KEY: &str = "matrix-recovery-credential-v1";
 const PREFERENCES_EVENT_TYPE: &str = "org.mesh.preferences.v1";
 const MAX_PINNED_EVENTS: usize = 100;
 const COMMUNITY_HOMESERVER_ENV: &str = "MESH_COMMUNITY_HOMESERVER";
@@ -175,19 +195,21 @@ const COMMUNITY_SERVER_NAME_ENV: &str = "MESH_COMMUNITY_SERVER_NAME";
 const LOGIN_TIMEOUT_SECONDS: u64 = 45;
 const SESSION_RESTORE_SYNC_TIMEOUT_SECONDS: u64 = 10;
 const REGISTRATION_TIMEOUT_SECONDS: u64 = 45;
-const OIDC_REDIRECT_URI: &str = "http://127.0.0.1:8418/oauth/callback";
-const OIDC_CLIENT_ID_ENV: &str = "MESH_OAUTH_CLIENT_ID";
+const LOCAL_ACCOUNT_STORE_REMOVE_ATTEMPTS: usize = 8;
+const LOCAL_ACCOUNT_STORE_REMOVE_BASE_DELAY_MS: u64 = 50;
 const MAX_COMPOSER_DRAFT_BYTES: usize = 16 * 1024;
 const CLIENT_REQUEST_ID_KEY: &str = "org.mesh.client_request_id";
 const MAX_MEDIA_CACHE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES: u64 = 100 * 1024 * 1024;
+const MAX_CONCURRENT_MEDIA_UPLOADS: usize = 3;
+const MAX_CONCURRENT_MEDIA_DOWNLOADS: usize = 3;
+const MAX_INFLIGHT_MEDIA_BYTES: usize = 200 * 1024 * 1024;
+const MAX_MESSAGE_BODY_BYTES: usize = 16 * 1024;
 const MAX_THUMBNAIL_SOURCE_PIXELS: u64 = 25_000_000;
 const MAX_THUMBNAIL_SOURCE_DIMENSION: u32 = 16_384;
 const MAX_THUMBNAIL_DECODE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_THUMBNAIL_DIMENSION: u32 = 512;
 const MAX_THUMBNAIL_BYTES: usize = 2 * 1024 * 1024;
-const MAX_INLINE_THUMBNAIL_DECODE_BYTES: u64 = 8 * 1024 * 1024;
-const MAX_CONCURRENT_THUMBNAIL_LOADS: usize = 4;
 const MAX_CONCURRENT_LIGHTBOX_IMAGE_LOADS: usize = 1;
 const MEDIA_DOWNLOAD_PROGRESS_INTERVAL_BYTES: u64 = 1024 * 1024;
 // A Content-Length hint is remote-claimed and unverified, so the initial
@@ -232,13 +254,6 @@ const MATRIX_RTC_MAX_PENDING_KEYS: usize = 256;
 const MATRIX_RTC_MAX_PENDING_ACTIVATIONS: usize = 64;
 const MATRIX_RTC_MAX_TO_DEVICE_BYTES: usize = 16 * 1024;
 const MATRIX_RTC_KEY_ATTEMPTS_PER_MINUTE: usize = 32;
-const BLOCKED_MEDIA_CONTENT_TYPES: &[&str] = &[
-    "application/x-msdownload",
-    "application/x-msdos-program",
-    "application/x-sh",
-    "application/x-shellscript",
-    "text/x-shellscript",
-];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MatrixRtcDiscoverySource {
@@ -277,15 +292,9 @@ struct GeneratedThumbnail {
     height: u32,
 }
 
-struct ResolvedMatrixThumbnail {
-    metadata: AttachmentThumbnailDto,
-    encrypted_file: EncryptedFile,
-}
-
 struct ResolvedMatrixAttachment {
     metadata: AttachmentDto,
     encrypted_file: EncryptedFile,
-    thumbnail: Option<ResolvedMatrixThumbnail>,
 }
 
 /// Incremental view of a media transfer so the download cap can be enforced on
@@ -543,10 +552,20 @@ struct LegacyPersistedSession {
     session: MatrixSession,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct PendingInvitationRecord {
     invite_link: String,
     metadata: PendingInvitationMetadata,
+    #[serde(default)]
+    bound_profile_id: Option<String>,
+    #[serde(default)]
+    joining_started_at: Option<u64>,
+}
+
+impl Drop for PendingInvitationRecord {
+    fn drop(&mut self) {
+        self.invite_link.zeroize();
+    }
 }
 
 impl PersistedAuthentication {
@@ -590,7 +609,7 @@ struct AccountStorage {
 struct LocalAccountRemovalPlan {
     profile_id: String,
     store_root: PathBuf,
-    key_names: [String; 4],
+    key_names: [String; 5],
 }
 
 struct LoginAttempt {
@@ -664,10 +683,11 @@ impl Default for MatrixSyncControl {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct WirePrivacyPreferences {
     read_receipt_mode: ReadReceiptMode,
     send_typing_indicators: bool,
+    conversation_privacy: std::collections::BTreeMap<String, ConversationPrivacyOverride>,
     share_presence: bool,
     invisible_mode: bool,
 }
@@ -677,6 +697,7 @@ impl From<&UserPreferences> for WirePrivacyPreferences {
         Self {
             read_receipt_mode: preferences.effective_read_receipt_mode(),
             send_typing_indicators: preferences.send_typing_indicators,
+            conversation_privacy: preferences.normalized_conversation_privacy(),
             share_presence: preferences.share_presence,
             invisible_mode: preferences.invisible_mode,
         }
@@ -684,7 +705,7 @@ impl From<&UserPreferences> for WirePrivacyPreferences {
 }
 
 impl WirePrivacyPreferences {
-    fn presence(self) -> PresenceState {
+    fn presence(&self) -> PresenceState {
         if self.share_presence && !self.invisible_mode {
             PresenceState::Online
         } else {
@@ -692,8 +713,22 @@ impl WirePrivacyPreferences {
         }
     }
 
-    fn should_send_typing_notice(self, already_sent: bool, typing: bool) -> bool {
-        (typing && self.send_typing_indicators) || (!typing && already_sent)
+    fn read_receipt_mode_for(&self, room_id: &str) -> ReadReceiptMode {
+        self.conversation_privacy
+            .get(room_id)
+            .and_then(|value| value.read_receipt_mode)
+            .unwrap_or(self.read_receipt_mode)
+    }
+
+    fn sends_typing_for(&self, room_id: &str) -> bool {
+        self.conversation_privacy
+            .get(room_id)
+            .and_then(|value| value.send_typing_indicators)
+            .unwrap_or(self.send_typing_indicators)
+    }
+
+    fn should_send_typing_notice(&self, room_id: &str, already_sent: bool, typing: bool) -> bool {
+        (typing && self.sends_typing_for(room_id)) || (!typing && already_sent)
     }
 }
 
@@ -727,16 +762,19 @@ pub struct MatrixBackend {
     runtime: RwLock<MatrixRuntime>,
     login_attempt: Mutex<Option<LoginAttempt>>,
     login_sequence: AtomicU64,
+    account_transition_gate: Arc<Mutex<()>>,
     verification_sessions: RwLock<HashMap<String, DeviceVerificationFlow>>,
     media_uploads: Mutex<HashMap<String, CancellationToken>>,
     media_downloads: Mutex<HashMap<String, CancellationToken>>,
+    media_upload_slots: Arc<Semaphore>,
+    media_download_slots: Arc<Semaphore>,
+    media_inflight_bytes: Arc<Semaphore>,
     custom_emoji_writes: Mutex<()>,
     verified_room_upgrades: RwLock<HashMap<OwnedRoomId, OwnedRoomId>>,
     send_queue_gate: Arc<Mutex<()>>,
     send_queue_reconcile: Arc<Notify>,
     send_queue_known: Arc<Mutex<HashMap<String, HashSet<String>>>>,
     pending_invitation_gate: Arc<Mutex<()>>,
-    thumbnail_loads: Semaphore,
     lightbox_image_loads: Semaphore,
     rtc_sessions: Arc<Mutex<HashMap<(String, String), MatrixRtcLocalSession>>>,
     rtc_media_keys: Arc<Mutex<MatrixRtcMediaKeyRuntime>>,
@@ -750,6 +788,11 @@ pub struct MatrixBackend {
     event_callback: Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
 }
 
+struct MediaTransferPermits {
+    _slot: OwnedSemaphorePermit,
+    _bytes: OwnedSemaphorePermit,
+}
+
 include!("matrix/messages.rs");
 include!("matrix/rtc.rs");
 include!("matrix/encryption.rs");
@@ -761,6 +804,67 @@ include!("matrix/emoji.rs");
 include!("matrix/personal_data.rs");
 
 impl MatrixBackend {
+    fn media_reservation_bytes(declared_size: u64) -> u64 {
+        if declared_size > 0 {
+            declared_size
+        } else {
+            // Missing size metadata must reserve the full permitted transfer,
+            // never zero bytes, before the response body can be allocated.
+            MAX_ATTACHMENT_BYTES
+        }
+    }
+
+    async fn acquire_media_transfer_permits(
+        slots: Arc<Semaphore>,
+        inflight_bytes: Arc<Semaphore>,
+        requested_bytes: u64,
+        cancellation: &CancellationToken,
+    ) -> BackendResult<MediaTransferPermits> {
+        let maximum_reservation = MAX_ATTACHMENT_BYTES + MAX_THUMBNAIL_BYTES as u64;
+        if requested_bytes == 0 || requested_bytes > maximum_reservation {
+            return Err(BackendError::InvalidConfiguration(
+                "attachment byte reservation is outside the native transfer limit".into(),
+            ));
+        }
+        let requested_bytes = u32::try_from(requested_bytes).map_err(|_| {
+            BackendError::InvalidConfiguration("attachment byte reservation is invalid".into())
+        })?;
+        let slot = tokio::select! {
+            permit = slots.acquire_owned() => permit.map_err(|_| {
+                BackendError::Other("Matrix media scheduler is unavailable".into())
+            })?,
+            _ = cancellation.cancelled() => {
+                return Err(BackendError::Other("Matrix attachment transfer cancelled".into()))
+            }
+        };
+        let bytes = tokio::select! {
+            permit = inflight_bytes.acquire_many_owned(requested_bytes) => permit.map_err(|_| {
+                BackendError::Other("Matrix media byte scheduler is unavailable".into())
+            })?,
+            _ = cancellation.cancelled() => {
+                return Err(BackendError::Other("Matrix attachment transfer cancelled".into()))
+            }
+        };
+        Ok(MediaTransferPermits {
+            _slot: slot,
+            _bytes: bytes,
+        })
+    }
+
+    fn validate_message_body(body: &str, label: &str) -> BackendResult<()> {
+        if body.trim().is_empty() {
+            return Err(BackendError::InvalidConfiguration(format!(
+                "{label} cannot be empty"
+            )));
+        }
+        if body.len() > MAX_MESSAGE_BODY_BYTES {
+            return Err(BackendError::InvalidConfiguration(format!(
+                "{label} is too large (maximum {MAX_MESSAGE_BODY_BYTES} UTF-8 bytes)"
+            )));
+        }
+        Ok(())
+    }
+
     pub fn new(store_root: PathBuf) -> Self {
         Self {
             store_root,
@@ -769,16 +873,19 @@ impl MatrixBackend {
             runtime: RwLock::new(MatrixRuntime::default()),
             login_attempt: Mutex::new(None),
             login_sequence: AtomicU64::new(0),
+            account_transition_gate: Arc::new(Mutex::new(())),
             verification_sessions: RwLock::new(HashMap::new()),
             media_uploads: Mutex::new(HashMap::new()),
             media_downloads: Mutex::new(HashMap::new()),
+            media_upload_slots: Arc::new(Semaphore::new(MAX_CONCURRENT_MEDIA_UPLOADS)),
+            media_download_slots: Arc::new(Semaphore::new(MAX_CONCURRENT_MEDIA_DOWNLOADS)),
+            media_inflight_bytes: Arc::new(Semaphore::new(MAX_INFLIGHT_MEDIA_BYTES)),
             custom_emoji_writes: Mutex::new(()),
             verified_room_upgrades: RwLock::new(HashMap::new()),
             send_queue_gate: Arc::new(Mutex::new(())),
             send_queue_reconcile: Arc::new(Notify::new()),
             send_queue_known: Arc::new(Mutex::new(HashMap::new())),
             pending_invitation_gate: Arc::new(Mutex::new(())),
-            thumbnail_loads: Semaphore::new(MAX_CONCURRENT_THUMBNAIL_LOADS),
             lightbox_image_loads: Semaphore::new(MAX_CONCURRENT_LIGHTBOX_IMAGE_LOADS),
             rtc_sessions: Arc::new(Mutex::new(HashMap::new())),
             rtc_media_keys: Arc::new(Mutex::new(MatrixRtcMediaKeyRuntime::default())),
@@ -814,16 +921,19 @@ impl MatrixBackend {
             runtime: RwLock::new(MatrixRuntime::default()),
             login_attempt: Mutex::new(None),
             login_sequence: AtomicU64::new(0),
+            account_transition_gate: Arc::new(Mutex::new(())),
             verification_sessions: RwLock::new(HashMap::new()),
             media_uploads: Mutex::new(HashMap::new()),
             media_downloads: Mutex::new(HashMap::new()),
+            media_upload_slots: Arc::new(Semaphore::new(MAX_CONCURRENT_MEDIA_UPLOADS)),
+            media_download_slots: Arc::new(Semaphore::new(MAX_CONCURRENT_MEDIA_DOWNLOADS)),
+            media_inflight_bytes: Arc::new(Semaphore::new(MAX_INFLIGHT_MEDIA_BYTES)),
             custom_emoji_writes: Mutex::new(()),
             verified_room_upgrades: RwLock::new(HashMap::new()),
             send_queue_gate: Arc::new(Mutex::new(())),
             send_queue_reconcile: Arc::new(Notify::new()),
             send_queue_known: Arc::new(Mutex::new(HashMap::new())),
             pending_invitation_gate: Arc::new(Mutex::new(())),
-            thumbnail_loads: Semaphore::new(MAX_CONCURRENT_THUMBNAIL_LOADS),
             lightbox_image_loads: Semaphore::new(MAX_CONCURRENT_LIGHTBOX_IMAGE_LOADS),
             rtc_sessions: Arc::new(Mutex::new(HashMap::new())),
             rtc_media_keys: Arc::new(Mutex::new(MatrixRtcMediaKeyRuntime::default())),
@@ -862,6 +972,13 @@ impl MatrixBackend {
         storage.store_root.join(PENDING_INVITATION_FILE)
     }
 
+    fn pending_invitation_write_storage(&self) -> AccountStorage {
+        // Account binding happens when registration or joining begins. The
+        // initial encrypted record must remain discoverable while the user
+        // deliberately switches from one saved account to another.
+        self.storage_for_profile("default")
+    }
+
     async fn pending_invitation_storages(&self) -> Vec<AccountStorage> {
         let preferred = match self.runtime.read().await.profile_id.clone() {
             Some(profile_id) => self.storage_for_profile(&profile_id),
@@ -895,6 +1012,22 @@ impl MatrixBackend {
         let mut via = Vec::new();
 
         if let Ok(url) = url::Url::parse(invite_link) {
+            let invitation_secrets = url
+                .query_pairs()
+                .filter(|(key, value)| key == "code" && !value.is_empty())
+                .map(|(_, value)| value.into_owned().to_ascii_lowercase())
+                .chain(
+                    url.fragment()
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_ascii_lowercase),
+                )
+                .collect::<Vec<_>>();
+            let contains_invitation_secret = |value: &str| {
+                let value = value.to_ascii_lowercase();
+                invitation_secrets
+                    .iter()
+                    .any(|secret| value.contains(secret))
+            };
             for (key, value) in url.query_pairs() {
                 match key.as_ref() {
                     "room" => room_or_alias = Some(value.into_owned()),
@@ -903,7 +1036,7 @@ impl MatrixBackend {
                             service = Some(value.into_owned());
                         }
                     }
-                    "admission" => admission_service = Some(value.into_owned()),
+                    "admission" | "api" => admission_service = Some(value.into_owned()),
                     "via" => {
                         for server in value
                             .split(',')
@@ -920,11 +1053,45 @@ impl MatrixBackend {
             }
 
             if admission_service.is_none()
-                && url.path().starts_with("/invite/")
+                && url.path() == "/invite"
+                && url.fragment().is_some()
                 && matches!(url.scheme(), "https" | "http")
             {
                 admission_service = url.host_str().map(|_| url.origin().ascii_serialization());
             }
+
+            // Presentation fields are untrusted invitation input. Validate
+            // their protocol shapes and suppress any value into which the
+            // bearer capability was duplicated; the renderer must never gain
+            // an oracle for the native invitation secret through metadata.
+            room_or_alias = room_or_alias.filter(|value| {
+                !contains_invitation_secret(value) && RoomOrAliasId::parse(value).is_ok()
+            });
+            via.retain(|value| {
+                !contains_invitation_secret(value) && ServerName::parse(value).is_ok()
+            });
+            service = service.and_then(|value| {
+                if contains_invitation_secret(&value) {
+                    return None;
+                }
+                let normalized = Self::normalize_homeserver_input(&value).ok()?;
+                if !normalized.contains("://") {
+                    return Some(normalized);
+                }
+                let parsed = url::Url::parse(&normalized).ok()?;
+                if parsed.query().is_some() || parsed.fragment().is_some() {
+                    return None;
+                }
+                Some(parsed.origin().ascii_serialization())
+            });
+            admission_service = admission_service.and_then(|value| {
+                if contains_invitation_secret(&value) {
+                    return None;
+                }
+                Self::normalize_admission_origin(&value)
+                    .ok()
+                    .map(|origin| origin.origin().ascii_serialization())
+            });
         }
 
         PendingInvitationMetadata {
@@ -959,83 +1126,6 @@ impl MatrixBackend {
         Some(service.to_owned())
     }
 
-    async fn enrich_pending_invitation_metadata(
-        &self,
-        mut metadata: PendingInvitationMetadata,
-    ) -> PendingInvitationMetadata {
-        if metadata.community_service_display_name.is_none() {
-            metadata.community_service_display_name = metadata
-                .service
-                .as_deref()
-                .and_then(Self::invitation_service_display_name);
-        }
-        let Some(room_id) = metadata
-            .room_or_alias
-            .as_deref()
-            .and_then(|value| matrix_sdk::ruma::RoomId::parse(value).ok())
-        else {
-            return metadata;
-        };
-        let Ok(client) = self.client().await else {
-            return metadata;
-        };
-        let Some(room) = Self::prejoin_invited_room_if_available(&client, &room_id) else {
-            return metadata;
-        };
-
-        if metadata.community_name.is_none() {
-            metadata.community_name = room
-                .display_name()
-                .await
-                .ok()
-                .map(|name| name.to_string())
-                .filter(|name| !name.trim().is_empty());
-        }
-        if metadata.join_rule.is_none() {
-            metadata.join_rule = room.join_rule().map(|rule| rule.as_str().to_owned());
-        }
-        if metadata.inviter_user_id.is_none() || metadata.inviter_display_name.is_none() {
-            if let Ok(invite) = room.invite_details().await {
-                if metadata.inviter_user_id.is_none() {
-                    metadata.inviter_user_id = Some(invite.inviter_id.to_string());
-                }
-                if metadata.inviter_display_name.is_none() {
-                    metadata.inviter_display_name =
-                        invite.inviter.map(|member| member.name().to_owned());
-                }
-            }
-        }
-        metadata
-    }
-
-    async fn enrich_community_admission(
-        &self,
-        mut admission: super::MatrixCommunityAdmission,
-    ) -> super::MatrixCommunityAdmission {
-        let metadata = self
-            .enrich_pending_invitation_metadata(PendingInvitationMetadata {
-                handle: String::new(),
-                room_or_alias: Some(admission.room_id.clone()),
-                via: admission.via.clone(),
-                service: Some(admission.service.clone()),
-                admission_service: None,
-                community_name: admission.community_name.take(),
-                inviter_display_name: admission.inviter_display_name.take(),
-                inviter_user_id: admission.inviter_user_id.take(),
-                join_rule: admission.join_rule.take(),
-                community_service_display_name: admission.community_service_display_name.take(),
-                stored_at: 0,
-                expires_at: admission.expires_at.unwrap_or_default(),
-            })
-            .await;
-        admission.community_name = metadata.community_name;
-        admission.inviter_display_name = metadata.inviter_display_name;
-        admission.inviter_user_id = metadata.inviter_user_id;
-        admission.join_rule = metadata.join_rule;
-        admission.community_service_display_name = metadata.community_service_display_name;
-        admission
-    }
-
     fn load_or_create_pending_invitation_key(storage: &AccountStorage) -> BackendResult<[u8; 32]> {
         let key_name = Self::pending_invitation_key(storage);
         match keychain::lookup_secret(&key_name).map_err(Self::map_secure_storage_error)? {
@@ -1056,8 +1146,8 @@ impl MatrixBackend {
         storage: &AccountStorage,
     ) -> BackendResult<Option<PendingInvitationRecord>> {
         let path = Self::pending_invitation_path(storage);
-        let ciphertext = match tokio::fs::read(&path).await {
-            Ok(bytes) => bytes,
+        let file = match tokio::fs::File::open(&path).await {
+            Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(error) => {
                 return Err(BackendError::Crypto(format!(
@@ -1065,6 +1155,20 @@ impl MatrixBackend {
                 )))
             }
         };
+        let mut ciphertext = Vec::with_capacity(PENDING_INVITATION_MAX_CIPHERTEXT_BYTES + 1);
+        file.take((PENDING_INVITATION_MAX_CIPHERTEXT_BYTES + 1) as u64)
+            .read_to_end(&mut ciphertext)
+            .await
+            .map_err(|error| {
+                BackendError::Crypto(format!(
+                    "could not read the pending invitation store: {error}"
+                ))
+            })?;
+        if ciphertext.len() > PENDING_INVITATION_MAX_CIPHERTEXT_BYTES {
+            return Err(BackendError::Crypto(
+                "pending invitation store exceeds its protected size limit".into(),
+            ));
+        }
         let mut key = Self::load_or_create_pending_invitation_key(storage)?;
         let plaintext = crate::crypto::encryption::decrypt_community_payload(
             &key,
@@ -1073,10 +1177,17 @@ impl MatrixBackend {
         )
         .map_err(|_| BackendError::Crypto("pending invitation store could not be opened".into()));
         key.zeroize();
-        let plaintext = plaintext?;
-        serde_json::from_slice(&plaintext)
-            .map(Some)
-            .map_err(|_| BackendError::Crypto("pending invitation store is invalid".into()))
+        let mut plaintext = plaintext?;
+        if plaintext.len() > PENDING_INVITATION_MAX_BYTES {
+            plaintext.zeroize();
+            return Err(BackendError::Crypto(
+                "pending invitation store exceeds its protected size limit".into(),
+            ));
+        }
+        let record = serde_json::from_slice(&plaintext)
+            .map_err(|_| BackendError::Crypto("pending invitation store is invalid".into()));
+        plaintext.zeroize();
+        record.map(Some)
     }
 
     async fn write_pending_invitation_record(
@@ -1084,10 +1195,11 @@ impl MatrixBackend {
         storage: &AccountStorage,
         record: &PendingInvitationRecord,
     ) -> BackendResult<()> {
-        let plaintext = serde_json::to_vec(record).map_err(|_| {
+        let mut plaintext = serde_json::to_vec(record).map_err(|_| {
             BackendError::Serialization("pending invitation could not be encoded".into())
         })?;
         if plaintext.len() > PENDING_INVITATION_MAX_BYTES {
+            plaintext.zeroize();
             return Err(BackendError::InvalidConfiguration(
                 "pending invitation is too large".into(),
             ));
@@ -1100,6 +1212,7 @@ impl MatrixBackend {
         )
         .map_err(|_| BackendError::Crypto("pending invitation could not be protected".into()));
         key.zeroize();
+        plaintext.zeroize();
         let ciphertext = ciphertext?;
 
         create_private_dir(&storage.store_root, true)
@@ -1170,13 +1283,6 @@ impl MatrixBackend {
         Ok(())
     }
 
-    async fn clear_pending_invitation_records(&self) -> BackendResult<()> {
-        for storage in self.pending_invitation_storages().await {
-            Self::remove_pending_invitation_record(&storage).await?;
-        }
-        Ok(())
-    }
-
     async fn find_pending_invitation_record(
         &self,
     ) -> BackendResult<Option<(AccountStorage, PendingInvitationRecord)>> {
@@ -1226,6 +1332,47 @@ impl MatrixBackend {
         format!("{RECOVERY_TEST_KEY}-{}", storage.key_namespace)
     }
 
+    fn recovery_credential_key(storage: &AccountStorage) -> String {
+        format!("{RECOVERY_CREDENTIAL_KEY}-{}", storage.key_namespace)
+    }
+
+    fn recovery_secure_storage_state(storage: &AccountStorage) -> MatrixRecoverySecureStorageState {
+        match keychain::lookup_secret(&Self::recovery_credential_key(storage)) {
+            Ok(keychain::SecretLookup::Found(mut bytes)) => {
+                let valid = std::str::from_utf8(&bytes).is_ok_and(|value| !value.trim().is_empty());
+                bytes.zeroize();
+                if valid {
+                    MatrixRecoverySecureStorageState::Saved
+                } else {
+                    MatrixRecoverySecureStorageState::Unavailable
+                }
+            }
+            Ok(keychain::SecretLookup::Missing) => MatrixRecoverySecureStorageState::Missing,
+            Err(_) => MatrixRecoverySecureStorageState::Unavailable,
+        }
+    }
+
+    fn load_stored_recovery_credential(storage: &AccountStorage) -> BackendResult<String> {
+        match keychain::lookup_secret(&Self::recovery_credential_key(storage))
+            .map_err(Self::map_secure_storage_error)?
+        {
+            keychain::SecretLookup::Found(mut bytes) => {
+                let result = String::from_utf8(bytes.clone()).map_err(Self::map_error);
+                bytes.zeroize();
+                let credential = result?;
+                if credential.trim().is_empty() {
+                    return Err(BackendError::Crypto(
+                        "the saved recovery credential is empty or corrupt".into(),
+                    ));
+                }
+                Ok(credential)
+            }
+            keychain::SecretLookup::Missing => Err(BackendError::InvalidConfiguration(
+                "no recovery credential is saved in this device's secure store".into(),
+            )),
+        }
+    }
+
     fn load_trusted_devices(storage: &AccountStorage) -> BackendResult<TrustedDeviceRegistry> {
         let key = Self::trusted_devices_key(storage);
         match keychain::lookup_secret(&key).map_err(Self::map_secure_storage_error)? {
@@ -1271,6 +1418,34 @@ impl MatrixBackend {
     fn persist_last_recovery_test(storage: &AccountStorage, tested_at: &str) -> BackendResult<()> {
         keychain::store_secret(&Self::recovery_test_key(storage), tested_at.as_bytes())
             .map_err(Self::map_secure_storage_error)
+    }
+
+    async fn verify_recovery_credential(
+        &self,
+        mut recovery_key_or_passphrase: String,
+    ) -> BackendResult<()> {
+        if recovery_key_or_passphrase.trim().is_empty() {
+            recovery_key_or_passphrase.zeroize();
+            return Err(BackendError::InvalidConfiguration(
+                "recovery key or passphrase cannot be empty".into(),
+            ));
+        }
+        let client = self.client().await?;
+        let result = tokio::time::timeout(
+            Duration::from_secs(30),
+            client
+                .encryption()
+                .recovery()
+                .recover(recovery_key_or_passphrase.trim()),
+        )
+        .await;
+        recovery_key_or_passphrase.zeroize();
+        match result {
+            Ok(result) => result.map_err(Self::map_error),
+            Err(_) => Err(BackendError::Network(
+                "recovery verification timed out after 30 seconds".into(),
+            )),
+        }
     }
 
     fn account_registry_key(&self) -> String {
@@ -1722,8 +1897,61 @@ impl MatrixBackend {
                 Self::store_passphrase_key(storage),
                 Self::trusted_devices_key(storage),
                 Self::recovery_test_key(storage),
+                Self::recovery_credential_key(storage),
             ],
         })
+    }
+
+    fn local_account_store_remove_retry_delay(attempt: usize) -> Duration {
+        Duration::from_millis(
+            (LOCAL_ACCOUNT_STORE_REMOVE_BASE_DELAY_MS.saturating_mul(1_u64 << attempt.min(4)))
+                .min(1_000),
+        )
+    }
+
+    fn remove_account_store_with_retry_with<Exists, Delete, Wait>(
+        path: &Path,
+        mut store_exists: Exists,
+        mut remove_store: Delete,
+        mut wait: Wait,
+    ) -> Result<(), String>
+    where
+        Exists: FnMut(&Path) -> Result<bool, String>,
+        Delete: FnMut(&Path) -> Result<(), String>,
+        Wait: FnMut(Duration),
+    {
+        let mut last_error = None;
+        for attempt in 0..LOCAL_ACCOUNT_STORE_REMOVE_ATTEMPTS {
+            match store_exists(path) {
+                Ok(false) => return Ok(()),
+                Ok(true) => match remove_store(path) {
+                    Ok(()) => match store_exists(path) {
+                        Ok(false) => return Ok(()),
+                        Ok(true) => {
+                            last_error = Some("store remained after remove attempt".to_owned())
+                        }
+                        Err(error) => last_error = Some(error),
+                    },
+                    Err(error) => last_error = Some(error),
+                },
+                Err(error) => last_error = Some(error),
+            }
+
+            if attempt + 1 < LOCAL_ACCOUNT_STORE_REMOVE_ATTEMPTS {
+                wait(Self::local_account_store_remove_retry_delay(attempt));
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| "store removal did not complete".to_owned()))
+    }
+
+    fn remove_account_store_with_retry(path: &Path) -> Result<(), String> {
+        Self::remove_account_store_with_retry_with(
+            path,
+            |path| path.try_exists().map_err(|error| error.to_string()),
+            |path| std::fs::remove_dir_all(path).map_err(|error| error.to_string()),
+            std::thread::sleep,
+        )
     }
 
     fn erase_local_account_artifacts_with<Exists, Delete>(
@@ -1762,7 +1990,7 @@ impl MatrixBackend {
 
         match plan.store_root.try_exists() {
             Ok(true) => {
-                if let Err(error) = std::fs::remove_dir_all(&plan.store_root) {
+                if let Err(error) = Self::remove_account_store_with_retry(&plan.store_root) {
                     failures.push(format!(
                         "could not remove account store {}: {error}",
                         plan.store_root.display()
@@ -1996,87 +2224,32 @@ impl MatrixBackend {
         }
     }
 
-    fn configured_oidc_client_id() -> Result<Option<String>, String> {
-        let Some(value) = std::env::var_os(OIDC_CLIENT_ID_ENV) else {
-            return Ok(None);
-        };
-        let value = value
-            .into_string()
-            .map_err(|_| format!("{OIDC_CLIENT_ID_ENV} must be valid UTF-8"))?;
-        Self::normalize_oidc_client_id(Some(value))
-    }
-
-    fn normalize_oidc_client_id(value: Option<String>) -> Result<Option<String>, String> {
-        let Some(value) = value else {
-            return Ok(None);
-        };
-        let value = value.trim();
-        if value.is_empty() {
-            return Ok(None);
-        }
-        if value.len() > 512 || value.chars().any(char::is_control) {
-            return Err(format!(
-                "{OIDC_CLIENT_ID_ENV} must be 1-512 characters and contain no control characters"
-            ));
-        }
-        Ok(Some(value.to_owned()))
-    }
-
-    fn oidc_metadata_supports_native_flow(metadata: &AuthorizationServerMetadata) -> bool {
-        Self::has_required_oidc_capabilities(
-            metadata
+    fn native_oidc_capabilities(metadata: &AuthorizationServerMetadata) -> NativeOidcCapabilities {
+        NativeOidcCapabilities {
+            code_response: metadata
                 .response_types_supported
                 .contains(&ResponseType::Code),
-            metadata
+            query_response_mode: metadata
                 .response_modes_supported
                 .contains(&ResponseMode::Query),
-            metadata
+            authorization_code_grant: metadata
                 .grant_types_supported
                 .contains(&GrantType::AuthorizationCode),
-            metadata
+            refresh_token_grant: metadata
                 .grant_types_supported
                 .contains(&GrantType::RefreshToken),
-            metadata
+            s256_pkce: metadata
                 .code_challenge_methods_supported
                 .contains(&CodeChallengeMethod::S256),
-        )
+        }
     }
 
-    fn has_required_oidc_capabilities(
-        code_response: bool,
-        query_response_mode: bool,
-        authorization_code_grant: bool,
-        refresh_token_grant: bool,
-        s256_pkce: bool,
-    ) -> bool {
-        code_response
-            && query_response_mode
-            && authorization_code_grant
-            && refresh_token_grant
-            && s256_pkce
-    }
-
-    async fn discover_oidc(&self, homeserver: String) -> BackendResult<MatrixOidcStatus> {
+    async fn discover_oidc_registration(
+        &self,
+        homeserver: String,
+    ) -> BackendResult<(MatrixOidcStatus, Option<OidcClientRegistration>)> {
         let homeserver = Self::normalize_homeserver_input(&homeserver)?;
-        let redirect_uri = OIDC_REDIRECT_URI.to_owned();
-        let configured_client_id = match Self::configured_oidc_client_id() {
-            Ok(client_id) => client_id,
-            Err(reason) => {
-                return Ok(MatrixOidcStatus {
-                    homeserver,
-                    availability: MatrixOidcAvailability::InvalidConfiguration,
-                    issuer: None,
-                    authorization_endpoint: None,
-                    registration_mode: None,
-                    client_id_configured: false,
-                    redirect_uri,
-                    authorization_code_pkce: false,
-                    native_callback_ready: false,
-                    ready: false,
-                    reason,
-                });
-            }
-        };
+        let redirect_uri = NATIVE_REDIRECT_URI.to_owned();
 
         // Discovery deliberately uses a storeless client. Merely checking
         // whether browser sign-in is available must not create an encrypted
@@ -2091,81 +2264,118 @@ impl MatrixBackend {
         let metadata = match client.oauth().server_metadata().await {
             Ok(metadata) => metadata,
             Err(error) if error.is_not_supported() => {
-                return Ok(MatrixOidcStatus {
-                    homeserver: resolved_homeserver,
-                    availability: MatrixOidcAvailability::NotSupported,
-                    issuer: None,
-                    authorization_endpoint: None,
-                    registration_mode: None,
-                    client_id_configured: configured_client_id.is_some(),
-                    redirect_uri,
-                    authorization_code_pkce: false,
-                    native_callback_ready: false,
-                    ready: false,
-                    reason: "This homeserver does not advertise Matrix OAuth/OIDC metadata".into(),
-                });
+                return Ok((
+                    MatrixOidcStatus {
+                        homeserver: resolved_homeserver,
+                        availability: MatrixOidcAvailability::NotSupported,
+                        issuer: None,
+                        authorization_endpoint: None,
+                        registration_mode: None,
+                        client_id_configured: false,
+                        redirect_uri,
+                        authorization_code_pkce: false,
+                        native_callback_ready: false,
+                        ready: false,
+                        reason: "This homeserver does not advertise Matrix OAuth/OIDC metadata"
+                            .into(),
+                    },
+                    None,
+                ));
             }
             Err(error) => {
-                return Ok(MatrixOidcStatus {
+                return Ok((
+                    MatrixOidcStatus {
+                        homeserver: resolved_homeserver,
+                        availability: MatrixOidcAvailability::InvalidConfiguration,
+                        issuer: None,
+                        authorization_endpoint: None,
+                        registration_mode: None,
+                        client_id_configured: false,
+                        redirect_uri,
+                        authorization_code_pkce: false,
+                        native_callback_ready: false,
+                        ready: false,
+                        reason: format!("OAuth/OIDC metadata could not be validated: {error}"),
+                    },
+                    None,
+                ));
+            }
+        };
+        let issuer = metadata.issuer.to_string();
+        let authorization_endpoint = metadata.authorization_endpoint.to_string();
+        let capabilities = Self::native_oidc_capabilities(&metadata);
+        if let Err(error) = capabilities.require_all(&issuer) {
+            return Ok((
+                MatrixOidcStatus {
                     homeserver: resolved_homeserver,
                     availability: MatrixOidcAvailability::InvalidConfiguration,
-                    issuer: None,
-                    authorization_endpoint: None,
+                    issuer: Some(issuer),
+                    authorization_endpoint: Some(authorization_endpoint),
                     registration_mode: None,
-                    client_id_configured: configured_client_id.is_some(),
+                    client_id_configured: false,
                     redirect_uri,
                     authorization_code_pkce: false,
                     native_callback_ready: false,
                     ready: false,
-                    reason: format!("OAuth/OIDC metadata could not be validated: {error}"),
-                });
-            }
-        };
-        if !Self::oidc_metadata_supports_native_flow(&metadata) {
-            return Ok(MatrixOidcStatus {
-                homeserver: resolved_homeserver,
-                availability: MatrixOidcAvailability::InvalidConfiguration,
-                issuer: Some(metadata.issuer.to_string()),
-                authorization_endpoint: Some(metadata.authorization_endpoint.to_string()),
-                registration_mode: None,
-                client_id_configured: configured_client_id.is_some(),
-                redirect_uri,
-                authorization_code_pkce: false,
-                native_callback_ready: false,
-                ready: false,
-                reason: "OAuth/OIDC metadata must explicitly include response type code, response mode query, authorization_code and refresh_token grants, and S256 PKCE".into(),
-            });
+                    reason: error.to_string(),
+                },
+                None,
+            ));
         }
 
-        let registration_mode = if configured_client_id.is_some() {
-            Some("static".into())
-        } else if metadata.registration_endpoint.is_some() {
-            Some("dynamic".into())
-        } else {
-            None
-        };
-        let ready = configured_client_id.is_some();
-        let registration_reason = if ready {
-            "Continue with Mesh is ready for this provider".to_owned()
-        } else {
-            format!(
-                "An operator must register {OIDC_REDIRECT_URI} and set {OIDC_CLIENT_ID_ENV}; Mesh does not use dynamic client registration"
-            )
+        let registration = OidcClientRegistry::from_embedded_build_configuration()
+            .and_then(|registry| registry.resolve(&metadata.issuer, capabilities).cloned());
+        let registration = match registration {
+            Ok(registration) => registration,
+            Err(error) => {
+                let availability = match &error {
+                    OidcRegistrationError::MissingConfiguration
+                    | OidcRegistrationError::MissingIssuerRegistration { .. } => {
+                        MatrixOidcAvailability::Supported
+                    }
+                    _ => MatrixOidcAvailability::InvalidConfiguration,
+                };
+                return Ok((
+                    MatrixOidcStatus {
+                        homeserver: resolved_homeserver,
+                        availability,
+                        issuer: Some(issuer),
+                        authorization_endpoint: Some(authorization_endpoint),
+                        registration_mode: None,
+                        client_id_configured: false,
+                        redirect_uri,
+                        authorization_code_pkce: true,
+                        native_callback_ready: true,
+                        ready: false,
+                        reason: error.to_string(),
+                    },
+                    None,
+                ));
+            }
         };
 
-        Ok(MatrixOidcStatus {
-            homeserver: resolved_homeserver,
-            availability: MatrixOidcAvailability::Supported,
-            issuer: Some(metadata.issuer.to_string()),
-            authorization_endpoint: Some(metadata.authorization_endpoint.to_string()),
-            registration_mode,
-            client_id_configured: configured_client_id.is_some(),
-            redirect_uri,
-            authorization_code_pkce: true,
-            native_callback_ready: true,
-            ready,
-            reason: registration_reason,
-        })
+        Ok((
+            MatrixOidcStatus {
+                homeserver: resolved_homeserver,
+                availability: MatrixOidcAvailability::Supported,
+                issuer: Some(issuer),
+                authorization_endpoint: Some(authorization_endpoint),
+                registration_mode: Some("static".into()),
+                client_id_configured: true,
+                redirect_uri,
+                authorization_code_pkce: true,
+                native_callback_ready: true,
+                ready: true,
+                reason: "Continue with Mesh is ready for this provider".into(),
+            },
+            Some(registration),
+        ))
+    }
+
+    async fn discover_oidc(&self, homeserver: String) -> BackendResult<MatrixOidcStatus> {
+        self.discover_oidc_registration(homeserver)
+            .await
+            .map(|(status, _registration)| status)
     }
 
     // `MatrixSyncFreshness` is advisory (staleness telemetry for the status
@@ -2326,7 +2536,7 @@ impl MatrixBackend {
         Self::restart_matrix_sync_locked(&mut control, freshness).await;
     }
 
-    async fn clear_sent_typing_notices(&self) {
+    async fn clear_disallowed_typing_notices(&self, next: &WirePrivacyPreferences) {
         let mut sent_rooms = self.sent_typing_notices.lock().await;
         if sent_rooms.is_empty() {
             return;
@@ -2338,6 +2548,9 @@ impl MatrixBackend {
         };
 
         for room_id in sent_rooms.clone() {
+            if next.sends_typing_for(&room_id) {
+                continue;
+            }
             let Ok(room_id) = matrix_sdk::ruma::RoomId::parse(&room_id) else {
                 sent_rooms.remove(&room_id);
                 continue;
@@ -2374,25 +2587,49 @@ impl MatrixBackend {
         }
     }
 
-    async fn apply_wire_privacy(&self, preferences: &UserPreferences) {
+    async fn apply_wire_privacy(&self, preferences: &UserPreferences) -> BackendResult<()> {
         let next = WirePrivacyPreferences::from(preferences);
-        let previous = {
-            let mut current = self.wire_privacy.write().await;
-            let previous = *current;
-            *current = next;
-            previous
-        };
-        if previous.send_typing_indicators && !next.send_typing_indicators {
-            self.clear_sent_typing_notices().await;
-        }
-
+        let previous = self.wire_privacy.read().await.clone();
         let mut control = self.matrix_sync_control.lock().await;
         let presence = next.presence();
-        if control.presence == presence {
-            return;
+        if control.presence != presence {
+            let publish_target = control
+                .client
+                .clone()
+                .map(|client| {
+                    let user_id = client
+                        .user_id()
+                        .ok_or(BackendError::NotAuthenticated)?
+                        .to_owned();
+                    Ok::<_, BackendError>((client, user_id))
+                })
+                .transpose()?;
+            let previous_presence = control.presence.clone();
+            control.presence = presence.clone();
+            Self::restart_matrix_sync_locked(&mut control, &self.matrix_sync_freshness).await;
+
+            if let Some((client, user_id)) = publish_target {
+                if let Err(error) = client
+                    .send(SetPresenceRequest::new(user_id, presence))
+                    .await
+                    .map_err(Self::map_error)
+                {
+                    // Keep the background sync and in-memory privacy state on
+                    // the last successfully published value when the explicit
+                    // Matrix presence write fails.
+                    control.presence = previous_presence;
+                    Self::restart_matrix_sync_locked(&mut control, &self.matrix_sync_freshness)
+                        .await;
+                    return Err(error);
+                }
+            }
         }
-        control.presence = presence;
-        Self::restart_matrix_sync_locked(&mut control, &self.matrix_sync_freshness).await;
+        drop(control);
+        if previous != next {
+            self.clear_disallowed_typing_notices(&next).await;
+        }
+        *self.wire_privacy.write().await = next;
+        Ok(())
     }
 
     async fn reconcile_matrix_sync_cadence(
@@ -2496,6 +2733,34 @@ impl MatrixBackend {
                                 .take(MAX_PINNED_EVENTS)
                                 .map(|event_id| event_id.to_string())
                                 .collect(),
+                        }),
+                    );
+                }
+            }
+        });
+        client.add_event_handler({
+            let event_callback = Arc::clone(&self.event_callback);
+            move |_event: OriginalSyncRoomPowerLevelsEvent, room: Room| {
+                let event_callback = Arc::clone(&event_callback);
+                async move {
+                    MatrixBackend::dispatch_backend_event(
+                        &event_callback,
+                        MatrixBackendEvent::PermissionStateChanged(MatrixPermissionStateChanged {
+                            room_id: room.room_id().to_string(),
+                        }),
+                    );
+                }
+            }
+        });
+        client.add_event_handler({
+            let event_callback = Arc::clone(&self.event_callback);
+            move |_event: OriginalSyncSpaceChildEvent, room: Room| {
+                let event_callback = Arc::clone(&event_callback);
+                async move {
+                    MatrixBackend::dispatch_backend_event(
+                        &event_callback,
+                        MatrixBackendEvent::PermissionStateChanged(MatrixPermissionStateChanged {
+                            room_id: room.room_id().to_string(),
                         }),
                     );
                 }
@@ -3025,43 +3290,20 @@ impl MeshBackend for MatrixBackend {
         let record = PendingInvitationRecord {
             invite_link,
             metadata: metadata.clone(),
+            bound_profile_id: None,
+            joining_started_at: None,
         };
-        let storages = self.pending_invitation_storages().await;
-        for storage in storages.iter().skip(1) {
-            Self::remove_pending_invitation_record(storage).await?;
+        let storage = self.pending_invitation_write_storage();
+        for existing in self.pending_invitation_storages().await {
+            if existing.store_root != storage.store_root
+                || existing.key_namespace != storage.key_namespace
+            {
+                Self::remove_pending_invitation_record(&existing).await?;
+            }
         }
-        let storage = storages.first().ok_or_else(|| {
-            BackendError::Crypto("pending invitation store is unavailable".into())
-        })?;
-        self.write_pending_invitation_record(storage, &record)
+        self.write_pending_invitation_record(&storage, &record)
             .await?;
         Ok(metadata)
-    }
-
-    async fn read_pending_invitation(&self) -> BackendResult<Option<String>> {
-        let _gate = self.pending_invitation_gate.lock().await;
-        let Some((storage, record)) = self.find_pending_invitation_record().await? else {
-            return Ok(None);
-        };
-        if Self::pending_invitation_expired(&record.metadata, Self::pending_invitation_now_ms()) {
-            Self::remove_pending_invitation_record(&storage).await?;
-            return Ok(None);
-        }
-        Ok(Some(record.invite_link))
-    }
-
-    async fn take_pending_invitation(&self) -> BackendResult<Option<String>> {
-        let _gate = self.pending_invitation_gate.lock().await;
-        let Some((storage, record)) = self.find_pending_invitation_record().await? else {
-            return Ok(None);
-        };
-        if Self::pending_invitation_expired(&record.metadata, Self::pending_invitation_now_ms()) {
-            Self::remove_pending_invitation_record(&storage).await?;
-            return Ok(None);
-        }
-        let invite_link = record.invite_link;
-        Self::remove_pending_invitation_record(&storage).await?;
-        Ok(Some(invite_link))
     }
 
     async fn peek_pending_invitation(&self) -> BackendResult<Option<PendingInvitationMetadata>> {
@@ -3075,36 +3317,105 @@ impl MeshBackend for MatrixBackend {
                 Self::remove_pending_invitation_record(&storage).await?;
                 return Ok(None);
             }
-            record.metadata
+            record.metadata.clone()
         };
-        Ok(Some(
-            self.enrich_pending_invitation_metadata(metadata).await,
-        ))
+        // Preview is intentionally local-only. Even Matrix SDK room helpers
+        // may fetch missing state, so no client/room method is called here.
+        Ok(Some(metadata))
     }
 
-    async fn resolve_pending_invitation(
-        &self,
-    ) -> BackendResult<Option<super::MatrixCommunityAdmission>> {
-        let record = {
+    async fn join_pending_invitation(&self, handle: String) -> BackendResult<CommunityDto> {
+        if uuid::Uuid::parse_str(handle.trim()).is_err() {
+            return Err(BackendError::RegistrationInvitationInvalid);
+        }
+        // Serialize against every operation that can replace or remove the
+        // active account. Re-acquiring the runtime read lock from nested join
+        // helpers is then safe even when a transition is queued.
+        let _account_transition = self.account_transition_gate.lock().await;
+        let runtime = self.runtime.read().await;
+        let profile_id = runtime
+            .profile_id
+            .clone()
+            .ok_or(BackendError::NotAuthenticated)?;
+        if runtime.client.is_none() {
+            return Err(BackendError::NotAuthenticated);
+        }
+        drop(runtime);
+
+        let (storage, invite_link) = {
             let _gate = self.pending_invitation_gate.lock().await;
-            let Some((storage, record)) = self.find_pending_invitation_record().await? else {
-                return Ok(None);
+            let Some((storage, mut record)) = self.find_pending_invitation_record().await? else {
+                return Err(BackendError::RegistrationInvitationInvalid);
             };
-            if Self::pending_invitation_expired(&record.metadata, Self::pending_invitation_now_ms())
-            {
+            let now = Self::pending_invitation_now_ms();
+            if Self::pending_invitation_expired(&record.metadata, now) {
                 Self::remove_pending_invitation_record(&storage).await?;
-                return Ok(None);
+                return Err(BackendError::RegistrationInvitationInvalid);
             }
-            record
+            if record.metadata.handle != handle.trim() {
+                return Err(BackendError::RegistrationInvitationInvalid);
+            }
+            if record
+                .bound_profile_id
+                .as_deref()
+                .is_some_and(|bound| bound != profile_id)
+            {
+                return Err(BackendError::PermissionDenied(
+                    "This invitation belongs to a different signed-in account. Switch back or discard it."
+                        .into(),
+                ));
+            }
+            if record.joining_started_at.is_some_and(|started| {
+                now.saturating_sub(started) < PENDING_INVITATION_JOIN_LEASE_MS
+            }) {
+                return Err(BackendError::RateLimited(
+                    "This invitation is already being joined. Wait for that attempt to finish."
+                        .into(),
+                ));
+            }
+            record.bound_profile_id = Some(profile_id.clone());
+            record.joining_started_at = Some(now);
+            self.write_pending_invitation_record(&storage, &record)
+                .await?;
+            (storage, record.invite_link.clone())
         };
 
-        let admission = self.resolve_community_invite(record.invite_link).await?;
-        Ok(Some(self.enrich_community_admission(admission).await))
+        let result = match Self::parse_admission_invitation(&invite_link, None) {
+            Ok(_) => self.claim_community_invite(invite_link).await,
+            Err(_) => match Self::parse_direct_community_invitation(&invite_link) {
+                Ok((room_or_alias, via)) => self.join_community(room_or_alias, via).await,
+                Err(_) => Err(BackendError::RegistrationInvitationInvalid),
+            },
+        };
+        let _gate = self.pending_invitation_gate.lock().await;
+        let current = self.read_pending_invitation_record(&storage).await?;
+        if current
+            .as_ref()
+            .is_some_and(|record| record.metadata.handle == handle.trim())
+        {
+            if result.is_ok() {
+                Self::remove_pending_invitation_record(&storage).await?;
+            } else if let Some(mut record) = current {
+                record.joining_started_at = None;
+                self.write_pending_invitation_record(&storage, &record)
+                    .await?;
+            }
+        }
+        result
     }
 
-    async fn clear_pending_invitation(&self) -> BackendResult<()> {
+    async fn clear_pending_invitation(&self, handle: String) -> BackendResult<()> {
+        if uuid::Uuid::parse_str(handle.trim()).is_err() {
+            return Err(BackendError::RegistrationInvitationInvalid);
+        }
         let _gate = self.pending_invitation_gate.lock().await;
-        self.clear_pending_invitation_records().await
+        let Some((storage, record)) = self.find_pending_invitation_record().await? else {
+            return Ok(());
+        };
+        if record.metadata.handle != handle.trim() {
+            return Err(BackendError::RegistrationInvitationInvalid);
+        }
+        Self::remove_pending_invitation_record(&storage).await
     }
 
     async fn active_account_storage_root(&self) -> BackendResult<PathBuf> {
@@ -3336,6 +3647,7 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn login(&self, request: MatrixLogin) -> BackendResult<BackendStatus> {
+        let _account_transition = self.account_transition_gate.lock().await;
         if request.username.trim().is_empty() || request.password.is_empty() {
             return Err(BackendError::InvalidConfiguration(
                 "username and password are required".into(),
@@ -3412,22 +3724,19 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn register_account(&self, request: MatrixRegistration) -> BackendResult<BackendStatus> {
+        let _account_transition = self.account_transition_gate.lock().await;
         let MatrixRegistration {
             homeserver,
             username,
-            mut password,
-            registration_token,
+            password,
+            pending_invitation_handle,
             device_name,
         } = request;
+        // The drop guard covers every early-return path in invitation parsing,
+        // storage, URL validation, and UIAA handling.
+        let mut password = Zeroizing::new(password);
         let normalized_homeserver = match Self::normalize_homeserver_input(&homeserver) {
             Ok(homeserver) => homeserver,
-            Err(error) => {
-                password.zeroize();
-                return Err(error);
-            }
-        };
-        let mut registration_token = match Self::normalize_registration_token(registration_token) {
-            Ok(token) => token,
             Err(error) => {
                 password.zeroize();
                 return Err(error);
@@ -3437,17 +3746,11 @@ impl MeshBackend for MatrixBackend {
             Ok(username) => username,
             Err(error) => {
                 password.zeroize();
-                if let Some(token) = &mut registration_token {
-                    token.zeroize();
-                }
                 return Err(error);
             }
         };
         if password.len() < 8 {
             password.zeroize();
-            if let Some(token) = &mut registration_token {
-                token.zeroize();
-            }
             return Err(BackendError::InvalidConfiguration(
                 "password must be at least 8 characters".into(),
             ));
@@ -3458,6 +3761,99 @@ impl MeshBackend for MatrixBackend {
             self.profile_hint.clone()
         };
         let storage = self.storage_for_profile(&profile_id);
+        let mut registration_token = None;
+        let mut pending_handle = None;
+        if let Some(handle) = pending_invitation_handle {
+            let handle = handle.trim().to_owned();
+            if uuid::Uuid::parse_str(&handle).is_err() {
+                password.zeroize();
+                return Err(BackendError::RegistrationInvitationInvalid);
+            }
+            let invite_link = {
+                let _gate = self.pending_invitation_gate.lock().await;
+                let Some((invitation_storage, mut record)) =
+                    self.find_pending_invitation_record().await?
+                else {
+                    password.zeroize();
+                    return Err(BackendError::RegistrationInvitationInvalid);
+                };
+                let now = Self::pending_invitation_now_ms();
+                if Self::pending_invitation_expired(&record.metadata, now) {
+                    Self::remove_pending_invitation_record(&invitation_storage).await?;
+                    password.zeroize();
+                    return Err(BackendError::RegistrationInvitationInvalid);
+                }
+                if record.metadata.handle != handle {
+                    password.zeroize();
+                    return Err(BackendError::RegistrationInvitationInvalid);
+                }
+                if record
+                    .bound_profile_id
+                    .as_deref()
+                    .is_some_and(|bound| bound != profile_id)
+                {
+                    password.zeroize();
+                    return Err(BackendError::PermissionDenied(
+                        "This account offer is already bound to a different service or username. Discard it before choosing another account."
+                            .into(),
+                    ));
+                }
+                if record.joining_started_at.is_some_and(|started| {
+                    now.saturating_sub(started) < PENDING_INVITATION_JOIN_LEASE_MS
+                }) {
+                    password.zeroize();
+                    return Err(BackendError::RateLimited(
+                        "This account offer is already being used. Wait for that attempt to finish."
+                            .into(),
+                    ));
+                }
+                record.bound_profile_id = Some(profile_id.clone());
+                record.joining_started_at = Some(now);
+                self.write_pending_invitation_record(&invitation_storage, &record)
+                    .await?;
+                record.invite_link.clone()
+            };
+
+            let admission = match self.resolve_admission_invitation(&invite_link, true).await {
+                Ok(admission) => admission,
+                Err(error) => {
+                    let _gate = self.pending_invitation_gate.lock().await;
+                    if let Some((invitation_storage, mut record)) =
+                        self.find_pending_invitation_record().await?
+                    {
+                        if record.metadata.handle == handle {
+                            record.joining_started_at = None;
+                            self.write_pending_invitation_record(&invitation_storage, &record)
+                                .await?;
+                        }
+                    }
+                    password.zeroize();
+                    return Err(error);
+                }
+            };
+            let requested_origin = url::Url::parse(&normalized_homeserver)
+                .map_err(|_| BackendError::RegistrationInvitationInvalid)?;
+            let offered_origin = url::Url::parse(&admission.service)
+                .map_err(|_| BackendError::RegistrationInvitationInvalid)?;
+            if requested_origin.origin() != offered_origin.origin() {
+                let _gate = self.pending_invitation_gate.lock().await;
+                if let Some((invitation_storage, mut record)) =
+                    self.find_pending_invitation_record().await?
+                {
+                    if record.metadata.handle == handle {
+                        record.joining_started_at = None;
+                        self.write_pending_invitation_record(&invitation_storage, &record)
+                            .await?;
+                    }
+                }
+                password.zeroize();
+                return Err(BackendError::PermissionDenied(
+                    "This account offer was issued for a different account service.".into(),
+                ));
+            }
+            registration_token = Self::normalize_registration_token(admission.registration_token)?;
+            pending_handle = Some(handle);
+        }
 
         let operation =
             match tokio::time::timeout(Duration::from_secs(REGISTRATION_TIMEOUT_SECONDS), async {
@@ -3465,7 +3861,7 @@ impl MeshBackend for MatrixBackend {
                 let registration_request = |auth: Option<AuthData>| {
                     let mut request = RegistrationRequest::new();
                     request.username = Some(username.clone());
-                    request.password = Some(password.clone());
+                    request.password = Some(password.as_str().to_owned());
                     request.initial_device_display_name =
                         Some(device_name.clone().unwrap_or_else(|| "Mesh desktop".into()));
                     request.auth = auth;
@@ -3561,6 +3957,19 @@ impl MeshBackend for MatrixBackend {
             token.zeroize();
         }
 
+        if let Some(handle) = pending_handle.as_deref() {
+            let _gate = self.pending_invitation_gate.lock().await;
+            if let Some((invitation_storage, mut record)) =
+                self.find_pending_invitation_record().await?
+            {
+                if record.metadata.handle == handle {
+                    record.joining_started_at = None;
+                    self.write_pending_invitation_record(&invitation_storage, &record)
+                        .await?;
+                }
+            }
+        }
+
         let (client, resolved_homeserver, profile_id) = operation?;
         self.stop_runtime().await;
         self.install_client(client, resolved_homeserver, profile_id)
@@ -3621,11 +4030,24 @@ impl MeshBackend for MatrixBackend {
                 .flows
                 .iter()
                 .any(|flow| matches!(flow, LoginType::Sso(_)));
-            let registration_request = get_username_availability::v3::Request::new(
-                "mesh-service-capability-probe".to_owned(),
-            );
-            let registration = match client.send(registration_request).await {
-                Ok(_) => MatrixRegistrationAvailability::Open,
+            // Capability discovery is strictly non-mutating. The Matrix
+            // username-availability endpoint proves only that a localpart is
+            // unused; it does not prove that registration is open (a service
+            // may still require a token, SSO, terms, CAPTCHA, or other UIAA).
+            // Therefore even a successful response remains Unknown unless a
+            // future non-mutating standard advertises the actual policy.
+            let mut probe_bytes = [0_u8; 12];
+            rand::thread_rng().fill_bytes(&mut probe_bytes);
+            let probe_suffix: String = probe_bytes
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            let probe_username = format!("mesh_capability_{probe_suffix}");
+            let registration = match client
+                .send(get_username_availability::v3::Request::new(probe_username))
+                .await
+            {
+                Ok(_) => MatrixRegistrationAvailability::Unknown,
                 Err(error)
                     if matches!(error.client_api_error_kind(), Some(ErrorKind::Forbidden)) =>
                 {
@@ -3661,23 +4083,19 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn start_oidc_login(&self, homeserver: String) -> BackendResult<()> {
-        let status = self.discover_oidc(homeserver).await?;
-        if status.availability != MatrixOidcAvailability::Supported
-            || !status.authorization_code_pkce
-            || !status.client_id_configured
-        {
+        let _account_transition = self.account_transition_gate.lock().await;
+        let (status, registration) = self.discover_oidc_registration(homeserver).await?;
+        if !status.ready {
             return Err(BackendError::InvalidConfiguration(format!(
                 "Matrix browser sign-in is unavailable: {}. Password sign-in remains available for an existing account",
                 status.reason
             )));
         }
-        let client_id = Self::configured_oidc_client_id()
-            .map_err(BackendError::InvalidConfiguration)?
-            .ok_or_else(|| {
-                BackendError::InvalidConfiguration(format!(
-                    "{OIDC_CLIENT_ID_ENV} is required for browser sign-in"
-                ))
-            })?;
+        let registration = registration.ok_or_else(|| {
+            BackendError::InvalidConfiguration(
+                "Matrix browser sign-in has no issuer-specific desktop registration".into(),
+            )
+        })?;
 
         let attempt_id = self.login_sequence.fetch_add(1, Ordering::SeqCst) + 1;
         let cancellation = CancellationToken::new();
@@ -3718,8 +4136,9 @@ impl MeshBackend for MatrixBackend {
                     .map_err(|_| BackendError::LoginTimedOut(LOGIN_TIMEOUT_SECONDS))??,
             };
             let oauth = client.oauth();
-            oauth.restore_registered_client(ClientId::new(client_id));
-            let redirect_uri = url::Url::parse(OIDC_REDIRECT_URI).map_err(Self::map_error)?;
+            oauth.restore_registered_client(ClientId::new(registration.client_id().to_owned()));
+            let redirect_uri =
+                url::Url::parse(registration.redirect_uri()).map_err(Self::map_error)?;
             let authorization = tokio::select! {
                 _ = cancellation.cancelled() => return Err(BackendError::LoginCancelled),
                 result = oauth.login(redirect_uri, None, None, None).build() => {
@@ -3899,6 +4318,7 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn restore_session(&self) -> BackendResult<BackendStatus> {
+        let _account_transition = self.account_transition_gate.lock().await;
         let storage = self.active_storage_from_registry()?;
         let persisted = self.load_session(&storage)?;
         let homeserver = persisted.homeserver.clone();
@@ -3921,6 +4341,7 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn logout(&self) -> BackendResult<()> {
+        let _account_transition = self.account_transition_gate.lock().await;
         let client = self.client().await?;
         let profile_id = self
             .runtime
@@ -4087,6 +4508,7 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn remove_local_account(&self) -> BackendResult<()> {
+        let _account_transition = self.account_transition_gate.lock().await;
         let runtime_profile_id = self.runtime.read().await.profile_id.clone();
         let profile_id = match runtime_profile_id {
             Some(profile_id) => profile_id,
@@ -4112,6 +4534,11 @@ impl MeshBackend for MatrixBackend {
                     "Remote logout failed during local account removal; continuing cryptographic erasure: {error}"
                 );
             }
+            // matrix-sdk's encrypted SQLite store remains open for as long as
+            // any Client clone is alive. Windows denies directory removal in
+            // that state, so release the final runtime-owned client before the
+            // local account erasure below.
+            drop(client);
         }
 
         Self::erase_local_account_artifacts_with(
@@ -4230,6 +4657,7 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn switch_account(&self, profile_id: String) -> BackendResult<BackendStatus> {
+        let _account_transition = self.account_transition_gate.lock().await;
         if self.runtime.read().await.profile_id.as_deref() == Some(profile_id.as_str()) {
             return Ok(self.status().await);
         }
@@ -4319,7 +4747,18 @@ impl MeshBackend for MatrixBackend {
             .clone()
             .ok_or(BackendError::NotAuthenticated)?;
         let storage = self.storage_for_profile(&profile_id);
-        let last_successful_test_at = Self::load_last_recovery_test(&storage)?;
+        let mut warnings = Vec::new();
+        let secure_storage_state = Self::recovery_secure_storage_state(&storage);
+        let last_successful_test_at = match Self::load_last_recovery_test(&storage) {
+            Ok(value) => value,
+            Err(_) => {
+                warnings.push(
+                    "Mesh could not read recovery-check history from this device's secure store"
+                        .into(),
+                );
+                None
+            }
+        };
         let recovery_test_is_fresh = last_successful_test_at
             .as_deref()
             .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
@@ -4332,7 +4771,6 @@ impl MeshBackend for MatrixBackend {
         let backups = encryption.backups();
         let backup_state = backups.state();
         let backup_enabled = backups.are_enabled().await;
-        let mut warnings = Vec::new();
         let backup_exists_on_server =
             match tokio::time::timeout(Duration::from_secs(15), backups.fetch_exists_on_server())
                 .await
@@ -4358,6 +4796,15 @@ impl MeshBackend for MatrixBackend {
         if !backup_exists_on_server {
             warnings.push("No current server-side key backup was confirmed".into());
         }
+        match secure_storage_state {
+            MatrixRecoverySecureStorageState::Saved => {}
+            MatrixRecoverySecureStorageState::Missing => warnings
+                .push("No backup code is saved in this device's protected credential store".into()),
+            MatrixRecoverySecureStorageState::Unavailable => warnings.push(
+                "Unlock or repair this device's protected credential store, then check again"
+                    .into(),
+            ),
+        }
         if last_successful_test_at.is_none() {
             warnings.push("Recovery credentials have not been tested on this device".into());
         } else if !recovery_test_is_fresh {
@@ -4368,6 +4815,7 @@ impl MeshBackend for MatrixBackend {
             && backup_enabled
             && backup_exists_on_server
             && recovery_test_is_fresh
+            && secure_storage_state == MatrixRecoverySecureStorageState::Saved
             && warnings.is_empty();
         Ok(MatrixRecoveryHealth {
             recovery_state: Self::recovery_state_name(recovery_state).into(),
@@ -4377,29 +4825,17 @@ impl MeshBackend for MatrixBackend {
             healthy,
             checked_at: chrono::Utc::now().to_rfc3339(),
             last_successful_test_at,
+            secure_storage_state,
             warnings,
         })
     }
 
     async fn test_recovery(
         &self,
-        mut recovery_key_or_passphrase: String,
+        recovery_key_or_passphrase: String,
     ) -> BackendResult<MatrixRecoveryHealth> {
-        if recovery_key_or_passphrase.trim().is_empty() {
-            recovery_key_or_passphrase.zeroize();
-            return Err(BackendError::InvalidConfiguration(
-                "recovery key or passphrase cannot be empty".into(),
-            ));
-        }
-        let client = self.client().await?;
-        let result = client
-            .encryption()
-            .recovery()
-            .recover(recovery_key_or_passphrase.trim())
-            .await
-            .map_err(Self::map_error);
-        recovery_key_or_passphrase.zeroize();
-        result?;
+        self.verify_recovery_credential(recovery_key_or_passphrase)
+            .await?;
 
         let profile_id = self
             .runtime
@@ -4412,6 +4848,19 @@ impl MeshBackend for MatrixBackend {
         let tested_at = chrono::Utc::now().to_rfc3339();
         Self::persist_last_recovery_test(&storage, &tested_at)?;
         self.recovery_health().await
+    }
+
+    async fn test_stored_recovery(&self) -> BackendResult<MatrixRecoveryHealth> {
+        let profile_id = self
+            .runtime
+            .read()
+            .await
+            .profile_id
+            .clone()
+            .ok_or(BackendError::NotAuthenticated)?;
+        let storage = self.storage_for_profile(&profile_id);
+        let credential = Self::load_stored_recovery_credential(&storage)?;
+        self.test_recovery(credential).await
     }
 
     async fn start_device_verification(
@@ -4619,6 +5068,8 @@ impl MeshBackend for MatrixBackend {
             (!description.trim().is_empty()).then(|| description.trim().to_owned());
         space_request.preset = Some(RoomPreset::PrivateChat);
         space_request.creation_content = Some(Raw::new(&space_creation).map_err(Self::map_error)?);
+        space_request.power_level_content_override =
+            Some(Self::community_role_power_level_override()?);
         space_request.initial_state = vec![Self::encrypted_room_initial_state()];
         let space = client
             .create_room(space_request)
@@ -4632,6 +5083,8 @@ impl MeshBackend for MatrixBackend {
         channel_request.name = Some("general".into());
         channel_request.topic = Some(format!("General discussion for {}", name.trim()));
         channel_request.preset = Some(RoomPreset::PrivateChat);
+        channel_request.power_level_content_override =
+            Some(Self::community_role_power_level_override()?);
         channel_request.initial_state = vec![
             Self::encrypted_room_initial_state(),
             Self::community_channel_join_rule_initial_state(space.room_id()),
@@ -4806,6 +5259,7 @@ impl MeshBackend for MatrixBackend {
         let mut request = CreateRoomRequest::new();
         request.name = Some(name.trim().to_owned());
         request.preset = Some(RoomPreset::PrivateChat);
+        request.power_level_content_override = Some(Self::community_role_power_level_override()?);
         if channel_type == "voice" {
             let mut creation = CreationContent::new();
             creation.room_type = Some("org.mesh.voice".into());
@@ -5385,11 +5839,7 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn send_text(&self, room_id: String, body: String) -> BackendResult<SentMessage> {
-        if body.trim().is_empty() {
-            return Err(BackendError::InvalidConfiguration(
-                "message body cannot be empty".into(),
-            ));
-        }
+        Self::validate_message_body(&body, "message body")?;
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let room = Self::protected_joined_room(&client, &room_id, "sending a message").await?;
@@ -5416,11 +5866,7 @@ impl MeshBackend for MatrixBackend {
         thread_root_id: Option<String>,
         transaction_id: String,
     ) -> BackendResult<MessageDto> {
-        if body.trim().is_empty() {
-            return Err(BackendError::InvalidConfiguration(
-                "message body cannot be empty".into(),
-            ));
-        }
+        Self::validate_message_body(&body, "message body")?;
 
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
@@ -5753,6 +6199,19 @@ impl MeshBackend for MatrixBackend {
         let transfer_total_bytes = Arc::new(AtomicU64::new(total_bytes));
 
         let result: BackendResult<MessageDto> = async {
+            let upload_reservation = total_bytes
+                .checked_add(MAX_THUMBNAIL_BYTES as u64)
+                .ok_or_else(|| BackendError::Other("attachment reservation overflowed".into()))?;
+            if !body.trim().is_empty() {
+                Self::validate_message_body(&body, "attachment caption")?;
+            }
+            let _resource_permits = Self::acquire_media_transfer_permits(
+                self.media_upload_slots.clone(),
+                self.media_inflight_bytes.clone(),
+                upload_reservation,
+                &cancellation,
+            )
+            .await?;
             let filename = Self::safe_media_filename(&filename)?;
             let content_type = content_type
                 .as_deref()
@@ -6069,6 +6528,14 @@ impl MeshBackend for MatrixBackend {
         let transferred_bytes = Arc::new(AtomicU64::new(0));
 
         let result: BackendResult<String> = async {
+            let reservation = total_bytes.unwrap_or(MAX_ATTACHMENT_BYTES);
+            let _resource_permits = Self::acquire_media_transfer_permits(
+                self.media_download_slots.clone(),
+                self.media_inflight_bytes.clone(),
+                reservation,
+                &cancellation,
+            )
+            .await?;
             let client = self.client().await?;
             Self::emit_transfer_progress(
                 &progress,
@@ -6124,11 +6591,15 @@ impl MeshBackend for MatrixBackend {
                     "decrypted attachment size does not match its metadata".into(),
                 ));
             }
-            Self::validate_media_payload(
-                &data,
-                attachment.content_type.as_deref(),
+            // Active and ambiguous received files may be saved into Mesh's
+            // private cache, but the native opener reclassifies and refuses to
+            // launch them. This preserves an explicit save path without ever
+            // treating sender-controlled metadata as an opening decision.
+            let _classification = classify_attachment(
                 &attachment.filename,
-            )?;
+                attachment.content_type.as_deref(),
+                &data,
+            );
 
             let profile_id = self
                 .runtime
@@ -6229,31 +6700,13 @@ impl MeshBackend for MatrixBackend {
 
     async fn load_attachment_thumbnail(
         &self,
-        room_id: String,
-        event_id: String,
-        attachment_index: u32,
+        _room_id: String,
+        _event_id: String,
+        _attachment_index: u32,
     ) -> BackendResult<Vec<u8>> {
-        let client = self.client().await?;
-        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
-        let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
-        let thumbnail =
-            Self::resolve_protected_thumbnail(&client, &room_id, &event_id, attachment_index)
-                .await?;
-        let _permit =
-            self.thumbnail_loads.acquire().await.map_err(|_| {
-                BackendError::Other("inline preview scheduler is unavailable".into())
-            })?;
-        let data = Self::download_bounded_encrypted_media(
-            &client,
-            &thumbnail.encrypted_file,
-            MAX_THUMBNAIL_BYTES as u64,
-            &mut |_| {},
-        )
-        .await?;
-        let metadata = thumbnail.metadata;
-        tokio::task::spawn_blocking(move || Self::sanitize_inline_thumbnail(&data, &metadata))
-            .await
-            .map_err(Self::map_error)?
+        Err(BackendError::Unsupported(
+            "received encrypted thumbnails remain encrypted until a sandboxed preview policy is approved",
+        ))
     }
 
     async fn load_attachment_image(
@@ -6283,10 +6736,19 @@ impl MeshBackend for MatrixBackend {
             ));
         }
         Self::validate_attachment_size(resolved_attachment.metadata.size)?;
-        let _permit =
+        let reservation = Self::media_reservation_bytes(resolved_attachment.metadata.size);
+        let _lightbox_permit =
             self.lightbox_image_loads.acquire().await.map_err(|_| {
                 BackendError::Other("protected image scheduler is unavailable".into())
             })?;
+        let cancellation = CancellationToken::new();
+        let _resource_permits = Self::acquire_media_transfer_permits(
+            self.media_download_slots.clone(),
+            self.media_inflight_bytes.clone(),
+            reservation,
+            &cancellation,
+        )
+        .await?;
         let data = Self::download_bounded_encrypted_media(
             &client,
             &resolved_attachment.encrypted_file,
@@ -6429,6 +6891,18 @@ impl MeshBackend for MatrixBackend {
             .into_iter()
             .map(Self::direct_message_from_message)
             .collect::<Vec<_>>();
+        // Reciprocity is a display boundary as well as a publication boundary:
+        // Mesh shows another person's public receipt only while this account
+        // has chosen to share public receipts in the same conversation.
+        if self
+            .wire_privacy
+            .read()
+            .await
+            .read_receipt_mode_for(room.room_id().as_str())
+            != ReadReceiptMode::Public
+        {
+            return Ok(messages);
+        }
         let own_user_id = client.user_id();
 
         for message in &mut messages {
@@ -6471,11 +6945,7 @@ impl MeshBackend for MatrixBackend {
         thread_root_id: Option<String>,
         transaction_id: String,
     ) -> BackendResult<DirectMessageDto> {
-        if body.trim().is_empty() {
-            return Err(BackendError::InvalidConfiguration(
-                "direct-message body cannot be empty".into(),
-            ));
-        }
+        Self::validate_message_body(&body, "direct-message body")?;
         let client = self.client().await?;
         let recipient =
             matrix_sdk::ruma::UserId::parse(recipient_user_id).map_err(Self::map_error)?;
@@ -6629,11 +7099,7 @@ impl MeshBackend for MatrixBackend {
         event_id: String,
         body: String,
     ) -> BackendResult<()> {
-        if body.trim().is_empty() {
-            return Err(BackendError::InvalidConfiguration(
-                "message body cannot be empty".into(),
-            ));
-        }
+        Self::validate_message_body(&body, "message body")?;
         let client = self.client().await?;
         let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
@@ -6815,7 +7281,11 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn mark_read(&self, room_id: String) -> BackendResult<()> {
-        let read_receipt_mode = self.wire_privacy.read().await.read_receipt_mode;
+        let read_receipt_mode = self
+            .wire_privacy
+            .read()
+            .await
+            .read_receipt_mode_for(&room_id);
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let room =
@@ -6864,9 +7334,9 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn set_typing(&self, room_id: String, typing: bool) -> BackendResult<()> {
-        let privacy = *self.wire_privacy.read().await;
+        let privacy = self.wire_privacy.read().await.clone();
         let mut sent_rooms = self.sent_typing_notices.lock().await;
-        if !privacy.should_send_typing_notice(sent_rooms.contains(&room_id), typing) {
+        if !privacy.should_send_typing_notice(&room_id, sent_rooms.contains(&room_id), typing) {
             return Ok(());
         }
         let client = self.client().await?;
@@ -6882,6 +7352,9 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn typing_users(&self, room_id: String) -> BackendResult<Vec<TypingUser>> {
+        if !self.wire_privacy.read().await.sends_typing_for(&room_id) {
+            return Ok(Vec::new());
+        }
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let room = Self::protected_joined_room(&client, &room_id, "reading typing status").await?;
@@ -7068,25 +7541,34 @@ impl MeshBackend for MatrixBackend {
                 == community.homeserver.trim_end_matches('/')
         }) && admission_origin.is_some()
         {
-            let access_token = client
-                .access_token()
-                .ok_or(BackendError::NotAuthenticated)?;
             let origin = admission_origin.ok_or_else(|| {
                 BackendError::InvalidConfiguration(
                     "no community admission service is configured".into(),
                 )
             })?;
-            let endpoint = origin
-                .join("/_mesh/admission/v1/invitations")
-                .map_err(|_| {
-                    BackendError::InvalidConfiguration(
-                        "the invitation service address could not be prepared".into(),
-                    )
-                })?;
-            let response = Self::admission_http_client()?
+            let openid = client
+                .send(request_openid_token::v3::Request::new(user_id.to_owned()))
+                .await
+                .map_err(Self::map_error)?;
+            let proof_id = uuid::Uuid::new_v4().to_string();
+            let endpoint = Self::admission_endpoint(&origin, "create")?;
+            let response = Self::admission_http_client(&origin)
+                .await?
                 .post(endpoint)
-                .bearer_auth(access_token)
-                .json(&serde_json::json!({ "room_id": space.room_id().as_str() }))
+                .json(&serde_json::json!({
+                    "room_id": space.room_id().as_str(),
+                    "identity_proof": {
+                        "proof_id": proof_id,
+                        "purpose": "create",
+                        "subject": space.room_id().as_str(),
+                        "audience": origin.origin().ascii_serialization(),
+                        "user_id": user_id.as_str(),
+                        "access_token": openid.access_token,
+                        "token_type": openid.token_type.to_string(),
+                        "matrix_server_name": openid.matrix_server_name.to_string(),
+                        "expires_in": openid.expires_in.as_secs(),
+                    }
+                }))
                 .send()
                 .await
                 .map_err(BackendError::from_sdk_error)?;
@@ -7134,10 +7616,30 @@ impl MeshBackend for MatrixBackend {
         let client = self.client().await?;
         let user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
         let target = Self::parse_admission_invitation(&invite_url, None)?;
-        let endpoint = Self::admission_endpoint(&target, "/claim")?;
-        let response = Self::admission_http_client()?
+        let openid = client
+            .send(request_openid_token::v3::Request::new(user_id.to_owned()))
+            .await
+            .map_err(Self::map_error)?;
+        let proof_id = uuid::Uuid::new_v4().to_string();
+        let endpoint = Self::admission_endpoint(&target.api_origin, "claim")?;
+        let response = Self::admission_http_client(&target.api_origin)
+            .await?
             .post(endpoint)
-            .json(&serde_json::json!({ "user_id": user_id.as_str() }))
+            .json(&serde_json::json!({
+                "invitation": target.code.as_str(),
+                "user_id": user_id.as_str(),
+                "identity_proof": {
+                    "proof_id": proof_id,
+                    "purpose": "claim",
+                    "subject": target.code.as_str(),
+                    "audience": target.api_origin.origin().ascii_serialization(),
+                    "user_id": user_id.as_str(),
+                    "access_token": openid.access_token,
+                    "token_type": openid.token_type.to_string(),
+                    "matrix_server_name": openid.matrix_server_name.to_string(),
+                    "expires_in": openid.expires_in.as_secs(),
+                }
+            }))
             .send()
             .await
             .map_err(BackendError::from_sdk_error)?;
@@ -7584,6 +8086,14 @@ impl MeshBackend for MatrixBackend {
         Ok(())
     }
 
+    async fn community_permission_projection(
+        &self,
+        community_id: String,
+        subject_user_id: String,
+    ) -> BackendResult<CommunityPermissionProjection> {
+        MatrixBackend::community_permission_projection(self, &community_id, &subject_user_id).await
+    }
+
     async fn update_member_role(
         &self,
         community_id: String,
@@ -7642,7 +8152,7 @@ impl MeshBackend for MatrixBackend {
             })
             .transpose()?;
         if let Some(preferences) = preferences.as_ref() {
-            self.apply_wire_privacy(preferences).await;
+            self.apply_wire_privacy(preferences).await?;
         }
         Ok(preferences)
     }
@@ -7653,7 +8163,7 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<UserPreferences> {
         let client = self.client().await?;
         let preferences = preferences.normalized();
-        self.apply_wire_privacy(&preferences).await;
+        self.apply_wire_privacy(&preferences).await?;
         let content: Raw<AnyGlobalAccountDataEventContent> = Raw::new(&preferences)
             .map_err(Self::map_error)?
             .cast_unchecked();
@@ -7724,32 +8234,64 @@ impl MeshBackend for MatrixBackend {
             .collect())
     }
 
-    async fn enable_recovery(&self, passphrase: Option<String>) -> BackendResult<String> {
+    async fn enable_recovery(
+        &self,
+        mut passphrase: Option<String>,
+    ) -> BackendResult<MatrixRecoverySetupResult> {
         let client = self.client().await?;
         let recovery = client.encryption().recovery();
         let enable = recovery.enable().wait_for_backups_to_upload();
-        match passphrase.as_deref() {
+        let result = match passphrase.as_deref() {
             Some(passphrase) if !passphrase.is_empty() => enable
                 .with_passphrase(passphrase)
                 .await
                 .map_err(Self::map_error),
             _ => enable.await.map_err(Self::map_error),
+        };
+        if let Some(passphrase) = passphrase.as_mut() {
+            passphrase.zeroize();
         }
+        let recovery_key = result?;
+        let profile_id = self
+            .runtime
+            .read()
+            .await
+            .profile_id
+            .clone()
+            .ok_or(BackendError::NotAuthenticated)?;
+        let storage = self.storage_for_profile(&profile_id);
+        let secure_storage_state = if keychain::store_secret(
+            &Self::recovery_credential_key(&storage),
+            recovery_key.as_bytes(),
+        )
+        .is_ok()
+        {
+            MatrixRecoverySecureStorageState::Saved
+        } else {
+            MatrixRecoverySecureStorageState::Unavailable
+        };
+        let verification_state = if self
+            .verify_recovery_credential(recovery_key.clone())
+            .await
+            .is_ok()
+        {
+            let tested_at = chrono::Utc::now().to_rfc3339();
+            let _ = Self::persist_last_recovery_test(&storage, &tested_at);
+            MatrixRecoveryVerificationState::Verified
+        } else {
+            MatrixRecoveryVerificationState::Failed
+        };
+
+        Ok(MatrixRecoverySetupResult {
+            recovery_key,
+            secure_storage_state,
+            verification_state,
+        })
     }
 
     async fn recover(&self, recovery_key_or_passphrase: String) -> BackendResult<()> {
-        if recovery_key_or_passphrase.is_empty() {
-            return Err(BackendError::InvalidConfiguration(
-                "recovery key or passphrase cannot be empty".into(),
-            ));
-        }
-        self.client()
-            .await?
-            .encryption()
-            .recovery()
-            .recover(&recovery_key_or_passphrase)
+        self.verify_recovery_credential(recovery_key_or_passphrase)
             .await
-            .map_err(Self::map_error)
     }
 
     async fn sync_once(&self) -> BackendResult<()> {
@@ -7768,7 +8310,13 @@ impl MeshBackend for MatrixBackend {
         let result = client
             .sync_once(
                 SyncSettings::default()
-                    .timeout(sync.cadence.timeout())
+                    // Explicit one-shot synchronization must not inherit the
+                    // background 30-second long poll. A one-second server poll
+                    // is long enough to deliver newly published ephemeral
+                    // state while remaining inside the caller's bounded
+                    // deadline; the restarted background task below retains
+                    // the normal long poll.
+                    .timeout(Duration::from_secs(1))
                     .set_presence(sync.presence.clone()),
             )
             .await

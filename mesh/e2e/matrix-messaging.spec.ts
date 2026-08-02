@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { expectNoWcagViolations } from './helpers/accessibility'
 
 type IpcCall = {
   command: string
@@ -380,7 +381,7 @@ async function openDirectMessage(page: Page): Promise<void> {
     page.getByRole('navigation', { name: 'Communities and direct messages' }),
   ).toBeVisible({ timeout: 10_000 })
 
-  await page.getByRole('button', { name: 'Direct Messages', exact: true }).click()
+  await page.getByRole('button', { name: 'Direct messages', exact: true }).click()
   await expect(
     page.getByRole('complementary', { name: 'Direct message conversations' }),
   ).toBeVisible()
@@ -402,31 +403,32 @@ function ipcCalls(page: Page): Promise<IpcCall[]> {
 test.describe('Matrix direct messaging and encrypted attachments', () => {
   test.use({ viewport: { width: 1440, height: 900 } })
 
-  test('renders a protected channel thumbnail without exposing its descriptor', async ({ page }) => {
+  test('keeps a received encrypted channel thumbnail protected', async ({ page }) => {
     await installAuthenticatedMatrixMessagingMock(page)
     await page.goto('/')
 
-    await expect(page.getByAltText('Preview of encrypted-plan.pdf')).toBeVisible({
+    await expect(page.getByText('Encrypted preview stays protected', { exact: true })).toBeVisible({
       timeout: 10_000,
     })
+    await expect(page.getByText(
+      'Save the file explicitly to inspect it. Mesh does not decrypt received thumbnails into the app interface.',
+      { exact: true },
+    )).toBeVisible()
+    await expect(page.getByAltText('Preview of encrypted-plan.pdf')).toHaveCount(0)
+    await expect(page.locator('body')).not.toContainText('matrix-sha256:encrypted-plan-thumbnail')
     const calls = await ipcCalls(page)
-    expect(calls).toContainEqual({
-      command: 'matrix_load_attachment_thumbnail',
-      args: {
-        roomId: '!general:mesh.test',
-        eventId: '$welcome',
-        attachmentIndex: 0,
-      },
-    })
+    expect(calls.map((call) => call.command)).not.toContain('matrix_load_attachment_thumbnail')
   })
 
-  test('opens an existing encrypted DM and loads its history through Matrix IPC', async ({ page }) => {
+  test('@a11y opens an existing encrypted DM and loads its history through Matrix IPC', async ({ page }) => {
     await openDirectMessage(page)
 
     await expect(page.getByText('Existing encrypted DM history.', { exact: true })).toBeVisible()
     await expect(page.getByText('encrypted-plan.pdf', { exact: true })).toBeVisible()
-    await expect(page.getByAltText('Preview of encrypted-plan.pdf')).toBeVisible()
+    await expect(page.getByText('Encrypted preview stays protected', { exact: true })).toBeVisible()
+    await expect(page.getByAltText('Preview of encrypted-plan.pdf')).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Download encrypted-plan.pdf' })).toBeVisible()
+    await expectNoWcagViolations(page, 'Encrypted direct message')
 
     const calls = await ipcCalls(page)
     expect(calls).toContainEqual({
@@ -444,14 +446,7 @@ test.describe('Matrix direct messaging and encrypted attachments', () => {
       command: 'matrix_mark_dm_read',
       args: { conversationId: '!alice-bob-dm:mesh.test' },
     })
-    expect(calls).toContainEqual({
-      command: 'matrix_load_attachment_thumbnail',
-      args: {
-        roomId: '!alice-bob-dm:mesh.test',
-        eventId: '$dm-history',
-        attachmentIndex: 0,
-      },
-    })
+    expect(calls.map((call) => call.command)).not.toContain('matrix_load_attachment_thumbnail')
   })
 
   test('keeps DM trust compact, explains who can read, and opens device review', async ({ page }) => {

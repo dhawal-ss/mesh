@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-rtc-refresh-membership"
+description = "Enables the matrix_rtc_refresh_membership command without any pre-configured scope."
+commands.allow = ["matrix_rtc_refresh_membership"]
+
+[[permission]]
+identifier = "deny-matrix-rtc-refresh-membership"
+description = "Denies the matrix_rtc_refresh_membership command without any pre-configured scope."
+commands.deny = ["matrix_rtc_refresh_membership"]

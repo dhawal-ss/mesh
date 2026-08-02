@@ -2,7 +2,7 @@
  * Unit tests for the pure voice policy functions.
  *
  * These tests validate the relay election, transition detection, reconnect
- * backoff, and debouncer state machine — all without touching SimplePeer
+ * backoff, and debouncer state machine: all without touching SimplePeer
  * or any browser WebRTC stack.
  */
 import { describe, it, expect } from 'vitest'
@@ -114,7 +114,7 @@ describe('detectRelayTransition', () => {
     // Curr: p-000 leaves, now lowest is p-001
     const prev = manyMembers(9, 'p')
     const curr = prev.slice(1) // remove p-000
-    // Still 8 members which equals threshold — at exactly threshold no relay
+    // Still 8 members which equals threshold: at exactly threshold no relay
     // needed, so this should be 'dissolved'
     expect(curr.length).toBe(VOICE_RELAY_THRESHOLD)
     expect(detectRelayTransition(prev, curr)).toBe('dissolved')

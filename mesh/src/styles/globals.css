@@ -7,14 +7,14 @@
   font-feature-settings: 'liga' 1, 'calt' 1;
 
   /*
-   * Tier 1 — reference colors. This palette is intentionally quiet and
+   * Tier 1: reference colors. This palette is intentionally quiet and
    * neutral: the accent is reserved for identity, focus, and action.
    * Components may consume semantic or component tokens only.
    */
   --ref-neutral-1: #101113;
   --ref-neutral-1-rgb: 16 17 19;
-  --ref-neutral-sidebar: #151619;
-  --ref-neutral-sidebar-rgb: 21 22 25;
+  --ref-neutral-sidebar: #0f141d;
+  --ref-neutral-sidebar-rgb: 15 20 29;
   --ref-neutral-2: #1b1c1f;
   --ref-neutral-2-rgb: 27 28 31;
   --ref-neutral-3: #202125;
@@ -71,7 +71,7 @@
   --ref-accent-light-11-rgb: 107 86 54;
   /*
    * Light-theme accent ramps. The dark ramps are pale by design (they sit on
-   * near-black), which leaves them at ~1.7:1 on a light canvas — invisible as
+   * near-black), which leaves them at ~1.7:1 on a light canvas: invisible as
    * fills, rings, and the active-channel marker. Each light ramp is verified at
    * >= 4.5:1 against white so it works for both text and non-text contrast.
    */
@@ -181,7 +181,7 @@
   --ref-avatar-cyan: #38bdf8;
   --ref-avatar-cyan-rgb: 56 189 248;
 
-  /* Tier 2 — semantic roles. Feature code should use this tier. */
+  /* Tier 2: semantic roles. Feature code should use this tier. */
   --surface-canvas-rgb: var(--ref-neutral-2-rgb);
   --surface-canvas: var(--ref-neutral-2);
   --surface-rail-rgb: var(--ref-neutral-1-rgb);
@@ -262,6 +262,42 @@
   --status-warning: var(--ref-amber-11);
   --status-info-rgb: var(--ref-blue-11-rgb);
   --status-info: var(--ref-blue-11);
+
+  /*
+   * Container quintuples are the only component-facing interaction palettes.
+   * The first declarations are conservative WebView fallbacks; the
+   * color-mix override below derives translucent states in perceptual OKLCH.
+   */
+  --surface-container: var(--surface-raised);
+  --surface-container-hover: var(--surface-hover);
+  --surface-container-active: var(--surface-active);
+  --surface-container-line: var(--border-default);
+  --surface-on-container: var(--content-primary);
+  --accent-container: rgb(var(--accent-rgb) / 0.14);
+  --accent-container-hover: rgb(var(--accent-rgb) / 0.2);
+  --accent-container-active: rgb(var(--accent-rgb) / 0.28);
+  --accent-container-line: rgb(var(--accent-rgb) / 0.55);
+  --accent-on-container: var(--content-accent);
+  --success-container: rgb(var(--status-success-rgb) / 0.14);
+  --success-container-hover: rgb(var(--status-success-rgb) / 0.2);
+  --success-container-active: rgb(var(--status-success-rgb) / 0.28);
+  --success-container-line: rgb(var(--status-success-rgb) / 0.55);
+  --success-on-container: var(--status-success);
+  --warning-container: rgb(var(--status-warning-rgb) / 0.14);
+  --warning-container-hover: rgb(var(--status-warning-rgb) / 0.2);
+  --warning-container-active: rgb(var(--status-warning-rgb) / 0.28);
+  --warning-container-line: rgb(var(--status-warning-rgb) / 0.55);
+  --warning-on-container: var(--status-warning);
+  --danger-container: rgb(var(--status-danger-rgb) / 0.14);
+  --danger-container-hover: rgb(var(--status-danger-rgb) / 0.2);
+  --danger-container-active: rgb(var(--status-danger-rgb) / 0.28);
+  --danger-container-line: rgb(var(--status-danger-rgb) / 0.55);
+  --danger-on-container: var(--status-danger);
+  --info-container: rgb(var(--status-info-rgb) / 0.14);
+  --info-container-hover: rgb(var(--status-info-rgb) / 0.2);
+  --info-container-active: rgb(var(--status-info-rgb) / 0.28);
+  --info-container-line: rgb(var(--status-info-rgb) / 0.55);
+  --info-on-container: var(--status-info);
   --scrollbar-rgb: var(--ref-neutral-4-rgb);
   --scrollbar: var(--ref-neutral-4);
   --scrollbar-hover-rgb: var(--ref-neutral-6-rgb);
@@ -278,7 +314,7 @@
   --avatar-yellow: var(--ref-avatar-yellow);
   --avatar-cyan: var(--ref-avatar-cyan);
 
-  /* Tier 3 — component roles. These may reference semantic tokens only. */
+  /* Tier 3: component roles. These may reference semantic tokens only. */
   --composer-bg: var(--surface-raised);
   --composer-border-focus: var(--border-focus);
   --message-hover-bg: var(--surface-hover);
@@ -419,8 +455,8 @@
   --composer-content-height: 200px;
   --context-action-width: calc(100% - 8px);
   --content-error-width: 224px;
-  --user-panel-height: 52px;
-  --conversation-header-height: 52px;
+  --user-panel-height: 56px;
+  --conversation-header-height: 56px;
   --onboarding-shell-height: calc(100vh - 3rem);
   --onboarding-shell-width: 1040px;
   --privacy-table-width: 36rem;
@@ -444,6 +480,31 @@
     inset 0 1px 0 0 rgb(255 255 255 / 0.05),
     0 0 0 1px rgb(0 0 0 / 0.6),
     0 12px 32px -8px rgb(0 0 0 / 0.5);
+}
+
+@supports (color: color-mix(in oklch, white, black)) {
+  :root {
+    --accent-container: color-mix(in oklch, var(--accent) 14%, transparent);
+    --accent-container-hover: color-mix(in oklch, var(--accent) 20%, transparent);
+    --accent-container-active: color-mix(in oklch, var(--accent) 28%, transparent);
+    --accent-container-line: color-mix(in oklch, var(--accent) 55%, transparent);
+    --success-container: color-mix(in oklch, var(--status-success) 14%, transparent);
+    --success-container-hover: color-mix(in oklch, var(--status-success) 20%, transparent);
+    --success-container-active: color-mix(in oklch, var(--status-success) 28%, transparent);
+    --success-container-line: color-mix(in oklch, var(--status-success) 55%, transparent);
+    --warning-container: color-mix(in oklch, var(--status-warning) 14%, transparent);
+    --warning-container-hover: color-mix(in oklch, var(--status-warning) 20%, transparent);
+    --warning-container-active: color-mix(in oklch, var(--status-warning) 28%, transparent);
+    --warning-container-line: color-mix(in oklch, var(--status-warning) 55%, transparent);
+    --danger-container: color-mix(in oklch, var(--status-danger) 14%, transparent);
+    --danger-container-hover: color-mix(in oklch, var(--status-danger) 20%, transparent);
+    --danger-container-active: color-mix(in oklch, var(--status-danger) 28%, transparent);
+    --danger-container-line: color-mix(in oklch, var(--status-danger) 55%, transparent);
+    --info-container: color-mix(in oklch, var(--status-info) 14%, transparent);
+    --info-container-hover: color-mix(in oklch, var(--status-info) 20%, transparent);
+    --info-container-active: color-mix(in oklch, var(--status-info) 28%, transparent);
+    --info-container-line: color-mix(in oklch, var(--status-info) 55%, transparent);
+  }
 }
 
 :root[data-theme='dark'],
@@ -562,6 +623,30 @@
   --border-strong: rgb(var(--ref-white-rgb) / 0.72);
   --content-on-accent-rgb: var(--ref-black-rgb);
   --content-on-accent: var(--ref-black);
+  --accent-container: var(--accent);
+  --accent-container-hover: var(--accent-hover);
+  --accent-container-active: var(--accent-muted);
+  --accent-container-line: var(--ref-white);
+  --success-container: var(--status-success);
+  --success-container-hover: var(--status-success);
+  --success-container-active: var(--status-success);
+  --success-container-line: var(--ref-white);
+  --success-on-container: var(--ref-black);
+  --warning-container: var(--status-warning);
+  --warning-container-hover: var(--status-warning);
+  --warning-container-active: var(--status-warning);
+  --warning-container-line: var(--ref-white);
+  --warning-on-container: var(--ref-black);
+  --danger-container: var(--status-danger);
+  --danger-container-hover: var(--status-danger);
+  --danger-container-active: var(--status-danger);
+  --danger-container-line: var(--ref-white);
+  --danger-on-container: var(--ref-black);
+  --info-container: var(--status-info);
+  --info-container-hover: var(--status-info);
+  --info-container-active: var(--status-info);
+  --info-container-line: var(--ref-white);
+  --info-on-container: var(--ref-black);
   /* Keep initials readable when high contrast switches avatar text to black. */
   --avatar-sand: var(--ref-white);
   --avatar-blue: var(--ref-white);
@@ -791,7 +876,7 @@ code {
   font-feature-settings: 'ss02' 1, 'zero' 1, 'tnum' 1, 'calt' 0, 'liga' 0;
 }
 
-/* ── Scrollbar — compact app chrome ── */
+/* ── Scrollbar: compact app chrome ── */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -841,6 +926,7 @@ textarea {
   outline: 2px solid var(--border-focus);
   outline-color: var(--border-focus) !important;
   outline-offset: 2px;
+  scroll-margin-block: 4rem;
 }
 
 /* Text uses a contrast-safe semantic foreground while action fills retain the selected accent. */
@@ -859,6 +945,16 @@ textarea {
     animation: none;
     transition: none;
   }
+
+  .mesh-pixel-avatar-default:hover .mesh-pixel-mark,
+  .mesh-pixel-brand:hover .mesh-pixel-mark,
+  .mesh-accent-choice:hover .mesh-pixel-mark,
+  .mesh-profile-choice:hover .mesh-pixel-mark,
+  button:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark,
+  a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
+    animation: none !important;
+    clip-path: none !important;
+  }
 }
 
 @media (forced-colors: active) {
@@ -875,9 +971,113 @@ textarea {
   }
 }
 
+/*
+ * Transparency is deliberately limited to bounded menus and popovers.
+ * Conversation panes and scrolling timelines always remain opaque.
+ */
+[data-transparency='readable'] .mesh-overlay-surface:not(.overflow-auto) {
+  background-color: rgb(var(--surface-overlay-rgb) / 0.94);
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  [data-transparency='readable'] .mesh-overlay-surface:not(.overflow-auto) {
+    backdrop-filter: blur(8px);
+  }
+}
+
+[data-transparency='opaque'] .mesh-overlay-surface {
+  background-color: var(--surface-overlay);
+  backdrop-filter: none;
+}
+
+@media (forced-colors: active) {
+  .mesh-overlay-surface {
+    background-color: var(--surface-overlay);
+    backdrop-filter: none;
+  }
+}
+
 .no-select {
   user-select: none;
   -webkit-user-select: none;
+}
+
+.mesh-button {
+  box-shadow: inset 0 1px 0 rgb(var(--ref-white-rgb) / 0.06);
+}
+
+.mesh-button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.mesh-input {
+  box-shadow: inset 0 1px 2px rgb(var(--ref-black-rgb) / 0.18);
+}
+
+.mesh-input:focus {
+  box-shadow:
+    0 0 0 3px rgb(var(--accent-rgb) / 0.12),
+    inset 0 1px 2px rgb(var(--ref-black-rgb) / 0.18);
+}
+
+.mesh-modal-surface {
+  box-shadow:
+    0 28px 80px rgb(var(--ref-black-rgb) / 0.58),
+    inset 0 1px 0 rgb(var(--ref-white-rgb) / 0.045);
+}
+
+.mesh-onboarding-root {
+  background-color: var(--surface-rail);
+}
+
+.mesh-onboarding-shell {
+  max-height: 920px;
+  background-color: var(--surface-base);
+  box-shadow:
+    0 32px 90px rgb(var(--ref-black-rgb) / 0.5),
+    inset 0 1px 0 rgb(var(--ref-white-rgb) / 0.035);
+}
+
+.mesh-onboarding-aside {
+  background-color: var(--ref-black);
+}
+
+.mesh-onboarding-content,
+.mesh-onboarding-scroll {
+  min-height: 0;
+}
+
+.mesh-onboarding-scroll {
+  max-height: calc(100vh - 8rem);
+  scrollbar-gutter: stable;
+}
+
+.mesh-onboarding-scroll h1[tabindex='-1']:focus,
+.mesh-onboarding-scroll [role='heading'][tabindex='-1']:focus {
+  outline: none !important;
+}
+
+.mesh-service-card,
+.mesh-form-card,
+.mesh-inline-card {
+  box-shadow: inset 0 1px 0 rgb(var(--ref-white-rgb) / 0.03);
+}
+
+.mesh-service-card {
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.mesh-service-card:focus-within,
+.mesh-service-card:hover {
+  border-color: var(--border-emphasis);
+  background-color: var(--surface-base);
+}
+
+.mesh-profile-choice {
+  background-color: var(--ref-black) !important;
+  box-shadow: inset 0 0 0 1px rgb(var(--ref-white-rgb) / 0.025);
 }
 
 #root {
@@ -885,7 +1085,7 @@ textarea {
 }
 
 .mesh-community-rail {
-  width: 56px;
+  width: 74px;
 }
 
 .mesh-context-sidebar {
@@ -894,6 +1094,169 @@ textarea {
 
 .mesh-room-context-panel {
   width: var(--mesh-room-context-width, var(--member-list-width));
+}
+
+.mesh-voice-dock {
+  min-height: 100px;
+}
+
+.mesh-settings-scroll {
+  max-height: calc(var(--modal-content-height) - 9.75rem);
+}
+
+.mesh-room-list {
+  overflow-anchor: none;
+}
+
+.mesh-accent-choice {
+  border: 1px solid rgb(var(--ref-white-rgb) / 0.12);
+  background: var(--ref-black);
+  color: var(--mesh-accent-preview);
+  box-shadow: inset 0 0 0 1px rgb(var(--ref-white-rgb) / 0.025);
+}
+
+.mesh-accent-choice[data-accent-preview='violet'] {
+  --mesh-accent-preview: var(--ref-accent-violet-9);
+}
+
+.mesh-accent-choice[data-accent-preview='sand'] {
+  --mesh-accent-preview: var(--ref-accent-9);
+}
+
+.mesh-accent-choice[data-accent-preview='ocean'] {
+  --mesh-accent-preview: var(--ref-accent-ocean-9);
+}
+
+.mesh-accent-choice[data-accent-preview='forest'] {
+  --mesh-accent-preview: var(--ref-accent-forest-9);
+}
+
+.mesh-accent-choice[data-accent-preview='ember'] {
+  --mesh-accent-preview: var(--ref-accent-ember-9);
+}
+
+.mesh-accent-choice[data-accent-preview='rose'] {
+  --mesh-accent-preview: var(--ref-accent-rose-9);
+}
+
+.mesh-pixel-mark {
+  display: block;
+  flex: none;
+  background-color: currentColor;
+  mask: var(--mesh-pixel-mask) center / 100% no-repeat;
+  -webkit-mask: var(--mesh-pixel-mask) center / 100% no-repeat;
+  transform: translateZ(0);
+  transform-origin: center;
+}
+
+.mesh-pixel-mark-brand {
+  --mesh-pixel-mask: url('../assets/pixel/mesh-heart.png');
+  color: var(--ref-accent-violet-9);
+}
+
+.mesh-pixel-mark-community {
+  --mesh-pixel-mask: url('../assets/pixel/community-lattice.png');
+}
+
+.mesh-pixel-mark-profile {
+  --mesh-pixel-mask: url('../assets/pixel/profile-signal.png');
+}
+
+.mesh-pixel-avatar-default,
+.mesh-pixel-brand {
+  background-color: var(--ref-black) !important;
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+}
+
+.mesh-pixel-brand {
+  overflow: hidden;
+  border-radius: var(--radius-community-active);
+}
+
+.mesh-pixel-avatar-default:hover .mesh-pixel-mark,
+.mesh-pixel-brand:hover .mesh-pixel-mark,
+.mesh-accent-choice:hover .mesh-pixel-mark,
+.mesh-profile-choice:hover .mesh-pixel-mark,
+button:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark,
+a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
+  animation: mesh-pixel-reveal 1320ms steps(8, end) infinite;
+}
+
+@keyframes mesh-pixel-reveal {
+  0%,
+  8% {
+    clip-path: inset(0 0 100% 0);
+  }
+
+  62%,
+  78% {
+    clip-path: inset(0);
+  }
+
+  100% {
+    clip-path: inset(100% 0 0 0);
+  }
+}
+
+@media (max-width: 1023px) {
+  .mesh-onboarding-shell {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .mesh-onboarding-scroll {
+    max-height: none;
+  }
+}
+
+@media (min-width: 1024px) and (max-height: 760px) {
+  .mesh-onboarding-trust {
+    display: none;
+  }
+}
+
+.sequence-card-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.sequence-card {
+  position: relative;
+  border: 1px solid var(--surface-container-line);
+  background: var(--surface-container);
+  color: var(--surface-on-container);
+}
+
+.sequence-card[data-sequence-position='single'] {
+  border-radius: var(--radius-control);
+}
+
+.sequence-card[data-sequence-position='first'] {
+  border-radius: var(--radius-control) var(--radius-control) 0 0;
+}
+
+.sequence-card[data-sequence-position='middle'] {
+  border-top-width: 0;
+  border-radius: 0;
+}
+
+.sequence-card[data-sequence-position='last'] {
+  border-top-width: 0;
+  border-radius: 0 0 var(--radius-control) var(--radius-control);
+}
+
+.sequence-card:hover {
+  background: var(--surface-container-hover);
+}
+
+.sequence-card:focus-within,
+.sequence-card[data-selected='true'] {
+  background: var(--surface-container-active);
+}
+
+.sequence-card:focus-within {
+  z-index: 1;
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
 }
 
 .mesh-panel-resize-handle {
@@ -943,7 +1306,7 @@ textarea {
 }
 
 .mesh-conversation-header {
-  min-height: 52px;
+  min-height: var(--conversation-header-height);
   background: var(--surface-canvas);
 }
 
@@ -1043,7 +1406,7 @@ textarea {
 
   .mesh-room-context-backdrop {
     position: fixed;
-    inset: 0 0 0 56px;
+    inset: 0 0 0 72px;
     z-index: 43;
     display: block;
     border: 0;
@@ -1141,7 +1504,7 @@ textarea {
   }
 
   /* Without this, grouped-message clock readings are unreachable on a device
-     that cannot hover — the timestamp would simply never appear. */
+     that cannot hover: the timestamp would simply never appear. */
   .mesh-message-time {
     opacity: 1;
   }

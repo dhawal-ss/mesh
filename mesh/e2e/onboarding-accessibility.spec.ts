@@ -18,7 +18,7 @@ async function installUnauthenticatedMatrixMock(
     let nextCallbackId = 1
     let nextListenerId = 1
     let authenticated = false
-    let pendingInvitationLink: string | null = null
+    let pendingInvitationLink: string | null = deepLinks?.[0] ?? null
 
     const pendingInvitationMetadata = () => {
       if (!pendingInvitationLink) return null
@@ -30,6 +30,10 @@ async function installUnauthenticatedMatrixMock(
         service: parsed.searchParams.get('community_service')
           ?? parsed.searchParams.get('service'),
         admissionService: parsed.searchParams.get('admission'),
+        communityName: 'Friends Community',
+        inviterDisplayName: 'Bob',
+        joinRule: 'invite',
+        communityServiceDisplayName: 'Community account service',
         storedAt: 1_752_000_000_000,
         expiresAt: 1_754_592_000_000,
       }
@@ -62,8 +66,6 @@ async function installUnauthenticatedMatrixMock(
 
     const responseFor = (command: string, args: Record<string, unknown>): unknown => {
       switch (command) {
-        case 'plugin:deep-link|get_current':
-          return deepLinks
         case 'plugin:event|listen':
           return nextListenerId++
         case 'plugin:event|unlisten':
@@ -130,23 +132,8 @@ async function installUnauthenticatedMatrixMock(
             ...(args.preferences as Record<string, unknown>),
             updatedAt: '2026-07-29T00:00:00.000Z',
           }
-        case 'matrix_resolve_community_invite':
-        case 'resolve_pending_invitation':
-          return {
-            version: 4,
-            registrationToken: 'resolved-registration-token',
-            roomId: '!invited:friends.example',
-            service: 'community.example',
-            via: ['friends.example'],
-            expiresAt: 1_800_000_000_000,
-          }
-        case 'store_pending_invitation':
-          pendingInvitationLink = String(args.inviteLink)
-          return pendingInvitationMetadata()
         case 'peek_pending_invitation':
           return pendingInvitationMetadata()
-        case 'read_pending_invitation':
-          return pendingInvitationLink
         case 'clear_pending_invitation':
           pendingInvitationLink = null
           return null
@@ -236,6 +223,9 @@ test.afterEach(async ({ page }) => {
 })
 
 test('@a11y has no automated WCAG A/AA violations on account-service selection', async ({ page }) => {
+  await expect(page.getByText('Mesh service', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('matrix.mesh.dhawal.org', { exact: false })).toHaveCount(0)
+  await expect(page.locator('form')).toHaveCount(0)
   await expectNoWcagViolations(page, 'Account service selection')
 })
 
@@ -247,6 +237,21 @@ test('@a11y has no automated WCAG A/AA violations on sign in', async ({ page }) 
   await expect(signInHeading).toBeFocused()
 
   await expectNoWcagViolations(page, 'Sign In screen')
+})
+
+test('makes password and username recovery visible from sign in', async ({ page }) => {
+  await page.getByRole('button', { name: 'Sign in with Matrix.org' }).click()
+
+  await page.getByRole('button', { name: 'Forgot password?' }).click()
+  await expect(page.getByText('Mesh never stores your account password')).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Open Matrix.org account help' })).toHaveAttribute(
+    'href',
+    'https://app.element.io/#/login',
+  )
+
+  await page.getByRole('button', { name: 'Forgot username?' }).click()
+  await expect(page.getByText('Usernames are issued by the account service')).toBeVisible()
+  await expect(page.getByText('Check the email or password manager')).toBeVisible()
 })
 
 for (const viewport of [
@@ -312,12 +317,12 @@ test('keeps validation errors and custom-service sign-in reachable at 200% zoom'
   await expectNoWcagViolations(page, 'Account setup at 200% zoom')
 })
 
-test('offers saved-account switching without exposing the qualified account ID', async ({ page }) => {
+test('@a11y offers saved-account switching without exposing the qualified account ID', async ({ page }) => {
   await installUnauthenticatedMatrixMock(page)
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Choose your account service' })).toBeVisible()
 
-  const savedAccount = page.getByRole('button', { name: /alice Saved account Continue/ })
+  const savedAccount = page.getByRole('button', { name: /alice Saved on this device Continue/ })
   await expect(savedAccount).toBeVisible()
   await expect(page.getByText('@alice:friends.example', { exact: true })).toHaveCount(0)
   await savedAccount.click()
@@ -329,9 +334,10 @@ test('offers saved-account switching without exposing the qualified account ID',
     args: { profileId: 'profile-1' },
   }])
   await expect(page.getByRole('heading', { name: 'Getting things ready' })).toBeVisible()
+  await expectNoWcagViolations(page, 'Saved-account handoff')
 })
 
-test('checks and starts browser sign-in through the native account boundary', async ({ page }) => {
+test('@a11y checks and starts browser sign-in through the native account boundary', async ({ page }) => {
   await installUnauthenticatedMatrixMock(page)
   await page.reload()
   await page.getByRole('button', { name: 'Use another service' }).click()
@@ -365,9 +371,10 @@ test('checks and starts browser sign-in through the native account boundary', as
     },
   ])
   await expect(page.getByRole('heading', { name: 'Getting things ready' })).toBeVisible()
+  await expectNoWcagViolations(page, 'Browser sign-in handoff')
 })
 
-test('prefills and resolves a cold-start invitation before account creation', async ({ page }) => {
+test('@a11y prefills an opaque cold-start invitation before account creation', async ({ page }) => {
   const code = 'abcdefghijklmnopqrstuvwxyzABCDEFG_123456789'
   const invitation =
     `mesh://join?v=5&kind=community&room=!invited%3Afriends.example&via=friends.example`
@@ -379,23 +386,27 @@ test('prefills and resolves a cold-start invitation before account creation', as
 
   await expect.poll(async () => (
     (await onboardingIpcCalls(page))
-      .filter((call) => [
-        'store_pending_invitation',
-        'resolve_pending_invitation',
-      ].includes(call.command))
-  )).toEqual([{
-    command: 'store_pending_invitation',
-    args: { inviteLink: invitation },
-  }, {
-    command: 'resolve_pending_invitation',
-    args: {},
-  }])
+      .filter((call) => call.command === 'peek_pending_invitation')
+      .length
+  )).toBeGreaterThan(0)
+  const invitationCalls = await onboardingIpcCalls(page)
+  expect(invitationCalls.map((call) => call.command)).not.toEqual(expect.arrayContaining([
+    'plugin:deep-link|get_current',
+    'store_pending_invitation',
+    'read_pending_invitation',
+    'resolve_pending_invitation',
+  ]))
+  expect(JSON.stringify(invitationCalls)).not.toContain(invitation)
   await expect(page.getByRole('button', { name: 'Sign in with Matrix.org' })).toBeVisible()
-  await page.getByRole('button', { name: 'Create account with community.example' }).click()
+  await page.getByRole('button', { name: 'Create account with Community account service' }).click()
   await expect(page.getByText('Invitation saved securely on this device')).toBeVisible()
-  await expect(page.getByText('Community target: !invited:friends.example.')).toBeVisible()
+  await expect(page.getByText('Friends Community')).toBeVisible()
+  await expect(page.getByText('Invited by Bob.')).toBeVisible()
+  await expect(page.getByText('Invitation only')).toBeVisible()
+  await expect(page.getByText('!invited:friends.example', { exact: false })).toHaveCount(0)
   await expect(page.getByRole('textbox', { name: 'Invitation code' })).toHaveCount(0)
   await expect(page.getByText('different Mesh service')).toHaveCount(0)
+  await expectNoWcagViolations(page, 'Invitation account creation')
 })
 
 test('keeps trust context and account setup usable in a narrow window', async ({ page }) => {

@@ -9,12 +9,14 @@ describe('appearance settings', () => {
     useSettingsStore.getState().setAppearanceTheme('dark')
     useSettingsStore.getState().setAppearanceDensity('default')
     useSettingsStore.getState().setAppearanceAccent('sand')
+    useSettingsStore.getState().setAppearanceTransparency('readable')
   })
 
   afterEach(() => {
     useSettingsStore.getState().setAppearanceTheme('dark')
     useSettingsStore.getState().setAppearanceDensity('default')
     useSettingsStore.getState().setAppearanceAccent('sand')
+    useSettingsStore.getState().setAppearanceTransparency('readable')
     localStorage.clear()
   })
 
@@ -24,16 +26,19 @@ describe('appearance settings', () => {
     useSettingsStore.getState().setAppearanceTheme('light')
     useSettingsStore.getState().setAppearanceDensity('comfortable')
     useSettingsStore.getState().setAppearanceAccent('rose')
+    useSettingsStore.getState().setAppearanceTransparency('opaque')
 
     expect(useSettingsStore.getState().appearance).toEqual({
       theme: 'light',
       density: 'comfortable',
       accent: 'rose',
+      transparency: 'opaque',
     })
     expect(useSettingsStore.getState().notifications).toBe(notificationsBefore)
     expect(document.documentElement.dataset.theme).toBe('light')
     expect(document.documentElement.dataset.density).toBe('comfortable')
     expect(document.documentElement.dataset.accent).toBe('rose')
+    expect(document.documentElement.dataset.transparency).toBe('opaque')
 
     const persisted = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as {
       state?: { appearance?: unknown }
@@ -42,6 +47,7 @@ describe('appearance settings', () => {
       theme: 'light',
       density: 'comfortable',
       accent: 'rose',
+      transparency: 'opaque',
     })
   })
 
@@ -54,6 +60,7 @@ describe('appearance settings', () => {
             theme: 'high-contrast',
             density: 'compact',
             accent: 'forest',
+            transparency: 'opaque',
           },
         },
         version: 0,
@@ -66,10 +73,12 @@ describe('appearance settings', () => {
       theme: 'high-contrast',
       density: 'compact',
       accent: 'forest',
+      transparency: 'opaque',
     })
     expect(document.documentElement.dataset.theme).toBe('high-contrast')
     expect(document.documentElement.dataset.density).toBe('compact')
     expect(document.documentElement.dataset.accent).toBe('forest')
+    expect(document.documentElement.dataset.transparency).toBe('opaque')
   })
 
   it('falls back to safe defaults for invalid persisted appearance values', async () => {
@@ -81,6 +90,7 @@ describe('appearance settings', () => {
             theme: 'system',
             density: 'tiny',
             accent: 'neon',
+            transparency: 'invisible',
           },
         },
         version: 0,
@@ -92,10 +102,12 @@ describe('appearance settings', () => {
     expect(useSettingsStore.getState().appearance).toEqual({
       theme: 'dark',
       density: 'default',
-      accent: 'sand',
+      accent: 'violet',
+      transparency: 'readable',
     })
     expect(document.documentElement.dataset.theme).toBe('dark')
     expect(document.documentElement.dataset.density).toBe('default')
-    expect(document.documentElement.dataset.accent).toBe('sand')
+    expect(document.documentElement.dataset.accent).toBe('violet')
+    expect(document.documentElement.dataset.transparency).toBe('readable')
   })
 })

@@ -598,6 +598,12 @@ function MessageInputContent({
   const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(false) }
   const stageBrowserFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) return
+    if (isTauri()) {
+      appendFiles([], [
+        'For safer file access, use the attachment button or drop files from your operating system. Mesh does not copy pasted file bytes through the app window.',
+      ])
+      return
+    }
     if (!bridge.isMatrixBackend()) {
       appendFiles([], [
         'Clipboard and browser-drop attachment copies require the encrypted Matrix backend. Use the attachment button to choose a stable local file.',
@@ -805,13 +811,13 @@ function MessageInputContent({
   return (
     <div
       ref={rootRef}
-      className="-mt-1 mx-5 mb-4"
+      className="-mt-1 mx-3 mb-4 min-w-0 max-w-full sm:mx-5"
       onDragOver={disabled || disableAttachments ? undefined : handleDragOver}
       onDragLeave={disabled || disableAttachments ? undefined : handleDragLeave}
       onDrop={disabled || disableAttachments ? undefined : handleDrop}
     >
       <div
-        className={`rounded-panel border border-border-subtle transition-colors ${
+        className={`min-w-0 overflow-hidden rounded-panel border border-border-subtle transition-colors ${
           isDragOver
             ? 'bg-accent/10 ring-2 ring-accent/40'
             : 'bg-surface-raised'
@@ -871,7 +877,7 @@ function MessageInputContent({
         </div>
 
         {/* Input row */}
-        <div className="relative flex items-end gap-0 px-1">
+        <div className="relative flex min-w-0 items-end gap-0 px-1">
           {slashSuggestions.length > 0 && (
             <div
               id={`slash-suggestions-${channelId}`}
@@ -1039,11 +1045,11 @@ function MessageInputContent({
                 : undefined}
             rows={1}
             disabled={disabled || isUploading || isStaging}
-            className="min-h-control-lg max-h-composer w-full resize-none bg-transparent px-2 py-2.5 text-sm text-primary placeholder:text-muted focus:outline-none disabled:opacity-60"
+            className="min-h-control-lg max-h-composer min-w-0 flex-1 resize-none bg-transparent px-2 py-2.5 text-sm text-primary placeholder:text-muted focus:outline-none disabled:opacity-60"
           />
 
           {/*
-            There was no Send button at all — sending was Enter-only, and the
+            There was no Send button at all: sending was Enter-only, and the
             Enter/Shift+Enter contract was documented nowhere in the UI. That is
             fine for practised users and invisible to everyone else, especially
             on touch.
@@ -1063,7 +1069,7 @@ function MessageInputContent({
         </div>
 
         {/*
-          The draft store silently discards anything past 16 KB — past the cap,
+          The draft store silently discards anything past 16 KB: past the cap,
           typing and pasting simply stopped having any effect with no counter,
           no warning and no announcement.
         */}
@@ -1076,7 +1082,7 @@ function MessageInputContent({
             {draftAtLimit && <Icon name="triangleAlert" size="xs" aria-hidden="true" />}
             <span className="tnum">
               {draftAtLimit
-                ? 'Message limit reached — shorten it to keep typing'
+                ? 'Message limit reached: shorten it to keep typing'
                 : `${Math.round((MAX_DRAFT_BYTES - draftBytesUsed) / 1024)} KB left`}
             </span>
           </div>

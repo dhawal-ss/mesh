@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-dm-conversations"
+description = "Enables the get_dm_conversations command without any pre-configured scope."
+commands.allow = ["get_dm_conversations"]
+
+[[permission]]
+identifier = "deny-get-dm-conversations"
+description = "Denies the get_dm_conversations command without any pre-configured scope."
+commands.deny = ["get_dm_conversations"]

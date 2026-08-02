@@ -11,9 +11,10 @@ import { EmptyState } from '../ui/Primitives'
 
 interface SearchBarProps {
   onNavigateToMessage: (message: Message) => void
+  label?: string
 }
 
-export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
+export function SearchBar({ onNavigateToMessage, label }: SearchBarProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Message[]>([])
@@ -132,13 +133,16 @@ export function SearchBar({ onNavigateToMessage }: SearchBarProps) {
             setIsOpen(true)
           }
         }}
-        className="flex h-8 w-8 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
+        className={`flex h-8 items-center justify-center gap-1.5 rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-secondary ${
+          label ? 'px-2' : 'w-8'
+        }`}
         title="Search messages"
         aria-label="Search messages"
         aria-expanded={isOpen}
         aria-controls={isOpen ? 'message-search-popover' : undefined}
       >
         <Icon name="search" size="sm" />
+        {label && <span className="hidden text-xs font-medium md:inline">{label}</span>}
       </button>
 
       <AnimatePresence>

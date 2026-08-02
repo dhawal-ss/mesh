@@ -108,15 +108,6 @@ impl MatrixBackend {
         Ok(Some(room))
     }
 
-    fn prejoin_invited_room_if_available(
-        client: &Client,
-        room_id: &matrix_sdk::ruma::RoomId,
-    ) -> Option<Room> {
-        client
-            .get_room(room_id)
-            .filter(|room| room.state() == RoomState::Invited)
-    }
-
     async fn existing_protected_text_channel(
         client: &Client,
         room_id: &matrix_sdk::ruma::RoomId,

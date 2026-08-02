@@ -720,11 +720,11 @@ describe('critical flow: out-of-order delivery converges', () => {
   it('edit delivered before message stores content as-sent then applies no change on late message arrival', () => {
     const store = useMessageStore.getState()
 
-    // Edit a non-existent message — should be a no-op
+    // Edit a non-existent message: should be a no-op
     store.editMessage('ch-1', 'late', 'edited content', '2025-04-02T00:00:01Z')
     expect(useMessageStore.getState().messages['ch-1']).toBeUndefined()
 
-    // Late message arrives with original content — the edit was lost at the
+    // Late message arrives with original content: the edit was lost at the
     // store layer, which is the expected behavior since the store isn't
     // the event log. This test documents the invariant.
     const m = msg({ id: 'late', content: 'original', timestamp: '2025-04-02T00:00:00Z' })

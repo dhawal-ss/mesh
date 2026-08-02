@@ -71,7 +71,7 @@ export class VoiceEngine {
   private relayRebuildTimer: number | null = null
   private relayRebuildCount = 0
   private lastRelayKey: string | null = null
-  // Injectable seam for peer creation — tests pass a FakeVoicePeerFactory.
+  // Injectable seam for peer creation: tests pass a FakeVoicePeerFactory.
   private readonly peerFactory: VoicePeerFactory
 
   constructor(
@@ -193,7 +193,7 @@ export class VoiceEngine {
    * Enables integration tests to drive the engine with a FakeVoicePeerFactory
    * without requiring a browser WebRTC environment.
    *
-   * Do not use in production code paths — always call `start()`.
+   * Do not use in production code paths: always call `start()`.
    */
   initForTesting(localPublicKey: string): void {
     this.destroyed = false
@@ -401,6 +401,8 @@ export class VoiceEngine {
       this.stopSpeakingDetection(publicKey)
     }
 
+    this.stopAllRelayReceivedStreams()
+
     if (this.audioContext) {
       this.audioContext.close().catch(() => {})
       this.audioContext = null
@@ -412,8 +414,6 @@ export class VoiceEngine {
     this.peers.clear()
     this.peerViews.clear()
     this.peerReconnectAttempts.clear()
-    this.relayReceivedStreams.clear()
-
     if (this.localStream) {
       this.localStream.getTracks().forEach((track) => track.stop())
       this.localStream = null
@@ -451,6 +451,7 @@ export class VoiceEngine {
       if (!shouldConnect) {
         const existing = this.peers.get(member.publicKey)
         if (existing) {
+          this.stopRelayReceivedStream(member.publicKey)
           existing.peer.destroy()
           this.peers.delete(member.publicKey)
         }
@@ -466,6 +467,7 @@ export class VoiceEngine {
       const existing = this.peers.get(member.publicKey)
 
       if (existing && existing.initiator !== shouldInitiate) {
+        this.stopRelayReceivedStream(member.publicKey)
         existing.peer.destroy()
         this.peers.delete(member.publicKey)
       }
@@ -481,6 +483,7 @@ export class VoiceEngine {
       }
 
       if (!memberKeys.has(publicKey)) {
+        this.stopRelayReceivedStream(publicKey)
         record.peer.destroy()
         this.peers.delete(publicKey)
         this.peerViews.delete(publicKey)
@@ -509,7 +512,8 @@ export class VoiceEngine {
 
     peer.on('signal', (signal) => {
       sendVoiceSignal(remotePublicKey, signal, this.communityId, this.channelId).catch((error) => {
-        console.error('VoiceEngine: failed to send voice signal', error)
+        const description = describeError(error, { operation: 'send voice signaling data' })
+        this.handlers.onConnectionWarning?.(`${description.title}. ${description.body}`)
       })
     })
 
@@ -519,18 +523,12 @@ export class VoiceEngine {
 
       // If we are the relay, add all already-received streams to the newly connected peer
       if (this.isLocalPeerRelay()) {
-        let addedTracks = false
         for (const [senderKey, stream] of this.relayReceivedStreams.entries()) {
           if (senderKey !== remotePublicKey) {
             for (const track of stream.getAudioTracks()) {
               peer.addTrack(track, stream)
-              addedTracks = true
             }
           }
-        }
-        // Force SDP renegotiation so the new tracks are transmitted
-        if (addedTracks) {
-          peer.negotiate()
         }
       }
     })
@@ -544,6 +542,7 @@ export class VoiceEngine {
 
       // Relay forwarding: if we are the relay, store the stream and forward to all other peers
       if (this.isLocalPeerRelay()) {
+        this.stopRelayReceivedStream(remotePublicKey)
         this.relayReceivedStreams.set(remotePublicKey, remoteStream)
         for (const [otherKey, otherRecord] of this.peers.entries()) {
           if (otherKey === remotePublicKey || otherKey === this.localPublicKey) {
@@ -552,8 +551,6 @@ export class VoiceEngine {
           for (const track of remoteStream.getAudioTracks()) {
             otherRecord.peer.addTrack(track, remoteStream)
           }
-          // Force SDP renegotiation so the forwarded tracks are transmitted
-          otherRecord.peer.negotiate()
         }
       }
     })
@@ -600,10 +597,8 @@ export class VoiceEngine {
     record.peer.destroy()
     this.peers.delete(remotePublicKey)
 
-    // Clean up relay stream for this peer
-    if (this.relayReceivedStreams.has(remotePublicKey)) {
-      this.relayReceivedStreams.delete(remotePublicKey)
-    }
+    // Stop relay-owned tracks before dropping the last stream reference.
+    this.stopRelayReceivedStream(remotePublicKey)
 
     const shouldRebuild =
       this.sessionSnapshot !== null &&
@@ -699,6 +694,7 @@ export class VoiceEngine {
     this.handlers.onRelayChanged?.()
 
     // Force reconnect all peers to establish new relay topology
+    this.stopAllRelayReceivedStreams()
     for (const [pk, peerRecord] of this.peers) {
       peerRecord.peer.destroy()
       this.peers.delete(pk)
@@ -799,6 +795,7 @@ export class VoiceEngine {
   }
 
   private resetPeerConnections(): void {
+    this.stopAllRelayReceivedStreams()
     for (const record of this.peers.values()) {
       record.peer.destroy()
     }
@@ -809,7 +806,6 @@ export class VoiceEngine {
     }
     this.peerReconnectTimers.clear()
     this.peerReconnectAttempts.clear()
-    this.relayReceivedStreams.clear()
   }
 
   private syncPeerViews(snapshot: VoiceSessionSnapshot): void {
@@ -839,7 +835,7 @@ export class VoiceEngine {
     // Stop any existing detection for this key before starting a new one
     this.stopSpeakingDetection(publicKey)
 
-    if (!this.audioContext) {
+    if (!this.audioContext || this.audioContext.state === 'closed') {
       this.audioContext = new AudioContext()
     }
 
@@ -887,6 +883,24 @@ export class VoiceEngine {
     entry.source.disconnect()
     entry.analyser.disconnect()
     this.audioAnalysers.delete(publicKey)
+  }
+
+  private stopRelayReceivedStream(publicKey: string): void {
+    const stream = this.relayReceivedStreams.get(publicKey)
+    if (!stream) {
+      return
+    }
+
+    for (const track of stream.getTracks()) {
+      track.stop()
+    }
+    this.relayReceivedStreams.delete(publicKey)
+  }
+
+  private stopAllRelayReceivedStreams(): void {
+    for (const publicKey of Array.from(this.relayReceivedStreams.keys())) {
+      this.stopRelayReceivedStream(publicKey)
+    }
   }
 
   private emitPeerView(publicKey: string, patch: Partial<Peer>): void {

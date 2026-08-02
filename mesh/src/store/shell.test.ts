@@ -10,6 +10,7 @@ describe('shell navigation state', () => {
       pendingInvitation: null,
       profileOpen: false,
       securityOpen: false,
+      diagnosticsOpen: false,
     })
   })
 
@@ -65,5 +66,10 @@ describe('shell navigation state', () => {
 
     expect(useShellStore.getState().securityOpen).toBe(true)
     expect(useShellStore.getState().profileOpen).toBe(false)
+  })
+
+  it('opens call diagnostics from fail-closed voice', () => {
+    useShellStore.getState().setDiagnosticsOpen(true)
+    expect(useShellStore.getState().diagnosticsOpen).toBe(true)
   })
 })

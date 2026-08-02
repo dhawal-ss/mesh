@@ -2,6 +2,7 @@ import { useId, useState } from 'react'
 import clsx from 'clsx'
 import { describeError, errorDetail, type ErrorContext } from '../../lib/errors'
 import { Button } from './Button'
+import { Icon } from './Icon'
 
 interface ErrorStateProps {
   error: unknown
@@ -40,17 +41,24 @@ export function ErrorState({
       role="alert"
       aria-labelledby={titleId}
       className={clsx(
-        'rounded-panel border border-status-danger/40 bg-status-danger/10 text-left',
+        'rounded-panel border border-status-danger/40 bg-surface-sunken text-left',
         compact ? 'px-3 py-2' : 'p-4',
         className,
       )}
     >
-      <h3 id={titleId} className={clsx('font-semibold text-status-danger', compact ? 'text-xs' : 'text-sm')}>
-        {description.title}
-      </h3>
-      <p className={clsx('leading-5 text-secondary', compact ? 'mt-0.5 text-xs' : 'mt-1 text-sm')}>
-        {description.body}
-      </p>
+      <div className="flex items-start gap-2.5">
+        <span className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-control bg-status-danger/10 text-status-danger" aria-hidden="true">
+          <Icon name="triangleAlert" size="sm" />
+        </span>
+        <div className="min-w-0">
+          <h3 id={titleId} className={clsx('font-semibold text-status-danger', compact ? 'text-xs' : 'text-sm')}>
+            {description.title}
+          </h3>
+          <p className={clsx('leading-5 text-secondary', compact ? 'mt-0.5 text-xs' : 'mt-1 text-sm')}>
+            {description.body}
+          </p>
+        </div>
+      </div>
       {onAction && primaryAction && (
         <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={onAction}>
           {primaryAction}
