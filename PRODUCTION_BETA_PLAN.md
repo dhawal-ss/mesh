@@ -20,13 +20,13 @@ release evidence snapshot.
 
 **Verdict:** `ALL_LOCALLY_SPECIFIABLE_FINDINGS_COMPLETE_NOT_RELEASE_READY`
 
-The current source of truth is
+The implementation and continuation reports remain the detailed source of truth:
 [MESH_IMPLEMENTATION_COMPLETION_REPORT_2026-08-01.md](MESH_IMPLEMENTATION_COMPLETION_REPORT_2026-08-01.md).
 It maps every Phase 1-4 finding to its root cause, implementation, regression
-evidence, exact local verification, and remaining external owner. The active
-worktree is intentionally dirty and is based on
-`45b1a2df6d71c826b17510a00f595c24b5d989ba`; neither that base SHA nor the
-existing `releaseSha` represents the uncommitted integration.
+evidence, exact local verification, and remaining external owner. The combined
+implementation has now been reviewed, recorded on `main`, and verified from a
+clean worktree. The readiness ledger must be rebound in a final ledger-only
+commit to the clean tested source snapshot before exact-SHA evidence is used.
 
 The final adversarial continuation closed additional local gaps that were not
 captured by the earlier snapshots below:
@@ -48,23 +48,23 @@ The readiness ledger now has 24 gates. The 58-case external campaign is split
 without reducing scope: 50 Windows/provider/community/publication cases are R2,
 while four macOS/Linux assistive-technology combinations and four installed
 native-invitation cases are explicit R4 gates. R0 exact-SHA dependency evidence
-is required and truthfully blocked until these changes exist on a clean,
-protected source SHA. No local/disposable result is production acceptance.
+is required. Local clean-source evidence does not substitute for protected
+same-SHA CI or production acceptance.
 
-Settled-source local evidence includes 106 Vitest files / 771 tests, 67/67
-Chromium cases, 190 Matrix Rust tests, 212 legacy Rust tests, Matrix/legacy
-security filters at 19/13, strict Matrix Clippy, formatting, TypeScript, clean
-ESLint, zero npm vulnerabilities, 20/20 deterministic Windows polling
-repetitions, and two independently reset disposable federation/recovery cycles
-with 2/2 live tests in each cycle. The final Matrix bundle remains inside every
-unchanged budget: 227.66 KiB entry, 447.02 KiB eager JavaScript, 1,909.18 KiB
-all JavaScript, and 2,341.98 KiB all production assets. These are dirty local
-results only and do not satisfy protected same-SHA or signed-build gates.
+Current clean-source local evidence includes 107 Vitest files / 774 tests,
+67/67 Chromium cases, passing Matrix and legacy Rust feature graphs,
+Matrix/legacy security filters at 19/13, strict Matrix and legacy Clippy,
+formatting, TypeScript, clean ESLint, zero npm vulnerabilities, daemon-free
+homeserver recovery checks, and live public-service discovery checks. The final
+Matrix bundle remains inside every tightened budget: 227.31 KiB entry,
+446.67 KiB eager JavaScript, 1,112.08 KiB all JavaScript, and 1,544.88 KiB all
+production assets. These local results do not satisfy protected same-SHA,
+signed-build, operator, accessibility, publication, or physical MatrixRTC gates.
 
-Do not update `releaseSha` for this dirty source. Do not publish or promote the
-draft candidate, enable the updater, enable MatrixRTC, provision admission, or
-claim authoritative moderation audit until the named external contracts and
-campaigns in the completion report pass.
+Rebind `releaseSha` only through the ledger-only evidence commit described
+above. Do not publish or promote a draft candidate, enable the updater, enable
+MatrixRTC, provision admission, or claim authoritative moderation audit until
+the named external contracts and campaigns in the completion report pass.
 
 ## Earlier verified readiness snapshots
 
