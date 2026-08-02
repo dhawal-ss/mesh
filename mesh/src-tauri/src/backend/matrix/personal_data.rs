@@ -215,7 +215,10 @@ impl MatrixBackend {
         if media_hashes.is_empty() {
             return Ok(0);
         }
-        if !tokio::fs::try_exists(cache_root).await.unwrap_or(false) {
+        if !tokio::fs::try_exists(cache_root)
+            .await
+            .map_err(Self::map_error)?
+        {
             warnings.push(format!(
                 "{} attachment{} referenced by your messages had no downloaded local copy. Mesh did not download anything new for this export.",
                 media_hashes.len(),

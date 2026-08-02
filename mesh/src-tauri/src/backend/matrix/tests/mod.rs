@@ -866,6 +866,26 @@ async fn personal_data_export_copies_only_matching_private_media() {
         .exists());
 }
 
+#[tokio::test]
+async fn personal_data_export_fails_when_private_media_cache_cannot_be_inspected() {
+    let root = tempfile::tempdir().unwrap();
+    let export = root.path().join("export");
+    tokio::fs::create_dir_all(&export).await.unwrap();
+    let invalid_cache = root.path().join("invalid\0media-cache");
+
+    let mut warnings = Vec::new();
+    let result = MatrixBackend::copy_personal_export_media(
+        &invalid_cache,
+        &export,
+        &HashSet::from(["matrix-sha256:abc".to_owned()]),
+        &mut warnings,
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert!(warnings.is_empty());
+}
+
 #[test]
 fn native_room_pins_are_unique_bounded_and_removable_at_capacity() {
     let first = matrix_sdk::ruma::EventId::parse("$first:example.org").unwrap();
