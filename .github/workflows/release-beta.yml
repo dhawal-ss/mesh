@@ -433,7 +433,7 @@ jobs:
           "MESH_CHECKSUM_PATH=$checksumPath" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Attest signed release provenance
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: |
             mesh/src-tauri/target/release/bundle/**/*.msi
