@@ -60,7 +60,7 @@
     "framer-motion": "^12.38.0",
     "livekit-client": "~2.20.2",
     "lucide-react": "^1.26.0",
-    "nanoid": "^5.1.7",
+    "nanoid": "^6.0.0",
     "radix-ui": "^1.6.7",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
