@@ -28,7 +28,7 @@ async function writeManifest(projectRoot, relativePath, manifest) {
   await writeFile(join(directory, 'package.json'), JSON.stringify(manifest), 'utf8')
 }
 
-test('installed manifest metadata wins when a dependency is present', async () => {
+test('lockfile metadata stays canonical when a platform package is installed', async () => {
   await withProject(async (projectRoot) => {
     const relativePath = 'node_modules/example'
     await writeManifest(projectRoot, relativePath, {
@@ -47,20 +47,20 @@ test('installed manifest metadata wins when a dependency is present', async () =
     } })
 
     assert.deepEqual(packages, [{
-      name: 'manifest-name',
-      version: '1.2.3',
-      license: 'Apache-2.0',
-      source: 'https://example.test/manifest.git',
+      name: 'example',
+      version: '9.9.9',
+      license: 'MIT',
+      source: 'https://example.test/lock.git',
     }])
   })
 })
 
-test('missing optional manifest uses legacy lockfile licenses and repository', async () => {
+test('missing optional manifest uses lockfile SPDX license and repository', async () => {
   await withProject(async (projectRoot) => {
     const packages = await collectJavaScriptPackages(projectRoot, { packages: {
       'node_modules/@example/linux-x64': {
         version: '4.5.6',
-        licenses: [{ type: 'MIT' }],
+        license: 'MIT',
         optional: true,
         repository: { url: 'git+https://example.test/platform.git' },
         resolved: 'https://registry.example.test/platform.tgz',
@@ -99,7 +99,6 @@ test('optional platform package output is independent of installation state', as
     const relativePath = 'node_modules/@example/platform-x64'
     const lock = { packages: {
       [relativePath]: {
-        name: '@example/platform-x64',
         version: '4.5.6',
         license: 'MIT',
         optional: true,
@@ -112,7 +111,7 @@ test('optional platform package output is independent of installation state', as
       name: '@example/platform-x64',
       version: '4.5.6',
       license: 'MIT',
-      homepage: 'https://registry.example.test/platform-x64.tgz',
+      repository: 'https://example.test/upstream.git',
     })
     const installed = await collectJavaScriptPackages(projectRoot, lock)
 
