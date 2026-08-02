@@ -1,4 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { expectNoWcagViolations } from './helpers/accessibility'
 
 type IpcCall = {
@@ -433,7 +435,7 @@ async function openAuthenticatedShell(
 async function expectCriticalConversationGeometry(
   page: Page,
   label: string,
-): Promise<void> {
+): Promise<Record<string, { x: number; width: number; right: number }>> {
   const criticalElements = [
     ['conversation header', page.locator('.mesh-conversation-header')],
     ['message log', page.getByRole('log', { name: /Messages in #/ })],
@@ -443,6 +445,7 @@ async function expectCriticalConversationGeometry(
   ] as const
 
   const viewportWidth = await page.evaluate(() => window.innerWidth)
+  const measurements: Record<string, { x: number; width: number; right: number }> = {}
   for (const [elementName, locator] of criticalElements) {
     await expect(locator, `${label}: ${elementName} should be visible`).toBeVisible()
     const box = await locator.boundingBox()
@@ -452,7 +455,13 @@ async function expectCriticalConversationGeometry(
     expect(box!.width, `${label}: ${elementName} should retain usable width`).toBeGreaterThanOrEqual(
       elementName === 'send control' ? 40 : 44,
     )
+    measurements[elementName] = {
+      x: box!.x,
+      width: box!.width,
+      right: box!.x + box!.width,
+    }
   }
+  return measurements
 }
 
 function ipcCalls(page: Page): Promise<IpcCall[]> {
@@ -582,7 +591,7 @@ test.describe('authenticated desktop shell', () => {
     await page.getByRole('button', { name: 'User settings' }).click()
     const dialog = page.getByRole('dialog', { name: 'User Settings' })
     await expect(dialog).toBeVisible()
-    await expect(dialog.getByText('Account', { exact: true })).toBeVisible()
+    await expect(dialog.getByRole('tab', { name: 'Account' })).toBeVisible()
     await expect(dialog.locator(':scope > div').first()).toHaveCSS('opacity', '1')
     await expectNoWcagViolations(page, 'User Settings dialog')
   })
@@ -921,9 +930,23 @@ test.describe('authenticated narrow shell', () => {
       { width: 320, height: 800, label: '400% zoom equivalent from 1280px' },
     ]
 
+    const evidenceDirectory = process.env.MESH_RESPONSIVE_EVIDENCE_DIR
+    const measurements: Record<string, unknown> = {}
+    if (evidenceDirectory) await mkdir(evidenceDirectory, { recursive: true })
     for (const layout of layouts) {
       await page.setViewportSize({ width: layout.width, height: layout.height })
-      await expectCriticalConversationGeometry(page, layout.label)
+      measurements[layout.label] = await expectCriticalConversationGeometry(page, layout.label)
+      if (evidenceDirectory) {
+        const filename = `${layout.label.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-')}.png`
+        await page.screenshot({ path: join(evidenceDirectory, filename), fullPage: true })
+      }
+    }
+    if (evidenceDirectory) {
+      await writeFile(
+        join(evidenceDirectory, 'responsive-conversation-geometry.json'),
+        `${JSON.stringify(measurements, null, 2)}\n`,
+        'utf8',
+      )
     }
   })
 
@@ -995,7 +1018,7 @@ test.describe('authenticated narrow shell', () => {
     await page.getByRole('button', { name: 'User settings' }).click()
     const dialog = page.getByRole('dialog', { name: 'User Settings' })
     await expect(dialog).toBeVisible()
-    await dialog.getByRole('tab', { name: 'Notifications' }).click()
+    await dialog.getByLabel('Settings section').selectOption('notifications')
     await expect(dialog.getByRole('checkbox', { name: 'Desktop notifications' })).toBeVisible()
 
     await page.keyboard.press('Escape')
@@ -1011,7 +1034,7 @@ test.describe('authenticated narrow shell', () => {
     const settingsDialog = page.getByRole('dialog', { name: 'User Settings' })
     await expect(settingsDialog).toBeVisible()
 
-    await settingsDialog.getByRole('tab', { name: 'Devices' }).click()
+    await settingsDialog.getByLabel('Settings section').selectOption('devices')
     await settingsDialog.getByRole('button', { name: 'Open your devices' }).click()
     const securityDialog = page.getByRole('dialog', { name: 'Your devices' })
     await expect(settingsDialog).toHaveCount(0)

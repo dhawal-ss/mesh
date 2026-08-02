@@ -154,8 +154,12 @@ async function openAdvancedDiagnostics(
   // content — not just the dialog title — before sending the shortcut, or
   // the keypress can land before the actual component (and its keydown
   // listener) has mounted.
-  await expect(settings.getByRole('tab', { name: 'Devices' })).toBeVisible()
-  await settings.getByRole('tab', { name: 'Devices' }).click()
+  if ((page.viewportSize()?.width ?? 0) < 640) {
+    await settings.getByLabel('Settings section').selectOption('devices')
+  } else {
+    await expect(settings.getByRole('tab', { name: 'Devices' })).toBeVisible()
+    await settings.getByRole('tab', { name: 'Devices' }).click()
+  }
   await page.keyboard.press('Control+Shift+D')
   const diagnosticsButton = settings.getByRole('button', { name: 'System diagnostics' })
   await expect(diagnosticsButton).toBeVisible()

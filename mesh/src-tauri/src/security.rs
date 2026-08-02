@@ -1,5 +1,6 @@
 use std::path::Path;
 
+#[cfg(any(feature = "matrix-backend", all(test, unix)))]
 use tokio::fs::{DirBuilder, File, OpenOptions};
 
 pub(crate) const BLOCKED_ATTACHMENT_EXTENSIONS: &[&str] = &[
@@ -289,6 +290,7 @@ pub(crate) fn is_file_in_named_directory_under(
             .is_some_and(|name| name == directory_name)
 }
 
+#[cfg(any(feature = "matrix-backend", all(test, unix)))]
 pub(crate) async fn create_private_dir(path: &Path, recursive: bool) -> std::io::Result<()> {
     let mut builder = DirBuilder::new();
     builder.recursive(recursive);
@@ -297,6 +299,7 @@ pub(crate) async fn create_private_dir(path: &Path, recursive: bool) -> std::io:
     builder.create(path).await
 }
 
+#[cfg(any(feature = "matrix-backend", all(test, unix)))]
 pub(crate) async fn open_private_file(path: &Path, create_new: bool) -> std::io::Result<File> {
     let mut options = OpenOptions::new();
     options.write(true);
@@ -369,26 +372,25 @@ mod tests {
     }
 
     #[test]
-    fn opener_capability_allows_only_web_and_email_urls() {
+    fn external_links_use_only_the_native_validated_command() {
         let capability: serde_json::Value =
             serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
         let permissions = capability["permissions"].as_array().unwrap();
-        assert!(!permissions.iter().any(|permission| {
-            permission
+        assert!(!permissions.iter().any(|permission| permission
+            .as_str()
+            .is_some_and(|identifier| identifier.starts_with("opener:"))
+            || permission["identifier"]
                 .as_str()
-                .is_some_and(|identifier| identifier == "opener:default")
-        }));
-        let opener = permissions
-            .iter()
-            .find(|permission| permission["identifier"] == "opener:allow-open-url")
-            .expect("scoped opener permission is missing");
-        let urls: Vec<_> = opener["allow"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|entry| entry["url"].as_str().unwrap())
-            .collect();
-        assert_eq!(urls, ["https://*", "http://*", "mailto:*"]);
+                .is_some_and(|identifier| identifier.starts_with("opener:"))));
+        assert!(include_str!("../permissions/mesh-main.toml").contains("open_external_url"));
+    }
+
+    #[test]
+    fn renderer_cannot_stage_byte_arrays_in_the_native_process() {
+        let handlers = include_str!("lib.rs");
+        let inventory = include_str!("../permissions/mesh-main.toml");
+        assert!(!handlers.contains("commands::attachments::stage_attachment_bytes"));
+        assert!(!inventory.contains("stage_attachment_bytes"));
     }
 
     #[test]

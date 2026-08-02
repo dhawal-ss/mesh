@@ -29,6 +29,7 @@
     "check:security-invariants:matrix": "cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features matrix-backend --locked --jobs 1 security_boundary",
     "check:security-invariants:legacy": "cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features legacy-p2p --locked --jobs 1 security_boundary",
     "generate:ipc-types": "cargo run --manifest-path src-tauri/Cargo.toml --bin export_ipc_types --no-default-features --features matrix-backend --locked",
+    "generate:third-party-notices": "node scripts/generate-third-party-notices.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:build:matrix": "tauri build",

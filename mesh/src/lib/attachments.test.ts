@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import * as bridge from './bridge'
+import { isTauri } from '@tauri-apps/api/core'
 import {
   MAX_ATTACHMENT_BYTES,
   MAX_PASTED_ATTACHMENT_BYTES,
@@ -34,30 +34,30 @@ describe('attachment intake', () => {
       .toThrow('can execute code')
   })
 
-  it('materializes a clipboard image through bounded native staging', async () => {
-    const stage = vi.spyOn(bridge, 'stageAttachmentBytes').mockResolvedValue({
-      token: 'opaque-token',
-      grant: 'opaque-token',
-      name: 'pasted-image.png',
+  it('materializes a clipboard image only inside the browser preview', async () => {
+    const arrayBuffer = vi.fn(async () => new Uint8Array([1, 2, 3, 4]).buffer)
+    const file = {
+      name: '',
+      type: 'image/png',
       size: 4,
-      contentType: 'image/png',
-    })
-    const file = new File([new Uint8Array([1, 2, 3, 4])], '', { type: 'image/png' })
+      arrayBuffer,
+    } as unknown as File
 
-    await expect(stageWebFile(file)).resolves.toEqual({
+    const staged = await stageWebFile(file)
+    expect(staged).toEqual({
       name: 'pasted-image.png',
       size: 4,
-      grant: 'opaque-token',
+      grant: expect.stringMatching(/^browser-preview:/),
       contentType: 'image/png',
       source: 'temporary',
-      stagingToken: 'opaque-token',
+      stagingToken: expect.stringMatching(/^browser-preview:/),
       transferId: expect.any(String),
     })
-    expect(stage).toHaveBeenCalledWith('pasted-image.png', [1, 2, 3, 4])
+    expect(staged.stagingToken).toBe(staged.grant)
+    expect(arrayBuffer).toHaveBeenCalledOnce()
   })
 
-  it('rejects an oversized pasted blob before crossing IPC', async () => {
-    const stage = vi.spyOn(bridge, 'stageAttachmentBytes')
+  it('rejects an oversized pasted blob before reading it', async () => {
     const file = {
       name: 'large.gif',
       type: 'image/gif',
@@ -66,7 +66,32 @@ describe('attachment intake', () => {
     } as unknown as File
 
     await expect(stageWebFile(file)).rejects.toThrow('use the attachment button')
-    expect(stage).not.toHaveBeenCalled()
+    expect(file.arrayBuffer).not.toHaveBeenCalled()
+  })
+
+  it('rejects a 1 GiB desktop payload without reading or copying its bytes', async () => {
+    vi.mocked(isTauri).mockReturnValue(true)
+    const file = {
+      name: 'memory-pressure.bin',
+      type: 'application/octet-stream',
+      size: 1024 * 1024 * 1024,
+      arrayBuffer: vi.fn(),
+    } as unknown as File
+
+    await expect(stageWebFile(file)).rejects.toThrow('limited to 100 MB')
+    expect(file.arrayBuffer).not.toHaveBeenCalled()
+  })
+
+  it('rejects even small WebView files before allocating a byte array', async () => {
+    vi.mocked(isTauri).mockReturnValue(true)
+    const file = {
+      name: 'clipboard.png',
+      type: 'image/png',
+      size: 4,
+      arrayBuffer: vi.fn(),
+    } as unknown as File
+
+    await expect(stageWebFile(file)).rejects.toThrow('attachment button')
     expect(file.arrayBuffer).not.toHaveBeenCalled()
   })
 })

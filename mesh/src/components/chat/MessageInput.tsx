@@ -598,6 +598,12 @@ function MessageInputContent({
   const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(false) }
   const stageBrowserFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) return
+    if (isTauri()) {
+      appendFiles([], [
+        'For safer file access, use the attachment button or drop files from your operating system. Mesh does not copy pasted file bytes through the app window.',
+      ])
+      return
+    }
     if (!bridge.isMatrixBackend()) {
       appendFiles([], [
         'Clipboard and browser-drop attachment copies require the encrypted Matrix backend. Use the attachment button to choose a stable local file.',

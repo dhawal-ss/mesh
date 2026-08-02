@@ -60,6 +60,50 @@ describe('UserSettingsPanel', () => {
     container.remove()
   })
 
+  it('implements roving keyboard tabs with complete panel relationships', async () => {
+    await act(async () => {
+      root.render(
+        <UserSettingsPanel
+          open
+          onClose={() => {}}
+          identity={{
+            publicKey: '@alice:example.org',
+            displayName: 'Alice',
+            avatarColor: '#52b5f4',
+          }}
+          matrixAccountId="@alice:example.org"
+          matrixMode
+          onOpenSecurity={() => {}}
+        />,
+      )
+    })
+
+    const tabs = Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+    expect(tabs.filter((tab) => tab.tabIndex === 0)).toHaveLength(1)
+    for (const tab of tabs) {
+      const panelId = tab.getAttribute('aria-controls')
+      expect(panelId).toBeTruthy()
+      expect(document.getElementById(panelId!)).not.toBeNull()
+    }
+
+    const appearance = tabs.find((tab) => tab.textContent === 'Appearance')!
+    await act(async () => {
+      appearance.focus()
+      appearance.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    })
+    const notifications = tabs.find((tab) => tab.textContent === 'Notifications')!
+    expect(notifications.getAttribute('aria-selected')).toBe('true')
+    expect(notifications.tabIndex).toBe(0)
+    expect(document.activeElement).toBe(notifications)
+
+    await act(async () => {
+      notifications.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+    })
+    const devices = tabs.find((tab) => tab.textContent === 'Devices')!
+    expect(devices.getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(devices)
+  })
+
   it('shows the authenticated Matrix account and opens security controls', async () => {
     const openSecurity = vi.fn()
     await act(async () => {

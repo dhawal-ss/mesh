@@ -7,14 +7,6 @@
     "core:default",
     "core:event:default",
     "mesh-main",
-    {
-      "identifier": "opener:allow-open-url",
-      "allow": [
-        { "url": "https://*" },
-        { "url": "http://*" },
-        { "url": "mailto:*" }
-      ]
-    },
     "dialog:allow-open",
     "notification:default"
   ]

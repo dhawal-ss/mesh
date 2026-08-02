@@ -1,3 +1,4 @@
+import { isTauri } from '@tauri-apps/api/core'
 import * as bridge from './bridge'
 import type { StagedFile } from '../components/chat/FileAttachment'
 
@@ -65,16 +66,29 @@ export async function stageWebFile(file: File): Promise<StagedFile> {
     throw new AttachmentValidationError(`${name} is empty and was not attached.`)
   }
 
-  const bytes = Array.from(new Uint8Array(await file.arrayBuffer()))
-  const staged = await bridge.stageAttachmentBytes(name, bytes)
+  if (isTauri()) {
+    throw new AttachmentValidationError(
+      'Pasting or browser-dropping file bytes is disabled in the desktop app. Use the attachment button or drop the file from your operating system so Mesh can use a bounded file-access grant.',
+    )
+  }
+
+  // Browser preview builds retain a local-only fixture path for UI development.
+  // The production Tauri handler and permission are deliberately absent, so a
+  // WebView can never deserialize an attacker-controlled byte array into Rust.
+  const bytes = await file.arrayBuffer()
+  if (bytes.byteLength !== file.size) {
+    throw new AttachmentValidationError(`${name} changed while Mesh was reading it.`)
+  }
+  const transferId = bridge.createMatrixTransferId()
+  const token = `browser-preview:${transferId}`
   return {
-    name: staged.name,
-    size: staged.size,
-    grant: staged.grant,
-    contentType: staged.contentType,
+    name,
+    size: bytes.byteLength,
+    grant: token,
+    contentType: file.type || 'application/octet-stream',
     source: 'temporary',
-    stagingToken: staged.token,
-    transferId: bridge.createMatrixTransferId(),
+    stagingToken: token,
+    transferId,
   }
 }
 

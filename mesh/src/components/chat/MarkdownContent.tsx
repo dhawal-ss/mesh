@@ -94,7 +94,7 @@ function isSafeUrl(url: string): boolean {
     // Handle protocol-relative URLs
     const normalized = url.startsWith('//') ? `https:${url}` : url
     const parsed = new URL(normalized, 'https://placeholder.invalid')
-    return ['http:', 'https:', 'mailto:'].includes(parsed.protocol)
+    return ['https:', 'mailto:'].includes(parsed.protocol)
   } catch {
     return false
   }

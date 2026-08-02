@@ -19,13 +19,14 @@ never cause a second panic.
 Release requirements
 --------------------
 
-Before a consumer beta, the owner must approve and verify a support-bundle flow
-that:
+The diagnostics panel now provides a bounded, allowlisted JSON support bundle
+flow that:
 
 * shows every field before export and requires an explicit user action;
 * redacts credentials, invitation URLs, identifiers, content, filesystem paths,
   and environment variables by default;
-* uses a bounded archive with a documented retention and deletion path;
+* uses a 16 KiB maximum file and tells the user to delete it after support no
+  longer needs it;
 * never uploads automatically and never treats silence as consent; and
 * keeps local diagnostics useful when all network telemetry is disabled.
 

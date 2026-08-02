@@ -956,14 +956,6 @@ export async function matrixCancelAttachmentDownload(fileHash: string): Promise<
   return tauriInvoke('matrix_cancel_attachment_download', { fileHash })
 }
 
-export interface StagedAttachmentBytes {
-  token: string
-  grant: string
-  name: string
-  size: number
-  contentType: string
-}
-
 export interface NativeAttachmentGrant {
   grant: string
   name: string
@@ -985,11 +977,8 @@ export async function acceptAttachmentDropGrants(grants: string[]): Promise<void
   return tauriInvoke('accept_attachment_drop_grants', { grants })
 }
 
-export async function stageAttachmentBytes(
-  filename: string,
-  bytes: number[],
-): Promise<StagedAttachmentBytes> {
-  return tauriInvoke('stage_attachment_bytes', { filename, bytes })
+export async function openExternalUrl(url: string): Promise<void> {
+  return tauriInvoke('open_external_url', { url })
 }
 
 export async function discardStagedAttachment(token: string): Promise<void> {

@@ -385,10 +385,10 @@ pub fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::attachments::pick_attachment_grants,
         commands::attachments::accept_attachment_drop_grants,
-        commands::attachments::stage_attachment_bytes,
         commands::attachments::discard_attachment_grant,
         commands::attachments::discard_staged_attachment,
         commands::attachments::open_downloaded_file,
+        commands::external::open_external_url,
         commands::backend::get_backend_status,
         commands::notifications::set_notification_context,
         commands::notifications::send_test_notification,
@@ -501,10 +501,10 @@ pub fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::attachments::pick_attachment_grants,
         commands::attachments::accept_attachment_drop_grants,
-        commands::attachments::stage_attachment_bytes,
         commands::attachments::discard_attachment_grant,
         commands::attachments::discard_staged_attachment,
         commands::attachments::open_downloaded_file,
+        commands::external::open_external_url,
         // Backend / Matrix architecture spike
         commands::backend::get_backend_status,
         commands::notifications::set_notification_context,

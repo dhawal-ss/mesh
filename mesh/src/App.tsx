@@ -122,6 +122,23 @@ export default function App() {
 
   useEffect(() => {
     if (!isTauriRuntime) return
+    const openExternalLink = (event: MouseEvent) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const anchor = target.closest<HTMLAnchorElement>('a[target="_blank"][href]')
+      if (!anchor) return
+      event.preventDefault()
+      void bridge.openExternalUrl(anchor.href).catch((error) => {
+        console.error('Could not open external link:', error)
+        showToast('Mesh could not open that secure link. Copy it and review the address.', 'error')
+      })
+    }
+    document.addEventListener('click', openExternalLink, true)
+    return () => document.removeEventListener('click', openExternalLink, true)
+  }, [isTauriRuntime])
+
+  useEffect(() => {
+    if (!isTauriRuntime) return
     let active = true
     const epoch = ++pendingInvitationEpochRef.current
     void bridge

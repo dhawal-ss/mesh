@@ -6,20 +6,20 @@ use std::time::{Duration, Instant, SystemTime};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use super::error::CommandError;
 use crate::backend::{BackendError, BackendKind};
 use crate::security::{
-    classify_attachment, create_private_dir, is_file_in_named_directory_under, open_private_file,
-    AttachmentDisposition,
+    classify_attachment, is_file_in_named_directory_under, AttachmentDisposition,
 };
 use crate::state::AppState;
 
-/// Clipboard bytes cross the JSON IPC boundary, so keep this deliberately
-/// lower than the 100 MB native-picker upload limit.
+/// Retained only for the validation regression test proving the removed
+/// renderer byte-staging boundary stayed bounded.
+#[cfg(test)]
 const MAX_STAGED_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES: u64 = 100 * 1024 * 1024;
 const STAGED_ATTACHMENT_TTL: Duration = Duration::from_secs(24 * 60 * 60);
@@ -82,16 +82,6 @@ pub struct NativeDropPosition {
 pub struct NativeAttachmentDropStart {
     pub drop_id: String,
     pub position: NativeDropPosition,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StagedAttachment {
-    token: String,
-    grant: String,
-    name: String,
-    size: u64,
-    content_type: String,
 }
 
 fn staging_root(app: &AppHandle) -> Result<PathBuf, CommandError> {
@@ -463,74 +453,6 @@ pub async fn accept_attachment_drop_grants(
     store: State<'_, AttachmentGrantStore>,
 ) -> Result<(), CommandError> {
     store.accept_drop_grants(&grants).await
-}
-
-/// Materialize a bounded clipboard/browser-drop blob inside Mesh's private
-/// cache. The returned token is also the only upload capability for this file.
-#[tauri::command]
-pub async fn stage_attachment_bytes(
-    filename: String,
-    bytes: Vec<u8>,
-    app: AppHandle,
-    store: State<'_, AttachmentGrantStore>,
-) -> Result<StagedAttachment, CommandError> {
-    validate_attachment_payload(
-        &filename,
-        bytes.len() as u64,
-        &bytes[..bytes.len().min(HEADER_INSPECTION_BYTES)],
-        MAX_STAGED_ATTACHMENT_BYTES as u64,
-    )?;
-
-    let root = staging_root(&app)?;
-    create_private_dir(&root, true)
-        .await
-        .map_err(|error| CommandError::Other(error.to_string()))?;
-    purge_expired_staged_attachments(&root).await;
-
-    let token = Uuid::new_v4().to_string();
-    let token_root = root.join(&token);
-    create_private_dir(&token_root, false)
-        .await
-        .map_err(|error| CommandError::Other(error.to_string()))?;
-    let path = token_root.join(filename.trim());
-    let mut file = match open_private_file(&path, true).await {
-        Ok(file) => file,
-        Err(error) => {
-            let _ = tokio::fs::remove_dir_all(&token_root).await;
-            return Err(CommandError::Other(error.to_string()));
-        }
-    };
-    if let Err(error) = file.write_all(&bytes).await {
-        drop(file);
-        let _ = tokio::fs::remove_dir_all(&token_root).await;
-        return Err(CommandError::Other(error.to_string()));
-    }
-    if let Err(error) = file.sync_all().await {
-        drop(file);
-        let _ = tokio::fs::remove_dir_all(&token_root).await;
-        return Err(CommandError::Other(error.to_string()));
-    }
-    drop(file);
-
-    let content_type = content_type_for_filename(filename.trim());
-    let grant = AttachmentGrant {
-        token: token.clone(),
-        path,
-        filename: filename.trim().to_owned(),
-        size: bytes.len() as u64,
-        content_type: content_type.clone(),
-        expires_at: Instant::now() + ATTACHMENT_GRANT_TTL,
-    };
-    store.grants.lock().await.insert(token.clone(), grant);
-    store.schedule_expiration(token.clone(), ATTACHMENT_GRANT_TTL);
-
-    Ok(StagedAttachment {
-        token: token.clone(),
-        grant: token,
-        name: filename.trim().to_owned(),
-        size: bytes.len() as u64,
-        content_type,
-    })
 }
 
 #[tauri::command]

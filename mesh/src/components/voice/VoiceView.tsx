@@ -9,7 +9,21 @@ import { Icon } from '../ui/Icon'
 import { voiceConnectionLabel } from '../../lib/voice-runtime'
 import { StatusDot } from '../ui/StatusDot'
 
-export function VoiceView({ channelName }: { channelId: string; channelName: string }) {
+interface VoiceViewProps {
+  channelId: string
+  channelName: string
+  onCheckAgain?: () => void
+  onOpenDiagnostics: () => void
+  onBackToChat: () => void
+}
+
+export function VoiceView({
+  channelId,
+  channelName,
+  onCheckAgain,
+  onOpenDiagnostics,
+  onBackToChat,
+}: VoiceViewProps) {
   const {
     connectionWarning,
     microphonePermission,
@@ -37,13 +51,12 @@ export function VoiceView({ channelName }: { channelId: string; channelName: str
   const currentChannelId = useVoiceStore((state) => state.currentChannelId)
   const setCurrentVoiceSession = useVoiceStore((state) => state.setCurrentVoiceSession)
   const retryJoin = useCallback(() => {
-    if (!currentChannelId) return
+    const retryChannelId = currentChannelId ?? channelId
     const communityId = currentCommunityId
-    const channelId = currentChannelId
     setCurrentVoiceSession(null, null)
     // Let the engine tear down before the join effect keys on the new session.
-    requestAnimationFrame(() => setCurrentVoiceSession(communityId, channelId))
-  }, [currentChannelId, currentCommunityId, setCurrentVoiceSession])
+    requestAnimationFrame(() => setCurrentVoiceSession(communityId, retryChannelId))
+  }, [channelId, currentChannelId, currentCommunityId, setCurrentVoiceSession])
 
   useEffect(() => {
     if (!relayChanged) return
@@ -62,6 +75,25 @@ export function VoiceView({ channelName }: { channelId: string; channelName: str
         : voiceService.availability === 'client-unavailable'
           ? 'Safety check'
           : 'Unavailable'
+    const blocker = microphonePermission === 'denied'
+      ? {
+          label: 'Permission',
+          explanation: 'Mesh cannot use the microphone until system permission is restored.',
+        }
+      : voiceService.availability === 'invalid-configuration'
+        ? {
+            label: 'Service capability',
+            explanation: 'This account service has not advertised a complete calling setup.',
+          }
+        : !voiceService.mediaE2eeVerified
+          ? {
+              label: 'Verification',
+              explanation: 'Mesh has not verified private media for this calling service.',
+            }
+          : {
+              label: 'Device or network',
+              explanation: 'The local calling client, device, or network check is not ready.',
+            }
 
     return (
       <div className="flex h-full w-full flex-col bg-surface-canvas">
@@ -89,6 +121,7 @@ export function VoiceView({ channelName }: { channelId: string; channelName: str
                 'Mesh keeps calling off until it can protect the whole conversation. Messaging still works normally.'}
             </p>
             <div className="mt-5 grid gap-2 text-left text-xs sm:grid-cols-2">
+              <VoiceReadinessItem label="Current blocker" value={blocker.label} warning />
               <VoiceReadinessItem label="Calling service" value={statusLabel} />
               <VoiceReadinessItem
                 label="Private audio and video"
@@ -97,8 +130,36 @@ export function VoiceView({ channelName }: { channelId: string; channelName: str
               />
             </div>
             <p className="mt-4 text-xs text-muted">
-              Your microphone, camera, and screen stay off until every safety check passes.
+              {blocker.explanation} Your microphone, camera, and screen stay off until every safety
+              check passes.
             </p>
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onCheckAgain?.()
+                  void refreshDevices(true)
+                  retryJoin()
+                }}
+                className="min-h-11 rounded-control bg-accent px-4 text-sm font-semibold text-content-on-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              >
+                Check again
+              </button>
+              <button
+                type="button"
+                onClick={onOpenDiagnostics}
+                className="min-h-11 rounded-control border border-border px-4 text-sm font-semibold text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              >
+                Open call diagnostics
+              </button>
+              <button
+                type="button"
+                onClick={onBackToChat}
+                className="min-h-11 rounded-control px-4 text-sm font-semibold text-secondary hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              >
+                Back to chat
+              </button>
+            </div>
           </section>
         </div>
       </div>

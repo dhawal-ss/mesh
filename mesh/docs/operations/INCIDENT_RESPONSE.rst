@@ -49,3 +49,8 @@ After closure, produce a sanitized review with the root cause, detection gap,
 timeline, user impact, corrective owner, due date, and regression evidence.
 Run at least one tabletop exercise and one independent restore exercise before
 consumer-beta promotion; local prose alone is not acceptance evidence.
+Record the sanitized tabletop results under the explicit external-acceptance
+IDs ``incident.client-tabletop`` and ``incident.community-service-tabletop``.
+The exercises must name participants, scenario, detection and containment
+times, communication route, failed assumptions, corrective owners, due dates,
+and exit criteria without including credentials or user content.

@@ -58,6 +58,8 @@ export const REQUIRED_EXTERNAL_ACCEPTANCE_IDS = Object.freeze([
   'community-hosted.signing-key-backup',
   'community-hosted.migration-material',
   'community-hosted.incident-response',
+  'incident.client-tabletop',
+  'incident.community-service-tabletop',
   'community-hosted.failure-recovery',
   'accessibility.nvda',
   'accessibility.voiceover',

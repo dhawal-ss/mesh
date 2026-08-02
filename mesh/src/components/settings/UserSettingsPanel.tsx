@@ -113,6 +113,10 @@ export function UserSettingsPanel({
   const [activeTab, setActiveTab] = useState<UserSettingsTab>('appearance')
   const versionTapCount = useRef(0)
   const settingsScrollRef = useRef<HTMLDivElement>(null)
+  const tabRefs = useRef<Partial<Record<UserSettingsTab, HTMLButtonElement>>>({})
+  const visibleSettingsTabs = matrixMode
+    ? SETTINGS_TABS
+    : SETTINGS_TABS.filter(([id]) => id !== 'privacy')
   const conversationPrivacy = activeConversationId
     ? privacy.conversationPrivacy[activeConversationId]
     : undefined
@@ -145,6 +149,29 @@ export function UserSettingsPanel({
     document.addEventListener('keydown', unlockAdvanced)
     return () => document.removeEventListener('keydown', unlockAdvanced)
   }, [open])
+
+  const activateTab = (id: UserSettingsTab, focus = false) => {
+    if (focus) tabRefs.current[id]?.focus()
+    setActiveTab(id)
+    window.requestAnimationFrame(() => {
+      if (settingsScrollRef.current) settingsScrollRef.current.scrollTop = 0
+      const tab = tabRefs.current[id]
+      tab?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+    })
+  }
+
+  const navigateTabs = (event: React.KeyboardEvent<HTMLButtonElement>, current: UserSettingsTab) => {
+    const ids = visibleSettingsTabs.map(([id]) => id)
+    const currentIndex = ids.indexOf(current)
+    let nextIndex: number | null = null
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % ids.length
+    if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + ids.length) % ids.length
+    if (event.key === 'Home') nextIndex = 0
+    if (event.key === 'End') nextIndex = ids.length - 1
+    if (nextIndex === null) return
+    event.preventDefault()
+    activateTab(ids[nextIndex], true)
+  }
 
   const saveDisplayName = async (event?: FormEvent) => {
     event?.preventDefault()
@@ -188,27 +215,39 @@ export function UserSettingsPanel({
       closeLabel="Close user settings"
     >
       <div className="-mx-4 border-b border-border-subtle px-4">
-        <div
-          role="tablist"
-          aria-label="User settings"
-          className="flex min-w-0 gap-1 overflow-x-auto"
-        >
-          {SETTINGS_TABS.map(([id, label]) => (
+        <label className="block py-2 text-xs font-medium text-secondary sm:hidden">
+          Settings section
+          <select
+            value={activeTab}
+            onChange={(event) => activateTab(event.target.value as UserSettingsTab)}
+            className="mt-1 block min-h-11 w-full rounded-control border border-border bg-surface-sunken px-3 text-sm text-primary"
+          >
+            {visibleSettingsTabs.map(([id, label]) => (
+              <option key={id} value={id}>{label}</option>
+            ))}
+          </select>
+        </label>
+        <div className="relative hidden sm:block">
+          <div
+            role="tablist"
+            aria-label="User settings"
+            className="flex min-w-0 gap-1 overflow-x-auto pr-8"
+          >
+          {visibleSettingsTabs.map(([id, label]) => (
             <button
               key={id}
+              ref={(element) => { tabRefs.current[id] = element ?? undefined }}
+              id={`user-settings-tab-${id}`}
               type="button"
               role="tab"
               aria-selected={activeTab === id}
               aria-controls={`user-settings-panel-${id}`}
+              tabIndex={activeTab === id ? 0 : -1}
               className={`relative min-h-11 flex-shrink-0 px-3 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
                 activeTab === id ? 'text-accent' : 'text-muted hover:text-primary'
               }`}
-              onClick={() => {
-                setActiveTab(id)
-                window.requestAnimationFrame(() => {
-                  if (settingsScrollRef.current) settingsScrollRef.current.scrollTop = 0
-                })
-              }}
+              onClick={() => activateTab(id)}
+              onKeyDown={(event) => navigateTabs(event, id)}
             >
               {label}
               {activeTab === id && (
@@ -216,10 +255,21 @@ export function UserSettingsPanel({
               )}
             </button>
           ))}
+          </div>
+          <div
+            className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface-raised to-transparent"
+            aria-hidden="true"
+          />
         </div>
       </div>
 
       <div ref={settingsScrollRef} className="mesh-settings-scroll overflow-y-auto py-5 pr-1">
+        <div
+          id={`user-settings-panel-${activeTab}`}
+          role="tabpanel"
+          aria-labelledby={`user-settings-tab-${activeTab}`}
+          tabIndex={0}
+        >
         {activeTab === 'account' && (
         <section className="border-b border-border-subtle pb-5">
           <p className="text-2xs uppercase tracking-signal text-muted">Account</p>
@@ -872,6 +922,18 @@ export function UserSettingsPanel({
           Mesh 0.1.0
         </button>
         )}
+        </div>
+        {visibleSettingsTabs
+          .filter(([id]) => id !== activeTab)
+          .map(([id]) => (
+            <div
+              key={id}
+              id={`user-settings-panel-${id}`}
+              role="tabpanel"
+              aria-labelledby={`user-settings-tab-${id}`}
+              hidden
+            />
+          ))}
       </div>
     </Modal>
   )

@@ -18,9 +18,9 @@ function copy(value) {
 
 describe('external acceptance evidence validator', () => {
   it('accepts the fail-closed tracked template', () => {
-    assert.equal(REQUIRED_EXTERNAL_ACCEPTANCE_IDS.length, 58)
-    assert.equal(requiredExternalAcceptanceIdsForMilestone('R2').length, 50)
-    assert.equal(requiredExternalAcceptanceIdsForMilestone('R4').length, 58)
+    assert.equal(REQUIRED_EXTERNAL_ACCEPTANCE_IDS.length, 60)
+    assert.equal(requiredExternalAcceptanceIdsForMilestone('R2').length, 52)
+    assert.equal(requiredExternalAcceptanceIdsForMilestone('R4').length, 60)
     assert.ok(!requiredExternalAcceptanceIdsForMilestone('R2').includes('accessibility.voiceover'))
     assert.ok(requiredExternalAcceptanceIdsForMilestone('R4').includes('accessibility.voiceover'))
     assert.deepEqual(validateExternalAcceptance(template, { templateMode: true }), [])

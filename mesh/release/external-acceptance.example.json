@@ -47,6 +47,8 @@
     { "id": "community-hosted.signing-key-backup", "status": "not-run", "environment": null, "notes": null, "evidenceIds": [] },
     { "id": "community-hosted.migration-material", "status": "not-run", "environment": null, "notes": null, "evidenceIds": [] },
     { "id": "community-hosted.incident-response", "status": "not-run", "environment": null, "notes": null, "evidenceIds": [] },
+    { "id": "incident.client-tabletop", "status": "not-run", "environment": null, "notes": null, "evidenceIds": [] },
+    { "id": "incident.community-service-tabletop", "status": "not-run", "environment": null, "notes": null, "evidenceIds": [] },
     { "id": "community-hosted.failure-recovery", "status": "not-run", "environment": null, "notes": null, "evidenceIds": [] },
     { "id": "accessibility.nvda", "status": "not-run", "environment": null, "notes": null, "evidenceIds": [] },
     { "id": "accessibility.voiceover", "status": "not-run", "environment": null, "notes": null, "evidenceIds": [] },

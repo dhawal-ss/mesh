@@ -5,9 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const tauriEvents = vi.hoisted(() => ({
   handlers: new Map<string, (event: { payload: unknown }) => void>(),
 }))
+const tauriRuntime = vi.hoisted(() => ({ enabled: false }))
 
 vi.mock('@tauri-apps/api/core', () => ({
-  isTauri: () => true,
+  isTauri: () => tauriRuntime.enabled,
 }))
 
 vi.mock('@tauri-apps/api/event', () => ({
@@ -49,7 +50,6 @@ async function flushAsyncWork() {
 describe('MessageInput attachment UX', () => {
   let container: HTMLDivElement
   let root: Root
-  let stageCounter: number
 
   beforeEach(() => {
     container = document.createElement('div')
@@ -66,8 +66,8 @@ describe('MessageInput attachment UX', () => {
       callback(0)
       return 1
     })
-    stageCounter = 0
     tauriEvents.handlers.clear()
+    tauriRuntime.enabled = false
     vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
     vi.spyOn(bridge, 'setTyping').mockResolvedValue(undefined)
     vi.spyOn(bridge, 'broadcastTyping').mockResolvedValue(undefined)
@@ -77,16 +77,6 @@ describe('MessageInput attachment UX', () => {
     vi.spyOn(bridge, 'loadComposerDraft').mockResolvedValue(null)
     vi.spyOn(bridge, 'saveComposerDraft').mockResolvedValue(undefined)
     vi.spyOn(bridge, 'clearComposerDraft').mockResolvedValue(undefined)
-    vi.spyOn(bridge, 'stageAttachmentBytes').mockImplementation(async (_name, bytes) => {
-      stageCounter += 1
-      return {
-        token: `token-${stageCounter}`,
-        grant: `token-${stageCounter}`,
-        name: _name,
-        size: bytes.length,
-        contentType: 'image/png',
-      }
-    })
   })
 
   afterEach(async () => {
@@ -178,7 +168,9 @@ describe('MessageInput attachment UX', () => {
     })
 
     expect(container.textContent).not.toContain('cat.gif')
-    expect(bridge.discardStagedAttachment).toHaveBeenCalledWith('token-1')
+    expect(bridge.discardStagedAttachment).toHaveBeenCalledWith(
+      expect.stringMatching(/^browser-preview:/),
+    )
     expect(document.activeElement).toBe(textarea)
   })
 
@@ -220,8 +212,13 @@ describe('MessageInput attachment UX', () => {
     expect(textarea.value).toBe('')
     expect(container.querySelector('[role="alert"]')?.textContent)
       .toContain('homeserver upload interrupted')
-    expect(bridge.discardStagedAttachment).toHaveBeenCalledWith('token-1')
-    expect(bridge.discardStagedAttachment).not.toHaveBeenCalledWith('token-2')
+    const firstAttemptFiles = onSend.mock.calls[0]?.[1] as StagedFile[]
+    const firstToken = firstAttemptFiles[0]?.stagingToken
+    const secondToken = firstAttemptFiles[1]?.stagingToken
+    expect(firstToken).toMatch(/^browser-preview:/)
+    expect(secondToken).toMatch(/^browser-preview:/)
+    expect(bridge.discardStagedAttachment).toHaveBeenCalledWith(firstToken)
+    expect(bridge.discardStagedAttachment).not.toHaveBeenCalledWith(secondToken)
 
     await act(async () => {
       textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
@@ -229,9 +226,9 @@ describe('MessageInput attachment UX', () => {
     })
     expect(onSend).toHaveBeenCalledTimes(2)
     expect(onSend.mock.calls[1]?.[1]).toEqual([
-      expect.objectContaining({ name: 'second.png', stagingToken: 'token-2' }),
+      expect.objectContaining({ name: 'second.png', stagingToken: secondToken }),
     ])
-    expect(bridge.discardStagedAttachment).toHaveBeenCalledWith('token-2')
+    expect(bridge.discardStagedAttachment).toHaveBeenCalledWith(secondToken)
   })
 
   it('reuses the original transfer id on retry but mints a fresh one for a new attachment', async () => {
@@ -296,7 +293,9 @@ describe('MessageInput attachment UX', () => {
     })
 
     expect(container.textContent).not.toContain('screen.png')
-    expect(bridge.discardStagedAttachment).toHaveBeenCalledWith('token-1')
+    expect(bridge.discardStagedAttachment).toHaveBeenCalledWith(
+      expect.stringMatching(/^browser-preview:/),
+    )
   })
 
   it('opens the last message for editing with ArrowUp in an empty composer', async () => {
@@ -468,20 +467,15 @@ describe('MessageInput attachment UX', () => {
   })
 
   it('discards a slow clipboard copy instead of moving it into the next room', async () => {
-    let finishStaging: ((value: {
-      token: string
-      grant: string
-      name: string
-      size: number
-      contentType: string
-    }) => void) | undefined
-    vi.mocked(bridge.stageAttachmentBytes).mockImplementationOnce(() => new Promise((resolve) => {
+    let finishStaging: ((value: ArrayBuffer) => void) | undefined
+    const slowFile = clipboardFile('room-a.png', 'image/png', [1])
+    vi.mocked(slowFile.arrayBuffer).mockImplementationOnce(() => new Promise((resolve) => {
       finishStaging = resolve
     }))
     const textarea = await render()
     const pasteEvent = new Event('paste', { bubbles: true, cancelable: true })
     Object.defineProperty(pasteEvent, 'clipboardData', {
-      value: { files: [clipboardFile('room-a.png', 'image/png', [1])] },
+      value: { files: [slowFile] },
     })
     await act(async () => textarea.dispatchEvent(pasteEvent))
 
@@ -496,18 +490,14 @@ describe('MessageInput attachment UX', () => {
       await flushAsyncWork()
     })
     await act(async () => {
-      finishStaging?.({
-        token: 'stale-token',
-        grant: 'stale-token',
-        name: 'room-a.png',
-        size: 1,
-        contentType: 'image/png',
-      })
+      finishStaging?.(new Uint8Array([1]).buffer)
       await flushAsyncWork()
     })
 
     expect(container.textContent).not.toContain('room-a.png')
-    expect(bridge.discardStagedAttachment).toHaveBeenCalledWith('stale-token')
+    expect(bridge.discardStagedAttachment).toHaveBeenCalledWith(
+      expect.stringMatching(/^browser-preview:/),
+    )
   })
 
   it('does not steal focus from room navigation when the active room changes', async () => {
@@ -533,19 +523,32 @@ describe('MessageInput attachment UX', () => {
     roomButton.remove()
   })
 
-  it('caps a bulk paste before bytes are copied across IPC', async () => {
+  it('caps a bulk paste before extra browser-preview files are read', async () => {
     const textarea = await render()
     const files = Array.from({ length: 12 }, (_, index) => (
       clipboardFile(`image-${index}.png`, 'image/png', [index])
     ))
     await paste(textarea, files)
 
-    expect(bridge.stageAttachmentBytes).toHaveBeenCalledTimes(10)
+    expect(files.filter((file) => vi.mocked(file.arrayBuffer).mock.calls.length === 1))
+      .toHaveLength(10)
     expect(container.querySelector('[role="alert"]')?.textContent)
       .toContain('up to 10 pending attachments')
   })
 
+  it('routes desktop clipboard files to opaque native intake without reading bytes', async () => {
+    tauriRuntime.enabled = true
+    const textarea = await render()
+    const file = clipboardFile('screen.png', 'image/png', [1, 2, 3])
+    await paste(textarea, [file])
+
+    expect(file.arrayBuffer).not.toHaveBeenCalled()
+    expect(container.querySelector('[role="alert"]')?.textContent)
+      .toContain('attachment button')
+  })
+
   it('revokes a native drop that finishes after switching rooms', async () => {
+    tauriRuntime.enabled = true
     await render()
     await act(async () => {
       await flushAsyncWork()
@@ -801,6 +804,8 @@ describe('MessageInput attachment UX', () => {
       textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
       await flushAsyncWork()
     })
+    const roomAToken = (onSend.mock.calls[0]?.[1] as StagedFile[])[0]?.stagingToken
+    expect(roomAToken).toMatch(/^browser-preview:/)
 
     await act(async () => {
       root.render(
@@ -812,7 +817,7 @@ describe('MessageInput attachment UX', () => {
       )
       await flushAsyncWork()
     })
-    expect(bridge.discardStagedAttachment).not.toHaveBeenCalledWith('token-1')
+    expect(bridge.discardStagedAttachment).not.toHaveBeenCalledWith(roomAToken)
 
     const otherTextarea = container.querySelector('textarea') as HTMLTextAreaElement
     await paste(otherTextarea, [clipboardFile('room-b.png', 'image/png', [2])])
@@ -821,7 +826,7 @@ describe('MessageInput attachment UX', () => {
       await flushAsyncWork()
     })
 
-    expect(bridge.discardStagedAttachment).toHaveBeenCalledWith('token-1')
+    expect(bridge.discardStagedAttachment).toHaveBeenCalledWith(roomAToken)
     expect(container.textContent).toContain('room-b.png')
     expect(container.textContent).not.toContain('room-a.png')
   })

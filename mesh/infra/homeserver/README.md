@@ -124,7 +124,9 @@ Stock Synapse does not provide the per-user storage quota required for an
 unattended public service. Until a reviewed quota mechanism and alert exist,
 operators must monitor disk growth, limit admissions, and treat disk pressure
 as a reason to close registration. `operational-health.sh` fails below 15% free
-space. This is a known limitation, not an implied unlimited-storage promise.
+space and, when token-gated account creation is open, invokes
+`registration-control.sh close` before reporting the failure. Existing accounts
+remain usable. This is a known limitation, not an implied unlimited-storage promise.
 
 The operator must keep `MESH_ABUSE_EMAIL` current and publish it with the
 community's rules. The reference configuration sends no usage statistics,
@@ -208,8 +210,10 @@ Schedule `sh ./restore-drill.sh` at least quarterly. The drill uses isolated
 Docker resources, validates the manifest and database, requires the restore
 password through `MESH_RESTORE_POSTGRES_PASSWORD`, starts the restored server
 without public traffic, and writes dated evidence to
-`runtime/status/restore-drill-status.json`. The operational health check
-requires each successful status file to contain a `lastSuccessfulAt` value.
+`runtime/status/restore-drill-status.json`. The operational health check requires
+each successful status file to contain a valid UTC ISO `lastSuccessfulAt` value.
+Freshness is calculated from that value, not the file modification time;
+invalid, future, duplicate-field, and stale status documents fail closed.
 
 For a real loss, restore onto a clean host:
 

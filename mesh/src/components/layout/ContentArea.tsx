@@ -8,7 +8,7 @@ import {
   useState,
   type CSSProperties,
 } from 'react'
-import { useActiveChannel } from '../../store/channels'
+import { useActiveChannel, useChannelStore } from '../../store/channels'
 import { useCommunityStore } from '../../store/communities'
 import { usePresence } from '../../hooks/usePresence'
 import { VoiceView } from '../voice/VoiceView'
@@ -52,6 +52,9 @@ export function ContentArea() {
   const activeCommunityId = useCommunityStore((state) => state.activeCommunityId)
   const openServerModal = useShellStore((state) => state.openServerModal)
   const setDmMode = useDmStore((state) => state.setDmMode)
+  const channels = useChannelStore((state) => state.channels)
+  const setActiveChannel = useChannelStore((state) => state.setActiveChannel)
+  const setDiagnosticsOpen = useShellStore((state) => state.setDiagnosticsOpen)
   const compactRoomContext = useMediaQuery(ROOM_CONTEXT_COMPACT_QUERY)
 
   const [showContext, setShowContext] = useState(() => (
@@ -250,7 +253,22 @@ export function ContentArea() {
       <div className="flex min-w-0 flex-1 flex-col">
         <ErrorBoundary scope="content">
           {activeChannel.channelType === 'voice' ? (
-            <VoiceView channelId={activeChannel.id} channelName={activeChannel.name} />
+            <VoiceView
+              channelId={activeChannel.id}
+              channelName={activeChannel.name}
+              onCheckAgain={() => {
+                // VoiceView performs device and session checks; this callback is
+                // retained as an explicit parent-owned retry seam.
+              }}
+              onOpenDiagnostics={() => setDiagnosticsOpen(true)}
+              onBackToChat={() => {
+                const textRoom = channels.find((candidate) => (
+                  candidate.communityId === activeChannel.communityId
+                  && candidate.channelType === 'text'
+                ))
+                if (textRoom) setActiveChannel(textRoom.id)
+              }}
+            />
           ) : (
             <Suspense fallback={<ChatViewLoadingFallback />}>
               <ChatView

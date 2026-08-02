@@ -224,7 +224,7 @@ export function OnboardingFlow({
                       }`}
                     />
                     <span
-                      className={`mt-2 hidden truncate text-caption sm:block ${
+                      className={`sr-only text-caption sm:not-sr-only sm:mt-2 sm:block sm:truncate ${
                         current
                           ? 'font-medium text-content'
                           : complete
