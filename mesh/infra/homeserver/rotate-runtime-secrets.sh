@@ -30,9 +30,14 @@ set_role_passwords() {
   postgres_db="$(env_value "$env_file" POSTGRES_DB)"
   postgres_password="$(env_value "$env_file" POSTGRES_PASSWORD)"
   admission_password="$(env_value "$env_file" MESH_ADMISSION_DB_PASSWORD)"
-  case "$postgres_user:$postgres_db:$postgres_password:$admission_password" in
-    *[!A-Za-z0-9_:.-]*|'') echo "Rotation environment contains invalid database settings." >&2; exit 1 ;;
-  esac
+  for setting in "$postgres_user" "$postgres_db" "$postgres_password" "$admission_password"; do
+    case "$setting" in
+      *[!A-Za-z0-9_.:-]*|'')
+        echo "Rotation environment contains invalid database settings." >&2
+        exit 1
+        ;;
+    esac
+  done
   docker compose exec -T postgres psql \
     --username "$(env_value .env POSTGRES_USER)" \
     --dbname "$(env_value .env POSTGRES_DB)" \
@@ -134,7 +139,10 @@ activate_rotation() {
   [ "${MESH_SECRET_ROTATION_CONFIRM:-}" = "ACTIVATE:$rotation_id" ] || { echo "Activation confirmation is missing." >&2; exit 1; }
   [ "$(cat .env.rotation.pending.id 2>/dev/null || true)" = "$rotation_id" ] || { echo "Staged rotation ID does not match." >&2; exit 1; }
   rollback_file="$script_dir/.env.rotation.$rotation_id.rollback"
-  [ -f "$rollback_file" ] && [ -f .env.rotation.pending ] || { echo "Rotation files are incomplete." >&2; exit 1; }
+  if [ ! -f "$rollback_file" ] || [ ! -f .env.rotation.pending ]; then
+    echo "Rotation files are incomplete." >&2
+    exit 1
+  fi
   old_key_id="$(env_value "$rollback_file" MESH_ADMISSION_SIGNING_KEY_ID)"
   new_key_id="$(env_value .env.rotation.pending MESH_ADMISSION_SIGNING_KEY_ID)"
   rollback_on_error() {
