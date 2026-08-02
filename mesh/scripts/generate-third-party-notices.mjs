@@ -42,13 +42,14 @@ export async function collectJavaScriptPackages(projectRoot, packageLock) {
     const manifestSource = normalizeSource(manifest?.repository, manifest?.homepage)
 
     packages.push({
-      // Lockfile metadata is canonical so a checked-in notice generated on
-      // Windows remains byte-identical when Linux installs a different set of
-      // optional platform packages. Manifests are fallback metadata only.
-      name: lockEntry.name ?? relativePath.split('node_modules/').at(-1),
-      version: lockEntry.version ?? manifest?.version ?? 'unknown',
-      license: lockLicense !== UNKNOWN_LICENSE ? lockLicense : manifestLicense,
-      source: lockSource || manifestSource,
+      // The installed manifest describes the package that will actually ship.
+      // A platform-specific optional package may legitimately be absent, so
+      // only that case falls back to the locked metadata. The lock source
+      // helper still prefers repository/homepage before a registry tarball.
+      name: manifest?.name ?? lockEntry.name ?? relativePath.split('node_modules/').at(-1),
+      version: manifest?.version ?? lockEntry.version ?? 'unknown',
+      license: manifestLicense !== UNKNOWN_LICENSE ? manifestLicense : lockLicense,
+      source: manifestSource || lockSource,
     })
   }
   return packages
