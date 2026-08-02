@@ -1,3 +1,11 @@
+import {
+  getSafeLocalStorage,
+  safeStorageRead,
+  safeStorageRemove,
+  safeStorageSet,
+  type StorageLike,
+} from './safe-storage'
+
 export const REGISTRATION_CONTINUATION_STORAGE_KEY =
   'mesh-registration-continuation-v1'
 const USED_REGISTRATION_CORRELATIONS_STORAGE_KEY =
@@ -47,13 +55,13 @@ interface UsedCorrelation {
   expiresAt: number
 }
 
-function defaultStorage(): Storage | null {
-  if (typeof window === 'undefined') return null
-  try {
-    return window.localStorage
-  } catch {
-    return null
-  }
+type UsedCorrelationsInspection =
+  | { status: 'ready'; correlations: UsedCorrelation[] }
+  | { status: 'malformed' }
+  | { status: 'unavailable' }
+
+function defaultStorage(): StorageLike | null {
+  return getSafeLocalStorage()
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -124,49 +132,58 @@ function randomCorrelation(): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-function readUsedCorrelations(storage: Storage, now: number): UsedCorrelation[] {
-  let raw: string | null
-  try {
-    raw = storage.getItem(USED_REGISTRATION_CORRELATIONS_STORAGE_KEY)
-  } catch {
-    return []
-  }
-  if (!raw || raw.length > MAX_USED_RECORD_BYTES) {
-    if (raw) storage.removeItem(USED_REGISTRATION_CORRELATIONS_STORAGE_KEY)
-    return []
+function readUsedCorrelations(
+  storage: StorageLike,
+  now: number,
+): UsedCorrelationsInspection {
+  const read = safeStorageRead(storage, USED_REGISTRATION_CORRELATIONS_STORAGE_KEY)
+  if (!read.ok) return { status: 'unavailable' }
+  const raw = read.value
+  if (!raw) return { status: 'ready', correlations: [] }
+  if (raw.length > MAX_USED_RECORD_BYTES) {
+    safeStorageRemove(storage, USED_REGISTRATION_CORRELATIONS_STORAGE_KEY)
+    return { status: 'malformed' }
   }
 
   try {
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) throw new Error('invalid used-correlation record')
-    return parsed
-      .filter((candidate): candidate is UsedCorrelation => (
-        isRecord(candidate)
-        && Object.keys(candidate).length === 2
-        && typeof candidate.correlation === 'string'
-        && CORRELATION_PATTERN.test(candidate.correlation)
-        && validTimestamp(candidate.expiresAt)
-        && candidate.expiresAt > now
-      ))
-      .slice(-MAX_USED_CORRELATIONS)
+    if (!parsed.every((candidate): candidate is UsedCorrelation => (
+      isRecord(candidate)
+      && Object.keys(candidate).length === 2
+      && typeof candidate.correlation === 'string'
+      && CORRELATION_PATTERN.test(candidate.correlation)
+      && validTimestamp(candidate.expiresAt)
+    ))) {
+      throw new Error('invalid used-correlation entry')
+    }
+    return {
+      status: 'ready',
+      correlations: parsed
+        .filter((candidate) => candidate.expiresAt > now)
+        .slice(-MAX_USED_CORRELATIONS),
+    }
   } catch {
-    storage.removeItem(USED_REGISTRATION_CORRELATIONS_STORAGE_KEY)
-    return []
+    safeStorageRemove(storage, USED_REGISTRATION_CORRELATIONS_STORAGE_KEY)
+    return { status: 'malformed' }
   }
 }
 
 function rememberUsedCorrelation(
-  storage: Storage,
+  storage: StorageLike,
   continuation: RegistrationContinuation,
   now: number,
-): void {
-  const used = readUsedCorrelations(storage, now)
+): boolean {
+  const inspected = readUsedCorrelations(storage, now)
+  if (inspected.status !== 'ready') return false
+  const used = inspected.correlations
     .filter((candidate) => candidate.correlation !== continuation.correlation)
   used.push({
     correlation: continuation.correlation,
     expiresAt: Math.max(continuation.expiresAt, now + REGISTRATION_CONTINUATION_TTL_MS),
   })
-  storage.setItem(
+  return safeStorageSet(
+    storage,
     USED_REGISTRATION_CORRELATIONS_STORAGE_KEY,
     JSON.stringify(used.slice(-MAX_USED_CORRELATIONS)),
   )
@@ -184,6 +201,9 @@ export function createRegistrationContinuation(
   if (!storage) {
     throw new Error('Mesh could not save the registration return on this device.')
   }
+  if (readUsedCorrelations(storage, now).status !== 'ready') {
+    throw new Error('Mesh could not save the registration return on this device.')
+  }
   const continuation: RegistrationContinuation = {
     version: 1,
     invitationTarget: input.invitationTarget,
@@ -198,12 +218,11 @@ export function createRegistrationContinuation(
     throw new Error('Mesh refused to save invalid registration return state.')
   }
 
-  try {
-    storage.setItem(
-      REGISTRATION_CONTINUATION_STORAGE_KEY,
-      JSON.stringify(continuation),
-    )
-  } catch {
+  if (!safeStorageSet(
+    storage,
+    REGISTRATION_CONTINUATION_STORAGE_KEY,
+    JSON.stringify(continuation),
+  )) {
     throw new Error('Mesh could not save the registration return on this device.')
   }
   return continuation
@@ -215,15 +234,12 @@ export function inspectRegistrationContinuation(
 ): RegistrationContinuationInspection {
   if (!storage) return { status: 'unavailable' }
 
-  let raw: string | null
-  try {
-    raw = storage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY)
-  } catch {
-    return { status: 'unavailable' }
-  }
+  const read = safeStorageRead(storage, REGISTRATION_CONTINUATION_STORAGE_KEY)
+  if (!read.ok) return { status: 'unavailable' }
+  const raw = read.value
   if (!raw) return { status: 'empty' }
   if (raw.length > MAX_RECORD_BYTES) {
-    storage.removeItem(REGISTRATION_CONTINUATION_STORAGE_KEY)
+    safeStorageRemove(storage, REGISTRATION_CONTINUATION_STORAGE_KEY)
     return { status: 'malformed' }
   }
 
@@ -231,23 +247,26 @@ export function inspectRegistrationContinuation(
   try {
     parsed = JSON.parse(raw)
   } catch {
-    storage.removeItem(REGISTRATION_CONTINUATION_STORAGE_KEY)
+    safeStorageRemove(storage, REGISTRATION_CONTINUATION_STORAGE_KEY)
     return { status: 'malformed' }
   }
   if (!validContinuation(parsed, now)) {
-    storage.removeItem(REGISTRATION_CONTINUATION_STORAGE_KEY)
+    safeStorageRemove(storage, REGISTRATION_CONTINUATION_STORAGE_KEY)
     return { status: 'malformed' }
   }
   if (parsed.expiresAt <= now) {
     rememberUsedCorrelation(storage, parsed, now)
-    storage.removeItem(REGISTRATION_CONTINUATION_STORAGE_KEY)
+    safeStorageRemove(storage, REGISTRATION_CONTINUATION_STORAGE_KEY)
     return { status: 'expired' }
   }
-  if (
-    readUsedCorrelations(storage, now)
-      .some((candidate) => candidate.correlation === parsed.correlation)
-  ) {
-    storage.removeItem(REGISTRATION_CONTINUATION_STORAGE_KEY)
+  const used = readUsedCorrelations(storage, now)
+  if (used.status === 'unavailable') return { status: 'unavailable' }
+  if (used.status === 'malformed') {
+    safeStorageRemove(storage, REGISTRATION_CONTINUATION_STORAGE_KEY)
+    return { status: 'malformed' }
+  }
+  if (used.correlations.some((candidate) => candidate.correlation === parsed.correlation)) {
+    safeStorageRemove(storage, REGISTRATION_CONTINUATION_STORAGE_KEY)
     return { status: 'replayed' }
   }
   return { status: 'ready', continuation: parsed }
@@ -265,12 +284,13 @@ export function consumeRegistrationContinuation(
   }
   if (!storage) return { status: 'unavailable' }
 
-  try {
-    rememberUsedCorrelation(storage, inspected.continuation, now)
-    storage.removeItem(REGISTRATION_CONTINUATION_STORAGE_KEY)
-  } catch {
+  if (!rememberUsedCorrelation(storage, inspected.continuation, now)) {
     return { status: 'unavailable' }
   }
+  // The replay tombstone is the security boundary. Removing the consumed
+  // payload is privacy cleanup and remains best-effort once that tombstone is
+  // durable; a leftover record will be rejected as replayed on the next read.
+  safeStorageRemove(storage, REGISTRATION_CONTINUATION_STORAGE_KEY)
   return { status: 'consumed', continuation: inspected.continuation }
 }
 
@@ -280,12 +300,8 @@ export function clearRegistrationContinuation(
 ): void {
   if (!storage) return
   const inspected = inspectRegistrationContinuation(now, storage)
-  try {
-    if (inspected.status === 'ready') {
-      rememberUsedCorrelation(storage, inspected.continuation, now)
-    }
-    storage.removeItem(REGISTRATION_CONTINUATION_STORAGE_KEY)
-  } catch {
-    // Best-effort cleanup is appropriate when storage has become unavailable.
+  if (inspected.status === 'ready') {
+    rememberUsedCorrelation(storage, inspected.continuation, now)
   }
+  safeStorageRemove(storage, REGISTRATION_CONTINUATION_STORAGE_KEY)
 }

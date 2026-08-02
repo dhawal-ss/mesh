@@ -8,29 +8,12 @@ import { EncryptedAttachmentPreview } from './EncryptedAttachmentPreview'
 describe('EncryptedAttachmentPreview', () => {
   let container: HTMLDivElement
   let root: Root
-  let intersectionCallback: IntersectionObserverCallback | undefined
 
   beforeEach(() => {
-    class TestIntersectionObserver {
-      readonly root = null
-      readonly rootMargin = '160px 0px'
-      readonly thresholds = [0]
-      constructor(callback: IntersectionObserverCallback) {
-        intersectionCallback = callback
-      }
-      disconnect() {}
-      observe() {}
-      takeRecords(): IntersectionObserverEntry[] {
-        return []
-      }
-      unobserve() {}
-    }
-
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-    vi.stubGlobal('IntersectionObserver', TestIntersectionObserver)
   })
 
   afterEach(async () => {
@@ -38,21 +21,12 @@ describe('EncryptedAttachmentPreview', () => {
     container.remove()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
-    intersectionCallback = undefined
   })
 
-  it('shows compact loading and semantic failure states, retries, and cleans up its URL', async () => {
-    let rejectLoad: ((reason?: unknown) => void) | undefined
-    const revokeObjectURL = vi.fn()
-    vi.stubGlobal('URL', {
-      createObjectURL: vi.fn(() => 'blob:retried-thumbnail'),
-      revokeObjectURL,
-    })
-    vi.spyOn(bridge, 'matrixLoadAttachmentThumbnail')
-      .mockImplementationOnce(() => new Promise((_, reject) => {
-        rejectLoad = reject
-      }))
-      .mockResolvedValueOnce(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]))
+  it('keeps received encrypted thumbnails outside renderer IPC', async () => {
+    const loadThumbnail = vi.spyOn(bridge, 'matrixLoadAttachmentThumbnail')
+    const createObjectURL = vi.fn()
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL: vi.fn() })
 
     await act(async () => {
       root.render(
@@ -72,44 +46,12 @@ describe('EncryptedAttachmentPreview', () => {
       )
     })
 
-    await act(async () => {
-      intersectionCallback?.(
-        [{ isIntersecting: true } as IntersectionObserverEntry],
-        {} as IntersectionObserver,
-      )
-      await Promise.resolve()
-    })
-
-    const loadingStatus = container.querySelector('[role="status"]')
-    expect(loadingStatus?.textContent).toContain('Loading protected preview')
-    expect(loadingStatus?.querySelector('.animate-spin')).not.toBeNull()
-
-    await act(async () => {
-      rejectLoad?.(new Error('secret transport detail'))
-      await Promise.resolve()
-    })
-
-    const failure = container.querySelector('[role="alert"]')
-    expect(failure?.textContent).toBe('Protected preview unavailable.')
-    expect(failure?.className).toContain('text-status-warning')
-    expect(failure?.querySelector('svg')).not.toBeNull()
-    expect(container.textContent).not.toContain('secret transport detail')
-
-    const retry = [...container.querySelectorAll('button')].find(
-      (button) => button.textContent === 'Retry preview',
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(
+      'Encrypted preview stays protected',
     )
-    expect(retry).toBeDefined()
-
-    await act(async () => {
-      retry?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(bridge.matrixLoadAttachmentThumbnail).toHaveBeenCalledTimes(2)
-    expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:retried-thumbnail')
-
-    await act(async () => root.render(<div />))
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:retried-thumbnail')
+    expect(container.textContent).toContain('does not decrypt received thumbnails')
+    expect(container.querySelector('img')).toBeNull()
+    expect(loadThumbnail).not.toHaveBeenCalled()
+    expect(createObjectURL).not.toHaveBeenCalled()
   })
 })

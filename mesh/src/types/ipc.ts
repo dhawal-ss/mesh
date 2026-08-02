@@ -71,7 +71,11 @@ export interface Identity extends IdentityDto {
   avatarUrl?: string | null
 }
 
-export type Community = CommunityDto
+export interface Community extends CommunityDto {
+  /** Optional renderer enrichment for services that expose community artwork. */
+  iconUrl?: string | null
+  bannerUrl?: string | null
+}
 
 export type ServerEmoji = CustomEmoji
 
@@ -108,7 +112,10 @@ export interface Channel extends ChannelDto {
   unreadMentions?: number
 }
 
-export type Message = MessageDto
+export interface Message extends MessageDto {
+  /** Development-only artwork used by the authenticated design preview. */
+  designPreviewImageUrl?: string | null
+}
 export type Attachment = AttachmentDto
 export type AttachmentThumbnail = AttachmentThumbnailDto
 

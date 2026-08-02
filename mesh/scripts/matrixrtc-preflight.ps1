@@ -18,6 +18,11 @@ $nginxPath = Join-Path $infraRoot "nginx.example.conf"
 $runbookPath = Join-Path $infraRoot "RUNBOOK.rst"
 $acceptanceTemplatePath = Join-Path $infraRoot "acceptance-matrix.example.json"
 $evidenceModulePath = Join-Path $infraRoot "MatrixRtcEvidence.psm1"
+$packagePath = Join-Path $repoRoot "package.json"
+$viteConfigPath = Join-Path $repoRoot "vite.config.ts"
+$voiceHookPath = Join-Path $repoRoot "src\hooks\useVoiceEngine.ts"
+$disabledVoicePath = Join-Path $repoRoot "src\lib\livekit-voice.disabled.ts"
+$betaContractPath = Join-Path $repoRoot "release\beta-contract.json"
 $sourceRoot = Split-Path -Parent $repoRoot
 Import-Module $evidenceModulePath -Force
 
@@ -107,6 +112,11 @@ foreach ($path in @(
     $nginxPath,
     $runbookPath,
     $evidenceModulePath,
+    $packagePath,
+    $viteConfigPath,
+    $voiceHookPath,
+    $disabledVoicePath,
+    $betaContractPath,
     $EnvironmentFile,
     $WellKnownFile,
     $AcceptanceEvidenceFile
@@ -183,6 +193,40 @@ if (Test-Path -LiteralPath $composePath) {
     }
     if ($failures.Count -eq $composeFailureCount) {
         Add-Pass "Pinned images and fail-closed Compose policy are present."
+    }
+}
+
+if ((Test-Path -LiteralPath $packagePath) -and
+    (Test-Path -LiteralPath $viteConfigPath) -and
+    (Test-Path -LiteralPath $voiceHookPath) -and
+    (Test-Path -LiteralPath $disabledVoicePath) -and
+    (Test-Path -LiteralPath $betaContractPath)) {
+    $buildFailureCount = $failures.Count
+    $package = Get-Content -LiteralPath $packagePath -Raw | ConvertFrom-Json
+    $viteConfig = Get-Content -LiteralPath $viteConfigPath -Raw
+    $voiceHook = Get-Content -LiteralPath $voiceHookPath -Raw
+    $disabledVoice = Get-Content -LiteralPath $disabledVoicePath -Raw
+    $betaContract = Get-Content -LiteralPath $betaContractPath -Raw | ConvertFrom-Json
+    if ([string]$package.scripts.'build:matrix' -notmatch '--mode matrix(?:\s|$)') {
+        Add-Failure "The public Matrix build must retain its text/community-only mode."
+    }
+    if ([string]$package.scripts.'build:matrix-voice' -notmatch '--mode matrix-voice(?:\s|$)') {
+        Add-Failure "Physical MatrixRTC acceptance needs the separately named matrix-voice build."
+    }
+    if ($viteConfig -notmatch '__MESH_MATRIX_VOICE_FRONTEND__' -or
+        $viteConfig -notmatch 'livekit-voice\.disabled\.ts') {
+        Add-Failure "Vite must exclude the LiveKit implementation from builds that have not passed physical acceptance."
+    }
+    if ($voiceHook -notmatch 'Calling is not included in this text beta build' -or
+        $disabledVoice -notmatch 'Calling is not included in this Mesh build') {
+        Add-Failure "The renderer must fail closed when the Matrix media implementation is absent."
+    }
+    if (@($betaContract.candidate.excludedCapabilities) -notcontains 'matrix-voice' -or
+        [bool]$betaContract.claims.voiceReady) {
+        Add-Failure "The beta contract must keep Matrix voice excluded until live acceptance passes."
+    }
+    if ($failures.Count -eq $buildFailureCount) {
+        Add-Pass "Text beta and physical MatrixRTC acceptance builds are mechanically separated."
     }
 }
 

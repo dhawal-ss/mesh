@@ -1,9 +1,9 @@
 /**
  * Integration tests for the VoiceEngine using FakeVoicePeerFactory.
  *
- * These tests drive the full VoiceEngine state machine — peer creation,
+ * These tests drive the full VoiceEngine state machine: peer creation,
  * signal handling, connection lifecycle, relay rebuilds, and disconnect
- * recovery — without requiring a real browser WebRTC stack.
+ * recovery: without requiring a real browser WebRTC stack.
  *
  * The FakeVoicePeer lets tests emit peer events (connect/stream/error/close)
  * directly to assert on the engine's response, and records every method
@@ -22,7 +22,7 @@ const sendVoiceSignalMock = vi.hoisted(() => vi.fn(() => Promise.resolve()))
 
 // Mock bridge functions that the engine calls during start().
 // The integration tests bypass start() by calling initForTesting(), so
-// these mocks are defensive — they prevent accidental calls from leaking
+// these mocks are defensive: they prevent accidental calls from leaking
 // into real IPC.
 vi.mock('./bridge', () => ({
   getIdentity: vi.fn(() => Promise.resolve(null)),
@@ -36,7 +36,7 @@ vi.mock('./bridge', () => ({
 // jsdom does not provide AudioContext. The engine's speaking-detection
 // path instantiates AudioContext when a stream arrives. Provide a minimal
 // stub that satisfies the constructor and the analyser graph the engine
-// builds — we only need the methods, not actual audio analysis.
+// builds: we only need the methods, not actual audio analysis.
 class FakeAudioContext {
   static instances: FakeAudioContext[] = []
   state: AudioContextState = 'running'
@@ -66,7 +66,7 @@ class FakeAudioContext {
 }
 ;(globalThis as unknown as { AudioContext: unknown }).AudioContext = FakeAudioContext
 // Also stub setInterval/clearInterval clearing for the speaking detection
-// interval — the engine uses window.setInterval which jsdom provides.
+// interval: the engine uses window.setInterval which jsdom provides.
 
 const COMMUNITY_ID = 'test-community'
 const CHANNEL_ID = 'test-channel'
@@ -205,7 +205,7 @@ describe('VoiceEngine integration (with FakeVoicePeer)', () => {
     const firstPeer = factory.latest()
     expect(firstPeer).toBeDefined()
 
-    // New epoch triggers topology reset — the engine tears down all peers
+    // New epoch triggers topology reset: the engine tears down all peers
     engine.applySessionSnapshot(snapshot([LOCAL_KEY, 'remote-1'], 2))
     expect(firstPeer!.destroyCalls).toBeGreaterThan(0)
   })
@@ -234,7 +234,7 @@ describe('VoiceEngine integration (with FakeVoicePeer)', () => {
     expect(factory.count()).toBe(2)
     const peers = [factory.createdPeers[0], factory.createdPeers[1]]
 
-    // Destroy the engine — all peers should be destroyed
+    // Destroy the engine: all peers should be destroyed
     await engine.destroy()
 
     for (const peer of peers) {
@@ -411,7 +411,7 @@ describe('VoiceEngine integration (with FakeVoicePeer)', () => {
     )
     expect(connectedSeen).toBe(true)
 
-    // Step 3: remote stream arrives — the engine should upsert with the stream
+    // Step 3: remote stream arrives: the engine should upsert with the stream
     const mockTrack = {
       stop: () => {},
       kind: 'audio',
@@ -567,7 +567,7 @@ describe('VoiceEngine integration (with FakeVoicePeer)', () => {
     // Close the peer first
     peer!.emitClose()
 
-    // Then try to emit a stream — the fake peer's emitStream is a no-op
+    // Then try to emit a stream: the fake peer's emitStream is a no-op
     // after destroy, so this must not crash
     const mockStream = {
       getAudioTracks: () => [],

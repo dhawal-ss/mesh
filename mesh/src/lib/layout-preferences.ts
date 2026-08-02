@@ -1,3 +1,5 @@
+import { safeLocalStorageGet, safeLocalStorageSet } from './safe-storage'
+
 export const CONTEXT_SIDEBAR_WIDTH_KEY = 'mesh-layout-context-sidebar-width'
 export const ROOM_CONTEXT_WIDTH_KEY = 'mesh-layout-room-context-width'
 export const ROOM_CONTEXT_OPEN_KEY = 'mesh-layout-room-context-open'
@@ -12,39 +14,23 @@ export function readStoredPanelWidth(
   minimum: number,
   maximum: number,
 ): number {
-  if (typeof window === 'undefined') return fallback
-  try {
-    const stored = Number(window.localStorage.getItem(key))
-    return Number.isFinite(stored)
-      ? clampPanelWidth(stored, minimum, maximum)
-      : fallback
-  } catch {
-    return fallback
-  }
+  const serialized = safeLocalStorageGet(key)
+  if (serialized === null) return fallback
+  const stored = Number(serialized)
+  return Number.isFinite(stored)
+    ? clampPanelWidth(stored, minimum, maximum)
+    : fallback
 }
 
 export function writeStoredPanelWidth(key: string, value: number) {
-  try {
-    window.localStorage.setItem(key, String(value))
-  } catch {
-    // Layout remains usable when storage is disabled.
-  }
+  safeLocalStorageSet(key, String(value))
 }
 
 export function readStoredBoolean(key: string, fallback: boolean): boolean {
-  if (typeof window === 'undefined') return fallback
-  try {
-    const value = window.localStorage.getItem(key)
-    return value === null ? fallback : value === 'true'
-  } catch {
-    return fallback
-  }
+  const value = safeLocalStorageGet(key)
+  return value === null ? fallback : value === 'true'
 }
 
 export function writeStoredBoolean(key: string, value: boolean) {
-  try {
-    window.localStorage.setItem(key, String(value))
-  } catch {
-    // Layout remains usable when storage is disabled.
-  }
+  safeLocalStorageSet(key, String(value))
 }

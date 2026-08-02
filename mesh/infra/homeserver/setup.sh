@@ -5,7 +5,7 @@ script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 cd "$script_dir"
 umask 077
 
-synapse_image="matrixdotorg/synapse:v1.157.0@sha256:53a686c52cdfca5fdb0adff5ef10b276b1d0971931b09815a9eb6b48d7188a1a"
+synapse_image="matrixdotorg/synapse:v1.157.1@sha256:d1fce43d7501428c461f2758dc10342555b946dc9f1d03c1b1b8aec1a4e8d130"
 
 mkdir -p \
   runtime/backups \
@@ -48,7 +48,8 @@ if [ ! -f .env ]; then
     printf 'MACAROON_SECRET_KEY=%s\n' "$macaroon_secret"
     printf 'FORM_SECRET=%s\n' "$form_secret"
     printf 'MESH_ADMISSION_SIGNING_KEY=%s\n' "$admission_signing_key"
-    printf '%s\n' 'MESH_ADMISSION_ADMIN_ACCESS_TOKEN=REPLACE_DURING_FIRST_START'
+    printf 'MESH_ADMISSION_SERVICE_USER_ID=@mesh-admission-service:%s\n' "$MESH_SERVER_NAME"
+    printf '%s\n' 'MESH_ADMISSION_SERVICE_ACCESS_TOKEN=REPLACE_DURING_FIRST_START'
     printf 'ACME_EMAIL=%s\n' "$ACME_EMAIL"
   } > .env
   chmod 600 .env
@@ -97,8 +98,12 @@ case "$admission_signing_key" in
     mv "$next_env" .env
     ;;
 esac
-if ! grep -q '^MESH_ADMISSION_ADMIN_ACCESS_TOKEN=' .env; then
-  printf '%s\n' 'MESH_ADMISSION_ADMIN_ACCESS_TOKEN=REPLACE_DURING_FIRST_START' >> .env
+if ! grep -q '^MESH_ADMISSION_SERVICE_USER_ID=' .env; then
+  printf 'MESH_ADMISSION_SERVICE_USER_ID=@mesh-admission-service:%s\n' "$MESH_SERVER_NAME" >> .env
+  chmod 600 .env
+fi
+if ! grep -q '^MESH_ADMISSION_SERVICE_ACCESS_TOKEN=' .env; then
+  printf '%s\n' 'MESH_ADMISSION_SERVICE_ACCESS_TOKEN=REPLACE_DURING_FIRST_START' >> .env
   chmod 600 .env
 fi
 

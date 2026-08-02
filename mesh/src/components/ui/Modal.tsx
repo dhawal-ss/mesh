@@ -11,7 +11,7 @@ export interface ModalProps {
   children: ReactNode
   title?: string
   description?: string
-  size?: 'sm' | 'md' | 'lg'
+  size?: 'sm' | 'md' | 'lg' | 'xl'
   className?: string
   closeLabel?: string
 }
@@ -20,6 +20,7 @@ const sizeClasses = {
   sm: 'max-w-sm',
   md: 'max-w-md',
   lg: 'max-w-2xl',
+  xl: 'max-w-3xl',
 } as const
 
 let nextRestoreFocusTarget: HTMLElement | null = null
@@ -118,19 +119,19 @@ export function Modal({
           }}
         >
           <motion.div
-            className="relative rounded-panel border border-border-subtle bg-surface-raised p-4 text-content shadow-overlay"
+            className="mesh-modal-surface mesh-overlay-surface relative rounded-panel border border-border-subtle bg-surface-raised p-5 text-content shadow-overlay"
             variants={variants.modal}
             initial="initial"
             animate="animate"
             exit="exit"
           >
             <DialogPrimitive.Title
-              className={title ? 'pr-10 text-base font-semibold text-content' : 'sr-only'}
+              className={title ? 'pr-10 text-title font-semibold tracking-tight text-content' : 'sr-only'}
             >
               {title ?? 'Dialog'}
             </DialogPrimitive.Title>
             {description && (
-              <DialogPrimitive.Description className="mt-1 pr-10 text-sm text-content-secondary">
+              <DialogPrimitive.Description className="mt-1.5 max-w-2xl pr-10 text-sm leading-5 text-content-secondary">
                 {description}
               </DialogPrimitive.Description>
             )}
@@ -138,7 +139,7 @@ export function Modal({
               <button
                 type="button"
                 aria-label={closeLabel}
-                className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-md text-content-muted hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-control border border-transparent text-content-muted hover:border-border-subtle hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               >
                 <Icon name="x" size="sm" />
               </button>

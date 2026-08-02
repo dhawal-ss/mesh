@@ -1,6 +1,10 @@
 const COMMUNITY_ADMISSION_ORIGIN_ENV: &str = "MESH_COMMUNITY_ADMISSION_ORIGIN";
 const ADMISSION_RESPONSE_MAX_BYTES: usize = 64 * 1024;
-const ADMISSION_REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+const ADMISSION_DNS_TIMEOUT: Duration = Duration::from_secs(3);
+const ADMISSION_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const ADMISSION_READ_TIMEOUT: Duration = Duration::from_secs(10);
+const ADMISSION_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+const ADMISSION_MAX_RESOLVED_ADDRESSES: usize = 16;
 
 #[derive(Debug, Deserialize)]
 struct AdmissionCreateResponse {
@@ -34,16 +38,32 @@ struct AdmissionServiceResponse {
 struct AdmissionErrorResponse {
     #[serde(default)]
     code: String,
-    #[serde(default)]
-    message: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 struct AdmissionInvitationTarget {
     code: String,
     api_origin: url::Url,
     via: Vec<String>,
     via_truncated: bool,
+}
+
+impl std::fmt::Debug for AdmissionInvitationTarget {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AdmissionInvitationTarget")
+            .field("code", &"[REDACTED]")
+            .field("api_origin", &self.api_origin)
+            .field("via", &self.via)
+            .field("via_truncated", &self.via_truncated)
+            .finish()
+    }
+}
+
+impl Drop for AdmissionInvitationTarget {
+    fn drop(&mut self) {
+        self.code.zeroize();
+    }
 }
 
 impl MatrixBackend {
@@ -60,16 +80,15 @@ impl MatrixBackend {
         let mut origin = url::Url::parse(value.trim()).map_err(|_| {
             BackendError::InvalidConfiguration("the invitation service address is invalid".into())
         })?;
-        let host = origin.host_str().ok_or_else(|| {
-            BackendError::InvalidConfiguration(
-                "the invitation service address has no host".into(),
-            )
+        let host = origin.host_str().map(str::to_owned).ok_or_else(|| {
+            BackendError::InvalidConfiguration("the invitation service address has no host".into())
         })?;
         let loopback = host.eq_ignore_ascii_case("localhost")
             || host
                 .parse::<std::net::IpAddr>()
                 .is_ok_and(|address| address.is_loopback());
-        if origin.scheme() != "https" && !(origin.scheme() == "http" && loopback) {
+        let development_loopback = loopback && Self::development_loopback_invitations_enabled();
+        if origin.scheme() != "https" && !(origin.scheme() == "http" && development_loopback) {
             return Err(BackendError::InvalidConfiguration(
                 "the invitation service must use HTTPS".into(),
             ));
@@ -86,7 +105,77 @@ impl MatrixBackend {
             ));
         }
         origin.set_path("");
+        if let Ok(address) = host.parse::<std::net::IpAddr>() {
+            if Self::unsafe_admission_address(address) && !development_loopback {
+                return Err(BackendError::PermissionDenied(
+                    "This invitation points to a private or local network address and cannot be opened safely."
+                        .into(),
+                ));
+            }
+        } else if host.eq_ignore_ascii_case("localhost") && !development_loopback {
+            return Err(BackendError::PermissionDenied(
+                "This invitation points to this device and cannot be opened safely.".into(),
+            ));
+        }
         Ok(origin)
+    }
+
+    fn development_loopback_invitations_enabled() -> bool {
+        cfg!(test)
+            || (cfg!(debug_assertions)
+                && std::env::var("MESH_ALLOW_INSECURE_LOOPBACK_INVITATIONS")
+                    .is_ok_and(|value| value.trim() == "1"))
+    }
+
+    fn unsafe_admission_address(address: std::net::IpAddr) -> bool {
+        match address {
+            std::net::IpAddr::V4(address) => {
+                let octets = address.octets();
+                address.is_private()
+                    || address.is_loopback()
+                    || address.is_link_local()
+                    || address.is_multicast()
+                    || address.is_unspecified()
+                    || address.is_broadcast()
+                    || octets[0] == 0
+                    || octets[0] >= 224
+                    || (octets[0] == 100 && (64..=127).contains(&octets[1]))
+                    || (octets[0] == 192 && octets[1] == 0 && octets[2] == 0)
+                    || (octets[0] == 192 && octets[1] == 0 && octets[2] == 2)
+                    || (octets[0] == 192 && octets[1] == 88 && octets[2] == 99)
+                    || (octets[0] == 198 && (18..=19).contains(&octets[1]))
+                    || (octets[0] == 198 && octets[1] == 51 && octets[2] == 100)
+                    || (octets[0] == 203 && octets[1] == 0 && octets[2] == 113)
+            }
+            std::net::IpAddr::V6(address) => {
+                if let Some(mapped) = address.to_ipv4_mapped() {
+                    return Self::unsafe_admission_address(mapped.into());
+                }
+                let segments = address.segments();
+                // Admission origins are intentionally limited to currently
+                // allocated global unicast space. This rejects deprecated
+                // IPv4-compatible forms, translation/discard prefixes, ULA,
+                // link-local, site-local, and reserved future allocations.
+                let allocated_global_unicast = segments[0] & 0xe000 == 0x2000;
+                // IANA special-purpose ranges that sit inside 2000::/3 remain
+                // unsuitable for an origin even when a subset is globally
+                // reachable (for example protocol anycast addresses).
+                let ietf_protocol_assignments = segments[0] == 0x2001 && segments[1] <= 0x01ff;
+                let documentation = segments[0] == 0x2001 && segments[1] == 0x0db8;
+                let six_to_four = segments[0] == 0x2002;
+                let documentation_v2 = segments[0] == 0x3fff && segments[1] & 0xf000 == 0;
+                !allocated_global_unicast
+                    || ietf_protocol_assignments
+                    || documentation
+                    || six_to_four
+                    || documentation_v2
+                    || address.is_loopback()
+                    || address.is_unspecified()
+                    || address.is_multicast()
+                    || address.is_unique_local()
+                    || address.is_unicast_link_local()
+            }
+        }
     }
 
     fn parse_admission_invitation(
@@ -107,7 +196,9 @@ impl MatrixBackend {
                 "this community invitation is incomplete or invalid".into(),
             )
         })?;
-        if !invite.username().is_empty() || invite.password().is_some() || invite.fragment().is_some()
+        if !invite.username().is_empty()
+            || invite.password().is_some()
+            || (invite.scheme() == "mesh" && invite.fragment().is_some())
         {
             return Err(BackendError::InvalidConfiguration(
                 "this community invitation is incomplete or invalid".into(),
@@ -167,8 +258,7 @@ impl MatrixBackend {
                 if fields.iter().any(|(key, _)| {
                     !matches!(
                         key.as_str(),
-                        "v"
-                            | "kind"
+                        "v" | "kind"
                             | "room"
                             | "via"
                             | "community_service"
@@ -275,12 +365,17 @@ impl MatrixBackend {
                 .path_segments()
                 .map(|segments| segments.filter(|part| !part.is_empty()).collect::<Vec<_>>())
                 .unwrap_or_default();
-            if segments.len() != 2 || segments[0] != "invite" {
+            if segments.len() != 1 || segments[0] != "invite" {
                 return Err(BackendError::InvalidConfiguration(
                     "this community invitation is incomplete or invalid".into(),
                 ));
             }
-            (segments[1].to_owned(), origin, Vec::new(), false)
+            let code = invite.fragment().ok_or_else(|| {
+                BackendError::InvalidConfiguration(
+                    "this community invitation has no admission capability".into(),
+                )
+            })?;
+            (code.to_owned(), origin, Vec::new(), false)
         };
 
         if expected_origin.is_some_and(|expected| origin.origin() != expected.origin()) {
@@ -289,9 +384,9 @@ impl MatrixBackend {
             ));
         }
         if !(CODE_MIN..=CODE_MAX).contains(&code.len())
-            || !code
-                .bytes()
-                .all(|character| character.is_ascii_alphanumeric() || matches!(character, b'_' | b'-'))
+            || !code.bytes().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, b'_' | b'-')
+            })
         {
             return Err(BackendError::InvalidConfiguration(
                 "this community invitation has an invalid admission code".into(),
@@ -305,16 +400,80 @@ impl MatrixBackend {
         })
     }
 
-    fn admission_endpoint(
-        target: &AdmissionInvitationTarget,
-        suffix: &str,
-    ) -> BackendResult<url::Url> {
-        target
-            .api_origin
-            .join(&format!(
-                "/_mesh/admission/v1/invitations/{}{}",
-                target.code, suffix
-            ))
+    fn parse_direct_community_invitation(invite_url: &str) -> BackendResult<(String, Vec<String>)> {
+        let invite_url = invite_url.trim();
+        if invite_url.is_empty() || invite_url.len() > 4_096 {
+            return Err(BackendError::RegistrationInvitationInvalid);
+        }
+        let invite =
+            url::Url::parse(invite_url).map_err(|_| BackendError::RegistrationInvitationInvalid)?;
+        if invite.scheme() != "mesh"
+            || invite.host_str() != Some("join")
+            || !matches!(invite.path(), "" | "/")
+            || !invite.username().is_empty()
+            || invite.password().is_some()
+            || invite.port().is_some()
+            || invite.fragment().is_some()
+        {
+            return Err(BackendError::RegistrationInvitationInvalid);
+        }
+
+        let fields = invite
+            .query_pairs()
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect::<Vec<_>>();
+        if fields.iter().any(|(key, _)| {
+            !matches!(
+                key.as_str(),
+                "v" | "kind" | "room" | "via" | "community_service" | "resume"
+            )
+        }) {
+            // In particular, never reinterpret an incomplete or malformed
+            // admission form as a direct room join. Admission and direct links
+            // are distinct security modes, not fallback representations.
+            return Err(BackendError::RegistrationInvitationInvalid);
+        }
+        let one = |name: &str| -> BackendResult<Option<String>> {
+            let values = fields
+                .iter()
+                .filter(|(key, _)| key == name)
+                .map(|(_, value)| value.clone())
+                .collect::<Vec<_>>();
+            if values.len() > 1 {
+                return Err(BackendError::RegistrationInvitationInvalid);
+            }
+            Ok(values.into_iter().next())
+        };
+        if one("v")?.as_deref() != Some("5") || one("kind")?.as_deref() != Some("community") {
+            return Err(BackendError::RegistrationInvitationInvalid);
+        }
+        let room = one("room")?.ok_or(BackendError::RegistrationInvitationInvalid)?;
+        RoomOrAliasId::parse(room.trim())
+            .map_err(|_| BackendError::RegistrationInvitationInvalid)?;
+
+        let raw_via = fields
+            .iter()
+            .filter(|(key, _)| key == "via")
+            .flat_map(|(_, value)| value.split(','))
+            .collect::<Vec<_>>();
+        if raw_via.is_empty() || raw_via.iter().any(|server| server.trim().is_empty()) {
+            return Err(BackendError::RegistrationInvitationInvalid);
+        }
+        let mut via = Vec::new();
+        for server in raw_via {
+            let server = server.trim();
+            ServerName::parse(server).map_err(|_| BackendError::RegistrationInvitationInvalid)?;
+            if !via.iter().any(|existing| existing == server) {
+                via.push(server.to_owned());
+            }
+        }
+        via.truncate(3);
+        Ok((room, via))
+    }
+
+    fn admission_endpoint(origin: &url::Url, operation: &str) -> BackendResult<url::Url> {
+        origin
+            .join(&format!("/_mesh/admission/v1/invitations/{operation}"))
             .map_err(|_| {
                 BackendError::InvalidConfiguration(
                     "the invitation service address could not be prepared".into(),
@@ -322,18 +481,76 @@ impl MatrixBackend {
             })
     }
 
-    fn admission_http_client() -> BackendResult<reqwest::Client> {
+    async fn admission_http_client(origin: &url::Url) -> BackendResult<reqwest::Client> {
+        let host = origin.host_str().ok_or_else(|| {
+            BackendError::InvalidConfiguration("the invitation service has no host".into())
+        })?;
+        let port = origin.port_or_known_default().ok_or_else(|| {
+            BackendError::InvalidConfiguration("the invitation service has no usable port".into())
+        })?;
+        let resolved =
+            tokio::time::timeout(ADMISSION_DNS_TIMEOUT, tokio::net::lookup_host((host, port)))
+                .await
+                .map_err(|_| {
+                    BackendError::Network(
+                        "The invitation service address took too long to look up.".into(),
+                    )
+                })?
+                .map_err(|_| {
+                    BackendError::Network(
+                        "The invitation service address could not be found.".into(),
+                    )
+                })?
+                .take(ADMISSION_MAX_RESOLVED_ADDRESSES + 1)
+                .collect::<Vec<_>>();
+        if resolved.is_empty() || resolved.len() > ADMISSION_MAX_RESOLVED_ADDRESSES {
+            return Err(BackendError::Network(
+                "The invitation service address could not be verified safely.".into(),
+            ));
+        }
+        let development_loopback = Self::development_loopback_invitations_enabled()
+            && origin.scheme() == "http"
+            && resolved.iter().all(|address| address.ip().is_loopback());
+        if !development_loopback
+            && resolved
+                .iter()
+                .any(|address| Self::unsafe_admission_address(address.ip()))
+        {
+            return Err(BackendError::PermissionDenied(
+                "This invitation resolves to a private or local network and cannot be opened safely."
+                    .into(),
+            ));
+        }
+
         reqwest::Client::builder()
+            // A process-level proxy could route around the pinned address set.
+            .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
-            .connect_timeout(Duration::from_secs(10))
+            // Pin the verified DNS answer into this one client so a second DNS
+            // answer cannot rebind the connection to a private address.
+            .resolve_to_addrs(host, &resolved)
+            .connect_timeout(ADMISSION_CONNECT_TIMEOUT)
+            .read_timeout(ADMISSION_READ_TIMEOUT)
             .timeout(ADMISSION_REQUEST_TIMEOUT)
             .build()
             .map_err(BackendError::from_sdk_error)
     }
 
-    async fn admission_response_bytes(
-        response: reqwest::Response,
-    ) -> BackendResult<Vec<u8>> {
+    fn append_admission_response_chunk(buffer: &mut Vec<u8>, chunk: &[u8]) -> BackendResult<()> {
+        if buffer
+            .len()
+            .checked_add(chunk.len())
+            .is_none_or(|length| length > ADMISSION_RESPONSE_MAX_BYTES)
+        {
+            return Err(BackendError::Serialization(
+                "the invitation service response was too large".into(),
+            ));
+        }
+        buffer.extend_from_slice(chunk);
+        Ok(())
+    }
+
+    async fn admission_response_bytes(mut response: reqwest::Response) -> BackendResult<Vec<u8>> {
         let status = response.status();
         let content_length = response.content_length();
         if content_length.is_some_and(|length| length > ADMISSION_RESPONSE_MAX_BYTES as u64) {
@@ -341,14 +558,20 @@ impl MatrixBackend {
                 "the invitation service response was too large".into(),
             ));
         }
-        let bytes = response.bytes().await.map_err(BackendError::from_sdk_error)?;
-        if bytes.len() > ADMISSION_RESPONSE_MAX_BYTES {
-            return Err(BackendError::Serialization(
-                "the invitation service response was too large".into(),
-            ));
+        let mut bytes = Vec::with_capacity(
+            content_length
+                .unwrap_or_default()
+                .min(ADMISSION_RESPONSE_MAX_BYTES as u64) as usize,
+        );
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(BackendError::from_sdk_error)?
+        {
+            Self::append_admission_response_chunk(&mut bytes, &chunk)?;
         }
         if status.is_success() {
-            return Ok(bytes.to_vec());
+            return Ok(bytes);
         }
 
         Err(Self::admission_error_response(status, &bytes))
@@ -357,20 +580,12 @@ impl MatrixBackend {
     fn admission_error_response(status: reqwest::StatusCode, bytes: &[u8]) -> BackendError {
         let error = match serde_json::from_slice::<AdmissionErrorResponse>(bytes) {
             Ok(error) => error,
-            Err(parse_error) => {
-                let excerpt: String = String::from_utf8_lossy(bytes)
-                    .chars()
-                    .filter(|character| !character.is_control() || character.is_whitespace())
-                    .take(512)
-                    .collect();
-                let excerpt = excerpt.trim();
-                let body = if excerpt.is_empty() {
-                    "<empty>"
-                } else {
-                    excerpt
-                };
+            Err(_) => {
+                // A malicious or buggy admission service can reflect the
+                // invitation capability in its body. Never carry that body
+                // through IPC, errors, or logs.
                 let detail = format!(
-                    "the invitation service returned malformed HTTP {} error data: {parse_error}; body={body}",
+                    "the invitation service returned malformed HTTP {} error data",
                     status.as_u16(),
                 );
                 return if status.is_client_error() {
@@ -380,18 +595,10 @@ impl MatrixBackend {
                 };
             }
         };
-        let detail = if error.message.trim().is_empty() {
-            format!(
-                "the invitation service rejected the request with HTTP status {}",
-                status.as_u16()
-            )
-        } else {
-            format!(
-                "the invitation service returned HTTP status {}: {}",
-                status.as_u16(),
-                error.message.trim()
-            )
-        };
+        let detail = format!(
+            "the invitation service rejected the request with HTTP status {}",
+            status.as_u16()
+        );
         match status.as_u16() {
             401 => BackendError::NotAuthenticated,
             403 => BackendError::PermissionDenied(detail),
@@ -510,9 +717,11 @@ impl MatrixBackend {
         require_registration: bool,
     ) -> BackendResult<super::MatrixCommunityAdmission> {
         let target = Self::parse_admission_invitation(invite_url, None)?;
-        let endpoint = Self::admission_endpoint(&target, "")?;
-        let response = Self::admission_http_client()?
-            .get(endpoint)
+        let endpoint = Self::admission_endpoint(&target.api_origin, "resolve")?;
+        let response = Self::admission_http_client(&target.api_origin)
+            .await?
+            .post(endpoint)
+            .json(&serde_json::json!({ "invitation": target.code.as_str() }))
             .send()
             .await
             .map_err(BackendError::from_sdk_error)?;

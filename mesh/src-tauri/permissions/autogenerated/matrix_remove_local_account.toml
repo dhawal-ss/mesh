@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-remove-local-account"
+description = "Enables the matrix_remove_local_account command without any pre-configured scope."
+commands.allow = ["matrix_remove_local_account"]
+
+[[permission]]
+identifier = "deny-matrix-remove-local-account"
+description = "Denies the matrix_remove_local_account command without any pre-configured scope."
+commands.deny = ["matrix_remove_local_account"]

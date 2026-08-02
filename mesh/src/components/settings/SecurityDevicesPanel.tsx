@@ -271,15 +271,21 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
     const removedAccountId = status?.userId ?? bridge.getMatrixUserId()
     try {
       await bridge.matrixRemoveLocalAccount()
+    } catch (cause) {
+      setError(errorMessage(cause))
+      setBusy(false)
+      return
+    }
+    try {
       clearRegistrationContinuation()
       clearRendererAccountState(removedAccountId)
+    } catch (cleanupError) {
+      console.warn('The account was removed, but optional renderer cleanup was incomplete.', cleanupError)
+    } finally {
       setLocalRemovalPhrase('')
       setLocalRemovalAcknowledged(false)
       onClose()
       window.location.reload()
-    } catch (cause) {
-      setError(errorMessage(cause))
-      setBusy(false)
     }
   }
 
@@ -309,14 +315,20 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
     const removedAccountId = status?.userId ?? bridge.getMatrixUserId()
     try {
       await bridge.matrixDeactivateAccount(deactivationPassword)
-      clearRendererAccountState(removedAccountId)
-      setDeactivationPassword('')
-      onClose()
-      window.location.reload()
     } catch (cause) {
       setDeactivationPassword('')
       setError(errorMessage(cause))
       setBusy(false)
+      return
+    }
+    try {
+      clearRendererAccountState(removedAccountId)
+    } catch (cleanupError) {
+      console.warn('The account was deactivated, but optional renderer cleanup was incomplete.', cleanupError)
+    } finally {
+      setDeactivationPassword('')
+      onClose()
+      window.location.reload()
     }
   }
 

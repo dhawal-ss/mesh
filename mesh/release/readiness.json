@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "ledgerId": "mesh-production-readiness",
   "releaseSha": "10defc262ee8d91106dd148f61daf533fc6115cc",
-  "updatedAt": "2026-08-01T02:33:01Z",
+  "updatedAt": "2026-08-01T09:36:00Z",
   "gates": [
     {
       "id": "r0.frontend-tests",
@@ -165,6 +165,86 @@
       "waiver": null
     },
     {
+      "id": "r0.dependency-advisory-policy",
+      "milestone": "R0",
+      "required": true,
+      "releaseStatus": "local-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh dependency security",
+      "capability": "Bind the exact Matrix shipping graph, reviewed warnings, legacy exclusions, and raw Rust advisory state to one policy",
+      "blockReason": "The current dirty workspace policy reports zero Matrix runtime vulnerabilities, seven reviewed unmaintained Matrix runtime warnings, one build-only warning, and two legacy-only Hickory vulnerabilities, but no clean exact-SHA release evidence exists for these changes. None of those warnings or legacy findings is represented as fixed.",
+      "nextAction": "On the clean candidate SHA, run the raw audit and scripts/check-matrix-release-dependencies.ps1, attach its source/lock/policy-bound report, retain Matrix-only artifact exclusion, and remove findings only when policy drift checks prove upstream resolution.",
+      "waiver": null
+    },
+    {
+      "id": "r1.admission-openid-verifier",
+      "milestone": "R1",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh identity and admission security",
+      "capability": "Verify short-lived Matrix identity proofs without putting credentials in URLs",
+      "blockReason": "The standardized Matrix OpenID userinfo flow places its assertion in a URL query. Mesh fails closed until a reviewed POST-capable verifier can validate the issuing service, user, audience, purpose, subject, expiry, and replay state.",
+      "nextAction": "Approve and implement a POST-capable verifier contract, then pass expired, replayed, malformed, wrong-user, wrong-service, cross-purpose, and credential-leak acceptance tests against a live independently hosted account.",
+      "waiver": null
+    },
+    {
+      "id": "r1.admission-service-authority",
+      "milestone": "R1",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh community-hosting operations",
+      "capability": "Issue one-use registration admission and invite users with least privilege",
+      "blockReason": "Synapse registration-token administration has no admission-only scope. Mesh will not give the admission service a server-admin credential; token issuance and the non-admin bot membership/power workflow therefore remain unavailable by default.",
+      "nextAction": "Approve a least-privilege issuer and bot-provisioning design, provision the bot only in admitted communities and child rooms, then pass live issue, revoke, expiry, room-membership, power, recovery, and credential-rotation tests.",
+      "waiver": null
+    },
+    {
+      "id": "r1.moderation-audit-authority",
+      "milestone": "R1",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh security and community governance",
+      "capability": "Provide private authoritative moderation audit history",
+      "blockReason": "Ordinary room events cannot prove historical moderator authority and are forgeable by members. Mesh no longer presents them as audit records and audit retrieval fails closed until an authoritative design is approved.",
+      "nextAction": "Approve an access-restricted append-only storage and federation threat model, then pass sender provenance, historical authorization, failed-outcome, forgery, demotion, cross-community, malformed-event, replay, retention, export, and unauthorized-reader tests.",
+      "waiver": null
+    },
+    {
       "id": "r1.clean-device-onboarding",
       "milestone": "R1",
       "required": true,
@@ -182,6 +262,66 @@
       "capability": "Install, open an invite, choose an account service, and enter a community",
       "blockReason": "A clean supported device and provider-backed onboarding run have not been performed.",
       "nextAction": "Run the R1 clean-device invite, service-choice, sign-in/create-account, and community-entry case.",
+      "waiver": null
+    },
+    {
+      "id": "r1.provider-identity-lifecycle",
+      "milestone": "R1",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh identity and release operations",
+      "capability": "Complete provider sign-in and session lifecycle against production registrations",
+      "blockReason": "Production OAuth registrations and same-SHA live callback, cancel/retry, refresh, account-removal, and provider-revocation evidence are not available. Local mocks and build-variable validation do not satisfy this gate.",
+      "nextAction": "Provision reviewed production registrations, then complete every provider.* case in release/external-acceptance.example.json against the signed release build and retain sanitized tamper-evident evidence.",
+      "waiver": null
+    },
+    {
+      "id": "r1.community-hosted-operations",
+      "milestone": "R1",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh community-hosting operations",
+      "capability": "Operate an advertised community-hosted service without coupling it to account hosting",
+      "blockReason": "Disposable Docker checks do not prove public DNS/TLS, independent-account federation, destructive restore, monitoring, rate limits, abuse handling, signing-key backup, migration material, incident response, or recovery on the optional community-hosted infrastructure.",
+      "nextAction": "Run every community-hosted.* external acceptance case on the owner-controlled service, including two independent destructive restore drills, while preserving Matrix.org and custom services as separate account-hosting choices.",
+      "waiver": null
+    },
+    {
+      "id": "r1.public-service-review",
+      "milestone": "R1",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh product and privacy review",
+      "capability": "Present only recently reviewed independent public account services",
+      "blockReason": "Matrix.org, tchncs.de, and quassel.io were live-checked during the audit, but no same-SHA durable acceptance artifact is attached and that review window expires on 2026-08-29.",
+      "nextAction": "Complete the three public-service.* cases, record operator/date/expiry and sanitized evidence, and re-review before 2026-08-29 or remove an expired service from release configuration.",
       "waiver": null
     },
     {
@@ -219,9 +359,69 @@
         "expiresAt": null
       },
       "owner": "Mesh release operations",
-      "capability": "Let another person download, verify, install, and launch Mesh",
-      "blockReason": "The current application version is the placeholder 0.1.0 and signing/public artifact verification is not live-proven.",
-      "nextAction": "Approve a non-placeholder version, configure protected signing, and verify public artifacts on a clean Windows device.",
+      "capability": "Complete signed installed acceptance on a clean Windows machine",
+      "blockReason": "The current application version is the placeholder 0.1.0, protected signing is not provisioned, and the 12 windows.* download/signature/install/invite/service/account/SSO/join/restart/update/uninstall/residue cases have not been live-proven.",
+      "nextAction": "Approve a non-placeholder version, configure protected signing, and complete every windows.* case in release/external-acceptance.example.json on a clean Windows machine.",
+      "waiver": null
+    },
+    {
+      "id": "r2.public-release",
+      "milestone": "R2",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh release operations",
+      "capability": "Publish verifiable release artifacts and a signed update path",
+      "blockReason": "Candidate automation can prepare a signed draft prerelease with checksums, SBOMs, provenance, and dependency evidence, but it intentionally contains no promotion path. The owner-controlled ordering for public prerelease verification, canonical routing, signed updater publication, rollback, legal approval, and post-public live-download evidence is not yet reviewed; the updater remains disabled.",
+      "nextAction": "Use the protected workflow only to create the signed draft candidate. Complete the pre-public public-release.* and Windows update cases, approve the promotion/post-public verification contract, and keep automatic updates disabled until its key, endpoint, rollback, and evidence ordering are reviewed.",
+      "waiver": null
+    },
+    {
+      "id": "r2.manual-accessibility-windows",
+      "milestone": "R2",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh product accessibility",
+      "capability": "Use the Windows beta with NVDA, WebView2, keyboard, zoom, text, motion, and contrast settings",
+      "blockReason": "Automated accessibility tests do not substitute for manual NVDA, WebView2, keyboard-only, 200% zoom, large-text, reduced-motion, and high-contrast acceptance on the signed Windows candidate.",
+      "nextAction": "Complete the R2 accessibility.* cases on the signed Windows candidate and retain sanitized evidence for each assistive-technology and display-setting combination.",
+      "waiver": null
+    },
+    {
+      "id": "r2.public-page-legal-approval",
+      "milestone": "R2",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh legal and release operations",
+      "capability": "Publish reviewed legal/support pages and the canonical download route",
+      "blockReason": "The Pages workflow requires explicit legal review, but owner approval and live public-route verification have not occurred.",
+      "nextAction": "Obtain owner/legal approval, complete public-release.legal-approval, deploy the exact reviewed public pages through the protected workflow, and attach same-SHA canonical-route and live-download evidence.",
       "waiver": null
     },
     {
@@ -240,8 +440,48 @@
       },
       "owner": "Mesh voice operations",
       "capability": "Offer private calling only when MatrixRTC, SFU, TURN, federation, and media protection are verified",
-      "blockReason": "The client is correctly fail-closed; live MatrixRTC/SFU/TURN and media-encryption acceptance is not available locally.",
-      "nextAction": "Complete the voice architecture decision spike, then run the physical-device hostile-network acceptance matrix.",
+      "blockReason": "The client is correctly fail-closed; none of the required complete 23-case MatrixRTC/SFU/TURN/media-E2EE signed-build campaign is available as current same-SHA physical-device evidence.",
+      "nextAction": "Complete all 23 cases in infra/matrixrtc/acceptance-matrix.example.json on physical devices and hostile networks, then pass matrixrtc:preflight with -Production -RequireLiveAcceptance without modifying the tracked template.",
+      "waiver": null
+    },
+    {
+      "id": "r4.native-invitation-delivery",
+      "milestone": "R4",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh desktop release",
+      "capability": "Deliver native invitations through installed-protocol and cold-start paths on every supported desktop platform",
+      "blockReason": "Windows native invitation routing is implemented, but there is no installed-protocol or cold-start acceptance evidence for macOS or Linux. Windows evidence must not imply cross-platform support.",
+      "nextAction": "Package signed/notarized platform builds and complete native-invite.macos-* and native-invite.linux-* cases before advertising those platforms as supported.",
+      "waiver": null
+    },
+    {
+      "id": "r4.manual-accessibility-cross-platform",
+      "milestone": "R4",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "commitSha": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh product accessibility",
+      "capability": "Use supported macOS and Linux builds with their native WebViews and screen readers",
+      "blockReason": "Windows accessibility evidence cannot prove VoiceOver/WKWebView or Orca/WebKitGTK behavior, and no signed supported macOS/Linux candidate exists for manual acceptance.",
+      "nextAction": "After signed platform candidates exist, complete accessibility.voiceover, accessibility.wkwebview, accessibility.orca, and accessibility.webkitgtk with physical assistive-technology evidence before advertising macOS or Linux support.",
       "waiver": null
     }
   ]

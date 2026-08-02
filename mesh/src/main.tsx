@@ -8,6 +8,22 @@ import './styles/globals.css'
 import { transitions } from './lib/motion'
 import { useReducedMotionPreference } from './hooks/useReducedMotionPreference'
 
+const devView = import.meta.env.DEV
+  ? new URLSearchParams(window.location.search).get('dev')
+  : null
+
+let WorkspacePreviewState: typeof import('./dev/WorkspacePreviewState').WorkspacePreviewState | null = null
+let simulateWorkspaceVoice = false
+if (import.meta.env.DEV && devView === 'workspace') {
+  const [previewRuntime, previewState] = await Promise.all([
+    import('./dev/installWorkspacePreview'),
+    import('./dev/WorkspacePreviewState'),
+  ])
+  simulateWorkspaceVoice = new URLSearchParams(window.location.search).get('simulateVoice') === 'true'
+  previewRuntime.installWorkspacePreview({ simulateVoice: simulateWorkspaceVoice })
+  WorkspacePreviewState = previewState.WorkspacePreviewState
+}
+
 const loadMotionFeatures = () =>
   import('./lib/motion-features').then((module) => module.default)
 
@@ -34,13 +50,20 @@ function AppMotionConfig({ children }: { children: ReactNode }) {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <AppMotionConfig>
-      {DevKitchenSink && new URLSearchParams(window.location.search).get('dev') === 'kitchen-sink'
+      {DevKitchenSink && devView === 'kitchen-sink'
         ? (
             <React.Suspense fallback={<div className="min-h-screen bg-surface-sunken" />}>
               <DevKitchenSink />
             </React.Suspense>
           )
-        : <App />}
+        : (
+            <>
+              <App />
+              {WorkspacePreviewState && (
+                <WorkspacePreviewState simulateVoice={simulateWorkspaceVoice} />
+              )}
+            </>
+          )}
     </AppMotionConfig>
   </React.StrictMode>
 )

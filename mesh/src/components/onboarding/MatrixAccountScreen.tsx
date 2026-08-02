@@ -8,6 +8,7 @@ import {
 } from 'react'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
+import { Avatar } from '../ui/Avatar'
 import * as bridge from '../../lib/bridge'
 import {
   MATRIX_ORG_SERVICE,
@@ -15,22 +16,20 @@ import {
   publicServiceReviewExpired,
   type PublicService,
 } from '../../config/public-services'
-import type { MatrixCommunityAdmission, PendingInvitationMetadata } from '../../types/ipc'
+import type { PendingInvitationMetadata } from '../../types/ipc'
 import type { OnboardingFlowProps } from './types'
 import {
   friendlyAccountCreationError,
-  invitationCodeFromInput,
-  invitationValidationError,
   normalizeUsername,
   passwordStrength,
   usernameValidationError,
 } from './accountCreation'
-import { parseAdmissionCommunityInvite } from '../../lib/community-invites'
 import {
   normalizeServiceAddress,
   displayServiceAddress,
   friendlyServiceError,
   resolveServiceAddress,
+  serviceFromUsername,
   serviceAddressConfigError,
   technicalSignInError,
   friendlySignInError,
@@ -53,17 +52,10 @@ type AccountMode =
   | 'advanced'
 type Availability = 'idle' | 'checking' | 'available' | 'taken' | 'error'
 type AvailabilityCheck = {
+  serviceIdentity: string
   username: string
   status: Exclude<Availability, 'idle' | 'checking'>
 }
-type AdmissionResolution =
-  | { invitation: string; status: 'resolving' }
-  | { invitation: string; status: 'resolved'; admission: MatrixCommunityAdmission }
-  | { invitation: string; status: 'error'; message: string }
-type PendingAdmissionResolution =
-  | { handle: string; status: 'resolving' }
-  | { handle: string; status: 'resolved'; admission: MatrixCommunityAdmission }
-  | { handle: string; status: 'error'; message: string }
 export type MatrixAccountOutcome = 'registered' | 'signed-in'
 
 type SelectedAccountService =
@@ -78,13 +70,17 @@ type MatrixAccountScreenProps = Pick<
   | 'onMatrixLogin'
   | 'onMatrixOidcLogin'
   | 'onMatrixSwitchAccount'
-  | 'onResolvePendingInvitation'
   | 'onDiscardPendingInvitation'
 > & {
   onNext: (outcome: MatrixAccountOutcome) => void
-  initialInvitation?: string
   initialPendingInvitation?: PendingInvitationMetadata | null
   initialAccountService?: string
+}
+
+// Read wall-clock time only from explicit user-action handlers. Keeping this
+// outside the component prevents an expiry check from becoming render input.
+function currentEpochMsForUserAction(): number {
+  return Date.now()
 }
 
 export function MatrixAccountScreen({
@@ -93,10 +89,8 @@ export function MatrixAccountScreen({
   onMatrixLogin,
   onMatrixOidcLogin,
   onMatrixSwitchAccount,
-  onResolvePendingInvitation,
   onDiscardPendingInvitation,
   onNext,
-  initialInvitation = '',
   initialPendingInvitation = null,
   initialAccountService,
 }: MatrixAccountScreenProps) {
@@ -123,14 +117,11 @@ export function MatrixAccountScreen({
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [passwordConfirmation, setPasswordConfirmation] = useState('')
-  const [invitation, setInvitation] = useState(initialInvitation)
-  const [admissionResolution, setAdmissionResolution] =
-    useState<AdmissionResolution | null>(null)
-  const [pendingAdmissionResolution, setPendingAdmissionResolution] =
-    useState<PendingAdmissionResolution | null>(null)
-  const [pendingInvitationDismissed, setPendingInvitationDismissed] = useState(false)
+  const [dismissedPendingInvitationHandle, setDismissedPendingInvitationHandle] =
+    useState<string | null>(null)
   const [serviceAddress, setServiceAddress] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [recoveryHelp, setRecoveryHelp] = useState<'password' | 'username' | null>(null)
   const [availabilityCheck, setAvailabilityCheck] = useState<AvailabilityCheck | null>(null)
   const [error, setErrorMessage] = useState<string | null>(null)
   const [errorDetails, setErrorDetails] = useState<string | null>(null)
@@ -148,6 +139,9 @@ export function MatrixAccountScreen({
     useState<string | null>(registrationStartup.notice)
   const modeHeadingRef = useRef<HTMLHeadingElement>(null)
   const previousModeRef = useRef<AccountMode>(mode)
+  const availabilityGenerationRef = useRef(0)
+  const capabilityGenerationRef = useRef(0)
+  const browserGenerationRef = useRef(0)
 
   const setError = (message: string | null, cause?: unknown) => {
     setErrorMessage(message)
@@ -161,53 +155,19 @@ export function MatrixAccountScreen({
   )
   const strength = useMemo(() => passwordStrength(password), [password])
   const passwordsMatch = passwordConfirmation.length > 0 && password === passwordConfirmation
-  const admissionInvitation = useMemo(
-    () => parseAdmissionCommunityInvite(invitation),
-    [invitation],
-  )
-  const matchingAdmission =
-    admissionInvitation && admissionResolution?.invitation === admissionInvitation.original
-      ? admissionResolution
-      : null
-  const resolvedAdmission =
-    matchingAdmission?.status === 'resolved' ? matchingAdmission.admission : null
-  const storedPendingInvitation = initialPendingInvitation && !pendingInvitationDismissed
+  const storedPendingInvitation = initialPendingInvitation
+    && initialPendingInvitation.handle !== dismissedPendingInvitationHandle
     ? initialPendingInvitation
     : null
-  const matchingPendingAdmission =
-    storedPendingInvitation
-    && pendingAdmissionResolution?.handle === storedPendingInvitation.handle
-      ? pendingAdmissionResolution
-      : null
-  const pendingAdmission =
-    matchingPendingAdmission?.status === 'resolved'
-      ? matchingPendingAdmission.admission
-      : null
-  const pendingAdmissionError =
-    matchingPendingAdmission?.status === 'error'
-      ? matchingPendingAdmission.message
-      : null
-  const effectiveAdmission = resolvedAdmission ?? pendingAdmission
-  const admissionResolving = matchingAdmission?.status === 'resolving'
-    || matchingPendingAdmission?.status === 'resolving'
-  const admissionError =
-    matchingAdmission?.status === 'error' ? matchingAdmission.message : null
-  const invitationError = useMemo(() => {
-    if (mode !== 'create') return null
-    if (storedPendingInvitation) return pendingAdmissionError
-    const syntaxError = invitationValidationError(invitation)
-    if (syntaxError) return syntaxError
-    if (!admissionInvitation) return null
-    if (admissionError) return admissionError
-    return null
-  }, [admissionError, admissionInvitation, invitation, mode, pendingAdmissionError, storedPendingInvitation])
-  const registrationToken = useMemo(
-    () => invitationCodeFromInput(invitation) ?? effectiveAdmission?.registrationToken ?? null,
-    [effectiveAdmission, invitation],
-  )
+  const pendingInvitationHandle = storedPendingInvitation?.handle ?? null
+  const offeredCommunityService = storedPendingInvitation?.service
+    && storedPendingInvitation.admissionService
+    ? storedPendingInvitation.service
+    : null
   const selectedServiceAddress = selectedService?.kind === 'public'
     ? selectedService.service.serviceAddress
     : selectedService?.address ?? ''
+  const selectedServiceIdentity = normalizeServiceAddress(selectedServiceAddress) ?? ''
   const resolvedService = useMemo(
     () => resolveServiceAddress(
       mode === 'advanced' ? 'advanced' : 'recommended',
@@ -222,100 +182,15 @@ export function MatrixAccountScreen({
     && normalizedUsername
     && !createUsernameError
     && onMatrixCheckUsernameAvailable
-    && selectedServiceAddress
+    && selectedServiceIdentity
       ? normalizedUsername
       : null
   const availability: Availability = !availabilityUsername
     ? 'idle'
-    : availabilityCheck?.username === availabilityUsername
+    : availabilityCheck?.serviceIdentity === selectedServiceIdentity
+      && availabilityCheck.username === availabilityUsername
       ? availabilityCheck.status
       : 'checking'
-
-  useEffect(() => {
-    if (!initialInvitation) return
-    const timer = window.setTimeout(() => setInvitation(initialInvitation), 0)
-    return () => window.clearTimeout(timer)
-  }, [initialInvitation])
-
-  useEffect(() => {
-    if (!storedPendingInvitation?.admissionService || !onResolvePendingInvitation) return
-    let active = true
-    const handle = storedPendingInvitation.handle
-    void Promise.resolve().then(async () => {
-      if (!active) return
-      setPendingAdmissionResolution({ handle, status: 'resolving' })
-      try {
-        const admission = await onResolvePendingInvitation()
-        if (!active) return
-        if (!admission) {
-          setPendingAdmissionResolution({
-            handle,
-            status: 'error',
-            message: 'This saved invitation could not be checked. You can discard it and paste it again.',
-          })
-        } else {
-          setPendingAdmissionResolution({ handle, status: 'resolved', admission })
-        }
-      } catch (cause) {
-        if (active) {
-          setError('This saved invitation is invalid, expired, or has already been used.', cause)
-          setPendingAdmissionResolution({
-            handle,
-            status: 'error',
-            message: 'This saved invitation is invalid, expired, or has already been used.',
-          })
-        }
-      }
-    })
-    return () => {
-      active = false
-    }
-  }, [onResolvePendingInvitation, storedPendingInvitation])
-
-  useEffect(() => {
-    if (!admissionInvitation) return
-    if (!bridge.isTauriRuntime()) {
-      const timer = window.setTimeout(() => {
-        setAdmissionResolution({
-          invitation: admissionInvitation.original,
-          status: 'error',
-          message: 'Community admission invitations can be opened in the installed Mesh app.',
-        })
-      }, 0)
-      return () => window.clearTimeout(timer)
-    }
-
-    let active = true
-    void Promise.resolve().then(async () => {
-      if (!active) return
-      setAdmissionResolution({
-        invitation: admissionInvitation.original,
-        status: 'resolving',
-      })
-      try {
-        const admission = await bridge.resolveCommunityInvite(admissionInvitation.original)
-        if (active) {
-          setAdmissionResolution({
-            invitation: admissionInvitation.original,
-            status: 'resolved',
-            admission,
-          })
-        }
-      } catch (cause) {
-        if (active) {
-          setError('This invitation is invalid, expired, or has already been used.', cause)
-          setAdmissionResolution({
-            invitation: admissionInvitation.original,
-            status: 'error',
-            message: 'This invitation is invalid, expired, or has already been used.',
-          })
-        }
-      }
-    })
-    return () => {
-      active = false
-    }
-  }, [admissionInvitation])
 
   useEffect(() => {
     if (!bridge.isTauriRuntime()) return
@@ -357,6 +232,7 @@ export function MatrixAccountScreen({
       return () => window.clearTimeout(timer)
     }
 
+    const generation = ++capabilityGenerationRef.current
     let active = true
     void Promise.resolve().then(async () => {
       if (!active) return
@@ -364,35 +240,42 @@ export function MatrixAccountScreen({
       setCapabilities(null)
       setError(null)
       try {
-        const nextCapabilities = await bridge.matrixServiceCapabilities(selectedServiceAddress)
-        if (active) setCapabilities(nextCapabilities)
+        const nextCapabilities = await bridge.matrixServiceCapabilities(selectedServiceIdentity)
+        if (active && generation === capabilityGenerationRef.current) {
+          setCapabilities(nextCapabilities)
+        }
       } catch (cause) {
-        if (!active) return
+        if (!active || generation !== capabilityGenerationRef.current) return
         setError(friendlyServiceError(cause, 'reach that account service'), cause)
       } finally {
-        if (active) setCheckingCapabilities(false)
+        if (active && generation === capabilityGenerationRef.current) {
+          setCheckingCapabilities(false)
+        }
       }
     })
     return () => {
       active = false
     }
-  }, [mode, selectedService, selectedServiceAddress])
+  }, [mode, selectedService, selectedServiceAddress, selectedServiceIdentity])
 
   useEffect(() => {
     if (!availabilityUsername || !onMatrixCheckUsernameAvailable) return
 
+    const serviceIdentity = selectedServiceIdentity
+    const generation = ++availabilityGenerationRef.current
     let active = true
     const timer = window.setTimeout(() => {
-      void onMatrixCheckUsernameAvailable(selectedServiceAddress, availabilityUsername).then((available) => {
-        if (active) {
+      void onMatrixCheckUsernameAvailable(serviceIdentity, availabilityUsername).then((available) => {
+        if (active && generation === availabilityGenerationRef.current) {
           setAvailabilityCheck({
+            serviceIdentity,
             username: availabilityUsername,
             status: available ? 'available' : 'taken',
           })
         }
       }).catch((cause) => {
-        if (active) {
-          setAvailabilityCheck({ username: availabilityUsername, status: 'error' })
+        if (active && generation === availabilityGenerationRef.current) {
+          setAvailabilityCheck({ serviceIdentity, username: availabilityUsername, status: 'error' })
           setError(friendlyAccountCreationError(cause), cause)
         }
       })
@@ -402,7 +285,7 @@ export function MatrixAccountScreen({
       active = false
       window.clearTimeout(timer)
     }
-  }, [availabilityUsername, onMatrixCheckUsernameAvailable, selectedServiceAddress])
+  }, [availabilityUsername, onMatrixCheckUsernameAvailable, selectedServiceIdentity])
 
   useEffect(() => {
     if (previousModeRef.current === mode) return
@@ -412,14 +295,20 @@ export function MatrixAccountScreen({
   }, [mode])
 
   const resetFeedback = () => {
+    browserGenerationRef.current += 1
     setError(null)
+    setCheckingBrowser(false)
     setBrowserReady(false)
+    setRecoveryHelp(null)
   }
 
   const changeMode = (nextMode: AccountMode) => {
     if (nextMode === 'select' || nextMode === 'public-services' || nextMode === 'advanced') {
       setSelectedService(null)
       setCapabilities(null)
+      setAvailabilityCheck(null)
+      capabilityGenerationRef.current += 1
+      availabilityGenerationRef.current += 1
     }
     setMode(nextMode)
     setPassword('')
@@ -452,7 +341,7 @@ export function MatrixAccountScreen({
     }
   }
 
-  const continueAfterExternalRegistration = () => {
+  const handleContinueAfterExternalRegistration = () => {
     if (!registrationContinuation || selectedService?.kind !== 'public') {
       clearRegistrationContinuation()
       setRegistrationContinuation(null)
@@ -477,7 +366,7 @@ export function MatrixAccountScreen({
       && storedPendingInvitation
       && (
         storedPendingInvitation.handle !== registrationContinuation.invitationTarget
-        || storedPendingInvitation.expiresAt <= Date.now()
+        || storedPendingInvitation.expiresAt <= currentEpochMsForUserAction()
       )
     ) {
       clearRegistrationContinuation()
@@ -543,33 +432,39 @@ export function MatrixAccountScreen({
   }
 
   const selectPublicService = (service: PublicService) => {
+    capabilityGenerationRef.current += 1
+    availabilityGenerationRef.current += 1
     setSelectedService({ kind: 'public', service })
     setServiceAddress('')
     setCapabilities(null)
+    setAvailabilityCheck(null)
     changeMode('sign-in')
   }
 
   const selectCommunityService = () => {
-    if (!effectiveAdmission?.registrationToken) return
-    const address = displayServiceAddress(effectiveAdmission.service)
+    if (!offeredCommunityService || !pendingInvitationHandle) return
+    const address = displayServiceAddress(offeredCommunityService)
+    capabilityGenerationRef.current += 1
+    availabilityGenerationRef.current += 1
     setSelectedService({
       kind: 'community',
-      name: effectiveAdmission.communityServiceDisplayName?.trim() || address,
-      address: effectiveAdmission.service,
+      name: storedPendingInvitation?.communityServiceDisplayName?.trim() || address,
+      address: offeredCommunityService,
     })
     setServiceAddress('')
     setCapabilities(null)
+    setAvailabilityCheck(null)
     changeMode('create')
   }
 
   const discardPendingInvitation = async () => {
+    const dismissedHandle = pendingInvitationHandle
     setError(null)
     try {
       await onDiscardPendingInvitation?.()
       clearRegistrationContinuation()
       setRegistrationContinuation(null)
-      setPendingInvitationDismissed(true)
-      setPendingAdmissionResolution(null)
+      setDismissedPendingInvitationHandle(dismissedHandle)
     } catch (cause) {
       setError('Mesh could not discard the saved invitation. Try again.', cause)
     }
@@ -585,25 +480,37 @@ export function MatrixAccountScreen({
       setError(serviceError)
       return
     }
+    const serviceIdentity = normalizeServiceAddress(resolvedService)
+    if (!serviceIdentity) {
+      setError('Enter a valid account service address.')
+      return
+    }
+    const generation = ++capabilityGenerationRef.current
     setCheckingCapabilities(true)
     setCapabilities(null)
     setError(null)
     try {
       const nextCapabilities = bridge.isTauriRuntime()
-        ? await bridge.matrixServiceCapabilities(resolvedService)
+        ? await bridge.matrixServiceCapabilities(serviceIdentity)
         : {
-            homeserver: resolvedService,
+            homeserver: serviceIdentity,
             serverVersions: ['preview'],
             passwordLogin: true,
             browserLogin: true,
             registration: 'unknown' as const,
             maxUploadBytes: null,
           }
-      setCapabilities(nextCapabilities)
+      if (generation === capabilityGenerationRef.current) {
+        setCapabilities(nextCapabilities)
+      }
     } catch (cause) {
-      setError(friendlyServiceError(cause, 'reach that account service'), cause)
+      if (generation === capabilityGenerationRef.current) {
+        setError(friendlyServiceError(cause, 'reach that account service'), cause)
+      }
     } finally {
-      setCheckingCapabilities(false)
+      if (generation === capabilityGenerationRef.current) {
+        setCheckingCapabilities(false)
+      }
     }
   }
 
@@ -617,7 +524,7 @@ export function MatrixAccountScreen({
         return
       }
       if (selectedService?.kind !== 'community' || !resolvedService) {
-        setError('Choose the community-hosted service before creating this account.')
+        setError('Choose an account service with this invitation before creating your account.')
         return
       }
       if (
@@ -625,8 +532,7 @@ export function MatrixAccountScreen({
         || availability !== 'available'
         || !strength.strongEnough
         || !passwordsMatch
-        || invitationError
-        || !registrationToken
+        || !pendingInvitationHandle
       ) {
         setError('Finish the highlighted fields before creating your account.')
         return
@@ -638,12 +544,11 @@ export function MatrixAccountScreen({
           homeserver: resolvedService,
           username: normalizedUsername,
           password,
-          registrationToken: registrationToken ?? undefined,
+          pendingInvitationHandle,
           deviceName: 'Mesh Desktop',
         })
         setPassword('')
         setPasswordConfirmation('')
-        setInvitation('')
         onNext('registered')
       } catch (cause) {
         setError(friendlyAccountCreationError(cause), cause)
@@ -707,17 +612,25 @@ export function MatrixAccountScreen({
       setError(serviceError)
       return
     }
+    const serviceIdentity = normalizeServiceAddress(resolvedService)
+    if (!serviceIdentity) {
+      setError('Enter a valid account service address.')
+      return
+    }
+    const generation = ++browserGenerationRef.current
     setCheckingBrowser(true)
     setBrowserReady(false)
     setError(null)
     try {
-      const status = await bridge.matrixOidcStatus(resolvedService)
+      const status = await bridge.matrixOidcStatus(serviceIdentity)
+      if (generation !== browserGenerationRef.current) return
       setBrowserReady(status.ready)
       if (!status.ready) setError('Browser sign-in is not available for this account.')
     } catch (cause) {
+      if (generation !== browserGenerationRef.current) return
       setError(friendlyServiceError(cause, 'prepare browser sign-in'), cause)
     } finally {
-      setCheckingBrowser(false)
+      if (generation === browserGenerationRef.current) setCheckingBrowser(false)
     }
   }
 
@@ -742,19 +655,32 @@ export function MatrixAccountScreen({
     ? selectedService.service
     : null
   const selectedServiceName = displayAccountService(selectedService)
-  const communityServiceName = effectiveAdmission?.communityServiceDisplayName?.trim()
-    || displayServiceAddress(effectiveAdmission?.service ?? '')
+  const accountHelpUrl = selectedPublicService?.accountHelpUrl
+    ?? selectedPublicService?.supportUrl
+    ?? null
+  const accountHelpLabel = selectedPublicService
+    ? `${selectedPublicService.displayName} account help`
+    : 'your account service support'
+  const communityServiceName = storedPendingInvitation?.communityServiceDisplayName?.trim()
+    || displayServiceAddress(offeredCommunityService ?? '')
   const prominentServiceExpired = publicServiceReviewExpired(MATRIX_ORG_SERVICE)
   const usernameHint = isCreate && !normalizedUsername ? '3–32 lowercase characters.' : undefined
+  const accountIdService = !isCreate ? serviceFromUsername(username) : null
+  const selectedAccountDomain = selectedService?.kind === 'public'
+    ? selectedService.service.accountDomain
+    : null
+  const accountIdBelongsElsewhere = Boolean(
+    accountIdService
+    && selectedAccountDomain
+    && accountIdService.toLowerCase() !== selectedAccountDomain.toLowerCase(),
+  )
   const createDisabled =
     submitting
     || availability !== 'available'
     || Boolean(createUsernameError)
     || !strength.strongEnough
     || !passwordsMatch
-    || Boolean(invitationError)
-    || admissionResolving
-    || !registrationToken
+    || !pendingInvitationHandle
   const signInDisabled =
     submitting
     || switchingProfile !== null
@@ -775,7 +701,7 @@ export function MatrixAccountScreen({
         className="space-y-5"
       >
         <header className="space-y-2">
-          <p className="text-2xs uppercase tracking-eyebrow text-muted">
+          <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">
             Continue account setup
           </p>
           <h1
@@ -810,9 +736,9 @@ export function MatrixAccountScreen({
         <Button
           type="button"
           className="w-full"
-          onClick={continueAfterExternalRegistration}
+          onClick={handleContinueAfterExternalRegistration}
         >
-          I created my account — sign in
+          I created my account: sign in
         </Button>
 
         {continuationNotice ? (
@@ -842,10 +768,14 @@ export function MatrixAccountScreen({
 
   if (mode === 'select') {
     return (
-      <div className="space-y-3">
-        <header className="space-y-1.5">
-          <p className="text-2xs uppercase tracking-eyebrow text-muted">Mesh</p>
-          <h1 className="text-lg font-semibold tracking-tight text-primary">
+      <div className="space-y-4">
+        <header className="space-y-2">
+          <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">Account service</p>
+          <h1
+            ref={modeHeadingRef}
+            tabIndex={-1}
+            className="text-lg font-semibold tracking-tight text-primary"
+          >
             Choose your account service
           </h1>
           <p className="max-w-md text-sm leading-6 text-secondary">
@@ -889,27 +819,18 @@ export function MatrixAccountScreen({
           />
         ) : null}
 
-        {storedPendingInvitation || effectiveAdmission ? (
+        {storedPendingInvitation ? (
           <CommunityInvitationPassport
             pending={storedPendingInvitation}
-            admission={effectiveAdmission}
-            checking={admissionResolving}
-            error={pendingAdmissionError}
-            onDiscard={storedPendingInvitation ? () => void discardPendingInvitation() : undefined}
+            onDiscard={() => void discardPendingInvitation()}
           />
         ) : null}
 
-        {!storedPendingInvitation && admissionResolving ? (
-          <p role="status" className="rounded-control bg-surface-sunken px-3 py-2 text-xs text-muted">
-            Checking whether this invitation offers a community-hosted account service…
-          </p>
-        ) : null}
-
-        {effectiveAdmission?.registrationToken ? (
+        {offeredCommunityService && pendingInvitationHandle ? (
           <ServiceChoiceCard
             title={communityServiceName}
             eyebrow="Optional account offer"
-            description={`This invitation offers account creation at ${displayServiceAddress(effectiveAdmission.service)}. It has no Mesh uptime guarantee, and you may choose another service instead.`}
+            description={`This invitation offers account creation at ${displayServiceAddress(offeredCommunityService)}. Mesh verifies the one-use invitation only when you choose this action. The service has no Mesh uptime guarantee, and you may choose another service instead.`}
             actionLabel="Create account"
             onSelect={selectCommunityService}
           />
@@ -923,7 +844,7 @@ export function MatrixAccountScreen({
             Use another service
           </Button>
         </div>
-        <p className="text-xs leading-5 text-muted">
+        <p className="border-t border-border-subtle pt-3 text-xs leading-5 text-muted">
           Public services are independently operated and may change availability, registration
           rules, content policies, and limits. Mesh does not endorse or guarantee them.
         </p>
@@ -933,10 +854,14 @@ export function MatrixAccountScreen({
 
   if (mode === 'public-services') {
     return (
-      <div className="space-y-3">
-        <header className="space-y-1.5">
-          <p className="text-2xs uppercase tracking-eyebrow text-muted">Independent options</p>
-          <h1 className="text-lg font-semibold tracking-tight text-primary">
+      <div className="space-y-4">
+        <header className="space-y-2">
+          <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">Independent options</p>
+          <h1
+            ref={modeHeadingRef}
+            tabIndex={-1}
+            className="text-lg font-semibold tracking-tight text-primary"
+          >
             More public services
           </h1>
           <p className="text-sm leading-6 text-secondary">
@@ -971,9 +896,11 @@ export function MatrixAccountScreen({
   }
 
   return (
-    <form className={isCreate ? 'space-y-2' : 'space-y-3'} onSubmit={submit}>
-      <header className="space-y-1.5">
-        <p className="text-2xs uppercase tracking-eyebrow text-muted">Mesh</p>
+    <form className="mesh-account-form space-y-3" onSubmit={submit}>
+      <header className="space-y-2">
+        <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">
+          {isCreate ? 'Create an account' : isAdvanced ? 'Advanced sign in' : 'Welcome back'}
+        </p>
         <h1 ref={modeHeadingRef} tabIndex={-1} className="text-lg font-semibold tracking-tight text-primary">
           {isCreate
             ? `Create your account with ${selectedServiceName}`
@@ -993,7 +920,7 @@ export function MatrixAccountScreen({
       {selectedPublicService ? (
         <section
           aria-label={`${selectedPublicService.displayName} service details`}
-          className="space-y-2 rounded-panel border border-border-subtle bg-surface-sunken p-3 text-xs leading-5 text-secondary"
+          className="mesh-inline-card space-y-2 rounded-panel border border-border-subtle bg-surface-sunken p-3 text-xs leading-5 text-secondary"
         >
           <p>
             Operated independently by {selectedPublicService.operator}.{' '}
@@ -1013,7 +940,7 @@ export function MatrixAccountScreen({
       ) : selectedService?.kind === 'community' ? (
         <section
           aria-label={`${selectedService.name} service details`}
-          className="rounded-panel border border-border-subtle bg-surface-sunken p-3 text-xs leading-5 text-secondary"
+          className="mesh-inline-card rounded-panel border border-border-subtle bg-surface-sunken p-3 text-xs leading-5 text-secondary"
         >
           <p>
             Your account will be stored at {displayServiceAddress(selectedService.address)}. This
@@ -1035,7 +962,11 @@ export function MatrixAccountScreen({
           aria-label="Saved accounts"
           className="space-y-2 rounded-panel border border-border-subtle bg-surface-sunken p-3"
         >
-          <p className="text-2xs uppercase tracking-signal text-muted">Saved on this device</p>
+          <p className="text-2xs uppercase tracking-signal text-muted">Continue without a password</p>
+          <p className="text-xs leading-5 text-secondary">
+            Mesh remembers accounts used on this device. Choose one below to restore its saved
+            session instead of typing your account details again.
+          </p>
           {savedAccounts.map((account) => (
             <button
               key={account.profileId}
@@ -1048,7 +979,7 @@ export function MatrixAccountScreen({
                 <span className="block truncate text-sm font-medium text-primary">
                   {friendlyAccountName(account.userId)}
                 </span>
-                <span className="block truncate text-xs text-muted">Saved account</span>
+                <span className="block truncate text-xs text-muted">Saved on this device</span>
               </span>
               <span className="text-xs font-medium text-accent">
                 {switchingProfile === account.profileId ? 'Opening…' : 'Continue'}
@@ -1059,18 +990,24 @@ export function MatrixAccountScreen({
       ) : null}
 
       <div
-        className={`rounded-panel border border-border-subtle bg-surface-sunken p-3 ${
+        className={`mesh-form-card rounded-panel border border-border-subtle bg-surface-sunken p-4 ${
           isCreate ? 'space-y-2' : 'space-y-3'
         }`}
       >
         <Input
-          label="Username"
+          label={isCreate ? 'Username' : 'Username or full account ID'}
           name="username"
           value={username}
           onChange={(value: string) => {
             setUsername(value)
-            if (isAdvanced) setCapabilities(null)
-            setError(null)
+            if (isAdvanced) {
+              capabilityGenerationRef.current += 1
+              setCapabilities(null)
+              setCheckingCapabilities(false)
+              resetFeedback()
+            } else {
+              setError(null)
+            }
           }}
           placeholder={isCreate ? 'ashvin' : isAdvanced ? '@ashvin:example.org' : 'ashvin'}
           autoComplete="username"
@@ -1082,6 +1019,13 @@ export function MatrixAccountScreen({
           error={createUsernameError ?? undefined}
           hint={usernameHint}
         />
+        {!isCreate && accountIdBelongsElsewhere && !isAdvanced ? (
+          <p className="rounded-control border border-status-warning/40 bg-status-warning/10 px-3 py-2 text-xs leading-5 text-secondary">
+            This account ID belongs to <span className="font-medium text-primary">{accountIdService}</span>.
+            Choose <span className="font-medium text-primary">Use another service</span> so Mesh can
+            connect to the service that stores this account.
+          </p>
+        ) : null}
         {isCreate && normalizedUsername && !createUsernameError && availability !== 'idle' ? (
           <p
             role="status"
@@ -1178,30 +1122,8 @@ export function MatrixAccountScreen({
         {isCreate && storedPendingInvitation ? (
           <CommunityInvitationPassport
             pending={storedPendingInvitation}
-            admission={effectiveAdmission}
-            error={pendingAdmissionError}
             onDiscard={() => void discardPendingInvitation()}
             compact
-          />
-        ) : isCreate ? (
-          <Input
-            label="Invitation code"
-            name="invitation"
-            value={invitation}
-            onChange={(value: string) => {
-              setInvitation(value)
-              setError(null)
-            }}
-            placeholder="Paste your invitation link or code"
-            autoComplete="off"
-            autoCapitalize="none"
-            spellCheck={false}
-            required
-            maxLength={512}
-            error={invitation ? invitationError ?? undefined : undefined}
-            hint={admissionResolving
-              ? 'Checking this one-use invitation…'
-              : 'One-use private beta invitation. No email needed.'}
           />
         ) : null}
 
@@ -1212,8 +1134,10 @@ export function MatrixAccountScreen({
               name="homeserver"
               value={serviceAddress}
               onChange={(value: string) => {
+                capabilityGenerationRef.current += 1
                 setServiceAddress(value)
                 setCapabilities(null)
+                setCheckingCapabilities(false)
                 resetFeedback()
               }}
               placeholder="example.com"
@@ -1234,44 +1158,8 @@ export function MatrixAccountScreen({
         ) : null}
       </div>
 
-      {!isCreate && capabilities?.browserLogin ? (
-        <div className="flex flex-wrap gap-2">
-          {!browserReady ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={checkingBrowser || !resolvedService || !bridge.isTauriRuntime()}
-              onClick={() => void checkBrowserSignIn()}
-            >
-              {checkingBrowser ? 'Checking…' : 'Use browser sign-in'}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={browserSigningIn || !onMatrixOidcLogin}
-              onClick={() => void startBrowserSignIn()}
-            >
-              {browserSigningIn ? 'Waiting for browser…' : 'Continue in browser'}
-            </Button>
-          )}
-          {browserSigningIn ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => void bridge.matrixCancelLogin()}
-            >
-              Cancel
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
-
       {!isCreate && capabilities && !capabilities.passwordLogin && !capabilities.browserLogin ? (
-        <p role="alert" className="text-sm text-status-danger">
+        <p role="alert" className="rounded-control border border-status-danger/40 bg-status-danger/10 px-3 py-2 text-sm text-status-danger">
           This service did not advertise a sign-in method that Mesh can use.
         </p>
       ) : null}
@@ -1317,16 +1205,16 @@ export function MatrixAccountScreen({
           </button>
         </p>
       ) : (
-        <div className="space-y-2 text-center">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border-subtle pt-2 text-xs">
           <button
             type="button"
-            className="flex min-h-8 w-full items-center justify-center rounded-control px-2 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            className="inline-flex min-h-8 items-center rounded-control px-2 text-muted transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             onClick={() => changeMode('select')}
           >
             Back to service choices
           </button>
           {selectedPublicService ? (
-            <p className="text-xs text-muted">
+            <span className="text-muted">
               Need an account?{' '}
               <ExternalLink
                 href={selectedPublicService.registration.url}
@@ -1334,46 +1222,154 @@ export function MatrixAccountScreen({
               >
                 Register with {selectedPublicService.displayName}
               </ExternalLink>
-            </p>
+            </span>
           ) : null}
         </div>
       )}
+
+      {!isCreate && capabilities?.browserLogin ? (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            {!browserReady ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={checkingBrowser || !resolvedService || !bridge.isTauriRuntime()}
+                aria-describedby={!bridge.isTauriRuntime() ? 'browser-sign-in-availability' : undefined}
+                onClick={() => void checkBrowserSignIn()}
+              >
+                {checkingBrowser ? 'Checking…' : 'Use browser sign-in'}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={browserSigningIn || !onMatrixOidcLogin}
+                onClick={() => void startBrowserSignIn()}
+              >
+                {browserSigningIn ? 'Waiting for browser…' : 'Continue in browser'}
+              </Button>
+            )}
+            {browserSigningIn ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => void bridge.matrixCancelLogin()}
+              >
+                Cancel
+              </Button>
+            ) : null}
+          </div>
+          {!bridge.isTauriRuntime() ? (
+            <p
+              id="browser-sign-in-availability"
+              role="status"
+              className="text-xs leading-5 text-muted"
+            >
+              Browser sign-in opens from the installed Mesh app. Password sign-in remains
+              available here when the service supports it.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!isCreate ? (
+        <section
+          aria-label="Sign-in help"
+          className="mesh-inline-card space-y-2 rounded-panel border border-border-subtle bg-surface-sunken p-3"
+        >
+          <p className="text-xs font-medium text-primary">Having trouble signing in?</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+            <button
+              type="button"
+              className="min-h-8 rounded-control px-1 text-accent transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              aria-expanded={recoveryHelp === 'password'}
+              onClick={() => setRecoveryHelp((current) => current === 'password' ? null : 'password')}
+            >
+              Forgot password?
+            </button>
+            <button
+              type="button"
+              className="min-h-8 rounded-control px-1 text-accent transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              aria-expanded={recoveryHelp === 'username'}
+              onClick={() => setRecoveryHelp((current) => current === 'username' ? null : 'username')}
+            >
+              Forgot username?
+            </button>
+          </div>
+          {recoveryHelp ? (
+            <div role="status" className="space-y-2 border-t border-border pt-2 text-xs leading-5 text-secondary">
+              {recoveryHelp === 'password' ? (
+                <>
+                  <p>
+                    Mesh never stores your account password, and Matrix does not provide one
+                    universal reset page. Password recovery is handled by {selectedServiceName}.
+                  </p>
+                  {accountHelpUrl ? (
+                    <ExternalLink href={accountHelpUrl}>Open {accountHelpLabel}</ExternalLink>
+                  ) : (
+                    <p>
+                      Open the website for {displayServiceAddress(selectedServiceAddress)} or ask
+                      whoever runs that service for a password reset.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p>
+                    Usernames are issued by the account service, so Mesh cannot safely search for
+                    one across services. Check the email or password manager you used when you
+                    created the account.
+                  </p>
+                  {savedAccounts.length > 0 ? (
+                    <p>
+                      If you used this device before, choose a saved account above. It opens
+                      without asking for the username or password again.
+                    </p>
+                  ) : null}
+                  {accountHelpUrl ? (
+                    <ExternalLink href={accountHelpUrl}>Open {accountHelpLabel}</ExternalLink>
+                  ) : (
+                    <p>
+                      Ask whoever runs {displayServiceAddress(selectedServiceAddress)} to help
+                      recover your account ID.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
     </form>
   )
 }
 
 function CommunityInvitationPassport({
   pending,
-  admission,
-  checking = false,
-  error,
   onDiscard,
   compact = false,
 }: {
   pending: PendingInvitationMetadata | null | undefined
-  admission: MatrixCommunityAdmission | null | undefined
-  checking?: boolean
-  error?: string | null
   onDiscard?: () => void
   compact?: boolean
 }) {
-  const communityName = invitationLabel(admission?.communityName ?? pending?.communityName)
-  const inviter = invitationLabel(
-    admission?.inviterDisplayName ?? pending?.inviterDisplayName,
-  )
+  const communityName = invitationLabel(pending?.communityName)
+  const inviter = invitationLabel(pending?.inviterDisplayName)
   const communityService = invitationLabel(
-    admission?.communityServiceDisplayName
-      ?? pending?.communityServiceDisplayName
-      ?? (admission?.service ? displayServiceAddress(admission.service) : null)
+    pending?.communityServiceDisplayName
       ?? (pending?.service ? displayServiceAddress(pending.service) : null),
   )
-  const route = (admission?.via ?? pending?.via ?? [])
+  const route = (pending?.via ?? [])
     .map(invitationLabel)
     .filter((value): value is string => value !== null)
     .join(', ')
-  const joinRule = plainJoinRule(admission?.joinRule ?? pending?.joinRule)
+  const joinRule = plainJoinRule(pending?.joinRule)
   const title = communityName ?? 'Community invitation'
-  const initial = Array.from(communityName ?? 'C')[0]?.toUpperCase() ?? 'C'
 
   return (
     <section
@@ -1381,12 +1377,13 @@ function CommunityInvitationPassport({
       className={`space-y-3 rounded-panel border border-border-subtle bg-surface-sunken p-3 text-xs leading-5 text-secondary ${compact ? '' : 'sm:p-4'}`}
     >
       <div className="flex items-start gap-3">
-        <span
-          aria-hidden="true"
-          className="flex h-10 w-10 flex-none items-center justify-center rounded-panel bg-accent/10 text-sm font-semibold text-accent"
-        >
-          {initial}
-        </span>
+        <Avatar
+          color="var(--accent)"
+          size={40}
+          name={communityName ?? 'Community invitation'}
+          variant="community"
+          className="flex-none !rounded-panel"
+        />
         <div className="min-w-0 space-y-0.5">
           <p className="text-2xs uppercase tracking-signal text-muted">Community invitation</p>
           <h2 className="truncate text-sm font-semibold text-primary">{title}</h2>
@@ -1427,16 +1424,6 @@ function CommunityInvitationPassport({
           : 'Invitation saved securely on this device and will be used after you sign in. Choose where your account lives below; Mesh checks this invitation and the community rules again before joining.'}
       </p>
 
-      {checking ? (
-        <p role="status" className="rounded-control bg-surface-base px-3 py-2 text-muted">
-          Checking invitation details…
-        </p>
-      ) : null}
-      {error ? (
-        <p role="alert" className="rounded-control border border-status-warning/40 bg-status-warning/10 px-3 py-2 text-secondary">
-          {error}
-        </p>
-      ) : null}
       {onDiscard ? (
         <Button type="button" size="sm" variant="ghost" onClick={onDiscard}>
           Discard invitation
@@ -1462,7 +1449,10 @@ function SavedAccounts({
       aria-label="Saved accounts"
       className="space-y-2 rounded-panel border border-border-subtle bg-surface-sunken p-3"
     >
-      <p className="text-2xs uppercase tracking-signal text-muted">Saved on this device</p>
+      <p className="text-2xs uppercase tracking-signal text-muted">Continue without a password</p>
+      <p className="text-xs leading-5 text-secondary">
+        Mesh remembers accounts used on this device. Choose one to restore its saved session.
+      </p>
       {accounts.map((account) => (
         <button
           key={account.profileId}
@@ -1475,7 +1465,7 @@ function SavedAccounts({
             <span className="block truncate text-sm font-medium text-primary">
               {friendlyAccountName(account.userId)}
             </span>
-            <span className="block truncate text-xs text-muted">Saved account</span>
+            <span className="block truncate text-xs text-muted">Saved on this device</span>
           </span>
           <span className="text-xs font-medium text-accent">
             {switchingProfile === account.profileId ? 'Opening…' : 'Continue'}
@@ -1510,10 +1500,10 @@ function ServiceChoiceCard({
   privacyUrl?: string
 }) {
   return (
-    <article className="space-y-3 rounded-panel border border-border-subtle bg-surface-sunken p-3">
+    <article className="mesh-service-card space-y-3 rounded-panel border border-border-subtle bg-surface-sunken p-4">
       <div className="space-y-1">
         <p className="text-2xs uppercase tracking-signal text-muted">{eyebrow}</p>
-        <h2 className="text-sm font-semibold text-primary">{title}</h2>
+        <h2 className="text-base font-semibold tracking-tight text-primary">{title}</h2>
         <p className="text-xs leading-5 text-secondary">{description}</p>
       </div>
       {termsUrl || privacyUrl ? (
@@ -1541,14 +1531,14 @@ function ServiceChoiceCard({
                 onClick={(event) => {
                   if (onRegister && !onRegister()) event.preventDefault()
                 }}
-                className="no-select inline-flex items-center justify-center rounded-md bg-surface-hover px-4 py-2 text-sm font-medium text-content transition-colors duration-fast hover:bg-surface-active focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                className="mesh-button no-select inline-flex min-h-10 items-center justify-center rounded-control border border-transparent bg-surface-hover px-4 py-2 text-sm font-semibold text-content transition-[background-color,border-color,color,box-shadow,transform] duration-fast hover:bg-surface-active focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               >
                 Create account
               </a>
             )}
             <Button
               type="button"
-              variant="secondary"
+              variant="primary"
               disabled={disabled}
               aria-label={`${actionLabel} with ${title}`}
               onClick={onSelect}
@@ -1560,7 +1550,7 @@ function ServiceChoiceCard({
       ) : (
         <Button
           type="button"
-          variant="secondary"
+          variant="primary"
           className="w-full"
           disabled={disabled}
           aria-label={`${actionLabel} with ${title}`}
@@ -1659,7 +1649,8 @@ function registrationContinuationProblem(
 
 function displayAccountService(service: SelectedAccountService | null): string {
   if (!service) return 'your service'
-  return service.kind === 'public' ? service.service.displayName : service.name
+  if (service.kind === 'public') return service.service.displayName
+  return service.name
 }
 
 function invitationLabel(value: string | null | undefined): string | null {
@@ -1694,12 +1685,15 @@ function capabilitySummary(capabilities: bridge.MatrixServiceCapabilities): stri
   const uploadSummary = capabilities.maxUploadBytes
     ? ` Maximum upload: ${formatBytes(capabilities.maxUploadBytes)}.`
     : ''
+  const invitationOnlySummary = capabilities.registration === 'invitation-only'
+    ? ' Account creation requires an invitation from the service operator.'
+    : ''
   const registrationSummary = capabilities.registration === 'open'
     ? ' Direct account creation is available.'
     : capabilities.registration === 'closed'
       ? ' Direct account creation is closed; use the operator’s registration link if offered.'
       : ''
-  return `Service reached; ${methodSummary}.${registrationSummary}${uploadSummary}`
+  return `Service reached; ${methodSummary}.${invitationOnlySummary || registrationSummary}${uploadSummary}`
 }
 
 function formatBytes(bytes: number): string {

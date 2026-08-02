@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dry-run-legacy-import"
+description = "Enables the dry_run_legacy_import command without any pre-configured scope."
+commands.allow = ["dry_run_legacy_import"]
+
+[[permission]]
+identifier = "deny-dry-run-legacy-import"
+description = "Denies the dry_run_legacy_import command without any pre-configured scope."
+commands.deny = ["dry_run_legacy_import"]

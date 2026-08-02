@@ -54,10 +54,10 @@ tauri-plugin-opener = "=2.5.3"
 tauri-plugin-deep-link = "2"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
-tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-single-instance = "2"
 
 # P2P Networking
-libp2p = { version = "0.54", optional = true, features = [
+libp2p = { version = "0.56", optional = true, features = [
   "tokio",
   "tcp",
   "quic",
@@ -109,7 +109,7 @@ rusqlite = { version = "0.37", features = ["bundled-sqlcipher-vendored-openssl"]
 keyring = "2.3"
 
 # Async runtime
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["full", "test-util"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 
 # Serialization

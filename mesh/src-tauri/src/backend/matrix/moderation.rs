@@ -5,11 +5,9 @@ use crate::backend::{
 
 mod permission_projection;
 
-const MODERATION_AUDIT_PREFIX: &str = "org.mesh.moderation.audit.v1:";
 const MAX_MODERATION_REASON_CHARS: usize = 500;
-const MAX_MODERATION_AUDIT_EVENTS: u32 = 200;
-const MAX_MODERATION_AUDIT_SCAN_EVENTS: usize = 2_000;
 const COMMUNITY_ROLE_POWER_LEVEL_OVERRIDE_JSON: &str = r#"{"events":{"m.room.power_levels":100}}"#;
+const MODERATION_AUDIT_UNAVAILABLE: &str = "A trustworthy moderation audit store is not configured. Room messages are not accepted as authoritative audit evidence.";
 
 // Direct room membership remains authoritative while MSC4284/MSC4204 policy
 // list semantics are unstable; importing them without verified enforcement
@@ -253,31 +251,17 @@ impl MatrixBackend {
         }
     }
 
-    fn moderation_audit_body(entry: &ModerationAuditEntry) -> BackendResult<String> {
-        serde_json::to_string(entry)
-            .map(|json| format!("{MODERATION_AUDIT_PREFIX}{json}"))
-            .map_err(Self::map_error)
-    }
-
-    fn parse_moderation_audit_body(body: &str) -> Option<ModerationAuditEntry> {
-        let json = body.strip_prefix(MODERATION_AUDIT_PREFIX)?;
-        serde_json::from_str(json).ok()
-    }
-
     async fn record_moderation_audit(
-        space: &Room,
-        entry: &ModerationAuditEntry,
+        _space: &Room,
+        _entry: &ModerationAuditEntry,
     ) -> BackendResult<()> {
-        let body = Self::moderation_audit_body(entry)?;
-        let content = RoomMessageEventContent::notice_plain(body);
-        let transaction_id =
-            Self::validate_transaction_id(&format!("moderation-audit-{}", entry.id))?;
-        space
-            .send(content)
-            .with_transaction_id(transaction_id)
-            .await
-            .map(|_| ())
-            .map_err(Self::map_error)
+        // A normal room message can be forged by any current member, replayed
+        // after demotion, copied across communities, or edited/redacted. Until
+        // Mesh has an append-only service with authenticated actor provenance
+        // and historical authorization checks, recording must fail closed.
+        Err(BackendError::InvalidConfiguration(
+            MODERATION_AUDIT_UNAVAILABLE.into(),
+        ))
     }
 
     async fn moderation_space(&self, community_id: &str) -> BackendResult<Room> {
@@ -409,46 +393,14 @@ impl MatrixBackend {
     pub(super) async fn moderation_audit(
         &self,
         community_id: &str,
-        limit: u32,
+        _limit: u32,
     ) -> BackendResult<Vec<ModerationAuditEntry>> {
         let space = self.moderation_space(community_id).await?;
         self.require_community_permission(&space, CommunityPermission::Admin)
             .await?;
-        let requested = limit.clamp(1, MAX_MODERATION_AUDIT_EVENTS) as usize;
-        let mut entries = Vec::with_capacity(requested);
-        let mut from = None;
-        let mut scanned = 0_usize;
-        while entries.len() < requested && scanned < MAX_MODERATION_AUDIT_SCAN_EVENTS {
-            let mut options = MessagesOptions::backward();
-            options.limit = 100_u32.into();
-            options.from = from;
-            let response = space.messages(options).await.map_err(Self::map_error)?;
-            if response.chunk.is_empty() {
-                break;
-            }
-            scanned += response.chunk.len();
-            entries.extend(
-                response
-                    .chunk
-                    .into_iter()
-                    .filter_map(|event| event.raw().deserialize_as::<serde_json::Value>().ok())
-                    .filter_map(|event| {
-                        let sender = event.get("sender").and_then(serde_json::Value::as_str)?;
-                        let entry = event
-                            .get("content")?
-                            .get("body")
-                            .and_then(serde_json::Value::as_str)
-                            .and_then(Self::parse_moderation_audit_body)?;
-                        (entry.actor_user_id == sender).then_some(entry)
-                    }),
-            );
-            let Some(next) = response.end else {
-                break;
-            };
-            from = Some(next);
-        }
-        entries.truncate(requested);
-        Ok(entries)
+        Err(BackendError::InvalidConfiguration(
+            MODERATION_AUDIT_UNAVAILABLE.into(),
+        ))
     }
 }
 
@@ -486,13 +438,62 @@ mod tests {
     }
 
     #[test]
-    fn audit_wire_body_round_trips_complete_room_outcomes() {
-        let expected = audit_entry();
-        let body = MatrixBackend::moderation_audit_body(&expected).unwrap();
-        assert_eq!(
-            MatrixBackend::parse_moderation_audit_body(&body),
-            Some(expected)
-        );
+    fn member_messages_are_never_treated_as_authoritative_audit_records() {
+        let source = include_str!("moderation.rs");
+        let implementation = source.split("#[cfg(test)]").next().unwrap();
+        assert!(!implementation.contains("RoomMessageEventContent::notice_plain"));
+        assert!(!implementation.contains("parse_moderation_audit_body"));
+        assert!(!implementation.contains("org.mesh.moderation.audit.v1:"));
+        assert!(implementation.contains("recording must fail closed"));
+        assert!(implementation.contains("historical authorization checks"));
+        let forged = serde_json::to_string(&audit_entry()).unwrap();
+        assert!(forged.contains("@owner:example.org"));
+        assert!(!implementation.contains("strip_prefix"));
+    }
+
+    #[test]
+    fn forged_former_demoted_cross_community_and_malformed_notices_are_untrusted() {
+        let untrusted = [
+            serde_json::json!({"sender":"@member:example.org","content":{"body":"forged"}}),
+            serde_json::json!({"sender":"@former-mod:example.org","content":{"body":"replayed"}}),
+            serde_json::json!({"sender":"@demoted:example.org","content":{"body":"historical-role-unknown"}}),
+            serde_json::json!({"room_id":"!other:example.org","content":{"body":"copied"}}),
+            serde_json::json!({"content":{"body":{"not":"text"}}}),
+        ];
+        let source = include_str!("moderation.rs");
+        let audit_reader = source
+            .split("pub(super) async fn moderation_audit")
+            .nth(1)
+            .unwrap()
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(!audit_reader.contains(".messages("));
+        assert!(!audit_reader.contains("content"));
+        assert!(audit_reader.contains("MODERATION_AUDIT_UNAVAILABLE"));
+        for event in untrusted {
+            assert!(event.is_object());
+            assert!(!audit_reader.contains(&event.to_string()));
+        }
+    }
+
+    #[test]
+    fn moderation_audit_readers_are_denied_before_the_fail_closed_store_error() {
+        let source = include_str!("moderation.rs");
+        let audit_reader = source
+            .split("pub(super) async fn moderation_audit")
+            .nth(1)
+            .unwrap()
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let permission = audit_reader
+            .find("require_community_permission")
+            .expect("moderator permission guard");
+        let unavailable = audit_reader
+            .find("MODERATION_AUDIT_UNAVAILABLE")
+            .expect("fail-closed audit error");
+        assert!(permission < unavailable);
     }
 
     #[test]

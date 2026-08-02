@@ -117,4 +117,140 @@ describe('registration continuation', () => {
     expect(continuation.correlation).toHaveLength(48)
     expect(inspectRegistrationContinuation(now)).toEqual({ status: 'replayed' })
   })
+
+  it('fails closed when the replay ledger cannot be read', () => {
+    createRegistrationContinuation({
+      invitationTarget: 'opaque-native-handle',
+      accountServiceId: 'matrix-org',
+      accountServiceAddress: 'matrix.org',
+    }, now)
+    const savedRecord = window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY)
+    const storage = {
+      getItem: vi.fn((key: string) => {
+        if (key === REGISTRATION_CONTINUATION_STORAGE_KEY) return savedRecord
+        throw new DOMException('denied', 'SecurityError')
+      }),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    }
+
+    expect(inspectRegistrationContinuation(now, storage)).toEqual({ status: 'unavailable' })
+    expect(storage.removeItem).not.toHaveBeenCalled()
+  })
+
+  it('does not start a continuation when the replay ledger is unavailable', () => {
+    const storage = {
+      getItem: vi.fn(() => { throw new DOMException('denied', 'SecurityError') }),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    }
+
+    expect(() => createRegistrationContinuation({
+      invitationTarget: null,
+      accountServiceId: 'matrix-org',
+      accountServiceAddress: 'matrix.org',
+    }, now, storage)).toThrow('could not save the registration return')
+    expect(storage.setItem).not.toHaveBeenCalled()
+  })
+
+  it('does not report a continuation consumed when its replay tombstone cannot be written', () => {
+    const continuation = createRegistrationContinuation({
+      invitationTarget: null,
+      accountServiceId: 'matrix-org',
+      accountServiceAddress: 'matrix.org',
+    }, now)
+    const savedRecord = window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY)
+    const values = new Map<string, string>()
+    if (savedRecord) values.set(REGISTRATION_CONTINUATION_STORAGE_KEY, savedRecord)
+    const storage = {
+      getItem: vi.fn((key: string) => values.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => {
+        if (key !== REGISTRATION_CONTINUATION_STORAGE_KEY) {
+          throw new DOMException('quota', 'QuotaExceededError')
+        }
+        values.set(key, value)
+      }),
+      removeItem: vi.fn((key: string) => { values.delete(key) }),
+    }
+
+    expect(consumeRegistrationContinuation(continuation.correlation, now, storage))
+      .toEqual({ status: 'unavailable' })
+    expect(values.get(REGISTRATION_CONTINUATION_STORAGE_KEY)).toBe(savedRecord)
+    expect(storage.removeItem).not.toHaveBeenCalled()
+  })
+
+  it('consumes after the replay tombstone is durable even if payload cleanup is denied', () => {
+    const continuation = createRegistrationContinuation({
+      invitationTarget: null,
+      accountServiceId: 'matrix-org',
+      accountServiceAddress: 'matrix.org',
+    }, now)
+    const savedRecord = window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY)
+    const values = new Map<string, string>()
+    if (savedRecord) values.set(REGISTRATION_CONTINUATION_STORAGE_KEY, savedRecord)
+    const storage = {
+      getItem: vi.fn((key: string) => values.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => { values.set(key, value) }),
+      removeItem: vi.fn(() => { throw new DOMException('denied', 'SecurityError') }),
+    }
+
+    expect(consumeRegistrationContinuation(continuation.correlation, now, storage)).toEqual({
+      status: 'consumed',
+      continuation,
+    })
+    expect(inspectRegistrationContinuation(now, storage)).toEqual({ status: 'replayed' })
+  })
+
+  it('handles malformed and expired records when cleanup is denied', () => {
+    const cleanupDenied = {
+      getItem: vi.fn((key: string) => (
+        key === REGISTRATION_CONTINUATION_STORAGE_KEY ? '{not-json' : null
+      )),
+      setItem: vi.fn(() => { throw new DOMException('quota', 'QuotaExceededError') }),
+      removeItem: vi.fn(() => { throw new DOMException('denied', 'SecurityError') }),
+    }
+    expect(() => inspectRegistrationContinuation(now, cleanupDenied)).not.toThrow()
+    expect(inspectRegistrationContinuation(now, cleanupDenied)).toEqual({ status: 'malformed' })
+
+    createRegistrationContinuation({
+      invitationTarget: null,
+      accountServiceId: 'tchncs-de',
+      accountServiceAddress: 'tchncs.de',
+    }, now)
+    const savedRecord = window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY)
+    const expiredCleanupDenied = {
+      getItem: vi.fn((key: string) => (
+        key === REGISTRATION_CONTINUATION_STORAGE_KEY ? savedRecord : null
+      )),
+      setItem: vi.fn(() => { throw new DOMException('quota', 'QuotaExceededError') }),
+      removeItem: vi.fn(() => { throw new DOMException('denied', 'SecurityError') }),
+    }
+
+    expect(inspectRegistrationContinuation(
+      now + REGISTRATION_CONTINUATION_TTL_MS,
+      expiredCleanupDenied,
+    )).toEqual({ status: 'expired' })
+    expect(() => clearRegistrationContinuation(now, expiredCleanupDenied)).not.toThrow()
+  })
+
+  it('invalidates the active continuation when the replay ledger is malformed', () => {
+    createRegistrationContinuation({
+      invitationTarget: null,
+      accountServiceId: 'matrix-org',
+      accountServiceAddress: 'matrix.org',
+    }, now)
+    const savedRecord = window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY)
+    const values = new Map<string, string>([
+      [REGISTRATION_CONTINUATION_STORAGE_KEY, savedRecord ?? ''],
+      ['mesh-registration-continuation-used-v1', '[{"correlation":"invalid"}]'],
+    ])
+    const storage = {
+      getItem: vi.fn((key: string) => values.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => { values.set(key, value) }),
+      removeItem: vi.fn((key: string) => { values.delete(key) }),
+    }
+
+    expect(inspectRegistrationContinuation(now, storage)).toEqual({ status: 'malformed' })
+    expect(values.has(REGISTRATION_CONTINUATION_STORAGE_KEY)).toBe(false)
+  })
 })

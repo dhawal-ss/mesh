@@ -23,6 +23,7 @@ import { useShellStore } from '../../store/shell'
 import type { DirectMessage, Message as MessageType } from '../../types/ipc'
 import { EmptyState } from '../ui/Primitives'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
+import { Avatar } from '../ui/Avatar'
 import { Icon } from '../ui/Icon'
 import { MessageSkeleton } from '../ui/Skeleton'
 import { DmTrustSummary } from './DmTrustSummary'
@@ -173,12 +174,19 @@ export function DmView() {
   const setSecurityOpen = useShellStore((state) => state.setSecurityOpen)
   const matrixMode = bridge.isMatrixBackend()
   const ownAuthorId = matrixMode ? bridge.getMatrixUserId() : identity?.publicKey
-  const [loadingConversationId, setLoadingConversationId] = useState<string | null>(null)
+  const messageLoad = useDmStore((state) => (
+    activeConversationId ? state.messageLoads[activeConversationId] : undefined
+  ))
   const [blockState, setBlockState] = useState<{
     peerPublicKey: string
     blocked: boolean
   } | null>(null)
   const [isBlockBusy, setIsBlockBusy] = useState(false)
+  const [blockError, setBlockError] = useState<unknown | null>(null)
+  const [markReadError, setMarkReadError] = useState<{
+    conversationId: string
+    error: unknown
+  } | null>(null)
   const [replyingTo, setReplyingTo] = useState<MessageType | null>(null)
   const [threadReplyRoot, setThreadReplyRoot] = useState<MessageType | null>(null)
   const [openThreadId, setOpenThreadId] = useState<string | null>(null)
@@ -257,11 +265,14 @@ export function DmView() {
   )
   const trust = useRoomTrust(activeConversationId, trustMembers)
   const peerPublicKey = conversation?.peerPublicKey
-  const isLoading = loadingConversationId === activeConversationId
+  const isLoading = (!messageLoad || messageLoad.status === 'idle' || messageLoad.status === 'loading')
+    && visibleChannelMessages.length === 0
+  const loadFailed = messageLoad?.status === 'failed'
   const isBlocked =
     Boolean(peerPublicKey)
     && blockState?.peerPublicKey === peerPublicKey
     && Boolean(blockState?.blocked)
+  const sendingProtectionUnavailable = matrixMode && trust.protection !== 'protected'
 
   const beginThreadReply = useCallback(
     (root: MessageType, target: MessageType = root) => {
@@ -277,6 +288,18 @@ export function DmView() {
   }, [])
   const toggleThread = useCallback((messageId: string) => {
     setOpenThreadId((current) => current === messageId ? null : messageId)
+  }, [])
+
+  const markConversationRead = useCallback(async (conversationId: string) => {
+    try {
+      await bridge.markDmRead(conversationId)
+      useDmStore.getState().patchConversation(conversationId, { unreadCount: 0 })
+      setMarkReadError((current) => (
+        current?.conversationId === conversationId ? null : current
+      ))
+    } catch (error) {
+      setMarkReadError({ conversationId, error })
+    }
   }, [])
 
   useEffect(() => {
@@ -309,20 +332,18 @@ export function DmView() {
     const conversationId = activeConversationId
     void Promise.resolve().then(async () => {
       if (!active) return
-      setLoadingConversationId(conversationId)
       try {
         await loadMessages(conversationId)
-        await bridge.markDmRead(conversationId)
+        if (!active) return
+        await markConversationRead(conversationId)
       } catch (error) {
         if (active) console.error('Failed to load direct messages:', error)
-      } finally {
-        if (active) setLoadingConversationId(null)
       }
     })
     return () => {
       active = false
     }
-  }, [activeConversationId, loadMessages])
+  }, [activeConversationId, loadMessages, markConversationRead])
 
   useEffect(() => {
     resetLayout()
@@ -539,6 +560,7 @@ export function DmView() {
         .getState()
         .updateReaction(activeConversationId, message.id, emoji, ownAuthorId, revertVerb)
       console.error('Failed to update DM reaction:', error)
+      throw error
     }
   }, [activeConversationId, matrixMode, ownAuthorId, updateDirectReaction])
 
@@ -565,6 +587,7 @@ export function DmView() {
   const handleToggleBlocked = async () => {
     if (!matrixMode || !conversation || isBlockBusy) return
     setIsBlockBusy(true)
+    setBlockError(null)
     try {
       const blocked = await bridge.matrixSetDmBlocked(
         conversation.peerPublicKey,
@@ -573,6 +596,7 @@ export function DmView() {
       setBlockState({ peerPublicKey: conversation.peerPublicKey, blocked })
     } catch (error) {
       console.error('Failed to update Matrix DM block state:', error)
+      setBlockError(error)
     } finally {
       setIsBlockBusy(false)
     }
@@ -599,13 +623,12 @@ export function DmView() {
         className="mesh-conversation-header flex h-conversation-header flex-shrink-0 items-center border-b border-border-subtle px-4 py-2"
         data-tauri-drag-region
       >
-        <div
-          className="mr-2 flex h-6 w-6 items-center justify-center rounded-control text-micro font-semibold text-content-on-avatar/90"
-          data-design-token-exception="data-driven-federated-avatar-color"
-          style={{ backgroundColor: conversation.peerAvatarColor }}
-        >
-          {peerName[0]?.toUpperCase() ?? '?'}
-        </div>
+        <Avatar
+          color={conversation.peerAvatarColor}
+          size={24}
+          name={peerName}
+          className="mr-2"
+        />
         <span className="min-w-0">
           <span className="block truncate text-sm font-medium text-primary">
             {peerName}
@@ -660,6 +683,38 @@ export function DmView() {
         </div>
       )}
 
+      {blockError != null && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-status-warning/20 bg-status-warning/10 px-4 py-2 text-xs text-secondary"
+        >
+          <span>The block setting could not be changed.</span>
+          <button
+            type="button"
+            className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+            onClick={() => void handleToggleBlocked()}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {markReadError?.conversationId === activeConversationId && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-status-warning/20 bg-status-warning/10 px-4 py-2 text-xs text-secondary"
+        >
+          <span>This conversation could not be marked as read.</span>
+          <button
+            type="button"
+            className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+            onClick={() => void markConversationRead(activeConversationId)}
+          >
+            Retry read status
+          </button>
+        </div>
+      )}
+
       <div
         ref={scrollContainerRef}
         onScroll={() => void handleScroll()}
@@ -668,7 +723,25 @@ export function DmView() {
         aria-live="off"
         aria-label={`Messages with ${peerName}`}
       >
-        {isLoading ? (
+        {loadFailed && visibleChannelMessages.length === 0 ? (
+          <div className="flex h-full items-center justify-center px-4">
+            <div
+              role="alert"
+              className="max-w-sm rounded-panel border border-status-warning/30 bg-status-warning/10 p-4 text-center text-sm text-secondary"
+            >
+              <p>Messages could not be loaded. This conversation has not been marked as read.</p>
+              <button
+                type="button"
+                className="mt-3 min-h-8 rounded-control px-3 font-semibold text-text-link hover:bg-surface-hover"
+                onClick={() => void loadMessages(activeConversationId)
+                  .then(() => markConversationRead(activeConversationId))
+                  .catch(() => {})}
+              >
+                Retry messages
+              </button>
+            </div>
+          </div>
+        ) : isLoading ? (
           <div aria-label="Loading messages" role="status">
             {Array.from({ length: 8 }).map((_, index) => (
               <MessageSkeleton key={index} />
@@ -772,6 +845,22 @@ export function DmView() {
         )}
       </div>
 
+      {loadFailed && visibleChannelMessages.length > 0 && (
+        <div
+          role="alert"
+          className="mx-4 mb-2 flex flex-wrap items-center justify-between gap-2 rounded-control border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs text-secondary"
+        >
+          <span>Could not refresh messages. Showing the last update.</span>
+          <button
+            type="button"
+            className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+            onClick={() => void loadMessages(activeConversationId).catch(() => {})}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {isBlocked && (
         <div className="mx-4 mb-2 rounded-panel border border-status-danger/20 bg-status-danger/5 px-3 py-2 text-xs text-status-danger">
           Messages from this user are blocked. Unblock them to resume this
@@ -800,12 +889,24 @@ export function DmView() {
           </button>
         </div>
       )}
+      {sendingProtectionUnavailable && (
+        <div
+          role="status"
+          className="border-t border-status-warning/30 bg-status-warning/10 px-4 py-2 text-xs text-secondary"
+        >
+          {trust.protection === 'checking'
+            ? "Checking this conversation's protection before sending."
+            : trust.protection === 'unencrypted'
+              ? 'Sending is unavailable because this conversation is not protected end to end.'
+              : "Sending is unavailable until this conversation's protection can be verified."}
+        </div>
+      )}
       <MessageInput
         channelId={activeConversationId}
         channelName={peerName}
         onSend={handleSend}
         disableAttachments={false}
-        disabled={matrixMode && isBlocked}
+        disabled={(matrixMode && isBlocked) || sendingProtectionUnavailable}
         onEditLastMessage={() => {
           const ownMessage = [...channelMessages]
             .reverse()

@@ -1,6 +1,6 @@
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   CommandPalette,
   accountServiceContext,
@@ -102,6 +102,25 @@ describe('command palette helpers', () => {
 
     expect(document.querySelector('[role="dialog"]')).not.toBeNull()
     expect(document.querySelector('input[role="combobox"]')).not.toBeNull()
+  })
+
+  it('opens when recent-command storage is denied', () => {
+    const read = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Storage access denied', 'SecurityError')
+    })
+    try {
+      mountedContainer = document.createElement('div')
+      document.body.appendChild(mountedContainer)
+      mountedRoot = createRoot(mountedContainer)
+      act(() => mountedRoot?.render(createElement(CommandPalette)))
+
+      act(() => window.dispatchEvent(new Event(COMMAND_PALETTE_OPEN_EVENT)))
+
+      expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+      expect(document.querySelector('input[role="combobox"]')).not.toBeNull()
+    } finally {
+      read.mockRestore()
+    }
   })
 
   it('opens from the visible affordance event and renders taxonomy as section headings', () => {

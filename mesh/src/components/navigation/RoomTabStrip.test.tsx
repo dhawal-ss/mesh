@@ -110,7 +110,9 @@ describe('RoomTabStrip', () => {
         bubbles: true,
       }))
     })
-    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(1)
+    // A single open conversation is already obvious in the room header, so the
+    // strip disappears until there are multiple conversations to manage.
+    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(0)
 
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', {

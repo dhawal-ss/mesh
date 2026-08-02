@@ -99,7 +99,12 @@ export function UserPanel() {
           onClick={openSettings}
           aria-label={`User settings for ${identity.displayName}`}
         >
-          <Avatar color={identity.avatarColor} size={32} name={identity.displayName} />
+          <Avatar
+            color={identity.avatarColor}
+            size={32}
+            name={identity.displayName}
+            imageUrl={identity.avatarUrl}
+          />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium leading-tight text-primary">
               {identity.displayName}

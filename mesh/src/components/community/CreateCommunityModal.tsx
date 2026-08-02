@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
@@ -6,17 +6,24 @@ import { Input } from '../ui/Input'
 import { ErrorState } from '../ui/ErrorState'
 import { useCommunityStore } from '../../store/communities'
 import { useChannelStore } from '../../store/channels'
-import { useShellStore } from '../../store/shell'
 import * as bridge from '../../lib/bridge'
 import { describeJoinRule } from '../../lib/community-access'
 import { transitions } from '../../lib/motion'
-import type { CommunityDirectoryEntry } from '../../types/ipc'
+import type { Community, CommunityDirectoryEntry } from '../../types/ipc'
 import { showToast } from '../ui/Toast'
+import { Avatar } from '../ui/Avatar'
+import { pixelColorForSeed } from '../ui/PixelMark'
 
 export type CreateCommunityTab = 'create' | 'join' | 'discover'
 type ServerTemplate = 'gaming' | 'friends' | 'community'
+type CreationPhase =
+  | 'idle'
+  | 'community'
+  | 'starter-rooms'
+  | 'activation'
+  | 'refresh'
+  | 'partial'
 
-const SERVER_ICONS = ['🎮', '🌟', '🧭', '🎨', '🏡'] as const
 const SERVER_TEMPLATES: Record<
   ServerTemplate,
   { label: string; description: string; channels: string[] }
@@ -58,10 +65,12 @@ export function CreateCommunityModal({
 
   const [communityName, setCommunityName] = useState('')
   const [communityDescription, setCommunityDescription] = useState('')
-  const [communityIcon, setCommunityIcon] = useState<(typeof SERVER_ICONS)[number]>('🌟')
   const [serverTemplate, setServerTemplate] = useState<ServerTemplate>('friends')
   const [createStep, setCreateStep] = useState<1 | 2>(1)
   const [createError, setCreateError] = useState<unknown | null>(null)
+  const [creationPhase, setCreationPhase] = useState<CreationPhase>('idle')
+  const [createdCommunity, setCreatedCommunity] = useState<Community | null>(null)
+  const creationInFlightRef = useRef(false)
 
   const [inviteLink, setInviteLink] = useState(initialInvite)
   const [joinError, setJoinError] = useState<unknown | null>(null)
@@ -75,15 +84,16 @@ export function CreateCommunityModal({
 
   const addCommunity = useCommunityStore((s) => s.addCommunity)
   const setActiveCommunity = useCommunityStore((s) => s.setActiveCommunity)
-  const setChannels = useChannelStore((s) => s.setChannels)
+  const replaceCommunityChannels = useChannelStore((s) => s.replaceCommunityChannels)
 
   const resetForm = () => {
     setCommunityName('')
     setCommunityDescription('')
-    setCommunityIcon('🌟')
     setServerTemplate('friends')
     setCreateStep(1)
     setCreateError(null)
+    setCreationPhase('idle')
+    setCreatedCommunity(null)
     setInviteLink('')
     setJoinError(null)
     setJoinStatus('')
@@ -102,32 +112,69 @@ export function CreateCommunityModal({
   }
 
   const handleCreate = async () => {
-    if (!communityName.trim()) return
+    if (!communityName.trim() || creationInFlightRef.current) return
+    creationInFlightRef.current = true
     setIsLoading(true)
     setCreateError(null)
+    let community = createdCommunity
+    let starterRoomFailure: unknown | null = null
     try {
-      const community = await bridge.createCommunity(
-        `${communityIcon} ${communityName.trim()}`,
-        communityDescription.trim(),
-      )
+      if (!community) {
+        setCreationPhase('community')
+        community = await bridge.createCommunity(
+          communityName.trim(),
+          communityDescription.trim(),
+        )
+        setCreatedCommunity(community)
+        addCommunity(community)
+      }
+
+      setCreationPhase('starter-rooms')
+      let existingChannels = await bridge.getChannels(community.id)
+      for (const channelName of SERVER_TEMPLATES[serverTemplate].channels) {
+        const alreadyExists = existingChannels.some(
+          (channel) => channel.name.trim().toLocaleLowerCase() === channelName.toLocaleLowerCase(),
+        )
+        if (alreadyExists) continue
+        try {
+          const created = await bridge.createChannel(community.id, channelName, 'text')
+          existingChannels = [...existingChannels, created]
+        } catch (error) {
+          starterRoomFailure ??= error
+        }
+      }
+
+      setCreationPhase('activation')
       addCommunity(community)
       setActiveCommunity(community.id)
-      const templateResults = await Promise.allSettled(
-        SERVER_TEMPLATES[serverTemplate].channels.map((channelName) =>
-          bridge.createChannel(community.id, channelName, 'text'),
+
+      setCreationPhase('refresh')
+      const channels = await bridge.getChannels(community.id)
+      replaceCommunityChannels(community.id, channels)
+      const missingStarterRooms = SERVER_TEMPLATES[serverTemplate].channels.filter(
+        (channelName) => !channels.some(
+          (channel) => channel.name.trim().toLocaleLowerCase() === channelName.toLocaleLowerCase(),
         ),
       )
-      if (templateResults.some((result) => result.status === 'rejected')) {
-        console.warn('The community was created, but one or more starter rooms could not be added.')
+
+      if (starterRoomFailure && missingStarterRooms.length > 0) {
+        setCreationPhase('partial')
+        setCreateError(starterRoomFailure)
+        showToast(
+          `${community.name} was created, but some starter rooms still need setup.`,
+          'error',
+        )
+      } else {
+        handleClose()
       }
-      const channels = await bridge.getChannels(community.id)
-      setChannels(channels)
-      handleClose()
     } catch (err) {
+      setCreationPhase(community ? 'partial' : 'idle')
       setCreateError(err)
       console.error('Failed to create community:', err)
+    } finally {
+      creationInFlightRef.current = false
+      setIsLoading(false)
     }
-    setIsLoading(false)
   }
 
   const handleJoin = async () => {
@@ -136,14 +183,6 @@ export function CreateCommunityModal({
     setJoinError(null)
     setJoinStatus('')
     try {
-      if (matrixMode) {
-        const pending = await bridge.storePendingInvitation(inviteLink.trim())
-        useShellStore.getState().setPendingInvitation(pending)
-        showToast('Review the invitation details before Mesh continues.', 'success')
-        handleClose()
-        setIsLoading(false)
-        return
-      }
       const outcome = await bridge.joinOrRequestCommunity(inviteLink.trim())
       if (outcome.status === 'knocked' || !outcome.community) {
         setJoinStatus(
@@ -156,7 +195,7 @@ export function CreateCommunityModal({
       addCommunity(community)
       setActiveCommunity(community.id)
       const channels = await bridge.getChannels(community.id)
-      setChannels(channels)
+      replaceCommunityChannels(community.id, channels)
       handleClose()
     } catch (err) {
       setJoinError(err)
@@ -187,7 +226,7 @@ export function CreateCommunityModal({
         const community = await bridge.joinCommunity(target)
         addCommunity(community)
         setActiveCommunity(community.id)
-        setChannels(await bridge.getChannels(community.id))
+        replaceCommunityChannels(community.id, await bridge.getChannels(community.id))
         handleClose()
         return
       }
@@ -196,7 +235,10 @@ export function CreateCommunityModal({
       if (result.status === 'joined' && result.community) {
         addCommunity(result.community)
         setActiveCommunity(result.community.id)
-        setChannels(await bridge.getChannels(result.community.id))
+        replaceCommunityChannels(
+          result.community.id,
+          await bridge.getChannels(result.community.id),
+        )
         handleClose()
         return
       }
@@ -211,6 +253,7 @@ export function CreateCommunityModal({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.currentTarget instanceof HTMLTextAreaElement) return
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       if (tab === 'create') {
@@ -277,7 +320,7 @@ export function CreateCommunityModal({
               transition={transitions.enter}
             >
               <p className="mb-4 text-xs text-muted">
-                Step {createStep} of 2 · {createStep === 1 ? 'Name and icon' : 'Choose a starting layout'}
+                Step {createStep} of 2 · {createStep === 1 ? 'Name and identity' : 'Choose a starting layout'}
               </p>
 
               {createStep === 1 ? (
@@ -293,34 +336,29 @@ export function CreateCommunityModal({
                     placeholder="e.g. Design Club"
                     autoFocus
                   />
-                  <fieldset>
-                    <legend className="mb-1.5 text-xs font-semibold uppercase text-muted">
-                      Icon
-                    </legend>
-                    <div className="flex flex-wrap gap-2">
-                      {SERVER_ICONS.map((icon) => (
-                        <button
-                          key={icon}
-                          type="button"
-                          className={`flex h-10 w-10 items-center justify-center rounded-md text-lg ${
-                            communityIcon === icon
-                              ? 'bg-accent ring-2 ring-accent'
-                               : 'bg-surface-hover hover:bg-surface-active'
-                          }`}
-                          aria-label={`Use ${icon} as the community icon`}
-                          aria-pressed={communityIcon === icon}
-                          onClick={() => setCommunityIcon(icon)}
-                        >
-                          {icon}
-                        </button>
-                      ))}
+                  <div className="flex items-center gap-3 rounded-control border border-border-subtle bg-surface-sunken p-3">
+                    <Avatar
+                      color={pixelColorForSeed(communityName || 'new-community')}
+                      size={44}
+                      name={communityName || 'New community'}
+                      variant="community"
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-primary">Mesh pixel identity</p>
+                      <p className="mt-0.5 text-xs text-muted">
+                        Your community starts with a distinct pixel mark. A custom image replaces it when one is set.
+                      </p>
                     </div>
-                  </fieldset>
+                  </div>
                   <div>
-                    <label className="mb-1.5 block text-xs font-semibold uppercase text-muted">
+                    <label
+                      htmlFor="create-community-description"
+                      className="mb-1.5 block text-xs font-semibold uppercase text-muted"
+                    >
                       Description
                     </label>
                     <textarea
+                      id="create-community-description"
                       value={communityDescription}
                       onChange={(e) => setCommunityDescription(e.target.value)}
                       onKeyDown={handleKeyDown}
@@ -357,11 +395,25 @@ export function CreateCommunityModal({
               {createError != null && (
                 <ErrorState
                   error={createError}
-                  context={{ operation: 'create this community', resource: 'community' }}
+                  context={{
+                    operation: createdCommunity
+                      ? 'finish setting up this community'
+                      : 'create this community',
+                    resource: 'community',
+                  }}
                   onAction={handleCreate}
                   className="mt-3"
                   compact
                 />
+              )}
+
+              {createdCommunity && creationPhase === 'partial' && (
+                <p
+                  role="status"
+                  className="mt-3 rounded-control border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-sm text-secondary"
+                >
+                  {createdCommunity.name} exists. Retry will add only missing rooms and refresh its room list.
+                </p>
               )}
 
               <div className="mt-4 flex gap-2">
@@ -378,7 +430,19 @@ export function CreateCommunityModal({
                   disabled={!communityName.trim() || isLoading}
                   className="flex-1"
                 >
-                  {createStep === 1 ? 'Next' : isLoading ? 'Creating…' : 'Create Community'}
+                  {createStep === 1
+                    ? 'Next'
+                    : isLoading
+                      ? creationPhase === 'community'
+                        ? 'Creating community…'
+                        : creationPhase === 'starter-rooms'
+                          ? 'Adding starter rooms…'
+                          : creationPhase === 'refresh'
+                            ? 'Refreshing rooms…'
+                            : 'Finishing setup…'
+                      : createdCommunity
+                        ? 'Finish setup'
+                        : 'Create Community'}
                 </Button>
               </div>
             </motion.div>
@@ -455,10 +519,14 @@ export function CreateCommunityModal({
                   placeholder="Leave blank to search Mesh"
                 />
                 <div>
-                  <label className="mb-1.5 block text-xs font-semibold uppercase text-muted">
+                  <label
+                    htmlFor="community-application-note"
+                    className="mb-1.5 block text-xs font-semibold uppercase text-muted"
+                  >
                     Application note (optional)
                   </label>
                   <textarea
+                    id="community-application-note"
                     value={applicationReason}
                     onChange={(event) => setApplicationReason(event.target.value)}
                     rows={2}

@@ -7,9 +7,10 @@ name: Nightly Soak
 #   1. All 13 live libp2p tests (~70s)
 #   2. 60-second leak-detection soak (Phase A baseline + Phase B churn)
 #   3. 45-second topology churn soak
-#   4. A real PostgreSQL dump and isolated Synapse restore drill
+#   4. Two independent real PostgreSQL dump and isolated Synapse restore drills
 #
-# Total runtime: ~4 minutes per run.
+# Legacy soak runtime is about four minutes; repeated restore runtime is
+# independently bounded by its 30-minute job timeout.
 #
 # Full output is captured as an artifact so regressions can be diagnosed
 # after the fact.
@@ -39,15 +40,50 @@ jobs:
   homeserver-restore-drill:
     name: Homeserver restore drill
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Restore a real Synapse backup into isolated services
+      - name: Repeatedly restore real Synapse backups into isolated services
         working-directory: mesh
         env:
           MESH_RUN_RESTORE_INTEGRATION: "1"
-        run: sh infra/homeserver/tests/restore-drill.integration.sh
+          MESH_ABUSE_EMAIL: abuse@mesh.restore.test
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p restore-drill-evidence
+          for iteration in 1 2; do
+            echo "Starting destructive restore drill iteration $iteration of 2."
+            MESH_RESTORE_DRILL_ITERATION="$iteration" \
+              sh infra/homeserver/tests/restore-drill.integration.sh \
+              2>&1 | tee "restore-drill-evidence/restore-cycle-$iteration.log"
+          done
+
+          source_sha="$(git rev-parse HEAD)"
+          cycle_1_sha="$(sha256sum restore-drill-evidence/restore-cycle-1.log | awk '{ print $1 }')"
+          cycle_2_sha="$(sha256sum restore-drill-evidence/restore-cycle-2.log | awk '{ print $1 }')"
+          printf '%s\n' \
+            '{' \
+            '  "schemaVersion": 1,' \
+            "  \"sourceSha\": \"$source_sha\"," \
+            "  \"workflowRunId\": \"$GITHUB_RUN_ID\"," \
+            '  "status": "passed",' \
+            '  "independentRestoreCycles": 2,' \
+            '  "cycles": [' \
+            "    { \"iteration\": 1, \"log\": \"restore-cycle-1.log\", \"sha256\": \"$cycle_1_sha\" }," \
+            "    { \"iteration\": 2, \"log\": \"restore-cycle-2.log\", \"sha256\": \"$cycle_2_sha\" }" \
+            '  ]' \
+            '}' > restore-drill-evidence/restore-drill-report.json
+
+      - name: Upload repeated restore evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: homeserver-restore-drill-${{ github.sha }}-${{ github.run_number }}
+          path: mesh/restore-drill-evidence/
+          if-no-files-found: error
+          retention-days: 90
 
   soak:
     name: Long-duration soak

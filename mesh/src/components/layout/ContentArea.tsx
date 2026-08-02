@@ -53,7 +53,7 @@ export function ContentArea() {
   ))
   const roomContextWidth = usePersistentPanelWidth({
     storageKey: ROOM_CONTEXT_WIDTH_KEY,
-    defaultWidth: 264,
+    defaultWidth: 260,
     minimum: 240,
     maximum: 420,
   })

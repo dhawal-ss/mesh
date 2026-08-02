@@ -3,20 +3,277 @@ use std::path::Path;
 use tokio::fs::{DirBuilder, File, OpenOptions};
 
 pub(crate) const BLOCKED_ATTACHMENT_EXTENSIONS: &[&str] = &[
-    "app", "bat", "chm", "cmd", "com", "command", "cpl", "desktop", "dll", "exe", "gadget", "hta",
-    "inf", "jar", "jnlp", "js", "jse", "lnk", "msc", "msh", "msh1", "msh2", "msi", "pif", "ps1",
-    "ps1xml", "ps2", "ps2xml", "psc1", "psc2", "reg", "rgs", "scf", "scr", "sct", "shb", "shs",
-    "sys", "url", "vbe", "vbs", "wasm", "ws", "wsc", "wsf", "wsh",
+    "apk",
+    "app",
+    "appimage",
+    "appinstaller",
+    "appx",
+    "appxbundle",
+    "bash",
+    "bat",
+    "bin",
+    "chm",
+    "cmd",
+    "com",
+    "command",
+    "cpl",
+    "csh",
+    "deb",
+    "desktop",
+    "dll",
+    "dmg",
+    "docm",
+    "dotm",
+    "exe",
+    "fish",
+    "gadget",
+    "hta",
+    "htm",
+    "html",
+    "img",
+    "inf",
+    "iso",
+    "jar",
+    "jnlp",
+    "js",
+    "jse",
+    "ksh",
+    "lnk",
+    "lua",
+    "mjs",
+    "msc",
+    "msh",
+    "msh1",
+    "msh2",
+    "msi",
+    "msix",
+    "msixbundle",
+    "pif",
+    "pl",
+    "potm",
+    "ppam",
+    "ppsm",
+    "pptm",
+    "ps1",
+    "ps1xml",
+    "ps2",
+    "ps2xml",
+    "psc1",
+    "psc2",
+    "psd1",
+    "psm1",
+    "py",
+    "pyc",
+    "pyo",
+    "pyw",
+    "rb",
+    "reg",
+    "rgs",
+    "rpm",
+    "scf",
+    "scr",
+    "sct",
+    "sh",
+    "shb",
+    "shs",
+    "sldm",
+    "svg",
+    "sys",
+    "url",
+    "vbe",
+    "vbs",
+    "vhd",
+    "vhdx",
+    "wasm",
+    "ws",
+    "wsc",
+    "wsf",
+    "wsh",
+    "xht",
+    "xhtml",
+    "xlsm",
+    "xltm",
+    "zsh",
 ];
 
-pub(crate) fn has_blocked_attachment_extension(path: &Path) -> bool {
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            BLOCKED_ATTACHMENT_EXTENSIONS
-                .iter()
-                .any(|blocked| blocked.eq_ignore_ascii_case(extension))
-        })
+const ACTIVE_ATTACHMENT_CONTENT_TYPES: &[&str] = &[
+    "application/ecmascript",
+    "application/hta",
+    "application/javascript",
+    "application/vnd.microsoft.portable-executable",
+    "application/vnd.ms-htmlhelp",
+    "application/vnd.ms-office",
+    "application/vnd.ms-powerpoint.addin.macroenabled.12",
+    "application/vnd.ms-powerpoint.presentation.macroenabled.12",
+    "application/vnd.ms-powerpoint.slideshow.macroenabled.12",
+    "application/vnd.ms-powerpoint.template.macroenabled.12",
+    "application/vnd.ms-word.document.macroenabled.12",
+    "application/vnd.ms-word.template.macroenabled.12",
+    "application/vnd.ms-excel.addin.macroenabled.12",
+    "application/vnd.ms-excel.sheet.macroenabled.12",
+    "application/vnd.ms-excel.template.macroenabled.12",
+    "application/vnd.ms-excel.sheet.binary.macroenabled.12",
+    "application/x-bat",
+    "application/x-csh",
+    "application/x-dosexec",
+    "application/x-executable",
+    "application/x-httpd-php",
+    "application/x-iso9660-image",
+    "application/x-javascript",
+    "application/x-msdownload",
+    "application/x-msi",
+    "application/x-powershell",
+    "application/x-python",
+    "application/x-sh",
+    "application/x-shellscript",
+    "application/x-shockwave-flash",
+    "application/xhtml+xml",
+    "image/svg+xml",
+    "text/ecmascript",
+    "text/html",
+    "text/javascript",
+    "text/x-python",
+    "text/x-script.python",
+    "text/x-shellscript",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AttachmentDisposition {
+    Safe,
+    Active,
+    Ambiguous,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AttachmentClassification {
+    pub disposition: AttachmentDisposition,
+    pub reason: &'static str,
+}
+
+fn normalized_content_type(content_type: Option<&str>) -> Option<String> {
+    content_type
+        .and_then(|value| value.split(';').next())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_ascii_lowercase)
+}
+
+fn executable_signature(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"MZ")
+        || bytes.starts_with(b"\x7fELF")
+        || bytes.starts_with(b"#!")
+        || bytes.starts_with(b"\xfe\xed\xfa\xce")
+        || bytes.starts_with(b"\xce\xfa\xed\xfe")
+        || bytes.starts_with(b"\xfe\xed\xfa\xcf")
+        || bytes.starts_with(b"\xcf\xfa\xed\xfe")
+        || bytes.starts_with(b"\xca\xfe\xba\xbe")
+}
+
+fn active_text_signature(bytes: &[u8]) -> bool {
+    let prefix = String::from_utf8_lossy(&bytes[..bytes.len().min(4096)]).to_ascii_lowercase();
+    let prefix = prefix
+        .trim_start_matches(|character: char| character.is_whitespace() || character == '\u{feff}');
+    prefix.starts_with("<!doctype html")
+        || prefix.starts_with("<html")
+        || prefix.starts_with("<svg")
+        || prefix.starts_with("<script")
+        || prefix.starts_with("<?xml") && prefix.contains("<svg")
+}
+
+fn recognized_safe_signature(extension: Option<&str>, bytes: &[u8]) -> bool {
+    match extension {
+        Some("png") => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
+        Some("jpg" | "jpeg") => bytes.starts_with(b"\xff\xd8\xff"),
+        Some("gif") => bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a"),
+        Some("webp") => bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP",
+        Some("wav") => bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WAVE",
+        Some("ogg" | "oga" | "ogv") => bytes.starts_with(b"OggS"),
+        Some("flac") => bytes.starts_with(b"fLaC"),
+        Some("mp3") => bytes.starts_with(b"ID3") || bytes.first() == Some(&0xff),
+        Some("mp4" | "m4a" | "m4v" | "mov") => bytes.len() >= 12 && &bytes[4..8] == b"ftyp",
+        Some("txt" | "md" | "csv" | "json") => !bytes.contains(&0),
+        _ => false,
+    }
+}
+
+/// Classify an attachment from every native signal available at the boundary.
+///
+/// `prefix` should contain up to the first 4 KiB for intake/opening and may be
+/// the complete buffer for Matrix transfers. Unknown containers remain
+/// saveable but are never considered safe for direct OS opening.
+pub(crate) fn classify_attachment(
+    filename: &str,
+    content_type: Option<&str>,
+    prefix: &[u8],
+) -> AttachmentClassification {
+    let extension = Path::new(filename)
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(str::to_ascii_lowercase);
+    if extension.as_deref().is_some_and(|extension| {
+        BLOCKED_ATTACHMENT_EXTENSIONS
+            .iter()
+            .any(|blocked| blocked.eq_ignore_ascii_case(extension))
+    }) {
+        return AttachmentClassification {
+            disposition: AttachmentDisposition::Active,
+            reason: "active filename",
+        };
+    }
+
+    let content_type = normalized_content_type(content_type);
+    if content_type.as_deref().is_some_and(|content_type| {
+        ACTIVE_ATTACHMENT_CONTENT_TYPES
+            .iter()
+            .any(|blocked| blocked.eq_ignore_ascii_case(content_type))
+    }) {
+        return AttachmentClassification {
+            disposition: AttachmentDisposition::Active,
+            reason: "active content type",
+        };
+    }
+    if executable_signature(prefix) || active_text_signature(prefix) {
+        return AttachmentClassification {
+            disposition: AttachmentDisposition::Active,
+            reason: "active file contents",
+        };
+    }
+
+    let expected_type = match extension.as_deref() {
+        Some("png") => Some("image/png"),
+        Some("jpg" | "jpeg") => Some("image/jpeg"),
+        Some("gif") => Some("image/gif"),
+        Some("webp") => Some("image/webp"),
+        Some("wav") => Some("audio/wav"),
+        Some("ogg" | "oga") => Some("audio/ogg"),
+        Some("flac") => Some("audio/flac"),
+        Some("mp3") => Some("audio/mpeg"),
+        Some("mp4" | "m4v" | "mov") => Some("video/mp4"),
+        Some("m4a") => Some("audio/mp4"),
+        Some("txt" | "md") => Some("text/plain"),
+        Some("csv") => Some("text/csv"),
+        Some("json") => Some("application/json"),
+        _ => None,
+    };
+    if let (Some(expected), Some(declared)) = (expected_type, content_type.as_deref()) {
+        if declared != expected && declared != "application/octet-stream" {
+            return AttachmentClassification {
+                disposition: AttachmentDisposition::Ambiguous,
+                reason: "conflicting filename and content type",
+            };
+        }
+    }
+    if expected_type.is_some() && recognized_safe_signature(extension.as_deref(), prefix) {
+        return AttachmentClassification {
+            disposition: AttachmentDisposition::Safe,
+            reason: "recognized passive content",
+        };
+    }
+
+    AttachmentClassification {
+        disposition: AttachmentDisposition::Ambiguous,
+        reason: "unrecognized or container content",
+    }
 }
 
 pub(crate) fn is_file_in_named_directory_under(
@@ -69,8 +326,46 @@ mod tests {
         ] {
             assert!(BLOCKED_ATTACHMENT_EXTENSIONS.contains(&required));
         }
-        assert!(has_blocked_attachment_extension(Path::new("payload.EXE")));
-        assert!(!has_blocked_attachment_extension(Path::new("photo.jpeg")));
+        assert_eq!(
+            classify_attachment("payload.EXE", None, &[]).disposition,
+            AttachmentDisposition::Active
+        );
+        assert_ne!(
+            classify_attachment("photo.jpeg", None, &[]).disposition,
+            AttachmentDisposition::Active
+        );
+    }
+
+    #[test]
+    fn central_attachment_classifier_combines_name_mime_magic_and_text_sniffing() {
+        assert_eq!(
+            classify_attachment("photo.png", Some("image/png"), b"\x89PNG\r\n\x1a\nrest")
+                .disposition,
+            AttachmentDisposition::Safe
+        );
+        assert_eq!(
+            classify_attachment("photo.png", Some("image/png"), b"MZnot-really-an-image")
+                .disposition,
+            AttachmentDisposition::Active
+        );
+        assert_eq!(
+            classify_attachment("notes.txt", Some("text/plain"), b"  <!doctype html><html>")
+                .disposition,
+            AttachmentDisposition::Active
+        );
+        assert_eq!(
+            classify_attachment("vector.svg", Some("image/svg+xml"), b"<svg/>").disposition,
+            AttachmentDisposition::Active
+        );
+        assert_eq!(
+            classify_attachment("photo.png", Some("image/jpeg"), b"\x89PNG\r\n\x1a\nrest")
+                .disposition,
+            AttachmentDisposition::Ambiguous
+        );
+        assert_eq!(
+            classify_attachment("archive.zip", Some("application/zip"), b"PK\x03\x04").disposition,
+            AttachmentDisposition::Ambiguous
+        );
     }
 
     #[test]

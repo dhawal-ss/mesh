@@ -13,8 +13,8 @@ use uuid::Uuid;
 use super::error::CommandError;
 use crate::backend::{BackendError, BackendKind};
 use crate::security::{
-    create_private_dir, has_blocked_attachment_extension, is_file_in_named_directory_under,
-    open_private_file,
+    classify_attachment, create_private_dir, is_file_in_named_directory_under, open_private_file,
+    AttachmentDisposition,
 };
 use crate::state::AppState;
 
@@ -25,7 +25,7 @@ const MAX_ATTACHMENT_BYTES: u64 = 100 * 1024 * 1024;
 const STAGED_ATTACHMENT_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const ATTACHMENT_GRANT_TTL: Duration = Duration::from_secs(60 * 60);
 const UNCLAIMED_DROP_GRANT_TTL: Duration = Duration::from_secs(30);
-const HEADER_INSPECTION_BYTES: usize = 8;
+const HEADER_INSPECTION_BYTES: usize = 4 * 1024;
 const MAX_PENDING_ATTACHMENTS: usize = 10;
 
 #[derive(Clone, Debug)]
@@ -142,7 +142,7 @@ fn validate_filename(filename: &str) -> Result<&str, CommandError> {
             "Attachment filename uses a reserved device name".into(),
         ));
     }
-    if has_blocked_attachment_extension(Path::new(safe_name)) {
+    if classify_attachment(safe_name, None, &[]).disposition == AttachmentDisposition::Active {
         return Err(CommandError::Validation(
             "This executable or script file type cannot be attached".into(),
         ));
@@ -166,16 +166,12 @@ fn validate_attachment_payload(
             "Attachment exceeds the {limit} MB limit"
         )));
     }
-    let executable_header = header.starts_with(b"MZ")
-        || header.starts_with(b"\x7fELF")
-        || header.starts_with(b"#!")
-        || header.starts_with(b"\xfe\xed\xfa\xce")
-        || header.starts_with(b"\xce\xfa\xed\xfe")
-        || header.starts_with(b"\xfe\xed\xfa\xcf")
-        || header.starts_with(b"\xcf\xfa\xed\xfe");
-    if executable_header {
+    let content_type = content_type_for_filename(filename);
+    if classify_attachment(filename, Some(&content_type), header).disposition
+        == AttachmentDisposition::Active
+    {
         return Err(CommandError::Validation(
-            "Executable file contents cannot be attached".into(),
+            "Active file contents cannot be attached".into(),
         ));
     }
     Ok(())
@@ -546,12 +542,6 @@ pub async fn open_downloaded_file(
     let path = tokio::fs::canonicalize(local_path).await.map_err(|_| {
         CommandError::NotFound("Downloaded attachment is no longer available".into())
     })?;
-    if has_blocked_attachment_extension(&path) {
-        return Err(CommandError::Validation(
-            "Executable files cannot be opened from Mesh".into(),
-        ));
-    }
-
     let allowed = match state.backend.kind() {
         BackendKind::Matrix => {
             let active_account_root = state
@@ -588,6 +578,34 @@ pub async fn open_downloaded_file(
         return Err(CommandError::PermissionDenied(
             "Mesh can open only files created by its attachment downloader".into(),
         ));
+    }
+
+    let filename = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| CommandError::Validation("Attachment filename is unavailable".into()))?;
+    let mut file = tokio::fs::File::open(&path).await.map_err(|_| {
+        CommandError::NotFound("Downloaded attachment is no longer available".into())
+    })?;
+    let mut prefix = vec![0_u8; HEADER_INSPECTION_BYTES];
+    let prefix_len = file.read(&mut prefix).await.map_err(|_| {
+        CommandError::NotFound("Downloaded attachment is no longer available".into())
+    })?;
+    prefix.truncate(prefix_len);
+    let content_type = content_type_for_filename(filename);
+    let classification = classify_attachment(filename, Some(&content_type), &prefix);
+    if classification.disposition != AttachmentDisposition::Safe {
+        return Err(CommandError::Validation(match classification.disposition {
+            AttachmentDisposition::Active => {
+                "This attachment contains active content. Save it only if you trust the sender; Mesh will not open it directly."
+                    .into()
+            }
+            AttachmentDisposition::Ambiguous => {
+                "Mesh cannot verify this attachment as passive content. Save it only if you trust the sender; Mesh will not open it directly."
+                    .into()
+            }
+            AttachmentDisposition::Safe => unreachable!("safe attachments pass the opening guard"),
+        }));
     }
 
     tauri_plugin_opener::open_path(&path, None::<&str>)
@@ -771,5 +789,25 @@ mod tests {
             .unwrap();
 
         assert!(store.claim(&dto.grant).await.is_err());
+    }
+
+    #[test]
+    fn native_open_reclassifies_and_denies_active_or_ambiguous_files_before_os_open() {
+        let source = include_str!("attachments.rs");
+        let opener = source
+            .split("pub async fn open_downloaded_file")
+            .nth(1)
+            .unwrap()
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let classification = opener.find("classify_attachment").unwrap();
+        let denial = opener
+            .find("classification.disposition != AttachmentDisposition::Safe")
+            .unwrap();
+        let operating_system_open = opener.find("tauri_plugin_opener::open_path").unwrap();
+        assert!(classification < denial);
+        assert!(denial < operating_system_open);
+        assert!(opener.contains("HEADER_INSPECTION_BYTES"));
     }
 }

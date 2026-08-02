@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-export-legacy-archive"
+description = "Enables the export_legacy_archive command without any pre-configured scope."
+commands.allow = ["export_legacy_archive"]
+
+[[permission]]
+identifier = "deny-export-legacy-archive"
+description = "Denies the export_legacy_archive command without any pre-configured scope."
+commands.deny = ["export_legacy_archive"]

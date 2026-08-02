@@ -17,6 +17,7 @@ import { Modal } from '../ui/Modal'
 import { Kbd } from '../ui/Primitives'
 import { Icon, type IconName } from '../ui/Icon'
 import { COMMAND_PALETTE_OPEN_EVENT } from '../../lib/command-palette'
+import { safeLocalStorageGet, safeLocalStorageSet } from '../../lib/safe-storage'
 
 const RECENT_COMMANDS_KEY = 'mesh-command-palette-recents'
 const MAX_RECENT_COMMANDS = 20
@@ -47,7 +48,7 @@ const SHORTCUTS = [
 
 function loadRecents(): string[] {
   try {
-    const value = JSON.parse(window.localStorage.getItem(RECENT_COMMANDS_KEY) ?? '[]')
+    const value = JSON.parse(safeLocalStorageGet(RECENT_COMMANDS_KEY) ?? '[]')
     if (!Array.isArray(value)) return []
     return value.filter((entry): entry is string => typeof entry === 'string').slice(0, MAX_RECENT_COMMANDS)
   } catch {
@@ -57,11 +58,7 @@ function loadRecents(): string[] {
 
 function saveRecent(commandId: string, current: string[]): string[] {
   const next = [commandId, ...current.filter((id) => id !== commandId)].slice(0, MAX_RECENT_COMMANDS)
-  try {
-    window.localStorage.setItem(RECENT_COMMANDS_KEY, JSON.stringify(next))
-  } catch {
-    // Navigation must keep working when storage is unavailable.
-  }
+  safeLocalStorageSet(RECENT_COMMANDS_KEY, JSON.stringify(next))
   return next
 }
 

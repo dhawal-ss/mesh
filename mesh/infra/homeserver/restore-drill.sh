@@ -6,9 +6,11 @@ cd "$script_dir"
 umask 077
 # shellcheck source=infra/homeserver/backup-lib.sh
 . "$script_dir/backup-lib.sh"
+# shellcheck source=infra/homeserver/docker-cli.sh
+. "$script_dir/docker-cli.sh"
 
 postgres_image="postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193"
-synapse_image="matrixdotorg/synapse:v1.157.0@sha256:53a686c52cdfca5fdb0adff5ef10b276b1d0971931b09815a9eb6b48d7188a1a"
+synapse_image="matrixdotorg/synapse:v1.157.1@sha256:d1fce43d7501428c461f2758dc10342555b946dc9f1d03c1b1b8aec1a4e8d130"
 
 if [ "$#" -gt 1 ]; then
   echo "usage: $0 [/path/to/backup]" >&2
@@ -64,9 +66,19 @@ for postgres_identity in "$postgres_user" "$postgres_db"; do
   fi
 done
 
-drill_root="$script_dir/runtime/restore-drills"
-mkdir -p "$drill_root" "$script_dir/runtime/status"
+runtime_root="${MESH_RESTORE_DRILL_RUNTIME_ROOT:-$script_dir/runtime}"
+case "$runtime_root" in
+  /*|[A-Za-z]:/*) ;;
+  *)
+    echo "Restore drill runtime root must be an absolute path." >&2
+    exit 1
+    ;;
+esac
+drill_root="$runtime_root/restore-drills"
+status_root="$runtime_root/status"
+mkdir -p "$drill_root" "$status_root"
 stage="$(mktemp -d "$drill_root/.work.XXXXXX")"
+stage_docker="$(mesh_docker_bind_path "$stage")"
 runtime_uid="${MESH_RESTORE_RUNTIME_UID:-$(id -u)}"
 runtime_gid="${MESH_RESTORE_RUNTIME_GID:-$(id -g)}"
 case "$runtime_uid:$runtime_gid" in
@@ -82,9 +94,9 @@ postgres_container="mesh-restore-postgres-$resource_suffix"
 synapse_container="mesh-restore-synapse-$resource_suffix"
 
 cleanup() {
-  docker rm -f "$synapse_container" "$postgres_container" >/dev/null 2>&1 || true
-  docker volume rm "$volume" >/dev/null 2>&1 || true
-  docker network rm "$network" >/dev/null 2>&1 || true
+  mesh_docker rm -f "$synapse_container" "$postgres_container" >/dev/null 2>&1 || true
+  mesh_docker volume rm "$volume" >/dev/null 2>&1 || true
+  mesh_docker network rm "$network" >/dev/null 2>&1 || true
   if [ "${MESH_KEEP_RESTORE_DRILL:-0}" != "1" ]; then
     rm -rf -- "$stage"
   else
@@ -101,16 +113,20 @@ tar -xzf "$backup_dir/synapse-critical.tar.gz" -C "$stage/synapse"
 if [ -f "$backup_dir/media-store.tar.gz" ]; then
   tar -xzf "$backup_dir/media-store.tar.gz" -C "$stage/synapse"
 fi
-if [ "$(id -u)" -eq 0 ]; then
+if [ "$mesh_docker_msys" -eq 1 ]; then
+  # Docker Desktop mediates Windows bind mounts; MSYS reports synthetic host
+  # IDs that cannot be applied as POSIX ownership to the mounted files.
+  :
+elif [ "$(id -u)" -eq 0 ]; then
   chown -R "$runtime_uid:$runtime_gid" "$stage/synapse"
 elif [ "$runtime_uid" -ne "$(id -u)" ] || [ "$runtime_gid" -ne "$(id -g)" ]; then
   echo "A non-root drill must use the current host UID and GID." >&2
   exit 1
 fi
 
-docker network create "$network" >/dev/null
-docker volume create "$volume" >/dev/null
-docker run -d \
+mesh_docker network create "$network" >/dev/null
+mesh_docker volume create "$volume" >/dev/null
+mesh_docker run -d \
   --name "$postgres_container" \
   --network "$network" \
   --network-alias postgres \
@@ -123,7 +139,7 @@ docker run -d \
   "$postgres_image" >/dev/null
 
 attempt=0
-until docker exec "$postgres_container" \
+until mesh_docker exec "$postgres_container" \
   pg_isready --username "$postgres_user" --dbname "$postgres_db" >/dev/null 2>&1
 do
   attempt=$((attempt + 1))
@@ -134,10 +150,10 @@ do
   sleep 2
 done
 
-dump_listing="$(docker exec -i "$postgres_container" pg_restore --list < "$backup_dir/postgres.dump")"
+dump_listing="$(mesh_docker exec -i "$postgres_container" pg_restore --list < "$backup_dir/postgres.dump")"
 printf '%s\n' "$dump_listing" | assert_no_otk_table_data
 
-docker exec -i "$postgres_container" \
+mesh_docker exec -i "$postgres_container" \
   pg_restore \
     --username "$postgres_user" \
     --dbname "$postgres_db" \
@@ -147,7 +163,7 @@ docker exec -i "$postgres_container" \
   < "$backup_dir/postgres.dump"
 
 required_tables="$(
-  docker exec "$postgres_container" \
+  mesh_docker exec "$postgres_container" \
     psql \
       --username "$postgres_user" \
       --dbname "$postgres_db" \
@@ -162,7 +178,7 @@ if [ "$required_tables" -ne 3 ]; then
   exit 1
 fi
 otk_rows="$(
-  docker exec "$postgres_container" \
+  mesh_docker exec "$postgres_container" \
     psql \
       --username "$postgres_user" \
       --dbname "$postgres_db" \
@@ -177,40 +193,40 @@ if [ "$otk_rows" -ne 0 ]; then
   exit 1
 fi
 
-docker run -d \
+mesh_docker run -d \
   --name "$synapse_container" \
   --network "$network" \
   --security-opt no-new-privileges:true \
   -e "UID=$runtime_uid" \
   -e "GID=$runtime_gid" \
   -e SYNAPSE_CONFIG_PATH=/data/homeserver.yaml \
-  -v "$stage/synapse:/data" \
+  -v "$stage_docker/synapse:/data" \
   "$synapse_image" >/dev/null
 
 attempt=0
-until docker exec "$synapse_container" python -c \
+until mesh_docker exec "$synapse_container" python -c \
   "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8008/health', timeout=3).read()" \
   >/dev/null 2>&1
 do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 90 ]; then
     echo "Restored Synapse did not become healthy within 180 seconds." >&2
-    docker logs --tail 50 "$synapse_container" >&2 || true
+    mesh_docker logs --tail 50 "$synapse_container" >&2 || true
     exit 1
   fi
   sleep 2
 done
-docker exec "$synapse_container" python -c \
+mesh_docker exec "$synapse_container" python -c \
   "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8008/_matrix/client/versions', timeout=5).read()" \
   >/dev/null
 
 completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 backup_id="$(basename "$backup_dir")"
-status_tmp="$script_dir/runtime/status/.restore-drill-status.$$"
+status_tmp="$status_root/.restore-drill-status.$$"
 printf '%s\n' \
   "{\"status\":\"ok\",\"lastSuccessfulAt\":\"$completed_at\",\"backupId\":\"$backup_id\",\"serverName\":\"$server_name\"}" \
   > "$status_tmp"
 chmod 600 "$status_tmp"
-mv "$status_tmp" "$script_dir/runtime/status/restore-drill-status.json"
+mv "$status_tmp" "$status_root/restore-drill-status.json"
 
 echo "Restore drill passed: database restored and isolated Synapse became healthy."

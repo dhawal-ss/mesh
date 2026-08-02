@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-send-attachment"
+description = "Enables the matrix_send_attachment command without any pre-configured scope."
+commands.allow = ["matrix_send_attachment"]
+
+[[permission]]
+identifier = "deny-matrix-send-attachment"
+description = "Denies the matrix_send_attachment command without any pre-configured scope."
+commands.deny = ["matrix_send_attachment"]

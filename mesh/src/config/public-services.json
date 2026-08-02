@@ -12,6 +12,7 @@
       "url": "https://app.element.io/#/register",
       "label": "Create a Matrix.org account in your browser"
     },
+    "accountHelpUrl": "https://app.element.io/#/login",
     "loginMethods": [
       "password",
       "browser"

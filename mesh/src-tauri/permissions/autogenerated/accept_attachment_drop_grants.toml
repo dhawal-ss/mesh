@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-accept-attachment-drop-grants"
+description = "Enables the accept_attachment_drop_grants command without any pre-configured scope."
+commands.allow = ["accept_attachment_drop_grants"]
+
+[[permission]]
+identifier = "deny-accept-attachment-drop-grants"
+description = "Denies the accept_attachment_drop_grants command without any pre-configured scope."
+commands.deny = ["accept_attachment_drop_grants"]

@@ -1,0 +1,12 @@
+* @dhawal-ss
+
+# Release publication and its security policy require an owner review.
+/.github/workflows/release-beta.yml @dhawal-ss
+/.github/workflows/security.yml @dhawal-ss
+/.github/dependency-review-config.yml @dhawal-ss
+/mesh/scripts/beta-release-preflight.ps1 @dhawal-ss
+/mesh/scripts/check-matrix-release-dependencies.ps1 @dhawal-ss
+/mesh/scripts/rust-dependency-policy.json @dhawal-ss
+/mesh/src-tauri/tauri.conf.json @dhawal-ss
+/mesh/src-tauri/Cargo.toml @dhawal-ss
+/mesh/src-tauri/Cargo.lock @dhawal-ss

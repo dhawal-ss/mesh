@@ -110,6 +110,13 @@ export function RoomContextPanel({
         { id: 'people', label: 'People' },
         { id: 'files', label: 'Files' },
       ]
+  const contextTitle = activeTab === 'people'
+    ? 'People here'
+    : activeTab === 'ledger'
+      ? 'Room ledger'
+      : activeTab === 'files'
+        ? 'Shared files'
+        : 'Pinned messages'
 
   const copyRoomLink = async () => {
     try {
@@ -164,17 +171,22 @@ export function RoomContextPanel({
         onPointerDown={onResizeStart}
         onResizeBy={onResizeBy}
       />
-      <div className="flex h-conversation-header flex-shrink-0 items-center gap-1 border-b border-border-subtle px-2">
-        <button
-          type="button"
-          className="order-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
-          aria-label="Close room context"
-          onClick={onClose}
-        >
-          <Icon name="x" size="sm" />
-        </button>
+      <div className="flex-shrink-0 border-b border-border-subtle">
+        <div className="flex h-conversation-header items-center gap-2 px-3">
+          <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-primary">
+            {contextTitle}
+          </h2>
+          <button
+            type="button"
+            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
+            aria-label="Close room context"
+            onClick={onClose}
+          >
+            <Icon name="x" size="sm" />
+          </button>
+        </div>
         <div
-          className="order-1 flex min-w-0 flex-1"
+          className="flex min-w-0 overflow-x-auto px-2"
           role="tablist"
           aria-label="Room context"
           onKeyDown={handleTabKeyDown}
@@ -188,7 +200,7 @@ export function RoomContextPanel({
               tabIndex={activeTab === tab.id ? 0 : -1}
               aria-selected={activeTab === tab.id}
               aria-controls={`room-context-${tab.id}`}
-              className={`min-h-control-sm flex-1 border-b-2 border-transparent px-1 text-xs font-medium transition-colors ${
+              className={`min-h-8 flex-1 border-b-2 border-transparent px-2 text-caption font-medium transition-colors ${
                 activeTab === tab.id
                   ? 'border-accent text-primary'
                   : 'text-muted hover:bg-surface-hover hover:text-secondary'
@@ -208,12 +220,12 @@ export function RoomContextPanel({
           aria-labelledby="room-context-tab-people"
           className="flex min-h-0 flex-1 flex-col"
         >
-          <div className="border-b border-border-subtle px-4 py-3">
-            <p className="text-xs font-medium text-primary">
-              {members.length} {members.length === 1 ? 'person' : 'people'}
+          <div className="px-4 pb-1 pt-4">
+            <p className="text-meta font-semibold uppercase tracking-caption text-muted">
+              In this room · {members.length}
             </p>
             <p className="mt-1 text-caption text-muted">
-              {members.filter((member) => member.online).length} here now
+              {members.filter((member) => member.online).length} online now
             </p>
           </div>
           <MemberList

@@ -38,11 +38,10 @@ export interface OnboardingFlowProps {
     homeserver: string
     username: string
     password: string
-    registrationToken?: string
+    pendingInvitationHandle?: string
     deviceName?: string
   }) => Promise<void>
   onMatrixSwitchAccount?: (profileId: string) => Promise<void>
-  onResolvePendingInvitation?: () => Promise<MatrixCommunityAdmission | null>
   onDiscardPendingInvitation?: () => Promise<void>
   onCreateBackupCode?: () => Promise<MatrixRecoverySetupResult>
   onBackupConfigured?: () => void
@@ -50,13 +49,11 @@ export interface OnboardingFlowProps {
   onGenerateIdentity?: () => Promise<void>
   onUpdateProfile?: (profile: OnboardingProfile) => Promise<void>
   onBootstrap?: (update: (state: BootstrapState) => void) => Promise<void>
-  initialMatrixInvitation?: string
   initialPendingInvitation?: PendingInvitationMetadata | null
   initialProfile?: Partial<OnboardingProfile>
   avatarColors?: readonly string[]
 }
 import type {
-  MatrixCommunityAdmission,
   MatrixRecoverySetupResult,
   PendingInvitationMetadata,
 } from '../../types/ipc'

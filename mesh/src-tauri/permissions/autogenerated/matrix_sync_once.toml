@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-sync-once"
+description = "Enables the matrix_sync_once command without any pre-configured scope."
+commands.allow = ["matrix_sync_once"]
+
+[[permission]]
+identifier = "deny-matrix-sync-once"
+description = "Denies the matrix_sync_once command without any pre-configured scope."
+commands.deny = ["matrix_sync_once"]

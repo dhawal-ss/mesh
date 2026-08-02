@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-load-custom-emoji-image"
+description = "Enables the matrix_load_custom_emoji_image command without any pre-configured scope."
+commands.allow = ["matrix_load_custom_emoji_image"]
+
+[[permission]]
+identifier = "deny-matrix-load-custom-emoji-image"
+description = "Denies the matrix_load_custom_emoji_image command without any pre-configured scope."
+commands.deny = ["matrix_load_custom_emoji_image"]

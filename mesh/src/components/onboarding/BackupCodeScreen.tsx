@@ -76,11 +76,11 @@ export function BackupCodeScreen({
   }
 
   return (
-    /* Was <main>, nested inside the shell's own <main> — two main landmarks is
+    /* Was <main>, nested inside the shell's own <main>: two main landmarks is
        invalid and broke landmark navigation on the most safety-critical screen. */
     <section aria-labelledby={titleId} className="space-y-6">
       <header className="space-y-2">
-        <p className="text-caption uppercase tracking-eyebrow text-content-muted">
+        <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">
           Protect your messages
         </p>
         <h1 id={titleId} className="text-lg font-semibold tracking-tight text-content">
@@ -153,15 +153,16 @@ export function BackupCodeScreen({
       {!confirming ? (
         <div className="space-y-3">
           <Button className="w-full" onClick={() => setConfirming(true)}>
-            I saved it — continue
+            I saved it: continue
           </Button>
-          <button
+          <Button
             type="button"
-            className="w-full rounded-md px-3 py-2 text-sm text-content-secondary transition-colors hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            variant="ghost"
+            className="w-full"
             onClick={() => onSkip({ kind: 'backup-code-reminder', recurringWarning: true })}
           >
             Remind me later (you could lose your messages)
-          </button>
+          </Button>
         </div>
       ) : (
         <form

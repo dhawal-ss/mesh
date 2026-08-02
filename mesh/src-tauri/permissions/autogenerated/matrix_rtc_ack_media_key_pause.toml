@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-rtc-ack-media-key-pause"
+description = "Enables the matrix_rtc_ack_media_key_pause command without any pre-configured scope."
+commands.allow = ["matrix_rtc_ack_media_key_pause"]
+
+[[permission]]
+identifier = "deny-matrix-rtc-ack-media-key-pause"
+description = "Denies the matrix_rtc_ack_media_key_pause command without any pre-configured scope."
+commands.deny = ["matrix_rtc_ack_media_key_pause"]

@@ -16,7 +16,57 @@ release evidence snapshot.
 
 ---
 
-## Current verified readiness ledger
+## 2026-08-01 active implementation handoff
+
+**Verdict:** `ALL_LOCALLY_SPECIFIABLE_FINDINGS_COMPLETE_NOT_RELEASE_READY`
+
+The current source of truth is
+[MESH_IMPLEMENTATION_COMPLETION_REPORT_2026-08-01.md](MESH_IMPLEMENTATION_COMPLETION_REPORT_2026-08-01.md).
+It maps every Phase 1-4 finding to its root cause, implementation, regression
+evidence, exact local verification, and remaining external owner. The active
+worktree is intentionally dirty and is based on
+`45b1a2df6d71c826b17510a00f595c24b5d989ba`; neither that base SHA nor the
+existing `releaseSha` represents the uncommitted integration.
+
+The final adversarial continuation closed additional local gaps that were not
+captured by the earlier snapshots below:
+
+- malformed admission links cannot downgrade into direct joins, invitation
+  presentation metadata suppresses duplicated capabilities, and admission
+  responses are bounded while streaming;
+- cross-community room selection repairs before network refresh, late
+  mark-read/upgrade errors stay room-scoped, failed pin mutations expose a
+  real retry, and browser/OIDC readiness is generation-bound to the selected
+  service;
+- candidate evidence no longer dirties the checkout before clean-source
+  validation, dependency evidence is re-bound to the checked-out lockfile and
+  policy, checksums are attested, signing material is failure-safely cleaned,
+  and the disposable federation workflow requires two independently reset,
+  separately hashed cycles.
+
+The readiness ledger now has 24 gates. The 58-case external campaign is split
+without reducing scope: 50 Windows/provider/community/publication cases are R2,
+while four macOS/Linux assistive-technology combinations and four installed
+native-invitation cases are explicit R4 gates. R0 exact-SHA dependency evidence
+is required and truthfully blocked until these changes exist on a clean,
+protected source SHA. No local/disposable result is production acceptance.
+
+Settled-source local evidence includes 106 Vitest files / 771 tests, 67/67
+Chromium cases, 190 Matrix Rust tests, 212 legacy Rust tests, Matrix/legacy
+security filters at 19/13, strict Matrix Clippy, formatting, TypeScript, clean
+ESLint, zero npm vulnerabilities, 20/20 deterministic Windows polling
+repetitions, and two independently reset disposable federation/recovery cycles
+with 2/2 live tests in each cycle. The final Matrix bundle remains inside every
+unchanged budget: 227.66 KiB entry, 447.02 KiB eager JavaScript, 1,909.18 KiB
+all JavaScript, and 2,341.98 KiB all production assets. These are dirty local
+results only and do not satisfy protected same-SHA or signed-build gates.
+
+Do not update `releaseSha` for this dirty source. Do not publish or promote the
+draft candidate, enable the updater, enable MatrixRTC, provision admission, or
+claim authoritative moderation audit until the named external contracts and
+campaigns in the completion report pass.
+
+## Earlier verified readiness snapshots
 
 **Evidence date:** 2026-07-31
 **Branch:** `main`
@@ -29,8 +79,8 @@ protected checks and two independently reset federation/recovery runs passed on
 the exact Z1-Z8 implementation SHA. Public beta publication remains gated on
 the owner-operated and external approvals listed below.
 
-This section is the current source of truth. The detailed workstream review below
-is retained as the original `2ca3dcc` audit baseline, so statements there that
+This section is retained as a historical clean-SHA snapshot. The detailed
+workstream review below is the original `2ca3dcc` audit baseline, so statements there that
 describe invitations, deep links, account removal, export, rate-limit cleanup,
 or test counts as missing are historical rather than current.
 

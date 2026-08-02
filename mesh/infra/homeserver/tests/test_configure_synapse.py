@@ -20,14 +20,17 @@ SPEC.loader.exec_module(configure)
 
 
 class ConfigureSynapseTests(unittest.TestCase):
-    def render(self, registration_enabled: str = "1") -> dict[str, object]:
+    def render(
+        self,
+        registration_enabled: str = "1",
+        abuse_email: str | None = "abuse@community.test",
+    ) -> dict[str, object]:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "homeserver.yaml"
             path.write_text("{}\n", encoding="utf-8")
             environment = {
                 "MESH_SERVER_NAME": "community.test",
                 "MESH_HOMESERVER_HOST": "matrix.community.test",
-                "MESH_ABUSE_EMAIL": "abuse@community.test",
                 "MESH_REGISTRATION_ENABLED": registration_enabled,
                 "POSTGRES_USER": "synapse",
                 "POSTGRES_PASSWORD": "test-password",
@@ -36,6 +39,8 @@ class ConfigureSynapseTests(unittest.TestCase):
                 "MACAROON_SECRET_KEY": "macaroon-secret",
                 "FORM_SECRET": "form-secret",
             }
+            if abuse_email is not None:
+                environment["MESH_ABUSE_EMAIL"] = abuse_email
             with (
                 mock.patch.dict(os.environ, environment, clear=True),
                 mock.patch.object(sys, "argv", ["configure_synapse.py", str(path)]),
@@ -63,6 +68,10 @@ class ConfigureSynapseTests(unittest.TestCase):
     def test_rejects_ambiguous_registration_switches(self) -> None:
         with self.assertRaises(SystemExit):
             self.render("sometimes")
+
+    def test_requires_an_explicit_abuse_contact(self) -> None:
+        with self.assertRaisesRegex(SystemExit, "MESH_ABUSE_EMAIL"):
+            self.render(abuse_email=None)
 
 
 if __name__ == "__main__":

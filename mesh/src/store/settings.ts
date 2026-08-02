@@ -1,11 +1,12 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
 import {
   getMatrixUserPreferences,
   isMatrixBackend,
   setKv,
   updateMatrixUserPreferences,
 } from '../lib/bridge'
+import { createSafeStorageAdapter, getSafeLocalStorage } from '../lib/safe-storage'
 import type { MatrixUserPreferences } from '../types/ipc'
 
 const MINUTE_MS = 60 * 1_000
@@ -109,7 +110,7 @@ const BACKUP_REMINDER_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000
 const DEFAULT_APPEARANCE: AppearancePreferences = {
   theme: 'dark',
   density: 'default',
-  accent: 'sand',
+  accent: 'violet',
   transparency: 'readable',
 }
 const DEFAULT_NOTIFICATIONS: NotificationPreferences = {
@@ -837,6 +838,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: 'mesh-settings',
+      storage: createJSONStorage(() => createSafeStorageAdapter(getSafeLocalStorage)),
       partialize: (state) => ({
         notifications: state.notifications,
         // Appearance stays device-local; MatrixUserPreferences contains only

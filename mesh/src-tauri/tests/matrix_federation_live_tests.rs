@@ -4,7 +4,7 @@ use std::{
     ffi::{OsStr, OsString},
     future::Future,
     io::{Cursor, Read, Write},
-    net::{SocketAddr, TcpStream},
+    net::{SocketAddr, TcpListener, TcpStream},
     path::PathBuf,
     process::Command,
     time::{Duration, Instant as StdInstant},
@@ -235,6 +235,64 @@ impl Drop for EnvironmentOverride {
             std::env::remove_var(self.name);
         }
     }
+}
+
+fn spawn_registration_admission_service() -> (String, std::thread::JoinHandle<()>) {
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .expect("a loopback admission test listener must be available");
+    let address = listener
+        .local_addr()
+        .expect("the admission test listener must have an address");
+    listener
+        .set_nonblocking(true)
+        .expect("the admission test listener must support a bounded wait");
+    let origin = format!("http://{address}");
+    let server = std::thread::spawn(move || {
+        let deadline = StdInstant::now() + Duration::from_secs(10);
+        let (mut stream, _) = loop {
+            match listener.accept() {
+                Ok(connection) => break connection,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::WouldBlock
+                        && StdInstant::now() < deadline =>
+                {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => {
+                    panic!("registration must resolve the native pending invitation: {error}")
+                }
+            }
+        };
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("the admission test socket timeout must be configurable");
+        let mut request = [0u8; 4_096];
+        let received = stream
+            .read(&mut request)
+            .expect("the admission request must be readable");
+        let request = String::from_utf8_lossy(&request[..received]);
+        assert!(request.starts_with("POST /_mesh/admission/v1/invitations/resolve HTTP/1.1"));
+        assert!(!request.contains("mesh-registration-passphrase"));
+
+        let body = serde_json::json!({
+            "version": 4,
+            "registration_token": "mesh-spike-registration",
+            "room_id": "!registration:hs1.mesh.test",
+            "service": "http://localhost:8008",
+            "via": ["hs1.mesh.test"],
+            "community_name": "Registration acceptance"
+        })
+        .to_string();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        stream
+            .write_all(response.as_bytes())
+            .expect("the admission response must be writable");
+    });
+    (origin, server)
 }
 
 struct PausedSynapse {
@@ -500,7 +558,7 @@ async fn wait_for_member_presence(
     .await
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn member_presence_wait_reports_phase_and_last_state_when_progress_stalls() {
     let policy = PresenceWaitPolicy {
         total: Duration::from_millis(40),
@@ -528,6 +586,7 @@ async fn member_presence_wait_reports_phase_and_last_state_when_progress_stalls(
     assert!(error.contains("phase=forced-no-progress"));
     assert!(error.contains("membership=joined ban=none online=false"));
     assert!(error.contains("attempts=3"));
+    assert!(error.contains("timed out after 30ms"));
 }
 
 #[tokio::test]
@@ -613,20 +672,37 @@ async fn run_matrix_backend_registers_a_fresh_community_hosted_account() {
     let _homeserver =
         EnvironmentOverride::new("MESH_COMMUNITY_HOMESERVER", "http://localhost:8008");
     let _server_name = EnvironmentOverride::new("MESH_COMMUNITY_SERVER_NAME", "hs1.mesh.test");
+    let _loopback_invitations =
+        EnvironmentOverride::new("MESH_ALLOW_INSECURE_LOOPBACK_INVITATIONS", "1");
     let store = tempfile::tempdir().unwrap();
     let nonce = uuid::Uuid::new_v4().simple().to_string();
     let username = format!("meshreg{}", &nonce[..12]);
     let backend = MatrixBackend::with_profile(store.path().to_owned(), "matrix-spike-registration");
+    let (admission_origin, admission_server) = spawn_registration_admission_service();
+    let invite = format!(
+        "mesh://join?v=5&kind=community&room=%21registration%3Ahs1.mesh.test&via=hs1.mesh.test&community_service=http%3A%2F%2Flocalhost%3A8008&admission={}&code={}",
+        urlencoding::encode(&admission_origin),
+        "registration-acceptance-code-000001"
+    );
+    let pending = backend
+        .store_pending_invitation(invite)
+        .await
+        .expect("the native pending invitation must be stored opaquely");
 
-    let status = backend
+    let registration = backend
         .register_account(MatrixRegistration {
             homeserver: "http://localhost:8008".into(),
             username: username.clone(),
             password: "mesh-registration-passphrase".into(),
-            registration_token: Some("mesh-spike-registration".into()),
+            pending_invitation_handle: Some(pending.handle),
             device_name: Some("mesh-spike-registration".into()),
         })
-        .await
+        .await;
+    let admission_result = admission_server
+        .join()
+        .map_err(|_| "the admission test service panicked");
+    admission_result.expect("the admission test service must finish cleanly");
+    let status = registration
         .expect("Mesh account registration must succeed on the community-hosted local service");
     assert!(status.authenticated);
     assert_eq!(
@@ -2265,7 +2341,10 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
         )
         .await
         .unwrap();
-    assert!(moderation.audit_recorded);
+    assert!(
+        !moderation.audit_recorded,
+        "moderation must not claim an authoritative audit record until a trustworthy store is configured"
+    );
     assert_eq!(moderation.audit.actor_user_id, alice_user);
     assert_eq!(moderation.audit.target_user_id, bob_user);
     assert_eq!(moderation.audit.action, "Banned member");
@@ -2285,13 +2364,17 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
             .iter()
             .any(|outcome| outcome.room_id == *room_id && outcome.succeeded));
     }
-    let moderation_audit = alice
+    let moderation_audit_error = alice
         .list_moderation_audit(community.space_id.clone(), 20)
         .await
-        .unwrap();
-    assert!(moderation_audit
-        .iter()
-        .any(|entry| entry == &moderation.audit));
+        .unwrap_err();
+    let BackendError::InvalidConfiguration(audit_warning) = moderation_audit_error else {
+        panic!("unavailable authoritative audit storage must fail closed with an actionable configuration warning");
+    };
+    assert!(audit_warning.contains("trustworthy moderation audit store is not configured"));
+    assert!(
+        audit_warning.contains("Room messages are not accepted as authoritative audit evidence")
+    );
     tokio::time::sleep(Duration::from_secs(2)).await;
     alice.sync_once().await.unwrap();
     let final_members = alice
@@ -2314,7 +2397,7 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
             "banned member rejoined a server channel"
         );
     }
-    checkpoint!("server-wide ban and protected moderation audit verified");
+    checkpoint!("server-wide ban enforced; authoritative moderation audit correctly unavailable");
 
     erase_live_test_account("Alice", &alice).await;
     erase_live_test_account("Bob", &restored).await;

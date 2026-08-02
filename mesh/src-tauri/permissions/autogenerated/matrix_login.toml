@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-login"
+description = "Enables the matrix_login command without any pre-configured scope."
+commands.allow = ["matrix_login"]
+
+[[permission]]
+identifier = "deny-matrix-login"
+description = "Denies the matrix_login command without any pre-configured scope."
+commands.deny = ["matrix_login"]

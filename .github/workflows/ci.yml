@@ -109,7 +109,7 @@ jobs:
 
       - name: Check legacy LAN backend
         working-directory: mesh/src-tauri
-        run: cargo check --no-default-features --features legacy-p2p --locked
+        run: cargo check --no-default-features --features legacy-p2p --locked --jobs 1
 
       - name: Test legacy LAN backend
         working-directory: mesh/src-tauri
@@ -162,11 +162,27 @@ jobs:
 
       - name: Check production readiness ledger
         working-directory: mesh
-        run: npm run check:readiness-ledger
+        run: |
+          node --test scripts/check-readiness-ledger.test.mjs
+          npm run check:readiness-ledger
+
+      - name: Check fail-closed external acceptance contract
+        working-directory: mesh
+        run: |
+          node --test scripts/check-external-acceptance.test.mjs
+          node scripts/check-external-acceptance.mjs
 
       - name: Check public site source
         working-directory: mesh
         run: npm run check:public-site
+
+      - name: Check beta product boundary
+        working-directory: mesh
+        run: npm run check:beta-contract
+
+      - name: Check production operations boundary
+        working-directory: mesh
+        run: npm run check:operations-contract
 
       - name: Check homeserver recovery scripts
         working-directory: mesh

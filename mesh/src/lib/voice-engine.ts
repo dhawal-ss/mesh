@@ -71,7 +71,7 @@ export class VoiceEngine {
   private relayRebuildTimer: number | null = null
   private relayRebuildCount = 0
   private lastRelayKey: string | null = null
-  // Injectable seam for peer creation — tests pass a FakeVoicePeerFactory.
+  // Injectable seam for peer creation: tests pass a FakeVoicePeerFactory.
   private readonly peerFactory: VoicePeerFactory
 
   constructor(
@@ -193,7 +193,7 @@ export class VoiceEngine {
    * Enables integration tests to drive the engine with a FakeVoicePeerFactory
    * without requiring a browser WebRTC environment.
    *
-   * Do not use in production code paths — always call `start()`.
+   * Do not use in production code paths: always call `start()`.
    */
   initForTesting(localPublicKey: string): void {
     this.destroyed = false

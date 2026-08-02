@@ -9,6 +9,8 @@ import {
   useSettingsStore,
 } from '../../store/settings'
 import { sequenceCardProps, type SequenceCardPosition } from '../ui/SequenceCard'
+import { Icon } from '../ui/Icon'
+import { PixelMark } from '../ui/PixelMark'
 import type {
   AppearanceAccent,
   AppearanceDensity,
@@ -34,6 +36,29 @@ interface UserSettingsPanelProps {
   onOpenDiagnostics?: () => void
   onOpenImport?: () => void
 }
+
+const ACCENT_CHOICES = [
+  { id: 'violet', label: 'Violet', description: 'Mesh default' },
+  { id: 'sand', label: 'Sand', description: 'Low-contrast warmth' },
+  { id: 'ocean', label: 'Ocean', description: 'Cool blue' },
+  { id: 'forest', label: 'Forest', description: 'Muted green' },
+  { id: 'ember', label: 'Ember', description: 'Burnt orange' },
+  { id: 'rose', label: 'Rose', description: 'Soft magenta' },
+] as const satisfies ReadonlyArray<{
+  id: AppearanceAccent
+  label: string
+  description: string
+}>
+
+type UserSettingsTab = 'account' | 'appearance' | 'notifications' | 'privacy' | 'devices'
+
+const SETTINGS_TABS = [
+  ['account', 'Account'],
+  ['appearance', 'Appearance'],
+  ['notifications', 'Notifications'],
+  ['privacy', 'Privacy'],
+  ['devices', 'Devices'],
+] as const satisfies ReadonlyArray<readonly [UserSettingsTab, string]>
 
 export function UserSettingsPanel({
   open,
@@ -85,7 +110,9 @@ export function UserSettingsPanel({
     null,
   )
   const [advancedUnlocked, setAdvancedUnlocked] = useState(false)
+  const [activeTab, setActiveTab] = useState<UserSettingsTab>('appearance')
   const versionTapCount = useRef(0)
+  const settingsScrollRef = useRef<HTMLDivElement>(null)
   const conversationPrivacy = activeConversationId
     ? privacy.conversationPrivacy[activeConversationId]
     : undefined
@@ -151,8 +178,49 @@ export function UserSettingsPanel({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="User Settings">
-      <div className="max-h-settings space-y-3 overflow-y-auto pr-1">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="User Settings"
+      description="Make Mesh feel like yours."
+      size="lg"
+      className="overflow-hidden"
+      closeLabel="Close user settings"
+    >
+      <div className="-mx-4 border-b border-border-subtle px-4">
+        <div
+          role="tablist"
+          aria-label="User settings"
+          className="flex min-w-0 gap-1 overflow-x-auto"
+        >
+          {SETTINGS_TABS.map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === id}
+              aria-controls={`user-settings-panel-${id}`}
+              className={`relative min-h-11 flex-shrink-0 px-3 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
+                activeTab === id ? 'text-accent' : 'text-muted hover:text-primary'
+              }`}
+              onClick={() => {
+                setActiveTab(id)
+                window.requestAnimationFrame(() => {
+                  if (settingsScrollRef.current) settingsScrollRef.current.scrollTop = 0
+                })
+              }}
+            >
+              {label}
+              {activeTab === id && (
+                <span className="absolute inset-x-1 bottom-0 h-0.5 rounded-full bg-accent" aria-hidden="true" />
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div ref={settingsScrollRef} className="mesh-settings-scroll overflow-y-auto py-5 pr-1">
+        {activeTab === 'account' && (
         <section className="border-b border-border-subtle pb-5">
           <p className="text-2xs uppercase tracking-signal text-muted">Account</p>
           <div className="mt-3 min-w-0">
@@ -223,9 +291,13 @@ export function UserSettingsPanel({
             </form>
           )}
         </section>
+        )}
 
+        {activeTab === 'appearance' && (
         <section
-          className="space-y-3 border-b border-border-subtle pb-5"
+          id="user-settings-panel-appearance"
+          role="tabpanel"
+          className="space-y-5"
           aria-labelledby="appearance-settings-heading"
         >
           <div>
@@ -233,13 +305,12 @@ export function UserSettingsPanel({
               Appearance
             </p>
             <p className="mt-1 text-xs leading-5 text-muted">
-              Choose how Mesh looks and how much space its controls use. These preferences are saved
-              on this device.
+              Changes preview instantly and stay on this device.
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <AppearanceSelect
+          <div className="space-y-4">
+            <AppearanceSegmentedControl
               id="appearance-theme"
               label="Theme"
               value={appearance.theme}
@@ -250,7 +321,7 @@ export function UserSettingsPanel({
               ]}
               onChange={(value) => setAppearanceTheme(value as AppearanceTheme)}
             />
-            <AppearanceSelect
+            <AppearanceSegmentedControl
               id="appearance-density"
               label="Density"
               value={appearance.density}
@@ -261,23 +332,9 @@ export function UserSettingsPanel({
               ]}
               onChange={(value) => setAppearanceDensity(value as AppearanceDensity)}
             />
-            <AppearanceSelect
-              id="appearance-accent"
-              label="Accent"
-              value={appearance.accent}
-              options={[
-                ['sand', 'Sand'],
-                ['ocean', 'Ocean'],
-                ['violet', 'Violet'],
-                ['forest', 'Forest'],
-                ['ember', 'Ember'],
-                ['rose', 'Rose'],
-              ]}
-              onChange={(value) => setAppearanceAccent(value as AppearanceAccent)}
-            />
-            <AppearanceSelect
+            <AppearanceSegmentedControl
               id="appearance-transparency"
-              label="Transparency"
+              label="Window transparency"
               value={appearance.transparency}
               options={[
                 ['readable', 'Subtle'],
@@ -286,9 +343,80 @@ export function UserSettingsPanel({
               onChange={(value) => setAppearanceTransparency(value as AppearanceTransparency)}
             />
           </div>
-        </section>
 
-        {matrixMode && (
+          <fieldset>
+            <legend className="text-xs font-medium text-muted">Accent color</legend>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {ACCENT_CHOICES.map((choice) => {
+                const selected = appearance.accent === choice.id
+                return (
+                  <label
+                    key={choice.id}
+                    className={`group flex min-h-16 cursor-pointer items-center gap-3 rounded-control border px-3 py-2.5 transition-colors ${
+                      selected
+                        ? 'border-accent bg-accent/10'
+                        : 'border-border-subtle bg-surface-sunken hover:border-border-emphasis hover:bg-surface-hover'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="appearance-accent"
+                      value={choice.id}
+                      checked={selected}
+                      onChange={() => setAppearanceAccent(choice.id)}
+                      className="sr-only"
+                    />
+                    <span
+                      className="mesh-accent-choice flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-control"
+                      data-accent-preview={choice.id}
+                      aria-hidden="true"
+                    >
+                      <PixelMark variant="community" className="h-9 w-9" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-primary">{choice.label}</span>
+                      <span className="mt-0.5 block text-caption text-muted">{choice.description}</span>
+                    </span>
+                    {selected && (
+                      <span className="ml-auto flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-accent text-content-on-accent" aria-hidden="true">
+                        <Icon name="check" size="xs" />
+                      </span>
+                    )}
+                  </label>
+                )
+              })}
+            </div>
+            <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption leading-5 text-muted">
+              <span className="h-2 w-2 rounded-full bg-status-success" aria-hidden="true" />
+              Status colors stay consistent. Connected, warning, and destructive actions do not change with your accent.
+            </p>
+          </fieldset>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle pt-4">
+            <button
+              type="button"
+              className="min-h-9 rounded-control px-2 text-sm font-medium text-accent hover:bg-accent/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              onClick={() => {
+                setAppearanceTheme('dark')
+                setAppearanceDensity('default')
+                setAppearanceAccent('violet')
+                setAppearanceTransparency('readable')
+              }}
+            >
+              Reset to Mesh default
+            </button>
+            <div className="ml-auto flex items-center gap-3">
+              <span className="flex items-center gap-2 text-caption text-muted">
+                <span className="h-2 w-2 rounded-full bg-status-success" aria-hidden="true" />
+                Saved on this device
+              </span>
+              <Button variant="primary" onClick={onClose}>Done</Button>
+            </div>
+          </div>
+        </section>
+        )}
+
+        {matrixMode && activeTab === 'privacy' && (
           <section
             className="space-y-4 border-b border-border-subtle pb-5"
             aria-labelledby="privacy-center-heading"
@@ -408,9 +536,9 @@ export function UserSettingsPanel({
                 description="Choose whether people in a conversation can see when you have read their messages."
                 value={privacy.readReceiptMode}
                 options={[
-                  ['public', 'Public — show when I have read messages'],
-                  ['private', 'Private — keep receipts between my devices'],
-                  ['off', 'Off — do not send read receipts'],
+                  ['public', 'Public: show when I have read messages'],
+                  ['private', 'Private: keep receipts between my devices'],
+                  ['off', 'Off: do not send read receipts'],
                 ]}
                 onChange={(value) => setReadReceiptMode(value as ReadReceiptMode)}
                 sequencePosition="first"
@@ -522,6 +650,7 @@ export function UserSettingsPanel({
           </section>
         )}
 
+        {activeTab === 'notifications' && (
         <section
           className="space-y-3 border-b border-border-subtle pb-5"
           aria-labelledby="notification-settings-heading"
@@ -659,8 +788,9 @@ export function UserSettingsPanel({
             </p>
           )}
         </section>
+        )}
 
-        {matrixMode && (
+        {matrixMode && activeTab === 'devices' && (
           <section className="border-b border-border-subtle pb-5">
             <div className="flex items-center gap-2">
               <p className="text-sm font-medium text-primary">Your devices</p>
@@ -682,7 +812,7 @@ export function UserSettingsPanel({
           </section>
         )}
 
-        {matrixMode && (
+        {matrixMode && activeTab === 'privacy' && (
           <section
             className="border-b border-border-subtle pb-5"
             aria-labelledby="call-privacy-heading"
@@ -703,7 +833,7 @@ export function UserSettingsPanel({
           </section>
         )}
 
-        {advancedUnlocked && (
+        {activeTab === 'devices' && advancedUnlocked && (
           <section
             className="rounded-panel border border-border-subtle bg-surface-sunken p-4"
             aria-labelledby="advanced-settings-heading"
@@ -729,6 +859,7 @@ export function UserSettingsPanel({
           </section>
         )}
 
+        {activeTab === 'devices' && (
         <button
           type="button"
           className="mx-auto flex min-h-8 items-center rounded-control px-2 text-caption text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
@@ -740,6 +871,7 @@ export function UserSettingsPanel({
         >
           Mesh 0.1.0
         </button>
+        )}
       </div>
     </Modal>
   )
@@ -769,7 +901,7 @@ function PrivacyVisibilityRow({
   )
 }
 
-function AppearanceSelect({
+function AppearanceSegmentedControl({
   id,
   label,
   value,
@@ -783,21 +915,35 @@ function AppearanceSelect({
   onChange: (value: string) => void
 }) {
   return (
-    <label htmlFor={id} className="block text-xs font-medium text-muted">
-      {label}
-      <select
+    <fieldset>
+      <legend className="text-xs font-medium text-primary">{label}</legend>
+      <div
         id={id}
-        className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
+        className="mt-2 grid overflow-hidden rounded-control border border-border-subtle bg-surface-sunken"
+        style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
       >
         {options.map(([optionValue, optionLabel]) => (
-          <option key={optionValue} value={optionValue}>
+          <label
+            key={optionValue}
+            className={`relative flex min-h-9 cursor-pointer items-center justify-center border-l border-border-subtle px-3 text-center text-xs font-medium first:border-l-0 ${
+              value === optionValue
+                ? 'bg-accent/10 text-accent outline outline-1 -outline-offset-1 outline-accent'
+                : 'text-muted hover:bg-surface-hover hover:text-primary'
+            }`}
+          >
+            <input
+              type="radio"
+              name={id}
+              value={optionValue}
+              checked={value === optionValue}
+              onChange={() => onChange(optionValue)}
+              className="sr-only"
+            />
             {optionLabel}
-          </option>
+          </label>
         ))}
-      </select>
-    </label>
+      </div>
+    </fieldset>
   )
 }
 

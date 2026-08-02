@@ -33,6 +33,14 @@ import { useRoomPinStore } from '../../store/room-pins'
 import { useShellStore } from '../../store/shell'
 import { FileAttachmentCard, MessageComponent } from './Message'
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
 function malformedMessage(): Message {
   return {
     id: 'message-1',
@@ -214,6 +222,141 @@ describe('MessageComponent federated timestamps', () => {
 
     expect(firstRowUpdates).toBeGreaterThan(0)
     expect(secondRowUpdates).toBe(0)
+  })
+
+  it('preserves failed edit text and retries without double submission', async () => {
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@alice:example.org')
+    const onEdit = vi.fn()
+      .mockRejectedValueOnce(new Error('service unavailable'))
+      .mockResolvedValueOnce(undefined)
+
+    await act(async () => {
+      root.render(
+        <MessageComponent
+          message={{
+            ...malformedMessage(),
+            timestamp: '2026-07-30T12:00:00.000Z',
+          }}
+          isGrouped={false}
+          surface="dm"
+          onEdit={onEdit}
+        />,
+      )
+    })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="Edit message"]')?.click()
+    })
+    const editor = container.querySelector<HTMLTextAreaElement>('textarea')
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        'value',
+      )?.set
+      valueSetter?.call(editor, 'Keep this edited text')
+      editor?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      [...container.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'save')
+        ?.click()
+      await Promise.resolve()
+    })
+
+    expect(onEdit).toHaveBeenCalledTimes(1)
+    expect(container.querySelector<HTMLTextAreaElement>('textarea')?.value)
+      .toBe('Keep this edited text')
+    expect(container.textContent).toContain('Save edit failed')
+
+    await act(async () => {
+      [...container.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'Retry')
+        ?.click()
+      await Promise.resolve()
+    })
+
+    expect(onEdit).toHaveBeenCalledTimes(2)
+    expect(container.querySelector('textarea')).toBeNull()
+  })
+
+  it('deduplicates rapid edit submissions while the current attempt is pending', async () => {
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@alice:example.org')
+    const pendingEdit = deferred<void>()
+    const onEdit = vi.fn(() => pendingEdit.promise)
+
+    await act(async () => {
+      root.render(
+        <MessageComponent
+          message={{
+            ...malformedMessage(),
+            timestamp: '2026-07-30T12:00:00.000Z',
+          }}
+          isGrouped={false}
+          surface="dm"
+          onEdit={onEdit}
+        />,
+      )
+    })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="Edit message"]')?.click()
+    })
+    const editor = container.querySelector<HTMLTextAreaElement>('textarea')
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        'value',
+      )?.set
+      valueSetter?.call(editor, 'One durable edit')
+      editor?.dispatchEvent(new Event('input', { bubbles: true }))
+      editor?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      editor?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(onEdit).toHaveBeenCalledTimes(1)
+    expect(container.querySelector<HTMLTextAreaElement>('textarea')?.disabled).toBe(true)
+
+    await act(async () => {
+      pendingEdit.resolve()
+      await pendingEdit.promise
+    })
+    expect(container.querySelector('textarea')).toBeNull()
+  })
+
+  it('deduplicates rapid reaction mutations while the current attempt is pending', async () => {
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@alice:example.org')
+    const pendingReaction = deferred<void>()
+    const onReact = vi.fn(() => pendingReaction.promise)
+
+    await act(async () => {
+      root.render(
+        <MessageComponent
+          message={{
+            ...malformedMessage(),
+            timestamp: '2026-07-30T12:00:00.000Z',
+            reactions: { 'ðŸ‘': ['@bob:example.org'] },
+          }}
+          isGrouped={false}
+          surface="dm"
+          onReact={onReact}
+        />,
+      )
+    })
+    const reaction = container.querySelector<HTMLButtonElement>('[aria-label*="reaction"]')
+    await act(async () => {
+      reaction?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      reaction?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(onReact).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      pendingReaction.resolve()
+      await pendingReaction.promise
+    })
   })
 
   it.each([
@@ -421,6 +564,55 @@ describe('MessageComponent federated timestamps', () => {
     expect(container.querySelector('[aria-label="Unpin message"]')).not.toBeNull()
   })
 
+  it('rolls back a failed pin and offers an in-row retry', async () => {
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@me:example.org')
+    const message = {
+      ...malformedMessage(),
+      id: '$message-pin-retry:example.org',
+      timestamp: '2026-07-28T09:42:00.000Z',
+    }
+    const togglePin = vi.spyOn(bridge, 'matrixToggleRoomPin')
+      .mockRejectedValueOnce(new Error('pin update offline'))
+      .mockResolvedValueOnce({
+        roomId: message.channelId,
+        eventIds: [message.id],
+        messages: [message],
+        unavailableEventIds: [],
+        canManage: true,
+      })
+    useRoomPinStore.setState({
+      roomId: message.channelId,
+      eventIds: [],
+      messages: [],
+      unavailableEventIds: [],
+      canManage: true,
+      loading: false,
+      loadFailed: false,
+    })
+    await act(async () => {
+      root.render(<MessageComponent message={message} isGrouped={false} />)
+    })
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Pin message"]')?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(container.querySelector('[aria-label="Unpin message"]')).toBeNull()
+    expect(container.textContent).toContain('Pin message failed')
+
+    await act(async () => {
+      [...container.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'Retry')
+        ?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(togglePin).toHaveBeenCalledTimes(2)
+    expect(container.querySelector('[aria-label="Unpin message"]')).not.toBeNull()
+  })
+
   it('reports Matrix messages to the selected account service from limited-action views', async () => {
     vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
     vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@me:matrix.org')
@@ -465,31 +657,12 @@ describe('MessageComponent federated timestamps', () => {
     )
   })
 
-  it('loads an encrypted thumbnail only near the viewport and revokes its Blob URL', async () => {
-    let intersectionCallback: IntersectionObserverCallback | undefined
-    class TestIntersectionObserver {
-      readonly root = null
-      readonly rootMargin = '160px 0px'
-      readonly thresholds = [0]
-      constructor(callback: IntersectionObserverCallback) {
-        intersectionCallback = callback
-      }
-      disconnect() {}
-      observe() {}
-      takeRecords(): IntersectionObserverEntry[] {
-        return []
-      }
-      unobserve() {}
-    }
-    const createObjectURL = vi.fn(() => 'blob:protected-thumbnail')
-    const revokeObjectURL = vi.fn()
-    vi.stubGlobal('IntersectionObserver', TestIntersectionObserver)
-    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL })
+  it('keeps encrypted thumbnail plaintext out of the renderer', async () => {
+    const createObjectURL = vi.fn()
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL: vi.fn() })
     vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
     vi.spyOn(bridge, 'onMatrixTransferProgress').mockResolvedValue(() => {})
-    vi.spyOn(bridge, 'matrixLoadAttachmentThumbnail').mockResolvedValue(
-      new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
-    )
+    const loadThumbnail = vi.spyOn(bridge, 'matrixLoadAttachmentThumbnail')
 
     await act(async () => {
       root.render(
@@ -502,132 +675,9 @@ describe('MessageComponent federated timestamps', () => {
       )
     })
 
-    expect(bridge.matrixLoadAttachmentThumbnail).not.toHaveBeenCalled()
-    await act(async () => {
-      intersectionCallback?.(
-        [{ isIntersecting: true } as IntersectionObserverEntry],
-        {} as IntersectionObserver,
-      )
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(bridge.matrixLoadAttachmentThumbnail).toHaveBeenCalledWith(
-      '!private:example.org',
-      '$image:example.org',
-      0,
-    )
-    expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:protected-thumbnail')
-
-    await act(async () => root.render(<div />))
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:protected-thumbnail')
-  })
-
-  it('shows a generic retry when a protected preview cannot be loaded', async () => {
-    let intersectionCallback: IntersectionObserverCallback | undefined
-    class TestIntersectionObserver {
-      readonly root = null
-      readonly rootMargin = '160px 0px'
-      readonly thresholds = [0]
-      constructor(callback: IntersectionObserverCallback) {
-        intersectionCallback = callback
-      }
-      disconnect() {}
-      observe() {}
-      takeRecords(): IntersectionObserverEntry[] {
-        return []
-      }
-      unobserve() {}
-    }
-    vi.stubGlobal('IntersectionObserver', TestIntersectionObserver)
-    vi.stubGlobal('URL', {
-      createObjectURL: vi.fn(() => 'blob:retried-thumbnail'),
-      revokeObjectURL: vi.fn(),
-    })
-    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
-    vi.spyOn(bridge, 'onMatrixTransferProgress').mockResolvedValue(() => {})
-    vi.spyOn(bridge, 'matrixLoadAttachmentThumbnail')
-      .mockRejectedValueOnce(new Error('secret transport detail'))
-      .mockResolvedValueOnce(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]))
-
-    await act(async () => {
-      root.render(
-        <FileAttachmentCard
-          attachment={previewAttachment()}
-          roomId="!private:example.org"
-          eventId="$image:example.org"
-          attachmentIndex={0}
-        />,
-      )
-    })
-    await act(async () => {
-      intersectionCallback?.(
-        [{ isIntersecting: true } as IntersectionObserverEntry],
-        {} as IntersectionObserver,
-      )
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    const retry = [...container.querySelectorAll('button')].find(
-      (button) => button.textContent === 'Retry preview',
-    )
-    expect(retry).toBeDefined()
-    expect(container.textContent).not.toContain('secret transport detail')
-
-    await act(async () => {
-      retry?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    expect(bridge.matrixLoadAttachmentThumbnail).toHaveBeenCalledTimes(2)
-    expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:retried-thumbnail')
-  })
-
-  it('requires explicit loading without intersection support and ignores stale completion', async () => {
-    let finishLoad: ((bytes: Uint8Array | null) => void) | undefined
-    const createObjectURL = vi.fn(() => 'blob:stale-thumbnail')
-    vi.stubGlobal('IntersectionObserver', undefined)
-    vi.stubGlobal('URL', {
-      createObjectURL,
-      revokeObjectURL: vi.fn(),
-    })
-    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
-    vi.spyOn(bridge, 'onMatrixTransferProgress').mockResolvedValue(() => {})
-    vi.spyOn(bridge, 'matrixLoadAttachmentThumbnail').mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          finishLoad = resolve
-        }),
-    )
-
-    await act(async () => {
-      root.render(
-        <FileAttachmentCard
-          attachment={previewAttachment()}
-          roomId="!private:example.org"
-          eventId="$image:example.org"
-          attachmentIndex={0}
-        />,
-      )
-    })
-    expect(bridge.matrixLoadAttachmentThumbnail).not.toHaveBeenCalled()
-
-    const load = [...container.querySelectorAll('button')].find(
-      (button) => button.textContent === 'Load preview',
-    )
-    expect(load).toBeDefined()
-    await act(async () => {
-      load?.click()
-      await Promise.resolve()
-    })
-    expect(bridge.matrixLoadAttachmentThumbnail).toHaveBeenCalledTimes(1)
-
-    await act(async () => root.render(<div />))
-    await act(async () => {
-      finishLoad?.(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]))
-      await Promise.resolve()
-    })
+    expect(container.textContent).toContain('Encrypted preview stays protected')
+    expect(container.querySelector('img')).toBeNull()
+    expect(loadThumbnail).not.toHaveBeenCalled()
     expect(createObjectURL).not.toHaveBeenCalled()
   })
 })

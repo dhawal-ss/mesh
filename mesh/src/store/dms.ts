@@ -3,6 +3,14 @@ import type { DmConversation, DirectMessage } from '../types/ipc'
 import * as bridge from '../lib/bridge'
 import { patchChanges } from '../lib/state'
 
+export type LoadStatus = 'idle' | 'loading' | 'loaded' | 'refreshing' | 'failed'
+
+export interface LoadState {
+  status: LoadStatus
+  error: unknown | null
+  generation: number
+}
+
 interface DmStore {
   /** Normalized conversation source of truth. */
   conversationEntities: Record<string, DmConversation>
@@ -16,6 +24,8 @@ interface DmStore {
   messages: Record<string, DirectMessage[]>
   activeConversationId: string | null
   isDmMode: boolean
+  conversationLoad: LoadState
+  messageLoads: Record<string, LoadState>
 
   setDmMode: (active: boolean) => void
   setActiveConversation: (id: string | null) => void
@@ -87,6 +97,8 @@ export const useDmStore = create<DmStore>((set, get) => ({
   messages: {},
   activeConversationId: null,
   isDmMode: false,
+  conversationLoad: { status: 'idle', error: null, generation: 0 },
+  messageLoads: {},
 
   setDmMode: (active) => set({ isDmMode: active }),
 
@@ -105,17 +117,56 @@ export const useDmStore = create<DmStore>((set, get) => ({
     }),
 
   loadConversations: async () => {
+    const generation = get().conversationLoad.generation + 1
+    const hasLastGood = get().conversationLoad.status === 'loaded'
+      || get().conversations.length > 0
+    set({
+      conversationLoad: {
+        status: hasLastGood ? 'refreshing' : 'loading',
+        error: null,
+        generation,
+      },
+    })
     try {
-      get().setConversations(await bridge.getDmConversations())
+      const incoming = await bridge.getDmConversations()
+      set((state) => {
+        if (state.conversationLoad.generation !== generation) return state
+        const normalized = normalizeConversations(incoming, state.conversationEntities)
+        const unchanged =
+          sameOrder(state.conversationOrder, normalized.conversationOrder) &&
+          normalized.conversationOrder.every(
+            (id) => state.conversationEntities[id] === normalized.conversationEntities[id],
+          )
+        const conversationLoad = { status: 'loaded', error: null, generation } as const
+        return unchanged ? { conversationLoad } : { ...normalized, conversationLoad }
+      })
     } catch (err) {
-      console.error('Failed to load DM conversations:', err)
+      if (get().conversationLoad.generation === generation) {
+        set({ conversationLoad: { status: 'failed', error: err, generation } })
+      }
+      throw err
     }
   },
 
   loadMessages: async (conversationId) => {
+    const current = get().messageLoads[conversationId]
+    const generation = (current?.generation ?? 0) + 1
+    const hasLastGood = current?.status === 'loaded'
+      || Object.prototype.hasOwnProperty.call(get().messages, conversationId)
+    set((state) => ({
+      messageLoads: {
+        ...state.messageLoads,
+        [conversationId]: {
+          status: hasLastGood ? 'refreshing' : 'loading',
+          error: null,
+          generation,
+        },
+      },
+    }))
     try {
       const incoming = await bridge.getDmMessages(conversationId, 50)
       set((state) => {
+        if (state.messageLoads[conversationId]?.generation !== generation) return state
         const normalized = normalizeMessages(
           incoming,
           state.messageEntities[conversationId] ?? {},
@@ -126,7 +177,12 @@ export const useDmStore = create<DmStore>((set, get) => ({
           normalized.order.every(
             (id) => state.messageEntities[conversationId]?.[id] === normalized.entities[id],
           )
-        if (unchanged) return state
+        const nextLoad = { status: 'loaded', error: null, generation } as const
+        if (unchanged) {
+          return {
+            messageLoads: { ...state.messageLoads, [conversationId]: nextLoad },
+          }
+        }
         return {
           messageEntities: {
             ...state.messageEntities,
@@ -140,10 +196,21 @@ export const useDmStore = create<DmStore>((set, get) => ({
             ...state.messages,
             [conversationId]: normalized.messages,
           },
+          messageLoads: { ...state.messageLoads, [conversationId]: nextLoad },
         }
       })
     } catch (err) {
-      console.error('Failed to load DM messages:', err)
+      set((state) => (
+        state.messageLoads[conversationId]?.generation === generation
+          ? {
+              messageLoads: {
+                ...state.messageLoads,
+                [conversationId]: { status: 'failed', error: err, generation },
+              },
+            }
+          : state
+      ))
+      throw err
     }
   },
 

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-request-message-history"
+description = "Enables the request_message_history command without any pre-configured scope."
+commands.allow = ["request_message_history"]
+
+[[permission]]
+identifier = "deny-request-message-history"
+description = "Denies the request_message_history command without any pre-configured scope."
+commands.deny = ["request_message_history"]

@@ -25,7 +25,7 @@ interface DiagnosticsPanelProps {
 /// Auto-refresh interval when the panel is open (milliseconds).
 const REFRESH_INTERVAL_MS = 3000
 
-/// Diagnostics panel — consumes the `get_diagnostics` command and renders a
+/// Diagnostics panel: consumes the `get_diagnostics` command and renders a
 /// compact operational health view. Designed for operators and support to
 /// answer "is the app working?" without parsing logs.
 export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: DiagnosticsPanelProps) {
@@ -351,7 +351,7 @@ function DiagnosticsContent({
             label="Pending messages"
             value={data.pendingMessageCount.toString()}
             // Only flag as a problem if we have peers AND still have pending.
-            // Solo + pending is normal — they'll re-broadcast when peers arrive.
+            // Solo + pending is normal: they'll re-broadcast when peers arrive.
             ok={data.pendingMessageCount === 0 || !data.networkConnected}
           />
         </Grid>
@@ -359,7 +359,7 @@ function DiagnosticsContent({
           <p className="mt-2 text-xs text-muted">
             Running as a solo peer. Your messages, communities, and settings are
             stored locally and visible to you immediately. They'll automatically
-            sync to other peers when someone joins the mesh — either via a local
+            sync to other peers when someone joins the mesh: either via a local
             network (mDNS) or by configuring{' '}
             <code className="rounded-control bg-surface-sunken px-1">MESH_BOOTSTRAP_PEERS</code>.
           </p>

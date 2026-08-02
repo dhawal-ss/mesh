@@ -4,6 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSettingsStore } from '../../store/settings'
 import { UserSettingsPanel } from './UserSettingsPanel'
 
+async function openSettingsTab(label: string) {
+  const tab = Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(
+    (button) => button.textContent === label,
+  )
+  expect(tab).toBeDefined()
+  await act(async () => tab?.click())
+}
+
 describe('UserSettingsPanel', () => {
   let container: HTMLDivElement
   let root: Root
@@ -71,15 +79,20 @@ describe('UserSettingsPanel', () => {
       )
     })
 
+    await openSettingsTab('Account')
     expect(document.body.textContent).toContain('alice')
     expect(document.body.textContent).toContain('Mesh account')
     expect(document.body.textContent).not.toContain('@alice:example.org')
+    await openSettingsTab('Devices')
     const securityButton = Array.from(document.body.querySelectorAll('button')).find((button) =>
       button.textContent?.includes('Open your devices'),
     )
     expect(securityButton).toBeDefined()
     expect(document.body.textContent).toContain('Your devices')
     expect(document.body.textContent).not.toContain('Security & Devices')
+    await act(async () => securityButton?.click())
+    expect(openSecurity).toHaveBeenCalledOnce()
+    await openSettingsTab('Privacy')
     expect(document.body.textContent).toContain('Call privacy')
     expect(document.body.textContent).toContain(
       'The service can see who connects, network addresses, call timing, and traffic volume.',
@@ -87,9 +100,6 @@ describe('UserSettingsPanel', () => {
     expect(document.body.textContent).toContain(
       'your microphone, camera, screen, and incoming media stay off',
     )
-
-    await act(async () => securityButton?.click())
-    expect(openSecurity).toHaveBeenCalledOnce()
   })
 
   it('updates real notification preferences and disables sound with notifications', async () => {
@@ -110,6 +120,7 @@ describe('UserSettingsPanel', () => {
       )
     })
 
+    await openSettingsTab('Notifications')
     const checkboxes = document.body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')
     expect(checkboxes).toHaveLength(5)
     expect(checkboxes[0]?.checked).toBe(true)
@@ -143,6 +154,7 @@ describe('UserSettingsPanel', () => {
       )
     })
 
+    await openSettingsTab('Privacy')
     expect(document.body.textContent).toContain('Privacy Center')
     expect(document.body.textContent).toContain('What your service can see')
     expect(document.body.textContent).toContain('Message and file content')
@@ -224,6 +236,7 @@ describe('UserSettingsPanel', () => {
       )
     })
 
+    await openSettingsTab('Privacy')
     expect(document.body.textContent).toContain('could not confirm them on your account')
     expect(
       Array.from(document.body.querySelectorAll('button')).some((button) =>
@@ -252,6 +265,7 @@ describe('UserSettingsPanel', () => {
       )
     })
 
+    await openSettingsTab('Notifications')
     const sound = document.body.querySelector<HTMLSelectElement>('#notification-sound')
     await act(async () => {
       if (sound) sound.value = 'pulse'
@@ -318,25 +332,41 @@ describe('UserSettingsPanel', () => {
       )
     })
 
-    const theme = document.body.querySelector<HTMLSelectElement>('#appearance-theme')
-    const density = document.body.querySelector<HTMLSelectElement>('#appearance-density')
-    const accent = document.body.querySelector<HTMLSelectElement>('#appearance-accent')
-    const transparency = document.body.querySelector<HTMLSelectElement>('#appearance-transparency')
+    const darkTheme = document.body.querySelector<HTMLInputElement>(
+      'input[name="appearance-theme"][value="dark"]',
+    )
+    const highContrastTheme = document.body.querySelector<HTMLInputElement>(
+      'input[name="appearance-theme"][value="high-contrast"]',
+    )
+    const cozyDensity = document.body.querySelector<HTMLInputElement>(
+      'input[name="appearance-density"][value="default"]',
+    )
+    const compactDensity = document.body.querySelector<HTMLInputElement>(
+      'input[name="appearance-density"][value="compact"]',
+    )
+    const sandAccent = document.body.querySelector<HTMLInputElement>(
+      'input[name="appearance-accent"][value="sand"]',
+    )
+    const oceanAccent = document.body.querySelector<HTMLInputElement>(
+      'input[name="appearance-accent"][value="ocean"]',
+    )
+    const subtleTransparency = document.body.querySelector<HTMLInputElement>(
+      'input[name="appearance-transparency"][value="readable"]',
+    )
+    const opaqueTransparency = document.body.querySelector<HTMLInputElement>(
+      'input[name="appearance-transparency"][value="opaque"]',
+    )
 
-    expect(theme?.value).toBe('dark')
-    expect(density?.selectedOptions[0]?.textContent).toBe('Cozy')
-    expect(accent?.value).toBe('sand')
-    expect(transparency?.value).toBe('readable')
+    expect(darkTheme?.checked).toBe(true)
+    expect(cozyDensity?.checked).toBe(true)
+    expect(sandAccent?.checked).toBe(true)
+    expect(subtleTransparency?.checked).toBe(true)
 
     await act(async () => {
-      if (theme) theme.value = 'high-contrast'
-      theme?.dispatchEvent(new Event('change', { bubbles: true }))
-      if (density) density.value = 'compact'
-      density?.dispatchEvent(new Event('change', { bubbles: true }))
-      if (accent) accent.value = 'ocean'
-      accent?.dispatchEvent(new Event('change', { bubbles: true }))
-      if (transparency) transparency.value = 'opaque'
-      transparency?.dispatchEvent(new Event('change', { bubbles: true }))
+      highContrastTheme?.click()
+      compactDensity?.click()
+      oceanAccent?.click()
+      opaqueTransparency?.click()
     })
 
     expect(useSettingsStore.getState().appearance).toEqual({
@@ -371,6 +401,7 @@ describe('UserSettingsPanel', () => {
       )
     })
 
+    await openSettingsTab('Account')
     const displayNameInput = document.body.querySelector<HTMLInputElement>(
       'input[autocomplete="nickname"]',
     )
@@ -417,6 +448,7 @@ describe('UserSettingsPanel', () => {
       )
     })
 
+    await openSettingsTab('Account')
     const displayNameInput = document.body.querySelector<HTMLInputElement>(
       'input[autocomplete="nickname"]',
     )
@@ -461,6 +493,7 @@ describe('UserSettingsPanel', () => {
       )
     })
 
+    await openSettingsTab('Devices')
     expect(document.body.textContent).not.toContain('System diagnostics')
     const version = document.body.querySelector<HTMLButtonElement>(
       'button[aria-label="Mesh version 0.1.0"]',
@@ -502,6 +535,7 @@ describe('UserSettingsPanel', () => {
       )
     })
 
+    await openSettingsTab('Devices')
     await act(async () => {
       document.dispatchEvent(
         new KeyboardEvent('keydown', {

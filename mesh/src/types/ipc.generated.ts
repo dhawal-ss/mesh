@@ -110,7 +110,7 @@ export type ModerationAuditEntry = { id: string, actorUserId: string, actorDispl
 
 export type CommunityModerationResult = { audit: ModerationAuditEntry, auditRecorded: boolean, };
 
-export type MatrixCommunityAdmission = { registrationToken?: string | null, roomId: string, service: string, via: Array<string>, expiresAt?: number | null, communityName?: string | null, inviterDisplayName?: string | null, inviterUserId?: string | null, joinRule?: string | null, communityServiceDisplayName?: string | null, };
+export type MatrixCommunityAdmission = { roomId: string, service: string, via: Array<string>, expiresAt?: number | null, communityName?: string | null, inviterDisplayName?: string | null, inviterUserId?: string | null, joinRule?: string | null, communityServiceDisplayName?: string | null, };
 
 export type PendingInvitationMetadata = { handle: string, roomOrAlias: string | null, via: Array<string>, service: string | null, admissionService: string | null, communityName?: string | null, inviterDisplayName?: string | null, inviterUserId?: string | null, joinRule?: string | null, communityServiceDisplayName?: string | null, storedAt: number, expiresAt: number, };
 

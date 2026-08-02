@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-load-composer-draft"
+description = "Enables the matrix_load_composer_draft command without any pre-configured scope."
+commands.allow = ["matrix_load_composer_draft"]
+
+[[permission]]
+identifier = "deny-matrix-load-composer-draft"
+description = "Denies the matrix_load_composer_draft command without any pre-configured scope."
+commands.deny = ["matrix_load_composer_draft"]

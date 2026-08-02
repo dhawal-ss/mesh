@@ -14,6 +14,7 @@ import { useTypingStore } from '../store/typing'
 import { useVoiceStore } from '../store/voice'
 import { resetMatrixAccountPreferences } from '../store/settings'
 import { roomTabStorageKey } from './room-tabs'
+import { safeLocalStorageRemove } from './safe-storage'
 
 /**
  * Remove renderer-only state that belongs to the previously active account.
@@ -23,9 +24,7 @@ import { roomTabStorageKey } from './room-tabs'
  * stores; native secure storage remains the session authority.
  */
 export function clearRendererAccountState(removedAccountId?: string | null): void {
-  if (removedAccountId && typeof localStorage !== 'undefined') {
-    localStorage.removeItem(roomTabStorageKey(removedAccountId))
-  }
+  if (removedAccountId) safeLocalStorageRemove(roomTabStorageKey(removedAccountId))
   resetMatrixAccountPreferences()
 
   const emojiCommunities = Object.keys(useServerEmojiStore.getState().byCommunity)
@@ -47,6 +46,8 @@ export function clearRendererAccountState(removedAccountId?: string | null): voi
     channelOrder: [],
     channels: [],
     activeChannelId: null,
+    refreshByCommunity: {},
+    refreshRequests: {},
   })
   useDmStore.setState({
     conversationEntities: {},
@@ -57,6 +58,8 @@ export function clearRendererAccountState(removedAccountId?: string | null): voi
     messages: {},
     activeConversationId: null,
     isDmMode: false,
+    conversationLoad: { status: 'idle', error: null, generation: 0 },
+    messageLoads: {},
   })
   useMembershipStore.setState({
     memberEntities: {},

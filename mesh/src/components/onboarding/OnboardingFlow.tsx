@@ -1,10 +1,11 @@
 import { AnimatePresence, motion } from '../../lib/lazy-motion'
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useRef, useState } from 'react'
 import { MatrixAccountScreen, type MatrixAccountOutcome } from './MatrixAccountScreen'
 import { Button } from '../ui/Button'
 import { ErrorState } from '../ui/ErrorState'
 import { Spinner } from '../ui/Spinner'
 import { Icon, type IconName } from '../ui/Icon'
+import { PixelMark } from '../ui/PixelMark'
 import { variants } from '../../lib/motion'
 import { DEFAULT_AVATAR_COLORS, type OnboardingFlowProps, type OnboardingProfile } from './types'
 import type { MatrixRecoverySetupResult } from '../../types/ipc'
@@ -67,7 +68,6 @@ export function OnboardingFlow({
   onMatrixLogin,
   onMatrixOidcLogin,
   onMatrixSwitchAccount,
-  onResolvePendingInvitation,
   onDiscardPendingInvitation,
   onCreateBackupCode,
   onBackupConfigured,
@@ -75,7 +75,6 @@ export function OnboardingFlow({
   onGenerateIdentity,
   onUpdateProfile,
   onBootstrap,
-  initialMatrixInvitation,
   initialPendingInvitation,
   initialProfile,
   avatarColors = DEFAULT_AVATAR_COLORS,
@@ -99,6 +98,13 @@ export function OnboardingFlow({
         ? 'profile'
         : 'identity',
   )
+  const stepContentRef = useRef<HTMLDivElement>(null)
+  const focusCurrentStepHeading = () => {
+    const heading = stepContentRef.current?.querySelector<HTMLElement>('h1, [role="heading"]')
+    if (!heading) return
+    heading.tabIndex = -1
+    heading.focus({ preventScroll: true })
+  }
   const [profile, setProfile] = useState<OnboardingProfile>({
     displayName: initialProfile?.displayName ?? '',
     avatarColor: initialProfile?.avatarColor ?? avatarColors[0] ?? DEFAULT_AVATAR_COLORS[0],
@@ -149,30 +155,30 @@ export function OnboardingFlow({
   }
 
   return (
-    <main className="h-screen overflow-y-auto bg-surface-sunken p-4 sm:px-6">
+    <main className="mesh-onboarding-root h-screen overflow-hidden bg-surface-sunken p-3 sm:p-4">
       <motion.section
         aria-label="Set up Mesh"
         data-onboarding-shell
-        className="mx-auto grid w-full max-w-onboarding-shell rounded-panel border border-border-subtle bg-surface-base shadow-overlay lg:min-h-onboarding-shell lg:grid-cols-[minmax(17rem,0.78fr)_minmax(28rem,1.22fr)]"
+        className="mesh-onboarding-shell mx-auto grid h-full w-full max-w-onboarding-shell overflow-hidden rounded-panel border border-border-subtle bg-surface-base shadow-overlay lg:grid-cols-[minmax(18rem,0.76fr)_minmax(30rem,1.24fr)]"
         variants={variants.screen}
         initial="initial"
         animate="animate"
         exit="exit"
       >
-        <aside className="flex flex-col border-b border-border-subtle bg-surface-base px-5 py-5 sm:grid sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-8 sm:px-8 sm:py-6 lg:flex lg:flex-col lg:items-stretch lg:gap-0 lg:border-b-0 lg:border-r lg:px-10 lg:py-8">
+        <aside className="mesh-onboarding-aside flex flex-col border-b border-border-subtle bg-surface-base px-5 py-5 sm:grid sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-8 sm:px-8 sm:py-6 lg:flex lg:flex-col lg:items-stretch lg:gap-0 lg:border-b-0 lg:border-r lg:px-10 lg:py-8">
           <div className="flex items-center gap-3" aria-label="Mesh">
-            <span className="flex h-9 w-9 items-center justify-center rounded-control bg-accent text-content-on-accent">
-              <Icon name="shieldCheck" size="md" />
+            <span className="mesh-pixel-brand flex h-10 w-10 items-center justify-center text-accent">
+              <PixelMark variant="brand" className="h-10 w-10" />
             </span>
             <span>
-              <span className="block text-sm font-semibold tracking-tight text-content">Mesh</span>
+              <span className="block text-base font-semibold tracking-tight text-content">Mesh</span>
               <span className="block text-caption uppercase tracking-section text-content-muted">
-                Community messenger
+                Private community chat
               </span>
             </span>
           </div>
 
-          <div className="mt-6 sm:mt-0 lg:mt-12">
+          <div className="mt-6 sm:mt-0 lg:mt-14">
             <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">
               Your account, your trust
             </p>
@@ -180,12 +186,12 @@ export function OnboardingFlow({
               Conversations that stay yours.
             </h2>
             <p className="mt-3 max-w-sm text-sm leading-6 text-content-secondary">
-              Familiar rooms and messages, with protection, device trust, and recovery built into
-              the experience.
+              Familiar rooms and messages, with privacy and service choice built in from the
+              beginning.
             </p>
           </div>
 
-          <div className="mt-8 hidden space-y-4 lg:block">
+          <div className="mesh-onboarding-trust mt-9 hidden space-y-5 lg:block">
             {TRUST_CUES.map((cue) => (
               <TrustCue key={cue.title} {...cue} />
             ))}
@@ -196,8 +202,8 @@ export function OnboardingFlow({
           </p>
         </aside>
 
-        <div className="flex min-w-0 flex-col bg-surface-raised px-5 py-4 sm:px-8 sm:py-5 lg:px-12">
-          <div className="mb-4">
+        <div className="mesh-onboarding-content flex min-h-0 min-w-0 flex-col bg-surface-raised px-5 py-4 sm:px-8 sm:py-5 lg:px-12">
+          <div className="mb-4 flex-none">
             <div className="flex items-center justify-between gap-4">
               <p className="text-caption font-semibold uppercase tracking-section text-content-muted">
                 Setup progress
@@ -234,7 +240,7 @@ export function OnboardingFlow({
             </ol>
           </div>
 
-          <div className="my-auto w-full max-w-lg">
+          <div ref={stepContentRef} className="mesh-onboarding-scroll my-auto w-full max-w-xl overflow-y-auto py-2 pr-1">
             <Suspense
               fallback={
                 <div
@@ -254,11 +260,10 @@ export function OnboardingFlow({
                     initial="initial"
                     animate="animate"
                     exit="exit"
+                    onAnimationComplete={focusCurrentStepHeading}
                   >
                     <MatrixAccountScreen
-                      initialInvitation={initialMatrixInvitation}
                       initialPendingInvitation={initialPendingInvitation}
-                      onResolvePendingInvitation={onResolvePendingInvitation}
                       onDiscardPendingInvitation={onDiscardPendingInvitation}
                       onMatrixCheckUsernameAvailable={onMatrixCheckUsernameAvailable}
                       onMatrixRegisterAccount={onMatrixRegisterAccount}
@@ -277,11 +282,12 @@ export function OnboardingFlow({
                     initial="initial"
                     animate="animate"
                     exit="exit"
+                    onAnimationComplete={focusCurrentStepHeading}
                   >
                     {!recoveryRequested ? (
                       <section aria-labelledby="recovery-consent-title" className="space-y-6">
                         <header className="space-y-2">
-                          <p className="text-caption uppercase tracking-eyebrow text-content-muted">
+                          <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">
                             Protect your messages
                           </p>
                           <h1
@@ -291,7 +297,7 @@ export function OnboardingFlow({
                             Set up message recovery
                           </h1>
                           <p className="max-w-lg text-sm leading-6 text-content-secondary">
-                            Your messages are locked so only you can read them — not even we can see
+                            Your messages are locked so only you can read them: not even we can see
                             them. That also means that if you lose this device, there is no way back
                             into your history unless you set up recovery now.
                           </p>
@@ -313,16 +319,17 @@ export function OnboardingFlow({
                           >
                             Set up recovery
                           </Button>
-                          <button
+                          <Button
                             type="button"
-                            className="w-full rounded-md px-3 py-2 text-sm text-content-secondary transition-colors hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                            variant="ghost"
+                            className="w-full"
                             onClick={() => {
                               onBackupSkipped?.()
                               setStep('bootstrap')
                             }}
                           >
                             Not now (you could lose your messages)
-                          </button>
+                          </Button>
                         </div>
                       </section>
                     ) : preparingBackup ? (
@@ -370,6 +377,7 @@ export function OnboardingFlow({
                     initial="initial"
                     animate="animate"
                     exit="exit"
+                    onAnimationComplete={focusCurrentStepHeading}
                   >
                     <IdentityScreen
                       backendKind={backendKind}
@@ -388,6 +396,7 @@ export function OnboardingFlow({
                     initial="initial"
                     animate="animate"
                     exit="exit"
+                    onAnimationComplete={focusCurrentStepHeading}
                   >
                     <JoinScreen
                       avatarColors={avatarColors}
@@ -409,6 +418,7 @@ export function OnboardingFlow({
                     initial="initial"
                     animate="animate"
                     exit="exit"
+                    onAnimationComplete={focusCurrentStepHeading}
                   >
                     <ReadyScreen
                       backendKind={backendKind}
@@ -437,8 +447,8 @@ function TrustCue({
   description: string
 }) {
   return (
-    <div className="flex gap-3">
-      <span className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-control bg-accent/10 text-accent">
+    <div className="flex gap-3.5">
+      <span className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-control border border-border-subtle bg-surface-sunken text-accent">
         <Icon name={icon} size="sm" />
       </span>
       <span>

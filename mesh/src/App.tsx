@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { listen } from '@tauri-apps/api/event'
 import { AnimatePresence, motion } from './lib/lazy-motion'
 import { OnboardingFlow } from './components/onboarding/OnboardingFlow'
 import { showToast, ToastContainer } from './components/ui/Toast'
@@ -12,9 +13,8 @@ import * as bridge from './lib/bridge'
 import { Spinner } from './components/ui/Spinner'
 import { variants } from './lib/motion'
 import { matrixIdentity, matrixProfileIdentity } from './lib/matrixIdentity'
-import type { Identity, MatrixCommunityAdmission } from './types/ipc'
+import type { Identity } from './types/ipc'
 import { registerPoll } from './lib/scheduler'
-import { installDeepLinkHandler } from './lib/deep-links'
 import { useShellStore } from './store/shell'
 import { describeError } from './lib/errors'
 
@@ -44,13 +44,6 @@ const MATRIX_BOOTSTRAP_STEPS = {
 } as const
 
 const MATRIX_STATUS_POLL_INTERVAL_MS = 5_000
-
-type PendingAdmissionResolution = {
-  handle: string
-  admission: MatrixCommunityAdmission | null
-  resolving: boolean
-  error: unknown
-}
 
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms))
 
@@ -108,6 +101,13 @@ export default function App() {
   const upsertCommunity = useCommunityStore((s) => s.upsertCommunity)
   const setActiveCommunity = useCommunityStore((s) => s.setActiveCommunity)
   const setChannels = useChannelStore((s) => s.setChannels)
+  const replaceCommunityChannels = useChannelStore((s) => s.replaceCommunityChannels)
+  const setCommunityRefresh = useChannelStore((s) => s.setCommunityRefresh)
+  const channelRefreshRequests = useChannelStore((s) => s.refreshRequests)
+  const channelRefreshRequestsKey = Object.entries(channelRefreshRequests)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([id, attempt]) => `${id}:${attempt}`)
+    .join('\u0000')
   const setActiveChannel = useChannelStore((s) => s.setActiveChannel)
   const setNetworkStatus = useNetworkStore((s) => s.setStatus)
   const setBackupConfigured = useSettingsStore((s) => s.setBackupConfigured)
@@ -116,22 +116,25 @@ export default function App() {
   const setPendingInvitation = useShellStore((state) => state.setPendingInvitation)
   const [showOnboarding, setShowOnboarding] = useState(!isTauriRuntime)
   const [backendStatus, setBackendStatus] = useState<bridge.BackendStatus | null>(null)
-  const [pendingAdmissionResolution, setPendingAdmissionResolution] =
-    useState<PendingAdmissionResolution | null>(null)
   const [invitationConfirming, setInvitationConfirming] = useState(false)
   const [invitationConfirmationError, setInvitationConfirmationError] = useState<unknown>(null)
-  const [invitationResolutionAttempt, setInvitationResolutionAttempt] = useState(0)
+  const pendingInvitationEpochRef = useRef(0)
 
   useEffect(() => {
     if (!isTauriRuntime) return
     let active = true
+    const epoch = ++pendingInvitationEpochRef.current
     void bridge
       .peekPendingInvitation()
       .then((pending) => {
-        if (active) setPendingInvitation(pending)
+        if (active && pendingInvitationEpochRef.current === epoch) {
+          setPendingInvitation(pending)
+        }
       })
       .catch((error) => {
-        if (active) console.warn('Could not inspect the pending invitation:', error)
+        if (active && pendingInvitationEpochRef.current === epoch) {
+          console.warn('Could not inspect the pending invitation:', error)
+        }
       })
     return () => {
       active = false
@@ -142,27 +145,26 @@ export default function App() {
     if (!isTauriRuntime) return
     let active = true
     let unlisten: (() => void) | undefined
-    void installDeepLinkHandler((inviteLink) => {
+
+    void listen('mesh-pending-invitation-ready', () => {
       if (!active) return
-      void bridge
-        .storePendingInvitation(inviteLink)
-        .then(async (pending) => {
-          if (!active) return
-          const describedPending = await bridge.peekPendingInvitation().catch(() => pending)
-          if (!active) return
-          setPendingInvitation(describedPending ?? pending)
-          setPendingAdmissionResolution(null)
+      const epoch = ++pendingInvitationEpochRef.current
+      void bridge.peekPendingInvitation()
+        .then((pending) => {
+          if (!active || pendingInvitationEpochRef.current !== epoch) return
+          setPendingInvitation(pending)
           setInvitationConfirmationError(null)
-          showToast('Community invitation saved securely and ready to review.', 'success')
+          if (pending) {
+            showToast('Community invitation saved securely and ready to review.', 'success')
+          }
         })
         .catch((error) => {
-          if (active) {
-            console.error('Could not save community invitation:', error)
-            showToast(
-              'Mesh could not save this invitation securely. Try opening it again.',
-              'error',
-            )
-          }
+          if (!active || pendingInvitationEpochRef.current !== epoch) return
+          console.warn('Could not inspect the saved community invitation:', error)
+          showToast(
+            'Mesh saved the invitation, but could not show its details yet. Try opening it again.',
+            'error',
+          )
         })
     })
       .then((cleanup) => {
@@ -170,8 +172,9 @@ export default function App() {
         else cleanup()
       })
       .catch((error) => {
-        console.error('Could not listen for community invitation links:', error)
+        if (active) console.error('Could not listen for saved community invitations:', error)
       })
+
     return () => {
       active = false
       unlisten?.()
@@ -312,15 +315,22 @@ export default function App() {
       return
     }
     let active = true
+    const epoch = ++pendingInvitationEpochRef.current
     void bridge
       .peekPendingInvitation()
       .then((describedPending) => {
-        if (active && describedPending?.handle === pendingHandle) {
+        if (
+          active
+          && pendingInvitationEpochRef.current === epoch
+          && describedPending?.handle === pendingHandle
+        ) {
           setPendingInvitation(describedPending)
         }
       })
       .catch((error) => {
-        if (active) console.warn('Could not refresh community invitation details:', error)
+        if (active && pendingInvitationEpochRef.current === epoch) {
+          console.warn('Could not refresh community invitation details:', error)
+        }
       })
     return () => {
       active = false
@@ -334,97 +344,27 @@ export default function App() {
     showOnboarding,
   ])
 
-  useEffect(() => {
-    const pendingHandle = pendingInvitation?.handle
-    const admissionService = pendingInvitation?.admissionService
-    if (
-      !isTauriRuntime ||
-      showOnboarding ||
-      backendStatus?.kind !== 'matrix' ||
-      !backendStatus.authenticated ||
-      !pendingHandle ||
-      !admissionService
-    ) {
-      return
-    }
-
-    let active = true
-    void Promise.resolve().then(async () => {
-      if (!active) return
-      setPendingAdmissionResolution({
-        handle: pendingHandle,
-        admission: null,
-        resolving: true,
-        error: null,
-      })
-      try {
-        const admission = await bridge.resolvePendingInvitation()
-        if (!active || useShellStore.getState().pendingInvitation?.handle !== pendingHandle) return
-        setPendingAdmissionResolution({
-          handle: pendingHandle,
-          admission,
-          resolving: false,
-          error: admission
-            ? null
-            : new Error(
-                'This invitation is no longer available. Discard it and ask for a new one.',
-              ),
-        })
-      } catch (error) {
-        if (active) {
-          setPendingAdmissionResolution({
-            handle: pendingHandle,
-            admission: null,
-            resolving: false,
-            error,
-          })
-        }
-      }
-    })
-    return () => {
-      active = false
-    }
-  }, [
-    backendStatus?.authenticated,
-    backendStatus?.kind,
-    invitationResolutionAttempt,
-    isTauriRuntime,
-    pendingInvitation?.admissionService,
-    pendingInvitation?.handle,
-    showOnboarding,
-  ])
-
   const confirmPendingInvitation = async () => {
     if (!pendingInvitation || invitationConfirming) return
     const handle = pendingInvitation.handle
+    const epoch = ++pendingInvitationEpochRef.current
     setInvitationConfirming(true)
     setInvitationConfirmationError(null)
     try {
-      const inviteLink = await bridge.readPendingInvitation()
-      if (!inviteLink) {
-        setPendingInvitation(null)
-        throw new Error('This saved invitation is no longer available. Open the invitation again.')
-      }
-      const result = await bridge.joinOrRequestCommunity(inviteLink)
-      if (useShellStore.getState().pendingInvitation?.handle !== handle) return
-      try {
-        await bridge.clearPendingInvitation()
-      } catch (clearError) {
-        console.warn(
-          'The community was opened, but its completed invitation could not be cleared:',
-          clearError,
-        )
-      }
+      const community = await bridge.joinPendingInvitation(handle)
+      if (
+        pendingInvitationEpochRef.current !== epoch
+        || useShellStore.getState().pendingInvitation?.handle !== handle
+      ) return
       setPendingInvitation(null)
-      setPendingAdmissionResolution(null)
-      if (result.status === 'joined' && result.community) {
-        upsertCommunity(result.community)
-        setActiveCommunity(result.community.id)
-        showToast(`Joined ${result.community.name}.`, 'success')
-      } else {
-        showToast('Your request was sent to the community administrators.', 'success')
-      }
+      upsertCommunity(community)
+      setActiveCommunity(community.id)
+      showToast(`Joined ${community.name}.`, 'success')
     } catch (error) {
+      if (
+        pendingInvitationEpochRef.current !== epoch
+        || useShellStore.getState().pendingInvitation?.handle !== handle
+      ) return
       console.error('Could not open community invitation:', error)
       setInvitationConfirmationError(error)
       const description = describeError(error, {
@@ -437,21 +377,27 @@ export default function App() {
     }
   }
 
-  const discardPendingInvitation = async () => {
-    try {
-      if (isTauriRuntime) await bridge.clearPendingInvitation()
-      setPendingInvitation(null)
-      setPendingAdmissionResolution(null)
-      setInvitationConfirmationError(null)
-    } catch (error) {
-      setInvitationConfirmationError(error)
-    }
+  const clearPendingInvitationForHandle = async (handle: string | undefined) => {
+    const epoch = ++pendingInvitationEpochRef.current
+    if (isTauriRuntime && handle) await bridge.clearPendingInvitation(handle)
+    if (
+      pendingInvitationEpochRef.current !== epoch
+      || useShellStore.getState().pendingInvitation?.handle !== handle
+    ) return
+    setPendingInvitation(null)
+    setInvitationConfirmationError(null)
   }
 
-  const activePendingAdmission =
-    pendingInvitation && pendingAdmissionResolution?.handle === pendingInvitation.handle
-      ? pendingAdmissionResolution
-      : null
+  const discardPendingInvitation = async () => {
+    const handle = pendingInvitation?.handle
+    try {
+      await clearPendingInvitationForHandle(handle)
+    } catch (error) {
+      if (useShellStore.getState().pendingInvitation?.handle === handle) {
+        setInvitationConfirmationError(error)
+      }
+    }
+  }
 
   useEffect(() => {
     if (!isTauriRuntime) {
@@ -466,34 +412,83 @@ export default function App() {
 
     let alive = true
 
-    const loadChannels = async () => {
+    const prioritizedCommunityIds = activeCommunityId && communityIds.includes(activeCommunityId)
+      ? [activeCommunityId, ...communityIds.filter((id) => id !== activeCommunityId)]
+      : communityIds
+
+    const repairSelection = () => {
+      const state = useChannelStore.getState()
+      const selected = state.activeChannelId
+        ? state.channelEntities[state.activeChannelId]
+        : undefined
+      if (selected?.communityId === activeCommunityId) return
+      setActiveChannel(
+        state.channelOrder.find(
+          (channelId) => state.channelEntities[channelId]?.communityId === activeCommunityId,
+        ) ?? null,
+      )
+    }
+
+    // Community navigation is local state and must be repaired immediately.
+    // Waiting for the selected community's network refresh can otherwise leave
+    // a room from the previous community interactive under the new selection.
+    repairSelection()
+
+    const loadCommunity = async (communityId: string) => {
+      const state = useChannelStore.getState()
+      const current = state.refreshByCommunity[communityId]
+      const generation = (current?.generation ?? 0) + 1
+      const hasLastGood = state.channels.some((channel) => channel.communityId === communityId)
+      setCommunityRefresh(communityId, {
+        status: hasLastGood ? 'stale' : 'loading',
+        error: null,
+        generation,
+      })
       try {
-        const channels = (
-          await Promise.all(communityIds.map((communityId) => bridge.getChannels(communityId)))
-        ).flat()
-        if (alive) {
-          setChannels(channels)
-          const currentActiveChannelId = useChannelStore.getState().activeChannelId
-          const currentActiveChannel = currentActiveChannelId
-            ? channels.find((channel) => channel.id === currentActiveChannelId)
-            : undefined
-          if (currentActiveChannel?.communityId !== activeCommunityId) {
-            setActiveChannel(
-              channels.find((channel) => channel.communityId === activeCommunityId)?.id ?? null,
-            )
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load channels:', err)
+        const channels = await bridge.getChannels(communityId)
+        if (!alive) return
+        const latest = useChannelStore.getState().refreshByCommunity[communityId]
+        if (latest?.generation !== generation) return
+        replaceCommunityChannels(communityId, channels)
+        setCommunityRefresh(communityId, { status: 'loaded', error: null, generation })
+        if (communityId === activeCommunityId) repairSelection()
+      } catch (error) {
+        if (!alive) return
+        const latest = useChannelStore.getState().refreshByCommunity[communityId]
+        if (latest?.generation !== generation) return
+        const stillHasLastGood = useChannelStore.getState().channels.some(
+          (channel) => channel.communityId === communityId,
+        )
+        setCommunityRefresh(communityId, {
+          status: stillHasLastGood ? 'stale' : 'failed',
+          error,
+          generation,
+        })
+        if (communityId === activeCommunityId) repairSelection()
+        console.error(`Failed to refresh rooms for community ${communityId}:`, error)
       }
     }
 
-    void loadChannels()
+    void (async () => {
+      const [selectedCommunityId, ...remainingCommunityIds] = prioritizedCommunityIds
+      if (selectedCommunityId) await loadCommunity(selectedCommunityId)
+      if (!alive) return
+      await Promise.allSettled(remainingCommunityIds.map(loadCommunity))
+    })()
 
     return () => {
       alive = false
     }
-  }, [activeCommunityId, communityIdsKey, isTauriRuntime, setActiveChannel, setChannels])
+  }, [
+    activeCommunityId,
+    channelRefreshRequestsKey,
+    communityIdsKey,
+    isTauriRuntime,
+    replaceCommunityChannels,
+    setActiveChannel,
+    setChannels,
+    setCommunityRefresh,
+  ])
 
   useEffect(() => {
     const userId =
@@ -584,13 +579,9 @@ export default function App() {
             >
               <OnboardingFlow
                 initialPendingInvitation={pendingInvitation}
-                onResolvePendingInvitation={async () => {
-                  if (!isTauriRuntime) return null
-                  return bridge.resolvePendingInvitation()
-                }}
                 onDiscardPendingInvitation={async () => {
-                  if (isTauriRuntime) await bridge.clearPendingInvitation()
-                  setPendingInvitation(null)
+                  const handle = pendingInvitation?.handle
+                  await clearPendingInvitationForHandle(handle)
                 }}
                 backendKind={backendStatus?.kind ?? 'matrix'}
                 backendAuthenticated={backendStatus?.authenticated ?? false}
@@ -849,15 +840,9 @@ export default function App() {
                 <Suspense fallback={null}>
                   <InvitationConfirmation
                     pending={pendingInvitation}
-                    admission={activePendingAdmission?.admission}
-                    resolving={activePendingAdmission?.resolving}
-                    resolutionError={activePendingAdmission?.error}
                     confirming={invitationConfirming}
                     confirmationError={invitationConfirmationError}
                     onConfirm={() => void confirmPendingInvitation()}
-                    onRetryResolution={() =>
-                      setInvitationResolutionAttempt((attempt) => attempt + 1)
-                    }
                     onDiscard={() => void discardPendingInvitation()}
                   />
                 </Suspense>

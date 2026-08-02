@@ -64,6 +64,10 @@ describe('OnboardingFlow account outcomes', () => {
 
     expect(container.querySelector('[aria-label="Set up Mesh"]')).not.toBeNull()
     expect(container.textContent).toContain('Conversations that stay yours.')
+    expect(container.textContent).toContain(
+      'Familiar rooms and messages, with privacy and service choice built in from the beginning.',
+    )
+    expect(container.textContent).not.toContain('Familiar rooms, voice, and messages')
     expect(container.textContent).toContain('Protected from the first message')
 
     const progress = container.querySelector<HTMLOListElement>('ol[aria-label="Setup progress"]')
@@ -107,6 +111,7 @@ describe('OnboardingFlow account outcomes', () => {
     expect(createBackupCode).not.toHaveBeenCalled()
     expect(container.textContent).toContain('Set up message recovery')
     expect(container.textContent).not.toContain('Ready step')
+    expect(document.activeElement?.textContent).toContain('Set up message recovery')
 
     const consent = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent === 'Set up recovery',

@@ -31,7 +31,7 @@ async function installAuthenticatedMatrixMock(
     let nextCallbackId = 1
     let nextListenerId = 1
     let invitationJoined = false
-    let pendingInvitationLink: string | null = null
+    let pendingInvitationLink: string | null = deepLinks?.[0] ?? null
 
     const pendingInvitationMetadata = () => {
       if (!pendingInvitationLink) return null
@@ -193,24 +193,15 @@ async function installAuthenticatedMatrixMock(
           return invitationJoined
             ? [community, secondCommunity, invitedCommunity]
             : [community, secondCommunity]
-        case 'matrix_join_community':
-          if (
-            args.roomOrAlias !== invitedCommunity.id
-            || !Array.isArray(args.via)
-            || args.via.length !== 1
-            || args.via[0] !== 'mesh.test'
-          ) {
-            throw new Error('Cold-start invitation was not forwarded to Matrix correctly')
+        case 'join_pending_invitation':
+          if (args.handle !== pendingInvitationMetadata()?.handle) {
+            throw new Error('Cold-start invitation handle was not forwarded correctly')
           }
           invitationJoined = true
+          pendingInvitationLink = null
           return invitedCommunity
-        case 'store_pending_invitation':
-          pendingInvitationLink = String(args.inviteLink)
-          return pendingInvitationMetadata()
         case 'peek_pending_invitation':
           return pendingInvitationMetadata()
-        case 'read_pending_invitation':
-          return pendingInvitationLink
         case 'clear_pending_invitation':
           pendingInvitationLink = null
           return null
@@ -354,8 +345,6 @@ async function installAuthenticatedMatrixMock(
         case 'matrix_clear_composer_draft':
         case 'plugin:event|unlisten':
           return null
-        case 'plugin:deep-link|get_current':
-          return deepLinks
         case 'matrix_wait_for_room_update':
           // The real command long-polls the SDK room-update stream. Keeping
           // this promise pending models that boundary without a CPU-heavy loop.
@@ -418,6 +407,7 @@ async function installAuthenticatedMatrixMock(
 async function openAuthenticatedShell(
   page: Page,
   currentDeepLinks: string[] | null = null,
+  expectedRoomName = 'general',
 ): Promise<void> {
   await installAuthenticatedMatrixMock(page, currentDeepLinks)
   await page.goto('/')
@@ -430,7 +420,7 @@ async function openAuthenticatedShell(
   await expect(
     page.getByRole('navigation', { name: 'Communities and direct messages' }),
   ).toBeVisible({ timeout: 10_000 })
-  await expect(page.getByRole('log', { name: 'Messages in #general' })).toBeVisible({
+  await expect(page.getByRole('log', { name: `Messages in #${expectedRoomName}` })).toBeVisible({
     timeout: 10_000,
   })
 }
@@ -499,7 +489,7 @@ test.describe('authenticated desktop shell', () => {
         recentlyClosed: [],
       }))
     })
-    await openAuthenticatedShell(page)
+    await openAuthenticatedShell(page, null, 'random')
 
     const tabs = page.getByRole('tablist', { name: 'Open rooms and direct messages' })
     await expect(tabs.getByRole('tab')).toHaveCount(2)
@@ -521,35 +511,29 @@ test.describe('authenticated desktop shell', () => {
     await expect(review.getByText('Invited by Bob', { exact: true })).toBeVisible()
     await expect(review.getByText('Matrix Test Service', { exact: true })).toBeVisible()
     await expect.poll(async () => (
-      (await ipcCalls(page)).filter((call) => call.command === 'matrix_join_community')
+      (await ipcCalls(page)).filter((call) => call.command === 'join_pending_invitation')
     )).toEqual([])
 
     await review.getByRole('button', { name: 'Confirm and continue' }).click()
     await expect.poll(async () => (
-      (await ipcCalls(page)).filter((call) => call.command === 'matrix_join_community')
+      (await ipcCalls(page)).filter((call) => call.command === 'join_pending_invitation')
     )).toEqual([{
-      command: 'matrix_join_community',
+      command: 'join_pending_invitation',
       args: {
-        roomOrAlias: '!invited:mesh.test',
-        via: ['mesh.test'],
+        handle: '11111111-2222-4333-8444-555555555555',
       },
     }])
     await expect(
       page.getByRole('navigation', { name: 'Communities and direct messages' }),
     ).toBeVisible()
-    await expect.poll(async () => (
-      (await ipcCalls(page))
-        .filter((call) => [
-          'store_pending_invitation',
-          'read_pending_invitation',
-          'clear_pending_invitation',
-        ].includes(call.command))
-        .map((call) => call.command)
-    )).toEqual([
+    const invitationCalls = await ipcCalls(page)
+    expect(invitationCalls.map((call) => call.command)).not.toEqual(expect.arrayContaining([
+      'plugin:deep-link|get_current',
       'store_pending_invitation',
       'read_pending_invitation',
-      'clear_pending_invitation',
-    ])
+      'resolve_pending_invitation',
+    ]))
+    expect(JSON.stringify(invitationCalls)).not.toContain(invite)
     await expect(
       page.getByRole('button', { name: 'Invited Mesh Community', exact: true }),
     ).toHaveAttribute('aria-current', 'true')
@@ -676,6 +660,7 @@ test.describe('authenticated desktop shell', () => {
 
     const dialog = page.getByRole('dialog', { name: 'User Settings' })
     await expect(dialog).toBeVisible()
+    await dialog.getByRole('tab', { name: 'Account' }).click()
     await expect(dialog.getByText('Mesh account', { exact: true })).toBeVisible()
 
     await dialog.getByRole('textbox', { name: 'Display name' }).fill('Alice Updated')
@@ -708,6 +693,7 @@ test.describe('authenticated desktop shell', () => {
     const settingsDialog = page.getByRole('dialog', { name: 'User Settings' })
     await expect(settingsDialog).toBeVisible()
 
+    await settingsDialog.getByRole('tab', { name: 'Devices' }).click()
     await settingsDialog.getByRole('button', { name: 'Open your devices' }).click()
     const securityDialog = page.getByRole('dialog', { name: 'Your devices' })
     await expect(settingsDialog).toHaveCount(0)
@@ -935,6 +921,7 @@ test.describe('authenticated narrow shell', () => {
     await page.getByRole('button', { name: 'User settings' }).click()
     const dialog = page.getByRole('dialog', { name: 'User Settings' })
     await expect(dialog).toBeVisible()
+    await dialog.getByRole('tab', { name: 'Notifications' }).click()
     await expect(dialog.getByRole('checkbox', { name: 'Desktop notifications' })).toBeVisible()
 
     await page.keyboard.press('Escape')
@@ -950,6 +937,7 @@ test.describe('authenticated narrow shell', () => {
     const settingsDialog = page.getByRole('dialog', { name: 'User Settings' })
     await expect(settingsDialog).toBeVisible()
 
+    await settingsDialog.getByRole('tab', { name: 'Devices' }).click()
     await settingsDialog.getByRole('button', { name: 'Open your devices' }).click()
     const securityDialog = page.getByRole('dialog', { name: 'Your devices' })
     await expect(settingsDialog).toHaveCount(0)

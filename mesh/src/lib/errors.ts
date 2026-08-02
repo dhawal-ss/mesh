@@ -24,6 +24,7 @@ export type AppErrorCode =
   | 'registration_invitation_invalid'
   | 'registration_timed_out'
   | 'community_invite_invalid'
+  | 'community_invite_requires_native_open'
   | 'banned'
   | 'unsupported_operation'
   | 'login_cancelled'
@@ -82,6 +83,7 @@ const KNOWN_CODES = new Set<AppErrorCode>([
   'registration_invitation_invalid',
   'registration_timed_out',
   'community_invite_invalid',
+  'community_invite_requires_native_open',
   'banned',
   'unsupported_operation',
   'login_cancelled',
@@ -475,6 +477,12 @@ export function describeError(
       return {
         title: 'Invitation unavailable',
         body: `${operation} Ask a community administrator for a new invitation link.`,
+        action: null,
+      }
+    case 'community_invite_requires_native_open':
+      return {
+        title: 'Open this invitation with Mesh',
+        body: 'For your security, use the invitation link itself so Mesh can keep its one-use secret outside the app interface.',
         action: null,
       }
     case 'banned':

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-room-upgrade"
+description = "Enables the matrix_room_upgrade command without any pre-configured scope."
+commands.allow = ["matrix_room_upgrade"]
+
+[[permission]]
+identifier = "deny-matrix-room-upgrade"
+description = "Denies the matrix_room_upgrade command without any pre-configured scope."
+commands.deny = ["matrix_room_upgrade"]

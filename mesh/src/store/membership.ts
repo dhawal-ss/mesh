@@ -5,6 +5,7 @@ export interface MemberRecord {
   publicKey: string
   displayName: string
   avatarColor: string
+  avatarUrl?: string | null
   role: 'owner' | 'admin' | 'member'
   joinStatus: 'invited' | 'joined' | 'left'
   banStatus: 'none' | 'banned'

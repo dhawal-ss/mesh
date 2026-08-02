@@ -71,27 +71,13 @@ describe('Matrix community invitation bridge', () => {
     })
   })
 
-  it('claims a community admission directly without falling back to an approval request', async () => {
+  it('refuses to pass a private admission secret through renderer IPC', async () => {
     const link =
       'https://mesh.test/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789'
-    const community = {
-      id: '!community:mesh.test',
-      name: 'Friends',
-      description: '',
-      memberCount: 2,
-      role: 'member',
-      joinedAt: '2026-07-29T00:00:00Z',
-    }
-    invokeMock.mockResolvedValueOnce(community)
-
-    await expect(joinOrRequestCommunity(link)).resolves.toEqual({
-      status: 'joined',
-      community,
+    await expect(joinOrRequestCommunity(link)).rejects.toMatchObject({
+      code: 'community_invite_requires_native_open',
     })
-    expect(invokeMock).toHaveBeenCalledOnce()
-    expect(invokeMock).toHaveBeenCalledWith('matrix_claim_community_invite', {
-      inviteUrl: link,
-    })
+    expect(invokeMock).not.toHaveBeenCalled()
   })
 
   it('passes the federation route and requests access when direct join is denied', async () => {
@@ -120,40 +106,15 @@ describe('Matrix community invitation bridge', () => {
     })
   })
 
-  it('falls back to federated join and knock when a version 5 admission service is offline', async () => {
+  it('does not bypass a version 5 admission service when its native join fails', async () => {
     const code = 'abcdefghijklmnopqrstuvwxyzABCDEFG_123456789'
     const link =
       `mesh://join?v=5&kind=community&room=!community%3Amesh.test&via=mesh.test`
       + `&admission=https%3A%2F%2Finvites.mesh.test&code=${code}`
-    invokeMock
-      .mockRejectedValueOnce({
-        code: 'network_unavailable',
-        detail: 'admission service offline',
-        retryable: true,
-      })
-      .mockRejectedValueOnce({
-        code: 'permission_denied',
-        detail: 'M_FORBIDDEN: invite required',
-        retryable: false,
-      })
-      .mockResolvedValueOnce({ status: 'knocked', community: null })
-
-    await expect(joinOrRequestCommunity(link)).resolves.toEqual({
-      status: 'knocked',
-      community: null,
+    await expect(joinOrRequestCommunity(link)).rejects.toMatchObject({
+      code: 'community_invite_requires_native_open',
     })
-    expect(invokeMock).toHaveBeenNthCalledWith(1, 'matrix_claim_community_invite', {
-      inviteUrl: link,
-    })
-    expect(invokeMock).toHaveBeenNthCalledWith(2, 'matrix_join_community', {
-      roomOrAlias: '!community:mesh.test',
-      via: ['mesh.test'],
-    })
-    expect(invokeMock).toHaveBeenNthCalledWith(3, 'matrix_knock_community', {
-      roomOrAlias: '!community:mesh.test',
-      reason: 'Requested through a private Mesh community link.',
-      via: ['mesh.test'],
-    })
+    expect(invokeMock).not.toHaveBeenCalled()
   })
 
   it('rejects malformed Mesh links before invoking Rust', async () => {

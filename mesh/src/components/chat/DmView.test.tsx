@@ -5,18 +5,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const composerHarness = vi.hoisted(() => ({
   onSend: null as null | ((content: string) => Promise<void>),
   onEditLastMessage: null as null | (() => void),
+  disabled: false,
 }))
 
 vi.mock('./MessageInput', () => ({
   MessageInput: ({
     onSend,
     onEditLastMessage,
+    disabled,
   }: {
     onSend: (content: string) => Promise<void>
     onEditLastMessage?: () => void
+    disabled?: boolean
   }) => {
     composerHarness.onSend = onSend
     composerHarness.onEditLastMessage = onEditLastMessage ?? null
+    composerHarness.disabled = Boolean(disabled)
     return <div>Message composer remains available</div>
   },
 }))
@@ -101,6 +105,8 @@ describe('DmView message containment', () => {
       activeConversationId: 'conversation-1',
       messages: {},
       isDmMode: true,
+      conversationLoad: { status: 'idle', error: null, generation: 0 },
+      messageLoads: {},
     })
     useMessageStore.setState({
       messageEntities: {},
@@ -115,6 +121,7 @@ describe('DmView message containment', () => {
     })
     composerHarness.onSend = null
     composerHarness.onEditLastMessage = null
+    composerHarness.disabled = false
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(false)
     vi.spyOn(bridge, 'onDmReceived').mockResolvedValue(() => {})
@@ -166,6 +173,80 @@ describe('DmView message containment', () => {
     expect(emptyState?.getAttribute('aria-labelledby')).toBe(title?.id)
     expect(emptyState?.getAttribute('aria-describedby')).toBe(description?.id)
     expect(emptyState?.querySelector('.border-dashed')).toBeNull()
+  })
+
+  it('does not show or mark an empty conversation after a failed hydration and retries', async () => {
+    const load = vi.spyOn(bridge, 'getDmMessages')
+      .mockRejectedValueOnce(new Error('timeout'))
+      .mockResolvedValueOnce([])
+    const markRead = vi.mocked(bridge.markDmRead)
+
+    await act(async () => {
+      root.render(<DmView />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Messages could not be loaded')
+    expect(container.textContent).not.toContain('Start of conversation')
+    expect(markRead).not.toHaveBeenCalled()
+
+    const retry = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Retry messages')
+    await act(async () => {
+      retry?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(load).toHaveBeenCalledTimes(2)
+    expect(markRead).toHaveBeenCalledWith('conversation-1')
+    expect(container.textContent).toContain('Start of conversation')
+  })
+
+  it('keeps the Matrix DM composer disabled when native protection reports unencrypted', async () => {
+    vi.mocked(bridge.isMatrixBackend).mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@me:example.org')
+    vi.spyOn(bridge, 'getDmMessages').mockResolvedValue([])
+    vi.spyOn(bridge, 'matrixDmBlocked').mockResolvedValue(false)
+    vi.spyOn(bridge, 'matrixRoomIsEncrypted').mockResolvedValue(false)
+    vi.spyOn(bridge, 'matrixWaitForRoomUpdate').mockReturnValue(new Promise(() => {}))
+
+    await act(async () => {
+      root.render(<DmView />)
+      await Promise.resolve()
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(composerHarness.disabled).toBe(true)
+    expect(container.textContent).toContain(
+      'Sending is unavailable because this conversation is not protected end to end.',
+    )
+  })
+
+  it('surfaces and retries a DM mark-read failure after hydration', async () => {
+    vi.spyOn(bridge, 'getDmMessages').mockResolvedValue([])
+    const markRead = vi.mocked(bridge.markDmRead)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(undefined)
+
+    await act(async () => {
+      root.render(<DmView />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(container.textContent).toContain('This conversation could not be marked as read')
+    expect(container.textContent).toContain('Start of conversation')
+
+    await act(async () => {
+      [...container.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'Retry read status')
+        ?.click()
+      await Promise.resolve()
+    })
+    expect(markRead).toHaveBeenCalledTimes(2)
+    expect(container.textContent).not.toContain('This conversation could not be marked as read')
   })
 
   it('offers account-service reporting for a received Matrix DM', async () => {

@@ -5,11 +5,8 @@ import { Tooltip } from '../ui/Tooltip'
 import { CommunityIcon } from '../community/CommunityIcon'
 import * as bridge from '../../lib/bridge'
 import { Icon } from '../ui/Icon'
-import {
-  getEffectiveChannelNotificationLevel,
-  isBackupReminderDue,
-  useSettingsStore,
-} from '../../store/settings'
+import { PixelMark } from '../ui/PixelMark'
+import { getEffectiveChannelNotificationLevel, useSettingsStore } from '../../store/settings'
 import { useChannelStore } from '../../store/channels'
 import { copyText } from '../../lib/notifications'
 import { showToast } from '../ui/Toast'
@@ -38,7 +35,6 @@ export function CommunitySidebar() {
   const openServerModal = useShellStore((state) => state.openServerModal)
   const closeServerModal = useShellStore((state) => state.closeServerModal)
   const setProfileOpen = useShellStore((state) => state.setProfileOpen)
-  const backupReminderDue = useSettingsStore((state) => isBackupReminderDue(state.backup))
   const notifications = useSettingsStore((state) => state.notifications)
 
   const copyCommunityLink = async (communityId: string) => {
@@ -94,8 +90,35 @@ export function CommunitySidebar() {
 
   return (
     <>
-      <div className="flex flex-col items-center gap-1.5 pb-2">
-        {/* Server icons */}
+      <div className="flex flex-col items-center gap-2 pb-2">
+        <div
+          className="mesh-pixel-brand mb-1 flex h-12 w-12 items-center justify-center text-accent"
+          role="img"
+          aria-label="Mesh"
+        >
+          <PixelMark variant="brand" className="h-12 w-12" />
+        </div>
+
+        <RailAction
+          label="Home"
+          icon="home"
+          onClick={() => setDmMode(false)}
+        />
+
+        {directMessagesAvailable ? (
+          <RailAction
+            label="DMs"
+            accessibleLabel="Direct messages"
+            icon="messageCircle"
+            active={isDmMode}
+            onClick={handleDmClick}
+          />
+        ) : null}
+
+        {communities.length > 0 && (
+          <div className="mx-auto my-1 h-rail-separator w-7 rounded-full bg-surface-active" />
+        )}
+
         {communities.map((c) => (
           <Tooltip key={c.id} content={c.name} side="right">
             <CommunityIcon
@@ -120,65 +143,19 @@ export function CommunitySidebar() {
           </Tooltip>
         ))}
 
-        {/* Separator */}
-        {communities.length > 0 && (
-          <div className="mx-auto h-rail-separator w-6 rounded-full bg-surface-active" />
-        )}
+        <RailAction
+          label="Join"
+          accessibleLabel="Join a community"
+          icon="plus"
+          onClick={() => openServerModal('join')}
+        />
 
-        <Tooltip content="Add a community" side="right">
-          <button
-            onClick={() => openServerModal('create')}
-            className="group flex h-10 w-10 items-center justify-center rounded-community bg-surface-sunken text-accent transition-all duration-normal hover:rounded-community-active hover:bg-accent hover:text-content-on-accent"
-            aria-label="Add a community"
-          >
-            <Icon name="plus" />
-          </button>
-        </Tooltip>
-
-        <div className="mx-auto h-rail-separator w-6 rounded-full bg-surface-active" />
-
-        {directMessagesAvailable ? <Tooltip content="Direct Messages" side="right">
-          <button
-            onClick={handleDmClick}
-            className={`group relative flex h-10 w-10 items-center justify-center rounded-community transition-all duration-normal ${
-              isDmMode
-                ? 'rounded-community-active bg-accent text-content-on-accent'
-                : 'bg-surface-sunken text-muted hover:rounded-community-active hover:bg-accent hover:text-content-on-accent'
-            }`}
-            aria-label="Direct Messages"
-          >
-            <Icon name="send" size="lg" />
-            {isDmMode && (
-              <div className="absolute -left-community-marker top-1/2 h-10 w-community-marker -translate-y-1/2 rounded-r-full bg-primary" />
-            )}
-          </button>
-        </Tooltip> : null}
-
-        <Tooltip content="Explore communities" side="right">
-          <button
-            onClick={() => openServerModal('discover')}
-            className="group relative flex h-10 w-10 items-center justify-center rounded-community bg-surface-sunken text-muted transition-all duration-normal hover:rounded-community-active hover:bg-accent hover:text-content-on-accent"
-            aria-label="Explore communities"
-          >
-            <Icon name="search" />
-          </button>
-        </Tooltip>
-
-        <Tooltip content="Profile" side="right">
-          <button
-            onClick={() => setProfileOpen(true)}
-            className="group relative flex h-10 w-10 items-center justify-center rounded-community bg-surface-sunken text-muted transition-all duration-normal hover:rounded-community-active hover:bg-accent hover:text-content-on-accent"
-            aria-label="Profile"
-          >
-            <Icon name="users" />
-            {backupReminderDue && (
-              <span
-                className="absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-bg-tertiary bg-status-warning"
-                aria-label="Message backup needs attention"
-              />
-            )}
-          </button>
-        </Tooltip>
+        <RailAction
+          label="Explore"
+          accessibleLabel="Explore communities"
+          icon="compass"
+          onClick={() => openServerModal('discover')}
+        />
       </div>
 
       {serverModalOpen && (
@@ -192,5 +169,44 @@ export function CommunitySidebar() {
         </Suspense>
       )}
     </>
+  )
+}
+
+function RailAction({
+  label,
+  accessibleLabel = label,
+  icon,
+  active = false,
+  onClick,
+}: {
+  label: string
+  accessibleLabel?: string
+  icon: 'home' | 'messageCircle' | 'plus' | 'compass'
+  active?: boolean
+  onClick: () => void
+}) {
+  return (
+    <Tooltip content={accessibleLabel} side="right">
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={accessibleLabel}
+        aria-current={active ? 'page' : undefined}
+        className={`group flex w-14 flex-col items-center gap-1 rounded-control py-1 text-meta transition-colors ${
+          active ? 'text-accent' : 'text-muted hover:text-primary'
+        }`}
+      >
+        <span
+          className={`flex h-10 w-10 items-center justify-center rounded-community border transition-all duration-normal ${
+            active
+              ? 'rounded-community-active border-accent/50 bg-accent/15 text-accent'
+              : 'border-transparent bg-surface-sunken group-hover:rounded-community-active group-hover:border-border-subtle group-hover:bg-surface-hover'
+          }`}
+        >
+          <Icon name={icon} size="md" />
+        </span>
+        <span>{label}</span>
+      </button>
+    </Tooltip>
   )
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-start-device-verification"
+description = "Enables the matrix_start_device_verification command without any pre-configured scope."
+commands.allow = ["matrix_start_device_verification"]
+
+[[permission]]
+identifier = "deny-matrix-start-device-verification"
+description = "Denies the matrix_start_device_verification command without any pre-configured scope."
+commands.deny = ["matrix_start_device_verification"]

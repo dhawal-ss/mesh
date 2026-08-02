@@ -10,13 +10,12 @@ use crate::backend::{
     BackendError, BackendKind, BackendStatus, CommunityAccessResult, CommunityAccessSettings,
     CommunityApplication, CommunityDirectoryEntry, CommunityMember, CommunityModerationResult,
     CommunityPermissionProjection, CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest,
-    MatrixCommunityAdmission, MatrixDevice, MatrixLogin, MatrixOidcStatus,
-    MatrixPersonalDataExport, MatrixProfile, MatrixRecoveryHealth, MatrixRecoverySetupResult,
-    MatrixRegistration, MatrixRoomNotificationMode, MatrixRoomPins, MatrixRoomUpgrade,
-    MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyLease, MatrixRtcMember,
-    MatrixServiceCapabilities, MatrixTransferObserver, MatrixTransferProgressCallback,
-    MatrixVerificationSession, ModerationAuditEntry, TypingUser, UserPreferences,
-    MATRIX_TRANSFER_PROGRESS_EVENT,
+    MatrixDevice, MatrixLogin, MatrixOidcStatus, MatrixPersonalDataExport, MatrixProfile,
+    MatrixRecoveryHealth, MatrixRecoverySetupResult, MatrixRegistration,
+    MatrixRoomNotificationMode, MatrixRoomPins, MatrixRoomUpgrade, MatrixRtcJoinResult,
+    MatrixRtcMediaKey, MatrixRtcMediaKeyLease, MatrixRtcMember, MatrixServiceCapabilities,
+    MatrixTransferObserver, MatrixTransferProgressCallback, MatrixVerificationSession,
+    ModerationAuditEntry, TypingUser, UserPreferences, MATRIX_TRANSFER_PROGRESS_EVENT,
 };
 use crate::state::AppState;
 use crate::types::{
@@ -975,23 +974,6 @@ pub async fn matrix_download_attachment(
 }
 
 #[tauri::command]
-pub async fn matrix_load_attachment_thumbnail(
-    room_id: String,
-    event_id: String,
-    attachment_index: u32,
-    state: State<'_, AppState>,
-) -> Result<tauri::ipc::Response, CommandError> {
-    require_matrix(&state)?;
-    state
-        .backend
-        .backend()
-        .load_attachment_thumbnail(room_id, event_id, attachment_index)
-        .await
-        .map(tauri::ipc::Response::new)
-        .map_err(map_error)
-}
-
-#[tauri::command]
 pub async fn matrix_load_attachment_image(
     room_id: String,
     event_id: String,
@@ -1414,34 +1396,6 @@ pub async fn matrix_create_community_invite(
         .backend
         .backend()
         .create_community_invite(community_id)
-        .await
-        .map_err(map_error)
-}
-
-#[tauri::command]
-pub async fn matrix_resolve_community_invite(
-    invite_url: String,
-    state: State<'_, AppState>,
-) -> Result<MatrixCommunityAdmission, CommandError> {
-    require_matrix(&state)?;
-    state
-        .backend
-        .backend()
-        .resolve_community_invite(invite_url)
-        .await
-        .map_err(map_error)
-}
-
-#[tauri::command]
-pub async fn matrix_claim_community_invite(
-    invite_url: String,
-    state: State<'_, AppState>,
-) -> Result<CommunityDto, CommandError> {
-    require_matrix(&state)?;
-    state
-        .backend
-        .backend()
-        .claim_community_invite(invite_url)
         .await
         .map_err(map_error)
 }

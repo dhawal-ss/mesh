@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MatrixAccountScreen } from './MatrixAccountScreen'
 import * as bridge from '../../lib/bridge'
-import type { MatrixCommunityAdmission, PendingInvitationMetadata } from '../../types/ipc'
+import type { PendingInvitationMetadata } from '../../types/ipc'
 import {
   REGISTRATION_CONTINUATION_STORAGE_KEY,
   REGISTRATION_CONTINUATION_TTL_MS,
@@ -19,7 +19,6 @@ vi.mock('../../lib/bridge', () => ({
   matrixServiceCapabilities: vi.fn(),
   matrixOidcStatus: vi.fn(),
   matrixCancelLogin: vi.fn(async () => {}),
-  resolveCommunityInvite: vi.fn(),
   setKv: vi.fn(async () => {}),
   updateMatrixUserPreferences: vi.fn(async () => {}),
 }))
@@ -50,6 +49,8 @@ describe('MatrixAccountScreen', () => {
     await renderScreen()
 
     expect(container.textContent).toContain('Choose your account service')
+    expect(container.textContent).not.toContain('Mesh service')
+    expect(container.textContent).not.toContain('matrix.mesh.dhawal.org')
     expect(container.textContent).toContain('Matrix.org')
     expect(container.textContent).toContain('independently')
     expect(container.textContent).toContain('opens this service in your browser')
@@ -76,6 +77,33 @@ describe('MatrixAccountScreen', () => {
     expect(container.textContent).toContain('Choose where your account lives below')
     expect(container.textContent).not.toContain('!garden:community.example')
     expect(container.textContent).not.toContain('registration-token')
+  })
+
+  it('does not offer a hard-coded Mesh account service without an invitation', async () => {
+    await renderScreen()
+
+    expect(container.textContent).not.toContain('Mesh service')
+    expect(container.textContent).not.toContain('matrix.mesh.dhawal.org')
+    expect(findButton('Sign in')).toBeTruthy()
+    expect(findButton('Use another service')).toBeTruthy()
+  })
+
+  it('moves focus to the new heading after account-service transitions', async () => {
+    await renderScreen()
+
+    await act(async () => {
+      findButton('More public services').click()
+      await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    })
+    expect(document.activeElement).toBe(container.querySelector('h1'))
+    expect(document.activeElement?.textContent).toContain('More public services')
+
+    await act(async () => {
+      findButton('Back to service choices').click()
+      await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    })
+    expect(document.activeElement).toBe(container.querySelector('h1'))
+    expect(document.activeElement?.textContent).toContain('Choose your account service')
   })
 
   it('keeps an expired prominent service visible but unavailable', async () => {
@@ -127,7 +155,7 @@ describe('MatrixAccountScreen', () => {
     })
 
     expect(container.textContent).toContain('Finish with Matrix.org')
-    await act(async () => findButton('I created my account — sign in').click())
+    await act(async () => findButton('I created my account: sign in').click())
     expect(container.textContent).toContain('Sign in to Matrix.org')
     expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY)).not.toBeNull()
 
@@ -154,7 +182,7 @@ describe('MatrixAccountScreen', () => {
     })
 
     await act(async () => clickLink(findLink('Create account')))
-    await act(async () => findButton('I created my account — sign in').click())
+    await act(async () => findButton('I created my account: sign in').click())
     await act(async () => {
       setInputValue(findInput('username'), 'alice')
       setInputValue(findInput('password'), 'correct horse battery staple')
@@ -230,7 +258,7 @@ describe('MatrixAccountScreen', () => {
     })
 
     await renderScreen({ initialPendingInvitation: pendingInvitationMetadata() })
-    await act(async () => findButton('I created my account — sign in').click())
+    await act(async () => findButton('I created my account: sign in').click())
 
     expect(container.textContent).toContain('saved invitation is missing or expired')
     expect(container.textContent).toContain('Choose your account service')
@@ -245,7 +273,7 @@ describe('MatrixAccountScreen', () => {
     })
 
     await renderScreen()
-    await act(async () => findButton('I created my account — sign in').click())
+    await act(async () => findButton('I created my account: sign in').click())
 
     expect(container.textContent).toContain('could not find the saved community invitation yet')
     expect(container.textContent).toContain('Finish with Matrix.org')
@@ -278,6 +306,55 @@ describe('MatrixAccountScreen', () => {
     expect(onNext).toHaveBeenCalledWith('signed-in')
   })
 
+  it('keeps a differently hosted community invitation separate from Matrix.org sign-in', async () => {
+    const login = vi.fn(async () => {})
+    await renderScreen({
+      initialPendingInvitation: pendingInvitationMetadata(),
+      onMatrixLogin: login,
+    })
+
+    expect(container.textContent).toContain('Garden community service')
+    expect(container.textContent).toContain('Choose where your account lives below')
+    await act(async () => findButton('Sign in').click())
+    await act(async () => {
+      setInputValue(findInput('username'), 'alice')
+      setInputValue(findInput('password'), 'correct horse battery staple')
+      submitForm()
+      await Promise.resolve()
+    })
+
+    expect(login).toHaveBeenCalledWith(expect.objectContaining({
+      homeserver: 'matrix.org',
+      username: 'alice',
+    }))
+  })
+
+  it('offers provider-owned password and username recovery help', async () => {
+    await renderScreen()
+    await act(async () => findButton('Sign in').click())
+
+    expect(findButton('Forgot password?')).toBeTruthy()
+    expect(findButton('Forgot username?')).toBeTruthy()
+
+    await act(async () => findButton('Forgot password?').click())
+    expect(container.textContent).toContain('Mesh never stores your account password')
+    expect(findLink('Open Matrix.org account help').getAttribute('href'))
+      .toBe('https://app.element.io/#/login')
+
+    await act(async () => findButton('Forgot username?').click())
+    expect(container.textContent).toContain('Usernames are issued by the account service')
+    expect(container.textContent).toContain('Check the email or password manager')
+  })
+
+  it('makes a full account ID on the wrong service actionable', async () => {
+    await renderScreen()
+    await act(async () => findButton('Sign in').click())
+    setInputValue(findInput('username'), '@thewallran:mesh.dhawal.org')
+
+    expect(container.textContent).toContain('This account ID belongs to mesh.dhawal.org')
+    expect(container.textContent).toContain('Use another service')
+  })
+
   it('checks a custom service before signing in with a full Matrix ID', async () => {
     const login = vi.fn(async () => {})
     await renderScreen({ onMatrixLogin: login })
@@ -300,6 +377,121 @@ describe('MatrixAccountScreen', () => {
       homeserver: 'friends.example',
       username: '@alice:friends.example',
     }))
+  })
+
+  it('ignores a stale capability result after switching custom services', async () => {
+    vi.mocked(bridge.isTauriRuntime).mockReturnValue(true)
+    let resolveFirst!: (value: bridge.MatrixServiceCapabilities) => void
+    let resolveSecond!: (value: bridge.MatrixServiceCapabilities) => void
+    const firstResult = new Promise<bridge.MatrixServiceCapabilities>((resolve) => {
+      resolveFirst = resolve
+    })
+    const secondResult = new Promise<bridge.MatrixServiceCapabilities>((resolve) => {
+      resolveSecond = resolve
+    })
+    vi.mocked(bridge.matrixServiceCapabilities).mockImplementation((homeserver) => (
+      homeserver === 'first.example' ? firstResult : secondResult
+    ))
+    await renderScreen()
+    await act(async () => findButton('Use another service').click())
+
+    await act(async () => {
+      setInputValue(findInput('homeserver'), 'first.example')
+      findButton('Check service').click()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      setInputValue(findInput('homeserver'), 'second.example')
+      await Promise.resolve()
+      findButton('Check service').click()
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      resolveFirst(capabilities({ homeserver: 'first.example', browserLogin: true }))
+      await Promise.resolve()
+    })
+    expect(container.textContent).toMatch(/Checking/)
+    expect(container.textContent).not.toContain('Service reached')
+    expect(container.textContent).not.toContain('Use browser sign-in')
+
+    await act(async () => {
+      resolveSecond(capabilities({ homeserver: 'second.example', browserLogin: false }))
+      await Promise.resolve()
+    })
+    expect(container.textContent).toContain('Service reached')
+    expect(container.textContent).not.toContain('Use browser sign-in')
+  })
+
+  it('does not reuse browser sign-in readiness after switching custom services', async () => {
+    vi.mocked(bridge.isTauriRuntime).mockReturnValue(true)
+    vi.mocked(bridge.matrixServiceCapabilities).mockImplementation(async (homeserver) => (
+      capabilities({ homeserver, browserLogin: true })
+    ))
+    let resolveFirst!: (value: bridge.MatrixOidcStatus) => void
+    const firstStatus = new Promise<bridge.MatrixOidcStatus>((resolve) => {
+      resolveFirst = resolve
+    })
+    vi.mocked(bridge.matrixOidcStatus).mockReturnValue(firstStatus)
+    await renderScreen()
+    await act(async () => findButton('Use another service').click())
+
+    await act(async () => {
+      setInputValue(findInput('homeserver'), 'first.example')
+      findButton('Check service').click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      findButton('Use browser sign-in').click()
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      setInputValue(findInput('homeserver'), 'second.example')
+      findButton('Check service').click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      resolveFirst({
+        homeserver: 'first.example',
+        availability: 'supported',
+        issuer: 'https://auth.first.example',
+        ready: true,
+        authorizationCodePkce: true,
+        clientIdConfigured: true,
+        redirectUri: 'http://127.0.0.1:8418/oauth/callback',
+        authorizationEndpoint: 'https://auth.first.example/authorize',
+        registrationMode: 'static',
+        nativeCallbackReady: true,
+        reason: '',
+      })
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Use browser sign-in')
+    expect(container.textContent).not.toContain('Continue in browser')
+  })
+
+  it('explains why browser sign-in is disabled outside the installed app', async () => {
+    vi.mocked(bridge.matrixServiceCapabilities).mockResolvedValue(capabilities({
+      homeserver: 'matrix.org',
+      browserLogin: true,
+    }))
+    await renderScreen()
+
+    await act(async () => {
+      findButton('Sign in').click()
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 0))
+    })
+
+    const browserButton = findButton('Use browser sign-in')
+    expect(browserButton.disabled).toBe(true)
+    expect(browserButton.getAttribute('aria-describedby')).toBe('browser-sign-in-availability')
+    expect(container.textContent).toContain('Browser sign-in opens from the installed Mesh app')
   })
 
   it('rejects credential-bearing and insecure custom-service addresses before probing', async () => {
@@ -379,23 +571,19 @@ describe('MatrixAccountScreen', () => {
   it('keeps community-hosted account creation optional and bound to its invitation', async () => {
     vi.useFakeTimers()
     vi.mocked(bridge.isTauriRuntime).mockReturnValue(true)
-    vi.mocked(bridge.resolveCommunityInvite).mockResolvedValue({
-      registrationToken: 'derived-registration-token',
-      roomId: '!friends:community.example',
-      service: 'community.example',
-      via: ['community.example'],
-      expiresAt: 1_785_283_200_000,
-      communityServiceDisplayName: 'Friends Account Service',
-    })
     vi.mocked(bridge.matrixServiceCapabilities).mockResolvedValue(capabilities({
       homeserver: 'community.example',
       registration: 'open',
     }))
     const checkUsername = vi.fn(async () => true)
     const register = vi.fn(async () => {})
-    const link = 'https://mesh.test/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789'
     await renderScreen({
-      initialInvitation: link,
+      initialPendingInvitation: {
+        ...pendingInvitationMetadata(),
+        service: 'community.example',
+        admissionService: 'https://invites.community.example',
+        communityServiceDisplayName: 'Friends Account Service',
+      },
       onMatrixCheckUsernameAvailable: checkUsername,
       onMatrixRegisterAccount: register,
     })
@@ -431,12 +619,12 @@ describe('MatrixAccountScreen', () => {
       homeserver: 'community.example',
       username: 'newfriend',
       password: 'correct horse battery staple',
-      registrationToken: 'derived-registration-token',
+      pendingInvitationHandle: 'd283967b-e094-460c-bf06-fbe068c21d5b',
       deviceName: 'Mesh Desktop',
     })
   })
 
-  it('resolves native pending-invitation metadata and discards it explicitly', async () => {
+  it('uses only native pending-invitation metadata and discards it explicitly', async () => {
     vi.mocked(bridge.isTauriRuntime).mockReturnValue(true)
     vi.mocked(bridge.matrixServiceCapabilities).mockResolvedValue(capabilities({
       homeserver: 'community.example',
@@ -451,18 +639,10 @@ describe('MatrixAccountScreen', () => {
       storedAt: 1_752_000_000_000,
       expiresAt: 1_754_592_000_000,
     }
-    const resolvePending = vi.fn(async (): Promise<MatrixCommunityAdmission> => ({
-      registrationToken: 'native-only-registration-token',
-      roomId: '!garden:community.example',
-      service: 'community.example',
-      via: ['community.example'],
-      expiresAt: 1_754_592_000_000,
-    }))
     const discardPending = vi.fn(async () => {})
 
     await renderScreen({
       initialPendingInvitation: pendingInvitation,
-      onResolvePendingInvitation: resolvePending,
       onDiscardPendingInvitation: discardPending,
     })
     await act(async () => {
@@ -470,13 +650,12 @@ describe('MatrixAccountScreen', () => {
       await Promise.resolve()
     })
 
-    expect(resolvePending).toHaveBeenCalledTimes(1)
     expect(findButton('Create account')).toBeTruthy()
 
     await act(async () => findButton('Create account').click())
     expect(container.textContent).toContain('Invitation saved securely on this device')
     expect(container.textContent).not.toContain('!garden:community.example')
-    expect(container.textContent).not.toContain('native-only-registration-token')
+    expect(container.textContent).not.toContain('d283967b-e094-460c-bf06-fbe068c21d5b')
 
     await act(async () => {
       findButton('Discard invitation').click()
@@ -484,6 +663,41 @@ describe('MatrixAccountScreen', () => {
     })
     expect(discardPending).toHaveBeenCalledTimes(1)
     expect(container.textContent).not.toContain('Invitation saved securely on this device')
+  })
+
+  it('does not hide a newer invitation when an older discard finishes late', async () => {
+    let finishDiscard!: () => void
+    const discardPending = vi.fn(() => new Promise<void>((resolve) => {
+      finishDiscard = resolve
+    }))
+    const firstInvitation = pendingInvitationMetadata()
+    const newerInvitation: PendingInvitationMetadata = {
+      ...firstInvitation,
+      handle: '875d1969-a61f-4b25-bc5c-e0ebf4cb5f2c',
+      communityName: 'Book Club',
+    }
+
+    await renderScreen({
+      initialPendingInvitation: firstInvitation,
+      onDiscardPendingInvitation: discardPending,
+    })
+    await act(async () => {
+      findButton('Discard invitation').click()
+      await Promise.resolve()
+    })
+    await renderScreen({
+      initialPendingInvitation: newerInvitation,
+      onDiscardPendingInvitation: discardPending,
+    })
+    expect(container.textContent).toContain('Book Club')
+
+    await act(async () => {
+      finishDiscard()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Book Club')
+    expect(container.textContent).toContain('Invitation saved securely on this device')
   })
 
   it('offers browser sign-in only after the selected custom service advertises it', async () => {
@@ -593,7 +807,7 @@ describe('MatrixAccountScreen', () => {
       homeserver: string
       username: string
       password: string
-      registrationToken?: string
+      pendingInvitationHandle?: string
       deviceName?: string
     }) => Promise<void>
     onMatrixLogin?: (request: {
@@ -604,9 +818,7 @@ describe('MatrixAccountScreen', () => {
     }) => Promise<void>
     onMatrixOidcLogin?: (homeserver: string) => Promise<void>
     onMatrixSwitchAccount?: (profileId: string) => Promise<void>
-    initialInvitation?: string
     initialPendingInvitation?: PendingInvitationMetadata
-    onResolvePendingInvitation?: () => Promise<MatrixCommunityAdmission | null>
     onDiscardPendingInvitation?: () => Promise<void>
     onNext?: (outcome: 'registered' | 'signed-in') => void
   } = {}) {
@@ -622,9 +834,7 @@ describe('MatrixAccountScreen', () => {
           onMatrixLogin={overrides.onMatrixLogin ?? vi.fn(async () => {})}
           onMatrixOidcLogin={overrides.onMatrixOidcLogin ?? vi.fn(async () => {})}
           onMatrixSwitchAccount={overrides.onMatrixSwitchAccount}
-          initialInvitation={overrides.initialInvitation}
           initialPendingInvitation={overrides.initialPendingInvitation}
-          onResolvePendingInvitation={overrides.onResolvePendingInvitation}
           onDiscardPendingInvitation={overrides.onDiscardPendingInvitation}
           onNext={overrides.onNext ?? (() => {})}
         />,

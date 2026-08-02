@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-dm-conversations"
+description = "Enables the matrix_dm_conversations command without any pre-configured scope."
+commands.allow = ["matrix_dm_conversations"]
+
+[[permission]]
+identifier = "deny-matrix-dm-conversations"
+description = "Denies the matrix_dm_conversations command without any pre-configured scope."
+commands.deny = ["matrix_dm_conversations"]

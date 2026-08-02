@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-select-device-verification-method"
+description = "Enables the matrix_select_device_verification_method command without any pre-configured scope."
+commands.allow = ["matrix_select_device_verification_method"]
+
+[[permission]]
+identifier = "deny-matrix-select-device-verification-method"
+description = "Denies the matrix_select_device_verification_method command without any pre-configured scope."
+commands.deny = ["matrix_select_device_verification_method"]

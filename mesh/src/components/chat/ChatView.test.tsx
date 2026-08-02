@@ -14,6 +14,7 @@ const messageHarness = vi.hoisted(() => ({
 
 const composerHarness = vi.hoisted(() => ({
   onSend: null as null | ((content: string) => Promise<void>),
+  disabled: false,
 }))
 
 vi.mock('./Message', () => ({
@@ -43,10 +44,13 @@ vi.mock('./Message', () => ({
 vi.mock('./MessageInput', () => ({
   MessageInput: ({
     onSend,
+    disabled,
   }: {
     onSend: (content: string) => Promise<void>
+    disabled?: boolean
   }) => {
     composerHarness.onSend = onSend
+    composerHarness.disabled = Boolean(disabled)
     return <div data-message-composer>Message composer</div>
   },
 }))
@@ -78,20 +82,23 @@ import * as bridge from '../../lib/bridge'
 import { useChannelStore } from '../../store/channels'
 import { useMessageNavigationStore } from '../../store/message-navigation'
 import { useMessageStore } from '../../store/messages'
-import type { Channel, Message } from '../../types/ipc'
+import type { Channel, MatrixRoomUpgrade, Message } from '../../types/ipc'
 import { ChatView } from './ChatView'
 
 interface Deferred<T> {
   promise: Promise<T>
   resolve: (value: T) => void
+  reject: (reason?: unknown) => void
 }
 
 function deferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((nextResolve) => {
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((nextResolve, nextReject) => {
     resolve = nextResolve
+    reject = nextReject
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 function channel(id: string, name: string): Channel {
@@ -154,6 +161,7 @@ describe('ChatView channel switching', () => {
     messageHarness.onRetry = {}
     messageHarness.onCancel = {}
     composerHarness.onSend = null
+    composerHarness.disabled = false
 
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
@@ -721,5 +729,241 @@ describe('ChatView channel switching', () => {
       deliveryStatus: 'failed',
     })
     expect(messageHarness.onRetry['request-failed']).toBeTypeOf('function')
+  })
+
+  it('does not show or mark a welcome state after history hydration fails and retries', async () => {
+    const activeChannel = channel('channel-offline', 'offline-room')
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(false)
+    const load = vi.spyOn(bridge, 'getMessages')
+      .mockRejectedValueOnce(new Error('timeout'))
+      .mockResolvedValueOnce([])
+    vi.spyOn(bridge, 'requestMessageHistory').mockResolvedValue(undefined)
+    const markRead = vi.spyOn(bridge, 'markChannelRead').mockResolvedValue(undefined)
+
+    await act(async () => {
+      root.render(<ChatView channel={activeChannel} />)
+      await flushAsyncWork()
+    })
+
+    expect(container.textContent).toContain('Messages could not be loaded')
+    expect(container.textContent).not.toContain('Welcome to #offline-room')
+    expect(markRead).not.toHaveBeenCalled()
+
+    const retry = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Retry messages')
+    await act(async () => {
+      retry?.click()
+      await flushAsyncWork()
+    })
+
+    expect(load.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(markRead).toHaveBeenCalledWith(activeChannel.id)
+    expect(container.textContent).toContain('Welcome to #offline-room')
+  })
+
+  it('surfaces an event-refresh failure with last-good messages and recovers on retry', async () => {
+    const activeChannel = channel('!matrix-room:example.org', 'matrix-room')
+    const lastGood = message('$last-good:example.org', activeChannel.id, 'Last good message')
+    const recovered = message('$recovered:example.org', activeChannel.id, 'Recovered message')
+    const firstUpdate = deferred<boolean>()
+    const laterUpdate = deferred<boolean>()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@alice:example.org')
+    vi.spyOn(bridge, 'getBackendCapabilities').mockReturnValue({
+      encryptedText: true,
+      encryptedAttachments: true,
+      directMessages: true,
+      voice: false,
+      durableTimeouts: false,
+      deviceManagement: true,
+      recovery: true,
+      legacyMigration: false,
+    })
+    const load = vi.spyOn(bridge, 'getMessages')
+      .mockResolvedValueOnce([lastGood])
+      .mockRejectedValueOnce(new Error('timeline refresh timed out'))
+      .mockResolvedValueOnce([recovered])
+    vi.spyOn(bridge, 'markChannelRead').mockResolvedValue(undefined)
+    vi.spyOn(bridge, 'matrixRoomUpgrade').mockResolvedValue(null)
+    vi.spyOn(bridge, 'matrixTypingUsers').mockResolvedValue([])
+    vi.spyOn(bridge, 'matrixWaitForRoomUpdate')
+      .mockReturnValueOnce(firstUpdate.promise)
+      .mockReturnValue(laterUpdate.promise)
+
+    await act(async () => {
+      root.render(<ChatView channel={activeChannel} />)
+      await flushAsyncWork()
+      await flushAsyncWork()
+    })
+    expect(container.textContent).toContain('Last good message')
+
+    await act(async () => {
+      firstUpdate.resolve(true)
+      await flushAsyncWork()
+      await flushAsyncWork()
+    })
+    expect(container.textContent).toContain('Last good message')
+    expect(container.textContent).toContain('Could not refresh messages. Showing the last update.')
+
+    const retry = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Retry')
+    await act(async () => {
+      retry?.click()
+      await flushAsyncWork()
+      await flushAsyncWork()
+    })
+
+    expect(load.mock.calls.length).toBeGreaterThanOrEqual(3)
+    expect(container.textContent).toContain('Recovered message')
+    expect(container.textContent).not.toContain('Could not refresh messages. Showing the last update.')
+  })
+
+  it.each([
+    ['protected', false],
+    ['checking', true],
+    ['unencrypted', true],
+    ['unavailable', true],
+  ] as const)('aligns the composer with %s native room protection', async (protection, disabled) => {
+    const activeChannel = channel('!protected:example.org', 'protected-room')
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@alice:example.org')
+    vi.spyOn(bridge, 'getBackendCapabilities').mockReturnValue({
+      encryptedText: true,
+      encryptedAttachments: true,
+      directMessages: true,
+      voice: false,
+      durableTimeouts: false,
+      deviceManagement: true,
+      recovery: true,
+      legacyMigration: false,
+    })
+    vi.spyOn(bridge, 'getMessages').mockResolvedValue([])
+    vi.spyOn(bridge, 'markChannelRead').mockResolvedValue(undefined)
+    vi.spyOn(bridge, 'matrixRoomUpgrade').mockResolvedValue(null)
+    vi.spyOn(bridge, 'matrixTypingUsers').mockResolvedValue([])
+
+    await act(async () => {
+      root.render(
+        <ChatView
+          channel={activeChannel}
+          trust={{
+            matrixMode: true,
+            protection,
+            communityMemberCount: 1,
+            services: [],
+            devices: [],
+            devicesNeedReview: 0,
+            verifiedDevices: 1,
+            backup: null,
+            accountId: '@alice:example.org',
+            homeService: 'example.org',
+            syncRunning: true,
+            loadingAccountTrust: protection === 'checking',
+          }}
+        />,
+      )
+      await flushAsyncWork()
+    })
+
+    expect(composerHarness.disabled).toBe(disabled)
+    if (disabled) {
+      expect(container.textContent).toMatch(/Checking this room|Sending is unavailable/)
+    }
+  })
+
+  it('surfaces and retries a mark-read failure without hiding hydrated history', async () => {
+    const activeChannel = channel('channel-read-error', 'read-error')
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(false)
+    vi.spyOn(bridge, 'getMessages').mockResolvedValue([])
+    vi.spyOn(bridge, 'requestMessageHistory').mockResolvedValue(undefined)
+    const markRead = vi.spyOn(bridge, 'markChannelRead')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(undefined)
+
+    await act(async () => {
+      root.render(<ChatView channel={activeChannel} />)
+      await flushAsyncWork()
+    })
+    expect(container.textContent).toContain('Welcome to #read-error')
+    expect(container.textContent).toContain('This room could not be marked as read')
+
+    await act(async () => {
+      [...container.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'Retry read status')
+        ?.click()
+      await flushAsyncWork()
+    })
+    expect(markRead.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(container.textContent).not.toContain('This room could not be marked as read')
+  })
+
+  it('keeps a late mark-read failure scoped to the room that produced it', async () => {
+    const channelA = channel('channel-read-a', 'read-a')
+    const channelB = channel('channel-read-b', 'read-b')
+    const markA = deferred<void>()
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(false)
+    vi.spyOn(bridge, 'getMessages').mockResolvedValue([])
+    vi.spyOn(bridge, 'requestMessageHistory').mockResolvedValue(undefined)
+    const markRead = vi.spyOn(bridge, 'markChannelRead').mockImplementation(
+      (channelId) => channelId === channelA.id ? markA.promise : Promise.resolve(),
+    )
+
+    await act(async () => {
+      root.render(<ChatView channel={channelA} />)
+      await flushAsyncWork()
+    })
+    expect(markRead).toHaveBeenCalledWith(channelA.id)
+
+    await act(async () => {
+      root.render(<ChatView channel={channelB} />)
+      await flushAsyncWork()
+    })
+    expect(container.textContent).toContain('Welcome to #read-b')
+
+    await act(async () => {
+      markA.reject(new Error('late offline failure'))
+      await flushAsyncWork()
+    })
+    expect(container.textContent).not.toContain('This room could not be marked as read')
+  })
+
+  it('does not carry a room-upgrade error into a newly selected room', async () => {
+    const channelA = channel('!upgrade-a:example.org', 'upgrade-a')
+    const channelB = channel('!upgrade-b:example.org', 'upgrade-b')
+    const pendingBUpgrade = deferred<MatrixRoomUpgrade | null>()
+    vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@alice:example.org')
+    vi.spyOn(bridge, 'getBackendCapabilities').mockReturnValue({
+      encryptedText: true,
+      encryptedAttachments: true,
+      directMessages: true,
+      voice: false,
+      durableTimeouts: false,
+      deviceManagement: true,
+      recovery: true,
+      legacyMigration: false,
+    })
+    vi.spyOn(bridge, 'getMessages').mockResolvedValue([])
+    vi.spyOn(bridge, 'markChannelRead').mockResolvedValue(undefined)
+    vi.spyOn(bridge, 'matrixTypingUsers').mockResolvedValue([])
+    vi.spyOn(bridge, 'matrixWaitForRoomUpdate').mockReturnValue(new Promise(() => {}))
+    vi.spyOn(bridge, 'matrixRoomUpgrade')
+      .mockRejectedValueOnce(new Error('upgrade lookup offline'))
+      .mockRejectedValueOnce(new Error('community lookup offline'))
+      .mockReturnValue(pendingBUpgrade.promise)
+
+    await act(async () => {
+      root.render(<ChatView channel={channelA} />)
+      await flushAsyncWork()
+      await flushAsyncWork()
+    })
+    expect(container.textContent).toContain('Room upgrade information could not be refreshed')
+
+    await act(async () => {
+      root.render(<ChatView channel={channelB} />)
+      await flushAsyncWork()
+    })
+    expect(container.textContent).not.toContain('Room upgrade information could not be refreshed')
   })
 })

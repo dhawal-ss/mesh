@@ -1,0 +1,47 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Chicago
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - ci
+
+  - package-ecosystem: npm
+    directory: /mesh
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:15"
+      timezone: America/Chicago
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - dependencies
+      - frontend
+
+  - package-ecosystem: cargo
+    directory: /mesh/src-tauri
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:30"
+      timezone: America/Chicago
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - dependencies
+      - rust

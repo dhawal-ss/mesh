@@ -163,11 +163,8 @@ describe('bridge message mutation boundary', () => {
     ])
   })
 
-  it('loads protected thumbnails as raw bytes without accepting media metadata', async () => {
+  it('keeps received encrypted thumbnails outside renderer IPC', async () => {
     const bridge = await loadBridge('matrix')
-    invokeMock.mockResolvedValueOnce(
-      new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]).buffer as never,
-    )
 
     await expect(
       bridge.matrixLoadAttachmentThumbnail(
@@ -175,33 +172,8 @@ describe('bridge message mutation boundary', () => {
         '$event:example.org',
         0,
       ),
-    ).resolves.toEqual(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]))
-    expect(invokeMock).toHaveBeenCalledWith(
-      'matrix_load_attachment_thumbnail',
-      {
-        roomId: '!room:example.org',
-        eventId: '$event:example.org',
-        attachmentIndex: 0,
-      },
-    )
-  })
-
-  it('rejects malformed or oversized thumbnail IPC responses locally', async () => {
-    const bridge = await loadBridge('matrix')
-    invokeMock
-      .mockResolvedValueOnce(new Uint8Array([]).buffer as never)
-      .mockResolvedValueOnce(new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7]) as never)
-      .mockResolvedValueOnce(new Uint8Array(2 * 1024 * 1024 + 1).buffer as never)
-
-    await expect(
-      bridge.matrixLoadAttachmentThumbnail('!room:example.org', '$empty:example.org', 0),
-    ).rejects.toThrow('Protected preview failed local validation')
-    await expect(
-      bridge.matrixLoadAttachmentThumbnail('!room:example.org', '$wrong:example.org', 0),
-    ).rejects.toThrow('Protected preview failed local validation')
-    await expect(
-      bridge.matrixLoadAttachmentThumbnail('!room:example.org', '$large:example.org', 0),
-    ).rejects.toThrow('Protected preview failed local validation')
+    ).resolves.toBeNull()
+    expect(invokeMock).not.toHaveBeenCalled()
   })
 
   it('loads only recognized protected image bytes for the full-size viewer', async () => {
@@ -227,14 +199,8 @@ describe('bridge message mutation boundary', () => {
     ).rejects.toThrow('Protected image failed local validation')
   })
 
-  it('coalesces identical protected thumbnail reads without retry amplification', async () => {
+  it('does not create renderer work for repeated protected-thumbnail reads', async () => {
     const bridge = await loadBridge('matrix')
-    let resolveRead: ((value: number[]) => void) | undefined
-    invokeMock.mockImplementationOnce(() => (
-      new Promise<number[]>((resolve) => {
-        resolveRead = resolve
-      }) as never
-    ))
 
     const first = bridge.matrixLoadAttachmentThumbnail(
       '!room:example.org',
@@ -246,15 +212,10 @@ describe('bridge message mutation boundary', () => {
       '$event:example.org',
       0,
     )
-    resolveRead?.([137, 80, 78, 71, 13, 10, 26, 10])
 
-    await expect(first).resolves.toEqual(
-      new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
-    )
-    await expect(second).resolves.toEqual(
-      new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
-    )
-    expect(invokeMock).toHaveBeenCalledTimes(1)
+    await expect(first).resolves.toBeNull()
+    await expect(second).resolves.toBeNull()
+    expect(invokeMock).not.toHaveBeenCalled()
   })
 
   it('requires room context for every generic Matrix mutation', async () => {

@@ -81,7 +81,7 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
   return (
     <div className="space-y-8">
       <div className="space-y-2">
-        <p className="text-2xs uppercase tracking-eyebrow text-muted">Step 1 of 3</p>
+        <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">Step 1 of 3</p>
         <h1 className="text-lg font-semibold tracking-tight text-primary">
           Welcome to Mesh
         </h1>

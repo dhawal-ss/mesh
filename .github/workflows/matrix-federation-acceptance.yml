@@ -65,29 +65,41 @@ jobs:
           key: ${{ runner.os }}-cargo-matrix-acceptance-${{ hashFiles('mesh/src-tauri/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-matrix-acceptance-
 
-      - name: Reset and start disposable homeservers
+      - name: Run two independent federated encryption and recovery cycles
         working-directory: mesh
         shell: bash
         run: |
           set -o pipefail
           mkdir -p matrix-spike-logs
-          npm run setup:matrix-spike:reset 2>&1 | tee matrix-spike-logs/setup.log
-
-      - name: Run federated encryption and recovery acceptance
-        working-directory: mesh
-        shell: bash
-        run: |
-          set -o pipefail
           # The app's Linux keyring backend requires a Secret Service. This
           # disposable, empty-password keyring exists only for the isolated
           # runner and is destroyed with it; no production credential is used.
-          dbus-run-session -- bash -c '
-            set -o pipefail
-            printf "\n" | gnome-keyring-daemon \
-              --unlock --components=secrets >/dev/null
-            npm run test:matrix-spike 2>&1 |
-              tee matrix-spike-logs/acceptance.log
-          '
+          for cycle in 1 2; do
+            npm run setup:matrix-spike:reset 2>&1 |
+              tee "matrix-spike-logs/setup-cycle-$cycle.log"
+            MESH_ACCEPTANCE_LOG="matrix-spike-logs/acceptance-cycle-$cycle.log" \
+              dbus-run-session -- bash -c '
+                set -o pipefail
+                printf "\n" | gnome-keyring-daemon \
+                  --unlock --components=secrets >/dev/null
+                npm run test:matrix-spike 2>&1 | tee "$MESH_ACCEPTANCE_LOG"
+              '
+          done
+
+          source_sha="$(git rev-parse HEAD)"
+          cycle_1_sha="$(sha256sum matrix-spike-logs/acceptance-cycle-1.log | awk '{ print $1 }')"
+          cycle_2_sha="$(sha256sum matrix-spike-logs/acceptance-cycle-2.log | awk '{ print $1 }')"
+          printf '%s\n' \
+            '{' \
+            '  "schemaVersion": 1,' \
+            "  \"sourceSha\": \"$source_sha\"," \
+            '  "status": "passed",' \
+            '  "independentResetTestCycles": 2,' \
+            '  "cycles": [' \
+            "    { \"iteration\": 1, \"log\": \"acceptance-cycle-1.log\", \"sha256\": \"$cycle_1_sha\" }," \
+            "    { \"iteration\": 2, \"log\": \"acceptance-cycle-2.log\", \"sha256\": \"$cycle_2_sha\" }" \
+            '  ]' \
+            '}' > matrix-spike-logs/acceptance-report.json
 
       - name: Capture service diagnostics
         if: ${{ always() }}
@@ -105,7 +117,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: matrix-federation-acceptance-${{ github.run_number }}
+          name: matrix-federation-acceptance-${{ github.sha }}-${{ github.run_number }}
           path: mesh/matrix-spike-logs/
           if-no-files-found: error
           retention-days: 14

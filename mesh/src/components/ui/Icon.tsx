@@ -8,8 +8,10 @@ import CodeXml from 'lucide-react/dist/esm/icons/code-xml.mjs'
 import Ellipsis from 'lucide-react/dist/esm/icons/ellipsis.mjs'
 import File from 'lucide-react/dist/esm/icons/file.mjs'
 import FileText from 'lucide-react/dist/esm/icons/file-text.mjs'
+import Compass from 'lucide-react/dist/esm/icons/compass.mjs'
 import HeadphoneOff from 'lucide-react/dist/esm/icons/headphone-off.mjs'
 import Headphones from 'lucide-react/dist/esm/icons/headphones.mjs'
+import House from 'lucide-react/dist/esm/icons/house.mjs'
 import Hash from 'lucide-react/dist/esm/icons/hash.mjs'
 import Image from 'lucide-react/dist/esm/icons/image.mjs'
 import LoaderCircle from 'lucide-react/dist/esm/icons/loader-circle.mjs'
@@ -50,8 +52,10 @@ const ICONS = {
   ellipsis: Ellipsis,
   file: File,
   fileText: FileText,
+  compass: Compass,
   headphoneOff: HeadphoneOff,
   headphones: Headphones,
+  home: House,
   hash: Hash,
   image: Image,
   loader: LoaderCircle,

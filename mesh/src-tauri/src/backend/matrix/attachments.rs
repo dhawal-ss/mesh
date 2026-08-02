@@ -11,11 +11,12 @@ impl MatrixBackend {
 
     fn resolved_matrix_thumbnail_from_content(
         content: &serde_json::Value,
-    ) -> Option<ResolvedMatrixThumbnail> {
+    ) -> Option<AttachmentThumbnailDto> {
         let info = content.get("info")?;
         // Plain `thumbnail_url` metadata is never accepted for encrypted-room
-        // attachments. Key material remains Rust-only and is recovered again
-        // from the authoritative event when a preview is requested.
+        // attachments. The encrypted descriptor is validated only to project
+        // bounded presentation metadata; its key material is not retained or
+        // exposed through renderer IPC.
         let encrypted_file: EncryptedFile =
             serde_json::from_value(info.get("thumbnail_file")?.clone()).ok()?;
         if !encrypted_file.url.as_str().starts_with("mxc://") {
@@ -39,15 +40,12 @@ impl MatrixBackend {
         {
             return None;
         }
-        Some(ResolvedMatrixThumbnail {
-            metadata: AttachmentThumbnailDto {
-                file_hash: format!("matrix-sha256:{sha256}"),
-                size,
-                width,
-                height,
-                content_type: content_type.to_owned(),
-            },
-            encrypted_file,
+        Some(AttachmentThumbnailDto {
+            file_hash: format!("matrix-sha256:{sha256}"),
+            size,
+            width,
+            height,
+            content_type: content_type.to_owned(),
         })
     }
 
@@ -91,12 +89,9 @@ impl MatrixBackend {
                 chunks: 1,
                 source_peer_id: "matrix".into(),
                 content_type,
-                thumbnail: thumbnail
-                    .as_ref()
-                    .map(|thumbnail| thumbnail.metadata.clone()),
+                thumbnail,
             },
             encrypted_file,
-            thumbnail,
         })
     }
 
@@ -164,32 +159,16 @@ impl MatrixBackend {
         Self::resolved_matrix_attachment_from_event(&value, attachment_index)
     }
 
-    async fn resolve_protected_thumbnail(
-        client: &Client,
-        room_id: &matrix_sdk::ruma::RoomId,
-        event_id: &matrix_sdk::ruma::EventId,
-        attachment_index: u32,
-    ) -> BackendResult<ResolvedMatrixThumbnail> {
-        Self::resolve_protected_attachment(client, room_id, event_id, attachment_index)
-            .await?
-            .thumbnail
-            .ok_or_else(|| {
-                BackendError::NotFound(
-                    "attachment does not contain a protected inline preview".into(),
-                )
-            })
-    }
-
     fn safe_media_filename(filename: &str) -> BackendResult<String> {
         let safe = Path::new(filename.trim())
             .file_name()
             .and_then(|name| name.to_str())
             .filter(|name| !name.is_empty())
-            .unwrap_or("attachment.bin")
+            .unwrap_or("attachment")
             .to_owned();
-        if has_blocked_attachment_extension(Path::new(&safe)) {
+        if classify_attachment(&safe, None, &[]).disposition == AttachmentDisposition::Active {
             return Err(BackendError::InvalidConfiguration(
-                "refusing to write an executable Matrix attachment".into(),
+                "active attachment filenames are not allowed".into(),
             ));
         }
         Ok(safe)
@@ -292,20 +271,10 @@ impl MatrixBackend {
         content_type: Option<&str>,
         filename: &str,
     ) -> BackendResult<()> {
-        let blocked_content_type = content_type.is_some_and(|content_type| {
-            BLOCKED_MEDIA_CONTENT_TYPES
-                .iter()
-                .any(|blocked| blocked.eq_ignore_ascii_case(content_type.trim()))
-        });
-        let executable_header = data.starts_with(b"MZ")
-            || data.starts_with(b"\x7fELF")
-            || data.starts_with(b"\xfe\xed\xfa\xce")
-            || data.starts_with(b"\xce\xfa\xed\xfe")
-            || data.starts_with(b"\xfe\xed\xfa\xcf")
-            || data.starts_with(b"\xcf\xfa\xed\xfe");
-        if blocked_content_type || executable_header {
+        let classification = classify_attachment(filename, content_type, data);
+        if classification.disposition == AttachmentDisposition::Active {
             return Err(BackendError::InvalidConfiguration(format!(
-                "refusing to cache or send executable Matrix attachment payload: {filename}"
+                "refusing to send active Matrix attachment content: {filename}"
             )));
         }
         Ok(())
@@ -431,89 +400,6 @@ impl MatrixBackend {
             width,
             height,
         }))
-    }
-
-    fn sanitize_inline_thumbnail(
-        data: &[u8],
-        thumbnail: &AttachmentThumbnailDto,
-    ) -> BackendResult<Vec<u8>> {
-        if thumbnail.content_type != "image/png"
-            || data.is_empty()
-            || data.len() > MAX_THUMBNAIL_BYTES
-            || data.len() as u64 != thumbnail.size
-        {
-            return Err(BackendError::InvalidConfiguration(
-                "inline preview bytes do not match protected PNG metadata".into(),
-            ));
-        }
-        let dimensions =
-            image::ImageReader::with_format(Cursor::new(data), image::ImageFormat::Png)
-                .into_dimensions()
-                .map_err(|_| {
-                    BackendError::InvalidConfiguration("inline preview is not a valid PNG".into())
-                })?;
-        let pixels = u64::from(dimensions.0)
-            .checked_mul(u64::from(dimensions.1))
-            .ok_or_else(|| {
-                BackendError::InvalidConfiguration("inline preview dimensions overflowed".into())
-            })?;
-        if dimensions != (thumbnail.width, thumbnail.height)
-            || dimensions.0 == 0
-            || dimensions.1 == 0
-            || dimensions.0 > MAX_THUMBNAIL_DIMENSION
-            || dimensions.1 > MAX_THUMBNAIL_DIMENSION
-            || pixels > u64::from(MAX_THUMBNAIL_DIMENSION).pow(2)
-        {
-            return Err(BackendError::InvalidConfiguration(
-                "inline preview dimensions do not match its protected metadata".into(),
-            ));
-        }
-
-        let mut decode_limits = image::Limits::default();
-        decode_limits.max_image_width = Some(MAX_THUMBNAIL_DIMENSION);
-        decode_limits.max_image_height = Some(MAX_THUMBNAIL_DIMENSION);
-        decode_limits.max_alloc = Some(MAX_INLINE_THUMBNAIL_DECODE_BYTES);
-        let mut reader =
-            image::ImageReader::with_format(Cursor::new(data), image::ImageFormat::Png);
-        reader.limits(decode_limits);
-        let decoded = reader.decode().map_err(|_| {
-            BackendError::InvalidConfiguration(
-                "inline preview could not be decoded within safe limits".into(),
-            )
-        })?;
-        if (decoded.width(), decoded.height()) != dimensions {
-            return Err(BackendError::InvalidConfiguration(
-                "decoded inline preview dimensions changed unexpectedly".into(),
-            ));
-        }
-
-        let mut output = Cursor::new(Vec::new());
-        decoded
-            .write_to(&mut output, image::ImageFormat::Png)
-            .map_err(|_| BackendError::Other("failed to sanitize inline preview".into()))?;
-        let bytes = output.into_inner();
-        if bytes.is_empty()
-            || bytes.len() > MAX_THUMBNAIL_BYTES
-            || !bytes.starts_with(b"\x89PNG\r\n\x1a\n")
-        {
-            return Err(BackendError::InvalidConfiguration(
-                "sanitized inline preview failed PNG validation".into(),
-            ));
-        }
-        let verified_dimensions =
-            image::ImageReader::with_format(Cursor::new(&bytes), image::ImageFormat::Png)
-                .into_dimensions()
-                .map_err(|_| {
-                    BackendError::InvalidConfiguration(
-                        "sanitized inline preview could not be verified".into(),
-                    )
-                })?;
-        if verified_dimensions != dimensions {
-            return Err(BackendError::InvalidConfiguration(
-                "sanitized inline preview dimensions changed unexpectedly".into(),
-            ));
-        }
-        Ok(bytes)
     }
 
     async fn upload_encrypted_media_bytes(

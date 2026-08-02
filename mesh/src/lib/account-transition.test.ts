@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearRendererAccountState } from './account-transition'
 import { roomTabStorageKey } from './room-tabs'
 import { useChannelStore } from '../store/channels'
@@ -32,6 +32,16 @@ describe('account transition', () => {
     expect(localStorage.getItem(removedKey)).toBeNull()
     expect(localStorage.getItem(retainedKey)).toBe('retained-room-title')
     localStorage.removeItem(retainedKey)
+  })
+
+  it('continues account cleanup when browser storage denies removal', () => {
+    const denied = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+      throw new DOMException('denied', 'SecurityError')
+    })
+
+    expect(() => clearRendererAccountState('@removed:example.org')).not.toThrow()
+    denied.mockRestore()
+    expect(useCommunityStore.getState().communities).toEqual([])
   })
 
   it('removes room, notification, draft, transfer, and voice projections', () => {

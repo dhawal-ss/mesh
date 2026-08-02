@@ -718,7 +718,7 @@ impl BackendCapabilities {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MatrixLogin {
     pub homeserver: String,
@@ -727,14 +727,44 @@ pub struct MatrixLogin {
     pub device_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl std::fmt::Debug for MatrixLogin {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MatrixLogin")
+            .field("homeserver", &self.homeserver)
+            .field("username", &self.username)
+            .field("password", &"[REDACTED]")
+            .field("device_name", &self.device_name)
+            .finish()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MatrixRegistration {
     pub homeserver: String,
     pub username: String,
     pub password: String,
-    pub registration_token: Option<String>,
+    /// Opaque native invitation handle. Registration admission remains in the
+    /// encrypted native store and never crosses renderer IPC.
+    pub pending_invitation_handle: Option<String>,
     pub device_name: Option<String>,
+}
+
+impl std::fmt::Debug for MatrixRegistration {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MatrixRegistration")
+            .field("homeserver", &self.homeserver)
+            .field("username", &self.username)
+            .field("password", &"[REDACTED]")
+            .field(
+                "pending_invitation_handle_present",
+                &self.pending_invitation_handle.is_some(),
+            )
+            .field("device_name", &self.device_name)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -742,6 +772,7 @@ pub struct MatrixRegistration {
 pub enum MatrixRegistrationAvailability {
     Open,
     Closed,
+    InvitationOnly,
     Unknown,
 }
 
@@ -997,10 +1028,13 @@ pub struct CommunityAccessResult {
     pub community: Option<CommunityDto>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct MatrixCommunityAdmission {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Native-only one-use account admission. This field must never serialize
+    /// into an IPC response or generated renderer type.
+    #[serde(default, skip_serializing, skip_deserializing)]
+    #[ts(skip)]
     pub registration_token: Option<String>,
     pub room_id: String,
     pub service: String,
@@ -1018,6 +1052,30 @@ pub struct MatrixCommunityAdmission {
     pub join_rule: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub community_service_display_name: Option<String>,
+}
+
+impl std::fmt::Debug for MatrixCommunityAdmission {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MatrixCommunityAdmission")
+            .field(
+                "registration_token_present",
+                &self.registration_token.is_some(),
+            )
+            .field("room_id", &self.room_id)
+            .field("service", &self.service)
+            .field("via", &self.via)
+            .field("expires_at", &self.expires_at)
+            .field("community_name", &self.community_name)
+            .field("inviter_display_name", &self.inviter_display_name)
+            .field("inviter_user_id", &self.inviter_user_id)
+            .field("join_rule", &self.join_rule)
+            .field(
+                "community_service_display_name",
+                &self.community_service_display_name,
+            )
+            .finish()
+    }
 }
 
 /// Metadata for an invitation held by the native pending-invitation store.
@@ -1317,19 +1375,13 @@ pub trait MeshBackend: Send + Sync {
     ) -> BackendResult<PendingInvitationMetadata> {
         Err(BackendError::Unsupported("pending invitations"))
     }
-    async fn read_pending_invitation(&self) -> BackendResult<Option<String>> {
-        Err(BackendError::Unsupported("pending invitations"))
-    }
-    async fn take_pending_invitation(&self) -> BackendResult<Option<String>> {
-        Err(BackendError::Unsupported("pending invitations"))
-    }
     async fn peek_pending_invitation(&self) -> BackendResult<Option<PendingInvitationMetadata>> {
         Err(BackendError::Unsupported("pending invitations"))
     }
-    async fn resolve_pending_invitation(&self) -> BackendResult<Option<MatrixCommunityAdmission>> {
+    async fn join_pending_invitation(&self, _handle: String) -> BackendResult<CommunityDto> {
         Err(BackendError::Unsupported("pending invitations"))
     }
-    async fn clear_pending_invitation(&self) -> BackendResult<()> {
+    async fn clear_pending_invitation(&self, _handle: String) -> BackendResult<()> {
         Err(BackendError::Unsupported("pending invitations"))
     }
     fn set_matrix_event_callback(&self, _callback: Option<MatrixBackendEventCallback>) {}
@@ -2026,6 +2078,47 @@ mod tests {
             serde_json::to_string(&BackendKind::LegacyP2p).unwrap(),
             "\"legacy-p2p\""
         );
+    }
+
+    #[test]
+    fn secret_bearing_matrix_types_redact_debug_output() {
+        let login = MatrixLogin {
+            homeserver: "https://matrix.example".into(),
+            username: "alice".into(),
+            password: "sentinel-login-password".into(),
+            device_name: Some("Mesh desktop".into()),
+        };
+        let registration = MatrixRegistration {
+            homeserver: "https://matrix.example".into(),
+            username: "alice".into(),
+            password: "sentinel-registration-password".into(),
+            pending_invitation_handle: Some("sentinel-pending-handle".into()),
+            device_name: Some("Mesh desktop".into()),
+        };
+        let admission = MatrixCommunityAdmission {
+            registration_token: Some("sentinel-registration-token".into()),
+            room_id: "!community:example.org".into(),
+            service: "https://matrix.example".into(),
+            via: vec!["example.org".into()],
+            expires_at: None,
+            community_name: None,
+            inviter_display_name: None,
+            inviter_user_id: None,
+            join_rule: None,
+            community_service_display_name: None,
+        };
+
+        let rendered = format!("{login:?}\n{registration:?}\n{admission:?}");
+        for secret in [
+            "sentinel-login-password",
+            "sentinel-registration-password",
+            "sentinel-pending-handle",
+            "sentinel-registration-token",
+        ] {
+            assert!(!rendered.contains(secret));
+        }
+        assert!(rendered.contains("[REDACTED]"));
+        assert!(rendered.contains("registration_token_present: true"));
     }
 
     #[test]

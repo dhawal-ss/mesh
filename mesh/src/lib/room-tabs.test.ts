@@ -4,6 +4,7 @@ import {
   activateRelativeRoomTab,
   closeRoomTab,
   emptyRoomTabState,
+  findRestorableActiveRoomTab,
   openRoomTab,
   reorderRoomTab,
   reopenRoomTab,
@@ -102,5 +103,22 @@ describe('account-scoped room tabs', () => {
     const restored = restoreRoomTabState(JSON.stringify(state), 'account')
     expect(restored.tabs).toHaveLength(MAX_OPEN_ROOM_TABS)
     expect(restored.tabs[0]).toMatchObject({ unreadCount: 9999, mentionCount: 0 })
+  })
+
+  it('restores the saved active conversation rather than the first available tab', () => {
+    let state = openRoomTab(emptyRoomTabState('account'), tab('general'))
+    state = openRoomTab(state, {
+      ...tab('friend'),
+      key: roomTabKey('dm', 'friend'),
+      kind: 'dm',
+      communityId: null,
+    })
+
+    const restored = findRestorableActiveRoomTab(
+      state,
+      (roomId) => roomId === 'general',
+      (conversationId) => conversationId === 'friend',
+    )
+    expect(restored).toMatchObject({ kind: 'dm', roomId: 'friend' })
   })
 })

@@ -138,7 +138,14 @@ async function installTauriMock(
 async function openAdvancedDiagnostics(
   page: Page,
 ): Promise<{ dialog: Locator; trigger: Locator }> {
-  await page.getByRole('button', { name: 'Profile', exact: true }).click()
+  const settingsButton = page.getByRole('button', { name: /^User settings for / })
+  if (!await settingsButton.isVisible().catch(() => false)) {
+    const roomNavigationButton = page.getByRole('button', { name: 'Open room navigation' })
+    if (await roomNavigationButton.isVisible().catch(() => false)) {
+      await roomNavigationButton.click()
+    }
+  }
+  await settingsButton.click()
   const settings = page.getByRole('dialog', { name: 'User Settings' })
   await expect(settings).toBeVisible()
   // UserSettingsPanel is lazy-loaded: the dialog that first becomes visible
@@ -147,7 +154,8 @@ async function openAdvancedDiagnostics(
   // content — not just the dialog title — before sending the shortcut, or
   // the keypress can land before the actual component (and its keydown
   // listener) has mounted.
-  await expect(settings.getByText('Account', { exact: true })).toBeVisible()
+  await expect(settings.getByRole('tab', { name: 'Devices' })).toBeVisible()
+  await settings.getByRole('tab', { name: 'Devices' }).click()
   await page.keyboard.press('Control+Shift+D')
   const diagnosticsButton = settings.getByRole('button', { name: 'System diagnostics' })
   await expect(diagnosticsButton).toBeVisible()

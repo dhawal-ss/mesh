@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-switch-account"
+description = "Enables the matrix_switch_account command without any pre-configured scope."
+commands.allow = ["matrix_switch_account"]
+
+[[permission]]
+identifier = "deny-matrix-switch-account"
+description = "Denies the matrix_switch_account command without any pre-configured scope."
+commands.deny = ["matrix_switch_account"]

@@ -31,7 +31,6 @@ import type {
   MatrixNotification,
   MatrixPermissionStateChanged,
   MatrixPersonalDataExport,
-  MatrixCommunityAdmission,
   PendingInvitationMetadata,
   MatrixQueuedMessageUpdate,
   MatrixUnreadUpdate,
@@ -107,7 +106,6 @@ const LIGHTBOX_IMAGE_IPC_OPTIONS: TauriInvokeOptions = {
   timeoutMs: 60_000,
   maxAttempts: 1,
 }
-const MAX_INLINE_THUMBNAIL_BYTES = 2 * 1024 * 1024
 const MAX_LIGHTBOX_IMAGE_BYTES = 100 * 1024 * 1024
 const MAX_CUSTOM_EMOJI_BYTES = 512 * 1024
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10] as const
@@ -357,7 +355,7 @@ export interface MatrixRegistrationRequest {
   homeserver: string
   username: string
   password: string
-  registrationToken?: string
+  pendingInvitationHandle?: string
   deviceName?: string
 }
 
@@ -380,7 +378,7 @@ export interface MatrixServiceCapabilities {
   serverVersions: string[]
   passwordLogin: boolean
   browserLogin: boolean
-  registration: 'open' | 'closed' | 'unknown'
+  registration: 'open' | 'closed' | 'invitation-only' | 'unknown'
   maxUploadBytes: number | null
 }
 
@@ -454,22 +452,6 @@ export async function getBackendStatus(): Promise<BackendStatus> {
   return cacheBackendStatus(status)
 }
 
-export async function storePendingInvitation(
-  inviteLink: string,
-): Promise<PendingInvitationMetadata> {
-  return tauriInvoke<PendingInvitationMetadata>('store_pending_invitation', {
-    inviteLink,
-  })
-}
-
-export async function readPendingInvitation(): Promise<string | null> {
-  return tauriInvoke<string | null>('read_pending_invitation')
-}
-
-export async function takePendingInvitation(): Promise<string | null> {
-  return tauriInvoke<string | null>('take_pending_invitation')
-}
-
 export async function peekPendingInvitation(): Promise<PendingInvitationMetadata | null> {
   return tauriInvoke<PendingInvitationMetadata | null>(
     'peek_pending_invitation',
@@ -478,16 +460,12 @@ export async function peekPendingInvitation(): Promise<PendingInvitationMetadata
   )
 }
 
-export async function resolvePendingInvitation(): Promise<MatrixCommunityAdmission | null> {
-  return tauriInvoke<MatrixCommunityAdmission | null>(
-    'resolve_pending_invitation',
-    undefined,
-    READ_IPC_OPTIONS,
-  )
+export async function joinPendingInvitation(handle: string): Promise<Community> {
+  return tauriInvoke<Community>('join_pending_invitation', { handle })
 }
 
-export async function clearPendingInvitation(): Promise<void> {
-  return tauriInvoke('clear_pending_invitation')
+export async function clearPendingInvitation(handle: string): Promise<void> {
+  return tauriInvoke('clear_pending_invitation', { handle })
 }
 
 export async function matrixLogin(request: MatrixLoginRequest): Promise<BackendStatus> {
@@ -942,25 +920,13 @@ export async function matrixDownloadAttachment(
 }
 
 export async function matrixLoadAttachmentThumbnail(
-  roomId: string,
-  eventId: string,
-  attachmentIndex: number,
-): Promise<Uint8Array | null> {
-  if (!isMatrixBackend()) return null
-  const bytes = await tauriInvoke<ArrayBuffer | Uint8Array | number[]>(
-    'matrix_load_attachment_thumbnail',
-    { roomId, eventId, attachmentIndex },
-    THUMBNAIL_IPC_OPTIONS,
-  )
-  const normalized = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
-  if (
-    normalized.byteLength === 0 ||
-    normalized.byteLength > MAX_INLINE_THUMBNAIL_BYTES ||
-    PNG_SIGNATURE.some((byte, index) => normalized[index] !== byte)
-  ) {
-    throw normalizeError('Protected preview failed local validation')
-  }
-  return normalized
+  _roomId: string,
+  _eventId: string,
+  _attachmentIndex: number,
+): Promise<null> {
+  // Received encrypted thumbnails stay undecrypted, uncached, and outside
+  // renderer IPC until Mesh has a reviewed sandboxed-preview boundary.
+  return null
 }
 
 export async function matrixLoadAttachmentImage(
@@ -1186,7 +1152,11 @@ export async function getCommunities(): Promise<Community[]> {
 export async function joinCommunity(inviteLink: string): Promise<Community> {
   if (isMatrixBackend()) {
     if (parseAdmissionCommunityInvite(inviteLink)) {
-      return claimCommunityInvite(inviteLink)
+      throw new AppError(
+        'community_invite_requires_native_open',
+        'For your security, open this private invitation with Mesh instead of pasting it. Mesh will keep its one-use secret outside the app interface.',
+        false,
+      )
     }
     const parsed = parseMatrixCommunityInvite(inviteLink)
     if (isMeshJoinLink(inviteLink) && !parsed) {
@@ -1211,32 +1181,6 @@ export async function matrixJoinRoom(roomId: string): Promise<void> {
   return tauriInvoke('matrix_join_room', { roomId })
 }
 
-export async function resolveCommunityInvite(
-  inviteLink: string,
-): Promise<MatrixCommunityAdmission> {
-  if (!parseAdmissionCommunityInvite(inviteLink)) {
-    throw new AppError(
-      'community_invite_invalid',
-      'This community admission invitation is incomplete or invalid.',
-      false,
-    )
-  }
-  return tauriInvoke('matrix_resolve_community_invite', { inviteUrl: inviteLink }, READ_IPC_OPTIONS)
-}
-
-export async function claimCommunityInvite(inviteLink: string): Promise<Community> {
-  if (!parseAdmissionCommunityInvite(inviteLink)) {
-    throw new AppError(
-      'community_invite_invalid',
-      'This community admission invitation is incomplete or invalid.',
-      false,
-    )
-  }
-  return tauriInvoke('matrix_claim_community_invite', {
-    inviteUrl: inviteLink,
-  })
-}
-
 export async function joinOrRequestCommunity(inviteLink: string): Promise<CommunityAccessResult> {
   const parsed = isMatrixBackend() ? parseMatrixCommunityInvite(inviteLink) : null
   try {
@@ -1248,21 +1192,7 @@ export async function joinOrRequestCommunity(inviteLink: string): Promise<Commun
     if (!isMatrixBackend() || !parsed) {
       throw error
     }
-    if (parseAdmissionCommunityInvite(inviteLink)) {
-      try {
-        return {
-          status: 'joined',
-          community: await tauriInvoke('matrix_join_community', {
-            roomOrAlias: parsed.roomOrAlias,
-            via: parsed.via,
-          }),
-        }
-      } catch (directJoinError) {
-        if (normalizeError(directJoinError).code !== 'permission_denied') {
-          throw directJoinError
-        }
-      }
-    } else if (normalizeError(error).code !== 'permission_denied') {
+    if (normalizeError(error).code !== 'permission_denied') {
       throw error
     }
     return requestCommunityAccess(
@@ -2384,6 +2314,7 @@ export async function getMembers(communityId: string): Promise<
     publicKey: string
     displayName: string
     avatarColor: string
+    avatarUrl?: string | null
     role: string
     joinStatus: string
     banStatus: string

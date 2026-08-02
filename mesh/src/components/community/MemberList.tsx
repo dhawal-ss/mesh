@@ -34,6 +34,7 @@ interface MemberEntry {
   publicKey: string
   displayName: string
   avatarColor: string
+  avatarUrl?: string | null
   role: 'owner' | 'admin' | 'member'
   online: boolean
 }
@@ -232,13 +233,13 @@ export function MemberList({
   const listEntries = useMemo<MemberListEntry[]>(() => {
     const entries: MemberListEntry[] = []
     if (online.length > 0) {
-      entries.push({ key: 'heading:online', kind: 'heading', label: `Online — ${online.length}` })
+      entries.push({ key: 'heading:online', kind: 'heading', label: `Online · ${online.length}` })
       for (const member of online) {
         entries.push({ key: `member:${member.publicKey}`, kind: 'member', member })
       }
     }
     if (offline.length > 0) {
-      entries.push({ key: 'heading:offline', kind: 'heading', label: `Offline — ${offline.length}` })
+      entries.push({ key: 'heading:offline', kind: 'heading', label: `Offline · ${offline.length}` })
       for (const member of offline) {
         entries.push({ key: `member:${member.publicKey}`, kind: 'member', member })
       }
@@ -321,6 +322,7 @@ export function MemberList({
                   key={entry.key}
                   member={entry.member}
                   actions={actions}
+                  embedded={embedded}
                   position={visibleRange.start + visibleIndex + 1}
                   setSize={listEntries.length}
                   sequencePosition={sequenceCardPositionFromNeighbors(
@@ -449,11 +451,13 @@ export function MemberList({
 function MemberRow({
   member,
   actions,
+  embedded,
   position,
   setSize,
   sequencePosition,
 }: {
   member: MemberEntry
+  embedded: boolean
   position: number
   setSize: number
   sequencePosition: SequenceCardPosition
@@ -507,11 +511,21 @@ function MemberRow({
       role="listitem"
       aria-posinset={position}
       aria-setsize={setSize}
-      data-sequence-position={sequence['data-sequence-position']}
-      className={`${sequence.className} group flex min-h-10 items-center gap-3 px-2 transition-colors`}
+      data-sequence-position={embedded ? undefined : sequence['data-sequence-position']}
+      className={`${
+        embedded
+          ? 'rounded-control border border-transparent hover:bg-surface-hover'
+          : sequence.className
+      } group flex min-h-10 items-center gap-3 px-2 transition-colors`}
     >
       <div className="relative flex-shrink-0">
-        <Avatar color={member.avatarColor} size={32} name={member.displayName} />
+        <Avatar
+          color={member.avatarColor}
+          size={36}
+          name={member.displayName}
+          imageUrl={member.avatarUrl}
+          className="!rounded-full"
+        />
         {/* Status dot */}
         <div
           className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-status border-surface-sidebar ${

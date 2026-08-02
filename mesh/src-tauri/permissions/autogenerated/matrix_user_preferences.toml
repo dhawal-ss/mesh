@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-user-preferences"
+description = "Enables the matrix_user_preferences command without any pre-configured scope."
+commands.allow = ["matrix_user_preferences"]
+
+[[permission]]
+identifier = "deny-matrix-user-preferences"
+description = "Denies the matrix_user_preferences command without any pre-configured scope."
+commands.deny = ["matrix_user_preferences"]

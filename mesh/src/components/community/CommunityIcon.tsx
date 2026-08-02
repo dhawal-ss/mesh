@@ -1,6 +1,7 @@
 import type { Community } from '../../types/ipc'
 import { NOTIFICATION_MUTE_DURATIONS, useSettingsStore } from '../../store/settings'
 import { Avatar } from '../ui/Avatar'
+import { pixelColorForSeed } from '../ui/PixelMark'
 import { Icon } from '../ui/Icon'
 import { ContextMenu, DropdownMenu, type MenuItem } from '../ui/InteractivePrimitives'
 
@@ -69,16 +70,18 @@ export function CommunityIcon({
           onClick={onClick}
           aria-label={`${community.name}${hasUnread ? `, ${unreadCount} unread` : ''}${isMuted ? ', muted' : ''}`}
           aria-current={active ? 'true' : undefined}
-          className={`group relative flex h-10 w-10 items-center justify-center overflow-hidden transition-all duration-normal ${
+          className={`group relative flex h-12 w-12 items-center justify-center overflow-hidden border transition-all duration-normal ${
             active
-              ? 'rounded-community-active bg-accent'
-              : 'rounded-community bg-surface-sunken hover:rounded-community-active hover:bg-accent'
+              ? 'rounded-community-active border-accent bg-accent'
+              : 'rounded-community border-border-subtle bg-surface-sunken hover:rounded-community-active hover:border-accent hover:bg-accent'
           }`}
         >
           <Avatar
-            color={active ? 'var(--accent)' : 'var(--avatar-blue)'}
-            size={40}
+            color={active ? 'var(--accent)' : pixelColorForSeed(community.id)}
+            size={48}
             name={community.name}
+            imageUrl={community.iconUrl}
+            variant="community"
             className="!rounded-none"
           />
           {/* Hover indicator for non-active */}

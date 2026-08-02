@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-typing-users"
+description = "Enables the matrix_typing_users command without any pre-configured scope."
+commands.allow = ["matrix_typing_users"]
+
+[[permission]]
+identifier = "deny-matrix-typing-users"
+description = "Denies the matrix_typing_users command without any pre-configured scope."
+commands.deny = ["matrix_typing_users"]

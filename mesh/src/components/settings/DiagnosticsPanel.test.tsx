@@ -404,7 +404,7 @@ describe('DiagnosticsPanel', () => {
       await new Promise((r) => setTimeout(r, 10))
     })
 
-    // After probe results render — outcome labels are human-readable
+    // After probe results render: outcome labels are human-readable
     expect(document.body.textContent).toContain('stun:stun.l.google.com:19302')
     expect(document.body.textContent).toContain('Reachable')
     expect(document.body.textContent).toContain('turn:bad.example.com:3478')
@@ -477,7 +477,7 @@ describe('DiagnosticsPanel', () => {
         host: 'turn.example.com',
         port: 3478,
         outcome: 'allocation_ok',
-        detail: 'TURN Allocate succeeded — server accepted credentials',
+        detail: 'TURN Allocate succeeded: server accepted credentials',
         resolvedAddrs: ['198.51.100.1:3478'],
         latencyMs: 42,
       },

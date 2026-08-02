@@ -13,9 +13,9 @@ import { ContentArea } from './ContentArea'
 import { DmSidebar } from './DmSidebar'
 import { DmView } from '../chat/DmView'
 import { useCommunitySync } from '../../hooks/useCommunitySync'
-import { useChannelStore } from '../../store/channels'
+import { useChannelStore, type CommunityRefreshState } from '../../store/channels'
 import { useCommunityStore } from '../../store/communities'
-import { useDmStore } from '../../store/dms'
+import { useDmStore, type LoadStatus } from '../../store/dms'
 import { useIdentityStore } from '../../store/identity'
 import { isBackupReminderDue, useSettingsStore } from '../../store/settings'
 import { useShellStore } from '../../store/shell'
@@ -28,7 +28,6 @@ import { getEffectiveChannelNotificationLevel } from '../../store/settings'
 import { useNetworkStore } from '../../store/network'
 import { COMPACT_VIEWPORT_QUERY, useMediaQuery } from '../../hooks/useMediaQuery'
 import { useQueuedMessageSync } from '../../hooks/useQueuedMessageSync'
-import { openCommandPalette } from '../../lib/command-palette'
 import { CONTEXT_SIDEBAR_WIDTH_KEY } from '../../lib/layout-preferences'
 import { usePersistentPanelWidth } from '../../hooks/usePersistentPanelWidth'
 import { PanelResizeHandle } from './PanelResizeHandle'
@@ -39,7 +38,7 @@ import {
   nextMeshRegion,
 } from '../../lib/region-navigation'
 import {
-  emptyRoomTabState,
+  findRestorableActiveRoomTab,
   openRoomTab,
   restoreRoomTabState,
   roomTabKey,
@@ -48,6 +47,8 @@ import {
   type RoomTab,
   type RoomTabState,
 } from '../../lib/room-tabs'
+import { safeLocalStorageGet, safeLocalStorageSet } from '../../lib/safe-storage'
+import { VoiceDock } from '../voice/VoiceDock'
 
 const CommandPalette = lazy(() =>
   import('../navigation/CommandPalette').then((module) => ({ default: module.CommandPalette })),
@@ -61,8 +62,15 @@ function createLazyRoomTabStrip() {
 }
 
 function loadRoomTabs(accountId: string): RoomTabState {
-  if (typeof localStorage === 'undefined') return emptyRoomTabState(accountId)
-  return restoreRoomTabState(localStorage.getItem(roomTabStorageKey(accountId)), accountId)
+  return restoreRoomTabState(safeLocalStorageGet(roomTabStorageKey(accountId)), accountId)
+}
+
+export function hasAuthoritativeSavedRoomSnapshot(
+  kind: RoomTab['kind'],
+  conversationStatus: LoadStatus,
+  roomStatus?: CommunityRefreshState['status'],
+): boolean {
+  return kind === 'dm' ? conversationStatus === 'loaded' : roomStatus === 'loaded'
 }
 
 export function AppLayout() {
@@ -89,6 +97,9 @@ export function AppLayout() {
   const conversationEntities = useDmStore((state) => state.conversationEntities)
   const setActiveConversation = useDmStore((state) => state.setActiveConversation)
   const setDmMode = useDmStore((state) => state.setDmMode)
+  const conversationLoadStatus = useDmStore((state) => state.conversationLoad.status)
+  const loadDmConversations = useDmStore((state) => state.loadConversations)
+  const channelRefreshByCommunity = useChannelStore((state) => state.refreshByCommunity)
   const backup = useSettingsStore((state) => state.backup)
   const dismissBackupReminder = useSettingsStore((state) => state.dismissBackupReminder)
   const setProfileOpen = useShellStore((state) => state.setProfileOpen)
@@ -96,7 +107,7 @@ export function AppLayout() {
   const networkStatus = useNetworkStore((state) => state.status)
   const contextSidebarWidth = usePersistentPanelWidth({
     storageKey: CONTEXT_SIDEBAR_WIDTH_KEY,
-    defaultWidth: 220,
+    defaultWidth: 304,
     minimum: 180,
     maximum: 360,
   })
@@ -104,6 +115,7 @@ export function AppLayout() {
   const myPublicKey = useIdentityStore((state) => state.identity?.publicKey)
   const roomTabAccountId = myPublicKey ?? 'local-device'
   const [roomTabs, setRoomTabs] = useState<RoomTabState>(() => loadRoomTabs(roomTabAccountId))
+  const [roomTabRestorationPending, setRoomTabRestorationPending] = useState(true)
   const [RoomTabStrip, setRoomTabStrip] = useState(createLazyRoomTabStrip)
   const navigationContextKey = `${activeCommunityId ?? ''}\u0000${activeChannelId ?? ''}\u0000${isDmMode}`
   const [openNavigationContextKey, setOpenNavigationContextKey] = useState<string | null>(null)
@@ -112,8 +124,8 @@ export function AppLayout() {
   const activeRoomId = isDmMode ? activeConversationId : activeChannelId
   /*
    * The navigation drawer only exists below 800px. Deriving "is the drawer
-   * actually a drawer right now" from the media query — rather than latching it
-   * when the drawer opened — fixes a keyboard trap: widening the window used to
+   * actually a drawer right now" from the media query: rather than latching it
+   * when the drawer opened: fixes a keyboard trap: widening the window used to
    * leave the Tab cycle and `aria-modal` installed on a sidebar that had
    * reverted to a static column, with its only Close control display:none.
    */
@@ -139,12 +151,71 @@ export function AppLayout() {
     setRoomTabs((current) => (
       current.accountId === roomTabAccountId ? current : loadRoomTabs(roomTabAccountId)
     ))
+    setRoomTabRestorationPending(true)
   }, [roomTabAccountId])
 
   useEffect(() => {
-    if (roomTabs.accountId !== roomTabAccountId || typeof localStorage === 'undefined') return
-    localStorage.setItem(roomTabStorageKey(roomTabAccountId), serializeRoomTabState(roomTabs))
+    if (roomTabs.accountId !== roomTabAccountId) return
+    safeLocalStorageSet(roomTabStorageKey(roomTabAccountId), serializeRoomTabState(roomTabs))
   }, [roomTabAccountId, roomTabs])
+
+  useEffect(() => {
+    if (!roomTabRestorationPending || roomTabs.accountId !== roomTabAccountId) return
+    const activeTab = findRestorableActiveRoomTab(
+      roomTabs,
+      (roomId) => Boolean(channelEntities[roomId]),
+      (conversationId) => Boolean(conversationEntities[conversationId]),
+    )
+    const savedActiveTab = roomTabs.tabs.find((tab) => tab.key === roomTabs.activeKey)
+    if (savedActiveTab && !activeTab) {
+      if (savedActiveTab.kind === 'dm') {
+        if (conversationLoadStatus === 'idle') {
+          void loadDmConversations().catch(() => {})
+          return
+        }
+        if (!hasAuthoritativeSavedRoomSnapshot('dm', conversationLoadStatus)) return
+      } else {
+        const refreshStatus = savedActiveTab.communityId
+          ? channelRefreshByCommunity[savedActiveTab.communityId]?.status
+          : undefined
+        if (!hasAuthoritativeSavedRoomSnapshot('room', conversationLoadStatus, refreshStatus)) {
+          return
+        }
+      }
+      // The saved room no longer exists in a completed source snapshot.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRoomTabRestorationPending(false)
+      return
+    }
+    if (!activeTab) {
+      // The persisted model is an external cache; this one-time flag prevents
+      // the default room from replacing a saved selection during hydration.
+      setRoomTabRestorationPending(false)
+      return
+    }
+    if (activeTab.kind === 'dm') {
+      setDmMode(true)
+      setActiveConversation(activeTab.roomId)
+    } else {
+      setDmMode(false)
+      if (activeTab.communityId) setActiveCommunity(activeTab.communityId)
+      setActiveChannel(activeTab.roomId)
+    }
+    setRoomTabRestorationPending(false)
+  }, [
+    channelEntities,
+    channelRefreshByCommunity,
+    conversationLoadStatus,
+    conversationEntities,
+    loadDmConversations,
+    roomTabAccountId,
+    roomTabRestorationPending,
+    roomTabs,
+    setActiveChannel,
+    setActiveCommunity,
+    setActiveConversation,
+    setDmMode,
+  ])
 
   useEffect(() => {
     let currentTab: RoomTab | null = null
@@ -173,7 +244,7 @@ export function AppLayout() {
         lastOpenedAt: Date.now(),
       }
     }
-    if (!currentTab) return
+    if (!currentTab || roomTabRestorationPending) return
     const tab = currentTab
     // Channel/DM stores are external Zustand sources. Mirror only their
     // current navigation identity into the bounded tab model.
@@ -181,7 +252,7 @@ export function AppLayout() {
     setRoomTabs((current) => (
       current.accountId === roomTabAccountId ? openRoomTab(current, tab) : current
     ))
-  }, [activeChannel, activeConversation, isDmMode, roomTabAccountId])
+  }, [activeChannel, activeConversation, isDmMode, roomTabAccountId, roomTabRestorationPending])
 
   useEffect(() => {
     // Keep badges and safe display labels fresh for every open tab, not only
@@ -352,7 +423,7 @@ export function AppLayout() {
   }, [activeChannelId, isDmMode, matrixMode, patchChannel, myPublicKey])
 
   // The user IS a peer. A mesh of size 1 (just them) is a VALID working
-  // state — they can send messages, create communities, queue things for
+  // state: they can send messages, create communities, queue things for
   // delivery. We only surface a banner when something actually blocks
   // them, not just because they're solo.
   //
@@ -360,7 +431,7 @@ export function AppLayout() {
   // at all (real failure), the user sees errors elsewhere. Solo is
   // advertised gently via the sidebar indicator instead.
   return (
-    <div className="relative flex h-screen flex-col overflow-hidden bg-surface-base text-content">
+    <div className="mesh-app-shell relative flex h-screen flex-col overflow-hidden bg-surface-base text-content">
       {/*
         Skip link. The room list is a flat list of buttons, so in a community
         with forty rooms it cost forty-plus Tab presses to reach the
@@ -406,9 +477,9 @@ export function AppLayout() {
           You’re offline. Messages marked Saved will send when Mesh reconnects.
         </div>
       )}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         <nav
-          className="mesh-community-rail flex flex-shrink-0 flex-col items-center overflow-y-auto border-r border-border-subtle bg-surface-sunken pt-2"
+          className="mesh-community-rail flex min-h-0 flex-shrink-0 flex-col items-center overflow-y-auto border-r border-border-subtle bg-surface-sunken pt-2"
           aria-label="Communities and direct messages"
           data-mesh-region
           tabIndex={-1}
@@ -438,7 +509,7 @@ export function AppLayout() {
           ref={contextNavigationRef}
           id="mesh-context-sidebar"
           data-open={contextNavigationOpen ? 'true' : 'false'}
-          className="mesh-context-sidebar relative flex flex-shrink-0 flex-col border-r border-border-subtle bg-surface-sidebar"
+          className="mesh-context-sidebar relative flex min-h-0 flex-shrink-0 flex-col border-r border-border-subtle bg-surface-sidebar"
           data-design-token-exception="user-resizable-persisted-context-sidebar-width"
           style={{
             '--mesh-context-sidebar-width': `${contextSidebarWidth.width}px`,
@@ -461,20 +532,6 @@ export function AppLayout() {
             onPointerDown={contextSidebarWidth.startResize}
             onResizeBy={contextSidebarWidth.resizeBy}
           />
-          <button
-            type="button"
-            className="mx-2 mt-2 flex min-h-9 flex-none items-center gap-2 rounded-control border border-border-subtle bg-surface-sunken px-2.5 text-left text-xs text-muted transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-            onClick={openCommandPalette}
-          >
-            <Icon name="search" size="sm" />
-            <span className="min-w-0 flex-1 truncate">Search or jump to…</span>
-            <span
-              className="flex-none rounded bg-surface-active px-1.5 py-0.5 text-meta"
-              aria-hidden="true"
-            >
-              Ctrl/⌘ K
-            </span>
-          </button>
           <ScopedErrorBoundary
             name={isDmMode && directMessagesAvailable ? 'Conversation list' : 'Room list'}
             description="Navigation failed to render. The current conversation remains available."
@@ -488,7 +545,7 @@ export function AppLayout() {
         <main
           id="mesh-conversation"
           tabIndex={-1}
-          className="flex min-w-0 flex-1 flex-col bg-surface-base outline-none"
+          className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface-base outline-none"
           aria-label={activeConversationLabel}
           data-mesh-region
         >
@@ -498,19 +555,7 @@ export function AppLayout() {
             resetKey={roomTabAccountId}
             onRetry={() => setRoomTabStrip(createLazyRoomTabStrip())}
           >
-            <Suspense
-              fallback={(
-                <div
-                  role="status"
-                  aria-label="Loading conversation tabs"
-                  className="flex min-h-10 flex-none items-center gap-2 border-b border-border-subtle bg-surface-sunken px-3"
-                >
-                  <span className="h-5 w-24 animate-pulse rounded-control bg-surface-hover" />
-                  <span className="h-5 w-20 animate-pulse rounded-control bg-surface-hover" />
-                  <span className="sr-only">Loading conversation tabs…</span>
-                </div>
-              )}
-            >
+            <Suspense fallback={null}>
               <RoomTabStrip state={roomTabs} onChange={changeRoomTabs} />
             </Suspense>
           </ScopedErrorBoundary>
@@ -538,7 +583,7 @@ export function AppLayout() {
               {matrixMode ? 'Encrypted session' : 'Local Mesh session'}
             </span>
           </div>
-          <div className="flex min-h-0 flex-1">
+          <div className="flex min-h-0 flex-1 overflow-hidden">
             {isDmMode && directMessagesAvailable ? (
               <ScopedErrorBoundary
                 name="Direct messages"
@@ -554,6 +599,7 @@ export function AppLayout() {
           </div>
         </main>
       </div>
+      <VoiceDock />
     </div>
   )
 }

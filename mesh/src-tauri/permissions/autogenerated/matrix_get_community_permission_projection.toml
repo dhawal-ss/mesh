@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-get-community-permission-projection"
+description = "Enables the matrix_get_community_permission_projection command without any pre-configured scope."
+commands.allow = ["matrix_get_community_permission_projection"]
+
+[[permission]]
+identifier = "deny-matrix-get-community-permission-projection"
+description = "Denies the matrix_get_community_permission_projection command without any pre-configured scope."
+commands.deny = ["matrix_get_community_permission_projection"]

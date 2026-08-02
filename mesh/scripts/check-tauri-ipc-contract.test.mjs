@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   collectInvokedCommands,
+  collectAllowedCommands,
   collectRegisteredCommands,
+  findPermissionDrift,
   findUnregisteredCommands,
 } from './check-tauri-ipc-contract.mjs'
 
@@ -41,4 +43,37 @@ test('reports a frontend command that has no registered handler', () => {
   `
 
   assert.deepEqual(findUnregisteredCommands(bridge, rust), ['dead_command'])
+})
+
+test('collects the explicit application permission inventory', () => {
+  const permission = `
+    [[permission]]
+    identifier = "mesh-main"
+    commands.allow = [
+      "matrix_login",
+      "matrix_logout",
+    ]
+  `
+
+  assert.deepEqual([...collectAllowedCommands(permission)], ['matrix_login', 'matrix_logout'])
+})
+
+test('reports missing and stale application permissions', () => {
+  const rust = `
+    tauri::generate_handler![
+      commands::backend::matrix_login,
+      commands::backend::matrix_logout,
+    ])
+  `
+  const permission = `
+    commands.allow = [
+      "matrix_login",
+      "removed_command",
+    ]
+  `
+
+  assert.deepEqual(findPermissionDrift(rust, permission), {
+    missing: ['matrix_logout'],
+    stale: ['removed_command'],
+  })
 })

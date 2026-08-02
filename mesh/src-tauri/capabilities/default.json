@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "core:event:default",
+    "mesh-main",
     {
       "identifier": "opener:allow-open-url",
       "allow": [
@@ -15,7 +16,6 @@
       ]
     },
     "dialog:allow-open",
-    "deep-link:default",
     "notification:default"
   ]
 }

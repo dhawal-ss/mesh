@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-mark-dm-read"
+description = "Enables the matrix_mark_dm_read command without any pre-configured scope."
+commands.allow = ["matrix_mark_dm_read"]
+
+[[permission]]
+identifier = "deny-matrix-mark-dm-read"
+description = "Denies the matrix_mark_dm_read command without any pre-configured scope."
+commands.deny = ["matrix_mark_dm_read"]

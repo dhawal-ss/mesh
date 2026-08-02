@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-update-display-name"
+description = "Enables the update_display_name command without any pre-configured scope."
+commands.allow = ["update_display_name"]
+
+[[permission]]
+identifier = "deny-update-display-name"
+description = "Denies the update_display_name command without any pre-configured scope."
+commands.deny = ["update_display_name"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-deactivate-account"
+description = "Enables the matrix_deactivate_account command without any pre-configured scope."
+commands.allow = ["matrix_deactivate_account"]
+
+[[permission]]
+identifier = "deny-matrix-deactivate-account"
+description = "Denies the matrix_deactivate_account command without any pre-configured scope."
+commands.deny = ["matrix_deactivate_account"]

@@ -10,6 +10,13 @@ The stack contains Synapse, PostgreSQL, a bounded one-use invitation service,
 and Caddy. Public registration is never open: account creation is either
 disabled or requires an operator-issued registration token.
 
+Synapse is pinned to the reviewed multi-architecture ``v1.157.1`` image index
+digest in Compose, setup, and restore tooling. Treat every version change as an
+operator upgrade: review the upstream release notes, back up first, run the
+daemon-free configuration and admission tests, then complete two independent
+disposable federation cycles before changing a live service. Never replace the
+digest with ``latest`` or infer live safety from a successful image pull.
+
 ## Permanent identity decision
 
 Choose the Matrix server name before creating the first account. It becomes
@@ -51,9 +58,24 @@ output before relying on this example.
 `MESH_REGISTRATION_ENABLED=1` permits token-gated account creation only.
 `enable_registration_without_verification` remains false and
 `registration_requires_token` remains true. The community invitation service
-stores only an opaque invitation digest and derives a one-use Synapse
-registration token. A person who chooses another account service never sends
-that token there.
+stores only opaque invitation/proof digests. It runs as the dedicated non-admin
+`MESH_ADMISSION_SERVICE_USER_ID`; its token has only the membership and power
+that each community explicitly gives that account. Never make it a Synapse
+server administrator.
+
+Production invitation creation and claim currently fail closed. A deployment
+must first provide both a reviewed POST-capable Matrix OpenID verifier and a
+narrowly scoped registration-token issuer. Stock Synapse validates OpenID
+proofs through a credential-bearing query URL and manages registration tokens
+through its server-admin API, so the reference service deliberately implements
+neither unsafe fallback. Replay state is keyed to the issuing server, verified
+user, and credential itself, so changing a client-supplied proof UUID, purpose,
+subject, or audience does not make a token reusable. The exact proof, replay,
+SSRF, bot-membership, and
+moderation-audit boundaries are documented in
+`docs/security/PHASE1_NATIVE_SECURITY_BOUNDARIES.md`. A person who chooses
+another account service never sends an account credential or registration
+token to this community service.
 
 Close account creation immediately without disabling existing accounts:
 
@@ -119,7 +141,7 @@ for key in \
   MESH_PUBLIC_ENABLED MESH_REGISTRATION_ENABLED MESH_ABUSE_EMAIL \
   MESH_OPERATOR_LOCALPART POSTGRES_USER POSTGRES_DB POSTGRES_PASSWORD \
   REGISTRATION_SHARED_SECRET MACAROON_SECRET_KEY FORM_SECRET \
-  MESH_ADMISSION_SIGNING_KEY MESH_ADMISSION_ADMIN_ACCESS_TOKEN ACME_EMAIL
+  MESH_ADMISSION_SIGNING_KEY MESH_ADMISSION_SERVICE_USER_ID +  MESH_ADMISSION_SERVICE_ACCESS_TOKEN ACME_EMAIL
 do
   printf '%s=%s\n' "$key" \
     "$(security find-generic-password -a "$key" -s 'Mesh Homeserver Runtime' -w)" \

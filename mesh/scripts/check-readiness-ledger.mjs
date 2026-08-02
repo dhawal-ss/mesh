@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
@@ -15,6 +16,21 @@ const SHA_PATTERN = /^[0-9a-f]{40}$/
 const MILESTONES = ['R0', 'R1', 'R2', 'R3', 'R4']
 const STATUSES = ['unverified', 'local-pass', 'live-pass', 'blocked', 'waived']
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/
+const SHA256_PATTERN = /^[0-9a-f]{64}$/
+
+export const REQUIRED_RELEASE_GATES = Object.freeze([
+  { id: 'r1.provider-identity-lifecycle', milestone: 'R1', required: true, releaseStatus: 'live-pass' },
+  { id: 'r1.community-hosted-operations', milestone: 'R1', required: true, releaseStatus: 'live-pass' },
+  { id: 'r1.public-service-review', milestone: 'R1', required: true, releaseStatus: 'live-pass' },
+  { id: 'r2.signed-windows-beta', milestone: 'R2', required: true, releaseStatus: 'live-pass' },
+  { id: 'r2.public-release', milestone: 'R2', required: true, releaseStatus: 'live-pass' },
+  { id: 'r2.manual-accessibility-windows', milestone: 'R2', required: true, releaseStatus: 'live-pass' },
+  { id: 'r2.public-page-legal-approval', milestone: 'R2', required: true, releaseStatus: 'live-pass' },
+  { id: 'r3.voice-live', milestone: 'R3', required: true, releaseStatus: 'live-pass' },
+  { id: 'r4.native-invitation-delivery', milestone: 'R4', required: true, releaseStatus: 'live-pass' },
+  { id: 'r4.manual-accessibility-cross-platform', milestone: 'R4', required: true, releaseStatus: 'live-pass' },
+  { id: 'r0.dependency-advisory-policy', milestone: 'R0', required: true, releaseStatus: 'local-pass' },
+])
 
 export function ledgerPathFromGitRoot(gitRoot) {
   const pathFromGitRoot = relative(resolve(gitRoot), ledgerPath).replaceAll('\\', '/')
@@ -27,6 +43,13 @@ function isNonEmptyString(value) {
 
 function isIsoDate(value) {
   return typeof value === 'string' && ISO_DATE_PATTERN.test(value) && Number.isFinite(Date.parse(value))
+}
+
+function rejectUnknownKeys(value, allowedKeys, path, fail) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return
+  for (const key of Object.keys(value)) {
+    if (!allowedKeys.includes(key)) fail(`${path}.${key} is not allowed by the readiness schema`)
+  }
 }
 
 function pathIsInsideRepo(candidate) {
@@ -46,6 +69,7 @@ export function validateReadinessLedger(ledger, {
   requireLive = false,
   commitSha = null,
   allowReleaseShaMismatch = false,
+  enforceGateContract = false,
 } = {}) {
   const errors = []
   const fail = (message) => errors.push(message)
@@ -53,6 +77,7 @@ export function validateReadinessLedger(ledger, {
   if (!ledger || typeof ledger !== 'object' || Array.isArray(ledger)) {
     return ['ledger must be an object']
   }
+  rejectUnknownKeys(ledger, ['schemaVersion', 'ledgerId', 'releaseSha', 'updatedAt', 'gates'], 'ledger', fail)
 
   if (ledger.schemaVersion !== 1) fail('schemaVersion must be 1')
   if (ledger.ledgerId !== 'mesh-production-readiness') fail('ledgerId is invalid')
@@ -72,6 +97,7 @@ export function validateReadinessLedger(ledger, {
       fail(`${path} must be an object`)
       continue
     }
+    rejectUnknownKeys(gate, ['id', 'milestone', 'required', 'releaseStatus', 'status', 'evidence', 'owner', 'capability', 'blockReason', 'nextAction', 'waiver'], path, fail)
     if (!isNonEmptyString(gate.id) || !/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(gate.id)) fail(`${path}.id is invalid`)
     if (ids.has(gate.id)) fail(`${path}.id duplicates ${gate.id}`)
     ids.add(gate.id)
@@ -89,22 +115,47 @@ export function validateReadinessLedger(ledger, {
       fail(`${path}.evidence must be an object`)
       continue
     }
+    rejectUnknownKeys(evidence, ['commitSha', 'command', 'artifactPath', 'artifactUri', 'artifactSha256', 'environment', 'collectedAt', 'expiresAt'], `${path}.evidence`, fail)
     if (evidence.commitSha !== null && !SHA_PATTERN.test(evidence.commitSha ?? '')) fail(`${path}.evidence.commitSha is invalid`)
     if (evidence.command !== null && !isNonEmptyString(evidence.command)) fail(`${path}.evidence.command must be a string or null`)
     if (evidence.artifactPath !== null && !pathIsInsideRepo(evidence.artifactPath)) fail(`${path}.evidence.artifactPath must be a relative path inside the repository`)
+    if (evidence.artifactUri !== undefined && evidence.artifactUri !== null) {
+      try {
+        const artifactUrl = new URL(evidence.artifactUri)
+        if (artifactUrl.protocol !== 'https:') fail(`${path}.evidence.artifactUri must use HTTPS`)
+        if (artifactUrl.username || artifactUrl.password || artifactUrl.search || artifactUrl.hash) fail(`${path}.evidence.artifactUri must not contain credentials, query parameters, or fragments`)
+      } catch {
+        fail(`${path}.evidence.artifactUri must be a valid HTTPS URI or null`)
+      }
+    }
+    if (evidence.artifactSha256 !== undefined && evidence.artifactSha256 !== null && !SHA256_PATTERN.test(evidence.artifactSha256)) {
+      fail(`${path}.evidence.artifactSha256 must be a lowercase SHA-256 or null`)
+    }
     if (evidence.environment !== null && !isNonEmptyString(evidence.environment)) fail(`${path}.evidence.environment must be a string or null`)
     if (evidence.collectedAt !== null && !isIsoDate(evidence.collectedAt)) fail(`${path}.evidence.collectedAt must be an ISO UTC timestamp or null`)
     if (evidence.expiresAt !== null && !isIsoDate(evidence.expiresAt)) fail(`${path}.evidence.expiresAt must be an ISO UTC timestamp or null`)
 
     if (gate.status === 'live-pass') {
       if (evidence.commitSha !== ledger.releaseSha) fail(`${path} live-pass evidence must use releaseSha`)
-      if (evidence.artifactPath === null || !existsSync(resolve(repoRoot, evidence.artifactPath))) fail(`${path} live-pass evidence artifact is missing`)
+      const hasRepositoryArtifact = evidence.artifactPath !== null && evidence.artifactPath !== undefined
+      const hasExternalArtifact = evidence.artifactUri !== null && evidence.artifactUri !== undefined
+      if (hasRepositoryArtifact === hasExternalArtifact) fail(`${path} live-pass requires exactly one artifactPath or immutable artifactUri`)
+      if (!SHA256_PATTERN.test(evidence.artifactSha256 ?? '')) fail(`${path} live-pass evidence requires artifactSha256`)
+      if (hasRepositoryArtifact) {
+        const artifact = resolve(repoRoot, evidence.artifactPath)
+        if (!existsSync(artifact)) fail(`${path} live-pass evidence artifact is missing`)
+        else {
+          const actualDigest = createHash('sha256').update(readFileSync(artifact)).digest('hex')
+          if (actualDigest !== evidence.artifactSha256) fail(`${path} live-pass evidence artifact SHA-256 does not match`)
+        }
+      }
       if (evidence.collectedAt === null || evidence.expiresAt === null) fail(`${path} live-pass evidence requires collectedAt and expiresAt`)
       if (evidence.expiresAt !== null && Date.parse(evidence.expiresAt) <= now.getTime()) fail(`${path} live-pass evidence expired at ${evidence.expiresAt}`)
       if (gate.blockReason !== null) fail(`${path} live-pass cannot have blockReason`)
       if (gate.waiver !== null) fail(`${path} live-pass cannot have a waiver`)
     } else if (gate.status === 'waived') {
       const waiver = gate.waiver
+      rejectUnknownKeys(waiver, ['approver', 'reason', 'expiresAt'], `${path}.waiver`, fail)
       if (!waiver || !isNonEmptyString(waiver.approver) || !isNonEmptyString(waiver.reason) || !isIsoDate(waiver.expiresAt)) fail(`${path} waived status requires approver, reason, and expiry`)
       else if (Date.parse(waiver.expiresAt) <= now.getTime()) fail(`${path} waiver expired at ${waiver.expiresAt}`)
     } else if (!isNonEmptyString(gate.nextAction)) {
@@ -119,7 +170,21 @@ export function validateReadinessLedger(ledger, {
       const satisfiesReleaseStatus = gate.releaseStatus === 'local-pass'
         ? gate.status === 'local-pass' || gate.status === 'live-pass'
         : gate.status === 'live-pass'
-      if (!satisfiesReleaseStatus) fail(`${path} is required for ${milestone} but status is ${gate.status}; minimum is ${gate.releaseStatus}`)
+      if (!satisfiesReleaseStatus) fail(`${path} (${gate.id}) is required for ${milestone} but status is ${gate.status}; minimum is ${gate.releaseStatus}`)
+    }
+  }
+
+  if (enforceGateContract) {
+    const gatesById = new Map(gates.map((gate) => [gate.id, gate]))
+    for (const expected of REQUIRED_RELEASE_GATES) {
+      const actual = gatesById.get(expected.id)
+      if (!actual) {
+        fail(`required release gate is missing: ${expected.id}`)
+        continue
+      }
+      for (const property of ['milestone', 'required', 'releaseStatus']) {
+        if (actual[property] !== expected[property]) fail(`${expected.id}.${property} must be ${expected[property]}`)
+      }
     }
   }
 
@@ -219,7 +284,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
   const errors = [
     ...bindingErrors,
-    ...validateReadinessLedger(ledger, { ...options, allowReleaseShaMismatch }),
+    ...validateReadinessLedger(ledger, { ...options, allowReleaseShaMismatch, enforceGateContract: true }),
   ]
   if (errors.length > 0) {
     console.error('Mesh readiness ledger validation failed:')

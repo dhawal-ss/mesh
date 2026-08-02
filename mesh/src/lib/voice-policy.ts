@@ -122,7 +122,7 @@ export function shouldExecuteRelayRebuild(
 /**
  * Given rapid departures, coalesce rebuild requests using debounce semantics.
  * This is a pure state machine that tracks pending rebuilds without actual
- * timers — tests can drive it by advancing a logical clock.
+ * timers: tests can drive it by advancing a logical clock.
  */
 export interface RebuildDebouncer {
   pending: boolean

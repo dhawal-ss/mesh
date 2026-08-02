@@ -1043,7 +1043,7 @@ function MessageInputContent({
           />
 
           {/*
-            There was no Send button at all — sending was Enter-only, and the
+            There was no Send button at all: sending was Enter-only, and the
             Enter/Shift+Enter contract was documented nowhere in the UI. That is
             fine for practised users and invisible to everyone else, especially
             on touch.
@@ -1063,7 +1063,7 @@ function MessageInputContent({
         </div>
 
         {/*
-          The draft store silently discards anything past 16 KB — past the cap,
+          The draft store silently discards anything past 16 KB: past the cap,
           typing and pasting simply stopped having any effect with no counter,
           no warning and no announcement.
         */}
@@ -1076,7 +1076,7 @@ function MessageInputContent({
             {draftAtLimit && <Icon name="triangleAlert" size="xs" aria-hidden="true" />}
             <span className="tnum">
               {draftAtLimit
-                ? 'Message limit reached — shorten it to keep typing'
+                ? 'Message limit reached: shorten it to keep typing'
                 : `${Math.round((MAX_DRAFT_BYTES - draftBytesUsed) / 1024)} KB left`}
             </span>
           </div>

@@ -15,6 +15,8 @@ import { transitions } from '../../lib/motion'
 import { canStartMatrixVoice } from '../../lib/voice-runtime'
 import type { CommunityApplication, ModerationAuditEntry } from '../../types/ipc'
 import { Icon } from '../ui/Icon'
+import { Avatar } from '../ui/Avatar'
+import { pixelColorForSeed } from '../ui/PixelMark'
 import {
   useServerEmoji,
   useServerEmojiStore,
@@ -271,9 +273,13 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
           {/* Community info card */}
           <div className="mb-6 rounded-panel border border-border-subtle bg-surface-sunken p-4">
             <div className="mb-3 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-control bg-accent text-lg font-semibold text-accent-content">
-                {community.name[0]?.toUpperCase()}
-              </div>
+              <Avatar
+                color={pixelColorForSeed(community.id)}
+                size={40}
+                name={community.name}
+                imageUrl={community.iconUrl}
+                variant="community"
+              />
               <div className="min-w-0 flex-1">
                 <h3 className="truncate text-sm font-semibold text-primary">{community.name}</h3>
                 <p className="member-count text-xs text-muted">
@@ -599,10 +605,10 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                         autoFocus
                       />
 
-                      <div>
-                        <label className="mb-1.5 block text-xs font-semibold uppercase text-muted">
+                      <fieldset>
+                        <legend className="mb-1.5 block text-xs font-semibold uppercase text-muted">
                           Room Type
-                        </label>
+                        </legend>
                         <div className="flex gap-2">
                           {(!matrixMode || matrixVoiceReady
                             ? (['text', 'voice'] as const)
@@ -626,7 +632,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                             Voice rooms appear after private calling passes its service checks.
                           </p>
                         )}
-                      </div>
+                      </fieldset>
 
                       <Button
                         onClick={handleCreateChannel}

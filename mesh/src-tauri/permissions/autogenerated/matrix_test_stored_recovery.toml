@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-test-stored-recovery"
+description = "Enables the matrix_test_stored_recovery command without any pre-configured scope."
+commands.allow = ["matrix_test_stored_recovery"]
+
+[[permission]]
+identifier = "deny-matrix-test-stored-recovery"
+description = "Denies the matrix_test_stored_recovery command without any pre-configured scope."
+commands.deny = ["matrix_test_stored_recovery"]

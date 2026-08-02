@@ -165,6 +165,18 @@ export function roomTabStorageKey(accountId: string): string {
   return `mesh-room-tabs-v1:${encodeURIComponent(accountId)}`
 }
 
+export function findRestorableActiveRoomTab(
+  state: RoomTabState,
+  roomAvailable: (roomId: string) => boolean,
+  dmAvailable: (conversationId: string) => boolean,
+): RoomTab | null {
+  const active = state.tabs.find((tab) => tab.key === state.activeKey)
+  if (!active) return null
+  return active.kind === 'dm'
+    ? dmAvailable(active.roomId) ? active : null
+    : roomAvailable(active.roomId) ? active : null
+}
+
 export function serializeRoomTabState(state: RoomTabState): string {
   return JSON.stringify(state)
 }

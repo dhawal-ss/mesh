@@ -87,7 +87,7 @@ export function RoomTabStrip({
     }
   }
 
-  if (state.tabs.length === 0) return null
+  if (state.tabs.length <= 1) return null
 
   return (
     <div

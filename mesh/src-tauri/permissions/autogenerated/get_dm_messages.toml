@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-dm-messages"
+description = "Enables the get_dm_messages command without any pre-configured scope."
+commands.allow = ["get_dm_messages"]
+
+[[permission]]
+identifier = "deny-get-dm-messages"
+description = "Denies the get_dm_messages command without any pre-configured scope."
+commands.deny = ["get_dm_messages"]

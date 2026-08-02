@@ -38,6 +38,11 @@
         },
         "command": { "type": ["string", "null"] },
         "artifactPath": { "type": ["string", "null"] },
+        "artifactUri": { "type": ["string", "null"], "format": "uri" },
+        "artifactSha256": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{64}$"
+        },
         "environment": { "type": ["string", "null"] },
         "collectedAt": { "type": ["string", "null"], "format": "date-time" },
         "expiresAt": { "type": ["string", "null"], "format": "date-time" }

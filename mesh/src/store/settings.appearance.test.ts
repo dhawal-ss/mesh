@@ -102,12 +102,12 @@ describe('appearance settings', () => {
     expect(useSettingsStore.getState().appearance).toEqual({
       theme: 'dark',
       density: 'default',
-      accent: 'sand',
+      accent: 'violet',
       transparency: 'readable',
     })
     expect(document.documentElement.dataset.theme).toBe('dark')
     expect(document.documentElement.dataset.density).toBe('default')
-    expect(document.documentElement.dataset.accent).toBe('sand')
+    expect(document.documentElement.dataset.accent).toBe('violet')
     expect(document.documentElement.dataset.transparency).toBe('readable')
   })
 })

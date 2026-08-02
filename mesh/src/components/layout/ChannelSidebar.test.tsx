@@ -122,7 +122,7 @@ describe('ChannelSidebar room containment', () => {
     expect(list?.querySelectorAll('button[data-room-id]').length).toBeGreaterThan(0)
     expect(list?.querySelectorAll('button[data-room-id]').length).toBeLessThan(100)
     expect(list?.querySelector('button[aria-label="text room: Room 0"]')).not.toBeNull()
-    expect(list?.querySelector('h3')?.textContent).toContain('Rooms')
+    expect(list?.querySelector('h3')?.textContent).toContain('Chat')
 
     await act(async () => {
       if (list instanceof HTMLElement) list.scrollTop = 180_032
