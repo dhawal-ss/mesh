@@ -18,6 +18,8 @@
     { "id": "windows.community-join", "status": "not-run", "environment": null, "notes": null, "evidenceIds": [] },
     { "id": "windows.restart-resume", "status": "not-run", "environment": null, "notes": null, "evidenceIds": [] },
     { "id": "windows.update", "status": "not-run", "environment": null, "notes": null, "evidenceIds": [] },
+    { "id": "windows.cross-format-msi-to-nsis", "status": "not-run", "environment": null, "notes": null, "evidenceIds": [] },
+    { "id": "windows.cross-format-nsis-to-msi", "status": "not-run", "environment": null, "notes": null, "evidenceIds": [] },
     { "id": "windows.uninstall", "status": "not-run", "environment": null, "notes": null, "evidenceIds": [] },
     { "id": "windows.residue", "status": "not-run", "environment": null, "notes": null, "evidenceIds": [] },
     { "id": "public-release.signed-installer", "status": "not-run", "environment": null, "notes": null, "evidenceIds": [] },

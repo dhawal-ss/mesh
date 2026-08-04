@@ -175,6 +175,8 @@ export default {
         'user-panel': 'var(--user-panel-height)',
         'conversation-header': 'var(--conversation-header-height)',
         'rail-separator': 'var(--rail-separator-height)',
+        'party-gutter': 'var(--party-conversation-padding)',
+        'party-message-y': 'var(--party-message-padding-block)',
       },
       width: {
         'member-list': 'var(--member-list-width)',
@@ -183,6 +185,9 @@ export default {
         'content-error': 'var(--content-error-width)',
         'onboarding-shell': 'var(--onboarding-shell-width)',
         'voice-label': 'var(--voice-controls-label-width)',
+        'party-rail': 'var(--party-rail-width)',
+        'party-channels': 'var(--party-channel-width)',
+        'party-roster': 'var(--party-roster-width)',
       },
       maxWidth: {
         'attachment-name': 'var(--attachment-name-width)',
@@ -192,6 +197,15 @@ export default {
         modal: 'var(--modal-content-height)',
         settings: 'var(--settings-content-height)',
         composer: 'var(--composer-content-height)',
+        'party-media': 'var(--party-media-max-height)',
+      },
+      height: {
+        'party-header': 'var(--party-header-height)',
+        'party-pin': 'var(--party-pin-height)',
+        'party-composer': 'var(--party-composer-height)',
+        'party-strip': 'var(--party-strip-height)',
+        'party-channel-row': 'var(--party-channel-row-height)',
+        'party-occupant': 'var(--party-occupant-row-height)',
       },
       minWidth: {
         'privacy-table': 'var(--privacy-table-width)',
@@ -221,22 +235,16 @@ export default {
         instant: 'var(--motion-dur-micro)',
         fast: 'var(--motion-dur-fast)',
         normal: 'var(--motion-dur-base)',
-        slow: 'var(--motion-dur-slow)',
+        slow: 'var(--motion-dur-deliberate)',
       },
       transitionTimingFunction: {
-        DEFAULT: 'var(--motion-ease-hover)',
-        enter: 'var(--motion-ease-enter)',
-        exit: 'var(--motion-ease-exit)',
-        move: 'var(--motion-ease-move)',
+        DEFAULT: 'var(--ref-ease-hover)',
+        enter: 'var(--motion-ease-arrive)',
+        exit: 'var(--motion-ease-arrive)',
+        move: 'var(--motion-ease-reposition)',
       },
       boxShadow: {
         overlay: 'var(--elev-overlay)',
-      },
-      animation: {
-        'pulse-soft': 'var(--animation-pulse-soft)',
-      },
-      keyframes: {
-        pulseSoft: { '0%, 100%': { opacity: '1' }, '50%': { opacity: '0.4' } },
       },
     },
   },

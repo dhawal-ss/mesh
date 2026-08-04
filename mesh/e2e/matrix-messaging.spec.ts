@@ -405,17 +405,17 @@ test.describe('Matrix direct messaging and encrypted attachments', () => {
   test.use({ viewport: { width: 1440, height: 900 } })
 
   test('keeps a received encrypted channel thumbnail protected', async ({ page }) => {
-    await installAuthenticatedMatrixMessagingMock(page)
-    await page.goto('/')
+    await openDirectMessage(page)
 
-    await expect(page.getByText('Encrypted preview stays protected', { exact: true })).toBeVisible({
+    const messageLog = page.getByRole('log', { name: 'Messages with Bob' })
+    await expect(messageLog.getByText('Encrypted preview stays protected', { exact: true })).toBeVisible({
       timeout: 10_000,
     })
-    await expect(page.getByText(
+    await expect(messageLog.getByText(
       'Save the file explicitly to inspect it. Mesh does not decrypt received thumbnails into the app interface.',
       { exact: true },
     )).toBeVisible()
-    await expect(page.getByAltText('Preview of encrypted-plan.pdf')).toHaveCount(0)
+    await expect(messageLog.getByAltText('Preview of encrypted-plan.pdf')).toHaveCount(0)
     await expect(page.locator('body')).not.toContainText('matrix-sha256:encrypted-plan-thumbnail')
     const calls = await ipcCalls(page)
     expect(calls.map((call) => call.command)).not.toContain('matrix_load_attachment_thumbnail')
@@ -424,17 +424,21 @@ test.describe('Matrix direct messaging and encrypted attachments', () => {
   test('@a11y opens an existing encrypted DM and loads its history through Matrix IPC', async ({ page }) => {
     await openDirectMessage(page)
 
-    await expect(page.getByText('Existing encrypted DM history.', { exact: true })).toBeVisible()
-    await expect(page.getByText('encrypted-plan.pdf', { exact: true })).toBeVisible()
-    await expect(page.getByText('Encrypted preview stays protected', { exact: true })).toBeVisible()
-    await expect(page.getByAltText('Preview of encrypted-plan.pdf')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Download encrypted-plan.pdf' })).toBeVisible()
+    const messageLog = page.getByRole('log', { name: 'Messages with Bob' })
+    await expect(messageLog.getByText('Existing encrypted DM history.', { exact: true })).toBeVisible()
+    await expect(messageLog.getByText('encrypted-plan.pdf', { exact: true })).toBeVisible()
+    await expect(messageLog.getByText('Encrypted preview stays protected', { exact: true })).toBeVisible()
+    await expect(messageLog.getByAltText('Preview of encrypted-plan.pdf')).toHaveCount(0)
+    await expect(messageLog.getByRole('button', { name: 'Download encrypted-plan.pdf' })).toBeVisible()
     await expectNoWcagViolations(page, 'Encrypted direct message')
 
     const calls = await ipcCalls(page)
     expect(calls).toContainEqual({
       command: 'matrix_dm_conversations',
-      args: {},
+      args: expect.objectContaining({
+        deadlineMs: 14_000,
+        requestId: expect.any(String),
+      }),
     })
     expect(calls).toContainEqual({
       command: 'matrix_dm_messages',
@@ -450,21 +454,23 @@ test.describe('Matrix direct messaging and encrypted attachments', () => {
     expect(calls.map((call) => call.command)).not.toContain('matrix_load_attachment_thumbnail')
   })
 
-  test('keeps DM trust compact, explains who can read, and opens device review', async ({ page }) => {
+  test('keeps DM safety contextual, explains who can read, and opens device review', async ({ page }) => {
     await openDirectMessage(page)
 
-    const trustSummary = page.getByRole('button', {
-      name: 'Encrypted. Open conversation trust details.',
+    const safetyTrigger = page.getByRole('button', {
+      name: 'Open Safety with Bob',
     })
-    await expect(trustSummary).toBeVisible()
+    await expect(safetyTrigger).toBeVisible()
     await expect(page.getByText('1 device needs review before it can be fully trusted.')).toBeVisible()
 
-    await trustSummary.click()
-    await expect(page.getByText('Who can read this conversation?')).toBeVisible()
-    await expect(page.getByText('Only you, Bob, and approved devices can read these messages.')).toBeVisible()
-    await expect(page.getByText('Message backup')).toBeVisible()
+    await safetyTrigger.click()
+    const safetyPane = page.getByRole('complementary', { name: 'Safety with Bob' })
+    await expect(safetyPane).toBeVisible()
+    await expect(safetyPane.getByText('Only you, Bob, and approved devices can read these messages.')).toBeVisible()
+    await expect(safetyPane.getByText('Message backup')).toBeVisible()
 
-    await page.getByRole('button', { name: 'Review devices and backup' }).click()
+    const reviewDevices = safetyPane.getByRole('button', { name: 'Review devices and backup' })
+    await reviewDevices.click()
     const securityDialog = page.getByRole('dialog', { name: 'Your devices' })
     await expect(securityDialog).toBeVisible()
     await expect(page.getByRole('dialog')).toHaveCount(1)
@@ -472,7 +478,9 @@ test.describe('Matrix direct messaging and encrypted attachments', () => {
 
     await page.keyboard.press('Escape')
     await expect(securityDialog).toHaveCount(0)
-    await expect(trustSummary).toBeFocused()
+    await expect(reviewDevices).toBeFocused()
+    await safetyPane.getByRole('button', { name: 'Close Safety' }).click()
+    await expect(safetyTrigger).toBeFocused()
     expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false)
   })
 
@@ -511,7 +519,7 @@ test.describe('Matrix direct messaging and encrypted attachments', () => {
     await composer.press('Enter')
 
     await expect(
-      page.getByText('Private beta document', { exact: true }),
+      page.getByRole('log', { name: 'Messages with Bob' }).getByText('Private beta document', { exact: true }),
     ).toBeVisible({ timeout: 10_000 })
     await expect(page.getByText('mesh-beta.pdf', { exact: true })).toBeVisible()
     await expect(composer).toHaveValue('')

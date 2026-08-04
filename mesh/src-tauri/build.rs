@@ -6,15 +6,20 @@ fn main() {
     .expect("failed to build the Mesh Tauri application manifest")
 }
 
-/// Keep one reviewed inventory for every renderer-callable application command.
-/// Tauri otherwise permits every registered command to every WebView by default.
-/// The capability references the `mesh-main` permission defined by this same
-/// file, so a newly registered command stays unavailable until the inventory and
-/// IPC contract are deliberately updated together.
+/// Select the command inventory that matches the compiled renderer/backend pair.
+/// The default Matrix build cannot acquire legacy LAN commands simply because a
+/// second handler exists elsewhere in lib.rs.
 fn application_commands() -> &'static [&'static str] {
-    const INVENTORY: &str = include_str!("permissions/mesh-main.toml");
-    let commands = INVENTORY
-        .lines()
+    const MATRIX_INVENTORY: &str = include_str!("permissions/mesh-main.toml");
+    const LEGACY_INVENTORY: &str = include_str!("permissions/mesh-legacy.toml");
+    let inventories: &[&'static str] = if cfg!(feature = "legacy-p2p") {
+        &[MATRIX_INVENTORY, LEGACY_INVENTORY]
+    } else {
+        &[MATRIX_INVENTORY]
+    };
+    let commands = inventories
+        .iter()
+        .flat_map(|inventory| inventory.lines())
         .filter_map(|line| {
             let line = line.trim();
             line.strip_prefix('"')

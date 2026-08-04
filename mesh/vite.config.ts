@@ -4,9 +4,49 @@ import react from "@vitejs/plugin-react";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
+const matrixVoiceDependencyRoot = fileURLToPath(
+  new URL("./feature-deps/matrix-voice/node_modules/", import.meta.url),
+);
+const legacyVoiceDependencyRoot = fileURLToPath(
+  new URL("./feature-deps/legacy-lan/node_modules/", import.meta.url),
+);
+
+function packageNameFromModuleId(moduleId: string): string | null {
+  const normalized = moduleId.replaceAll('\\', '/');
+  const marker = '/node_modules/';
+  const index = normalized.lastIndexOf(marker);
+  if (index < 0) return null;
+  const parts = normalized.slice(index + marker.length).split('/');
+  if (parts[0]?.startsWith('@') && parts[1]) return `${parts[0]}/${parts[1]}`;
+  return parts[0] || null;
+}
+
+function reachabilityPlugin(mode: string) {
+  return {
+    name: 'mesh-artifact-reachability',
+    generateBundle(_options: unknown, bundle: Record<string, { type: string; modules?: Record<string, unknown> }>) {
+      const packages = new Set<string>();
+      let moduleCount = 0;
+      for (const output of Object.values(bundle)) {
+        if (output.type !== 'chunk') continue;
+        for (const moduleId of Object.keys(output.modules ?? {})) {
+          moduleCount += 1;
+          const packageName = packageNameFromModuleId(moduleId);
+          if (packageName) packages.add(packageName);
+        }
+      }
+      this.emitFile({
+        type: 'asset',
+        fileName: 'mesh-reachability.json',
+        source: `${JSON.stringify({ schemaVersion: 1, mode, moduleCount, packages: [...packages].sort() }, null, 2)}\n`,
+      });
+    },
+  };
+}
 
 // https://vite.dev/config/
-export default defineConfig(async ({ mode }) => ({
+export default defineConfig(async ({ mode }) => {
+  return ({
   plugins: [
     react({
       babel: {
@@ -15,27 +55,50 @@ export default defineConfig(async ({ mode }) => ({
         plugins: ["babel-plugin-react-compiler"],
       },
     }),
+    reachabilityPlugin(mode),
   ],
   resolve: {
     // Force simple-peer/readable-stream onto the browser EventEmitter package
     // instead of Vite's empty shim for the Node built-in `events` module.
     alias: [
-      ...(mode === "matrix-voice" || mode === "test"
-        ? []
-        : [
-            {
-              find: "../lib/livekit-voice",
-              replacement: fileURLToPath(
-                new URL("./src/lib/livekit-voice.disabled.ts", import.meta.url),
-              ),
-            },
-          ]),
       {
-        find: /^events$/,
-        replacement: fileURLToPath(
-          new URL("./node_modules/events/events.js", import.meta.url),
-        ),
+        find: "@mesh/matrix-voice-runtime",
+        replacement: fileURLToPath(new URL(
+          mode === "matrix-voice"
+            ? "./src/lib/livekit-voice.ts"
+            : "./src/lib/livekit-voice.disabled.ts",
+          import.meta.url,
+        )),
       },
+      {
+        find: "@mesh/legacy-voice-runtime",
+        replacement: fileURLToPath(new URL(
+          mode === "legacy-p2p"
+            ? "./src/lib/voice-engine.ts"
+            : "./src/lib/voice-engine.disabled.ts",
+          import.meta.url,
+        )),
+      },
+      ...(mode === "matrix-voice" ? [
+        {
+          find: /^livekit-client$/,
+          replacement: `${matrixVoiceDependencyRoot}livekit-client/dist/livekit-client.esm.mjs`,
+        },
+        {
+          find: /^livekit-client\/e2ee-worker(?:\?url)?$/,
+          replacement: `${matrixVoiceDependencyRoot}livekit-client/dist/livekit-client.e2ee.worker.mjs?url`,
+        },
+      ] : []),
+      ...(mode === "legacy-p2p" ? [
+        {
+          find: /^simple-peer$/,
+          replacement: `${legacyVoiceDependencyRoot}simple-peer/index.js`,
+        },
+        {
+          find: /^events$/,
+          replacement: `${legacyVoiceDependencyRoot}events/events.js`,
+        },
+      ] : []),
     ],
   },
   // simple-peer's browser dependency graph still references Node's `global`
@@ -98,4 +161,5 @@ export default defineConfig(async ({ mode }) => ({
       },
     },
   },
-}));
+  });
+});

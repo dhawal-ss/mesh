@@ -3,6 +3,24 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSettingsStore } from '../../store/settings'
 import { UserSettingsPanel } from './UserSettingsPanel'
+import { DEFAULT_INTERFACE_SOUND_EVENTS } from '../../lib/interface-sound-contract'
+
+const interfaceSoundMocks = vi.hoisted(() => ({
+  play: vi.fn(() => Promise.resolve(true)),
+}))
+
+vi.mock('../../lib/interface-sounds', () => ({
+  playInterfaceSound: interfaceSoundMocks.play,
+}))
+
+vi.mock('./SecurityDevicesPanel', () => ({
+  SecurityDevicesPanel: ({ embedded, onClose }: { embedded?: boolean; onClose: () => void }) => (
+    <section aria-label="Inline safety and devices">
+      <span>{embedded ? 'Embedded device controls' : 'Device controls'}</span>
+      <button type="button" onClick={onClose}>Close devices</button>
+    </section>
+  ),
+}))
 
 async function openSettingsTab(label: string) {
   const tab = Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(
@@ -20,12 +38,15 @@ describe('UserSettingsPanel', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    interfaceSoundMocks.play.mockClear()
     useSettingsStore.setState((state) => ({
       notifications: {
         ...state.notifications,
         enabled: true,
         sound: true,
         soundId: 'mesh',
+        soundVolume: 0.6,
+        soundEvents: { ...DEFAULT_INTERFACE_SOUND_EVENTS },
         showMessageContent: false,
         doNotDisturb: false,
         quietHours: {
@@ -43,6 +64,8 @@ describe('UserSettingsPanel', () => {
     useSettingsStore.getState().setAppearanceTheme('dark')
     useSettingsStore.getState().setAppearanceDensity('default')
     useSettingsStore.getState().setAppearanceAccent('sand')
+    useSettingsStore.getState().setAppearanceTransparency('opaque')
+    useSettingsStore.getState().setReduceMotion(false)
     useSettingsStore.setState({
       privacy: {
         readReceiptMode: 'public',
@@ -52,6 +75,7 @@ describe('UserSettingsPanel', () => {
         invisibleMode: false,
       },
       matrixPreferenceSync: { status: 'idle', error: null },
+      signalCheckEnabled: false,
     })
   })
 
@@ -99,9 +123,52 @@ describe('UserSettingsPanel', () => {
     await act(async () => {
       notifications.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
     })
-    const devices = tabs.find((tab) => tab.textContent === 'Devices')!
-    expect(devices.getAttribute('aria-selected')).toBe('true')
-    expect(document.activeElement).toBe(devices)
+    const advanced = tabs.find((tab) => tab.textContent === 'Advanced')!
+    expect(advanced.getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(advanced)
+  })
+
+  it('renders route-owned You content without nesting a settings dialog', async () => {
+    const openSecurity = vi.fn()
+    await act(async () => {
+      root.render(
+        <UserSettingsPanel
+          embedded
+          open
+          activeSection="account"
+          onClose={() => {}}
+          identity={{
+            publicKey: '@alice:example.org',
+            displayName: 'Alice',
+            avatarColor: '#52b5f4',
+          }}
+          matrixAccountId="@alice:example.org"
+          matrixMode
+          onOpenSecurity={openSecurity}
+        />,
+      )
+    })
+
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.textContent).toContain('Current account service')
+    expect(document.body.textContent).not.toContain('@alice:example.org')
+    const reveal = Array.from(document.body.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Show account address'),
+    )
+    await act(async () => reveal?.click())
+    expect(document.body.textContent).toContain('@alice:example.org')
+    const useAnotherService = Array.from(document.body.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Use another service'),
+    )
+    expect(useAnotherService?.hasAttribute('disabled')).toBe(false)
+    await act(async () => {
+      useAnotherService?.click()
+      await import('./SecurityDevicesPanel')
+      await Promise.resolve()
+    })
+    expect(openSecurity).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('Embedded device controls')
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
   })
 
   it('shows the authenticated Matrix account and opens security controls', async () => {
@@ -123,11 +190,11 @@ describe('UserSettingsPanel', () => {
       )
     })
 
-    await openSettingsTab('Account')
+    await openSettingsTab('Profile')
     expect(document.body.textContent).toContain('alice')
     expect(document.body.textContent).toContain('Mesh account')
     expect(document.body.textContent).not.toContain('@alice:example.org')
-    await openSettingsTab('Devices')
+    await openSettingsTab('Safety and devices')
     const securityButton = Array.from(document.body.querySelectorAll('button')).find((button) =>
       button.textContent?.includes('Open your devices'),
     )
@@ -136,7 +203,7 @@ describe('UserSettingsPanel', () => {
     expect(document.body.textContent).not.toContain('Security & Devices')
     await act(async () => securityButton?.click())
     expect(openSecurity).toHaveBeenCalledOnce()
-    await openSettingsTab('Privacy')
+    await openSettingsTab('Privacy and voice')
     expect(document.body.textContent).toContain('Call privacy')
     expect(document.body.textContent).toContain(
       'The service can see who connects, network addresses, call timing, and traffic volume.',
@@ -146,7 +213,7 @@ describe('UserSettingsPanel', () => {
     )
   })
 
-  it('updates real notification preferences and disables sound with notifications', async () => {
+  it('keeps interface-sound controls independent from desktop notifications', async () => {
     await act(async () => {
       root.render(
         <UserSettingsPanel
@@ -166,7 +233,7 @@ describe('UserSettingsPanel', () => {
 
     await openSettingsTab('Notifications')
     const checkboxes = document.body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')
-    expect(checkboxes).toHaveLength(5)
+    expect(checkboxes).toHaveLength(13)
     expect(checkboxes[0]?.checked).toBe(true)
     expect(checkboxes[1]?.disabled).toBe(false)
 
@@ -175,7 +242,8 @@ describe('UserSettingsPanel', () => {
     expect(useSettingsStore.getState().notifications.enabled).toBe(false)
     expect(
       document.body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')[1]?.disabled,
-    ).toBe(true)
+    ).toBe(false)
+    expect(useSettingsStore.getState().notifications.sound).toBe(true)
   })
 
   it('explains service visibility and updates every privacy control', async () => {
@@ -198,7 +266,7 @@ describe('UserSettingsPanel', () => {
       )
     })
 
-    await openSettingsTab('Privacy')
+    await openSettingsTab('Privacy and voice')
     expect(document.body.textContent).toContain('Privacy Center')
     expect(document.body.textContent).toContain('What your service can see')
     expect(document.body.textContent).toContain('Message and file content')
@@ -280,7 +348,7 @@ describe('UserSettingsPanel', () => {
       )
     })
 
-    await openSettingsTab('Privacy')
+    await openSettingsTab('Privacy and voice')
     expect(document.body.textContent).toContain('could not confirm them on your account')
     expect(
       Array.from(document.body.querySelectorAll('button')).some((button) =>
@@ -310,25 +378,42 @@ describe('UserSettingsPanel', () => {
     })
 
     await openSettingsTab('Notifications')
-    const sound = document.body.querySelector<HTMLSelectElement>('#notification-sound')
+    expect(document.body.querySelector('#notification-sound')).toBeNull()
+    const volume = document.body.querySelector<HTMLInputElement>('#interface-sound-volume')
     await act(async () => {
-      if (sound) sound.value = 'pulse'
-      sound?.dispatchEvent(new Event('change', { bubbles: true }))
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setValue?.call(volume, '35')
+      volume?.dispatchEvent(new Event('input', { bubbles: true }))
     })
-    expect(useSettingsStore.getState().notifications.soundId).toBe('pulse')
+    expect(useSettingsStore.getState().notifications.soundVolume).toBe(0.35)
+
+    const directPreview = document.body.querySelector<HTMLButtonElement>(
+      'button[aria-label="Preview direct-message sound"]',
+    )
+    const directToggle = directPreview?.parentElement?.parentElement?.querySelector<HTMLInputElement>(
+      'input[type="checkbox"]',
+    )
+    await act(async () => directToggle?.click())
+    expect(useSettingsStore.getState().notifications.soundEvents['message-direct']).toBe(false)
+    await act(async () => directPreview?.click())
+    expect(interfaceSoundMocks.play).toHaveBeenCalledWith('message-direct', {
+      preview: true,
+      masterVolume: 0.35,
+    })
+    expect(useSettingsStore.getState().notifications.soundEvents['message-direct']).toBe(false)
 
     const previewToggle = Array.from(
       document.body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
-    )[2]
+    )[10]
     expect(document.body.textContent).toContain('lock screens, mirrored displays')
     await act(async () => previewToggle?.click())
     expect(useSettingsStore.getState().notifications.showMessageContent).toBe(true)
 
     const checkboxes = document.body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')
-    await act(async () => checkboxes[3]?.click())
+    await act(async () => checkboxes[11]?.click())
     expect(useSettingsStore.getState().notifications.doNotDisturb).toBe(true)
 
-    await act(async () => checkboxes[4]?.click())
+    await act(async () => checkboxes[12]?.click())
     expect(document.body.querySelector('#quiet-hours-start')).not.toBeNull()
     const start = document.body.querySelector<HTMLInputElement>('#quiet-hours-start')
     const end = document.body.querySelector<HTMLInputElement>('#quiet-hours-end')
@@ -400,29 +485,35 @@ describe('UserSettingsPanel', () => {
     const opaqueTransparency = document.body.querySelector<HTMLInputElement>(
       'input[name="appearance-transparency"][value="opaque"]',
     )
+    const reduceMotion = Array.from(document.body.querySelectorAll<HTMLLabelElement>('label'))
+      .find((label) => label.textContent?.includes('Reduce motion'))
+      ?.querySelector<HTMLInputElement>('input[type="checkbox"]')
 
     expect(darkTheme?.checked).toBe(true)
     expect(cozyDensity?.checked).toBe(true)
     expect(sandAccent?.checked).toBe(true)
-    expect(subtleTransparency?.checked).toBe(true)
+    expect(opaqueTransparency?.checked).toBe(true)
 
     await act(async () => {
       highContrastTheme?.click()
       compactDensity?.click()
       oceanAccent?.click()
-      opaqueTransparency?.click()
+      subtleTransparency?.click()
+      reduceMotion?.click()
     })
 
     expect(useSettingsStore.getState().appearance).toEqual({
       theme: 'high-contrast',
       density: 'compact',
       accent: 'ocean',
-      transparency: 'opaque',
+      transparency: 'readable',
+      reduceMotion: true,
     })
     expect(document.documentElement.dataset.theme).toBe('high-contrast')
     expect(document.documentElement.dataset.density).toBe('compact')
     expect(document.documentElement.dataset.accent).toBe('ocean')
-    expect(document.documentElement.dataset.transparency).toBe('opaque')
+    expect(document.documentElement.dataset.transparency).toBe('readable')
+    expect(document.documentElement.dataset.reduceMotion).toBe('true')
   })
 
   it('saves a trimmed Matrix display name and reports success', async () => {
@@ -445,7 +536,7 @@ describe('UserSettingsPanel', () => {
       )
     })
 
-    await openSettingsTab('Account')
+    await openSettingsTab('Profile')
     const displayNameInput = document.body.querySelector<HTMLInputElement>(
       'input[autocomplete="nickname"]',
     )
@@ -492,7 +583,7 @@ describe('UserSettingsPanel', () => {
       )
     })
 
-    await openSettingsTab('Account')
+    await openSettingsTab('Profile')
     const displayNameInput = document.body.querySelector<HTMLInputElement>(
       'input[autocomplete="nickname"]',
     )
@@ -515,7 +606,7 @@ describe('UserSettingsPanel', () => {
     )
   })
 
-  it('reveals operator tools only after the version easter egg', async () => {
+  it('uses an explicit Signal Check opt-in before diagnostics can open', async () => {
     const openDiagnostics = vi.fn()
     await act(async () => {
       root.render(
@@ -535,25 +626,22 @@ describe('UserSettingsPanel', () => {
       )
     })
 
-    await openSettingsTab('Devices')
-    expect(document.body.textContent).not.toContain('System diagnostics')
-    const version = document.body.querySelector<HTMLButtonElement>(
-      'button[aria-label="Mesh version 0.1.0"]',
-    )
-    await act(async () => {
-      for (let index = 0; index < 5; index += 1) version?.click()
-    })
-
+    await openSettingsTab('Advanced')
     expect(document.body.textContent).toContain('Advanced')
+    expect(document.body.textContent).toContain('Show Signal Check details')
+    expect(document.body.textContent).not.toContain('Review Signal Check')
+    const toggle = document.body.querySelector<HTMLInputElement>('input[type="checkbox"]')
+    await act(async () => toggle?.click())
+    expect(useSettingsStore.getState().signalCheckEnabled).toBe(true)
     const diagnostics = Array.from(document.body.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('System diagnostics'),
+      button.textContent?.includes('Review Signal Check'),
     )
     await act(async () => diagnostics?.click())
     expect(openDiagnostics).toHaveBeenCalledOnce()
     expect(document.body.textContent).not.toContain('Import older Mesh data')
   })
 
-  it('also unlocks Advanced with Ctrl+Shift+D and shows the backup warning dot', async () => {
+  it('keeps the backup warning visible in Safety and devices', async () => {
     await act(async () => {
       root.render(
         <UserSettingsPanel
@@ -573,19 +661,7 @@ describe('UserSettingsPanel', () => {
       )
     })
 
-    await openSettingsTab('Devices')
-    await act(async () => {
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', {
-          key: 'D',
-          ctrlKey: true,
-          shiftKey: true,
-          bubbles: true,
-        }),
-      )
-    })
-
-    expect(document.body.textContent).toContain('Advanced')
+    await openSettingsTab('Safety and devices')
     expect(document.body.textContent).toContain('Your messages are not backed up yet.')
     expect(
       document.body.querySelector('[aria-label="Message backup needs attention"]'),

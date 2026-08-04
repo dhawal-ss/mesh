@@ -100,6 +100,10 @@ claudereview/
 **/infra/matrix-spike/runtime/
 **/infra/homeserver/runtime/
 **/infra/homeserver/rotation-evidence/
+mesh/release/source-lockfile.cdx.json
+mesh/release/matrix-windows-artifact.cdx.json
+mesh/release/installer-payload/*
+!mesh/release/installer-payload/INSTRUCTIONS
 
 # Local configuration and secrets
 .env

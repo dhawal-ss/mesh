@@ -50,8 +50,8 @@ async function installAuthenticatedMatrixMock(
         inviterUserId: '@bob:mesh.test',
         joinRule: 'public',
         communityServiceDisplayName: 'Matrix Test Service',
-        storedAt: 1_752_000_000_000,
-        expiresAt: 1_754_592_000_000,
+        storedAt: 1_785_552_000_000,
+        expiresAt: 1_788_144_000_000,
       }
     }
 
@@ -427,13 +427,26 @@ async function openAuthenticatedShell(
   await page.goto('/')
   if (currentDeepLinks?.length) {
     await expect(
-      page.getByRole('dialog', { name: 'Review community invitation' }),
+      page.getByRole('heading', { name: /^Invitation to .+$/ }),
     ).toBeVisible({ timeout: 10_000 })
     return
   }
   await expect(
     page.getByRole('navigation', { name: 'Communities and direct messages' }),
   ).toBeVisible({ timeout: 10_000 })
+
+  const community = page.locator('button[aria-label^="Mesh Test Community"]').first()
+  await expect(community).toBeVisible()
+  await community.click()
+
+  const room = page.getByRole('button', { name: `Text room: ${expectedRoomName}` })
+  if (!(await room.isVisible())) {
+    const openRoomNavigation = page.getByRole('button', { name: 'Open room navigation' })
+    await expect(openRoomNavigation).toBeVisible()
+    await openRoomNavigation.click()
+  }
+  await expect(room).toBeVisible()
+  await room.click()
   await expect(page.getByRole('log', { name: `Messages in #${expectedRoomName}` })).toBeVisible({
     timeout: 10_000,
   })
@@ -501,49 +514,52 @@ test.describe('authenticated desktop shell', () => {
     await expect(page.getByText('Anonymous', { exact: true })).toHaveCount(0)
   })
 
-  test('restores multiple account-scoped tabs with authoritative mention badges', async ({ page }) => {
+  test('restores an account-scoped room route with authoritative mention badges', async ({ page }) => {
     await page.addInitScript(() => {
       const accountId = '@alice:mesh.test'
-      localStorage.setItem(`mesh-room-tabs-v1:${encodeURIComponent(accountId)}`, JSON.stringify({
+      localStorage.setItem(`mesh-navigation-v1:${encodeURIComponent(accountId)}`, JSON.stringify({
         schemaVersion: 1,
         accountId,
-        tabs: [
+        entries: [
+          { kind: 'home' },
           {
-            key: 'room:!general:mesh.test',
             kind: 'room',
-            roomId: '!general:mesh.test',
             communityId: '!mesh-e2e:mesh.test',
-            title: 'general',
-            pinned: true,
-            unreadCount: 0,
-            mentionCount: 0,
-            lastOpenedAt: 1,
-          },
-          {
-            key: 'room:!random:mesh.test',
-            kind: 'room',
             roomId: '!random:mesh.test',
-            communityId: '!mesh-e2e:mesh.test',
-            title: 'random',
-            pinned: false,
-            unreadCount: 1,
-            mentionCount: 0,
-            lastOpenedAt: 2,
           },
         ],
-        activeKey: 'room:!random:mesh.test',
-        recentlyClosed: [],
+        index: 1,
+        recents: [
+          {
+            route: {
+              kind: 'room',
+              communityId: '!mesh-e2e:mesh.test',
+              roomId: '!random:mesh.test',
+            },
+            lastOpenedAt: 2,
+          },
+          {
+            route: {
+              kind: 'room',
+              communityId: '!mesh-e2e:mesh.test',
+              roomId: '!general:mesh.test',
+            },
+            lastOpenedAt: 1,
+          },
+        ],
       }))
     })
-    await openAuthenticatedShell(page, null, 'random')
+    await installAuthenticatedMatrixMock(page)
+    await page.goto('/')
 
-    const tabs = page.getByRole('tablist', { name: 'Open rooms and direct messages' })
-    await expect(tabs.getByRole('tab')).toHaveCount(2)
-    await expect(tabs.getByRole('tab', { name: /general, pinned/ })).toBeVisible()
-    const random = tabs.getByRole('tab', { name: /random, 2 mentions/ })
-    await expect(random).toBeVisible()
-    await random.click()
-    await expect(page.getByRole('log', { name: 'Messages in #random' })).toBeVisible()
+    await expect(page.getByRole('log', { name: 'Messages in #random' })).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(page.getByRole('button', { name: /^Text room: random, 2 mentions/ })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    await expect(page.getByRole('button', { name: 'Text room: general' })).toBeVisible()
   })
 
   test('joins a cold-start Mesh invitation through Matrix and opens the community', async ({ page }) => {
@@ -551,16 +567,19 @@ test.describe('authenticated desktop shell', () => {
       'mesh://join?v=3&kind=matrix&room=!invited:mesh.test&via=mesh.test&service=https%3A%2F%2Fmatrix.mesh.test'
     await openAuthenticatedShell(page, [invite])
 
-    const review = page.getByRole('dialog', { name: 'Review community invitation' })
-    await expect(review).toBeVisible()
-    await expect(review.getByText('Invited Mesh Community', { exact: true })).toBeVisible()
-    await expect(review.getByText('Invited by Bob', { exact: true })).toBeVisible()
-    await expect(review.getByText('Matrix Test Service', { exact: true })).toBeVisible()
+    const invitationHeading = page.getByRole('heading', {
+      name: 'Invitation to Invited Mesh Community',
+    })
+    await expect(invitationHeading).toBeVisible()
+    const destination = page.getByRole('region', { name: 'Invitation destination' })
+    await expect(destination.getByText('Invited Mesh Community', { exact: true })).toBeVisible()
+    await expect(destination.getByText('Bob', { exact: true })).toBeVisible()
+    await expect(destination.getByText('Matrix Test Service', { exact: true })).toBeVisible()
     await expect.poll(async () => (
       (await ipcCalls(page)).filter((call) => call.command === 'join_pending_invitation')
     )).toEqual([])
 
-    await review.getByRole('button', { name: 'Confirm and continue' }).click()
+    await page.getByRole('button', { name: 'Join Invited Mesh Community' }).click()
     await expect.poll(async () => (
       (await ipcCalls(page)).filter((call) => call.command === 'join_pending_invitation')
     )).toEqual([{
@@ -583,11 +602,8 @@ test.describe('authenticated desktop shell', () => {
     await expect(
       page.getByRole('button', { name: 'Invited Mesh Community', exact: true }),
     ).toHaveAttribute('aria-current', 'true')
-    await expect(page.getByRole('button', { name: 'Text room: welcome' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    )
-    await expect(review).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Text room: welcome' })).toBeVisible()
+    await expect(invitationHeading).toHaveCount(0)
 
   })
 
@@ -647,52 +663,53 @@ test.describe('authenticated desktop shell', () => {
     })
   })
 
-  test('opens the room ledger and switches among useful room context views', async ({ page }) => {
+  test('opens Signal Check and switches among useful Details views', async ({ page }) => {
     await openAuthenticatedShell(page)
 
-    const trustSummary = page.getByRole('button', { name: /Encrypted, 2 members, 1 connected service, 1 device needs review. Open room ledger./ })
+    const trustSummary = page.getByRole('button', { name: /1 device needs review. Open Signal Check./ })
     await expect(trustSummary).toBeVisible()
     await trustSummary.click()
 
-    const context = page.getByRole('complementary', { name: 'Room context for general' })
+    const signalCheck = page.getByRole('complementary', { name: 'Signal Check for general' })
+    await expect(signalCheck).toBeVisible()
+    await expect(signalCheck.getByRole('region', { name: 'Signal Check' })).toBeVisible()
+    await expect(signalCheck.getByText('Protected end to end')).toBeVisible()
+    await expect(signalCheck.getByText('1 need review')).toBeVisible()
+    await expect(signalCheck.getByText('Ready', { exact: true })).toBeVisible()
+    await signalCheck.getByRole('button', { name: 'Close room context' }).click()
+
+    await page.getByRole('button', { name: 'Show Details' }).click()
+    const context = page.getByRole('complementary', { name: 'Details for general' })
     await expect(context).toBeVisible()
     const peopleTab = context.getByRole('tab', { name: 'People' })
-    const ledgerTab = context.getByRole('tab', { name: 'Ledger' })
     const filesTab = context.getByRole('tab', { name: 'Files' })
     const pinsTab = context.getByRole('tab', { name: 'Pins' })
-    await expect(ledgerTab).toHaveAttribute('aria-selected', 'true')
-    await expect(ledgerTab).toHaveAttribute('tabindex', '0')
-    await expect(peopleTab).toHaveAttribute('tabindex', '-1')
+    await expect(peopleTab).toHaveAttribute('aria-selected', 'true')
+    await expect(peopleTab).toHaveAttribute('tabindex', '0')
     await expect(filesTab).toHaveAttribute('tabindex', '-1')
     await expect(pinsTab).toHaveAttribute('tabindex', '-1')
-    await expect(context.getByText('Protected end to end')).toBeVisible()
-    await expect(context.getByText('1 need review')).toBeVisible()
-    await expect(context.getByText('Ready', { exact: true })).toBeVisible()
 
-    await ledgerTab.focus()
+    await peopleTab.focus()
     await page.keyboard.press('ArrowRight')
-    await expect(filesTab).toBeFocused()
-    await expect(filesTab).toHaveAttribute('aria-selected', 'true')
-    await expect(context.getByRole('tabpanel')).toHaveAttribute(
-      'aria-labelledby',
-      await filesTab.getAttribute('id') ?? '',
-    )
-    await page.keyboard.press('End')
     await expect(pinsTab).toBeFocused()
     await expect(pinsTab).toHaveAttribute('aria-selected', 'true')
-    await expect(context.getByText('Pinned guidance stays reachable at every supported width.')).toBeVisible()
+    await expect(context.getByRole('tabpanel')).toHaveAttribute(
+      'aria-labelledby',
+      await pinsTab.getAttribute('id') ?? '',
+    )
+    await page.keyboard.press('End')
+    await expect(filesTab).toBeFocused()
+    await expect(filesTab).toHaveAttribute('aria-selected', 'true')
     await page.keyboard.press('Home')
     await expect(peopleTab).toBeFocused()
     await expect(peopleTab).toHaveAttribute('aria-selected', 'true')
-    await page.keyboard.press('ArrowLeft')
-    await expect(pinsTab).toBeFocused()
     await page.keyboard.press('ArrowLeft')
     await expect(filesTab).toBeFocused()
     await expect(context.getByText('No files shared yet')).toBeVisible()
 
     await context.getByRole('button', { name: 'Close room context' }).click()
     await expect(context).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Show room context' })).toHaveAttribute(
+    await expect(page.getByRole('button', { name: 'Show Details' })).toHaveAttribute(
       'aria-expanded',
       'false',
     )
@@ -706,7 +723,7 @@ test.describe('authenticated desktop shell', () => {
 
     const dialog = page.getByRole('dialog', { name: 'User Settings' })
     await expect(dialog).toBeVisible()
-    await dialog.getByRole('tab', { name: 'Account' }).click()
+    await dialog.getByRole('tab', { name: 'Profile' }).click()
     await expect(dialog.getByText('Mesh account', { exact: true })).toBeVisible()
 
     await dialog.getByRole('textbox', { name: 'Display name' }).fill('Alice Updated')
@@ -739,7 +756,7 @@ test.describe('authenticated desktop shell', () => {
     const settingsDialog = page.getByRole('dialog', { name: 'User Settings' })
     await expect(settingsDialog).toBeVisible()
 
-    await settingsDialog.getByRole('tab', { name: 'Devices' }).click()
+    await settingsDialog.getByRole('tab', { name: 'Safety and devices' }).click()
     await settingsDialog.getByRole('button', { name: 'Open your devices' }).click()
     const securityDialog = page.getByRole('dialog', { name: 'Your devices' })
     await expect(settingsDialog).toHaveCount(0)
@@ -753,7 +770,7 @@ test.describe('authenticated desktop shell', () => {
     expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false)
   })
 
-  test('opens community management as an accessible sheet and restores focus', async ({ page }) => {
+  test('opens community administration as an accessible routed surface', async ({ page }) => {
     await openAuthenticatedShell(page)
 
     const settingsButton = page.getByRole('button', {
@@ -761,32 +778,42 @@ test.describe('authenticated desktop shell', () => {
     })
     await settingsButton.click()
 
-    const sheet = page.getByRole('dialog', { name: 'Community settings' })
-    await expect(sheet).toBeVisible()
-    await expect(
-      sheet.getByText('Manage Mesh Test Community, its rooms, and who can find it.'),
-    ).toBeVisible()
-    await expect(sheet.getByRole('switch', { name: 'List this community publicly' })).toHaveAttribute(
+    const administration = page.getByRole('region', { name: 'Community administration' })
+    await expect(administration).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Community settings' })).toHaveCount(0)
+    const sectionNavigation = administration.getByRole('navigation', {
+      name: 'Community administration sections',
+    })
+    await expect(sectionNavigation.getByRole('tab')).toHaveCount(8)
+
+    await sectionNavigation.getByRole('tab', { name: /^Discovery and access/ }).click()
+    await expect(administration.getByRole('switch', { name: 'List this community publicly' })).toHaveAttribute(
       'aria-checked',
       'false',
     )
 
-    const createRoom = sheet.getByRole('button', { name: 'Create room', exact: true })
+    await sectionNavigation.getByRole('tab', { name: /^Moderation/ }).click()
+    await expect(
+      administration.getByText('Mesh does not currently provide an authoritative administrator-action history.'),
+    ).toBeVisible()
+
+    await sectionNavigation.getByRole('tab', { name: /^Rooms and voice/ }).click()
+    const createRoom = administration.getByRole('button', { name: 'Create room', exact: true })
     await createRoom.click()
-    await expect(sheet.getByRole('button', { name: 'Cancel', exact: true })).toHaveAttribute(
+    await expect(administration.getByRole('button', { name: 'Cancel', exact: true })).toHaveAttribute(
       'aria-expanded',
       'true',
     )
-    await expect(sheet.getByRole('button', { name: 'Text' })).toHaveAttribute(
+    await expect(administration.getByRole('button', { name: 'Text' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
-    await expect(sheet.getByRole('button', { name: 'Voice' })).toHaveCount(0)
-    await expectNoWcagViolations(page, 'Community settings sheet')
+    await expect(administration.getByRole('button', { name: 'Voice' })).toHaveCount(0)
+    await expectNoWcagViolations(page, 'Community administration route')
 
-    await page.keyboard.press('Escape')
-    await expect(sheet).toHaveCount(0)
-    await expect(settingsButton).toBeFocused()
+    await administration.getByRole('button', { name: 'Back to community' }).click()
+    await expect(administration).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: 'Mesh Test Community' })).toBeVisible()
   })
 
   test('changes room notification rules and marks unread state from the context menu', async ({ page }) => {
@@ -841,10 +868,8 @@ test.describe('authenticated desktop shell', () => {
     await expect(page.getByLabel('Lounge call members').getByText('Bob')).toBeVisible()
     await page.getByRole('button', { name: 'Voice room: Lounge' }).click()
 
-    await expect(page.getByRole('heading', { name: 'Calling is not ready yet' })).toBeVisible()
-    await expect(
-      page.getByText('Your microphone, camera, and screen stay off until every safety check passes.'),
-    ).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Voice is not available for this room' })).toBeVisible()
+    await expect(page.getByText('You can keep using messages.')).toBeVisible()
     await expectNoWcagViolations(page, 'Voice-disabled room')
 
     const calls = await ipcCalls(page)
@@ -957,7 +982,7 @@ test.describe('authenticated narrow shell', () => {
     }
   })
 
-  test('keeps pinned and sticky conversation surfaces opaque across release zooms', async ({ page }) => {
+  test('keeps narrow conversation chrome collision-free and sticky surfaces opaque', async ({ page }) => {
     await openAuthenticatedShell(page)
     await page.emulateMedia({ reducedMotion: 'reduce' })
     // Chromium does not expose desktop browser zoom through Playwright. Browser
@@ -974,7 +999,7 @@ test.describe('authenticated narrow shell', () => {
     const evidenceDirectory = process.env.MESH_RESPONSIVE_EVIDENCE_DIR
     if (evidenceDirectory) await mkdir(evidenceDirectory, { recursive: true })
 
-    for (const scenario of scenarios) {
+    for (const [scenarioIndex, scenario] of scenarios.entries()) {
       await page.setViewportSize({ width: scenario.width, height: scenario.height })
       const closeNavigation = page.getByRole('button', {
         name: 'Close room navigation',
@@ -983,6 +1008,75 @@ test.describe('authenticated narrow shell', () => {
       if (await closeNavigation.isVisible()) await closeNavigation.click()
       const log = page.getByRole('log', { name: 'Messages in #general' })
       await expect(log).toBeVisible()
+
+      const headerLayout = await page.locator('.mesh-conversation-header').evaluate((header) => {
+        const bounds = header.getBoundingClientRect()
+        const titleBounds = header.querySelector('h1')!.getBoundingClientRect()
+        const actions = [...header.querySelectorAll<HTMLButtonElement>('button')]
+          .map((button) => button.getBoundingClientRect())
+          .filter((buttonBounds) => buttonBounds.width > 0 && buttonBounds.height > 0)
+          .sort((left, right) => left.x - right.x)
+          .map((buttonBounds) => ({ left: buttonBounds.left, right: buttonBounds.right }))
+        const trustLabel = header.querySelector<HTMLElement>('.mesh-trust-summary span')
+        return {
+          header: { left: bounds.left, right: bounds.right },
+          title: { left: titleBounds.left, right: titleBounds.right },
+          actions,
+          trustLabelVisible: trustLabel ? getComputedStyle(trustLabel).display !== 'none' : null,
+        }
+      })
+      expect(headerLayout.title.left, `${scenario.label} room title starts inside header`)
+        .toBeGreaterThanOrEqual(headerLayout.header.left - 0.5)
+      expect(headerLayout.title.right, `${scenario.label} room title clears header actions`)
+        .toBeLessThanOrEqual(headerLayout.actions[0]!.left + 0.5)
+      for (const [index, action] of headerLayout.actions.entries()) {
+        expect(action.left, `${scenario.label} header action ${index + 1} starts inside header`)
+          .toBeGreaterThanOrEqual(headerLayout.header.left - 0.5)
+        expect(action.right, `${scenario.label} header action ${index + 1} ends inside header`)
+          .toBeLessThanOrEqual(headerLayout.header.right + 0.5)
+        if (index > 0) {
+          expect(action.left, `${scenario.label} header actions ${index} and ${index + 1} do not overlap`)
+            .toBeGreaterThanOrEqual(headerLayout.actions[index - 1]!.right - 0.5)
+        }
+      }
+      expect(headerLayout.trustLabelVisible, `${scenario.label} trust label responsive state`)
+        .toBe(scenario.width >= 640)
+
+      const pinnedMessage = page.getByRole('button', { name: /Open pinned message from/ })
+      await expect(pinnedMessage).toBeVisible()
+      const pinnedLayout = await pinnedMessage.evaluate((button) => {
+        const copy = button.querySelector<HTMLElement>('.mesh-pinned-message-copy')!
+        const preview = copy.lastElementChild as HTMLElement
+        const action = button.querySelector<HTMLElement>('.mesh-pinned-message-action')!
+        const buttonBounds = button.getBoundingClientRect()
+        const copyBounds = copy.getBoundingClientRect()
+        const previewBounds = preview.getBoundingClientRect()
+        const actionBounds = action.getBoundingClientRect()
+        const previewStyle = getComputedStyle(preview)
+        return {
+          button: { left: buttonBounds.left, right: buttonBounds.right },
+          copy: { left: copyBounds.left, right: copyBounds.right },
+          preview: { left: previewBounds.left, right: previewBounds.right },
+          action: { left: actionBounds.left, right: actionBounds.right },
+          previewOverflow: previewStyle.overflow,
+          previewTextOverflow: previewStyle.textOverflow,
+          previewWhiteSpace: previewStyle.whiteSpace,
+          scrollWidth: button.scrollWidth,
+          clientWidth: button.clientWidth,
+        }
+      })
+      expect(pinnedLayout.copy.right, `${scenario.label} pinned copy clears action`)
+        .toBeLessThanOrEqual(pinnedLayout.action.left + 0.5)
+      expect(pinnedLayout.preview.right, `${scenario.label} pinned preview clears action`)
+        .toBeLessThanOrEqual(pinnedLayout.action.left + 0.5)
+      expect(pinnedLayout.action.right, `${scenario.label} pinned action stays inside row`)
+        .toBeLessThanOrEqual(pinnedLayout.button.right + 0.5)
+      expect(pinnedLayout.previewOverflow, `${scenario.label} pinned preview clips`).toBe('hidden')
+      expect(pinnedLayout.previewTextOverflow, `${scenario.label} pinned preview ellipsizes`).toBe('ellipsis')
+      expect(pinnedLayout.previewWhiteSpace, `${scenario.label} pinned preview remains one line`).toBe('nowrap')
+      expect(pinnedLayout.scrollWidth, `${scenario.label} pinned row has no horizontal overflow`)
+        .toBeLessThanOrEqual(pinnedLayout.clientWidth)
+
       await log.evaluate((element) => {
         element.scrollTop = Math.max(1, element.scrollHeight / 3)
       })
@@ -1003,10 +1097,12 @@ test.describe('authenticated narrow shell', () => {
       expect(surface.background, `${scenario.label} divider background`).not.toBe('transparent')
       expect(surface.opacity, `${scenario.label} divider opacity`).toBe('1')
       expect(surface.width, `${scenario.label} divider coverage`).toBeGreaterThanOrEqual(surface.parentWidth - 1)
-      await expect(page.getByRole('button', { name: /Open pinned message from/ })).toBeVisible()
       if (evidenceDirectory) {
         await page.screenshot({
-          path: join(evidenceDirectory, `sticky-legibility-${scenario.label}.png`),
+          path: join(
+            evidenceDirectory,
+            `${String(scenarioIndex + 1).padStart(2, '0')}-conversation-chrome-${scenario.label}.png`,
+          ),
           fullPage: true,
         })
       }
@@ -1022,18 +1118,18 @@ test.describe('authenticated narrow shell', () => {
     await expectNoWcagViolations(page, 'Sticky conversation surfaces in high contrast')
   })
 
-  test('does not restore desktop room context into a narrow launch and closes it on resize', async ({ page }) => {
+  test('ignores a retired Details preference in narrow launch and closes Details on resize', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('mesh-layout-room-context-open', 'true')
     })
     await openAuthenticatedShell(page)
 
-    const context = page.getByRole('complementary', { name: 'Room context for general' })
-    const contextToggle = page.getByRole('button', { name: 'Show room context' })
+    const context = page.getByRole('complementary', { name: 'Details for general' })
+    const contextToggle = page.getByRole('button', { name: 'Show Details' })
     await expect(context).toHaveCount(0)
     await expect.poll(() => page.evaluate(() => (
       localStorage.getItem('mesh-layout-room-context-open')
-    ))).toBe('false')
+    ))).toBe('true')
 
     await page.setViewportSize({ width: 1280, height: 800 })
     await contextToggle.click()
@@ -1046,11 +1142,11 @@ test.describe('authenticated narrow shell', () => {
   test('opens room context as a drawer and restores focus after Escape', async ({ page }) => {
     await openAuthenticatedShell(page)
 
-    const contextToggle = page.getByRole('button', { name: 'Show room context' })
+    const contextToggle = page.getByRole('button', { name: 'Show Details' })
     await expect(contextToggle).toHaveAttribute('aria-expanded', 'false')
     await contextToggle.click()
 
-    const context = page.getByRole('complementary', { name: 'Room context for general' })
+    const context = page.getByRole('complementary', { name: 'Details for general' })
     await expect(context).toBeVisible()
     const closeContext = context.getByRole('button', { name: 'Close room context' })
     const closeContextBox = await closeContext.boundingBox()
@@ -1060,18 +1156,16 @@ test.describe('authenticated narrow shell', () => {
     expect(await context.evaluate((panel) => panel.contains(document.activeElement))).toBe(true)
     for (let index = 0; index < 8; index += 1) await page.keyboard.press('Tab')
     expect(await context.evaluate((panel) => panel.contains(document.activeElement))).toBe(true)
-    const ledgerTab = context.getByRole('tab', { name: 'Ledger' })
     const peopleTab = context.getByRole('tab', { name: 'People' })
     const pinsTab = context.getByRole('tab', { name: 'Pins' })
-    await ledgerTab.focus()
+    const filesTab = context.getByRole('tab', { name: 'Files' })
+    await peopleTab.focus()
     await page.keyboard.press('ArrowLeft')
-    await expect(peopleTab).toBeFocused()
+    await expect(filesTab).toBeFocused()
     await page.keyboard.press('ArrowLeft')
     await expect(pinsTab).toBeFocused()
     await page.keyboard.press('Home')
     await expect(peopleTab).toBeFocused()
-    await ledgerTab.click()
-    await expect(context.getByText('Protected end to end')).toBeVisible()
     await expectNoWcagViolations(page, 'Authenticated narrow room context drawer')
 
     await page.keyboard.press('Escape')
@@ -1120,7 +1214,7 @@ test.describe('authenticated narrow shell', () => {
     expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false)
   })
 
-  test('fits community management to the viewport and restores its drawer trigger', async ({ page }) => {
+  test('fits routed community administration to the narrow viewport', async ({ page }) => {
     await openAuthenticatedShell(page)
 
     await page.getByRole('button', { name: 'Open room navigation' }).click()
@@ -1129,22 +1223,46 @@ test.describe('authenticated narrow shell', () => {
     })
     await settingsButton.click()
 
-    const sheet = page.getByRole('dialog', { name: 'Community settings' })
-    await expect(sheet).toBeVisible()
-    await expect.poll(async () => Math.round((await sheet.boundingBox())?.x ?? -1)).toBe(0)
-    const bounds = await sheet.boundingBox()
-    expect(Math.abs(bounds?.x ?? Number.POSITIVE_INFINITY)).toBeLessThan(0.5)
-    expect(bounds?.width).toBe(390)
+    const administration = page.getByRole('region', { name: 'Community administration' })
+    await expect(administration).toBeVisible()
+    await administration.getByRole('combobox', { name: 'Administration section' }).selectOption('danger')
+    await expect(administration.getByText('Ownership must be resolved first')).toBeVisible()
+    await expect(administration.getByRole('button', { name: 'Leave Community' })).toHaveCount(0)
+    await expect(page.getByRole('dialog', { name: 'Community settings' })).toHaveCount(0)
 
     const dimensions = await page.evaluate(() => ({
       viewport: document.documentElement.clientWidth,
       content: document.documentElement.scrollWidth,
     }))
     expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport)
-    await expectNoWcagViolations(page, 'Narrow community settings sheet')
+    await expectNoWcagViolations(page, 'Narrow community administration route')
 
-    await page.keyboard.press('Escape')
-    await expect(sheet).toHaveCount(0)
-    await expect(settingsButton).toBeFocused()
+    await administration.getByRole('button', { name: 'Back to community' }).click()
+    await expect(administration).toHaveCount(0)
+  })
+
+  test('keeps the settings index usable at 200% and 400% equivalent widths with reduced motion', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+
+    for (const width of [640, 320]) {
+      await page.setViewportSize({ width, height: 720 })
+      await openAuthenticatedShell(page)
+      await page.getByRole('button', { name: 'Open room navigation' }).click()
+      const settingsButton = page.getByRole('button', {
+        name: 'Open settings for Mesh Test Community',
+      })
+      await settingsButton.click()
+      const administration = page.getByRole('region', { name: 'Community administration' })
+      await expect(
+        administration.getByRole('combobox', { name: 'Administration section' }),
+      ).toBeVisible()
+      const dimensions = await page.evaluate(() => ({
+        viewport: document.documentElement.clientWidth,
+        content: document.documentElement.scrollWidth,
+      }))
+      expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport)
+      await administration.getByRole('button', { name: 'Back to community' }).click()
+      await expect(administration).toHaveCount(0)
+    }
   })
 })

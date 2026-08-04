@@ -625,7 +625,7 @@ describe('LiveKitVoiceEngine', () => {
     fake.emit(RoomEvent.ParticipantDisconnected, fake.remoteParticipant)
     fake.emit(RoomEvent.ParticipantConnected, fake.localParticipant)
 
-    expect(cuePlayer.mock.calls).toEqual([['join'], ['leave']])
+    expect(cuePlayer.mock.calls).toEqual([['peer-join'], ['peer-leave']])
     await engine.disconnect()
   })
 

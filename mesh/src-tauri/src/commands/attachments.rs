@@ -13,9 +13,7 @@ use uuid::Uuid;
 
 use super::error::CommandError;
 use crate::backend::{BackendError, BackendKind};
-use crate::security::{
-    classify_attachment, is_file_in_named_directory_under, AttachmentDisposition,
-};
+use crate::security::{classify_attachment, is_file_directly_under, AttachmentDisposition};
 use crate::state::AppState;
 
 /// Retained only for the validation regression test proving the removed
@@ -606,19 +604,19 @@ pub async fn open_downloaded_file(
     })?;
     let allowed = match state.backend.kind() {
         BackendKind::Matrix => {
-            let active_account_root = state
+            let active_cache_root = state
                 .backend
                 .backend()
-                .active_account_storage_root()
+                .active_account_media_cache_root()
                 .await
                 .map_err(|error| match error {
                     BackendError::NotAuthenticated => CommandError::NotAuthenticated,
                     _ => CommandError::NotFound("Local account cache is unavailable".into()),
                 })?;
-            let active_account_root = tokio::fs::canonicalize(active_account_root)
+            let active_cache_root = tokio::fs::canonicalize(active_cache_root)
                 .await
                 .map_err(|_| CommandError::NotFound("Local account cache is unavailable".into()))?;
-            is_file_in_named_directory_under(&path, &active_account_root, "media-cache")
+            is_file_directly_under(&path, &active_cache_root)
         }
         BackendKind::LegacyP2p => {
             #[cfg(feature = "legacy-p2p")]

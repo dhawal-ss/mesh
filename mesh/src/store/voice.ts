@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Peer, VoiceConnectionState, VoiceSessionSnapshot } from '../types/ipc'
 import type { MatrixRtcMember } from '../lib/bridge'
+import { beginVoiceActivation, clearVoiceActivation } from '../lib/voice-activation'
 import {
   buildPeerFromMember,
   normalizeVoiceSessionSnapshot,
@@ -117,6 +118,7 @@ export const useVoiceStore = create<VoiceStore>((set) => ({
   setCurrentVoiceSession: (communityId, channelId) =>
     set((state) => {
       if (channelId === null || communityId === null) {
+        if (state.currentChannelId) clearVoiceActivation(state.currentChannelId)
         return {
           currentChannelId: null,
           currentCommunityId: null,
@@ -129,6 +131,8 @@ export const useVoiceStore = create<VoiceStore>((set) => ({
 
       const sameSession =
         state.currentCommunityId === communityId && state.currentChannelId === channelId
+
+      if (!sameSession) beginVoiceActivation(channelId)
 
       return {
         currentChannelId: channelId,
@@ -235,7 +239,8 @@ export const useVoiceStore = create<VoiceStore>((set) => ({
       next[roomId] = authoritativeMembers
       return { matrixRtcMembersByRoom: next }
     }),
-  resetVoiceState: () =>
+  resetVoiceState: () => {
+    clearVoiceActivation()
     set({
       currentChannelId: null,
       currentCommunityId: null,
@@ -249,7 +254,8 @@ export const useVoiceStore = create<VoiceStore>((set) => ({
       isScreenSharing: false,
       localAudioLevel: 0,
       participantVolumes: {},
-    }),
+    })
+  },
 }))
 
 export function setVoiceSessionFromSnapshot(snapshot: VoiceSessionSnapshot | null) {

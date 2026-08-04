@@ -17,6 +17,7 @@ import type {
   MatrixRtcMediaKeyLease,
   MatrixRtcMediaKeyPause,
 } from './bridge'
+import { playInterfaceSound } from './interface-sounds'
 
 export interface MatrixVoiceCredentials {
   roomId: string
@@ -62,7 +63,7 @@ export type PublisherActivationPauseResult =
 
 type RoomFactory = (options: ConstructorParameters<typeof Room>[0]) => Room
 type EncryptionFactory = () => Promise<{ keyProvider: MatrixRtcKeyProvider; worker: Worker }>
-type VoiceCuePlayer = (cue: 'join' | 'leave') => void | Promise<void>
+type VoiceCuePlayer = (cue: 'peer-join' | 'peer-leave') => void | Promise<void>
 
 const AUDIO_CAPTURE_OPTIONS = {
   autoGainControl: true,
@@ -157,39 +158,10 @@ export class MatrixRtcKeyProvider extends BaseKeyProvider {
   }
 }
 
-let voiceCueAudioContext: AudioContext | null = null
-
-export async function playMatrixVoiceCue(cue: 'join' | 'leave'): Promise<void> {
-  if (typeof AudioContext === 'undefined') return
-
-  try {
-    const context = voiceCueAudioContext ?? new AudioContext()
-    voiceCueAudioContext = context
-    if (context.state === 'suspended') {
-      await context.resume()
-    }
-
-    const start = context.currentTime
-    const frequencies = cue === 'join' ? [440, 587.33] : [587.33, 392]
-    frequencies.forEach((frequency, index) => {
-      const oscillator = context.createOscillator()
-      const gain = context.createGain()
-      const toneStart = start + index * 0.08
-      const toneEnd = toneStart + 0.11
-
-      oscillator.type = 'sine'
-      oscillator.frequency.setValueAtTime(frequency, toneStart)
-      gain.gain.setValueAtTime(0.0001, toneStart)
-      gain.gain.exponentialRampToValueAtTime(0.035, toneStart + 0.012)
-      gain.gain.exponentialRampToValueAtTime(0.0001, toneEnd)
-      oscillator.connect(gain)
-      gain.connect(context.destination)
-      oscillator.start(toneStart)
-      oscillator.stop(toneEnd + 0.01)
-    })
-  } catch {
-    // A blocked audio context must never interrupt call membership updates.
-  }
+export async function playMatrixVoiceCue(
+  cue: 'peer-join' | 'peer-leave',
+): Promise<void> {
+  await playInterfaceSound(cue === 'peer-join' ? 'voice-peer-join' : 'voice-peer-leave')
 }
 
 function connectionState(state: ConnectionState): VoiceConnectionState {
@@ -938,14 +910,14 @@ export class LiveKitVoiceEngine {
       })
       .on(RoomEvent.ParticipantConnected, (participant) => {
         if (participant.identity !== room.localParticipant.identity) {
-          this.playCue('join')
+          this.playCue('peer-join')
         }
         this.subscribeKeyedParticipant(participant.identity)
         this.emitPeers(room)
       })
       .on(RoomEvent.ParticipantDisconnected, (participant) => {
         if (participant.identity !== room.localParticipant.identity) {
-          this.playCue('leave')
+          this.playCue('peer-leave')
         }
         this.emitPeers(room)
       })
@@ -992,7 +964,7 @@ export class LiveKitVoiceEngine {
       })
   }
 
-  private playCue(cue: 'join' | 'leave'): void {
+  private playCue(cue: 'peer-join' | 'peer-leave'): void {
     try {
       void Promise.resolve(this.cuePlayer(cue)).catch(() => {})
     } catch {

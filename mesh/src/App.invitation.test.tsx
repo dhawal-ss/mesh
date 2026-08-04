@@ -138,7 +138,10 @@ describe('App pending invitation ordering', () => {
       refreshByCommunity: {},
       refreshRequests: {},
     })
-    useShellStore.setState({ pendingInvitation: null })
+    useShellStore.setState({
+      pendingInvitation: null,
+      foregroundInvitationHandle: null,
+    })
     vi.spyOn(bridge, 'isTauriRuntime').mockReturnValue(true)
     vi.spyOn(bridge, 'getBackendStatus').mockResolvedValue({
       kind: 'matrix',

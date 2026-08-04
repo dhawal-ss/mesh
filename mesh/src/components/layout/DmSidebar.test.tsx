@@ -11,7 +11,7 @@ import { useDmStore } from '../../store/dms'
 import { useIdentityStore } from '../../store/identity'
 import { useNetworkStore } from '../../store/network'
 import type { DmConversation } from '../../types/ipc'
-import { DmSidebar } from './DmSidebar'
+import { DM_CONVERSATION_ROW_HEIGHT, DmSidebar } from './DmSidebar'
 
 function conversation(index: number): DmConversation {
   return {
@@ -101,7 +101,9 @@ describe('DmSidebar conversation containment', () => {
     expect(list?.querySelector('button[role="listitem"]')).toBeNull()
 
     await act(async () => {
-      if (list instanceof HTMLElement) list.scrollTop = 260_000
+      if (list instanceof HTMLElement) {
+        list.scrollTop = DM_CONVERSATION_ROW_HEIGHT * conversations.length
+      }
       list?.dispatchEvent(new Event('scroll', { bubbles: true }))
       await Promise.resolve()
     })
@@ -125,7 +127,7 @@ describe('DmSidebar conversation containment', () => {
     })
 
     expect(container.textContent).toContain('Conversations could not be loaded')
-    expect(container.textContent).not.toContain('No conversations yet')
+    expect(container.textContent).not.toContain('No direct messages yet')
 
     const retry = [...container.querySelectorAll<HTMLButtonElement>('button')]
       .find((button) => button.textContent === 'Retry conversations')
@@ -134,6 +136,6 @@ describe('DmSidebar conversation containment', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    expect(container.textContent).toContain('No conversations yet')
+    expect(container.textContent).toContain('No direct messages yet')
   })
 })

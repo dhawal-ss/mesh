@@ -266,6 +266,18 @@ function ipcCalls(page: Page): Promise<IpcCall[]> {
   ).__MESH_E2E__.calls)
 }
 
+async function openGeneralRoom(page: Page): Promise<void> {
+  await installKeyboardActionsMock(page)
+  await page.goto('/')
+  const community = page.getByRole('button', { name: 'Mesh Test Community', exact: true })
+  await expect(community).toBeVisible()
+  await community.click()
+  const room = page.getByRole('button', { name: 'Text room: general' })
+  await expect(room).toBeVisible()
+  await room.click()
+  await expect(page.getByRole('log', { name: 'Messages in #general' })).toBeVisible()
+}
+
 // Real Tab-key traversal (not locator.focus(), which bypasses tab order and
 // would prove nothing about keyboard reachability). Bounded so a broken tab
 // order fails the test instead of hanging.
@@ -283,9 +295,7 @@ test.describe('message action bar keyboard access (V-25)', () => {
   test.use({ viewport: { width: 1440, height: 900 } })
 
   test('reacts, replies, and opens the context-menu equivalent on another user\'s message via Tab alone', async ({ page }) => {
-    await installKeyboardActionsMock(page)
-    await page.goto('/')
-    await expect(page.getByRole('log', { name: 'Messages in #general' })).toBeVisible()
+    await openGeneralRoom(page)
     await expect(page.getByText("A message alice didn't send.")).toBeVisible()
 
     const reactButton = page.getByRole('button', { name: 'React to message from Bob' })
@@ -336,8 +346,7 @@ test.describe('message action bar keyboard access (V-25)', () => {
   // only close paths were onMouseLeave and picking an emoji), and Shift+F10
   // left focus on <body> instead of moving it into the opened menu.
   test('Escape dismisses the reaction picker without picking an emoji, and Shift+F10 moves focus into the context menu', async ({ page }) => {
-    await installKeyboardActionsMock(page)
-    await page.goto('/')
+    await openGeneralRoom(page)
     await expect(page.getByText("A message alice didn't send.")).toBeVisible()
 
     const reactButton = page.getByRole('button', { name: 'React to message from Bob' })
@@ -375,8 +384,7 @@ test.describe('message action bar keyboard access (V-25)', () => {
   })
 
   test('mouse hover still reveals the action bar (no regression)', async ({ page }) => {
-    await installKeyboardActionsMock(page)
-    await page.goto('/')
+    await openGeneralRoom(page)
     await expect(page.getByText("A message alice didn't send.")).toBeVisible()
 
     const reactButton = page.getByRole('button', { name: 'React to message from Bob' })

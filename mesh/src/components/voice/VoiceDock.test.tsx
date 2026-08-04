@@ -5,6 +5,8 @@ import { useChannelStore } from '../../store/channels'
 import { useCommunityStore } from '../../store/communities'
 import { useIdentityStore } from '../../store/identity'
 import { useVoiceStore } from '../../store/voice'
+import { useMeshNavigationStore } from '../../store/navigation'
+import { currentMeshRoute, emptyMeshNavigation } from '../../lib/mesh-navigation'
 import { VoiceDock } from './VoiceDock'
 
 describe('VoiceDock', () => {
@@ -47,6 +49,12 @@ describe('VoiceDock', () => {
       },
     ])
     useChannelStore.getState().setActiveChannel('!concept:mesh.test')
+    useMeshNavigationStore.setState({
+      ...emptyMeshNavigation('local-device'),
+      hydrated: true,
+      drawer: 'none',
+      focusRequest: 0,
+    })
     useVoiceStore.setState({
       currentCommunityId: '!community:mesh.test',
       currentChannelId: '!studio:mesh.test',
@@ -73,7 +81,7 @@ describe('VoiceDock', () => {
     await act(async () => root.render(<VoiceDock />))
 
     expect(container.textContent).toContain('Studio')
-    expect(container.textContent).toContain('Voice connected')
+    expect(container.textContent).toContain('1 in party')
 
     await act(async () => {
       container.querySelector<HTMLButtonElement>('button[aria-label="Mute microphone"]')?.click()
@@ -84,18 +92,35 @@ describe('VoiceDock', () => {
       container.querySelector<HTMLButtonElement>('button[aria-label="Open voice room Studio"]')?.click()
     })
     expect(useChannelStore.getState().activeChannelId).toBe('!studio:mesh.test')
+    expect(currentMeshRoute(useMeshNavigationStore.getState())).toEqual({
+      kind: 'voice',
+      communityId: '!community:mesh.test',
+      roomId: '!studio:mesh.test',
+    })
   })
 
   it('leaves through the existing voice-session boundary', async () => {
     await act(async () => root.render(<VoiceDock />))
 
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('button[aria-label="Leave voice room"]')?.click()
+      container.querySelector<HTMLButtonElement>('button[aria-label="Leave Studio"]')?.click()
     })
 
     expect(useVoiceStore.getState()).toMatchObject({
       currentCommunityId: null,
       currentChannelId: null,
     })
+  })
+
+  it('keeps a failed owned session actionable without hiding messages', async () => {
+    useVoiceStore.setState({ connectionState: 'disconnected' })
+    await act(async () => root.render(<VoiceDock />))
+
+    expect(container.textContent).toContain('Voice could not reconnect')
+    const retry = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.includes('Try again'))
+    expect(retry).toBeDefined()
+    expect(container.querySelector('button[aria-label="Open voice room Studio"]')).not.toBeNull()
+    expect(container.querySelector('button[aria-label="Leave Studio"]')).not.toBeNull()
   })
 })

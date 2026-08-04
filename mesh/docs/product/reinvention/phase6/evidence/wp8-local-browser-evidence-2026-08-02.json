@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "sourceSha": "a3e35bd50e5b7c8ef1c0f2fd1c8dbe20201fb0e2",
+  "dirtyWorktree": true,
+  "releaseEligible": false,
+  "testedAt": "2026-08-03T06:37:03.9793418-05:00",
+  "buildMode": "vite-development-local",
+  "method": "Codex in-app Browser against the local Vite Matrix workspace preview",
+  "rawEvidencePath": "docs/product/reinvention/phase6/evidence/wp8-local-browser-evidence-2026-08-02.json",
+  "platform": {
+    "os": "Microsoft Windows 11 Pro",
+    "osVersion": "10.0.26200",
+    "manufacturer": "Micro-Star International Co., Ltd.",
+    "hardware": "MS-7D75",
+    "processor": "AMD Ryzen 7 7800X3D 8-Core Processor",
+    "logicalProcessorCount": 16,
+    "totalMemoryBytes": 33158033408,
+    "node": "v24.11.1"
+  },
+  "coldStartToInteractive": {
+    "targetMs": 2000,
+    "sampleSize": 5,
+    "readyCondition": "The independently operated Matrix.org sign-in control is visible and enabled, followed by a 34 ms paint-settlement interval.",
+    "medianMs": 169,
+    "p95Ms": 178,
+    "worstObservedMs": 178,
+    "samples": [
+      { "run": 1, "paintedMs": 136, "interactiveMs": 177 },
+      { "run": 2, "paintedMs": 126, "interactiveMs": 169 },
+      { "run": 3, "paintedMs": 126, "interactiveMs": 168 },
+      { "run": 4, "paintedMs": 130, "interactiveMs": 178 },
+      { "run": 5, "paintedMs": 121, "interactiveMs": 168 }
+    ],
+    "limitations": [
+      "This is cached local development-browser evidence, not an installed signed Windows candidate.",
+      "Navigation and readiness were observed through browser automation, not a physical stopwatch or assistive technology."
+    ]
+  },
+  "playwrightColdStartToInteractive": {
+    "targetMs": 2000,
+    "sampleSize": 3,
+    "readyCondition": "The independently operated Matrix.org sign-in control is visible and enabled, followed by a 34 ms paint-settlement interval.",
+    "rawEvidencePath": "test-results/resource-budget-browser.json",
+    "medianPaintedMs": 92,
+    "p95PaintedMs": 693,
+    "worstObservedPaintedMs": 693,
+    "medianInteractiveMs": 130,
+    "p95InteractiveMs": 752,
+    "worstObservedInteractiveMs": 752,
+    "samples": [
+      { "run": 1, "paintedMs": 693, "interactiveMs": 752, "longTaskMs": 69, "transferBytes": 4055261 },
+      { "run": 2, "paintedMs": 92, "interactiveMs": 128, "longTaskMs": 0, "transferBytes": 22200 },
+      { "run": 3, "paintedMs": 86, "interactiveMs": 130, "longTaskMs": 0, "transferBytes": 22200 }
+    ],
+    "limitations": [
+      "This is local Vite development-browser evidence from the final 72-case Playwright pass, not an installed signed Windows candidate.",
+      "The cold first sample includes a 4055261-byte transfer; the two warm samples each transferred 22200 bytes."
+    ]
+  },
+  "partyRoomViewports": [
+    { "width": 1600, "height": 900, "bodyClientWidth": 1600, "bodyScrollWidth": 1600, "horizontalOverflow": false, "railWidth": 60, "roomListWidth": 250 },
+    { "width": 1440, "height": 810, "bodyClientWidth": 1440, "bodyScrollWidth": 1440, "horizontalOverflow": false, "railWidth": 56, "roomListWidth": 220 },
+    { "width": 1366, "height": 768, "bodyClientWidth": 1366, "bodyScrollWidth": 1366, "horizontalOverflow": false, "railWidth": 56, "roomListWidth": 220 },
+    { "width": 1920, "height": 1080, "bodyClientWidth": 1920, "bodyScrollWidth": 1920, "horizontalOverflow": false, "railWidth": 64, "roomListWidth": 264 },
+    { "width": 1280, "height": 720, "bodyClientWidth": 1280, "bodyScrollWidth": 1280, "horizontalOverflow": false, "railWidth": 56, "roomListWidth": 208 },
+    { "width": 640, "height": 800, "bodyClientWidth": 640, "bodyScrollWidth": 640, "horizontalOverflow": false, "railWidth": 56, "roomListWidth": 208, "roomListOffCanvas": true },
+    { "width": 390, "height": 844, "bodyClientWidth": 390, "bodyScrollWidth": 390, "horizontalOverflow": false, "railWidth": 56, "roomListWidth": 208, "roomListOffCanvas": true }
+  ],
+  "highContrast": {
+    "desktop": { "width": 1280, "height": 720, "bodyScrollWidth": 1280, "theme": "high-contrast" },
+    "compact": { "width": 640, "height": 800, "bodyScrollWidth": 640, "bodyScrollHeight": 800, "theme": "high-contrast" },
+    "restoredTheme": "dark"
+  },
+  "physicalGates": [
+    { "id": "voice-join-under-500ms", "status": "not-run", "reason": "Shipping Matrix voice is fail closed without protected physical MatrixRTC evidence and a real audible capability." },
+    { "id": "ten-thousand-message-scroll-60fps", "status": "not-run", "reason": "Requires the declared physical reference machine, production data path, frame capture, median, p95, worst result, and raw trace." },
+    { "id": "active-voice-idle-cpu-under-2-percent", "status": "not-run", "reason": "Requires a real voice room and signed candidate process tree; simulated browser voice is not evidence." },
+    { "id": "manual-keyboard-visible-focus", "status": "not-run", "reason": "Automated keyboard and axe coverage does not replace physical keyboard-only acceptance." },
+    { "id": "nvda-windows", "status": "not-run", "reason": "Requires NVDA with the signed Windows WebView2 candidate." },
+    { "id": "manual-reduced-motion-zoom-text-high-contrast-compact", "status": "not-run", "reason": "Automated responsive and theme checks do not close the physical display and assistive-technology matrix." },
+    { "id": "manual-party-steps-listening", "status": "not-run", "reason": "Requires laptop speakers, a gaming headset, and desktop speakers at low and normal volume." }
+  ]
+}

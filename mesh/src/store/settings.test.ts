@@ -9,6 +9,7 @@ import {
   normalizePrivacyPreferences,
   useSettingsStore,
 } from './settings'
+import { DEFAULT_INTERFACE_SOUND_EVENTS } from '../lib/interface-sound-contract'
 
 const matrixPreferences = {
   schemaVersion: 2,
@@ -29,6 +30,8 @@ describe('Matrix preference projection', () => {
       enabled: false,
       sound: true,
       soundId: 'mesh',
+      soundVolume: 0.6,
+      soundEvents: DEFAULT_INTERFACE_SOUND_EVENTS,
       showMessageContent: false,
       doNotDisturb: false,
       quietHours: {

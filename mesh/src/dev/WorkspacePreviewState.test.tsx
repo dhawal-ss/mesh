@@ -52,6 +52,6 @@ describe('WorkspacePreviewState', () => {
       currentChannelId: '!studio:mesh.test',
       connectionState: 'connected',
     })
-    expect(useVoiceStore.getState().peers).toHaveLength(4)
+    expect(useVoiceStore.getState().peers).toHaveLength(3)
   })
 })

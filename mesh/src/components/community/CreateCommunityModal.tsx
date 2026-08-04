@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
@@ -13,9 +13,11 @@ import type { Community, CommunityDirectoryEntry } from '../../types/ipc'
 import { showToast } from '../ui/Toast'
 import { Avatar } from '../ui/Avatar'
 import { pixelColorForSeed } from '../ui/PixelMark'
+import { Icon } from '../ui/Icon'
+import { parseCommunityInvite, type CommunityInvite } from '../../lib/community-invites'
 
 export type CreateCommunityTab = 'create' | 'join' | 'discover'
-type ServerTemplate = 'gaming' | 'friends' | 'community'
+type CommunityAccessChoice = 'invite' | 'approval'
 type CreationPhase =
   | 'idle'
   | 'community'
@@ -24,32 +26,16 @@ type CreationPhase =
   | 'refresh'
   | 'partial'
 
-const SERVER_TEMPLATES: Record<
-  ServerTemplate,
-  { label: string; description: string; channels: string[] }
-> = {
-  gaming: {
-    label: 'Gaming',
-    description: 'Squads, clips, and game nights',
-    channels: ['squad-up', 'clips'],
-  },
-  friends: {
-    label: 'Friends',
-    description: 'Plans, photos, and everyday chat',
-    channels: ['plans', 'photos'],
-  },
-  community: {
-    label: 'Community',
-    description: 'Introductions and announcements',
-    channels: ['announcements', 'introductions'],
-  },
-}
+const GAMING_STARTER_ROOMS = ['general', 'clips-and-builds', 'playtest-notes'] as const
 
 interface CreateCommunityModalProps {
   isOpen: boolean
   onClose: () => void
   initialTab?: CreateCommunityTab
   initialInvite?: string
+  embedded?: boolean
+  activeTab?: CreateCommunityTab
+  onTabChange?: (tab: CreateCommunityTab) => void
 }
 
 export function CreateCommunityModal({
@@ -57,22 +43,32 @@ export function CreateCommunityModal({
   onClose,
   initialTab = 'create',
   initialInvite = '',
+  embedded = false,
+  activeTab,
+  onTabChange,
 }: CreateCommunityModalProps) {
   const matrixMode = bridge.isMatrixBackend()
-  const tabs: CreateCommunityTab[] = matrixMode ? ['create', 'join', 'discover'] : ['create', 'join']
-  const [tab, setTab] = useState<CreateCommunityTab>(initialTab)
+  const tabs: CreateCommunityTab[] = matrixMode ? ['join', 'discover', 'create'] : ['join', 'create']
+  const [localTab, setLocalTab] = useState<CreateCommunityTab>(initialTab)
+  const tab = activeTab ?? localTab
+  const setTab = (next: CreateCommunityTab) => {
+    if (onTabChange) onTabChange(next)
+    else setLocalTab(next)
+  }
   const [isLoading, setIsLoading] = useState(false)
 
   const [communityName, setCommunityName] = useState('')
   const [communityDescription, setCommunityDescription] = useState('')
-  const [serverTemplate, setServerTemplate] = useState<ServerTemplate>('friends')
+  const [accessChoice, setAccessChoice] = useState<CommunityAccessChoice>('invite')
   const [createStep, setCreateStep] = useState<1 | 2>(1)
   const [createError, setCreateError] = useState<unknown | null>(null)
   const [creationPhase, setCreationPhase] = useState<CreationPhase>('idle')
   const [createdCommunity, setCreatedCommunity] = useState<Community | null>(null)
+  const [missingStarterRooms, setMissingStarterRooms] = useState<string[]>([])
   const creationInFlightRef = useRef(false)
 
   const [inviteLink, setInviteLink] = useState(initialInvite)
+  const [reviewedInvite, setReviewedInvite] = useState<CommunityInvite | null>(null)
   const [joinError, setJoinError] = useState<unknown | null>(null)
   const [joinStatus, setJoinStatus] = useState('')
   const [directoryQuery, setDirectoryQuery] = useState('')
@@ -89,12 +85,14 @@ export function CreateCommunityModal({
   const resetForm = () => {
     setCommunityName('')
     setCommunityDescription('')
-    setServerTemplate('friends')
+    setAccessChoice('invite')
     setCreateStep(1)
     setCreateError(null)
     setCreationPhase('idle')
     setCreatedCommunity(null)
+    setMissingStarterRooms([])
     setInviteLink('')
+    setReviewedInvite(null)
     setJoinError(null)
     setJoinStatus('')
     setDirectoryQuery('')
@@ -129,9 +127,17 @@ export function CreateCommunityModal({
         addCommunity(community)
       }
 
+      if (matrixMode) {
+        try {
+          await bridge.updateCommunityAccess(community.id, '', accessChoice === 'approval')
+        } catch (error) {
+          starterRoomFailure ??= error
+        }
+      }
+
       setCreationPhase('starter-rooms')
       let existingChannels = await bridge.getChannels(community.id)
-      for (const channelName of SERVER_TEMPLATES[serverTemplate].channels) {
+      for (const channelName of GAMING_STARTER_ROOMS) {
         const alreadyExists = existingChannels.some(
           (channel) => channel.name.trim().toLocaleLowerCase() === channelName.toLocaleLowerCase(),
         )
@@ -151,13 +157,14 @@ export function CreateCommunityModal({
       setCreationPhase('refresh')
       const channels = await bridge.getChannels(community.id)
       replaceCommunityChannels(community.id, channels)
-      const missingStarterRooms = SERVER_TEMPLATES[serverTemplate].channels.filter(
+      const missingRooms = GAMING_STARTER_ROOMS.filter(
         (channelName) => !channels.some(
           (channel) => channel.name.trim().toLocaleLowerCase() === channelName.toLocaleLowerCase(),
         ),
       )
+      setMissingStarterRooms([...missingRooms])
 
-      if (starterRoomFailure && missingStarterRooms.length > 0) {
+      if (starterRoomFailure && (missingRooms.length > 0 || matrixMode)) {
         setCreationPhase('partial')
         setCreateError(starterRoomFailure)
         showToast(
@@ -178,7 +185,7 @@ export function CreateCommunityModal({
   }
 
   const handleJoin = async () => {
-    if (!inviteLink.trim()) return
+    if (!inviteLink.trim() || !reviewedInvite) return
     setIsLoading(true)
     setJoinError(null)
     setJoinStatus('')
@@ -204,7 +211,23 @@ export function CreateCommunityModal({
     setIsLoading(false)
   }
 
+  const handleInviteReview = () => {
+    setJoinError(null)
+    setJoinStatus('')
+    const parsed = parseCommunityInvite(inviteLink)
+    if (!parsed) {
+      setReviewedInvite(null)
+      setJoinError(new Error('Check the invitation link or code and try again.'))
+      return
+    }
+    setReviewedInvite(parsed)
+  }
+
   const handleDirectorySearch = async () => {
+    if (!directoryServer.trim()) {
+      setDirectoryError(new Error('Enter an explicit compatible directory address in Advanced.'))
+      return
+    }
     setIsLoading(true)
     setDirectoryError(null)
     try {
@@ -260,7 +283,10 @@ export function CreateCommunityModal({
         if (createStep === 1 && communityName.trim()) setCreateStep(2)
         else if (createStep === 2) void handleCreate()
       }
-      else if (tab === 'join') handleJoin()
+      else if (tab === 'join') {
+        if (reviewedInvite) void handleJoin()
+        else handleInviteReview()
+      }
       else handleDirectorySearch()
     }
   }
@@ -269,7 +295,7 @@ export function CreateCommunityModal({
     ? 'Create a community'
     : tab === 'join'
       ? 'Join a community'
-      : 'Discover communities'
+      : 'Browse communities'
   const modalDescription = tab === 'create'
     ? 'Start a focused space for the people you talk with.'
     : tab === 'join'
@@ -279,36 +305,48 @@ export function CreateCommunityModal({
       : 'Search the public community directory. New members may need approval.'
 
   return (
-    <Modal
+    <CommunityToolsFrame
+      embedded={embedded}
       open={isOpen}
       onClose={handleClose}
       title={modalTitle}
       description={modalDescription}
+      size="xl"
+      className="mesh-community-tools-dialog"
     >
-      <div>
+      <div className={embedded ? 'px-party-gutter py-5' : undefined}>
         {/* Tab switcher */}
-        <div className="mb-5 flex rounded-control bg-surface-hover p-1">
+        {!embedded && (
+        <div className="mb-5 grid grid-cols-3 gap-2">
           {tabs.map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`relative flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                tab === t ? 'text-primary' : 'text-muted hover:text-secondary'
+              className={`relative flex min-h-12 items-center justify-center gap-2 rounded-control border px-4 py-2 text-sm font-medium transition-colors ${
+                tab === t
+                  ? 'border-accent/40 bg-accent/10 text-primary'
+                  : 'border-border-subtle bg-surface-sunken text-muted hover:border-border-emphasis hover:bg-surface-hover hover:text-secondary'
               }`}
             >
               {tab === t && (
                 <motion.div
                   layoutId="tab-indicator"
-                  className="absolute inset-0 rounded-control bg-surface-active"
+                  className="absolute inset-0 rounded-control bg-accent/10"
                   transition={transitions.enter}
                 />
               )}
+              <Icon
+                name={t === 'create' ? 'plus' : t === 'join' ? 'userPlus' : 'compass'}
+                size="sm"
+                className="relative z-sticky"
+              />
               <span className="relative z-sticky capitalize">
-                {t === 'create' ? 'Create' : t === 'join' ? 'Join' : 'Discover'}
+                {t === 'create' ? 'Create' : t === 'join' ? 'Join' : 'Browse'}
               </span>
             </button>
           ))}
         </div>
+        )}
 
         <AnimatePresence mode="wait">
           {tab === 'create' ? (
@@ -320,20 +358,20 @@ export function CreateCommunityModal({
               transition={transitions.enter}
             >
               <p className="mb-4 text-xs text-muted">
-                Step {createStep} of 2 · {createStep === 1 ? 'Name and identity' : 'Choose a starting layout'}
+                Step {createStep} of 2 · {createStep === 1 ? 'Name and identity' : 'Access and starter rooms'}
               </p>
 
               {createStep === 1 ? (
                 <div className="space-y-3">
                   <Input
-                    label="Community Name"
+                    label="Community name"
                     value={communityName}
                     onChange={(value: string) => {
                       setCommunityName(value)
                       setCreateError(null)
                     }}
                     onKeyDown={handleKeyDown}
-                    placeholder="e.g. Design Club"
+                    placeholder="e.g. Canyon Raiders"
                     autoFocus
                   />
                   <div className="flex items-center gap-3 rounded-control border border-border-subtle bg-surface-sunken p-3">
@@ -369,27 +407,50 @@ export function CreateCommunityModal({
                   </div>
                 </div>
               ) : (
-                <fieldset className="space-y-2">
-                  <legend className="sr-only">Community template</legend>
-                  {(Object.entries(SERVER_TEMPLATES) as Array<
-                    [ServerTemplate, (typeof SERVER_TEMPLATES)[ServerTemplate]]
-                  >).map(([value, template]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className={`w-full rounded-panel border p-3 text-left ${
-                        serverTemplate === value
-                          ? 'border-accent bg-accent/10'
-                          : 'border-border-subtle bg-surface-hover hover:bg-surface-active'
-                      }`}
-                      aria-pressed={serverTemplate === value}
-                      onClick={() => setServerTemplate(value)}
-                    >
-                      <span className="block text-sm font-semibold text-primary">{template.label}</span>
-                      <span className="mt-1 block text-xs text-muted">{template.description}</span>
-                    </button>
-                  ))}
-                </fieldset>
+                <div className="space-y-4">
+                  <fieldset>
+                    <legend className="text-xs font-semibold uppercase tracking-eyebrow text-muted">Who can join</legend>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      {([
+                        ['invite', 'Invitation only', 'Players join from an invitation you create.'],
+                        ['approval', 'Approval required', 'Players can request access and wait for an administrator.'],
+                      ] as const).map(([value, label, description]) => (
+                        <label
+                          key={value}
+                          className={`cursor-pointer rounded-control border px-3 py-3 ${
+                            accessChoice === value
+                              ? 'border-accent bg-accent/10'
+                              : 'border-border-subtle bg-surface-sunken hover:bg-surface-hover'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="community-access"
+                            value={value}
+                            checked={accessChoice === value}
+                            onChange={() => setAccessChoice(value)}
+                            className="sr-only"
+                          />
+                          <span className="block text-sm font-semibold text-primary">{label}</span>
+                          <span className="mt-1 block text-xs leading-5 text-muted">{description}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                  <section className="rounded-control border border-border-subtle bg-surface-sunken px-3 py-3" aria-labelledby="starter-rooms-heading">
+                    <h3 id="starter-rooms-heading" className="text-xs font-semibold uppercase tracking-eyebrow text-muted">Gaming starter rooms</h3>
+                    <ul className="mt-2 space-y-1 text-sm text-secondary">
+                      {GAMING_STARTER_ROOMS.map((room) => <li key={room}>#{room}</li>)}
+                    </ul>
+                    <p className="mt-2 text-xs leading-5 text-muted">
+                      A voice room is added only when this account service reports that private calling and voice-room creation are ready.
+                    </p>
+                  </section>
+                  <p className="text-xs leading-5 text-muted">
+                    This community will use your current account service. Members may use other compatible services.
+                    Mesh does not provision paid hosting, DNS, or server setup.
+                  </p>
+                </div>
               )}
 
               {createError != null && (
@@ -408,12 +469,18 @@ export function CreateCommunityModal({
               )}
 
               {createdCommunity && creationPhase === 'partial' && (
-                <p
+                <div
                   role="status"
                   className="mt-3 rounded-control border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-sm text-secondary"
                 >
-                  {createdCommunity.name} exists. Retry will add only missing rooms and refresh its room list.
-                </p>
+                  <p>Community created. Some rooms still need attention.</p>
+                  {missingStarterRooms.length > 0 && (
+                    <ul className="mt-2 list-disc pl-5 text-xs">
+                      {missingStarterRooms.map((room) => <li key={room}>#{room}</li>)}
+                    </ul>
+                  )}
+                  <p className="mt-2 text-xs">Retry adds only missing rooms and refreshes this community.</p>
+                </div>
               )}
 
               <div className="mt-4 flex gap-2">
@@ -423,6 +490,7 @@ export function CreateCommunityModal({
                   </Button>
                 )}
                 <Button
+                  variant="primary"
                   onClick={() => {
                     if (createStep === 1) setCreateStep(2)
                     else void handleCreate()
@@ -442,7 +510,7 @@ export function CreateCommunityModal({
                             : 'Finishing setup…'
                       : createdCommunity
                         ? 'Finish setup'
-                        : 'Create Community'}
+                        : 'Create community'}
                 </Button>
               </div>
             </motion.div>
@@ -455,12 +523,13 @@ export function CreateCommunityModal({
               transition={transitions.enter}
             >
               <Input
-                label="Invite code or link"
+                label="Invitation link or code"
                 value={inviteLink}
                 onChange={(v: string) => {
                   setInviteLink(v)
                   setJoinError(null)
                   setJoinStatus('')
+                  setReviewedInvite(null)
                 }}
                 onKeyDown={handleKeyDown}
                 placeholder={matrixMode ? 'mesh.app/i/aB3xK9' : 'Paste your invite link'}
@@ -470,8 +539,8 @@ export function CreateCommunityModal({
               {joinError != null && (
                 <ErrorState
                   error={joinError}
-                  context={{ operation: 'join this community', resource: 'community' }}
-                  onAction={handleJoin}
+                  context={{ operation: reviewedInvite ? 'join this community' : 'review this invitation', resource: 'community' }}
+                  onAction={reviewedInvite ? handleJoin : handleInviteReview}
                   className="mt-2"
                   compact
                 />
@@ -486,12 +555,34 @@ export function CreateCommunityModal({
                 </p>
               )}
 
+              {reviewedInvite && (
+                <section className="mt-3 rounded-control border border-border-control bg-surface-sunken px-3 py-3" aria-labelledby="invitation-preview-heading">
+                  <h3 id="invitation-preview-heading" className="text-sm font-semibold text-primary">Destination ready to review</h3>
+                  <dl className="mt-2 space-y-2 text-xs">
+                    <div className="flex items-start justify-between gap-3"><dt className="text-muted">Community</dt><dd className="text-right text-secondary">Confirmed when you continue</dd></div>
+                    <div className="flex items-start justify-between gap-3"><dt className="text-muted">Access</dt><dd className="text-right text-secondary">Join or request approval</dd></div>
+                    {suggestedServiceLabel(reviewedInvite) && (
+                      <div className="flex items-start justify-between gap-3"><dt className="text-muted">Service suggested by this invitation</dt><dd className="text-right text-secondary">{suggestedServiceLabel(reviewedInvite)}</dd></div>
+                    )}
+                  </dl>
+                  <p className="mt-3 text-xs leading-5 text-muted">
+                    Your current account service and this destination community can be different.
+                    A suggested service is never selected for you.
+                  </p>
+                </section>
+              )}
+
               <Button
-                onClick={handleJoin}
+                variant="primary"
+                onClick={reviewedInvite ? handleJoin : handleInviteReview}
                 disabled={!inviteLink.trim() || isLoading}
                 className="mt-4 w-full"
               >
-                {isLoading ? 'Joining…' : 'Join Community'}
+                {isLoading
+                  ? 'Checking access…'
+                  : reviewedInvite
+                    ? 'Continue with current account'
+                    : 'Review invitation'}
               </Button>
             </motion.div>
           ) : (
@@ -502,21 +593,33 @@ export function CreateCommunityModal({
               exit={{ opacity: 0, x: -8 }}
               transition={transitions.enter}
             >
-              <div className="space-y-3">
+              <section className="rounded-control border border-border-subtle bg-surface-sunken px-3 py-4" aria-labelledby="browse-unavailable-heading">
+                <h3 id="browse-unavailable-heading" className="text-sm font-semibold text-primary">Browsing is not available yet</h3>
+                <p className="mt-2 text-xs leading-5 text-muted">
+                  Mesh has no reviewed public directory source configured. You can still join with an invitation or create a community.
+                </p>
+              </section>
+              <details className="mt-4 rounded-control border border-border-subtle bg-surface-raised px-3">
+                <summary className="flex min-h-11 cursor-pointer items-center text-sm font-semibold text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                  Use another directory
+                </summary>
+                <div className="space-y-3 border-t border-border-subtle py-3">
+                <Input
+                  label="Compatible directory address"
+                  value={directoryServer}
+                  onChange={(value: string) => {
+                    setDirectoryServer(value)
+                    setDirectoryError(null)
+                  }}
+                  onKeyDown={handleKeyDown}
+                  placeholder="https://directory.example.org"
+                />
                 <Input
                   label="Search"
                   value={directoryQuery}
                   onChange={setDirectoryQuery}
                   onKeyDown={handleKeyDown}
                   placeholder="Community name or topic"
-                  autoFocus
-                />
-                <Input
-                  label="Search source (optional)"
-                  value={directoryServer}
-                  onChange={setDirectoryServer}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Leave blank to search Mesh"
                 />
                 <div>
                   <label
@@ -534,10 +637,9 @@ export function CreateCommunityModal({
                     placeholder="Why would you like to join?"
                   />
                 </div>
-              </div>
 
-              <Button onClick={handleDirectorySearch} disabled={isLoading} className="mt-4 w-full">
-                {isLoading ? 'Searching…' : 'Search Directory'}
+              <Button variant="primary" onClick={handleDirectorySearch} disabled={isLoading || !directoryServer.trim() || !directoryQuery.trim()} className="w-full">
+                {isLoading ? 'Searching…' : 'Search directory'}
               </Button>
 
               {directoryError != null && (
@@ -549,7 +651,10 @@ export function CreateCommunityModal({
                 />
               )}
 
-              <div className="mt-4 max-h-64 space-y-2 overflow-y-auto">
+              <div className="mt-4 max-h-64 space-y-2 overflow-y-auto" aria-live="polite">
+                {directoryResults.length > 0 && (
+                  <p className="text-caption text-muted">{directoryResults.length} result{directoryResults.length === 1 ? '' : 's'}</p>
+                )}
                 {directoryResults.map((entry) => (
                   <div key={entry.id} className="rounded-panel bg-surface-sunken p-3">
                     <div className="flex items-start justify-between gap-3">
@@ -576,13 +681,38 @@ export function CreateCommunityModal({
                   </div>
                 ))}
                 {!isLoading && directoryResults.length === 0 && !directoryError && (
-                  <p className="py-3 text-center text-xs text-muted">Search to find public communities.</p>
+                  <p className="py-3 text-center text-xs text-muted">Enter an explicit compatible directory to search.</p>
                 )}
               </div>
+                </div>
+              </details>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
-    </Modal>
+    </CommunityToolsFrame>
   )
+}
+
+function CommunityToolsFrame({
+  embedded,
+  children,
+  ...modalProps
+}: React.ComponentProps<typeof Modal> & { embedded: boolean; children: ReactNode }) {
+  if (embedded) return <div className="min-h-0 overflow-y-auto">{children}</div>
+  return <Modal {...modalProps}>{children}</Modal>
+}
+
+function suggestedServiceLabel(invite: CommunityInvite): string | null {
+  const value = invite.kind === 'matrix'
+    ? invite.service
+    : invite.kind === 'community'
+      ? invite.communityService
+      : null
+  if (!value) return null
+  try {
+    return new URL(value).hostname
+  } catch {
+    return null
+  }
 }

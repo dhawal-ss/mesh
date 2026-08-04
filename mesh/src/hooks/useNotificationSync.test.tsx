@@ -16,9 +16,12 @@ const bridgeMocks = vi.hoisted(() => ({
     () => Promise<'all' | 'mentions' | 'nothing'>
   >(() => Promise.resolve('mentions')),
   setMatrixRoomNotificationMode: vi.fn(() => Promise.resolve()),
-  playNotificationSound: vi.fn(),
   notificationHandler: undefined as ((notification: MatrixNotification) => void) | undefined,
   unreadHandler: undefined as ((update: MatrixUnreadUpdate) => void) | undefined,
+}))
+
+const interfaceSoundMocks = vi.hoisted(() => ({
+  play: vi.fn(() => Promise.resolve(true)),
 }))
 
 vi.mock('../lib/bridge', () => ({
@@ -32,7 +35,6 @@ vi.mock('../lib/bridge', () => ({
   sendTestNotification: bridgeMocks.sendTestNotification,
   getMatrixRoomNotificationMode: bridgeMocks.getMatrixRoomNotificationMode,
   setMatrixRoomNotificationMode: bridgeMocks.setMatrixRoomNotificationMode,
-  playNotificationSound: bridgeMocks.playNotificationSound,
   onMatrixNotification: vi.fn((handler) => {
     bridgeMocks.notificationHandler = handler
     return Promise.resolve(vi.fn())
@@ -41,6 +43,10 @@ vi.mock('../lib/bridge', () => ({
     bridgeMocks.unreadHandler = handler
     return Promise.resolve(vi.fn())
   }),
+}))
+
+vi.mock('../lib/interface-sounds', () => ({
+  playInterfaceSound: interfaceSoundMocks.play,
 }))
 
 vi.mock('../components/ui/Toast', () => ({
@@ -128,12 +134,12 @@ describe('useNotificationSync', () => {
 
     act(() => {
       bridgeMocks.notificationHandler?.({
-        roomId: room.id,
+        roomId: '!other:example.org',
         eventId: '$event',
         sender: '@friend:example.org',
         displayName: 'Friend',
         preview: 'Hello',
-        isMention: false,
+        isMention: true,
         isDm: false,
         avatarUrl: null,
       })
@@ -144,7 +150,10 @@ describe('useNotificationSync', () => {
       })
     })
 
-    expect(bridgeMocks.playNotificationSound).toHaveBeenCalledWith('pulse')
+    expect(interfaceSoundMocks.play).toHaveBeenCalledWith('message-mention', {
+      contextKey: '!other:example.org',
+      focused: false,
+    })
     expect(useChannelStore.getState().channelEntities[room.id]).toMatchObject({
       unreadCount: 6,
       unreadMentions: 2,

@@ -7,22 +7,28 @@ type PreviewCallback = (...args: unknown[]) => void
 
 const COMMUNITY_ID = '!lantern-guild:mesh.test'
 const ACTIVE_ROOM_ID = '!concept-art:mesh.test'
+const INVITED_COMMUNITY_ID = '!canyon-crew:canyon.example'
+const INVITED_ROOM_ID = '!controller-lab:canyon.example'
 let simulateVoice = false
+let simulateInvitation = false
+let simulateSignedOut = false
+let simulateQueue = false
 
 const community = {
   id: COMMUNITY_ID,
   name: 'Lantern Guild',
-  description: 'A private creative studio for games, art, and shared work.',
+  description: 'A late-night crew for playtests, clips, art, and co-op runs.',
   memberCount: 15,
   role: 'owner',
   joinedAt: '2026-07-24T00:00:00.000Z',
+  iconUrl: lanternGuildEnvironment,
   bannerUrl: lanternGuildEnvironment,
 }
 
 const secondCommunity = {
   id: '!field-notes:mesh.test',
   name: 'Field Notes',
-  description: 'A small research and writing circle.',
+  description: 'A small crew for exploration games, screenshots, and field notes.',
   memberCount: 8,
   role: 'member',
   joinedAt: '2026-07-26T00:00:00.000Z',
@@ -73,13 +79,19 @@ const timeline = [
     authorDisplayName: 'Maya Chen',
     authorAvatarColor: '#9b7cff',
     content: 'Color pass: warmer lantern glow, with enough blue distance to keep the scene open.',
-    attachments: [],
+    attachments: [{
+      fileHash: 'matrix-sha256:lighting-notes',
+      filename: 'lighting-notes.pdf',
+      size: 428_032,
+      chunks: 1,
+      sourcePeerId: 'matrix',
+      contentType: 'application/pdf',
+    }],
     reactions: { '🔥': ['@rohan:mesh.test', '@ari:mesh.test'], '👀': ['@devon:mesh.test'] },
     timestamp: '2026-08-01T14:42:00.000Z',
     signature: '',
     replyToId: null,
     deliveryStatus: 'sent',
-    designPreviewImageUrl: lanternGuildEnvironment,
   },
   {
     id: '$rohan-atmosphere',
@@ -122,6 +134,7 @@ const timeline = [
     signature: '',
     replyToId: '$devon-bounce',
     deliveryStatus: 'sent',
+    designPreviewImageUrl: lanternGuildEnvironment,
   },
   {
     id: '$kira-path',
@@ -139,6 +152,87 @@ const timeline = [
   },
 ]
 
+const directConversations = [
+  {
+    id: '!dm-maya:mesh.test',
+    peerPublicKey: '@maya:mesh.test',
+    peerDisplayName: 'Maya Chen',
+    peerAvatarColor: '#9b7cff',
+    lastMessageAt: '2026-08-01T15:06:00.000Z',
+    unreadCount: 1,
+    createdAt: '2026-07-25T00:00:00.000Z',
+  },
+  {
+    id: '!dm-rohan:mesh.test',
+    peerPublicKey: '@rohan:mesh.test',
+    peerDisplayName: 'Rohan',
+    peerAvatarColor: '#f1a45b',
+    lastMessageAt: '2026-08-01T14:18:00.000Z',
+    unreadCount: 0,
+    createdAt: '2026-07-27T00:00:00.000Z',
+  },
+]
+
+const directMessages = [
+  {
+    id: '$dm-maya-reference',
+    conversationId: '!dm-maya:mesh.test',
+    authorPublicKey: '@maya:mesh.test',
+    authorDisplayName: 'Maya Chen',
+    authorAvatarColor: '#9b7cff',
+    content: 'I added the lighting reference to concept-art. The warmer pass is ready for another look.',
+    timestamp: '2026-08-01T15:04:00.000Z',
+    signature: '',
+    attachments: [],
+    reactions: {},
+    deliveryStatus: 'sent',
+  },
+  {
+    id: '$dm-maya-thread-reply',
+    conversationId: '!dm-maya:mesh.test',
+    authorPublicKey: '@taylor:mesh.test',
+    authorDisplayName: 'Taylor',
+    authorAvatarColor: '#f2b84b',
+    content: 'Perfect. I will keep the warmer pass in the thread so the main chat stays clean.',
+    timestamp: '2026-08-01T15:06:00.000Z',
+    signature: '',
+    attachments: [],
+    reactions: {},
+    replyToId: '$dm-maya-reference',
+    threadRootId: '$dm-maya-reference',
+    deliveryStatus: 'sent',
+  },
+  {
+    id: '$dm-rohan-review',
+    conversationId: '!dm-rohan:mesh.test',
+    authorPublicKey: '@rohan:mesh.test',
+    authorDisplayName: 'Rohan',
+    authorAvatarColor: '#f1a45b',
+    content: 'The community guide looks good. I left one note on the welcome room.',
+    timestamp: '2026-08-01T14:18:00.000Z',
+    signature: '',
+    attachments: [],
+    reactions: {},
+    deliveryStatus: 'sent',
+  },
+]
+
+const queuedPreviewMessages = [{
+  id: 'preview-queued-lighting-note',
+  channelId: ACTIVE_ROOM_ID,
+  authorPublicKey: '@taylor:mesh.test',
+  authorDisplayName: 'Taylor',
+  authorAvatarColor: '#4ecdc4',
+  content: 'Uploading the controller-lighting notes when the connection is ready.',
+  attachments: [],
+  reactions: {},
+  timestamp: '2026-08-01T15:08:00.000Z',
+  signature: '',
+  transactionId: 'preview-queued-lighting-note',
+  clientRequestId: 'preview-queued-lighting-note',
+  deliveryStatus: 'pending',
+}]
+
 function backendStatus() {
   return {
     kind: 'matrix',
@@ -146,7 +240,7 @@ function backendStatus() {
       encryptedText: true,
       encryptedAttachments: true,
       directMessages: true,
-      voice: false,
+      voice: simulateVoice,
       durableTimeouts: false,
       deviceManagement: true,
       recovery: true,
@@ -154,20 +248,20 @@ function backendStatus() {
     },
     voiceService: {
       provider: 'matrix-rtc',
-      availability: 'not-configured',
+      availability: simulateVoice ? 'ready' : 'not-configured',
       discoveryKey: 'org.matrix.msc4143.rtc_foci',
       livekitServiceUrl: null,
       tokenEndpoint: null,
       livekitSfuUrl: null,
       cspReady: false,
-      mediaE2eeVerified: false,
-      reason: 'Voice is unavailable in this design preview.',
+      mediaE2eeVerified: simulateVoice,
+      reason: simulateVoice ? null : 'Voice is unavailable in this design preview.',
     },
-    authenticated: true,
-    userId: '@taylor:mesh.test',
-    deviceId: 'TAYLOR-PREVIEW',
-    homeserver: 'https://mesh.test',
-    syncRunning: true,
+    authenticated: !simulateSignedOut,
+    userId: simulateSignedOut ? null : '@taylor:mesh.test',
+    deviceId: simulateSignedOut ? null : 'TAYLOR-PREVIEW',
+    homeserver: simulateSignedOut ? null : 'https://mesh.test',
+    syncRunning: !simulateSignedOut,
     durableHistory: true,
     supportsE2ee: true,
     sessionE2eeReady: true,
@@ -179,7 +273,49 @@ function responseFor(command: string, args: PreviewIpcArgs): unknown | Promise<u
   switch (command) {
     case 'get_backend_status':
       return backendStatus()
+    case 'matrix_service_capabilities':
+      return {
+        homeserver: String(args.homeserver ?? 'https://matrix.org'),
+        serverVersions: ['v1.13'],
+        passwordLogin: true,
+        browserLogin: true,
+        registration: 'open',
+        maxUploadBytes: 10 * 1024 * 1024,
+      }
+    case 'matrix_login':
+      simulateSignedOut = false
+      return backendStatus()
     case 'peek_pending_invitation':
+      return simulateInvitation ? {
+        handle: 'preview-invitation-handle',
+        roomOrAlias: '#canyon-crew:canyon.example',
+        via: ['canyon.example'],
+        service: 'https://matrix.canyon.example',
+        admissionService: null,
+        communityName: 'Canyon Crew',
+        inviterDisplayName: 'Mothbyte',
+        inviterUserId: null,
+        joinRule: 'invite',
+        communityServiceDisplayName: 'Canyon Accounts',
+        storedAt: Date.now() - 800,
+        expiresAt: Date.now() + 86_400_000,
+      } : null
+    case 'join_pending_invitation':
+      if (!simulateInvitation || args.handle !== 'preview-invitation-handle') {
+        throw new Error('The preview invitation is no longer available.')
+      }
+      simulateInvitation = false
+      return {
+        id: INVITED_COMMUNITY_ID,
+        name: 'Canyon Crew',
+        description: 'Controller runs, boss clips, and playtest notes.',
+        memberCount: 24,
+        role: 'member',
+        joinedAt: new Date().toISOString(),
+      }
+    case 'clear_pending_invitation':
+      if (args.handle === 'preview-invitation-handle') simulateInvitation = false
+      return null
     case 'matrix_user_preferences':
     case 'matrix_room_upgrade':
       return null
@@ -191,14 +327,27 @@ function responseFor(command: string, args: PreviewIpcArgs): unknown | Promise<u
       return {
         entities: args.communityId === COMMUNITY_ID
           ? channels
-          : [{ id: '!notes:mesh.test', communityId: secondCommunity.id, name: 'notes', channelType: 'text', unreadCount: 3 }],
+          : args.communityId === INVITED_COMMUNITY_ID
+            ? [{
+                id: INVITED_ROOM_ID,
+                communityId: INVITED_COMMUNITY_ID,
+                name: 'controller lab',
+                channelType: 'text',
+                unreadCount: 0,
+              }]
+            : [{ id: '!notes:mesh.test', communityId: secondCommunity.id, name: 'notes', channelType: 'text', unreadCount: 3 }],
         blockedEntities: [],
       }
     case 'matrix_list_members':
       return people
     case 'matrix_get_messages':
       return timeline.filter((message) => message.channelId === args.roomId)
+    case 'matrix_dm_conversations':
+      return { entities: directConversations, blockedEntities: [] }
+    case 'matrix_dm_messages':
+      return directMessages.filter((message) => message.conversationId === args.conversationId)
     case 'matrix_queued_messages':
+      return simulateQueue ? queuedPreviewMessages : []
     case 'matrix_typing_users':
     case 'matrix_list_custom_emoji':
     case 'matrix_list_community_applications':
@@ -206,8 +355,14 @@ function responseFor(command: string, args: PreviewIpcArgs): unknown | Promise<u
       return []
     case 'matrix_room_is_encrypted':
       return true
+    case 'matrix_dm_blocked':
+      return false
     case 'matrix_get_room_notification_mode':
       return 'all'
+    case 'matrix_download_attachment':
+      return 'C:\\Mesh Preview\\Downloads\\lighting-notes.pdf'
+    case 'open_downloaded_file':
+      return null
     case 'matrix_room_pins':
       return {
         roomId: String(args.roomId),
@@ -268,6 +423,7 @@ function responseFor(command: string, args: PreviewIpcArgs): unknown | Promise<u
         deliveryStatus: 'sent',
       }
     case 'matrix_mark_read':
+    case 'matrix_mark_dm_read':
     case 'matrix_set_typing':
     case 'matrix_load_composer_draft':
     case 'matrix_save_composer_draft':
@@ -287,13 +443,24 @@ function responseFor(command: string, args: PreviewIpcArgs): unknown | Promise<u
   }
 }
 
-export function installWorkspacePreview(options: { simulateVoice?: boolean } = {}): void {
+export function installWorkspacePreview(
+  options: {
+    simulateVoice?: boolean
+    simulateInvitation?: boolean
+    simulateSignedOut?: boolean
+    simulateQueue?: boolean
+  } = {},
+): void {
   const previewWindow = window as typeof window & {
     __TAURI_INTERNALS__?: unknown
   }
   if (typeof window === 'undefined' || previewWindow.__TAURI_INTERNALS__) return
 
   simulateVoice = options.simulateVoice === true
+  simulateInvitation = options.simulateInvitation === true
+  simulateSignedOut = options.simulateSignedOut === true
+  simulateQueue = options.simulateQueue === true
+  document.documentElement.dataset.meshSimulateVoice = simulateVoice ? 'true' : 'false'
 
   safeLocalStorageSet('mesh-layout-room-context-open', 'true')
 

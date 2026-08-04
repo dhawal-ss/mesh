@@ -55,12 +55,13 @@ test('lockfile metadata stays canonical when a platform package is installed', a
   })
 })
 
-test('missing optional manifest uses lockfile SPDX license and repository', async () => {
+test('missing optional manifest uses legacy lockfile SPDX licenses and repository', async () => {
   await withProject(async (projectRoot) => {
     const packages = await collectJavaScriptPackages(projectRoot, { packages: {
       'node_modules/@example/linux-x64': {
         version: '4.5.6',
-        license: 'MIT',
+        license: ' ',
+        licenses: [{ type: 'MIT' }],
         optional: true,
         repository: { url: 'git+https://example.test/platform.git' },
         resolved: 'https://registry.example.test/platform.tgz',
@@ -196,6 +197,25 @@ test('missing and stale notice files fail while a byte-identical notice passes',
 
     await writeFile(noticesPath, 'expected', 'utf8')
     assert.deepEqual(await checkNoticeFile(noticesPath, 'expected', 0), [])
+  })
+})
+
+test('an independently locked feature graph can use complete lock metadata without installation', async () => {
+  await withProject(async (projectRoot) => {
+    const packages = await collectJavaScriptPackages(projectRoot, { packages: {
+      'node_modules/feature-only': {
+        version: '3.2.1',
+        license: 'Apache-2.0',
+        resolved: 'https://registry.example.test/feature-only.tgz',
+      },
+    } }, { allowMissingLockedManifest: true })
+
+    assert.deepEqual(packages, [{
+      name: 'feature-only',
+      version: '3.2.1',
+      license: 'Apache-2.0',
+      source: 'https://registry.example.test/feature-only.tgz',
+    }])
   })
 })
 

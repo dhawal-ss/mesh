@@ -13,6 +13,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react'
 import { DiagnosticsPanel } from './DiagnosticsPanel'
 import type { SystemDiagnostics } from '../../lib/bridge'
+import { useSettingsStore } from '../../store/settings'
 
 // Mock the bridge getDiagnostics and probeIceServers functions
 vi.mock('../../lib/bridge', () => ({
@@ -54,9 +55,11 @@ describe('DiagnosticsPanel', () => {
     root = createRoot(container)
     vi.clearAllMocks()
     vi.mocked(probeIceServers).mockResolvedValue([])
+    useSettingsStore.setState({ signalCheckEnabled: true })
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     act(() => {
       root.unmount()
     })
@@ -69,7 +72,7 @@ describe('DiagnosticsPanel', () => {
       root.render(<DiagnosticsPanel open={false} onClose={() => {}} />)
     })
     // Panel should not render content when closed
-    expect(document.body.textContent).not.toContain('System diagnostics')
+    expect(document.body.textContent).not.toContain('Signal Check')
   })
 
   it('renders the panel title when open', async () => {
@@ -81,10 +84,65 @@ describe('DiagnosticsPanel', () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0))
     })
-    expect(document.body.textContent).toContain('System diagnostics')
+    expect(document.body.textContent).toContain('Signal Check')
     const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')
     expect(dialog).toBeTruthy()
     expect(dialog?.getAttribute('aria-labelledby')).toBeTruthy()
+  })
+
+  it('renders the routed Signal Check inline without creating another dialog', async () => {
+    const onClose = vi.fn()
+    vi.mocked(getDiagnostics).mockResolvedValue(mockDiagnostics())
+    await act(async () => {
+      root.render(<DiagnosticsPanel embedded open onClose={onClose} />)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.querySelector('[aria-labelledby="embedded-signal-check-heading"]')).not.toBeNull()
+    const close = Array.from(document.body.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Close Signal Check'),
+    )
+    await act(async () => close?.click())
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('does not request diagnostic data until Signal Check is explicitly enabled', async () => {
+    useSettingsStore.setState({ signalCheckEnabled: false })
+    vi.mocked(getDiagnostics).mockResolvedValue(mockDiagnostics())
+    await act(async () => {
+      root.render(<DiagnosticsPanel open onClose={() => {}} />)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(document.body.textContent).toContain('Signal Check is off')
+    expect(getDiagnostics).not.toHaveBeenCalled()
+    const enable = Array.from(document.body.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Turn on Signal Check'),
+    )
+    await act(async () => {
+      enable?.click()
+      await vi.waitFor(() => {
+        expect(getDiagnostics).toHaveBeenCalledTimes(1)
+      })
+    })
+    expect(getDiagnostics).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes only on demand and never starts the former three-second loop', async () => {
+    const intervalSpy = vi.spyOn(window, 'setInterval')
+    vi.mocked(getDiagnostics).mockResolvedValue(mockDiagnostics())
+    await act(async () => {
+      root.render(<DiagnosticsPanel open onClose={() => {}} />)
+    })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
+    const initialCalls = vi.mocked(getDiagnostics).mock.calls.length
+    expect(initialCalls).toBe(1)
+    expect(getDiagnostics).toHaveBeenCalledTimes(1)
+    expect(intervalSpy.mock.calls.some(([, delay]) => delay === 3_000)).toBe(false)
+    intervalSpy.mockRestore()
   })
 
   it('shows account health without exposing implementation names in product copy', async () => {
@@ -132,7 +190,7 @@ describe('DiagnosticsPanel', () => {
     })
 
     expect(document.body.textContent).toContain('Your Mesh account is connected and syncing normally.')
-    expect(document.body.textContent).toContain('@alice:localhost')
+    expect(document.body.textContent).not.toContain('@alice:localhost')
     expect(document.body.textContent).toContain('http://localhost:8008')
     expect(document.body.textContent).toContain('Private calling')
     expect(document.body.textContent).toContain('Media protection')
@@ -193,8 +251,9 @@ describe('DiagnosticsPanel', () => {
       await new Promise((r) => setTimeout(r, 10))
     })
     expect(document.body.textContent).toContain('Warnings')
-    expect(document.body.textContent).toContain('No TURN server configured')
-    expect(document.body.textContent).toContain('2 download(s) stalled')
+    expect(document.body.textContent).not.toContain('No TURN server configured')
+    expect(document.body.textContent).not.toContain('2 download(s) stalled')
+    expect(document.body.textContent).toContain('A service check needs attention')
   })
 
   it('displays error message when getDiagnostics rejects', async () => {
@@ -321,7 +380,7 @@ describe('DiagnosticsPanel', () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 10))
     })
-    const closeButton = document.body.querySelector('button[aria-label="Close diagnostics"]')
+    const closeButton = document.body.querySelector('button[aria-label="Close Signal Check"]')
     expect(closeButton).toBeTruthy()
     await act(async () => {
       ;(closeButton as HTMLButtonElement).click()

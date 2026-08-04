@@ -7,6 +7,9 @@ import {
   matrixGetProfile,
   matrixListChannels,
   matrixLogout,
+  matrixRevokeDevice,
+  matrixRemoveLocalAccount,
+  matrixDeactivateAccount,
   matrixSendMessage,
   probeIceServers,
   sendDm,
@@ -29,6 +32,43 @@ describe('bridge IPC resilience', () => {
     vi.useRealTimers()
   })
 
+  it('does not cross the destructive IPC boundary when native confirmation is cancelled', async () => {
+    invokeMock.mockImplementation((command) => {
+      if (command === 'request_destructive_action_grant') return Promise.resolve(null) as never
+      return Promise.reject(new Error(`unexpected command: ${command}`)) as never
+    })
+
+    await expect(matrixRevokeDevice('DEVICE-A', 'account-password')).resolves.toBe(false)
+    await expect(matrixRemoveLocalAccount()).resolves.toBe(false)
+    await expect(matrixDeactivateAccount('account-password')).resolves.toBe(false)
+    expect(invokeMock.mock.calls.map(([command]) => command)).toEqual([
+      'request_destructive_action_grant',
+      'request_destructive_action_grant',
+      'request_destructive_action_grant',
+    ])
+  })
+
+  it('passes a native one-use grant only to the exact destructive write', async () => {
+    invokeMock.mockImplementation((command) => {
+      if (command === 'request_destructive_action_grant') {
+        return Promise.resolve('one-use-native-grant') as never
+      }
+      if (command === 'matrix_revoke_device') return Promise.resolve() as never
+      return Promise.reject(new Error(`unexpected command: ${command}`)) as never
+    })
+
+    await expect(matrixRevokeDevice('DEVICE-A', 'account-password')).resolves.toBe(true)
+    expect(invokeMock).toHaveBeenNthCalledWith(1, 'request_destructive_action_grant', {
+      action: 'revokeDevice',
+      targetId: 'DEVICE-A',
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(2, 'matrix_revoke_device', {
+      deviceId: 'DEVICE-A',
+      password: 'account-password',
+      presenceGrant: 'one-use-native-grant',
+    })
+  })
+
   it('coalesces identical in-flight read requests', async () => {
     let resolveRequest!: (value: string) => void
     const pending = new Promise<string>((resolve) => {
@@ -40,6 +80,14 @@ describe('bridge IPC resilience', () => {
     const second = getMatrixRoomNotificationMode('room-1')
 
     expect(invokeMock).toHaveBeenCalledTimes(1)
+    expect(invokeMock).toHaveBeenCalledWith(
+      'matrix_get_room_notification_mode',
+      expect.objectContaining({
+        roomId: 'room-1',
+        requestId: expect.any(String),
+        deadlineMs: expect.any(Number),
+      }),
+    )
     resolveRequest('all')
     await expect(Promise.all([first, second])).resolves.toEqual(['all', 'all'])
   })
@@ -59,14 +107,62 @@ describe('bridge IPC resilience', () => {
 
   it('times out a read instead of waiting forever', async () => {
     vi.useFakeTimers()
-    invokeMock.mockReturnValue(new Promise(() => {}) as never)
+    invokeMock.mockImplementation((command) => {
+      if (command === 'cancel_native_request') return Promise.resolve('completed') as never
+      return new Promise(() => {}) as never
+    })
 
     const result = matrixGetProfile()
-    const assertion = expect(result).rejects.toMatchObject({ code: 'network_unavailable', retryable: true })
-    await vi.advanceTimersByTimeAsync(46_000)
+    const assertion = expect(result).rejects.toMatchObject({
+      code: 'network_unavailable',
+      retryable: false,
+    })
+    await vi.advanceTimersByTimeAsync(15_000)
 
     await assertion
-    expect(invokeMock).toHaveBeenCalledTimes(3)
+    expect(invokeMock.mock.calls.filter(([command]) => command === 'matrix_get_profile')).toHaveLength(1)
+    expect(invokeMock).toHaveBeenCalledWith('cancel_native_request', {
+      requestId: expect.any(String),
+    })
+  })
+
+  it('blocks a later identical read until unacknowledged native work completes', async () => {
+    vi.useFakeTimers()
+    let resolveNative!: (value: unknown) => void
+    const pendingNative = new Promise((resolve) => {
+      resolveNative = resolve
+    })
+    let profileCalls = 0
+    invokeMock.mockImplementation((command) => {
+      if (command === 'cancel_native_request') return Promise.resolve('unknown-request') as never
+      if (command === 'matrix_get_profile') {
+        profileCalls += 1
+        if (profileCalls === 1) return pendingNative as never
+        return Promise.resolve({ userId: '@alice:example.org' }) as never
+      }
+      return Promise.resolve(undefined) as never
+    })
+
+    const first = matrixGetProfile()
+    const firstAssertion = expect(first).rejects.toMatchObject({ retryable: false })
+    await vi.advanceTimersByTimeAsync(15_000)
+    await firstAssertion
+    await Promise.resolve()
+
+    const second = matrixGetProfile()
+    await Promise.resolve()
+    expect(profileCalls).toBe(1)
+
+    resolveNative({ userId: '@alice:example.org' })
+    await expect(second).resolves.toEqual({ userId: '@alice:example.org' })
+    expect(profileCalls).toBe(2)
+  })
+
+  it('does not retry an untyped failure even when it claims to be retryable', async () => {
+    invokeMock.mockRejectedValue({ detail: 'offline', retryable: true })
+
+    await expect(matrixGetProfile()).rejects.toMatchObject({ code: 'network_unavailable' })
+    expect(invokeMock).toHaveBeenCalledTimes(1)
   })
 
   it('never retries mutations, even for transient failures', async () => {

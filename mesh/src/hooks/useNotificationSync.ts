@@ -9,6 +9,7 @@ import {
   type NotificationLevel,
 } from '../store/settings'
 import { showToast } from '../components/ui/Toast'
+import { playInterfaceSound } from '../lib/interface-sounds'
 
 interface UseNotificationSyncOptions {
   matrixMode: boolean
@@ -95,9 +96,19 @@ export function useNotificationSync({
   useEffect(() => {
     if (!matrixMode) return
 
-    const notificationListener = bridge.onMatrixNotification(() => {
-      const current = useSettingsStore.getState().notifications
-      if (current.sound) bridge.playNotificationSound(current.soundId)
+    const notificationListener = bridge.onMatrixNotification((notification) => {
+      if (notification.roomId === activeRoomId) return
+      if (notification.isDm) {
+        void playInterfaceSound('message-direct', {
+          contextKey: notification.roomId,
+          focused: false,
+        })
+      } else if (notification.isMention) {
+        void playInterfaceSound('message-mention', {
+          contextKey: notification.roomId,
+          focused: false,
+        })
+      }
     })
     const unreadListener = bridge.onMatrixUnreadUpdate((update) => {
       if (useChannelStore.getState().channelEntities[update.roomId]) {
@@ -119,7 +130,7 @@ export function useNotificationSync({
       void notificationListener.then((unlisten) => unlisten())
       void unreadListener.then((unlisten) => unlisten())
     }
-  }, [matrixMode, patchChannel, patchConversation])
+  }, [activeRoomId, matrixMode, patchChannel, patchConversation])
 
   useEffect(() => {
     if (!matrixMode || !roomIdsKey) return

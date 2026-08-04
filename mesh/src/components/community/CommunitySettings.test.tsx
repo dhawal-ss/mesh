@@ -59,6 +59,7 @@ describe('CommunitySettings mutation failures', () => {
   })
 
   it('surfaces metadata, room creation, and leave failures without closing the sheet', async () => {
+    setCommunityRole('admin')
     vi.mocked(bridge.updateCommunityMetadata).mockRejectedValue(new Error('offline'))
     vi.mocked(bridge.createChannel).mockRejectedValue(new Error('offline'))
     vi.mocked(bridge.leaveCommunity).mockRejectedValue(new Error('offline'))
@@ -87,6 +88,20 @@ describe('CommunitySettings mutation failures', () => {
     // The failed destructive action remains visible and actionable instead of closing.
     expect(document.body.textContent).toContain("Mesh couldn't leave Design Club")
     expect(document.body.textContent).toContain('Community settings')
+  })
+
+  it('does not invent Matrix ownership transfer, owner leave, or global deletion', async () => {
+    await act(async () => {
+      root.render(
+        <CommunitySettings embedded isOpen activeSection="danger" onClose={() => {}} />,
+      )
+      await Promise.resolve()
+    })
+
+    expect(document.body.textContent).toContain('Ownership must be resolved first')
+    expect(document.body.textContent).toContain('does not invent an ownership transfer')
+    expect(document.body.textContent).not.toContain('Leave Community')
+    expect(document.body.textContent).not.toContain('Delete Community')
   })
 
   it('surfaces a failed owner deletion after explicit confirmation', async () => {
@@ -123,10 +138,62 @@ describe('CommunitySettings mutation failures', () => {
     )
   })
 
+  it('searches and focuses a calm section index without hiding authority or opening destructive state', async () => {
+    window.location.hash = '#community-settings-danger'
+    await renderSettings()
+
+    expect(document.body.textContent).not.toContain('Leave Design Club?')
+    const search = inputForLabel('Find a settings section')
+    await act(async () => setInputValue(search, 'moderation'))
+
+    const sectionNavigation = document.body.querySelector('nav[aria-label="Community settings sections"]')
+    expect(sectionNavigation?.textContent).toContain('Moderation activity')
+    expect(sectionNavigation?.textContent).not.toContain('Danger zone')
+    // Navigation filtering never hides the underlying authority disclosure.
+    expect(document.body.textContent).toContain(
+      'Mesh does not currently provide an authoritative administrator-action history.',
+    )
+
+    await act(async () => findButton('Moderation activity').click())
+    expect(document.activeElement?.id).toBe('community-settings-moderation')
+    window.location.hash = ''
+  })
+
+  it('renders invitations directly in the routed administration surface without nesting a dialog', async () => {
+    await act(async () => {
+      root.render(
+        <CommunitySettings
+          embedded
+          isOpen
+          activeSection="invitations"
+          onClose={() => {}}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.textContent).toContain('Invitations for Design Club')
+    expect(document.body.textContent).toContain(
+      'It never changes where someone keeps their account.',
+    )
+    expect(document.body.textContent).not.toContain('Overview')
+    expect(findButton('Create invite link')).toBeDefined()
+  })
+
   async function renderSettings() {
     await act(async () => {
       root.render(<CommunitySettings isOpen onClose={() => {}} />)
       await Promise.resolve()
+    })
+  }
+
+  function setCommunityRole(role: 'owner' | 'admin' | 'member') {
+    const current = useCommunityStore.getState().communityEntities['community-1']
+    const next = { ...current, role }
+    useCommunityStore.setState({
+      communityEntities: { 'community-1': next },
+      communities: [next],
     })
   }
 

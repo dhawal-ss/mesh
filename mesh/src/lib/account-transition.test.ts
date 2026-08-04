@@ -10,28 +10,43 @@ import { useMembershipStore } from '../store/membership'
 import { useMessageNavigationStore } from '../store/message-navigation'
 import { useMessageStore } from '../store/messages'
 import { useNetworkStore } from '../store/network'
+import { useMeshNavigationStore } from '../store/navigation'
 import { useRoomPinStore } from '../store/room-pins'
 import { useShellStore } from '../store/shell'
 import { useTypingStore } from '../store/typing'
 import { useVoiceStore } from '../store/voice'
 import { useSettingsStore } from '../store/settings'
+import { meshNavigationStorageKey } from './mesh-navigation'
 
 describe('account transition', () => {
   beforeEach(() => {
     clearRendererAccountState()
   })
 
-  it('deletes room-tab metadata only for an explicitly removed account', () => {
+  it('deletes saved navigation only for an explicitly removed account', () => {
     const removedKey = roomTabStorageKey('@removed:example.org')
     const retainedKey = roomTabStorageKey('@retained:example.org')
+    const removedNavigationKey = meshNavigationStorageKey('@removed:example.org')
+    const retainedNavigationKey = meshNavigationStorageKey('@retained:example.org')
     localStorage.setItem(removedKey, 'removed-room-title')
     localStorage.setItem(retainedKey, 'retained-room-title')
+    localStorage.setItem(removedNavigationKey, 'removed-navigation')
+    localStorage.setItem(retainedNavigationKey, 'retained-navigation')
+    useMeshNavigationStore.getState().initialize('@removed:example.org')
 
     clearRendererAccountState('@removed:example.org')
 
     expect(localStorage.getItem(removedKey)).toBeNull()
     expect(localStorage.getItem(retainedKey)).toBe('retained-room-title')
+    expect(localStorage.getItem(removedNavigationKey)).toBeNull()
+    expect(localStorage.getItem(retainedNavigationKey)).toBe('retained-navigation')
+    expect(useMeshNavigationStore.getState()).toMatchObject({
+      accountId: 'local-device',
+      hydrated: false,
+      drawer: 'none',
+    })
     localStorage.removeItem(retainedKey)
+    localStorage.removeItem(retainedNavigationKey)
   })
 
   it('continues account cleanup when browser storage denies removal', () => {
@@ -165,6 +180,7 @@ describe('account transition', () => {
         density: 'compact',
         accent: 'violet',
         transparency: 'opaque',
+        reduceMotion: true,
       },
       notifications: {
         ...useSettingsStore.getState().notifications,

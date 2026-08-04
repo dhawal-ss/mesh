@@ -8,6 +8,7 @@ describe('shell navigation state', () => {
       serverModalOpen: false,
       serverModalTab: 'create',
       pendingInvitation: null,
+      foregroundInvitationHandle: null,
       profileOpen: false,
       securityOpen: false,
       diagnosticsOpen: false,
@@ -31,6 +32,7 @@ describe('shell navigation state', () => {
       serverModalOpen: true,
       serverModalTab: 'join',
       pendingInvitation,
+      foregroundInvitationHandle: pendingInvitation.handle,
     })
 
     useShellStore.getState().closeServerModal()
@@ -38,6 +40,31 @@ describe('shell navigation state', () => {
       serverModalOpen: false,
       pendingInvitation,
     })
+  })
+
+  it('keeps a saved invitation available without forcing its route until review', () => {
+    const pendingInvitation = {
+      handle: 'review-later',
+      roomOrAlias: '#party:example.org',
+      via: ['example.org'],
+      service: null,
+      admissionService: null,
+      storedAt: 1_752_000_000_000,
+      expiresAt: 1_754_592_000_000,
+    }
+    useShellStore.getState().setPendingInvitation(pendingInvitation)
+    useShellStore.getState().savePendingInvitationForLater()
+
+    expect(useShellStore.getState()).toMatchObject({
+      pendingInvitation,
+      foregroundInvitationHandle: null,
+    })
+
+    useShellStore.getState().setPendingInvitation(pendingInvitation)
+    expect(useShellStore.getState().foregroundInvitationHandle).toBeNull()
+
+    useShellStore.getState().foregroundPendingInvitation()
+    expect(useShellStore.getState().foregroundInvitationHandle).toBe('review-later')
   })
 
   it('does not persist invitation secrets in localStorage', () => {

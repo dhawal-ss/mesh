@@ -811,13 +811,13 @@ function MessageInputContent({
   return (
     <div
       ref={rootRef}
-      className="-mt-1 mx-3 mb-4 min-w-0 max-w-full sm:mx-5"
+      className="mesh-composer-shell -mt-1 mx-3 mb-4 min-w-0 max-w-full sm:mx-5"
       onDragOver={disabled || disableAttachments ? undefined : handleDragOver}
       onDragLeave={disabled || disableAttachments ? undefined : handleDragLeave}
       onDrop={disabled || disableAttachments ? undefined : handleDrop}
     >
       <div
-        className={`min-w-0 overflow-hidden rounded-panel border border-border-subtle transition-colors ${
+        className={`mesh-composer min-w-0 overflow-hidden rounded-panel border border-border-subtle transition-colors ${
           isDragOver
             ? 'bg-accent/10 ring-2 ring-accent/40'
             : 'bg-surface-raised'
@@ -854,7 +854,7 @@ function MessageInputContent({
           />
         )}
 
-        <div className="flex items-center gap-1 border-b border-border-subtle px-2 py-1" aria-label="Message formatting">
+        <div className="mesh-composer-formatting flex items-center gap-1 border-b border-border-subtle px-2 py-1" aria-label="Message formatting">
           {([
             ['bold', 'Bold', 'B'],
             ['italic', 'Italic', 'I'],

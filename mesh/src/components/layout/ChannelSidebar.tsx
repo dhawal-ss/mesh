@@ -1,6 +1,4 @@
 import {
-  lazy,
-  Suspense,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -14,7 +12,7 @@ import { useChannelStore } from '../../store/channels'
 import { useVoiceStore } from '../../store/voice'
 import { ChannelItem } from '../community/ChannelItem'
 import { UserPanel } from './UserPanel'
-import { DialogErrorBoundary, ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
+import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
 import { Avatar } from '../ui/Avatar'
 import { useShellStore } from '../../store/shell'
@@ -24,14 +22,10 @@ import { showToast } from '../ui/Toast'
 import type { Channel } from '../../types/ipc'
 import { useMatrixRtcMembershipSync } from '../../hooks/useMatrixRtcMembershipSync'
 import { canStartMatrixVoice, shouldActivateVoiceSession } from '../../lib/voice-runtime'
-import { ModalLoadingFallback } from '../ui/ModalLoadingFallback'
 import { EmptyState } from '../ui/Primitives'
 import { useVirtualScroll, type VirtualItem } from '../../hooks/useVirtualScroll'
 import { IconButton } from '../ui/IconButton'
-
-const CommunitySettings = lazy(() =>
-  import('../community/CommunitySettings').then((module) => ({ default: module.CommunitySettings })),
-)
+import { useMeshNavigationStore } from '../../store/navigation'
 
 type RoomListEntry =
   | {
@@ -62,9 +56,9 @@ export function ChannelSidebar() {
   const currentChannelId = useVoiceStore((state) => state.currentChannelId)
   const currentCommunityId = useVoiceStore((state) => state.currentCommunityId)
   const setCurrentVoiceSession = useVoiceStore((state) => state.setCurrentVoiceSession)
+  const navigate = useMeshNavigationStore((state) => state.navigate)
   const matrixRtcMembersByRoom = useVoiceStore((state) => state.matrixRtcMembersByRoom)
   const setProfileOpen = useShellStore((state) => state.setProfileOpen)
-  const [showSettings, setShowSettings] = useState(false)
   const [voiceCollapsed, setVoiceCollapsed] = useState(false)
   const [roomFocus, setRoomFocus] = useState({
     activeChannelId,
@@ -95,38 +89,27 @@ export function ChannelSidebar() {
   )
   const roomListEntries = useMemo<RoomListEntry[]>(() => {
     const entries: RoomListEntry[] = []
-    if (textChannels.length > 0) {
-      const startHere = textChannels.filter((channel) =>
-        ['welcome', 'announcements'].includes(channel.name.toLocaleLowerCase()),
-      )
-      const projects = textChannels.filter((channel) =>
-        channel.name.toLocaleLowerCase().startsWith('project-'),
-      )
-      const chat = textChannels.filter((channel) =>
-        !startHere.includes(channel) && !projects.includes(channel),
-      )
-      const sections = [
-        ['start-here', 'Start here', startHere],
-        ['chat', 'Chat', chat],
-        ['projects', 'Projects', projects],
-      ] as const
-
-      for (const [key, label, sectionChannels] of sections) {
-        if (sectionChannels.length === 0) continue
-        entries.push({
-          key: `heading:${key}`,
-          kind: 'heading',
-          roomType: 'text',
-          label,
-          collapsed: false,
-          collapsible: false,
-        })
-        for (const channel of sectionChannels) {
-          entries.push({ key: `room:${channel.id}`, kind: 'room', channel })
-        }
+    const liveVoiceChannels = voiceChannels.filter((channel) => (
+      (matrixRtcMembersByRoom[channel.id]?.length ?? 0) > 0
+      || channel.id === currentChannelId
+    ))
+    const availableVoiceChannels = voiceChannels.filter(
+      (channel) => !liveVoiceChannels.includes(channel),
+    )
+    if (liveVoiceChannels.length > 0) {
+      entries.push({
+        key: 'heading:live-now',
+        kind: 'heading',
+        roomType: 'voice',
+        label: 'Live now',
+        collapsed: false,
+        collapsible: false,
+      })
+      for (const channel of liveVoiceChannels) {
+        entries.push({ key: `room:${channel.id}`, kind: 'room', channel })
       }
     }
-    if (voiceChannels.length > 0) {
+    if (availableVoiceChannels.length > 0) {
       entries.push({
         key: 'heading:voice',
         kind: 'heading',
@@ -136,13 +119,26 @@ export function ChannelSidebar() {
         collapsible: true,
       })
       if (!voiceCollapsed) {
-        for (const channel of voiceChannels) {
+        for (const channel of availableVoiceChannels) {
           entries.push({ key: `room:${channel.id}`, kind: 'room', channel })
         }
       }
     }
+    if (textChannels.length > 0) {
+      entries.push({
+        key: 'heading:rooms',
+        kind: 'heading',
+        roomType: 'text',
+        label: 'Rooms',
+        collapsed: false,
+        collapsible: false,
+      })
+      for (const channel of textChannels) {
+        entries.push({ key: `room:${channel.id}`, kind: 'room', channel })
+      }
+    }
     return entries
-  }, [textChannels, voiceChannels, voiceCollapsed])
+  }, [currentChannelId, matrixRtcMembersByRoom, textChannels, voiceChannels, voiceCollapsed])
   const virtualRoomItems = useMemo<VirtualItem[]>(() => roomListEntries.map((entry) => {
     if (entry.kind === 'heading') {
       return {
@@ -286,11 +282,32 @@ export function ChannelSidebar() {
     }
   }
 
+  const copyCommunityInvite = async () => {
+    if (!activeCommunityId) return
+    try {
+      const link = await bridge.generateInviteLink(activeCommunityId)
+      await copyText(link)
+      showToast('Community invite copied.', 'success')
+    } catch {
+      showToast('Could not copy a community invite.', 'error')
+    }
+  }
+
+  const browseRooms = () => {
+    const roomList = document.querySelector<HTMLElement>('#community-room-list')
+    roomList?.focus({ preventScroll: true })
+    roomList?.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const openMembers = () => {
+    window.dispatchEvent(new CustomEvent('mesh:open-room-context', { detail: 'people' }))
+  }
+
   if (!activeCommunity) {
     return (
       <div className="flex flex-col h-full">
         <div className="flex h-conversation-header flex-shrink-0 items-center border-b border-border-subtle px-4">
-          <h2 className="text-sm font-semibold text-primary">Your servers</h2>
+          <h2 className="text-sm font-semibold text-primary">Your communities</h2>
         </div>
         <div className="flex flex-1 items-center justify-center">
           <EmptyState
@@ -318,22 +335,15 @@ export function ChannelSidebar() {
   return (
     <>
       <div className="flex flex-col h-full">
-        <div className="mesh-community-header relative flex min-h-28 flex-shrink-0 items-end justify-between gap-2 overflow-hidden border-b border-border-subtle px-4 pb-4 pt-5">
-          {activeCommunity.bannerUrl ? (
-            <img
-              src={activeCommunity.bannerUrl}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover opacity-45"
-            />
-          ) : null}
-          <span className="relative min-w-0 flex-1">
-            <span className="block truncate text-base font-semibold tracking-tight text-primary">
+        <div className="mesh-community-header flex h-party-header flex-shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-3">
+          <span className="mesh-community-identity min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold text-primary">
               {activeCommunity.name}
             </span>
-            <span className="mt-1 flex items-center gap-2 truncate text-caption text-secondary">
+            <span className="flex items-center gap-2 truncate text-caption text-muted">
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-status-success" aria-hidden="true" />
-                {activeCommunity.role === 'owner' ? 'Private' : 'Member'}
+                {activeCommunity.memberCount ?? 1} members
               </span>
               <span aria-hidden="true">·</span>
               <span className="truncate">
@@ -344,8 +354,12 @@ export function ChannelSidebar() {
           <IconButton
             size="sm"
             aria-label={`Open settings for ${activeCommunity.name}`}
-            className="relative"
-            onClick={() => setShowSettings(true)}
+            className="border border-border-subtle"
+            onClick={() => navigate({
+              kind: 'community-admin',
+              communityId: activeCommunity.id,
+              section: 'general',
+            })}
           >
             <Icon name="ellipsis" size="sm" />
           </IconButton>
@@ -360,6 +374,7 @@ export function ChannelSidebar() {
           className="mesh-room-list flex-1 overflow-y-auto px-2 py-3"
           role="navigation"
           aria-label="Community rooms"
+          tabIndex={-1}
         >
           {activeRefresh && (activeRefresh.status === 'failed' || activeRefresh.status === 'stale') && (
             <div
@@ -436,7 +451,14 @@ export function ChannelSidebar() {
                         channel={channel}
                         matrixMode={matrixMode}
                         active={channel.id === activeChannelId}
-                        onClick={() => setActiveChannel(channel.id)}
+                        onClick={() => {
+                          setActiveChannel(channel.id)
+                          navigate({
+                            kind: 'room',
+                            communityId: channel.communityId,
+                            roomId: channel.id,
+                          })
+                        }}
                         onMarkRead={() => void markRead(channel)}
                         onOpenNotificationSettings={() => setProfileOpen(true)}
                         onCopyLink={() => void copyChannelLink(channel)}
@@ -454,6 +476,11 @@ export function ChannelSidebar() {
                 if (shouldActivateVoiceSession(matrixMode, matrixVoiceReady)) {
                   setCurrentVoiceSession(activeCommunityId, channel.id)
                 }
+                navigate({
+                  kind: 'voice',
+                  communityId: channel.communityId,
+                  roomId: channel.id,
+                })
               }
 
               return (
@@ -551,6 +578,33 @@ export function ChannelSidebar() {
           </div>
         </div>
 
+        <div className="mesh-community-shortcuts grid grid-cols-3 gap-1 border-t border-border-subtle p-2">
+          <button
+            type="button"
+            onClick={() => void copyCommunityInvite()}
+            className="flex min-h-9 items-center justify-center gap-2 rounded-control text-xs font-medium text-secondary transition-colors hover:bg-surface-hover hover:text-primary"
+          >
+            <Icon name="userPlus" size="sm" />
+            Invite
+          </button>
+          <button
+            type="button"
+            onClick={browseRooms}
+            className="flex min-h-9 items-center justify-center gap-2 rounded-control text-xs font-medium text-secondary transition-colors hover:bg-surface-hover hover:text-primary"
+          >
+            <Icon name="search" size="sm" />
+            Browse
+          </button>
+          <button
+            type="button"
+            onClick={openMembers}
+            className="flex min-h-9 items-center justify-center gap-2 rounded-control text-xs font-medium text-secondary transition-colors hover:bg-surface-hover hover:text-primary"
+          >
+            <Icon name="users" size="sm" />
+            Members
+          </button>
+        </div>
+
         {/* User panel: Discord-style bottom bar */}
         <ScopedErrorBoundary
           name="User controls"
@@ -560,18 +614,6 @@ export function ChannelSidebar() {
           <UserPanel />
         </ScopedErrorBoundary>
       </div>
-
-      <DialogErrorBoundary
-        open={showSettings}
-        onClose={() => setShowSettings(false)}
-        title="Community Settings"
-      >
-        {showSettings && (
-          <Suspense fallback={<ModalLoadingFallback title="Community Settings" label="Loading community settings" />}>
-            <CommunitySettings isOpen onClose={() => setShowSettings(false)} />
-          </Suspense>
-        )}
-      </DialogErrorBoundary>
     </>
   )
 }

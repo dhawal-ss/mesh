@@ -5,11 +5,13 @@ import { fileURLToPath } from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const tailwindPath = path.join(root, 'tailwind.config.ts')
 const globalsPath = path.join(root, 'src', 'styles', 'globals.css')
+const mainPath = path.join(root, 'src', 'main.tsx')
 const componentsPath = path.join(root, 'src', 'components')
 
-const [tailwind, globals] = await Promise.all([
+const [tailwind, globals, main] = await Promise.all([
   readFile(tailwindPath, 'utf8'),
   readFile(globalsPath, 'utf8'),
+  readFile(mainPath, 'utf8'),
 ])
 
 const errors = []
@@ -151,6 +153,27 @@ for (const [name, expected] of expectedReferenceColors) {
   }
 }
 
+const expectedPartyRoomColors = new Map([
+  ['--ref-party-canvas', '#141311'],
+  ['--ref-party-primary', '#F5F0E8'],
+  ['--ref-party-secondary', '#B9B2A8'],
+  ['--ref-party-rule', '#696257'],
+  ['--ref-party-amber', '#F3A64A'],
+  ['--ref-party-green', '#74C991'],
+  ['--ref-party-light-canvas', '#F7F3EB'],
+  ['--ref-party-light-primary', '#1A1916'],
+  ['--ref-party-light-secondary', '#686159'],
+  ['--ref-party-light-rule', '#948B7F'],
+  ['--ref-party-light-amber', '#A34E00'],
+  ['--ref-party-light-green', '#237548'],
+])
+
+for (const [name, expected] of expectedPartyRoomColors) {
+  if (declarations.get(name) !== expected) {
+    errors.push(`${name} must use the approved Party Room value (${expected})`)
+  }
+}
+
 for (const [index, line] of globals.split(/\r?\n/).entries()) {
   if (
     (/#(?:[\da-f]{3,8})\b/i.test(line) || /\boklch\(/i.test(line))
@@ -186,6 +209,14 @@ const expectedTypography = new Map([
   ['--font-weight-regular', '400'],
   ['--font-weight-medium', '500'],
   ['--font-weight-semibold', '600'],
+  ['--font-sans', "'Spline Sans Variable', 'Spline Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif"],
+  ['--font-mono', "'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace"],
+  ['--line-height-11', '15px'],
+  ['--line-height-14', '18px'],
+  ['--line-height-15', '21px'],
+  ['--letter-spacing-11', '0.05em'],
+  ['--letter-spacing-14', '-0.01em'],
+  ['--letter-spacing-15', '-0.005em'],
 ])
 
 for (const [name, expected] of expectedTypography) {
@@ -224,15 +255,17 @@ const expectedMotion = new Map([
   ['--ref-ease-out-quint', 'cubic-bezier(0.23, 1, 0.32, 1)'],
   ['--ref-ease-in-out-cubic', 'cubic-bezier(0.645, 0.045, 0.355, 1)'],
   ['--ref-ease-hover', 'ease'],
+  ['--motion-dur-none', '0ms'],
+  ['--motion-dur-press', 'var(--ref-dur-50)'],
   ['--motion-dur-micro', 'var(--ref-dur-100)'],
   ['--motion-dur-fast', 'var(--ref-dur-150)'],
   ['--motion-dur-base', 'var(--ref-dur-200)'],
-  ['--motion-dur-slow', 'var(--ref-dur-250)'],
-  ['--motion-dur-exit', 'var(--ref-dur-150)'],
-  ['--motion-ease-enter', 'var(--ref-ease-out-quart)'],
-  ['--motion-ease-exit', 'var(--ref-ease-out-quart)'],
-  ['--motion-ease-move', 'var(--ref-ease-in-out-cubic)'],
-  ['--motion-ease-hover', 'var(--ref-ease-hover)'],
+  ['--motion-dur-deliberate', 'var(--ref-dur-250)'],
+  ['--motion-dur-maximum', 'var(--ref-dur-300)'],
+  ['--motion-ease-arrive', 'var(--ref-ease-out-quart)'],
+  ['--motion-ease-emphasize', 'var(--ref-ease-out-quint)'],
+  ['--motion-ease-reposition', 'var(--ref-ease-in-out-cubic)'],
+  ['--motion-ease-progress', 'linear'],
 ])
 
 for (const [name, expected] of expectedMotion) {
@@ -245,16 +278,81 @@ if (globals.includes('--ease-spring')) {
   errors.push('globals.css must not restore the overshooting --ease-spring token')
 }
 
+if (globals.includes('--animation-pulse-soft') || tailwind.includes('pulseSoft')) {
+  errors.push('Party Response must not restore the indefinite pulse animation')
+}
+
 for (const requiredRule of [
   "font-feature-settings: 'liga' 1, 'calt' 1",
-  "font-variation-settings: 'opsz' 14",
-  "font-variation-settings: 'opsz' 28",
+  'font-optical-sizing: auto',
+  'font-family: var(--font-mono)',
   "font-feature-settings: 'tnum' 1, 'calt' 1",
   'outline: 2px solid var(--border-focus)',
   'outline-offset: 2px',
 ]) {
   if (!globals.includes(requiredRule)) {
     errors.push(`globals.css must include ${requiredRule}`)
+  }
+}
+
+for (const fontAsset of [
+  '@fontsource-variable/spline-sans/files/spline-sans-latin-wght-normal.woff2',
+  '@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2',
+  '@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2',
+]) {
+  if (!globals.includes(fontAsset)) {
+    errors.push(`globals.css must load the local ${fontAsset} font asset`)
+  }
+}
+
+if (main.includes('@fontsource-variable/inter')) {
+  errors.push('src/main.tsx must not load Inter after Party Room typography is active')
+}
+
+const expectedPartyRoomGeometry = new Map([
+  ['--radius-control', '3px'],
+  ['--radius-panel', '0'],
+  ['--radius-community-rest', '0'],
+  ['--radius-community-active', '0'],
+  ['--border-width-status', '1px'],
+  ['--party-rail-width', '56px'],
+  ['--party-channel-width', '208px'],
+  ['--party-roster-width', '220px'],
+  ['--party-header-height', '50px'],
+  ['--party-pin-height', '40px'],
+  ['--party-composer-height', '46px'],
+  ['--party-strip-height', '60px'],
+  ['--party-media-max-height', '274px'],
+  ['--party-conversation-padding', '20px'],
+  ['--party-channel-row-height', '34px'],
+  ['--party-occupant-row-height', '40px'],
+  ['--party-message-padding-block', '4px'],
+  ['--party-message-measure', '65ch'],
+  ['--party-media-max-width', '960px'],
+])
+
+for (const [name, expected] of expectedPartyRoomGeometry) {
+  if (declarations.get(name) !== expected) {
+    errors.push(`${name} must use the approved Party Room foundation value (${expected})`)
+  }
+}
+
+for (const variable of [
+  '--party-rail-width',
+  '--party-channel-width',
+  '--party-roster-width',
+  '--party-header-height',
+  '--party-pin-height',
+  '--party-composer-height',
+  '--party-strip-height',
+  '--party-media-max-height',
+  '--party-conversation-padding',
+  '--party-channel-row-height',
+  '--party-occupant-row-height',
+  '--party-message-padding-block',
+]) {
+  if (!tailwind.includes(`var(${variable})`)) {
+    errors.push(`Tailwind must expose Party Room geometry token ${variable}`)
   }
 }
 
@@ -303,15 +401,13 @@ const requiredVariableBackedValues = [
   '--radius-default',
   '--radius-xl',
   '--elev-overlay',
-  '--animation-pulse-soft',
   '--z-dropdown',
   '--z-modal',
   '--motion-dur-micro',
-  '--motion-dur-slow',
-  '--motion-ease-enter',
-  '--motion-ease-exit',
-  '--motion-ease-move',
-  '--motion-ease-hover',
+  '--motion-dur-deliberate',
+  '--motion-ease-arrive',
+  '--motion-ease-reposition',
+  '--ref-ease-hover',
   '--density-row-block',
   '--density-control-lg',
 ]
@@ -398,10 +494,21 @@ for (const [label, foreground, background] of [
   ['light warning content', '#855b08', '#ffffff'],
   ['light danger content', '#a3313a', '#ffffff'],
   ['light info content', '#1f5fae', '#ffffff'],
+  ['Party Room dark primary', '#F5F0E8', '#141311'],
+  ['Party Room dark secondary', '#B9B2A8', '#141311'],
+  ['Party Room dark rule', '#696257', '#141311'],
+  ['Party Room dark amber', '#F3A64A', '#141311'],
+  ['Party Room dark presence', '#74C991', '#141311'],
+  ['Party Room light primary', '#1A1916', '#F7F3EB'],
+  ['Party Room light secondary', '#686159', '#F7F3EB'],
+  ['Party Room light rule', '#948B7F', '#F7F3EB'],
+  ['Party Room light amber', '#A34E00', '#F7F3EB'],
+  ['Party Room light presence', '#237548', '#F7F3EB'],
 ]) {
   const ratio = contrastRatio(foreground, background)
-  if (ratio < 4.5) {
-    errors.push(`${label} contrast must be at least 4.5:1, found ${ratio.toFixed(2)}:1`)
+  const minimum = label.includes('rule') ? 3 : 4.5
+  if (ratio < minimum) {
+    errors.push(`${label} contrast must be at least ${minimum}:1, found ${ratio.toFixed(2)}:1`)
   }
 }
 

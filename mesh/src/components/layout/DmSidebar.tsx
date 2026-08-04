@@ -12,11 +12,19 @@ import { useIdentityStore } from '../../store/identity'
 import { EmptyState } from '../ui/Primitives'
 import { useVirtualScroll, type VirtualItem } from '../../hooks/useVirtualScroll'
 import { identityLabel } from '../../lib/notifications'
+import { useMeshNavigationStore } from '../../store/navigation'
+import { AsyncStatus } from '../ui/AsyncStatus'
+import { Button } from '../ui/Button'
+
+export const DM_CONVERSATION_ROW_HEIGHT = 64
 
 export function DmSidebar() {
   const conversations = useDmStore((state) => state.conversations)
   const activeConversationId = useDmStore((state) => state.activeConversationId)
   const setActiveConversation = useDmStore((state) => state.setActiveConversation)
+  const setDmMode = useDmStore((state) => state.setDmMode)
+  const navigate = useMeshNavigationStore((state) => state.navigate)
+  const messagesByConversation = useDmStore((state) => state.messages)
   const loadConversations = useDmStore((state) => state.loadConversations)
   const conversationLoad = useDmStore((state) => state.conversationLoad)
   const storedIdentity = useIdentityStore((state) => state.identity)
@@ -39,7 +47,7 @@ export function DmSidebar() {
   const virtualItems = useMemo<VirtualItem[]>(() => filteredConversations.map((conversation) => ({
     key: conversation.id,
     type: 'message',
-    height: 52,
+    height: DM_CONVERSATION_ROW_HEIGHT,
   })), [filteredConversations])
   const {
     scrollContainerRef,
@@ -49,7 +57,7 @@ export function DmSidebar() {
     handleScroll,
     resetLayout,
   } = useVirtualScroll(virtualItems, {
-    estimatedMessageHeight: 52,
+    estimatedMessageHeight: DM_CONVERSATION_ROW_HEIGHT,
     overscanPx: 500,
   })
   const visibleConversations = useMemo(
@@ -91,17 +99,36 @@ export function DmSidebar() {
   }, [loadConversations])
 
   const handleSelect = useCallback(async (conversationId: string) => {
+    setDmMode(true)
     setActiveConversation(conversationId)
-  }, [setActiveConversation])
+    navigate({ kind: 'direct', conversationId })
+  }, [navigate, setActiveConversation, setDmMode])
+
+  const startConversation = useCallback(() => {
+    setDmMode(false)
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('mesh:open-room-context', { detail: 'people' }))
+    }, 100)
+  }, [setDmMode])
 
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex min-h-conversation-header flex-shrink-0 flex-col justify-center border-b border-border-subtle px-3 py-2">
-        <h2 className="truncate text-sm font-semibold text-primary">Direct messages</h2>
+      <div className="flex min-h-conversation-header flex-shrink-0 items-center gap-2 border-b border-border-subtle px-3 py-2">
+        <div className="min-w-0 flex-1">
+        <h2 className="truncate text-base font-semibold tracking-tight text-primary">Messages</h2>
         <p className="mt-1 truncate text-caption text-muted">
           Private conversations · {currentIdentityLabel}
         </p>
+        </div>
+        <button
+          type="button"
+          aria-label="Start a private conversation"
+          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-control border border-border-subtle bg-surface-sunken text-muted transition-colors hover:border-border-emphasis hover:bg-surface-hover hover:text-primary"
+          onClick={startConversation}
+        >
+          <Icon name="squarePen" size="sm" />
+        </button>
       </div>
 
       {/* Conversation search */}
@@ -113,7 +140,7 @@ export function DmSidebar() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Find a conversation"
-          className="min-h-8 w-full rounded-control border border-border bg-surface-sunken px-2 text-xs text-primary outline-none placeholder:text-muted focus:border-accent"
+          className="mesh-dm-search min-h-8 w-full rounded-control border border-border bg-surface-sunken px-2 text-xs text-primary outline-none placeholder:text-muted focus:border-accent"
         />
       </div>
 
@@ -127,9 +154,11 @@ export function DmSidebar() {
       >
         {(conversationLoad.status === 'idle' || conversationLoad.status === 'loading')
         && conversations.length === 0 ? (
-          <div role="status" className="px-2 py-4 text-center text-xs text-muted">
-            Loading conversations...
-          </div>
+          <AsyncStatus
+            compact
+            title="Bringing in your conversations"
+            detail="You can keep using your current room while private conversations arrive."
+          />
         ) : conversationLoad.status === 'failed' && conversations.length === 0 ? (
           <div
             role="alert"
@@ -148,12 +177,17 @@ export function DmSidebar() {
           <EmptyState
             variant="compact"
             icon={<Icon name={conversations.length === 0 ? 'messageCircle' : 'search'} size="lg" />}
-            title={conversations.length === 0 ? 'No conversations yet' : 'No conversations found'}
+            title={conversations.length === 0 ? 'No direct messages yet' : 'No conversations found'}
             description={
               conversations.length === 0
-                ? 'Open People in any room to start a private conversation.'
+                ? 'Start a private conversation when you need one.'
                 : 'Try another name, or a full address like @ashvin:example.org.'
             }
+            action={conversations.length === 0 ? (
+              <Button size="sm" variant="secondary" onClick={startConversation}>
+                New conversation
+              </Button>
+            ) : undefined}
           />
         ) : (
           <div
@@ -167,21 +201,24 @@ export function DmSidebar() {
             {visibleConversations.map((conv) => {
               const isActive = conv.id === activeConversationId
               const shortName = conv.peerDisplayName || conv.peerPublicKey.slice(0, 8)
+              const conversationMessages = messagesByConversation[conv.id] ?? []
+              const latestMessage = conversationMessages[conversationMessages.length - 1]
 
               return (
                 <div key={conv.id} role="listitem">
                   <button
                     onClick={() => void handleSelect(conv.id)}
-                    className={`group flex w-full items-center gap-3 rounded px-2 py-density-row text-left transition-colors ${
+                    className={`mesh-dm-item group flex min-h-14 w-full items-center gap-3 rounded-control border px-2.5 py-2 text-left transition-colors ${
                       isActive
-                        ? 'mesh-channel-active bg-surface-selected text-primary'
-                        : 'text-muted hover:bg-surface-hover hover:text-secondary'
+                        ? 'border-accent/30 bg-accent/10 text-primary'
+                        : 'border-transparent text-muted hover:border-border-subtle hover:bg-surface-hover hover:text-secondary'
                     }`}
                     aria-label={`Direct message with ${shortName}`}
+                    aria-current={isActive ? 'page' : undefined}
                   >
                     <Avatar
                       color={conv.peerAvatarColor}
-                      size={32}
+                      size={40}
                       name={shortName}
                     />
 
@@ -199,11 +236,9 @@ export function DmSidebar() {
                           </span>
                         )}
                       </div>
-                      {matrixMode && conv.peerPublicKey.startsWith('@') && (
-                        <span className="identifier block truncate font-mono text-caption text-muted">
-                          {conv.peerPublicKey}
-                        </span>
-                      )}
+                      <span className="block truncate text-caption text-muted">
+                        {latestMessage?.content || (matrixMode ? 'Private conversation' : 'Local conversation')}
+                      </span>
                     </div>
                   </button>
                 </div>

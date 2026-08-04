@@ -138,37 +138,26 @@ async function installTauriMock(
 
 async function openAdvancedDiagnostics(
   page: Page,
-): Promise<{ dialog: Locator; trigger: Locator }> {
-  const settingsButton = page.getByRole('button', { name: /^User settings for / })
-  if (!await settingsButton.isVisible().catch(() => false)) {
-    const roomNavigationButton = page.getByRole('button', { name: 'Open room navigation' })
-    if (await roomNavigationButton.isVisible().catch(() => false)) {
-      await roomNavigationButton.click()
-    }
-  }
-  await settingsButton.click()
-  const settings = page.getByRole('dialog', { name: 'User Settings' })
+): Promise<{ surface: Locator; trigger: Locator }> {
+  await page.getByRole('button', { name: 'You and settings' }).click()
+  const settings = page.getByRole('main', { name: 'You' }).first()
   await expect(settings).toBeVisible()
-  // UserSettingsPanel is lazy-loaded: the dialog that first becomes visible
-  // can be the Suspense fallback (a spinner in a dialog titled "User
-  // Settings" too), which has no Ctrl+Shift+D listener. Wait for real panel
-  // content — not just the dialog title — before sending the shortcut, or
-  // the keypress can land before the actual component (and its keydown
-  // listener) has mounted.
-  if ((page.viewportSize()?.width ?? 0) < 640) {
-    await settings.getByLabel('Settings section').selectOption('devices')
+  if ((page.viewportSize()?.width ?? 0) < 768) {
+    await settings.getByRole('combobox', { name: 'You section', exact: true }).selectOption('advanced')
   } else {
-    await expect(settings.getByRole('tab', { name: 'Devices' })).toBeVisible()
-    await settings.getByRole('tab', { name: 'Devices' }).click()
+    await expect(settings.getByRole('tab', { name: 'Advanced' })).toBeVisible()
+    await settings.getByRole('tab', { name: 'Advanced' }).click()
   }
-  await page.keyboard.press('Control+Shift+D')
-  const diagnosticsButton = settings.getByRole('button', { name: 'System diagnostics' })
+  const signalCheck = settings.getByRole('checkbox', { name: 'Show Signal Check details' })
+  if (!(await signalCheck.isChecked())) await signalCheck.check()
+  const diagnosticsButton = settings.getByRole('button', { name: 'Review Signal Check' })
   await expect(diagnosticsButton).toBeVisible()
   await diagnosticsButton.click()
-  const dialog = page.getByRole('dialog', { name: 'System diagnostics' })
-  await expect(dialog).toBeVisible()
-  await expect(dialog.getByText('Overview', { exact: true })).toBeVisible()
-  return { dialog, trigger: diagnosticsButton }
+  const surface = settings.getByRole('region', { name: 'Signal Check' })
+  await expect(surface).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Signal Check' })).toHaveCount(0)
+  await expect(surface.getByText('Overview', { exact: true })).toBeVisible()
+  return { surface, trigger: diagnosticsButton }
 }
 
 test.describe('diagnostics panel E2E', () => {
@@ -192,7 +181,7 @@ test.describe('diagnostics panel E2E', () => {
     expect(mockInstalled).toBe(true)
   })
 
-  test('diagnostics panel opens from Profile Advanced', async ({ page }) => {
+  test('Signal Check opens inline from You Advanced', async ({ page }) => {
     await installTauriMock(page)
     await page.goto('/')
     await page.waitForLoadState('networkidle')
@@ -224,16 +213,20 @@ test.describe('diagnostics panel E2E', () => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    const { dialog, trigger } = await openAdvancedDiagnostics(page)
-    const bounds = await dialog.boundingBox()
+    const { surface, trigger } = await openAdvancedDiagnostics(page)
+    const bounds = await surface.boundingBox()
     expect(bounds?.x).toBeGreaterThanOrEqual(0)
     expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(390)
-    expect(bounds?.height).toBeLessThanOrEqual(844)
-    await expect(dialog.getByRole('button', { name: 'Refresh diagnostics' })).toBeVisible()
-    await expectNoWcagViolations(page, 'Narrow system diagnostics dialog')
+    const dimensions = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      content: document.documentElement.scrollWidth,
+    }))
+    expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport)
+    await expect(surface.getByRole('button', { name: 'Refresh diagnostics' })).toBeVisible()
+    await expectNoWcagViolations(page, 'Narrow inline Signal Check')
 
     await page.keyboard.press('Escape')
-    await expect(dialog).toHaveCount(0)
+    await expect(surface).toHaveCount(0)
     await expect(trigger).toBeFocused()
   })
 

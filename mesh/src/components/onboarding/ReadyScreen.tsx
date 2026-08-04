@@ -114,8 +114,8 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
 
       <motion.div
         className="space-y-5 rounded-panel border border-border-subtle bg-surface-sunken p-5"
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={{ y: 6 }}
+        animate={{ y: 0 }}
         transition={transitions.enter}
       >
         <div className="flex items-center justify-between gap-4">
@@ -148,9 +148,9 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
             <motion.div
               key={item}
               className="flex items-center justify-between rounded-control bg-surface-hover px-3 py-2"
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ ...transitions.enter, delay: index * motionDurations.staggerFast }}
+              initial={{ y: 4 }}
+              animate={{ y: 0 }}
+              transition={{ ...transitions.enter, delay: index * motionDurations.press }}
             >
               <span>{item}</span>
               {/*

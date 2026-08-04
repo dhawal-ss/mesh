@@ -4,7 +4,6 @@ import { useCommunityStore } from '../../store/communities'
 import { useDmStore } from '../../store/dms'
 import { useIdentityStore } from '../../store/identity'
 import { useMembershipStore } from '../../store/membership'
-import { useShellStore } from '../../store/shell'
 import { useVoiceStore } from '../../store/voice'
 import * as bridge from '../../lib/bridge'
 import { showToast } from '../ui/Toast'
@@ -18,6 +17,7 @@ import { Kbd } from '../ui/Primitives'
 import { Icon, type IconName } from '../ui/Icon'
 import { COMMAND_PALETTE_OPEN_EVENT } from '../../lib/command-palette'
 import { safeLocalStorageGet, safeLocalStorageSet } from '../../lib/safe-storage'
+import { useMeshNavigationStore } from '../../store/navigation'
 
 const RECENT_COMMANDS_KEY = 'mesh-command-palette-recents'
 const MAX_RECENT_COMMANDS = 20
@@ -178,16 +178,23 @@ function selectChannel(channelId: string) {
   useDmStore.getState().setDmMode(false)
   useCommunityStore.getState().setActiveCommunity(channel.communityId)
   useChannelStore.getState().setActiveChannel(channel.id)
+  useMeshNavigationStore.getState().navigate({
+    kind: channel.channelType === 'voice' ? 'voice' : 'room',
+    communityId: channel.communityId,
+    roomId: channel.id,
+  })
 }
 
 function selectCommunity(communityId: string) {
   useDmStore.getState().setDmMode(false)
   useCommunityStore.getState().setActiveCommunity(communityId)
+  useMeshNavigationStore.getState().navigate({ kind: 'community', communityId })
 }
 
 function selectConversation(conversationId: string) {
   useDmStore.getState().setDmMode(true)
   useDmStore.getState().setActiveConversation(conversationId)
+  useMeshNavigationStore.getState().navigate({ kind: 'direct', conversationId })
 }
 
 export function CommandPalette() {
@@ -310,7 +317,9 @@ export function CommandPalette() {
         icon: 'settings',
         keywords: ['profile', 'preferences', 'account'],
         activityRank: 200,
-        run: () => useShellStore.getState().setProfileOpen(true),
+        run: () => {
+          useMeshNavigationStore.getState().navigate({ kind: 'you', section: 'profile' })
+        },
       },
       {
         id: 'action:create-server',
@@ -319,7 +328,9 @@ export function CommandPalette() {
         icon: 'plus',
         keywords: ['create', 'new', 'community'],
         activityRank: 100,
-        run: () => useShellStore.getState().openServerModal('create'),
+        run: () => {
+          useMeshNavigationStore.getState().navigate({ kind: 'communities', mode: 'create' })
+        },
       },
       {
         id: 'action:join-server',
@@ -328,7 +339,9 @@ export function CommandPalette() {
         icon: 'userPlus',
         keywords: ['join', 'invite', 'community'],
         activityRank: 100,
-        run: () => useShellStore.getState().openServerModal('join'),
+        run: () => {
+          useMeshNavigationStore.getState().navigate({ kind: 'communities', mode: 'join' })
+        },
       },
     )
     if (matrixMode) {
@@ -339,7 +352,9 @@ export function CommandPalette() {
         icon: 'search',
         keywords: ['explore', 'discover', 'search', 'community'],
         activityRank: 100,
-        run: () => useShellStore.getState().openServerModal('discover'),
+        run: () => {
+          useMeshNavigationStore.getState().navigate({ kind: 'communities', mode: 'browse' })
+        },
       })
     }
     entries.push(

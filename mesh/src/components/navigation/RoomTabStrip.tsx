@@ -92,13 +92,13 @@ export function RoomTabStrip({
   return (
     <div
       ref={rootRef}
-      className="flex min-h-10 flex-none items-center gap-1 border-b border-border-subtle bg-surface-sunken px-2"
+      className="mesh-room-tabs flex min-h-11 flex-none items-center gap-2 border-b border-border-subtle bg-surface-base px-2.5"
       aria-label="Open conversations"
     >
       <div
         role="tablist"
         aria-label="Open rooms and direct messages"
-        className="hidden min-w-0 flex-1 items-stretch gap-0.5 overflow-hidden sm:flex"
+        className="hidden min-w-0 flex-1 items-center gap-1.5 overflow-hidden sm:flex"
       >
         {state.tabs.map((tab) => {
           const selected = tab.key === state.activeKey
@@ -114,10 +114,10 @@ export function RoomTabStrip({
               aria-keyshortcuts="Delete Control+PageUp Control+PageDown Meta+PageUp Meta+PageDown Alt+Shift+ArrowLeft Alt+Shift+ArrowRight"
               onClick={() => onChange(activateRoomTab(state, tab.key))}
               onKeyDown={(event) => handleTabKeyDown(event, tab.key)}
-              className={`flex min-w-0 max-w-48 flex-1 items-center gap-1.5 rounded-t-control border-x border-t px-2 text-xs transition-colors ${
+              className={`mesh-room-tab flex min-h-8 min-w-0 max-w-52 flex-none items-center gap-1.5 rounded-control border px-2.5 text-xs transition-colors ${
                 selected
-                  ? 'border-border-subtle bg-surface-base text-primary'
-                  : 'border-transparent text-muted hover:bg-surface-hover hover:text-secondary'
+                  ? 'border-accent/30 bg-accent/10 text-primary'
+                  : 'border-transparent text-muted hover:border-border-subtle hover:bg-surface-hover hover:text-secondary'
               }`}
             >
               <Icon name={tab.kind === 'dm' ? 'messageCircle' : 'hash'} size="xs" />

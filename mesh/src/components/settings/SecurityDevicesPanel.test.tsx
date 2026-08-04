@@ -157,6 +157,21 @@ describe('SecurityDevicesPanel', () => {
     expect(document.body.textContent).toContain('2 devices')
   })
 
+  it('renders inline in You and handles Escape without nesting a dialog', async () => {
+    const onClose = vi.fn()
+    await act(async () => {
+      root.render(<SecurityDevicesPanel embedded open onClose={onClose} />)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.textContent).toContain('Safety and devices')
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    })
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
   it('presents a changed device as a re-check advisory, never as moderation', async () => {
     vi.mocked(matrixDevices).mockResolvedValue([
       {
@@ -254,7 +269,7 @@ describe('SecurityDevicesPanel', () => {
   })
 
   it('revokes only the selected lost device after interactive authentication', async () => {
-    vi.mocked(matrixRevokeDevice).mockResolvedValue()
+    vi.mocked(matrixRevokeDevice).mockResolvedValue(true)
     await act(async () => {
       root.render(<SecurityDevicesPanel open onClose={() => {}} />)
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -421,7 +436,7 @@ describe('SecurityDevicesPanel', () => {
   })
 
   it('requires a password, typed phrase, and acknowledgement before remote account deletion', async () => {
-    vi.mocked(matrixDeactivateAccount).mockResolvedValue()
+    vi.mocked(matrixDeactivateAccount).mockResolvedValue(true)
     await act(async () => {
       root.render(<SecurityDevicesPanel open onClose={() => {}} />)
       await new Promise((resolve) => setTimeout(resolve, 0))

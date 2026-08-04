@@ -6,16 +6,26 @@ operator-controlled location outside the source worktree, never edit the
 tracked template to claim a pass, and never include access tokens, invitation
 URLs, authorization headers, private keys, or unsanitized logs.
 
-The 60 cases cover clean Windows installation, public release and signed
-update delivery, provider identity lifecycle, optional community-hosted
-operations (including two independent destructive restores), manual
-accessibility, public-service re-review, and native invitation delivery on
-macOS and Linux. The separate MatrixRTC evidence contract remains authoritative
-for its 23 physical-device/media cases.
+The 62 cases cover clean Windows installation, cross-format replacement
+blocking and guidance, public release and updater-disabled controls, provider
+identity lifecycle, optional community-hosted operations (including two
+independent destructive restores), manual accessibility, public-service
+re-review, and native invitation delivery on macOS and Linux. The separate
+MatrixRTC evidence contract remains authoritative for its 23
+physical-device/media cases.
+
+The first beta has no automatic updater. For R2, ``windows.update`` means a
+manual signed-installer upgrade that preserves the account and resumes safely.
+``public-release.updater-manifest`` passes only when the candidate exposes no
+updater manifest, endpoint, plugin, or background check.
+``public-release.updater-rollback`` passes only when rollback withdraws
+canonical download pointers and documents a manually installed signed
+replacement without reusing version or tag bytes. These are negative controls;
+they must never be satisfied by publishing an updater for the first beta.
 
 ``acceptanceMilestone`` defines the support claim:
 
-* ``R2`` requires the 52 Windows-beta and service/operations cases. It excludes
+* ``R2`` requires the 54 Windows-beta and service/operations cases. It excludes
   VoiceOver, Orca, WKWebView, WebKitGTK, and ``native-invite.*`` because those
   are cross-platform support claims.
 * ``R4`` additionally requires the four macOS/Linux accessibility combinations
@@ -24,8 +34,8 @@ for its 23 physical-device/media cases.
 
 Each passed result needs a non-placeholder environment and at least one
 sanitized artifact. Artifact/result links are bidirectional, and every file is
-bound by byte size and SHA-256. The campaign uses one non-zero-major release
-tag, exact source SHA, operator, test time, and expiry.
+bound by byte size and SHA-256. The campaign uses the exact release tag approved
+in ``owner-decisions.json``, exact source SHA, operator, test time, and expiry.
 
 Validate the tracked contract without making a live claim::
 
@@ -69,7 +79,10 @@ gates pass. It cannot publish or promote the draft. This ordering is required
 because clean-device, provider, accessibility, updater, and public-download
 acceptance need a signed candidate before they can be collected.
 
-Promotion remains blocked on an owner-reviewed lifecycle decision. Do not add
-or run a promotion path until the ordering for public prerelease verification,
-canonical download routing, signed updater publication, rollback, legal
-approval, and post-public live-download evidence is approved.
+The owner-approved first-beta lifecycle keeps the release as a draft prerelease
+until acceptance is complete, promotes NSIS as the canonical consumer download,
+keeps MSI as a secondary managed-deployment artifact, and keeps automatic
+updates disabled. Promotion still requires exact-version legal approval,
+signing evidence, the required R2 or R4 campaign, and post-public live-download
+verification. Rollback removes canonical pointers without reusing version or
+tag bytes.

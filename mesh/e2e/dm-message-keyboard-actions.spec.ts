@@ -309,8 +309,9 @@ test.describe('DM message action bar keyboard access (V-25 follow-up)', () => {
 
   test('reacts and replies to an incoming DM, and edits your own DM message, via Tab alone', async ({ page }) => {
     await openDirectMessage(page)
+    const messageLog = page.getByRole('log', { name: 'Messages with Bob' })
     await expect(page.getByText("A DM Bob didn't send to himself.")).toBeVisible()
-    await expect(page.getByText("Alice's own DM, editable via keyboard.")).toBeVisible()
+    await expect(messageLog.getByText("Alice's own DM, editable via keyboard.")).toBeVisible()
 
     const bobRow = page.getByRole('group', { name: /^Message from Bob,/ })
     const ownRow = page.getByRole('group', { name: /^Message from alice,/ })
@@ -368,7 +369,7 @@ test.describe('DM message action bar keyboard access (V-25 follow-up)', () => {
         body: "Alice's own DM, editable via keyboard. v2",
       },
     })
-    await expect(page.getByText("Alice's own DM, editable via keyboard. v2")).toBeVisible()
+    await expect(messageLog.getByText("Alice's own DM, editable via keyboard. v2")).toBeVisible()
   })
 
   // Review follow-up on V-25 (DmView is the same gap on the DM path): the

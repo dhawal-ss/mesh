@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { VoiceEngine } from '../lib/voice-engine'
 import type {
-  LiveKitVoiceEngine,
   LiveKitVoiceStats,
   VoiceDevice,
-} from '../lib/livekit-voice'
+  LiveKitVoiceEngineRuntime,
+  LegacyVoiceEngineRuntime,
+} from '../lib/voice-runtime-types'
 import type {
   MatrixRtcJoinResult,
   MatrixRtcMediaKey,
@@ -79,8 +79,8 @@ export function useVoiceEngine() {
   const legacyVoiceReady = canStartLegacyVoice(backendStatus)
   const matrixVoiceReady = canStartMatrixVoice(backendStatus)
 
-  const legacyEngineRef = useRef<VoiceEngine | null>(null)
-  const liveKitEngineRef = useRef<LiveKitVoiceEngine | null>(null)
+  const legacyEngineRef = useRef<LegacyVoiceEngineRuntime | null>(null)
+  const liveKitEngineRef = useRef<LiveKitVoiceEngineRuntime | null>(null)
   const currentChannelId = useVoiceStore((state) => state.currentChannelId)
   const currentCommunityId = useVoiceStore((state) => state.currentCommunityId)
   const isMuted = useVoiceStore((state) => state.isMuted)
@@ -202,7 +202,7 @@ export function useVoiceEngine() {
     }
 
     const failClosedMatrixMedia = (
-      engine: LiveKitVoiceEngine,
+      engine: LiveKitVoiceEngineRuntime,
       reason: string,
     ) => {
       stopMatrixLeaseRenewal()
@@ -210,7 +210,7 @@ export function useVoiceEngine() {
     }
 
     const startMatrixLeaseRenewal = (
-      engine: LiveKitVoiceEngine,
+      engine: LiveKitVoiceEngineRuntime,
       credentials: MatrixRtcJoinResult,
     ) => {
       stopMatrixLeaseRenewal()
@@ -264,7 +264,7 @@ export function useVoiceEngine() {
       }, MATRIX_RTC_LEASE_RENEW_INTERVAL_MS)
     }
 
-    const startMatrixStats = (engine: LiveKitVoiceEngine) => {
+    const startMatrixStats = (engine: LiveKitVoiceEngineRuntime) => {
       const refreshStats = () => {
         if (disposed || liveKitEngineRef.current !== engine) return
         void engine.getStats().then(setStats).catch(() => setStats(EMPTY_STATS))
@@ -310,6 +310,13 @@ export function useVoiceEngine() {
 
     if (backendStatus?.kind === 'matrix') {
       void destroyLegacyEngine()
+      const workspaceVoicePreview = import.meta.env.DEV
+        && typeof document !== 'undefined'
+        && document.documentElement.dataset.meshSimulateVoice === 'true'
+      if (workspaceVoicePreview) {
+        setConnectionState('connected', null)
+        return
+      }
       setSessionSnapshot(null)
 
       // This compile-time boundary is false in the public text/community beta.
@@ -333,7 +340,7 @@ export function useVoiceEngine() {
       const startMatrixEngine = async () => {
         setConnectionWarning(null)
         setStats(EMPTY_STATS)
-        const { LiveKitVoiceEngine } = await import('../lib/livekit-voice')
+        const { LiveKitVoiceEngine } = await import('@mesh/matrix-voice-runtime')
         if (disposed) return
 
         const engine = new LiveKitVoiceEngine({
@@ -666,7 +673,7 @@ export function useVoiceEngine() {
     setSessionSnapshot(null)
 
     const startLegacyEngine = async () => {
-      const { VoiceEngine } = await import('../lib/voice-engine')
+      const { VoiceEngine } = await import('@mesh/legacy-voice-runtime')
       if (disposed) return
 
       const engine = new VoiceEngine(currentCommunityId, currentChannelId, {

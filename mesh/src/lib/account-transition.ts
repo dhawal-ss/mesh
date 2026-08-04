@@ -8,6 +8,7 @@ import { useMembershipStore } from '../store/membership'
 import { useMessageNavigationStore } from '../store/message-navigation'
 import { useMessageStore } from '../store/messages'
 import { useNetworkStore } from '../store/network'
+import { useMeshNavigationStore } from '../store/navigation'
 import { useRoomPinStore } from '../store/room-pins'
 import { useShellStore } from '../store/shell'
 import { useTypingStore } from '../store/typing'
@@ -25,6 +26,7 @@ import { safeLocalStorageRemove } from './safe-storage'
  */
 export function clearRendererAccountState(removedAccountId?: string | null): void {
   if (removedAccountId) safeLocalStorageRemove(roomTabStorageKey(removedAccountId))
+  useMeshNavigationStore.getState().resetForAccountTransition(removedAccountId)
   resetMatrixAccountPreferences()
 
   const emojiCommunities = Object.keys(useServerEmojiStore.getState().byCommunity)

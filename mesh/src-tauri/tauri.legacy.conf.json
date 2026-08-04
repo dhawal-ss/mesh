@@ -4,5 +4,10 @@
   "identifier": "com.mesh.desktop.lan",
   "build": {
     "beforeBuildCommand": "npm run build:lan"
+  },
+  "app": {
+    "security": {
+      "capabilities": ["legacy"]
+    }
   }
 }

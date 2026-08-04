@@ -47,7 +47,7 @@ $script:AllowedArtifactKinds = @(
     "screenshot",
     "operator-record"
 )
-$script:ExpectedLiveKitImage = "livekit/livekit-server:v1.13.1@sha256:2c6869d2d5ff6c9c0166f47be1c92dad6928bfecfa5e4060a6ece48db8accfa3"
+$script:ExpectedLiveKitImage = "livekit/livekit-server:v1.13.5@sha256:3497163e15c48fef6e7830c78716f9e9d5edc28abf7aa90b61c86e93bbc306b1"
 $script:ExpectedAuthorizationImage = "ghcr.io/element-hq/lk-jwt-service:0.4.4@sha256:9c715697c6f7c1f538f2ee41b7b59b04a8d06bf790a7cc8c8517ccac8d28813d"
 
 function Get-EvidenceProperty {

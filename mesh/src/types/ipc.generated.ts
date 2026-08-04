@@ -94,7 +94,7 @@ export type ReadReceiptMode = "public" | "private" | "off";
 
 export type ConversationPrivacyOverride = { readReceiptMode?: ReadReceiptMode | null, sendTypingIndicators?: boolean | null, };
 
-export type UserPreferences = { schemaVersion: number, notificationsEnabled: boolean, notificationSound: boolean, notificationSoundId?: string | null, doNotDisturb: boolean,
+export type UserPreferences = { schemaVersion: number, notificationsEnabled: boolean, notificationSound: boolean, notificationSoundId?: string | null, interfaceSoundVolume: number, interfaceSoundEvents: { [key in string]?: boolean }, doNotDisturb: boolean,
 /**
  * Whether bounded message text may appear in native notifications.
  * Fresh and migrated accounts remain private unless the user opts in.

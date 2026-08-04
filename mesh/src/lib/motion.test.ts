@@ -19,40 +19,49 @@ function sourceFiles(directory: string): string[] {
 describe('motion tokens', () => {
   it('reads CSS time and easing variables into Framer Motion values', () => {
     const values: Record<string, string> = {
+      '--motion-dur-none': '0ms',
+      '--motion-dur-press': '50ms',
+      '--motion-dur-micro': '100ms',
       '--motion-dur-fast': '150ms',
       '--motion-dur-base': '0.2s',
-      '--motion-dur-slow': '250ms',
-      '--motion-dur-exit': '0.15s',
-      '--motion-ease-enter': 'cubic-bezier(0.165, 0.84, 0.44, 1)',
-      '--motion-ease-exit': 'cubic-bezier(0.165, 0.84, 0.44, 1)',
-      '--motion-ease-move': 'cubic-bezier(0.645, 0.045, 0.355, 1)',
-      '--motion-ease-hover': 'ease',
+      '--motion-dur-deliberate': '250ms',
+      '--motion-dur-maximum': '300ms',
+      '--motion-ease-arrive': 'cubic-bezier(0.165, 0.84, 0.44, 1)',
+      '--motion-ease-emphasize': 'cubic-bezier(0.23, 1, 0.32, 1)',
+      '--motion-ease-reposition': 'cubic-bezier(0.645, 0.045, 0.355, 1)',
+      '--motion-ease-progress': 'linear',
     }
 
     expect(readMotionTokens({
       getPropertyValue: (name) => values[name] ?? '',
     })).toEqual({
+      none: 0,
+      press: 0.05,
+      micro: 0.1,
       fast: 0.15,
-      normal: 0.2,
-      slow: 0.25,
-      exit: 0.15,
-      easing: [0.165, 0.84, 0.44, 1],
-      exitEasing: [0.165, 0.84, 0.44, 1],
-      moveEasing: [0.645, 0.045, 0.355, 1],
-      hoverEasing: [0.25, 0.1, 0.25, 1],
+      base: 0.2,
+      deliberate: 0.25,
+      maximum: 0.3,
+      arriveEasing: [0.165, 0.84, 0.44, 1],
+      emphasizeEasing: [0.23, 1, 0.32, 1],
+      repositionEasing: [0.645, 0.045, 0.355, 1],
+      progressEasing: [0, 0, 1, 1],
     })
   })
 
   it('falls back safely when CSS motion tokens are unavailable', () => {
     expect(readMotionTokens(undefined)).toEqual({
+      none: 0,
+      press: 0.05,
+      micro: 0.1,
       fast: 0.15,
-      normal: 0.2,
-      slow: 0.25,
-      exit: 0.15,
-      easing: [0.165, 0.84, 0.44, 1],
-      exitEasing: [0.165, 0.84, 0.44, 1],
-      moveEasing: [0.645, 0.045, 0.355, 1],
-      hoverEasing: [0.25, 0.1, 0.25, 1],
+      base: 0.2,
+      deliberate: 0.25,
+      maximum: 0.3,
+      arriveEasing: [0.165, 0.84, 0.44, 1],
+      emphasizeEasing: [0.23, 1, 0.32, 1],
+      repositionEasing: [0.645, 0.045, 0.355, 1],
+      progressEasing: [0, 0, 1, 1],
     })
   })
 
@@ -69,29 +78,31 @@ describe('motion tokens', () => {
     ]))
 
     const custom = createMotionVariants({
+      none: 0,
+      press: 0.04,
+      micro: 0.08,
       fast: 0.08,
-      normal: 0.16,
-      slow: 0.24,
-      exit: 0.12,
-      easing: [0, 0, 0.58, 1],
-      exitEasing: [0, 0, 0.58, 1],
-      moveEasing: [0.645, 0.045, 0.355, 1],
-      hoverEasing: [0.25, 0.1, 0.25, 1],
+      base: 0.16,
+      deliberate: 0.24,
+      maximum: 0.3,
+      arriveEasing: [0, 0, 0.58, 1],
+      emphasizeEasing: [0.23, 1, 0.32, 1],
+      repositionEasing: [0.645, 0.045, 0.355, 1],
+      progressEasing: [0, 0, 1, 1],
     })
-    expect(custom.screen.animate).toMatchObject({
+    expect(custom.panel.animate).toMatchObject({
       transition: { duration: 0.16 },
     })
-    expect(custom.screen.exit).toMatchObject({
-      transition: { duration: 0.12 },
+    expect(custom.panel.exit).toMatchObject({
+      transition: { duration: 0.08 },
     })
     expect(transitions.enter.duration).toBeGreaterThanOrEqual(0.14)
     expect(transitions.enter.duration).toBeLessThanOrEqual(0.22)
     expect(transitions.exit.duration).toBe(0.15)
-    expect(transitions.reaction).toMatchObject({
-      type: 'spring',
-      duration: 0.3,
-      bounce: 0.2,
-    })
+    expect(transitions.deliberate.duration).toBe(0.25)
+    expect(transitions.maximum.duration).toBe(0.3)
+    expect(transitions).not.toHaveProperty('reaction')
+    expect(transitions).not.toHaveProperty('ambientLoop')
   })
 })
 

@@ -12,6 +12,9 @@ const devices = [
 function props() {
   return {
     devices,
+    roomName: 'Studio',
+    onOpenMessages: vi.fn(),
+    onLeave: vi.fn(),
     onInputDeviceChange: vi.fn().mockResolvedValue(undefined),
     onOutputDeviceChange: vi.fn().mockResolvedValue(undefined),
     onCameraChange: vi.fn().mockResolvedValue(undefined),
@@ -212,7 +215,7 @@ describe('VoiceControls', () => {
     const deafen = container.querySelector<HTMLButtonElement>('button[aria-label="Deafen audio"]')!
     const camera = container.querySelector<HTMLButtonElement>('button[aria-label="Turn camera on"]')!
     const share = container.querySelector<HTMLButtonElement>('button[aria-label="Share screen"]')!
-    const disconnect = container.querySelector<HTMLButtonElement>('button[aria-label="Disconnect from voice room"]')!
+    const disconnect = container.querySelector<HTMLButtonElement>('button[aria-label="Leave Studio"]')!
 
     expect([mute, deafen, camera, share, disconnect].every(Boolean)).toBe(true)
 
@@ -232,10 +235,19 @@ describe('VoiceControls', () => {
     expect(controls.onScreenShareChange).toHaveBeenCalledWith(true)
 
     await act(async () => disconnect.click())
-    expect(useVoiceStore.getState()).toMatchObject({
-      currentCommunityId: null,
-      currentChannelId: null,
+    expect(controls.onLeave).toHaveBeenCalledOnce()
+  })
+
+  it('keeps text focus labelled and separate from the destructive leave action', async () => {
+    const controls = props()
+    await act(async () => root.render(<VoiceControls {...controls} />))
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="Open messages from Studio"]')?.click()
     })
+
+    expect(controls.onOpenMessages).toHaveBeenCalledOnce()
+    expect(container.querySelector('button[aria-label="Leave Studio"]')).not.toBeNull()
   })
 
   it('uses attention for muted states, accent for active media, and danger only for disconnect', async () => {
@@ -260,7 +272,7 @@ describe('VoiceControls', () => {
       container.querySelector<HTMLButtonElement>('button[aria-label="Stop sharing screen"]')?.className,
     ).toContain('bg-accent')
     expect(
-      container.querySelector<HTMLButtonElement>('button[aria-label="Disconnect from voice room"]')?.className,
+      container.querySelector<HTMLButtonElement>('button[aria-label="Leave Studio"]')?.className,
     ).toContain('bg-status-danger')
   })
 })

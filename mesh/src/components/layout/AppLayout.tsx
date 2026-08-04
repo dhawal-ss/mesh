@@ -5,7 +5,6 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
-  useState,
   type CSSProperties,
 } from 'react'
 import { CommunitySidebar } from './CommunitySidebar'
@@ -21,11 +20,9 @@ import { useIdentityStore } from '../../store/identity'
 import { isBackupReminderDue, useSettingsStore } from '../../store/settings'
 import { useShellStore } from '../../store/shell'
 import * as bridge from '../../lib/bridge'
-import { playNotificationSound } from '../../lib/bridge'
 import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
 import { useNotificationSync } from '../../hooks/useNotificationSync'
-import { getEffectiveChannelNotificationLevel } from '../../store/settings'
 import { useNetworkStore } from '../../store/network'
 import { COMPACT_VIEWPORT_QUERY, useMediaQuery } from '../../hooks/useMediaQuery'
 import { useQueuedMessageSync } from '../../hooks/useQueuedMessageSync'
@@ -38,36 +35,18 @@ import {
   MESH_REGION_SELECTOR,
   nextMeshRegion,
 } from '../../lib/region-navigation'
-import {
-  findRestorableActiveRoomTab,
-  openRoomTab,
-  restoreRoomTabState,
-  roomTabKey,
-  roomTabStorageKey,
-  serializeRoomTabState,
-  type RoomTab,
-  type RoomTabState,
-} from '../../lib/room-tabs'
-import { safeLocalStorageGet, safeLocalStorageSet } from '../../lib/safe-storage'
 import { VoiceDock } from '../voice/VoiceDock'
+import { HomeSurface } from '../home/HomeSurface'
+import { useCurrentMeshRoute, useMeshNavigationStore } from '../../store/navigation'
+import { RouteSurface } from '../navigation/RouteSurface'
+import { UserPanel } from './UserPanel'
 
 const CommandPalette = lazy(() =>
   import('../navigation/CommandPalette').then((module) => ({ default: module.CommandPalette })),
 )
 
-function createLazyRoomTabStrip() {
-  return lazy(() =>
-    import('../navigation/RoomTabStrip')
-      .then((module) => ({ default: module.RoomTabStrip })),
-  )
-}
-
-function loadRoomTabs(accountId: string): RoomTabState {
-  return restoreRoomTabState(safeLocalStorageGet(roomTabStorageKey(accountId)), accountId)
-}
-
 export function hasAuthoritativeSavedRoomSnapshot(
-  kind: RoomTab['kind'],
+  kind: 'room' | 'dm',
   conversationStatus: LoadStatus,
   roomStatus?: CommunityRefreshState['status'],
 ): boolean {
@@ -86,41 +65,42 @@ export function AppLayout() {
   const channelEntities = useChannelStore((state) => state.channelEntities)
   const setActiveChannel = useChannelStore((state) => state.setActiveChannel)
   const activeCommunityId = useCommunityStore((state) => state.activeCommunityId)
+  const communityEntities = useCommunityStore((state) => state.communityEntities)
   const setActiveCommunity = useCommunityStore((state) => state.setActiveCommunity)
   const patchChannel = useChannelStore((state) => state.patchChannel)
   const isDmMode = useDmStore((state) => state.isDmMode)
   const activeConversationId = useDmStore((state) => state.activeConversationId)
-  const activeConversation = useDmStore((state) => (
-    state.activeConversationId
-      ? state.conversationEntities[state.activeConversationId]
-      : undefined
-  ))
   const conversationEntities = useDmStore((state) => state.conversationEntities)
   const setActiveConversation = useDmStore((state) => state.setActiveConversation)
   const setDmMode = useDmStore((state) => state.setDmMode)
-  const conversationLoadStatus = useDmStore((state) => state.conversationLoad.status)
-  const loadDmConversations = useDmStore((state) => state.loadConversations)
-  const channelRefreshByCommunity = useChannelStore((state) => state.refreshByCommunity)
   const backup = useSettingsStore((state) => state.backup)
   const dismissBackupReminder = useSettingsStore((state) => state.dismissBackupReminder)
-  const setProfileOpen = useShellStore((state) => state.setProfileOpen)
+  const pendingInvitation = useShellStore((state) => state.pendingInvitation)
+  const foregroundInvitationHandle = useShellStore(
+    (state) => state.foregroundInvitationHandle,
+  )
   const backupReminderDue = isBackupReminderDue(backup)
   const networkStatus = useNetworkStore((state) => state.status)
+  const recoveredConnection = useNetworkStore((state) => state.recoveredConnection)
   const contextSidebarWidth = usePersistentPanelWidth({
     storageKey: CONTEXT_SIDEBAR_WIDTH_KEY,
-    defaultWidth: 304,
-    minimum: 180,
-    maximum: 360,
+    defaultWidth: 250,
+    minimum: 208,
+    maximum: 280,
   })
 
   const myPublicKey = useIdentityStore((state) => state.identity?.publicKey)
   const roomTabAccountId = myPublicKey ?? 'local-device'
-  const [roomTabs, setRoomTabs] = useState<RoomTabState>(() => loadRoomTabs(roomTabAccountId))
-  const [roomTabRestorationPending, setRoomTabRestorationPending] = useState(true)
-  const [RoomTabStrip, setRoomTabStrip] = useState(createLazyRoomTabStrip)
-  const navigationContextKey = `${activeCommunityId ?? ''}\u0000${activeChannelId ?? ''}\u0000${isDmMode}`
-  const [openNavigationContextKey, setOpenNavigationContextKey] = useState<string | null>(null)
-  const contextNavigationOpen = openNavigationContextKey === navigationContextKey
+  const route = useCurrentMeshRoute()
+  const navigationHydrated = useMeshNavigationStore((state) => state.hydrated)
+  const initializeNavigation = useMeshNavigationStore((state) => state.initialize)
+  const navigate = useMeshNavigationStore((state) => state.navigate)
+  const goBack = useMeshNavigationStore((state) => state.back)
+  const goForward = useMeshNavigationStore((state) => state.forward)
+  const focusRequest = useMeshNavigationStore((state) => state.focusRequest)
+  const drawer = useMeshNavigationStore((state) => state.drawer)
+  const setDrawer = useMeshNavigationStore((state) => state.setDrawer)
+  const contextNavigationOpen = drawer === 'context'
   const contextNavigationRef = useRef<HTMLElement>(null)
   const activeRoomId = isDmMode ? activeConversationId : activeChannelId
   /*
@@ -133,93 +113,81 @@ export function AppLayout() {
   const isCompactViewport = useMediaQuery(COMPACT_VIEWPORT_QUERY)
   const drawerActive = contextNavigationOpen && isCompactViewport
   const closeNavigationDrawer = useCallback((restoreFocus = true) => {
-    setOpenNavigationContextKey(null)
+    setDrawer('none')
     if (restoreFocus && typeof document !== 'undefined') {
       window.requestAnimationFrame(() => {
         document.querySelector<HTMLButtonElement>('.mesh-compact-header button')?.focus()
       })
     }
-  }, [])
+  }, [setDrawer])
   // Naming the main landmark after the open conversation is far more useful for
   // landmark navigation than the previous static "Content area".
-  const activeConversationLabel = isDmMode
-    ? 'Direct message conversation'
-    : activeChannel?.name
-      ? `Conversation in ${activeChannel.name}`
-      : 'Conversation'
+  const directRouteActive = route.kind === 'direct'
+  const roomNavigationVisible = route.kind === 'room'
+    || route.kind === 'voice'
+    || route.kind === 'community'
+    || route.kind === 'community-admin'
+    || directRouteActive
+  const activeConversationLabel = route.kind === 'home'
+    ? 'Home'
+    : route.kind === 'communities'
+      ? 'Communities'
+      : route.kind === 'community'
+        ? `${communityEntities[route.communityId]?.name ?? 'Community'} community`
+        : route.kind === 'you'
+          ? 'You'
+          : route.kind === 'invitation'
+            ? 'Community invitation'
+            : route.kind === 'community-admin'
+              ? `${communityEntities[route.communityId]?.name ?? 'Community'} settings`
+    : directRouteActive
+              ? 'Direct message conversation'
+              : activeChannel?.name
+                ? `Conversation in ${activeChannel.name}`
+                : 'Conversation'
   useNotificationSync({ matrixMode, activeRoomId })
 
   useEffect(() => {
-    if (!directMessagesAvailable && isDmMode) setDmMode(false)
-  }, [directMessagesAvailable, isDmMode, setDmMode])
+    initializeNavigation(roomTabAccountId)
+  }, [initializeNavigation, roomTabAccountId])
 
   useEffect(() => {
-    // This is an external-storage/account boundary: switching accounts must
-    // replace, rather than merge, persisted room identifiers.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setRoomTabs((current) => (
-      current.accountId === roomTabAccountId ? current : loadRoomTabs(roomTabAccountId)
-    ))
-    setRoomTabRestorationPending(true)
-  }, [roomTabAccountId])
+    if (!navigationHydrated || !foregroundInvitationHandle) return
+    if (route.kind === 'invitation' && route.handle === foregroundInvitationHandle) return
+    navigate({ kind: 'invitation', handle: foregroundInvitationHandle })
+  }, [foregroundInvitationHandle, navigate, navigationHydrated, route])
 
   useEffect(() => {
-    if (roomTabs.accountId !== roomTabAccountId) return
-    safeLocalStorageSet(roomTabStorageKey(roomTabAccountId), serializeRoomTabState(roomTabs))
-  }, [roomTabAccountId, roomTabs])
-
-  useEffect(() => {
-    if (!roomTabRestorationPending || roomTabs.accountId !== roomTabAccountId) return
-    const activeTab = findRestorableActiveRoomTab(
-      roomTabs,
-      (roomId) => Boolean(channelEntities[roomId]),
-      (conversationId) => Boolean(conversationEntities[conversationId]),
-    )
-    const savedActiveTab = roomTabs.tabs.find((tab) => tab.key === roomTabs.activeKey)
-    if (savedActiveTab && !activeTab) {
-      if (savedActiveTab.kind === 'dm') {
-        if (conversationLoadStatus === 'idle') {
-          void loadDmConversations().catch(() => {})
-          return
-        }
-        if (!hasAuthoritativeSavedRoomSnapshot('dm', conversationLoadStatus)) return
-      } else {
-        const refreshStatus = savedActiveTab.communityId
-          ? channelRefreshByCommunity[savedActiveTab.communityId]?.status
-          : undefined
-        if (!hasAuthoritativeSavedRoomSnapshot('room', conversationLoadStatus, refreshStatus)) {
-          return
-        }
-      }
-      // The saved room no longer exists in a completed source snapshot.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setRoomTabRestorationPending(false)
-      return
-    }
-    if (!activeTab) {
-      // The persisted model is an external cache; this one-time flag prevents
-      // the default room from replacing a saved selection during hydration.
-      setRoomTabRestorationPending(false)
-      return
-    }
-    if (activeTab.kind === 'dm') {
-      setDmMode(true)
-      setActiveConversation(activeTab.roomId)
-    } else {
+    if (!navigationHydrated) return
+    if (route.kind === 'room') {
+      if (!channelEntities[route.roomId]) return
       setDmMode(false)
-      if (activeTab.communityId) setActiveCommunity(activeTab.communityId)
-      setActiveChannel(activeTab.roomId)
+      setActiveCommunity(route.communityId)
+      setActiveChannel(route.roomId)
+      return
     }
-    setRoomTabRestorationPending(false)
+    if (route.kind === 'direct') {
+      if (!conversationEntities[route.conversationId]) return
+      setDmMode(true)
+      setActiveConversation(route.conversationId)
+      return
+    }
+    if (route.kind === 'voice') {
+      if (!channelEntities[route.roomId]) return
+      setDmMode(false)
+      setActiveCommunity(route.communityId)
+      setActiveChannel(route.roomId)
+      return
+    }
+    if (route.kind === 'community' || route.kind === 'community-admin') {
+      setDmMode(false)
+      setActiveCommunity(route.communityId)
+    }
   }, [
     channelEntities,
-    channelRefreshByCommunity,
-    conversationLoadStatus,
     conversationEntities,
-    loadDmConversations,
-    roomTabAccountId,
-    roomTabRestorationPending,
-    roomTabs,
+    navigationHydrated,
+    route,
     setActiveChannel,
     setActiveCommunity,
     setActiveConversation,
@@ -227,93 +195,74 @@ export function AppLayout() {
   ])
 
   useEffect(() => {
-    let currentTab: RoomTab | null = null
-    if (isDmMode && activeConversation) {
-      currentTab = {
-        key: roomTabKey('dm', activeConversation.id),
-        kind: 'dm',
-        roomId: activeConversation.id,
-        communityId: null,
-        title: activeConversation.peerDisplayName,
-        pinned: false,
-        unreadCount: activeConversation.unreadCount,
-        mentionCount: activeConversation.unreadMentions ?? 0,
-        lastOpenedAt: Date.now(),
-      }
-    } else if (!isDmMode && activeChannel) {
-      currentTab = {
-        key: roomTabKey('room', activeChannel.id),
-        kind: 'room',
-        roomId: activeChannel.id,
-        communityId: activeChannel.communityId,
-        title: activeChannel.name,
-        pinned: false,
-        unreadCount: activeChannel.unreadCount,
-        mentionCount: activeChannel.unreadMentions ?? 0,
-        lastOpenedAt: Date.now(),
+    if (focusRequest === 0) return
+    let framesRemaining = 4
+    let focusFrame = 0
+    const focusRouteHeading = () => {
+      document.querySelector<HTMLElement>('[data-mesh-route-heading]')?.focus({
+        preventScroll: true,
+      })
+      framesRemaining -= 1
+      if (framesRemaining > 0) {
+        focusFrame = window.requestAnimationFrame(focusRouteHeading)
       }
     }
-    if (!currentTab || roomTabRestorationPending) return
-    const tab = currentTab
-    // Channel/DM stores are external Zustand sources. Mirror only their
-    // current navigation identity into the bounded tab model.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setRoomTabs((current) => (
-      current.accountId === roomTabAccountId ? openRoomTab(current, tab) : current
-    ))
-  }, [activeChannel, activeConversation, isDmMode, roomTabAccountId, roomTabRestorationPending])
+    focusFrame = window.requestAnimationFrame(focusRouteHeading)
+    return () => window.cancelAnimationFrame(focusFrame)
+  }, [focusRequest])
 
   useEffect(() => {
-    // Keep badges and safe display labels fresh for every open tab, not only
-    // the active conversation. The existing Matrix unread listener owns the
-    // authoritative counts; tabs remain a bounded navigation projection.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setRoomTabs((current) => {
-      if (current.accountId !== roomTabAccountId) return current
-      let changed = false
-      const tabs = current.tabs.map((tab) => {
-        const source = tab.kind === 'dm'
-          ? conversationEntities[tab.roomId]
-          : channelEntities[tab.roomId]
-        if (!source) return tab
-        const title = tab.kind === 'dm'
-          ? conversationEntities[tab.roomId]?.peerDisplayName ?? tab.title
-          : channelEntities[tab.roomId]?.name ?? tab.title
-        const mentionCount = source.unreadMentions ?? 0
-        if (
-          tab.title === title
-          && tab.unreadCount === source.unreadCount
-          && tab.mentionCount === mentionCount
-        ) {
-          return tab
-        }
-        changed = true
-        return {
-          ...tab,
-          title,
-          unreadCount: source.unreadCount,
-          mentionCount,
-        }
-      })
-      return changed ? { ...current, tabs } : current
-    })
-  }, [channelEntities, conversationEntities, roomTabAccountId])
+    const communityName = route.kind === 'room' || route.kind === 'voice'
+      ? communityEntities[route.communityId]?.name
+      : route.kind === 'community' || route.kind === 'community-admin'
+        ? communityEntities[route.communityId]?.name
+        : null
+    const roomName = route.kind === 'room' || route.kind === 'voice'
+      ? useChannelStore.getState().channelEntities[route.roomId]?.name
+      : null
+    const conversationName = route.kind === 'direct'
+      ? useDmStore.getState().conversationEntities[route.conversationId]?.peerDisplayName
+      : null
+    document.title = route.kind === 'home'
+      ? 'Home | Mesh'
+      : route.kind === 'you'
+        ? 'You | Mesh'
+        : route.kind === 'invitation'
+          ? `Invitation to ${pendingInvitation?.communityName?.trim() || 'a community'} | Mesh`
+        : route.kind === 'direct'
+          ? `${conversationName ?? 'Messages'} | Mesh`
+          : route.kind === 'room'
+            ? `#${roomName ?? 'Room'}${communityName ? ` | ${communityName}` : ''} | Mesh`
+            : route.kind === 'voice'
+              ? `${roomName ?? 'Voice'} | Mesh`
+              : communityName
+                ? `${communityName} | Mesh`
+                : 'Mesh'
+  }, [communityEntities, pendingInvitation?.communityName, route])
 
-  const changeRoomTabs = (next: RoomTabState) => {
-    if (next.accountId !== roomTabAccountId) return
-    const activeTab = next.tabs.find((tab) => tab.key === next.activeKey)
-    if (activeTab && activeTab.key !== roomTabs.activeKey) {
-      if (activeTab.kind === 'dm') {
-        setDmMode(true)
-        setActiveConversation(activeTab.roomId)
-      } else {
-        setDmMode(false)
-        if (activeTab.communityId) setActiveCommunity(activeTab.communityId)
-        setActiveChannel(activeTab.roomId)
+  useEffect(() => {
+    const handleProductHistory = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented
+        || !event.altKey
+        || event.ctrlKey
+        || event.metaKey
+        || event.shiftKey
+        || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')
+      ) {
+        return
       }
+      event.preventDefault()
+      if (event.key === 'ArrowLeft') goBack()
+      else goForward()
     }
-    setRoomTabs(next)
-  }
+    window.addEventListener('keydown', handleProductHistory)
+    return () => window.removeEventListener('keydown', handleProductHistory)
+  }, [goBack, goForward])
+
+  useEffect(() => {
+    if (!directMessagesAvailable && isDmMode) setDmMode(false)
+  }, [directMessagesAvailable, isDmMode, setDmMode])
 
   useEffect(() => {
     const handleRegionCycle = (event: KeyboardEvent) => {
@@ -394,7 +343,6 @@ export function AppLayout() {
     const unlisten = matrixMode
       ? Promise.resolve(() => {})
       : bridge.onMessageReceived((message) => {
-        const isOwnMessage = myPublicKey && message.authorPublicKey === myPublicKey
         const isActiveChannel = message.channelId === activeChannelId && !isDmMode
 
         if (isActiveChannel) {
@@ -407,26 +355,12 @@ export function AppLayout() {
         patchChannel(message.channelId, {
           unreadCount: (channel?.unreadCount ?? 0) + 1,
         })
-
-        // Legacy builds retain their renderer event while Matrix uses the
-        // SDK-owned notification and unread streams installed above.
-        if (!isOwnMessage) {
-          const { notifications } = useSettingsStore.getState()
-          const level = getEffectiveChannelNotificationLevel(
-            notifications,
-            message.channelId,
-            channel?.communityId,
-          )
-          if (notifications.sound && level === 'all') {
-            playNotificationSound(notifications.soundId)
-          }
-        }
       })
 
     return () => {
       unlisten.then((fn) => fn())
     }
-  }, [activeChannelId, isDmMode, matrixMode, patchChannel, myPublicKey])
+  }, [activeChannelId, isDmMode, matrixMode, patchChannel])
 
   // The user IS a peer. A mesh of size 1 (just them) is a VALID working
   // state: they can send messages, create communities, queue things for
@@ -461,7 +395,7 @@ export function AppLayout() {
           <button
             type="button"
             className="font-semibold text-accent hover:underline"
-            onClick={() => setProfileOpen(true)}
+            onClick={() => navigate({ kind: 'you', section: 'safety-devices' })}
           >
             Open profile
           </button>
@@ -480,10 +414,18 @@ export function AppLayout() {
           role="status"
           className="border-b border-status-warning/30 bg-status-warning/10 px-4 py-2 text-center text-xs text-content"
         >
-          You’re offline. Messages marked Saved will send when Mesh reconnects.
+          You are offline. Saved rooms stay available. New activity will arrive when the connection returns.
         </div>
       )}
-      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+      {matrixMode && recoveredConnection && networkStatus.state === 'connected' && (
+        <div
+          role="status"
+          className="border-b border-status-success/30 bg-status-success/10 px-4 py-2 text-center text-xs text-content"
+        >
+          Connection restored. Saved messages can continue sending and new activity can arrive.
+        </div>
+      )}
+      <div className="mesh-workspace-frame flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <nav
           className="mesh-community-rail flex min-h-0 flex-shrink-0 flex-col items-center overflow-y-auto border-r border-border-subtle bg-surface-sunken pt-2"
           aria-label="Communities and direct messages"
@@ -511,7 +453,7 @@ export function AppLayout() {
           />
         )}
 
-        <aside
+        {roomNavigationVisible && <aside
           ref={contextNavigationRef}
           id="mesh-context-sidebar"
           data-open={contextNavigationOpen ? 'true' : 'false'}
@@ -520,7 +462,7 @@ export function AppLayout() {
           style={{
             '--mesh-context-sidebar-width': `${contextSidebarWidth.width}px`,
           } as CSSProperties}
-          aria-label={isDmMode && directMessagesAvailable ? 'Direct message conversations' : 'Room list'}
+          aria-label={directRouteActive && directMessagesAvailable ? 'Direct message conversations' : 'Room list'}
           data-mesh-region
           tabIndex={-1}
           /* Only a real drawer is a modal dialog. Above the compact breakpoint
@@ -532,12 +474,12 @@ export function AppLayout() {
           {drawerActive && (
             <div className="flex min-h-11 flex-shrink-0 items-center justify-between border-b border-border-subtle px-2">
               <span className="min-w-0 truncate px-2 text-sm font-semibold text-secondary">
-                {isDmMode && directMessagesAvailable ? 'Conversations' : 'Rooms'}
+                {directRouteActive && directMessagesAvailable ? 'Conversations' : 'Rooms'}
               </span>
               <button
                 type="button"
                 className="flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
-                aria-label={isDmMode ? 'Close conversation navigation drawer' : 'Close room navigation drawer'}
+                aria-label={directRouteActive ? 'Close conversation navigation drawer' : 'Close room navigation drawer'}
                 onClick={() => closeNavigationDrawer()}
               >
                 <Icon name="x" size="sm" />
@@ -548,39 +490,29 @@ export function AppLayout() {
             label="Resize room navigation"
             side="right"
             value={contextSidebarWidth.width}
-            minimum={180}
-            maximum={360}
+            minimum={208}
+            maximum={280}
             onPointerDown={contextSidebarWidth.startResize}
             onResizeBy={contextSidebarWidth.resizeBy}
           />
           <ScopedErrorBoundary
-            name={isDmMode && directMessagesAvailable ? 'Conversation list' : 'Room list'}
+            name={directRouteActive && directMessagesAvailable ? 'Conversation list' : 'Room list'}
             description="Navigation failed to render. The current conversation remains available."
             className="m-2"
-            resetKey={`${isDmMode ? 'dm' : 'channel'}:${activeCommunityId ?? ''}`}
+            resetKey={`${directRouteActive ? 'dm' : 'channel'}:${activeCommunityId ?? ''}`}
           >
-            {isDmMode && directMessagesAvailable ? <DmSidebar /> : <ChannelSidebar />}
+            {directRouteActive && directMessagesAvailable ? <DmSidebar /> : <ChannelSidebar />}
           </ScopedErrorBoundary>
-        </aside>
+        </aside>}
 
         <main
           id="mesh-conversation"
           tabIndex={-1}
-          className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface-base outline-none"
+          className="mesh-workspace-main flex min-h-0 min-w-0 flex-1 flex-col bg-surface-base outline-none"
           aria-label={activeConversationLabel}
           data-mesh-region
         >
-          <ScopedErrorBoundary
-            name="Conversation tabs"
-            description="Open conversations are still available from the room and direct-message lists."
-            resetKey={roomTabAccountId}
-            onRetry={() => setRoomTabStrip(createLazyRoomTabStrip())}
-          >
-            <Suspense fallback={null}>
-              <RoomTabStrip state={roomTabs} onChange={changeRoomTabs} />
-            </Suspense>
-          </ScopedErrorBoundary>
-          <div className="mesh-compact-header">
+          {roomNavigationVisible && <div className="mesh-compact-header">
             <button
               type="button"
               className="flex h-8 items-center gap-2 rounded-control px-2 text-sm font-medium text-secondary hover:bg-surface-hover hover:text-primary"
@@ -589,23 +521,35 @@ export function AppLayout() {
               aria-label={
                 contextNavigationOpen
                   ? 'Close room navigation'
-                  : isDmMode
+                  : directRouteActive
                     ? 'Open conversation navigation'
                     : 'Open room navigation'
               }
-              onClick={() => setOpenNavigationContextKey((openKey) => (
-                openKey === navigationContextKey ? null : navigationContextKey
-              ))}
+              onClick={() => setDrawer(contextNavigationOpen ? 'none' : 'context')}
             >
               <Icon name={contextNavigationOpen ? 'x' : 'menu'} size="sm" />
-              {contextNavigationOpen ? 'Close' : isDmMode ? 'Conversations' : 'Rooms'}
+              {contextNavigationOpen ? 'Close' : directRouteActive ? 'Conversations' : 'Rooms'}
             </button>
             <span className="truncate text-xs text-muted">
-              {matrixMode ? 'Encrypted session' : 'Local Mesh session'}
+              {route.kind === 'direct'
+                ? 'Direct messages'
+                : route.kind === 'community' || route.kind === 'community-admin'
+                  ? communityEntities[route.communityId]?.name ?? 'Community'
+                  : route.kind === 'room' || route.kind === 'voice'
+                    ? communityEntities[route.communityId]?.name ?? 'Community'
+                    : 'Mesh'}
             </span>
-          </div>
+          </div>}
           <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-            {isDmMode && directMessagesAvailable ? (
+            {route.kind === 'home' ? (
+              <HomeSurface />
+            ) : route.kind === 'community'
+              || route.kind === 'communities'
+              || route.kind === 'you'
+              || route.kind === 'invitation'
+              || route.kind === 'community-admin' ? (
+              <RouteSurface route={route} />
+            ) : directRouteActive && directMessagesAvailable ? (
               <ScopedErrorBoundary
                 name="Direct messages"
                 description="This conversation could not be displayed. Choose another conversation or retry."
@@ -620,7 +564,11 @@ export function AppLayout() {
           </div>
         </main>
       </div>
-      <VoiceDock />
+      <div className="mesh-party-strip-row flex flex-shrink-0">
+        <div className="mesh-party-strip-rail-spacer flex-shrink-0 border-r border-border-subtle bg-surface-sunken" aria-hidden="true" />
+        <VoiceDock />
+      </div>
+      {!roomNavigationVisible && <UserPanel controls={false} />}
     </div>
   )
 }

@@ -1166,6 +1166,21 @@ pub struct CustomEmoji {
 /// Portable, non-secret preferences synchronized through Matrix account data.
 /// Device credentials, recovery material, and machine-local network settings
 /// are intentionally outside this contract.
+fn default_interface_sound_volume() -> u8 {
+    60
+}
+
+const INTERFACE_SOUND_IDS: [&str; 8] = [
+    "voice-self-join",
+    "voice-self-leave",
+    "voice-peer-join",
+    "voice-peer-leave",
+    "message-mention",
+    "message-direct",
+    "message-failed",
+    "connection-recovered",
+];
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct UserPreferences {
@@ -1174,6 +1189,10 @@ pub struct UserPreferences {
     pub notification_sound: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notification_sound_id: Option<String>,
+    #[serde(default = "default_interface_sound_volume")]
+    pub interface_sound_volume: u8,
+    #[serde(default)]
+    pub interface_sound_events: std::collections::BTreeMap<String, bool>,
     #[serde(default)]
     pub do_not_disturb: bool,
     /// Whether bounded message text may appear in native notifications.
@@ -1216,7 +1235,7 @@ pub struct UserPreferences {
 }
 
 impl UserPreferences {
-    pub const SCHEMA_VERSION: u32 = 6;
+    pub const SCHEMA_VERSION: u32 = 7;
     pub const MAX_CONVERSATION_PRIVACY_OVERRIDES: usize = 256;
 
     pub fn effective_read_receipt_mode(&self) -> ReadReceiptMode {
@@ -1230,6 +1249,19 @@ impl UserPreferences {
 
     pub fn normalized(mut self) -> Self {
         self.schema_version = Self::SCHEMA_VERSION;
+        self.interface_sound_volume = self.interface_sound_volume.min(100);
+        self.interface_sound_events = INTERFACE_SOUND_IDS
+            .iter()
+            .map(|id| {
+                (
+                    (*id).to_owned(),
+                    self.interface_sound_events
+                        .get(*id)
+                        .copied()
+                        .unwrap_or(self.notification_sound),
+                )
+            })
+            .collect();
         if self.read_receipt_mode.is_none() {
             self.read_receipt_mode = Some(self.effective_read_receipt_mode());
         }
@@ -1406,8 +1438,14 @@ pub type BackendResult<T> = Result<T, BackendError>;
 #[async_trait]
 pub trait MeshBackend: Send + Sync {
     fn kind(&self) -> BackendKind;
+    async fn shutdown(&self) -> BackendResult<()> {
+        Ok(())
+    }
     async fn active_account_storage_root(&self) -> BackendResult<PathBuf> {
         Err(BackendError::Unsupported("active account storage"))
+    }
+    async fn active_account_media_cache_root(&self) -> BackendResult<PathBuf> {
+        Err(BackendError::Unsupported("active account media cache"))
     }
     async fn store_pending_invitation(
         &self,
@@ -2218,6 +2256,11 @@ mod tests {
             notifications_enabled: true,
             notification_sound: false,
             notification_sound_id: Some("chime".into()),
+            interface_sound_volume: 200,
+            interface_sound_events: std::collections::BTreeMap::from([
+                ("message-direct".into(), true),
+                ("unknown-cue".into(), true),
+            ]),
             do_not_disturb: true,
             show_notification_content: true,
             quiet_hours_enabled: true,
@@ -2263,6 +2306,12 @@ mod tests {
         .normalized();
 
         assert_eq!(preferences.schema_version, UserPreferences::SCHEMA_VERSION);
+        assert_eq!(preferences.interface_sound_volume, 100);
+        assert!(preferences.interface_sound_events["message-direct"]);
+        assert!(!preferences.interface_sound_events["voice-self-join"]);
+        assert!(!preferences
+            .interface_sound_events
+            .contains_key("unknown-cue"));
         assert!(preferences.show_notification_content);
         assert_eq!(preferences.read_receipt_mode, Some(ReadReceiptMode::Off));
         assert_eq!(preferences.conversation_privacy.len(), 1);

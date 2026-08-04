@@ -24,7 +24,7 @@ services:
         aliases: [synapse2]
 
   federation1:
-    image: nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
+    image: nginx:1.30.4-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46
     restart: unless-stopped
     depends_on: [synapse1]
     volumes:
@@ -37,7 +37,7 @@ services:
         aliases: [hs1.mesh.test]
 
   federation2:
-    image: nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
+    image: nginx:1.30.4-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46
     restart: unless-stopped
     depends_on: [synapse2]
     volumes:

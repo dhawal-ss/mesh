@@ -17,6 +17,14 @@ const composerHarness = vi.hoisted(() => ({
   disabled: false,
 }))
 
+const interfaceSoundHarness = vi.hoisted(() => ({
+  play: vi.fn(async () => true),
+}))
+
+vi.mock('../../lib/interface-sounds', () => ({
+  playInterfaceSound: interfaceSoundHarness.play,
+}))
+
 vi.mock('./Message', () => ({
   MessageComponent: ({
     message,
@@ -162,6 +170,7 @@ describe('ChatView channel switching', () => {
     messageHarness.onCancel = {}
     composerHarness.onSend = null
     composerHarness.disabled = false
+    interfaceSoundHarness.play.mockClear()
 
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
@@ -579,8 +588,8 @@ describe('ChatView channel switching', () => {
     const emptyState = container.querySelector('section')
     const title = emptyState?.querySelector('h3')
     const description = emptyState?.querySelector('p')
-    expect(title?.textContent).toBe('Welcome to #alpha')
-    expect(description?.textContent).toBe('This is the start of the #alpha channel.')
+    expect(title?.textContent).toBe('No messages yet')
+    expect(description?.textContent).toBe('Start with a build, clip, question, or thought.')
     expect(emptyState?.getAttribute('aria-labelledby')).toBe(title?.id)
     expect(emptyState?.getAttribute('aria-describedby')).toBe(description?.id)
     expect(emptyState?.querySelector('.border-dashed')).toBeNull()
@@ -758,7 +767,7 @@ describe('ChatView channel switching', () => {
 
     expect(load.mock.calls.length).toBeGreaterThanOrEqual(2)
     expect(markRead).toHaveBeenCalledWith(activeChannel.id)
-    expect(container.textContent).toContain('Welcome to #offline-room')
+    expect(container.textContent).toContain('No messages yet')
   })
 
   it('surfaces an event-refresh failure with last-good messages and recovers on retry', async () => {
@@ -885,7 +894,7 @@ describe('ChatView channel switching', () => {
       root.render(<ChatView channel={activeChannel} />)
       await flushAsyncWork()
     })
-    expect(container.textContent).toContain('Welcome to #read-error')
+    expect(container.textContent).toContain('No messages yet')
     expect(container.textContent).toContain('This room could not be marked as read')
 
     await act(async () => {
@@ -919,7 +928,7 @@ describe('ChatView channel switching', () => {
       root.render(<ChatView channel={channelB} />)
       await flushAsyncWork()
     })
-    expect(container.textContent).toContain('Welcome to #read-b')
+    expect(container.textContent).toContain('No messages yet')
 
     await act(async () => {
       markA.reject(new Error('late offline failure'))

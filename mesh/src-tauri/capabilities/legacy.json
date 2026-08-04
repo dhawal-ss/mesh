@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "legacy",
+  "description": "Capability for the explicitly selected Mesh LAN build",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "mesh-main",
+    "mesh-legacy",
+    "dialog:allow-open",
+    "notification:default"
+  ]
+}
