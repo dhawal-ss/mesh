@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "scannerPolicy": {
+    "candidateOutage": "fail-closed",
+    "developmentOutage": "blocked-unavailable",
+    "severityCutoff": "high",
+    "onlyFixable": true
+  },
+  "requiredUpdateRegressions": [
+    "disposable-federation",
+    "backup",
+    "restore",
+    "health",
+    "cleanup"
+  ],
+  "images": [
+    {
+      "image": "caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d",
+      "signaturePolicy": "discover-upstream-support-before-candidate"
+    },
+    {
+      "image": "ghcr.io/element-hq/lk-jwt-service:0.4.4@sha256:9c715697c6f7c1f538f2ee41b7b59b04a8d06bf790a7cc8c8517ccac8d28813d",
+      "signaturePolicy": "discover-upstream-support-before-candidate"
+    },
+    {
+      "image": "livekit/livekit-server:v1.13.1@sha256:2c6869d2d5ff6c9c0166f47be1c92dad6928bfecfa5e4060a6ece48db8accfa3",
+      "signaturePolicy": "discover-upstream-support-before-candidate"
+    },
+    {
+      "image": "matrixdotorg/synapse:v1.157.1@sha256:d1fce43d7501428c461f2758dc10342555b946dc9f1d03c1b1b8aec1a4e8d130",
+      "signaturePolicy": "discover-upstream-support-before-candidate"
+    },
+    {
+      "image": "nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de",
+      "signaturePolicy": "discover-upstream-support-before-candidate"
+    },
+    {
+      "image": "postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193",
+      "signaturePolicy": "discover-upstream-support-before-candidate"
+    }
+  ],
+  "exceptions": []
+}

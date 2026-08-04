@@ -10,25 +10,20 @@ import { useChannelStore } from './store/channels'
 import { useNetworkStore } from './store/network'
 import { refreshMatrixPreferences, useSettingsStore } from './store/settings'
 import * as bridge from './lib/bridge'
-import { Spinner } from './components/ui/Spinner'
 import { variants } from './lib/motion'
+import { AsyncStatus } from './components/ui/AsyncStatus'
+import { Button } from './components/ui/Button'
 import { matrixIdentity, matrixProfileIdentity } from './lib/matrixIdentity'
 import type { Identity } from './types/ipc'
 import { registerPoll } from './lib/scheduler'
 import { useShellStore } from './store/shell'
-import { describeError } from './lib/errors'
+import { beginInvitationActivation } from './lib/invitation-activation'
 
 const AppLayout = lazy(() =>
   import('./components/layout/AppLayout').then((module) => ({
     default: module.AppLayout,
   })),
 )
-const InvitationConfirmation = lazy(() =>
-  import('./components/onboarding/InvitationConfirmation').then((module) => ({
-    default: module.InvitationConfirmation,
-  })),
-)
-
 const BOOTSTRAP_STEPS = {
   connecting: { label: 'Connecting to the DHT', progress: 28 },
   syncing: { label: 'Resolving nearby peers with mDNS', progress: 62 },
@@ -89,6 +84,43 @@ function mapMatrixNetworkState(authenticated: boolean, syncRunning: boolean) {
   } as const
 }
 
+function ColdStartStatus({
+  invitationName,
+  onRecovery,
+}: {
+  invitationName?: string | null
+  onRecovery: () => void
+}) {
+  const [delayed, setDelayed] = useState(false)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDelayed(true), 8_000)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  const destination = invitationName?.trim()
+  return (
+    <AsyncStatus
+      title={delayed
+        ? 'Mesh is taking longer to open'
+        : destination
+          ? `Opening invitation to ${destination}`
+          : 'Opening Mesh'}
+      detail={delayed
+        ? 'Try again, or open sign-in and recovery if this keeps happening.'
+        : destination
+          ? 'Keeping this destination ready while Mesh checks access.'
+          : 'Restoring your rooms and settings.'}
+      actions={delayed ? (
+        <>
+          <Button onClick={() => window.location.reload()}>Try again</Button>
+          <Button variant="secondary" onClick={onRecovery}>Sign-in and recovery</Button>
+          <Button variant="ghost" onClick={() => window.close()}>Close Mesh</Button>
+        </>
+      ) : undefined}
+    />
+  )
+}
+
 export default function App() {
   const isTauriRuntime = bridge.isTauriRuntime()
   const identity = useIdentityStore((state) => state.identity)
@@ -110,14 +142,11 @@ export default function App() {
     .join('\u0000')
   const setActiveChannel = useChannelStore((s) => s.setActiveChannel)
   const setNetworkStatus = useNetworkStore((s) => s.setStatus)
-  const setBackupConfigured = useSettingsStore((s) => s.setBackupConfigured)
   const scheduleBackupReminder = useSettingsStore((s) => s.scheduleBackupReminder)
   const pendingInvitation = useShellStore((state) => state.pendingInvitation)
   const setPendingInvitation = useShellStore((state) => state.setPendingInvitation)
   const [showOnboarding, setShowOnboarding] = useState(!isTauriRuntime)
   const [backendStatus, setBackendStatus] = useState<bridge.BackendStatus | null>(null)
-  const [invitationConfirming, setInvitationConfirming] = useState(false)
-  const [invitationConfirmationError, setInvitationConfirmationError] = useState<unknown>(null)
   const pendingInvitationEpochRef = useRef(0)
 
   useEffect(() => {
@@ -170,7 +199,6 @@ export default function App() {
         .then((pending) => {
           if (!active || pendingInvitationEpochRef.current !== epoch) return
           setPendingInvitation(pending)
-          setInvitationConfirmationError(null)
           if (pending) {
             showToast('Community invitation saved securely and ready to review.', 'success')
           }
@@ -197,6 +225,11 @@ export default function App() {
       unlisten?.()
     }
   }, [isTauriRuntime, setPendingInvitation])
+
+  useEffect(() => {
+    if (!pendingInvitation) return
+    beginInvitationActivation(pendingInvitation.handle, pendingInvitation.storedAt)
+  }, [pendingInvitation])
 
   useEffect(() => {
     let active = true
@@ -361,39 +394,6 @@ export default function App() {
     showOnboarding,
   ])
 
-  const confirmPendingInvitation = async () => {
-    if (!pendingInvitation || invitationConfirming) return
-    const handle = pendingInvitation.handle
-    const epoch = ++pendingInvitationEpochRef.current
-    setInvitationConfirming(true)
-    setInvitationConfirmationError(null)
-    try {
-      const community = await bridge.joinPendingInvitation(handle)
-      if (
-        pendingInvitationEpochRef.current !== epoch
-        || useShellStore.getState().pendingInvitation?.handle !== handle
-      ) return
-      setPendingInvitation(null)
-      upsertCommunity(community)
-      setActiveCommunity(community.id)
-      showToast(`Joined ${community.name}.`, 'success')
-    } catch (error) {
-      if (
-        pendingInvitationEpochRef.current !== epoch
-        || useShellStore.getState().pendingInvitation?.handle !== handle
-      ) return
-      console.error('Could not open community invitation:', error)
-      setInvitationConfirmationError(error)
-      const description = describeError(error, {
-        operation: 'open this invitation',
-        resource: 'community',
-      })
-      showToast(`${description.title}: ${description.body}`, 'error')
-    } finally {
-      setInvitationConfirming(false)
-    }
-  }
-
   const clearPendingInvitationForHandle = async (handle: string | undefined) => {
     const epoch = ++pendingInvitationEpochRef.current
     if (isTauriRuntime && handle) await bridge.clearPendingInvitation(handle)
@@ -402,18 +402,6 @@ export default function App() {
       || useShellStore.getState().pendingInvitation?.handle !== handle
     ) return
     setPendingInvitation(null)
-    setInvitationConfirmationError(null)
-  }
-
-  const discardPendingInvitation = async () => {
-    const handle = pendingInvitation?.handle
-    try {
-      await clearPendingInvitationForHandle(handle)
-    } catch (error) {
-      if (useShellStore.getState().pendingInvitation?.handle === handle) {
-        setInvitationConfirmationError(error)
-      }
-    }
   }
 
   useEffect(() => {
@@ -573,10 +561,13 @@ export default function App() {
   if (isLoading && !showOnboarding) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-surface-canvas">
-        <div className="flex flex-col items-center gap-3">
-          <Spinner size={24} />
-          <p className="text-sm text-muted">Loading...</p>
-        </div>
+        <ColdStartStatus
+          invitationName={pendingInvitation?.communityName}
+          onRecovery={() => {
+            setShowOnboarding(true)
+            setLoading(false)
+          }}
+        />
       </div>
     )
   }
@@ -672,17 +663,6 @@ export default function App() {
                   const signedInIdentity = await loadMatrixIdentity(status.userId, true)
                   if (signedInIdentity) setIdentity(signedInIdentity)
                 }}
-                onCreateBackupCode={async () => {
-                  if (!isTauriRuntime) {
-                    return {
-                      recoveryKey: 'MESH-FROST-LANTERN-HARBOR-COPPER-ORBIT-MEADOW',
-                      secureStorageState: 'saved',
-                      verificationState: 'verified',
-                    }
-                  }
-                  return bridge.matrixEnableRecovery()
-                }}
-                onBackupConfigured={() => setBackupConfigured(true)}
                 onBackupSkipped={scheduleBackupReminder}
                 initialProfile={identity ?? undefined}
                 onGenerateIdentity={async () => {
@@ -843,29 +823,21 @@ export default function App() {
               <Suspense
                 fallback={
                   <div
-                    className="flex h-full items-center justify-center"
-                    role="status"
-                    aria-label="Loading Mesh"
+                    className="flex h-full flex-col items-center justify-center gap-3 text-center"
                   >
-                    <Spinner />
+                    <AsyncStatus
+                      title={pendingInvitation
+                        ? `Opening invitation to ${pendingInvitation.communityName?.trim() || 'your community'}`
+                        : 'Bringing in your rooms'}
+                      detail={pendingInvitation
+                        ? 'Keeping this destination ready while Mesh checks access.'
+                        : 'You can keep this window open while Mesh prepares the first view.'}
+                    />
                   </div>
                 }
               >
                 <AppLayout />
               </Suspense>
-              {pendingInvitation &&
-              backendStatus?.kind === 'matrix' &&
-              backendStatus.authenticated ? (
-                <Suspense fallback={null}>
-                  <InvitationConfirmation
-                    pending={pendingInvitation}
-                    confirming={invitationConfirming}
-                    confirmationError={invitationConfirmationError}
-                    onConfirm={() => void confirmPendingInvitation()}
-                    onDiscard={() => void discardPendingInvitation()}
-                  />
-                </Suspense>
-              ) : null}
             </motion.div>
           </ErrorBoundary>
         )}

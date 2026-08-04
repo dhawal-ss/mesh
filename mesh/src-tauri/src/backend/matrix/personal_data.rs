@@ -601,7 +601,7 @@ impl MatrixBackend {
             }
 
             let media_file_count = Self::copy_personal_export_media_bounded(
-                &storage.store_root.join("media-cache"),
+                &self.media_cache_root(&storage),
                 &staging_root,
                 &media_hashes,
                 &mut warnings,

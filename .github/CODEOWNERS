@@ -1,9 +1,15 @@
 * @dhawal-ss
 
 # Release publication and its security policy require an owner review.
+/.github/workflows/ @dhawal-ss
+/.github/dependabot.yml @dhawal-ss
+/.github/CODEOWNERS @dhawal-ss
 /.github/workflows/release-beta.yml @dhawal-ss
 /.github/workflows/security.yml @dhawal-ss
 /.github/dependency-review-config.yml @dhawal-ss
+/mesh/release/ @dhawal-ss
+/mesh/infra/ @dhawal-ss
+/mesh/docs/operations/ @dhawal-ss
 /mesh/scripts/beta-release-preflight.ps1 @dhawal-ss
 /mesh/scripts/check-matrix-release-dependencies.ps1 @dhawal-ss
 /mesh/scripts/rust-dependency-policy.json @dhawal-ss

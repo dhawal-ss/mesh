@@ -196,6 +196,8 @@ const MAX_SEARCH_ROOMS: usize = 5_000;
 const MAX_SEARCH_EVENTS: usize = 50_000;
 const MAX_SEARCH_EVENTS_PER_ROOM: u32 = 250;
 const MAX_SEARCH_SCANNED_BYTES: usize = 32 * 1024 * 1024;
+const MAX_SEARCH_RETAINED_BYTES: usize = 4 * 1024 * 1024;
+const MAX_SEARCH_QUERY_BYTES: usize = 1_024;
 const MAX_SEARCH_DEADLINE_MS: u64 = 15_000;
 const COMMUNITY_HOMESERVER_ENV: &str = "MESH_COMMUNITY_HOMESERVER";
 const COMMUNITY_SERVER_NAME_ENV: &str = "MESH_COMMUNITY_SERVER_NAME";
@@ -206,6 +208,8 @@ const LOCAL_ACCOUNT_STORE_REMOVE_ATTEMPTS: usize = 8;
 const LOCAL_ACCOUNT_STORE_REMOVE_BASE_DELAY_MS: u64 = 50;
 const MAX_COMPOSER_DRAFT_BYTES: usize = 16 * 1024;
 const CLIENT_REQUEST_ID_KEY: &str = "org.mesh.client_request_id";
+const LEGACY_MEDIA_CACHE_DIRECTORY: &str = "media-cache";
+const SESSION_MEDIA_CACHE_DIRECTORY: &str = "session-media-cache";
 const MAX_MEDIA_CACHE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES: u64 = 100 * 1024 * 1024;
 const MAX_CONCURRENT_MEDIA_UPLOADS: usize = 3;
@@ -757,6 +761,167 @@ struct CommunityHomeserverConfig {
     server_name: OwnedServerName,
 }
 
+#[derive(Debug)]
+struct MessageSearchBudget {
+    rooms_remaining: usize,
+    events_remaining: usize,
+    scanned_bytes_remaining: usize,
+}
+
+impl MessageSearchBudget {
+    fn production() -> Self {
+        Self {
+            rooms_remaining: MAX_SEARCH_ROOMS,
+            events_remaining: MAX_SEARCH_EVENTS,
+            scanned_bytes_remaining: MAX_SEARCH_SCANNED_BYTES,
+        }
+    }
+
+    fn reserve_room(&mut self) -> bool {
+        if self.rooms_remaining == 0 {
+            return false;
+        }
+        self.rooms_remaining -= 1;
+        true
+    }
+
+    fn reserve_event(&mut self, event_bytes: usize) -> bool {
+        if self.events_remaining == 0 || event_bytes > self.scanned_bytes_remaining {
+            return false;
+        }
+        self.events_remaining -= 1;
+        self.scanned_bytes_remaining -= event_bytes;
+        true
+    }
+}
+
+#[derive(Debug)]
+struct BoundedMessageSearchResults {
+    entries: Vec<MessageDto>,
+    retained_bytes: usize,
+    max_entries: usize,
+    max_retained_bytes: usize,
+}
+
+impl BoundedMessageSearchResults {
+    fn new(max_entries: usize, max_retained_bytes: usize) -> Self {
+        Self {
+            entries: Vec::with_capacity(max_entries),
+            retained_bytes: 0,
+            max_entries,
+            max_retained_bytes,
+        }
+    }
+
+    fn insert(&mut self, candidate: MessageDto) {
+        let candidate_bytes = message_search_retained_bytes(&candidate);
+        if self.max_entries == 0 || candidate_bytes > self.max_retained_bytes {
+            return;
+        }
+        let position = self.entries.partition_point(|existing| {
+            existing.timestamp > candidate.timestamp
+                || (existing.timestamp == candidate.timestamp && existing.id > candidate.id)
+        });
+        if position >= self.max_entries && self.entries.len() >= self.max_entries {
+            return;
+        }
+
+        let evicted_bytes = if self.entries.len() >= self.max_entries {
+            self.entries
+                .last()
+                .map(message_search_retained_bytes)
+                .unwrap_or_default()
+        } else {
+            0
+        };
+        insert_bounded_search_result(&mut self.entries, candidate, self.max_entries);
+        self.retained_bytes = self
+            .retained_bytes
+            .saturating_add(candidate_bytes)
+            .saturating_sub(evicted_bytes);
+        while self.entries.len() > self.max_entries || self.retained_bytes > self.max_retained_bytes
+        {
+            let removed = self
+                .entries
+                .pop()
+                .expect("an over-budget search result contains an entry");
+            self.retained_bytes = self
+                .retained_bytes
+                .saturating_sub(message_search_retained_bytes(&removed));
+        }
+    }
+
+    fn into_entries(self) -> Vec<MessageDto> {
+        self.entries
+    }
+}
+
+fn message_search_retained_bytes(message: &MessageDto) -> usize {
+    fn optional_string_bytes(value: &Option<String>) -> usize {
+        value.as_ref().map(String::capacity).unwrap_or_default()
+    }
+
+    let mut bytes = std::mem::size_of::<MessageDto>()
+        .saturating_add(message.id.capacity())
+        .saturating_add(message.channel_id.capacity())
+        .saturating_add(message.author_public_key.capacity())
+        .saturating_add(message.author_display_name.capacity())
+        .saturating_add(message.author_avatar_color.capacity())
+        .saturating_add(message.content.capacity())
+        .saturating_add(message.timestamp.capacity())
+        .saturating_add(message.signature.capacity())
+        .saturating_add(optional_string_bytes(&message.edited_at))
+        .saturating_add(optional_string_bytes(&message.deleted_at))
+        .saturating_add(optional_string_bytes(&message.reply_to_id))
+        .saturating_add(optional_string_bytes(&message.thread_root_id))
+        .saturating_add(optional_string_bytes(&message.transaction_id))
+        .saturating_add(optional_string_bytes(&message.client_request_id))
+        .saturating_add(optional_string_bytes(&message.delivery_status))
+        .saturating_add(
+            message
+                .attachments
+                .capacity()
+                .saturating_mul(std::mem::size_of::<AttachmentDto>()),
+        )
+        .saturating_add(
+            message
+                .reactions
+                .capacity()
+                .saturating_mul(std::mem::size_of::<(String, Vec<String>)>() + 1),
+        );
+
+    for attachment in &message.attachments {
+        bytes = bytes
+            .saturating_add(attachment.file_hash.capacity())
+            .saturating_add(attachment.filename.capacity())
+            .saturating_add(attachment.source_peer_id.capacity())
+            .saturating_add(optional_string_bytes(&attachment.content_type));
+        if let Some(thumbnail) = &attachment.thumbnail {
+            bytes = bytes
+                .saturating_add(std::mem::size_of::<AttachmentThumbnailDto>())
+                .saturating_add(thumbnail.file_hash.capacity())
+                .saturating_add(thumbnail.content_type.capacity());
+        }
+    }
+    for (reaction, users) in &message.reactions {
+        bytes = bytes.saturating_add(reaction.capacity()).saturating_add(
+            users
+                .capacity()
+                .saturating_mul(std::mem::size_of::<String>()),
+        );
+        for user in users {
+            bytes = bytes.saturating_add(user.capacity());
+        }
+    }
+    if let Some(undecryptable) = &message.undecryptable {
+        bytes = bytes
+            .saturating_add(std::mem::size_of::<UndecryptableMessageDto>())
+            .saturating_add(undecryptable.event_id.capacity())
+            .saturating_add(undecryptable.sender.capacity());
+    }
+    bytes
+}
+
 /// Production Matrix implementation backed by matrix-rust-sdk.
 ///
 /// The SDK owns room state, timeline deduplication, Olm/Megolm, and its
@@ -766,6 +931,7 @@ pub struct MatrixBackend {
     store_root: PathBuf,
     profile_hint: String,
     dynamic_accounts: bool,
+    media_cache_session_id: String,
     runtime: RwLock<MatrixRuntime>,
     login_attempt: Mutex<Option<LoginAttempt>>,
     login_sequence: AtomicU64,
@@ -817,9 +983,9 @@ impl MatrixBackend {
     fn blocked_entity_reason(error: &BackendError) -> Option<BlockedEntityReason> {
         match error {
             BackendError::NotEncrypted(_) => Some(BlockedEntityReason::Unencrypted),
-            BackendError::Unsupported(_) | BackendError::InvalidConfiguration(_) => {
-                Some(BlockedEntityReason::Unsupported)
-            }
+            BackendError::Unsupported(_)
+            | BackendError::InvalidConfiguration(_)
+            | BackendError::Serialization(_) => Some(BlockedEntityReason::Unsupported),
             BackendError::NotFound(_)
             | BackendError::PermissionDenied(_)
             | BackendError::DecryptionFailed(_) => Some(BlockedEntityReason::Inaccessible),
@@ -827,7 +993,6 @@ impl MatrixBackend {
             | BackendError::Network(_)
             | BackendError::RateLimited(_)
             | BackendError::Crypto(_)
-            | BackendError::Serialization(_)
             | BackendError::Cancelled(_)
             | BackendError::CommunityHomeserverUnconfigured
             | BackendError::UsernameUnavailable
@@ -865,6 +1030,77 @@ impl MatrixBackend {
             }
         }
         Ok(())
+    }
+
+    fn quarantine_space_child_state_key(
+        child_ids: &mut Vec<OwnedRoomId>,
+        blocked_entities: &mut Vec<BlockedEntityDiagnostic>,
+        diagnostic_id: String,
+        state_key: Option<String>,
+    ) -> BackendResult<()> {
+        let entity_id = state_key
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .unwrap_or(&diagnostic_id)
+            .to_owned();
+        let parsed = state_key
+            .ok_or_else(|| {
+                BackendError::InvalidConfiguration(
+                    "Matrix Space child state is missing its room ID".into(),
+                )
+            })
+            .and_then(|value| {
+                matrix_sdk::ruma::RoomId::parse(value).map_err(|error| {
+                    BackendError::InvalidConfiguration(format!(
+                        "Matrix Space child room ID is malformed: {error}"
+                    ))
+                })
+            });
+        Self::quarantine_entity(
+            child_ids,
+            blocked_entities,
+            entity_id,
+            BlockedEntityKind::Channel,
+            parsed,
+        )
+    }
+
+    async fn space_child_ids_for_listing(
+        &self,
+        space: &Room,
+    ) -> BackendResult<EntityList<OwnedRoomId>> {
+        let response = self
+            .client()
+            .await?
+            .send(get_state_events::v3::Request::new(
+                space.room_id().to_owned(),
+            ))
+            .await
+            .map_err(Self::map_error)?;
+        let mut child_ids = Vec::new();
+        let mut blocked_entities = Vec::new();
+
+        for (index, event) in response.room_state.into_iter().enumerate() {
+            let event_type = match event.get_field::<String>("type") {
+                Ok(Some(event_type)) => event_type,
+                Ok(None) | Err(_) => continue,
+            };
+            if event_type != "m.space.child" {
+                continue;
+            }
+            let state_key = event.get_field::<String>("state_key").ok().flatten();
+            Self::quarantine_space_child_state_key(
+                &mut child_ids,
+                &mut blocked_entities,
+                format!("{}#malformed-child-{index}", space.room_id()),
+                state_key,
+            )?;
+        }
+
+        Ok(EntityList {
+            entities: child_ids,
+            blocked_entities,
+        })
     }
 
     fn media_reservation_bytes(declared_size: u64) -> u64 {
@@ -933,6 +1169,7 @@ impl MatrixBackend {
             store_root,
             profile_hint: "default".into(),
             dynamic_accounts: true,
+            media_cache_session_id: uuid::Uuid::new_v4().simple().to_string(),
             runtime: RwLock::new(MatrixRuntime::default()),
             login_attempt: Mutex::new(None),
             login_sequence: AtomicU64::new(0),
@@ -983,6 +1220,7 @@ impl MatrixBackend {
             store_root,
             profile_hint: key_namespace,
             dynamic_accounts: false,
+            media_cache_session_id: uuid::Uuid::new_v4().simple().to_string(),
             runtime: RwLock::new(MatrixRuntime::default()),
             login_attempt: Mutex::new(None),
             login_sequence: AtomicU64::new(0),
@@ -1028,6 +1266,81 @@ impl MatrixBackend {
                 store_root: self.store_root.join("accounts").join(profile_id),
                 key_namespace: profile_id.to_owned(),
             }
+        }
+    }
+
+    fn media_cache_root(&self, storage: &AccountStorage) -> PathBuf {
+        storage
+            .store_root
+            .join(SESSION_MEDIA_CACHE_DIRECTORY)
+            .join(&self.media_cache_session_id)
+    }
+
+    fn session_media_cache_paths(&self, storage: &AccountStorage) -> BackendResult<[PathBuf; 2]> {
+        let store_root = storage.store_root.as_path();
+        let safe_store = if !self.dynamic_accounts || storage.profile_id == "default" {
+            store_root == self.store_root
+        } else {
+            store_root.starts_with(self.store_root.join("accounts"))
+                && !store_root
+                    .components()
+                    .any(|component| matches!(component, Component::ParentDir | Component::CurDir))
+        };
+        if !store_root.is_absolute() || !safe_store {
+            return Err(BackendError::InvalidConfiguration(
+                "refusing to clean decrypted media outside the Matrix account store".into(),
+            ));
+        }
+        Ok([
+            store_root.join(LEGACY_MEDIA_CACHE_DIRECTORY),
+            store_root.join(SESSION_MEDIA_CACHE_DIRECTORY),
+        ])
+    }
+
+    fn cleanup_session_media_for_storage(&self, storage: &AccountStorage) -> BackendResult<()> {
+        let mut failures = Vec::new();
+        for path in self.session_media_cache_paths(storage)? {
+            if let Err(error) = Self::remove_account_store_with_retry(&path) {
+                failures.push(format!(
+                    "could not remove decrypted session media at {}: {error}",
+                    path.display()
+                ));
+            }
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(BackendError::Other(failures.join("; ")))
+        }
+    }
+
+    fn session_media_storages(&self) -> BackendResult<Vec<AccountStorage>> {
+        let mut storages = vec![self.storage_for_profile("default")];
+        if self.dynamic_accounts {
+            if let Some(registry) = self.load_registry_if_present()? {
+                for account in registry.accounts {
+                    if account.profile_id != "default" {
+                        storages.push(self.storage_for_profile(&account.profile_id));
+                    }
+                }
+            }
+        }
+        storages.sort_by(|left, right| left.store_root.cmp(&right.store_root));
+        storages.dedup_by(|left, right| left.store_root == right.store_root);
+        Ok(storages)
+    }
+
+    fn cleanup_all_session_media(&self) -> BackendResult<()> {
+        let mut failures = Vec::new();
+        for storage in self.session_media_storages()? {
+            if let Err(error) = self.cleanup_session_media_for_storage(&storage) {
+                failures.push(error.to_string());
+            }
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(BackendError::Other(failures.join("; ")))
         }
     }
 
@@ -2117,6 +2430,12 @@ impl MatrixBackend {
         storage: &AccountStorage,
     ) -> BackendResult<Client> {
         let homeserver = Self::normalize_homeserver_input(homeserver)?;
+
+        // A cache survives only for this native process. Remove both the old
+        // persistent layout and any interrupted previous-session layout before
+        // opening account state. Failure is fatal so stale decrypted bytes are
+        // never silently carried into a new authenticated session.
+        self.cleanup_session_media_for_storage(storage)?;
 
         std::fs::create_dir_all(&storage.store_root).map_err(Self::map_error)?;
         let passphrase = Self::load_or_create_store_passphrase(storage)?;
@@ -3340,6 +3659,25 @@ impl MeshBackend for MatrixBackend {
         BackendKind::Matrix
     }
 
+    async fn shutdown(&self) -> BackendResult<()> {
+        if let Some(attempt) = self.login_attempt.lock().await.as_ref() {
+            attempt.cancellation.cancel();
+        }
+        for cancellation in self.media_uploads.lock().await.values() {
+            cancellation.cancel();
+        }
+        for cancellation in self.media_downloads.lock().await.values() {
+            cancellation.cancel();
+        }
+        self.search_operations.cancel_all().await?;
+        <Self as MeshBackend>::cancel_personal_data_export(self).await?;
+        self.stop_runtime().await;
+        // Give cancelled media tasks a scheduling point before the bounded
+        // retry loop handles any still-closing Windows file handles.
+        tokio::task::yield_now().await;
+        self.cleanup_all_session_media()
+    }
+
     async fn store_pending_invitation(
         &self,
         invite_link: String,
@@ -3496,6 +3834,17 @@ impl MeshBackend for MatrixBackend {
         Ok(self.storage_for_profile(&profile_id).store_root)
     }
 
+    async fn active_account_media_cache_root(&self) -> BackendResult<PathBuf> {
+        let profile_id = self
+            .runtime
+            .read()
+            .await
+            .profile_id
+            .clone()
+            .ok_or(BackendError::NotAuthenticated)?;
+        Ok(self.media_cache_root(&self.storage_for_profile(&profile_id)))
+    }
+
     fn set_matrix_event_callback(&self, callback: Option<MatrixBackendEventCallback>) {
         match self.event_callback.write() {
             Ok(mut current) => *current = callback,
@@ -3509,6 +3858,10 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn start(&self) -> BackendResult<()> {
+        // Run before registry restoration so crash leftovers are scavenged
+        // even when there is no active account. A locked file or permission
+        // failure stops startup instead of preserving undeclared plaintext.
+        self.cleanup_all_session_media()?;
         let storage = match self.active_storage_from_registry() {
             Ok(storage) => storage,
             Err(BackendError::NotAuthenticated) => return Ok(()),
@@ -4432,6 +4785,7 @@ impl MeshBackend for MatrixBackend {
             _ => return Err(BackendError::NotAuthenticated),
         }
         self.stop_runtime().await;
+        let cache_cleanup = self.cleanup_session_media_for_storage(&storage);
         let session_key = Self::session_key(&storage);
         if keychain::try_secret_exists(&session_key).map_err(Self::map_secure_storage_error)? {
             keychain::delete_secret(&session_key).map_err(Self::map_secure_storage_error)?;
@@ -4442,7 +4796,11 @@ impl MeshBackend for MatrixBackend {
             .retain(|account| account.profile_id != profile_id);
         registry.active_profile_id = None;
         self.persist_registry(&registry)?;
-        Ok(())
+        cache_cleanup.map_err(|error| {
+            BackendError::Other(format!(
+                "You are signed out, but Mesh could not remove decrypted session media: {error}"
+            ))
+        })
     }
 
     async fn list_devices(&self) -> BackendResult<Vec<MatrixDevice>> {
@@ -4775,6 +5133,13 @@ impl MeshBackend for MatrixBackend {
         if self.runtime.read().await.profile_id.as_deref() == Some(profile_id.as_str()) {
             return Ok(self.status().await);
         }
+        let previous_storage = self
+            .runtime
+            .read()
+            .await
+            .profile_id
+            .as_deref()
+            .map(|current| self.storage_for_profile(current));
         let mut registry = self.load_registry()?;
         let account = registry
             .accounts
@@ -4799,7 +5164,11 @@ impl MeshBackend for MatrixBackend {
         let client = tokio::time::timeout(Duration::from_secs(LOGIN_TIMEOUT_SECONDS), operation)
             .await
             .map_err(|_| BackendError::LoginTimedOut(LOGIN_TIMEOUT_SECONDS))??;
-        self.stop_runtime().await;
+        let previous_client = self.stop_runtime().await;
+        drop(previous_client);
+        if let Some(previous_storage) = previous_storage {
+            self.cleanup_session_media_for_storage(&previous_storage)?;
+        }
         self.install_client(client, homeserver, profile_id.clone())
             .await;
 
@@ -5300,9 +5669,10 @@ impl MeshBackend for MatrixBackend {
         }
 
         let mut channels = Vec::new();
-        let mut blocked_entities = Vec::new();
+        let mut child_listing = self.space_child_ids_for_listing(&space).await?;
+        let mut blocked_entities = std::mem::take(&mut child_listing.blocked_entities);
         let mut listed_room_ids = BTreeSet::new();
-        for child_id in self.space_child_ids(&space).await? {
+        for child_id in child_listing.entities {
             let child_entity_id = child_id.to_string();
             let room = match Self::protected_joined_room(
                 &client,
@@ -6766,10 +7136,8 @@ impl MeshBackend for MatrixBackend {
                 .profile_id
                 .clone()
                 .ok_or(BackendError::NotAuthenticated)?;
-            let cache_root = self
-                .storage_for_profile(&profile_id)
-                .store_root
-                .join("media-cache");
+            let storage = self.storage_for_profile(&profile_id);
+            let cache_root = self.media_cache_root(&storage);
             create_private_dir(&cache_root, true)
                 .await
                 .map_err(Self::map_error)?;
@@ -6948,17 +7316,33 @@ impl MeshBackend for MatrixBackend {
         let mut blocked_entities = Vec::new();
         for room in client.joined_rooms() {
             let targets = room.direct_targets();
-            if targets.len() != 1 {
+            if targets.is_empty() {
                 continue;
             }
             let entity_id = room.room_id().to_string();
+            if targets.len() != 1 {
+                Self::quarantine_entity::<DmConversationDto>(
+                    &mut conversations,
+                    &mut blocked_entities,
+                    entity_id,
+                    BlockedEntityKind::DirectMessage,
+                    Err(BackendError::InvalidConfiguration(
+                        "group direct-message rooms are not supported".into(),
+                    )),
+                )?;
+                continue;
+            }
             let projection = async {
                 Self::require_protected_room(&room, "listing direct messages").await?;
                 let target = targets.into_iter().next().ok_or_else(|| {
                     BackendError::InvalidConfiguration("direct room has no peer".into())
                 })?;
                 let user_id =
-                    matrix_sdk::ruma::UserId::parse(target.as_str()).map_err(Self::map_error)?;
+                    matrix_sdk::ruma::UserId::parse(target.as_str()).map_err(|error| {
+                        BackendError::InvalidConfiguration(format!(
+                            "direct-message peer ID is malformed: {error}"
+                        ))
+                    })?;
                 let member = room.get_member(&user_id).await.map_err(Self::map_error)?;
                 let peer_display_name = member
                     .map(|member| member.name().to_owned())
@@ -7562,9 +7946,20 @@ impl MeshBackend for MatrixBackend {
         request_id: String,
         deadline_ms: u64,
     ) -> BackendResult<Vec<MessageDto>> {
-        let query = query.trim().to_lowercase();
+        let query = query.trim();
         if query.is_empty() {
             return Ok(Vec::new());
+        }
+        if query.len() > MAX_SEARCH_QUERY_BYTES {
+            return Err(BackendError::InvalidConfiguration(format!(
+                "message search query is too large (maximum {MAX_SEARCH_QUERY_BYTES} UTF-8 bytes)"
+            )));
+        }
+        let query = query.to_lowercase();
+        if query.len() > MAX_SEARCH_QUERY_BYTES {
+            return Err(BackendError::InvalidConfiguration(format!(
+                "normalized message search query is too large (maximum {MAX_SEARCH_QUERY_BYTES} UTF-8 bytes)"
+            )));
         }
         let client = self.client().await?;
         let account_id = client
@@ -7584,10 +7979,12 @@ impl MeshBackend for MatrixBackend {
                 }
                 result = self.list_channels(community_id) => result?.entities,
             };
-            let mut results = Vec::with_capacity(limit);
-            let mut scanned_events = 0usize;
-            let mut scanned_bytes = 0usize;
-            for channel in channels.into_iter().take(MAX_SEARCH_ROOMS) {
+            let mut results = BoundedMessageSearchResults::new(limit, MAX_SEARCH_RETAINED_BYTES);
+            let mut budget = MessageSearchBudget::production();
+            for channel in channels {
+                if !budget.reserve_room() {
+                    break;
+                }
                 if cancellation.is_cancelled() {
                     return Err(BackendError::Cancelled(
                         "message search was superseded".into(),
@@ -7598,15 +7995,17 @@ impl MeshBackend for MatrixBackend {
                     _ = cancellation.cancelled() => {
                         return Err(BackendError::Cancelled("message search was superseded".into()))
                     }
-                    result = self.messages(channel.id, MAX_SEARCH_EVENTS_PER_ROOM, None, None) => result?,
+                    result = self.messages(channel.id, MAX_SEARCH_EVENTS_PER_ROOM, None, None) => {
+                        match result {
+                            Ok(messages) => messages,
+                            Err(error) if Self::blocked_entity_reason(&error).is_some() => continue,
+                            Err(error) => return Err(error),
+                        }
+                    },
                 };
                 for message in messages {
-                    scanned_events = scanned_events.saturating_add(1);
-                    scanned_bytes = scanned_bytes.saturating_add(message.content.len());
-                    if scanned_events > MAX_SEARCH_EVENTS
-                        || scanned_bytes > MAX_SEARCH_SCANNED_BYTES
-                    {
-                        return Ok(results);
+                    if !budget.reserve_event(message_search_retained_bytes(&message)) {
+                        return Ok(results.into_entries());
                     }
                     if cancellation.is_cancelled() {
                         return Err(BackendError::Cancelled(
@@ -7616,11 +8015,11 @@ impl MeshBackend for MatrixBackend {
                     if message.deleted_at.is_none()
                         && message.content.to_lowercase().contains(&query)
                     {
-                        insert_bounded_search_result(&mut results, message, limit);
+                        results.insert(message);
                     }
                 }
             }
-            Ok(results)
+            Ok(results.into_entries())
         };
         let result = match tokio::time::timeout(
             Duration::from_millis(deadline_ms.clamp(250, MAX_SEARCH_DEADLINE_MS)),

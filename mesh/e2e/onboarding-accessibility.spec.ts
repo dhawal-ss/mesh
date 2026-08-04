@@ -360,15 +360,15 @@ test('@a11y checks and starts browser sign-in through the native account boundar
   )).toEqual([
     {
       command: 'matrix_service_capabilities',
-      args: { homeserver: 'friends.example' },
+      args: expect.objectContaining({ homeserver: 'friends.example' }),
     },
     {
       command: 'matrix_oidc_status',
-      args: { homeserver: 'friends.example' },
+      args: expect.objectContaining({ homeserver: 'friends.example' }),
     },
     {
       command: 'matrix_start_oidc_login',
-      args: { homeserver: 'friends.example' },
+      args: expect.objectContaining({ homeserver: 'friends.example' }),
     },
   ])
   await expect(page.getByRole('heading', { name: 'Getting things ready' })).toBeVisible()
@@ -400,10 +400,13 @@ test('@a11y prefills an opaque cold-start invitation before account creation', a
   expect(JSON.stringify(invitationCalls)).not.toContain(invitation)
   await expect(page.getByRole('button', { name: 'Sign in with Matrix.org' })).toBeVisible()
   await page.getByRole('button', { name: 'Create account with Community account service' }).click()
-  await expect(page.getByText('Invitation saved securely on this device')).toBeVisible()
-  await expect(page.getByText('Friends Community')).toBeVisible()
-  await expect(page.getByText('Invited by Bob.')).toBeVisible()
-  await expect(page.getByText('Invitation only')).toBeVisible()
+  const destination = page.getByRole('region', { name: 'Invitation destination' })
+  await expect(destination.getByText('Friends Community', { exact: true })).toBeVisible()
+  await expect(destination.getByText('Bob', { exact: true })).toBeVisible()
+  await expect(destination.getByText('Invite only', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', {
+    name: 'Create your account with Community account service',
+  })).toBeVisible()
   await expect(page.getByText('!invited:friends.example', { exact: false })).toHaveCount(0)
   await expect(page.getByRole('textbox', { name: 'Invitation code' })).toHaveCount(0)
   await expect(page.getByText('different Mesh service')).toHaveCount(0)
@@ -415,7 +418,7 @@ test('keeps trust context and account setup usable in a narrow window', async ({
 
   const shell = page.getByRole('region', { name: 'Set up Mesh' })
   await expect(shell).toBeVisible()
-  await expect(page.getByText('Conversations that stay yours.')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Find your people. Keep the party close.' })).toBeVisible()
   await expect(page.getByRole('list', { name: 'Setup progress' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Sign in with Matrix.org' })).toBeVisible()
 

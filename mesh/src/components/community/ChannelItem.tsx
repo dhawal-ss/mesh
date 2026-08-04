@@ -129,12 +129,12 @@ export function ChannelItem({
         onClick={onClick}
         aria-label={`${channel.channelType === 'text' ? 'Text' : 'Voice'} room: ${channel.name}${hasUnread ? `, ${unreadLabel}` : ''}${isMuted ? ', muted' : ''}`}
         aria-current={active ? 'page' : undefined}
-        className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-control px-2 py-density-row text-left transition-colors duration-instant ${
+        className={`mesh-channel-item flex min-w-0 flex-1 items-center gap-1.5 rounded-control border px-2 py-density-row text-left transition-colors duration-instant ${
           active
-            ? 'mesh-channel-active bg-surface-selected text-primary'
+            ? 'mesh-channel-active border-transparent bg-transparent text-accent'
             : hasUnread
-              ? 'text-primary hover:bg-surface-hover'
-              : 'text-muted hover:bg-surface-hover hover:text-secondary'
+              ? 'border-transparent text-primary hover:bg-surface-hover'
+              : 'border-transparent text-muted hover:bg-surface-hover hover:text-secondary'
         }`}
       >
         {/* Channel type icon */}

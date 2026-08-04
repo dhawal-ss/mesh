@@ -118,17 +118,18 @@ describe('bridge message mutation boundary', () => {
     await bridge.matrixRetryQueuedMessage('!room:example.org', 'txn-1')
     await bridge.matrixCancelQueuedMessage('!room:example.org', 'txn-1')
 
-    expect(invokeMock.mock.calls).toEqual([
-      ['matrix_queued_messages', undefined],
-      [
-        'matrix_retry_queued_message',
-        { roomId: '!room:example.org', transactionId: 'txn-1' },
-      ],
-      [
-        'matrix_cancel_queued_message',
-        { roomId: '!room:example.org', transactionId: 'txn-1' },
-      ],
-    ])
+    expect(invokeMock).toHaveBeenNthCalledWith(1, 'matrix_queued_messages', {
+      requestId: expect.any(String),
+      deadlineMs: expect.any(Number),
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(2, 'matrix_retry_queued_message', {
+      roomId: '!room:example.org',
+      transactionId: 'txn-1',
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(3, 'matrix_cancel_queued_message', {
+      roomId: '!room:example.org',
+      transactionId: 'txn-1',
+    })
   })
 
   it('does not expose Matrix queue commands to the legacy artifact', async () => {
@@ -154,14 +155,18 @@ describe('bridge message mutation boundary', () => {
     await bridge.saveComposerDraft('!room:example.org', 'updated draft')
     await bridge.clearComposerDraft('!room:example.org')
 
-    expect(invokeMock.mock.calls).toEqual([
-      ['matrix_load_composer_draft', { roomId: '!room:example.org' }],
-      [
-        'matrix_save_composer_draft',
-        { roomId: '!room:example.org', body: 'updated draft' },
-      ],
-      ['matrix_clear_composer_draft', { roomId: '!room:example.org' }],
-    ])
+    expect(invokeMock).toHaveBeenNthCalledWith(1, 'matrix_load_composer_draft', {
+      roomId: '!room:example.org',
+      requestId: expect.any(String),
+      deadlineMs: expect.any(Number),
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(2, 'matrix_save_composer_draft', {
+      roomId: '!room:example.org',
+      body: 'updated draft',
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(3, 'matrix_clear_composer_draft', {
+      roomId: '!room:example.org',
+    })
   })
 
   it('keeps received encrypted thumbnails outside renderer IPC', async () => {
@@ -193,6 +198,8 @@ describe('bridge message mutation boundary', () => {
         roomId: '!room:example.org',
         eventId: '$event:example.org',
         attachmentIndex: 0,
+        requestId: expect.any(String),
+        deadlineMs: expect.any(Number),
       },
     )
     await expect(

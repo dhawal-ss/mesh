@@ -18,7 +18,7 @@ export function DayDivider({ timestamp }: { timestamp: unknown }) {
 
   return (
     <div
-      className="pointer-events-none sticky top-0 z-sticky flex items-center gap-3 bg-surface-base px-4 py-2"
+      className="pointer-events-none sticky top-0 z-sticky flex w-full items-center gap-3 bg-surface-base px-4 py-2"
       role="separator"
       aria-label={label}
     >

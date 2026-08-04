@@ -6,14 +6,22 @@ name: Build signed Matrix beta candidate
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
   workflow_dispatch:
     inputs:
       release_version:
-        description: Exact non-placeholder application version to release
+        description: Exact approved application version
         required: true
+        default: "0.2.0"
         type: string
+      validation_only:
+        description: Exercise the factory without secrets, signing, binaries, or publication
+        required: true
+        default: true
+        type: boolean
       release_tag:
         description: Optional existing v* tag for a signed draft candidate; leave empty for validation-only
         required: false
@@ -28,11 +36,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  MESH_RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.release_version || github.ref_name }}
+  MESH_RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.release_version || (startsWith(github.ref, 'refs/tags/') && github.ref_name || '0.2.0') }}
   MESH_RELEASE_TAG: ${{ inputs.release_tag }}
-  # Public desktop OAuth registrations are build inputs, not credentials.
-  # Each entry is bound to one exact discovered issuer and the fixed loopback callback.
-  MESH_OAUTH_CLIENT_REGISTRATIONS_JSON: ${{ vars.MESH_OAUTH_CLIENT_REGISTRATIONS_JSON }}
 
 jobs:
   quality-gate:
@@ -57,17 +62,25 @@ jobs:
           source_sha="$(git rev-parse HEAD)"
           release_tag=""
           create_candidate=false
+          validation_only=false
 
-          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
-            if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
-              echo "Tagged candidate runs require a v* tag." >&2
-              exit 1
-            fi
+          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == refs/tags/v* ]]; then
             release_tag="$GITHUB_REF_NAME"
             create_candidate=true
+          elif [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
+            validation_only=true
+          elif [[ "${{ inputs.validation_only }}" == "true" ]]; then
+            if [[ -n "$MESH_RELEASE_TAG" ]]; then
+              echo "Validation-only runs cannot name a release tag." >&2
+              exit 1
+            fi
+            validation_only=true
           elif [[ -n "$MESH_RELEASE_TAG" ]]; then
             release_tag="$MESH_RELEASE_TAG"
             create_candidate=true
+          else
+            echo "A non-validation manual run requires an explicit release tag." >&2
+            exit 1
           fi
 
           git fetch --no-tags origin \
@@ -98,6 +111,7 @@ jobs:
           echo "MESH_CREATE_CANDIDATE=$create_candidate" >> "$GITHUB_ENV"
           echo "MESH_RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
           echo "MESH_SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
+          echo "MESH_VALIDATION_ONLY=$validation_only" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -126,6 +140,7 @@ jobs:
         working-directory: mesh
         run: |
           npm audit --audit-level=high
+          node --test ./scripts/release-factory-validation.test.mjs
           if [[ "$MESH_CREATE_CANDIDATE" == "true" ]]; then
             pwsh -NoProfile -File ./scripts/beta-release-preflight.ps1 \
               -Tag "$MESH_RELEASE_TAG" \
@@ -134,7 +149,8 @@ jobs:
               -RequireProtectedMainAncestry
           else
             pwsh -NoProfile -File ./scripts/beta-release-preflight.ps1 \
-              -ReleaseVersion "$MESH_RELEASE_VERSION"
+              -ReleaseVersion "$MESH_RELEASE_VERSION" \
+              -ValidationOnly
           fi
           pwsh -NoProfile -File ./infra/matrixrtc/test-evidence-validation.ps1
           pwsh -NoProfile -File ./scripts/matrixrtc-preflight.ps1
@@ -142,9 +158,12 @@ jobs:
           node ./scripts/check-external-acceptance.mjs
           pwsh -NoProfile -File ./scripts/operator-smoke.ps1
           npm run check:public-services
+          npm run check:owner-decisions
           npm run check:beta-contract
           npm run check:operations-contract
+          npm run check:interface-sounds
           npm run check:third-party-notices
+          npm run check:installer-payload
           # Evidence is collected on the tested source commit. A final release
           # metadata-only commit may update readiness.json afterward; the
           # validator allows that one-file delta and rejects source drift.
@@ -152,13 +171,37 @@ jobs:
           # acceptance can be collected. Candidate creation therefore requires
           # exact-SHA R0 readiness; R2 stays blocked until genuine live evidence
           # is collected from this signed draft.
-          npm run check:readiness-ledger -- --milestone R0 --require-live --commit-sha "$MESH_SOURCE_SHA" --allow-ledger-only-commit
+          if [[ "$MESH_CREATE_CANDIDATE" == "true" ]]; then
+            npm run check:readiness-ledger -- --milestone R0 --require-live --commit-sha "$MESH_SOURCE_SHA" --allow-ledger-only-commit
+          else
+            npm run check:readiness-ledger
+          fi
           npm run check:public-site
           npm test -- --maxWorkers=4
           npm run build
+          npm run check:release-sboms
           npm run check:bundle-size -- --report release/bundle-report.json
           pwsh -NoProfile -File ./scripts/beta-release-preflight.ps1 -VerifyFrontendBundle
           npm run e2e -- --workers=1
+
+      - name: Record validation-only artifact inventory
+        if: ${{ steps.release-context.outputs.create_candidate != 'true' }}
+        working-directory: mesh
+        run: |
+          node scripts/release-factory-validation.mjs \
+            --validation-only true \
+            --source-sha "${{ steps.release-context.outputs.source_sha }}" \
+            --tree-hash "$(git rev-parse HEAD^{tree})" \
+            --output release/release-factory-validation.json
+
+      - name: Upload validation-only artifact inventory
+        if: ${{ steps.release-context.outputs.create_candidate != 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: matrix-beta-factory-validation-${{ steps.release-context.outputs.source_sha }}
+          path: mesh/release/release-factory-validation.json
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Run Matrix backend gates
         working-directory: mesh/src-tauri
@@ -192,9 +235,63 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  container-supply-chain:
+    name: Candidate container scan (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: caddy
+            image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+          - name: lk-jwt-service
+            image: ghcr.io/element-hq/lk-jwt-service:0.4.4@sha256:9c715697c6f7c1f538f2ee41b7b59b04a8d06bf790a7cc8c8517ccac8d28813d
+          - name: livekit-server
+            image: livekit/livekit-server:v1.13.1@sha256:2c6869d2d5ff6c9c0166f47be1c92dad6928bfecfa5e4060a6ece48db8accfa3
+          - name: synapse
+            image: matrixdotorg/synapse:v1.157.1@sha256:d1fce43d7501428c461f2758dc10342555b946dc9f1d03c1b1b8aec1a4e8d130
+          - name: nginx
+            image: nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
+          - name: postgres
+            image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Validate exact container policy
+        working-directory: mesh
+        run: npm run check:container-supply-chain
+      - name: Generate candidate container SBOM
+        uses: anchore/sbom-action@e8d2a6937ecead383dfe75190d104edd1f9c5751 # v0.16.0
+        with:
+          image: ${{ matrix.image }}
+          format: cyclonedx-json
+          output-file: candidate-${{ matrix.name }}.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Fail candidate on scanner outage or fixable high finding
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
+        with:
+          image: ${{ matrix.image }}
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
+          output-format: json
+          output-file: candidate-${{ matrix.name }}-grype.json
+      - name: Upload candidate container evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: candidate-container-${{ matrix.name }}-${{ github.sha }}
+          path: |
+            candidate-${{ matrix.name }}.cdx.json
+            candidate-${{ matrix.name }}-grype.json
+          if-no-files-found: error
+          retention-days: 90
+
   windows:
     name: Signed Windows Matrix beta candidate
-    needs: quality-gate
+    needs: [quality-gate, container-supply-chain]
     if: ${{ needs.quality-gate.outputs.create_candidate == 'true' }}
     runs-on: windows-latest
     timeout-minutes: 90
@@ -202,6 +299,9 @@ jobs:
     env:
       MESH_RELEASE_TAG: ${{ needs.quality-gate.outputs.release_tag }}
       MESH_SOURCE_SHA: ${{ needs.quality-gate.outputs.source_sha }}
+      # Public desktop OAuth registrations are build inputs, not credentials,
+      # but remain scoped to the protected candidate job.
+      MESH_OAUTH_CLIENT_REGISTRATIONS_JSON: ${{ vars.MESH_OAUTH_CLIENT_REGISTRATIONS_JSON }}
     permissions:
       contents: write
       id-token: write
@@ -357,10 +457,10 @@ jobs:
         shell: pwsh
         run: |
           Push-Location mesh
-          npm sbom --sbom-format=cyclonedx | Out-File mesh-node.cdx.json -Encoding utf8
+          npm run build:matrix
+          npm run generate:release-sboms
+          npm run prepare:installer-payload -- --tag $env:MESH_RELEASE_TAG
           Pop-Location
-          cargo install cargo-cyclonedx --version 0.5.9 --locked
-          cargo cyclonedx --manifest-path mesh/src-tauri/Cargo.toml --no-default-features --features matrix-backend --format json
 
       - name: Record clean-source build provenance
         shell: pwsh
@@ -383,10 +483,19 @@ jobs:
           $provenance |
             ConvertTo-Json -Depth 4 |
             Out-File mesh/build-provenance.json -Encoding utf8
+          Copy-Item -LiteralPath mesh/build-provenance.json `
+            -Destination mesh/release/installer-payload/provenance.json
 
       - name: Build signed Matrix installers
         working-directory: mesh
         run: npm run tauri -- build --features matrix-backend -- --no-default-features --locked --jobs 1
+
+      - name: Verify compiled installer coexistence controls
+        shell: pwsh
+        run: |
+          ./mesh/scripts/check-compiled-installer-coexistence.ps1 `
+            -BundleRoot mesh/src-tauri/target/release/bundle `
+            -ExpectedVersion $env:MESH_RELEASE_VERSION
 
       - name: Verify installer signatures and timestamps
         shell: pwsh
@@ -415,11 +524,15 @@ jobs:
           }
 
           $sboms = @(
-            Get-Item mesh/mesh-node.cdx.json
-            Get-Item mesh/src-tauri/mesh.cdx.json
+            Get-Item mesh/release/source-lockfile.cdx.json
+            Get-Item mesh/release/matrix-windows-artifact.cdx.json
+            Get-Item mesh/release/installer-payload/exact-source.json
             Get-Item mesh/build-provenance.json
             Get-Item mesh/bundle-report.json
             Get-Item mesh/release-evidence/rust-dependency-report.json
+            Get-Item mesh/THIRD_PARTY_NOTICES.md
+            Get-Item LICENSE
+            Get-Item COPYRIGHT
           )
           $evidence = @($installers) + $sboms
           $checksumPath = Join-Path $PWD "mesh/SHA256SUMS.txt"
@@ -438,11 +551,15 @@ jobs:
           subject-path: |
             mesh/src-tauri/target/release/bundle/**/*.msi
             mesh/src-tauri/target/release/bundle/**/*.exe
-            mesh/mesh-node.cdx.json
-            mesh/src-tauri/mesh.cdx.json
+            mesh/release/source-lockfile.cdx.json
+            mesh/release/matrix-windows-artifact.cdx.json
+            mesh/release/installer-payload/exact-source.json
             mesh/build-provenance.json
             mesh/bundle-report.json
             mesh/release-evidence/rust-dependency-report.json
+            mesh/THIRD_PARTY_NOTICES.md
+            LICENSE
+            COPYRIGHT
             mesh/SHA256SUMS.txt
 
       - name: Scan release artifacts for secrets
@@ -452,11 +569,15 @@ jobs:
         run: |
           & ./mesh/scripts/scan-release-artifacts.ps1 -Path @(
             "mesh/src-tauri/target/release/bundle",
-            "mesh/mesh-node.cdx.json",
-            "mesh/src-tauri/mesh.cdx.json",
+            "mesh/release/source-lockfile.cdx.json",
+            "mesh/release/matrix-windows-artifact.cdx.json",
+            "mesh/release/installer-payload/exact-source.json",
             "mesh/build-provenance.json",
             "mesh/bundle-report.json",
             "mesh/release-evidence/rust-dependency-report.json",
+            "mesh/THIRD_PARTY_NOTICES.md",
+            "LICENSE",
+            "COPYRIGHT",
             $env:MESH_CHECKSUM_PATH
           )
 
@@ -479,11 +600,15 @@ jobs:
           $assets = @(
             $installers.FullName
             $env:MESH_CHECKSUM_PATH
-            (Resolve-Path mesh/mesh-node.cdx.json).Path
-            (Resolve-Path mesh/src-tauri/mesh.cdx.json).Path
+            (Resolve-Path mesh/release/source-lockfile.cdx.json).Path
+            (Resolve-Path mesh/release/matrix-windows-artifact.cdx.json).Path
+            (Resolve-Path mesh/release/installer-payload/exact-source.json).Path
             (Resolve-Path mesh/build-provenance.json).Path
             (Resolve-Path mesh/bundle-report.json).Path
             (Resolve-Path mesh/release-evidence/rust-dependency-report.json).Path
+            (Resolve-Path mesh/THIRD_PARTY_NOTICES.md).Path
+            (Resolve-Path LICENSE).Path
+            (Resolve-Path COPYRIGHT).Path
           )
 
           $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.txt"
@@ -492,7 +617,7 @@ jobs:
 
           This draft is not a public release and must not be promoted until the owner-controlled R2 acceptance and publication lifecycle is reviewed and complete.
 
-          Verify downloads against ``SHA256SUMS.txt`` and inspect the attached CycloneDX SBOMs.
+          Verify downloads against ``SHA256SUMS.txt`` and inspect the attached complete-source and Matrix-artifact CycloneDX SBOMs. License, copyright, third-party notices, and the exact-source pointer are included both as assets and offline installer resources.
 
           Automatic updates are intentionally disabled until Mesh has a provisioned signed-update endpoint and updater public key. Install this beta only in a controlled test environment.
           "@ | Out-File $notesPath -Encoding utf8

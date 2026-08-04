@@ -26,6 +26,7 @@ import { ProtectedImageLightbox } from './ProtectedImageLightbox'
 import { ContextMenu, Popover, type MenuItem } from '../ui/InteractivePrimitives'
 import { MessageReportDialog } from './MessageReportDialog'
 import { useShellStore } from '../../store/shell'
+import { copyText } from '../../lib/notifications'
 
 interface MessageProps {
   message: MessageType
@@ -108,6 +109,10 @@ export const MessageComponent = memo(function MessageComponent({
   const isPinned = useRoomPinStore((state) => state.roomId === message.channelId && state.eventIds.includes(message.id))
   const canManagePins = useRoomPinStore((state) => state.roomId === message.channelId && state.canManage)
   const toggleRoomPin = useRoomPinStore((state) => state.toggle)
+  const queueState = useMessageStore((state) => {
+    const transactionId = message.transactionId ?? message.id
+    return state.matrixQueueStates[message.channelId]?.[transactionId]?.state
+  })
 
   const isOwnMessage = myPublicKey === message.authorPublicKey
   const canModerate = myRole === 'owner' || myRole === 'admin'
@@ -116,6 +121,7 @@ export const MessageComponent = memo(function MessageComponent({
   const isUndecryptable = !!undecryptable
   const isQueued =
     message.deliveryStatus === 'pending' || message.deliveryStatus === 'failed'
+  const isSavedForLater = message.deliveryStatus === 'pending' && queueState === 'pending'
   const mutationBusy = mutation?.status === 'pending' || mutation?.status === 'retrying'
   const canPinMessage =
     surface === 'channel'
@@ -417,9 +423,9 @@ export const MessageComponent = memo(function MessageComponent({
 
   const deliveryLabel =
     message.deliveryStatus === 'pending'
-      ? ', saved on this device and waiting to send'
+      ? isSavedForLater ? ', saved for later' : ', sending'
       : message.deliveryStatus === 'failed'
-        ? ', delivery needs attention'
+        ? ', could not send'
         : ''
   const undecryptableLabel = isUndecryptable ? ', message content unavailable' : ''
   const editedLabel = message.editedAt ? ', edited' : ''
@@ -443,16 +449,16 @@ export const MessageComponent = memo(function MessageComponent({
           role="group"
           aria-label={messageAriaLabel}
           tabIndex={-1}
-          className={`group relative flex min-w-0 max-w-full gap-3 py-0.5 pl-message-gutter pr-12 outline-none transition-opacity duration-fast hover:bg-surface-hover ${
+          className={`mesh-message-row group relative flex min-w-0 max-w-full gap-3 py-0.5 pl-message-gutter pr-12 outline-none transition-opacity duration-fast hover:bg-surface-hover ${
             message.deliveryStatus === 'pending' ? 'opacity-60' : 'opacity-100'
           } ${!isGrouped ? 'mt-message-group' : ''}`}
           onMouseLeave={() => setShowReactions(false)}
           onKeyDown={handleRowKeyDown}
         >
           {/* Avatar: absolute positioned in left gutter */}
-          <div className="absolute left-4 top-0.5 w-8">
+          <div className="absolute left-5 top-0.5 w-10">
             {!isGrouped ? (
-              <Avatar color={message.authorAvatarColor} size={32} name={message.authorDisplayName} />
+              <Avatar color={message.authorAvatarColor} size={38} name={message.authorDisplayName} />
             ) : (
               /* Revealed by CSS group state rather than the JS `hovered` flag so
                  keyboard users (group-focus-within) and touch users (the
@@ -467,7 +473,13 @@ export const MessageComponent = memo(function MessageComponent({
           <div className="mesh-message-content min-w-0 flex-1">
             {!isGrouped && (
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
-                <span className="text-sm font-semibold text-primary">{message.authorDisplayName}</span>
+                <span
+                  className="text-sm font-semibold"
+                  data-design-token-exception="Author color is member identity data."
+                  style={{ color: message.authorAvatarColor }}
+                >
+                  {message.authorDisplayName}
+                </span>
                 <MessageTime
                   value={message.timestamp}
                   variant="full"
@@ -479,7 +491,7 @@ export const MessageComponent = memo(function MessageComponent({
             {message.deliveryStatus === 'pending' && (
               <div role="status" className="mt-1 inline-flex items-center gap-1 text-meta text-status-warning">
                 <Icon name="loader" size="xs" className="animate-spin" />
-                Saved on this device · Waiting to send
+                {isSavedForLater ? 'Saved for later' : 'Sending'}
               </div>
             )}
 
@@ -495,13 +507,24 @@ export const MessageComponent = memo(function MessageComponent({
                 animate={disableMotion ? undefined : { x: [0, -2, 2, 0] }}
                 transition={transitions.failure}
               >
-                <span>Delivery needs attention.</span>
+                <span>Could not send.</span>
                 <button
                   type="button"
                   onClick={() => onRetry?.(message)}
                   className="min-h-control-sm rounded-control bg-status-danger/10 px-2 font-medium transition-colors hover:bg-status-danger/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                 >
-                  Retry
+                  Try again
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void copyText(message.content)
+                      .then(() => showToast('Message text copied.', 'success'))
+                      .catch(() => showToast('Could not copy this message.', 'error'))
+                  }}
+                  className="min-h-control-sm rounded-control px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  Copy text
                 </button>
                 {onCancel && (
                   <button
@@ -509,7 +532,7 @@ export const MessageComponent = memo(function MessageComponent({
                     onClick={() => onCancel(message)}
                     className="min-h-control-sm rounded-control px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                   >
-                    Cancel
+                    Remove
                   </button>
                 )}
               </motion.div>
@@ -624,7 +647,7 @@ export const MessageComponent = memo(function MessageComponent({
                   <img
                     src={message.designPreviewImageUrl}
                     alt={`${message.authorDisplayName} shared concept art`}
-                    className="mt-2 max-h-44 w-full max-w-2xl rounded-panel border border-border-subtle object-cover"
+                    className="mesh-message-media mt-3 w-full max-w-3xl rounded-panel border border-border-subtle object-cover"
                   />
                 ) : null}
                 {message.editedAt && (
@@ -660,10 +683,16 @@ export const MessageComponent = memo(function MessageComponent({
                 type="button"
                 onClick={onToggleThread}
                 aria-expanded={threadOpen}
+                aria-controls="mesh-thread-panel"
+                aria-label={
+                  threadOpen
+                    ? `Close thread for message from ${message.authorDisplayName}`
+                    : `Open thread for message from ${message.authorDisplayName}, ${threadReplyCount} ${threadReplyCount === 1 ? 'reply' : 'replies'}`
+                }
                 className="mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-control px-2 text-xs font-medium text-text-link transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               >
                 <Icon name="messageCircle" size="xs" />
-                {threadOpen ? 'Hide replies' : `${threadReplyCount} ${threadReplyCount === 1 ? 'reply' : 'replies'}`}
+                {threadOpen ? 'Close thread' : `${threadReplyCount} ${threadReplyCount === 1 ? 'reply' : 'replies'}`}
               </button>
             )}
 
@@ -703,18 +732,7 @@ export const MessageComponent = memo(function MessageComponent({
                       {/* A checkmark carries the "you reacted" state independently
                           of the accent tint, which was previously the only signal. */}
                       {mine && <Icon name="check" size="xs" aria-hidden="true" />}
-                      {disableMotion ? (
-                        <span aria-hidden="true">{glyph}</span>
-                      ) : (
-                        <motion.span
-                          aria-hidden="true"
-                          initial={{ scale: 0.8 }}
-                          animate={{ scale: 1 }}
-                          transition={transitions.reaction}
-                        >
-                          {glyph}
-                        </motion.span>
-                      )}
+                      <span aria-hidden="true">{glyph}</span>
                       <span aria-hidden="true" className="badge-count text-meta">{users.length}</span>
                     </button>
                   )
@@ -892,12 +910,14 @@ export function FileAttachmentCard({
   eventId,
   attachmentIndex,
   onOpenImage,
+  compact = false,
 }: {
   attachment: MessageType['attachments'][number]
   roomId: string
   eventId: string
   attachmentIndex: number
   onOpenImage?: () => void
+  compact?: boolean
 }) {
   const download = useFileDownloadStore((s) => s.downloads[attachment.fileHash])
   const sourcePeerId = attachment.sourcePeerId
@@ -1011,6 +1031,64 @@ export function FileAttachmentCard({
   const isDownloading = status === 'downloading'
   const isCompleted = status === 'completed'
   const isErrored = status === 'error'
+  const actionLabel = isCompleted
+    ? `Open ${attachment.filename}`
+    : isDownloading && matrixMode
+      ? `Cancel download of ${attachment.filename}`
+      : `Download ${attachment.filename}`
+  const actionText = isCompleted
+    ? 'Open'
+    : isDownloading && matrixMode
+      ? 'Cancel'
+      : isDownloading
+        ? `${progressPercent}%`
+        : isErrored && download?.retryMode === 'restart-from-zero'
+          ? 'Restart'
+          : isErrored
+            ? 'Retry'
+            : 'Download'
+  const handleAction = isCompleted ? handleOpen : isDownloading && matrixMode ? cancelDownload : startDownload
+
+  if (compact) {
+    return (
+      <div className="rounded-control border border-border-subtle bg-surface-raised p-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-control bg-surface-hover text-muted">
+            <Icon name="fileText" size="sm" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-xs font-medium text-text-link">{attachment.filename}</span>
+            <span className="block text-caption text-muted">{(attachment.size / 1024 / 1024).toFixed(2)} MB</span>
+          </span>
+        </div>
+        {isDownloading && (
+          <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-active">
+            <div
+              className="h-full rounded-full bg-accent transition-[width] duration-normal"
+              data-design-token-exception="data-driven-transfer-progress-width"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+        )}
+        {isErrored && <p className="mt-2 text-caption leading-5 text-status-danger">{download?.error ?? 'Download failed'}</p>}
+        <button
+          type="button"
+          onClick={() => void handleAction()}
+          disabled={isDownloading && !matrixMode}
+          className={`mt-2 min-h-9 w-full rounded-control px-3 text-xs font-semibold transition-colors ${
+            isCompleted
+              ? 'bg-status-success/15 text-status-success hover:bg-status-success/25'
+              : isErrored
+                ? 'bg-status-danger/10 text-status-danger hover:bg-status-danger/15'
+                : 'bg-surface-hover text-secondary hover:bg-surface-active'
+          } disabled:opacity-60`}
+          aria-label={actionLabel}
+        >
+          {actionText}
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-sm overflow-hidden rounded-panel border border-border-subtle bg-surface-raised">
@@ -1053,7 +1131,7 @@ export function FileAttachmentCard({
         </div>
 
         <button
-          onClick={isCompleted ? handleOpen : isDownloading && matrixMode ? cancelDownload : startDownload}
+          onClick={handleAction}
           disabled={isDownloading && !matrixMode}
           className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
             isCompleted
@@ -1062,25 +1140,9 @@ export function FileAttachmentCard({
                 ? 'bg-status-danger/10 text-status-danger hover:bg-status-danger/15'
                 : 'bg-surface-hover text-secondary hover:bg-surface-active'
           } disabled:opacity-60`}
-          aria-label={
-            isCompleted
-              ? `Open ${attachment.filename}`
-              : isDownloading && matrixMode
-                ? `Cancel download of ${attachment.filename}`
-                : `Download ${attachment.filename}`
-          }
+          aria-label={actionLabel}
         >
-          {isCompleted
-            ? 'Open'
-            : isDownloading && matrixMode
-              ? 'Cancel'
-              : isDownloading
-                ? `${progressPercent}%`
-                : isErrored && download?.retryMode === 'restart-from-zero'
-                  ? 'Restart'
-                  : isErrored
-                    ? 'Retry'
-                    : 'Download'}
+          {actionText}
         </button>
       </div>
     </div>

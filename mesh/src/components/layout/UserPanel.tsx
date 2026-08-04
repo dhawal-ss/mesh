@@ -10,7 +10,10 @@ import { setNextModalRestoreFocusTarget } from '../ui/Modal'
 import { useChannelStore } from '../../store/channels'
 import { useDmStore } from '../../store/dms'
 import { isBackupReminderDue, useSettingsStore } from '../../store/settings'
+import { playInterfaceSound } from '../../lib/interface-sounds'
 import { ModalLoadingFallback } from '../ui/ModalLoadingFallback'
+import { useVoiceStore } from '../../store/voice'
+import { IconButton } from '../ui/IconButton'
 
 const DiagnosticsPanel = lazy(() =>
   import('../settings/DiagnosticsPanel').then((module) => ({
@@ -27,7 +30,7 @@ const SecurityDevicesPanel = lazy(() =>
     default: module.SecurityDevicesPanel,
   })),
 )
-export function UserPanel() {
+export function UserPanel({ controls = true }: { controls?: boolean } = {}) {
   const storedIdentity = useIdentityStore((state) => state.identity)
   const setIdentity = useIdentityStore((state) => state.setIdentity)
   const matrixMode = bridge.isMatrixBackend()
@@ -53,6 +56,11 @@ export function UserPanel() {
   const activePrivacyRoomId = isDmMode ? activeConversationId : activeChannelId
   const activePrivacyRoomName = isDmMode ? activeConversationName : activeChannelName
   const backupReminderDue = useSettingsStore((state) => isBackupReminderDue(state.backup))
+  const currentVoiceChannelId = useVoiceStore((state) => state.currentChannelId)
+  const isMuted = useVoiceStore((state) => state.isMuted)
+  const isDeafened = useVoiceStore((state) => state.isDeafened)
+  const setMuted = useVoiceStore((state) => state.setMuted)
+  const setDeafened = useVoiceStore((state) => state.setDeafened)
   const settingsTriggerRef = useRef<HTMLButtonElement | null>(null)
 
   const openSettings = (event: MouseEvent<HTMLButtonElement>) => {
@@ -62,7 +70,12 @@ export function UserPanel() {
 
   const closeSettings = () => {
     setShowSettings(false)
-    window.setTimeout(() => settingsTriggerRef.current?.focus(), 0)
+    window.setTimeout(() => {
+      const fallback = document.querySelector<HTMLButtonElement>(
+        'button[aria-label="You and settings"]',
+      )
+      ;(settingsTriggerRef.current ?? fallback)?.focus()
+    }, 0)
   }
 
   const openSecurity = () => {
@@ -77,7 +90,7 @@ export function UserPanel() {
 
   return (
     <>
-      <div className="flex h-user-panel flex-shrink-0 items-center gap-2 bg-surface-sunken px-2">
+      {controls && <div className="mesh-user-panel flex h-user-panel flex-shrink-0 items-center gap-1 bg-surface-sunken px-2">
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-2 rounded-control px-1 py-1 text-left transition-colors hover:bg-surface-hover"
@@ -98,9 +111,36 @@ export function UserPanel() {
               {matrixAccountId ? 'Mesh account' : 'Local identity'}
             </span>
           </span>
-          <Icon name="settings" size="sm" className="flex-shrink-0 text-muted" />
         </button>
-      </div>
+        <div className="flex flex-shrink-0 items-center" role="toolbar" aria-label="Voice and account controls">
+          <IconButton
+            size="sm"
+            disabled={!currentVoiceChannelId}
+            aria-label={isMuted ? 'Unmute microphone' : 'Mute microphone'}
+            aria-pressed={isMuted}
+            onClick={() => setMuted(!isMuted)}
+          >
+            <Icon name={isMuted ? 'micOff' : 'mic'} size="sm" />
+          </IconButton>
+          <IconButton
+            size="sm"
+            disabled={!currentVoiceChannelId}
+            aria-label={isDeafened ? 'Restore call audio' : 'Mute call audio'}
+            aria-pressed={isDeafened}
+            onClick={() => setDeafened(!isDeafened)}
+          >
+            <Icon name={isDeafened ? 'headphoneOff' : 'headphones'} size="sm" />
+          </IconButton>
+          <IconButton
+            ref={settingsTriggerRef}
+            size="sm"
+            aria-label={`Open settings for ${identity.displayName}`}
+            onClick={openSettings}
+          >
+            <Icon name="settings" size="sm" />
+          </IconButton>
+        </div>
+      </div>}
 
       <DialogErrorBoundary open={showSettings} onClose={closeSettings} title="User Settings">
         {showSettings && (
@@ -124,10 +164,7 @@ export function UserPanel() {
               onOpenDiagnostics={openDiagnostics}
               onTestNotification={async () => {
                 await bridge.sendTestNotification()
-                const notifications = useSettingsStore.getState().notifications
-                if (notifications.sound) {
-                  bridge.playNotificationSound(notifications.soundId)
-                }
+                await playInterfaceSound('message-direct', { preview: true })
               }}
             />
           </Suspense>
@@ -151,12 +188,12 @@ export function UserPanel() {
       <DialogErrorBoundary
         open={showDiagnostics}
         onClose={() => setShowDiagnostics(false)}
-        title="System diagnostics"
+        title="Signal Check"
       >
         {showDiagnostics && (
           <Suspense
             fallback={
-              <ModalLoadingFallback title="System diagnostics" label="Loading diagnostics" />
+              <ModalLoadingFallback title="Signal Check" label="Opening Signal Check" />
             }
           >
             <DiagnosticsPanel

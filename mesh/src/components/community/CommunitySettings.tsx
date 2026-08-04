@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
@@ -7,9 +7,10 @@ import { Sheet, Switch } from '../ui/InteractivePrimitives'
 import { Field, Textarea } from '../ui/Primitives'
 import { IconButton } from '../ui/IconButton'
 import { InviteModal } from './InviteModal'
+import { MemberList } from './MemberList'
 import { useActiveCommunity, useCommunityStore } from '../../store/communities'
 import { useChannelStore } from '../../store/channels'
-import { useMembershipStore } from '../../store/membership'
+import { useCommunityMembers, useMembershipStore } from '../../store/membership'
 import * as bridge from '../../lib/bridge'
 import { transitions } from '../../lib/motion'
 import { canStartMatrixVoice } from '../../lib/voice-runtime'
@@ -21,13 +22,55 @@ import {
   useServerEmoji,
   useServerEmojiStore,
 } from '../../store/custom-emoji'
+import type { CommunityAdminSection } from '../../lib/mesh-navigation'
 
 interface CommunitySettingsProps {
   isOpen: boolean
   onClose: () => void
+  embedded?: boolean
+  activeSection?: CommunityAdminSection
 }
 
-export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
+function CommunitySettingsFrame({
+  embedded,
+  isOpen,
+  onClose,
+  communityName,
+  children,
+}: {
+  embedded: boolean
+  isOpen: boolean
+  onClose: () => void
+  communityName: string
+  children: ReactNode
+}) {
+  if (embedded) {
+    if (!isOpen) return null
+    return <div className="h-full overflow-y-auto">{children}</div>
+  }
+
+  return (
+    <Sheet
+      open={isOpen}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose()
+      }}
+      title="Community settings"
+      description={`Manage ${communityName}, its rooms, and who can find it.`}
+      size="lg"
+      closeLabel="Close community settings"
+    >
+      {children}
+    </Sheet>
+  )
+}
+
+export function CommunitySettings({
+  isOpen,
+  onClose,
+  embedded = false,
+  activeSection,
+}: CommunitySettingsProps) {
   const matrixMode = bridge.isMatrixBackend()
   const matrixVoiceReady = canStartMatrixVoice(bridge.getBackendStatusSnapshot())
   const communityOrder = useCommunityStore((state) => state.communityOrder)
@@ -37,10 +80,12 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
   const patchCommunity = useCommunityStore((state) => state.patchCommunity)
   const addChannel = useChannelStore((state) => state.addChannel)
   const clearCommunityMembership = useMembershipStore((s) => s.clearCommunity)
+  const communityMembers = useCommunityMembers(activeCommunityId)
 
   const community = useActiveCommunity()
 
   const [showInvite, setShowInvite] = useState(false)
+  const [sectionQuery, setSectionQuery] = useState('')
   const [showCreateChannel, setShowCreateChannel] = useState(false)
   const [channelName, setChannelName] = useState('')
   const [channelType, setChannelType] = useState<'text' | 'voice'>('text')
@@ -72,6 +117,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
 
   useEffect(() => {
     if (!isOpen || !matrixMode || !community || !activeCommunityId) return
+    if (activeSection && activeSection !== 'discovery-access') return
     if (community.role !== 'owner' && community.role !== 'admin') return
 
     let cancelled = false
@@ -95,10 +141,11 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
     return () => {
       cancelled = true
     }
-  }, [activeCommunityId, community, isOpen, matrixMode])
+  }, [activeCommunityId, activeSection, community, isOpen, matrixMode])
 
   useEffect(() => {
     if (!isOpen || !matrixMode || !community || !activeCommunityId) return
+    if (activeSection && activeSection !== 'moderation') return
     if (community.role !== 'owner' && community.role !== 'admin') return
 
     let cancelled = false
@@ -115,12 +162,42 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
     return () => {
       cancelled = true
     }
-  }, [activeCommunityId, community, isOpen, matrixMode])
+  }, [activeCommunityId, activeSection, community, isOpen, matrixMode])
 
   if (!community || !activeCommunityId) return null
 
   const isOwner = community.role === 'owner'
   const isOwnerOrAdmin = community.role === 'owner' || community.role === 'admin'
+  const sectionVisible = (section: CommunityAdminSection) => !activeSection || activeSection === section
+  const settingsSections = [
+    { id: 'community-settings-summary', label: 'Community summary', keywords: 'profile description members' },
+    { id: 'community-settings-invitations', label: 'Invitations', keywords: 'invite people link account' },
+    ...(isOwnerOrAdmin
+      ? [{ id: 'community-settings-overview', label: 'Overview', keywords: 'name description profile' }]
+      : []),
+    ...(matrixMode && isOwnerOrAdmin
+      ? [
+          { id: 'community-settings-access', label: 'Access & discovery', keywords: 'public applications approval authority' },
+          { id: 'community-settings-emoji', label: 'Custom emoji', keywords: 'image shortcode privacy' },
+          { id: 'community-settings-moderation', label: 'Moderation activity', keywords: 'authority audit actions outcomes' },
+        ]
+      : []),
+    ...(isOwnerOrAdmin
+      ? [{ id: 'community-settings-rooms', label: 'Rooms', keywords: 'create text voice channel' }]
+      : []),
+    { id: 'community-settings-danger', label: 'Danger zone', keywords: 'leave delete destructive' },
+  ]
+  const normalizedSectionQuery = sectionQuery.trim().toLocaleLowerCase()
+  const visibleSettingsSections = settingsSections.filter((section) =>
+    `${section.label} ${section.keywords}`.toLocaleLowerCase().includes(normalizedSectionQuery),
+  )
+
+  const focusSettingsSection = (sectionId: string) => {
+    const section = document.getElementById(sectionId)
+    if (!section) return
+    section.scrollIntoView?.({ block: 'start', behavior: 'auto' })
+    section.focus({ preventScroll: true })
+  }
 
   const handleCreateChannel = async () => {
     if (!channelName.trim()) return
@@ -259,19 +336,20 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
 
   return (
     <>
-      <Sheet
-        open={isOpen}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) onClose()
-        }}
-        title="Community settings"
-        description={`Manage ${community.name}, its rooms, and who can find it.`}
-        size="lg"
-        closeLabel="Close community settings"
+      <CommunitySettingsFrame
+        embedded={embedded}
+        isOpen={isOpen}
+        onClose={onClose}
+        communityName={community.name}
       >
-        <div className="flex min-h-full flex-col">
+        <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-party-gutter py-6">
           {/* Community info card */}
-          <div className="mb-6 rounded-panel border border-border-subtle bg-surface-sunken p-4">
+          {sectionVisible('general') && <section
+            id="community-settings-summary"
+            tabIndex={-1}
+            aria-labelledby="community-settings-summary-heading"
+            className="mb-6 scroll-mt-4 rounded-panel border border-border-subtle bg-surface-sunken p-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          >
             <div className="mb-3 flex items-center gap-3">
               <Avatar
                 color={pixelColorForSeed(community.id)}
@@ -281,7 +359,7 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                 variant="community"
               />
               <div className="min-w-0 flex-1">
-                <h3 className="truncate text-sm font-semibold text-primary">{community.name}</h3>
+                <h3 id="community-settings-summary-heading" className="truncate text-sm font-semibold text-primary">{community.name}</h3>
                 <p className="member-count text-xs text-muted">
                   {community.role} · {community.memberCount} member{community.memberCount !== 1 ? 's' : ''}
                 </p>
@@ -290,21 +368,63 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
             {community.description && (
               <p className="text-sm text-secondary">{community.description}</p>
             )}
-          </div>
+            <details className="mt-3 border-t border-border-subtle pt-3 text-xs text-muted">
+              <summary className="cursor-pointer font-semibold text-secondary">Advanced service details</summary>
+              <p className="mt-2">Community address</p>
+              <code className="mt-1 block break-all rounded-control bg-surface-hover px-2 py-1.5 font-mono text-secondary">
+                {community.id}
+              </code>
+            </details>
+          </section>}
 
           {/* Invite */}
-          <div className="mb-4">
+          {!embedded && sectionVisible('invitations') && <section
+            id="community-settings-invitations"
+            tabIndex={-1}
+            aria-labelledby="community-settings-invitations-heading"
+            className="mb-4 scroll-mt-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <h3 id="community-settings-invitations-heading" className="sr-only">Invitations</h3>
             <Button onClick={() => setShowInvite(true)} className="w-full" variant="secondary">
               <span className="flex items-center gap-2">
                 <Icon name="userPlus" size="sm" />
                 Invite People
               </span>
             </Button>
-          </div>
+          </section>}
 
-          {isOwnerOrAdmin && (
-            <div className="mb-6">
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Overview</h3>
+          {!embedded && <div className="mb-6 rounded-panel border border-border-subtle bg-surface-sunken p-3">
+            <Input
+              id="community-settings-section-search"
+              label="Find a settings section"
+              value={sectionQuery}
+              onChange={setSectionQuery}
+              placeholder="Search sections"
+            />
+            <nav aria-label="Community settings sections" className="mt-3 grid grid-cols-1 gap-1 sm:grid-cols-2">
+              {visibleSettingsSections.map((section) => (
+                <Button
+                  key={section.id}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="justify-start text-left"
+                  onClick={() => focusSettingsSection(section.id)}
+                >
+                  {section.label}
+                </Button>
+              ))}
+            </nav>
+            {visibleSettingsSections.length === 0 && (
+              <p role="status" className="mt-3 text-xs text-muted">
+                No settings sections match that search.
+              </p>
+            )}
+          </div>}
+
+          {isOwnerOrAdmin && sectionVisible('general') && (
+            <section id="community-settings-overview" tabIndex={-1} aria-labelledby="community-settings-overview-heading" className="mb-6 scroll-mt-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+              <h3 id="community-settings-overview-heading" className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Overview</h3>
               <div className="space-y-3 border-b border-border-subtle pb-5">
                 <Input
                   label="Community Name"
@@ -337,12 +457,46 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                   />
                 ) : null}
               </div>
-            </div>
+            </section>
           )}
 
-          {matrixMode && isOwnerOrAdmin && (
-            <div className="mb-6">
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Access & Discovery</h3>
+          {embedded && sectionVisible('people-roles') && (
+            <section
+              id="community-settings-people"
+              tabIndex={-1}
+              aria-labelledby="community-settings-people-heading"
+              className="mb-6 flex min-h-0 flex-1 flex-col scroll-mt-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              <h3 id="community-settings-people-heading" className="text-section-title font-semibold text-primary">
+                People and roles for {community.name}
+              </h3>
+              <p className="mt-1 text-sm text-secondary">
+                Current membership and roles come from the community. Moderation actions keep their own confirmation and report partial room outcomes.
+              </p>
+              <p className="mt-2 rounded-control border border-border-subtle bg-surface-sunken px-3 py-2 text-xs text-muted">
+                Granular role changes stay unavailable until Mesh can verify the community's permission model. Ownership transfer is not offered.
+              </p>
+              <div className="mt-4 flex min-h-0 flex-1 overflow-hidden rounded-panel border border-border-subtle bg-surface-sunken">
+                <MemberList
+                  embedded
+                  isOpen
+                  onClose={() => {}}
+                  members={communityMembers.map((member) => ({
+                    publicKey: member.publicKey,
+                    displayName: member.displayName,
+                    avatarColor: member.avatarColor,
+                    avatarUrl: member.avatarUrl,
+                    role: member.role,
+                    online: member.online ?? false,
+                  }))}
+                />
+              </div>
+            </section>
+          )}
+
+          {matrixMode && isOwnerOrAdmin && sectionVisible('discovery-access') && (
+            <section id="community-settings-access" tabIndex={-1} aria-labelledby="community-settings-access-heading" className="mb-6 scroll-mt-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+              <h3 id="community-settings-access-heading" className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Access & Discovery</h3>
               <div className="space-y-3 border-b border-border-subtle pb-5">
                 <Input
                   id="community-public-link"
@@ -410,12 +564,12 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                   ))}
                 </div>
               )}
-            </div>
+            </section>
           )}
 
-          {matrixMode && isOwnerOrAdmin && (
-            <div className="mb-6">
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+          {matrixMode && isOwnerOrAdmin && sectionVisible('emoji') && (
+            <section id="community-settings-emoji" tabIndex={-1} aria-labelledby="community-settings-emoji-heading" className="mb-6 scroll-mt-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+              <h3 id="community-settings-emoji-heading" className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
                 Custom Emoji
               </h3>
               <div className="space-y-3 border-b border-border-subtle pb-5">
@@ -496,12 +650,12 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                   </div>
                 )}
               </div>
-            </div>
+            </section>
           )}
 
-          {matrixMode && isOwnerOrAdmin && (
-            <div className="mb-6">
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+          {matrixMode && isOwnerOrAdmin && sectionVisible('moderation') && (
+            <section id="community-settings-moderation" tabIndex={-1} aria-labelledby="community-settings-moderation-heading" className="mb-6 scroll-mt-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+              <h3 id="community-settings-moderation-heading" className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
                 Moderation Activity
               </h3>
               <div className="space-y-3 border-b border-border-subtle pb-5">
@@ -567,14 +721,14 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                   )
                 })}
               </div>
-            </div>
+            </section>
           )}
 
           {/* Create channel */}
-          {isOwnerOrAdmin && (
-            <div className="mb-6">
+          {isOwnerOrAdmin && sectionVisible('rooms-voice') && (
+            <section id="community-settings-rooms" tabIndex={-1} aria-labelledby="community-settings-rooms-heading" className="mb-6 scroll-mt-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Rooms</h3>
+                <h3 id="community-settings-rooms-heading" className="text-xs font-semibold uppercase tracking-wide text-muted">Rooms</h3>
                 <Button
                   onClick={() => setShowCreateChannel(!showCreateChannel)}
                   variant="ghost"
@@ -653,13 +807,20 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                   </motion.div>
                 )}
               </AnimatePresence>
-            </div>
+            </section>
           )}
 
           {/* Danger zone */}
-          <div className="mt-auto border-t border-border pt-5">
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-status-danger">Danger zone</h3>
-            {!showLeaveConfirm ? (
+          {sectionVisible('danger') && <section id="community-settings-danger" tabIndex={-1} aria-labelledby="community-settings-danger-heading" className="mt-auto scroll-mt-4 border-t border-border pt-5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+            <h3 id="community-settings-danger-heading" className="mb-2 text-xs font-semibold uppercase tracking-wide text-status-danger">Danger zone</h3>
+            {matrixMode && isOwner ? (
+              <div className="rounded-panel border border-border-subtle bg-surface-sunken p-4">
+                <p className="text-sm font-semibold text-primary">Ownership must be resolved first</p>
+                <p className="mt-1 text-sm text-secondary">
+                  Mesh does not invent an ownership transfer or claim to delete this community across compatible services. Leaving stays unavailable until that contract is reviewed.
+                </p>
+              </div>
+            ) : !showLeaveConfirm ? (
               <Button
                 onClick={() => {
                   setDangerError(null)
@@ -723,16 +884,38 @@ export function CommunitySettings({ isOpen, onClose }: CommunitySettingsProps) {
                 </div>
               </motion.div>
             )}
-          </div>
-        </div>
-      </Sheet>
+          </section>}
 
-      <InviteModal
+          {embedded && activeSection === 'invitations' && (
+            <InviteModal
+              embedded
+              isOpen
+              onClose={onClose}
+              communityId={activeCommunityId}
+              communityName={community.name}
+            />
+          )}
+
+          {embedded
+            && activeSection
+            && !isOwnerOrAdmin
+            && ['rooms-voice', 'discovery-access', 'moderation', 'emoji'].includes(activeSection) && (
+              <section role="alert" className="rounded-panel border border-status-warning/40 bg-status-warning/5 p-4">
+                <h2 className="text-sm font-semibold text-primary">Your community permissions changed</h2>
+                <p className="mt-1 text-sm text-secondary">
+                  You can still view the community, but this administration section requires a current owner or administrator role.
+                </p>
+              </section>
+          )}
+        </div>
+      </CommunitySettingsFrame>
+
+      {!embedded && <InviteModal
         isOpen={showInvite}
         onClose={() => setShowInvite(false)}
         communityId={activeCommunityId}
         communityName={community.name}
-      />
+      />}
     </>
   )
 }

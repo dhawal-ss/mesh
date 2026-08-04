@@ -85,7 +85,7 @@ describe('DmTrustSummary', () => {
     })
 
     const trigger = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Encrypted. Open conversation trust details."]',
+      'button[aria-label="Needs attention. Open conversation safety details."]',
     )
     expect(trigger?.className).toContain('min-h-8')
 
@@ -108,13 +108,32 @@ describe('DmTrustSummary', () => {
     expect(onReviewDevices).toHaveBeenCalledOnce()
   })
 
+  it('keeps successful protocol assurance out of normal conversation chrome', async () => {
+    await act(async () => {
+      root.render(
+        <DmTrustSummary
+          trust={{ ...trust, devicesNeedReview: 0 }}
+          peerName="Ana"
+          onReviewDevices={() => {}}
+        />,
+      )
+    })
+
+    expect(container.textContent).toBe('Safety')
+    expect(container.textContent).not.toContain('Encrypted')
+    expect(container.textContent).not.toContain('service')
+    expect(
+      container.querySelector('button[aria-label="Safety. Open conversation safety details."]'),
+    ).not.toBeNull()
+  })
+
   it('restores Security focus to the persistent trust-summary trigger', async () => {
     await act(async () => {
       root.render(<TrustToSecurityHarness />)
     })
 
     const trigger = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Encrypted. Open conversation trust details."]',
+      'button[aria-label="Needs attention. Open conversation safety details."]',
     )
     trigger?.focus()
     await act(async () => {

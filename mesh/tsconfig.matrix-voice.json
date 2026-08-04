@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@mesh/matrix-voice-runtime": ["src/lib/matrix-voice-runtime.contract.ts"],
+      "@mesh/legacy-voice-runtime": ["src/lib/legacy-voice-runtime.contract.ts"],
+      "livekit-client": ["feature-deps/matrix-voice/node_modules/livekit-client"],
+      "livekit-client/*": ["feature-deps/matrix-voice/node_modules/livekit-client/*"]
+    }
+  },
+  "exclude": [
+    "src/lib/voice-engine.ts",
+    "src/lib/voice-engine.test.ts",
+    "src/lib/voice-peer.ts"
+  ]
+}

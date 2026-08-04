@@ -2,6 +2,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OnboardingFlow } from './OnboardingFlow'
+import type { PendingInvitationMetadata } from '../../types/ipc'
 
 vi.mock('./MatrixAccountScreen', () => ({
   MatrixAccountScreen: ({ onNext }: { onNext: (outcome: 'registered' | 'signed-in') => void }) => (
@@ -11,28 +12,6 @@ vi.mock('./MatrixAccountScreen', () => ({
       </button>
       <button type="button" onClick={() => onNext('signed-in')}>
         Signed in
-      </button>
-    </div>
-  ),
-}))
-
-vi.mock('./BackupCodeScreen', () => ({
-  BackupCodeScreen: ({
-    backupCode,
-    onContinue,
-    onSkip,
-  }: {
-    backupCode: string
-    onContinue: () => void
-    onSkip: () => void
-  }) => (
-    <div>
-      <p>Backup: {backupCode}</p>
-      <button type="button" onClick={onContinue}>
-        Confirm backup
-      </button>
-      <button type="button" onClick={onSkip}>
-        Skip backup
       </button>
     </div>
   ),
@@ -57,15 +36,15 @@ describe('OnboardingFlow account outcomes', () => {
     container.remove()
   })
 
-  it('introduces Mesh trust cues and exposes the current setup step', async () => {
+  it('introduces the gamer-first account path and exposes the current setup step', async () => {
     await act(async () => {
       root.render(<OnboardingFlow backendKind="matrix" onComplete={() => {}} />)
     })
 
     expect(container.querySelector('[aria-label="Set up Mesh"]')).not.toBeNull()
-    expect(container.textContent).toContain('Conversations that stay yours.')
+    expect(container.textContent).toContain('Find your people. Keep the party close.')
     expect(container.textContent).toContain(
-      'Familiar rooms and messages, with privacy and service choice built in from the beginning.',
+      'Pick an independent account service, then join rooms built around the games you play.',
     )
     expect(container.textContent).not.toContain('Familiar rooms, voice, and messages')
     expect(container.textContent).toContain('Protected from the first message')
@@ -76,78 +55,13 @@ describe('OnboardingFlow account outcomes', () => {
     expect(progress?.textContent).toContain('Ready')
   })
 
-  it('requires the backup-code step after registration, but only enables recovery on consent', async () => {
-    const createBackupCode = vi.fn().mockResolvedValue({
-      recoveryKey: 'MESH-ONE-TWO-THREE-FOUR',
-      secureStorageState: 'saved',
-      verificationState: 'verified',
-    })
-    const configured = vi.fn()
-    await act(async () => {
-      root.render(
-        <OnboardingFlow
-          backendKind="matrix"
-          onComplete={() => {}}
-          onCreateBackupCode={createBackupCode}
-          onBackupConfigured={configured}
-        />,
-      )
-    })
-
-    const registered = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Registered',
-    )
-    await act(async () => {
-      registered?.click()
-      await new Promise((resolve) => window.setTimeout(resolve, 350))
-    })
-
-    /*
-     * Creating the code enables cross-signing recovery on the account. Doing
-     * that as a side effect of navigation meant a user who then declined ended
-     * up with recovery on and a key they had never seen. Reaching the step must
-     * not enable anything.
-     */
-    expect(createBackupCode).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Set up message recovery')
-    expect(container.textContent).not.toContain('Ready step')
-    expect(document.activeElement?.textContent).toContain('Set up message recovery')
-
-    const consent = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Set up recovery',
-    )
-    await act(async () => {
-      consent?.click()
-      await new Promise((resolve) => window.setTimeout(resolve, 350))
-    })
-
-    expect(createBackupCode).toHaveBeenCalledOnce()
-    expect(container.textContent).toContain('Backup: MESH-ONE-TWO-THREE-FOUR')
-
-    const confirm = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Confirm backup',
-    )
-    await act(async () => {
-      confirm?.click()
-      await new Promise((resolve) => window.setTimeout(resolve, 350))
-    })
-    expect(configured).toHaveBeenCalledOnce()
-    expect(container.textContent).toContain('Ready step')
-  })
-
-  it('never enables recovery when the user declines at the consent step', async () => {
-    const createBackupCode = vi.fn().mockResolvedValue({
-      recoveryKey: 'MESH-ONE-TWO-THREE-FOUR',
-      secureStorageState: 'saved',
-      verificationState: 'verified',
-    })
+  it('moves recovery after engagement and schedules a reminder for a new account', async () => {
     const skipped = vi.fn()
     await act(async () => {
       root.render(
         <OnboardingFlow
           backendKind="matrix"
           onComplete={() => {}}
-          onCreateBackupCode={createBackupCode}
           onBackupSkipped={skipped}
         />,
       )
@@ -161,28 +75,43 @@ describe('OnboardingFlow account outcomes', () => {
       await new Promise((resolve) => window.setTimeout(resolve, 350))
     })
 
-    const decline = Array.from(container.querySelectorAll('button')).find((button) =>
-      button.textContent?.startsWith('Not now'),
-    )
-    await act(async () => {
-      decline?.click()
-      await new Promise((resolve) => window.setTimeout(resolve, 350))
-    })
-
-    expect(createBackupCode).not.toHaveBeenCalled()
     expect(skipped).toHaveBeenCalledOnce()
+    expect(container.textContent).not.toContain('Set up message recovery')
     expect(container.textContent).toContain('Ready step')
   })
 
-  it('does not create a new backup code for an existing-account sign-in', async () => {
-    const createBackupCode = vi.fn()
+  it('keeps the invitation destination visible through account handoff and bootstrap', async () => {
     await act(async () => {
       root.render(
         <OnboardingFlow
           backendKind="matrix"
           onComplete={() => {}}
-          onCreateBackupCode={createBackupCode}
+          initialPendingInvitation={pendingInvitation()}
         />,
+      )
+    })
+
+    expect(container.textContent).toContain('Lantern Guild is waiting.')
+    expect(container.textContent).toContain('Invitation destination')
+    expect(container.textContent).not.toContain('playtest notes')
+
+    const registered = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Registered',
+    )
+    await act(async () => {
+      registered?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 350))
+    })
+
+    expect(container.textContent).toContain('Invitation destination')
+    expect(container.textContent).not.toContain('playtest notes')
+    expect(container.textContent).toContain('Ready step')
+  })
+
+  it('does not create a new backup code for an existing-account sign-in', async () => {
+    await act(async () => {
+      root.render(
+        <OnboardingFlow backendKind="matrix" onComplete={() => {}} />,
       )
     })
 
@@ -194,7 +123,22 @@ describe('OnboardingFlow account outcomes', () => {
       await new Promise((resolve) => window.setTimeout(resolve, 350))
     })
 
-    expect(createBackupCode).not.toHaveBeenCalled()
     expect(container.textContent).toContain('Ready step')
   })
 })
+
+function pendingInvitation(): PendingInvitationMetadata {
+  return {
+    handle: 'pending-onboarding-invitation',
+    roomOrAlias: '#playtest-notes:lantern.example',
+    via: ['lantern.example'],
+    service: 'https://matrix.lantern.example',
+    admissionService: null,
+    communityName: 'Lantern Guild',
+    inviterDisplayName: 'Maya',
+    joinRule: 'invite',
+    communityServiceDisplayName: 'Lantern Accounts',
+    storedAt: 1_786_000_000_000,
+    expiresAt: 1_786_086_400_000,
+  }
+}

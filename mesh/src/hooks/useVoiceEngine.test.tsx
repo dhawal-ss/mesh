@@ -31,7 +31,7 @@ const mocks = vi.hoisted(() => ({
   } | null,
 }))
 
-vi.mock('../lib/livekit-voice', () => ({
+vi.mock('@mesh/matrix-voice-runtime', () => ({
   LiveKitVoiceEngine: class {
     sessionId: string | null = null
     canApplyMediaKeys = false

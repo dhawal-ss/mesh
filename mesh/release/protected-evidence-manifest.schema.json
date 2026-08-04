@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mesh:release:protected-evidence-manifest:v1",
+  "title": "Mesh protected CI evidence manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "manifestId", "sourceCommit", "sourceTreeHash", "workflow", "runner", "commands", "artifacts", "build", "collectedAt", "expiresAt", "reviewer"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "manifestId": { "const": "mesh-protected-ci-evidence" },
+    "sourceCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "sourceTreeHash": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "workflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "runId", "runAttempt", "uri"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "runId": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+        "runAttempt": { "type": "integer", "minimum": 1 },
+        "uri": { "type": "string", "format": "uri" }
+      }
+    },
+    "runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "arch", "toolVersions"],
+      "properties": {
+        "os": { "type": "string", "minLength": 1 },
+        "arch": { "type": "string", "minLength": 1 },
+        "toolVersions": {
+          "type": "object",
+          "additionalProperties": { "type": "string", "minLength": 1 },
+          "minProperties": 1
+        }
+      }
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "status", "passed", "failed", "ignored", "ignoredTests", "durationMs"],
+        "properties": {
+          "command": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["pass", "fail"] },
+          "passed": { "type": "integer", "minimum": 0 },
+          "failed": { "type": "integer", "minimum": 0 },
+          "ignored": { "type": "integer", "minimum": 0 },
+          "ignoredTests": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+          "durationMs": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "uri", "sha256", "sizeBytes"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "uri": { "type": "string", "format": "uri" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "sizeBytes": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "features"],
+      "properties": {
+        "mode": { "type": "string", "minLength": 1 },
+        "features": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
+    "collectedAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "reviewer": { "type": ["string", "null"], "minLength": 1 }
+  }
+}

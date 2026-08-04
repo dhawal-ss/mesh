@@ -13,6 +13,7 @@ import { federatedTimestampMilliseconds } from '../../lib/federated-time'
 import { shouldGroupMessage } from '../../lib/message-grouping'
 import { resolveSenderIdentity } from '../../lib/matrixIdentity'
 import { groupThreadReplies } from '../../lib/threads'
+import { restorePaneTriggerFocus } from '../../lib/pane-focus'
 import * as bridge from '../../lib/bridge'
 import { useRoomTrust } from '../../hooks/useRoomTrust'
 import { useVirtualScroll, type VirtualItem } from '../../hooks/useVirtualScroll'
@@ -20,16 +21,24 @@ import { useDmConversation, useDmStore } from '../../store/dms'
 import { useIdentityStore } from '../../store/identity'
 import { useMessageStore } from '../../store/messages'
 import { useShellStore } from '../../store/shell'
+import { useCurrentMeshRoute, useMeshNavigationStore } from '../../store/navigation'
+import { useFailedMessageAnnouncement } from '../../hooks/useFailedMessageAnnouncement'
+import { ROOM_CONTEXT_COMPACT_QUERY, useMediaQuery } from '../../hooks/useMediaQuery'
+import { useCompactPaneFocus } from '../../hooks/useCompactPaneFocus'
 import type { DirectMessage, Message as MessageType } from '../../types/ipc'
 import { EmptyState } from '../ui/Primitives'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
 import { Avatar } from '../ui/Avatar'
 import { Icon } from '../ui/Icon'
 import { MessageSkeleton } from '../ui/Skeleton'
-import { DmTrustSummary } from './DmTrustSummary'
+import { AsyncStatus } from '../ui/AsyncStatus'
+import { setNextModalRestoreFocusTarget } from '../ui/Modal'
+import { DmSafetyPanel } from './DmSafetyPanel'
 import type { StagedFile } from './FileAttachment'
 import { MessageComponent } from './Message'
 import { MessageInput } from './MessageInput'
+import { ThreadPanel } from './ThreadPanel'
+import { OfflineQueueSummary } from './OfflineQueueSummary'
 
 const EMPTY_DIRECT_MESSAGES: DirectMessage[] = []
 const EMPTY_MESSAGES: MessageType[] = []
@@ -166,13 +175,25 @@ export function DmView() {
       ? (state.messages[activeConversationId] ?? EMPTY_MESSAGES)
       : EMPTY_MESSAGES,
   )
+  const queueStates = useMessageStore((state) => (
+    activeConversationId ? state.matrixQueueStates[activeConversationId] : undefined
+  ))
   const loadMessages = useDmStore((state) => state.loadMessages)
   const addDirectMessage = useDmStore((state) => state.addMessage)
   const patchDirectMessage = useDmStore((state) => state.patchMessage)
   const updateDirectReaction = useDmStore((state) => state.updateReaction)
   const identity = useIdentityStore((state) => state.identity)
   const setSecurityOpen = useShellStore((state) => state.setSecurityOpen)
+  const compactSecondaryPane = useMediaQuery(ROOM_CONTEXT_COMPACT_QUERY)
+  const route = useCurrentMeshRoute()
+  const navigate = useMeshNavigationStore((state) => state.navigate)
+  const closePane = useMeshNavigationStore((state) => state.closePane)
   const matrixMode = bridge.isMatrixBackend()
+
+  const openSecurityFrom = useCallback((trigger: HTMLButtonElement) => {
+    setNextModalRestoreFocusTarget(trigger)
+    setSecurityOpen(true)
+  }, [setSecurityOpen])
   const ownAuthorId = matrixMode ? bridge.getMatrixUserId() : identity?.publicKey
   const messageLoad = useDmStore((state) => (
     activeConversationId ? state.messageLoads[activeConversationId] : undefined
@@ -189,7 +210,6 @@ export function DmView() {
   } | null>(null)
   const [replyingTo, setReplyingTo] = useState<MessageType | null>(null)
   const [threadReplyRoot, setThreadReplyRoot] = useState<MessageType | null>(null)
-  const [openThreadId, setOpenThreadId] = useState<string | null>(null)
   const [editRequest, setEditRequest] = useState<{
     messageId: string
     token: number
@@ -199,6 +219,18 @@ export function DmView() {
   const channelMessages = useMemo(
     () => mergeDirectMessageTimeline(directMessages, deliveryMessages),
     [deliveryMessages, directMessages],
+  )
+  const failedSendAnnouncement = useFailedMessageAnnouncement(
+    activeConversationId ?? 'no-conversation',
+    channelMessages,
+  )
+  const savedMessages = useMemo(
+    () => channelMessages.filter((message) => {
+      const transactionId = message.transactionId ?? message.id
+      return message.deliveryStatus === 'pending'
+        && queueStates?.[transactionId]?.state === 'pending'
+    }),
+    [channelMessages, queueStates],
   )
   const { visibleMessages: visibleChannelMessages, repliesByRoot } = useMemo(
     () => groupThreadReplies(channelMessages),
@@ -220,7 +252,6 @@ export function DmView() {
         52
         + Math.min(160, Math.max(1, Math.ceil(message.content.length / 80)) * 20)
         + ((message.attachments?.length ?? 0) > 0 ? 96 : 0)
-        + (repliesByRoot.get(message.id)?.length ?? 0) * 88
         + (repliesByRoot.has(message.id) ? 36 : 0),
     })),
     [repliesByRoot, visibleChannelMessages],
@@ -273,10 +304,29 @@ export function DmView() {
     && blockState?.peerPublicKey === peerPublicKey
     && Boolean(blockState?.blocked)
   const sendingProtectionUnavailable = matrixMode && trust.protection !== 'protected'
+  const safetyOpen = route.kind === 'direct'
+    && route.conversationId === activeConversationId
+    && route.pane?.kind === 'safety'
+  const openThreadId = route.kind === 'direct'
+    && route.conversationId === activeConversationId
+    && route.pane?.kind === 'thread'
+      ? route.pane.rootEventId
+      : null
+  const reportMessages = useMemo(
+    () => [...channelMessages]
+      .reverse()
+      .filter((message) => (
+        message.authorPublicKey === peerPublicKey
+        && !message.deletedAt
+        && message.deliveryStatus !== 'pending'
+        && message.deliveryStatus !== 'failed'
+      ))
+      .slice(0, 3),
+    [channelMessages, peerPublicKey],
+  )
 
   const beginThreadReply = useCallback(
     (root: MessageType, target: MessageType = root) => {
-      setOpenThreadId(root.id)
       setThreadReplyRoot(root)
       setReplyingTo(target)
     },
@@ -287,8 +337,35 @@ export function DmView() {
     setReplyingTo(message)
   }, [])
   const toggleThread = useCallback((messageId: string) => {
-    setOpenThreadId((current) => current === messageId ? null : messageId)
-  }, [])
+    if (route.kind !== 'direct' || route.conversationId !== activeConversationId) return
+    if (openThreadId === messageId) {
+      closePane()
+      return
+    }
+    navigate({
+      ...route,
+      pane: { kind: 'thread', rootEventId: messageId },
+    }, { focus: false })
+  }, [activeConversationId, closePane, navigate, openThreadId, route])
+  const closeThread = useCallback(() => {
+    const rootId = openThreadId
+    closePane()
+    restorePaneTriggerFocus('mesh-thread-panel', rootId)
+  }, [closePane, openThreadId])
+  const closeSafety = useCallback(() => {
+    closePane()
+    restorePaneTriggerFocus('mesh-dm-safety-panel')
+  }, [closePane])
+  const closeActivePane = useCallback(() => {
+    if (safetyOpen) closeSafety()
+    else closeThread()
+  }, [closeSafety, closeThread, safetyOpen])
+  useCompactPaneFocus({
+    active: safetyOpen || openThreadId !== null,
+    compact: compactSecondaryPane,
+    panelId: safetyOpen ? 'mesh-dm-safety-panel' : openThreadId ? 'mesh-thread-panel' : null,
+    onClose: closeActivePane,
+  })
 
   const markConversationRead = useCallback(async (conversationId: string) => {
     try {
@@ -305,7 +382,6 @@ export function DmView() {
   useEffect(() => {
     if (previousConversationIdRef.current === activeConversationId) return
     previousConversationIdRef.current = activeConversationId
-    setOpenThreadId(null)
     setThreadReplyRoot(null)
     setReplyingTo(null)
     setEditRequest(null)
@@ -614,11 +690,11 @@ export function DmView() {
     )
   }
 
-  const peerName =
-    conversation.peerDisplayName || conversation.peerPublicKey.slice(0, 8)
+  const peerName = conversation.peerDisplayName.trim() || 'Unknown account'
 
   return (
-    <div className="flex h-full flex-1 flex-col">
+    <div className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div
         className="mesh-conversation-header flex h-conversation-header flex-shrink-0 items-center border-b border-border-subtle px-4 py-2"
         data-tauri-drag-region
@@ -630,36 +706,57 @@ export function DmView() {
           className="mr-2"
         />
         <span className="min-w-0">
-          <span className="block truncate text-sm font-medium text-primary">
+          <h1
+            className="block truncate text-sm font-medium text-primary outline-none"
+            data-mesh-route-heading
+            tabIndex={-1}
+          >
             {peerName}
-          </span>
-          {conversation.peerPublicKey.startsWith('@') && (
-            <span className="identifier block truncate font-mono text-caption text-muted">
-              {conversation.peerPublicKey}
-            </span>
-          )}
+          </h1>
         </span>
         <div className="ml-auto flex items-center gap-1.5">
           {matrixMode && (
-            <DmTrustSummary
-              trust={trust}
-              peerName={peerName}
-              onReviewDevices={() => setSecurityOpen(true)}
-            />
-          )}
-          {matrixMode && (
             <button
               type="button"
-              onClick={() => void handleToggleBlocked()}
-              disabled={isBlockBusy}
-              className="min-h-8 rounded-control px-2 text-caption font-medium text-muted transition-colors hover:bg-status-danger/10 hover:text-status-danger disabled:opacity-50"
-              aria-label={isBlocked ? `Unblock ${peerName}` : `Block ${peerName}`}
+              onClick={() => {
+                if (safetyOpen) closeSafety()
+                else navigate({
+                  kind: 'direct',
+                  conversationId: activeConversationId,
+                  pane: { kind: 'safety' },
+                })
+              }}
+              className={`flex min-h-8 items-center gap-1.5 rounded-control px-2 text-caption font-medium transition-colors ${
+                safetyOpen
+                  ? 'bg-surface-selected text-primary'
+                  : trust.devicesNeedReview > 0 || trust.protection !== 'protected'
+                    ? 'bg-status-warning/10 text-status-warning hover:bg-status-warning/20'
+                    : 'text-muted hover:bg-surface-hover hover:text-primary'
+              }`}
+              aria-controls="mesh-dm-safety-panel"
+              aria-expanded={safetyOpen}
+              aria-label={safetyOpen ? 'Close Safety' : `Open Safety with ${peerName}`}
             >
-              {isBlockBusy ? 'Saving…' : isBlocked ? 'Unblock' : 'Block'}
+              <Icon
+                name={trust.devicesNeedReview > 0 || trust.protection !== 'protected' ? 'triangleAlert' : 'shieldCheck'}
+                size="xs"
+              />
+              Safety
             </button>
           )}
         </div>
       </div>
+      {failedSendAnnouncement.text ? (
+        <p
+          key={failedSendAnnouncement.generation}
+          className="sr-only"
+          role="alert"
+          aria-live="assertive"
+          aria-atomic="true"
+        >
+          {failedSendAnnouncement.text}
+        </p>
+      ) : null}
 
       {matrixMode && !trust.loadingAccountTrust && trust.devicesNeedReview > 0 && (
         <div className="flex min-h-10 items-center gap-2 border-b border-status-warning/20 bg-status-warning/5 px-4 py-1.5 text-xs text-secondary">
@@ -675,26 +772,10 @@ export function DmView() {
           </span>
           <button
             type="button"
-            onClick={() => setSecurityOpen(true)}
+            onClick={(event) => openSecurityFrom(event.currentTarget)}
             className="min-h-8 flex-shrink-0 rounded-control px-2 font-semibold text-status-warning hover:bg-status-warning/10"
           >
             Review
-          </button>
-        </div>
-      )}
-
-      {blockError != null && (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center justify-between gap-2 border-b border-status-warning/20 bg-status-warning/10 px-4 py-2 text-xs text-secondary"
-        >
-          <span>The block setting could not be changed.</span>
-          <button
-            type="button"
-            className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
-            onClick={() => void handleToggleBlocked()}
-          >
-            Retry
           </button>
         </div>
       )}
@@ -742,7 +823,12 @@ export function DmView() {
             </div>
           </div>
         ) : isLoading ? (
-          <div aria-label="Loading messages" role="status">
+          <div aria-label="Loading messages">
+            <AsyncStatus
+              compact
+              title="Bringing in this conversation"
+              detail="The conversation stays in place while Mesh checks for new activity."
+            />
             {Array.from({ length: 8 }).map((_, index) => (
               <MessageSkeleton key={index} />
             ))}
@@ -804,37 +890,6 @@ export function DmView() {
                               : 0
                           }
                         />
-                        {openThreadId === message.id && threadReplies.length > 0 && (
-                          <div
-                            className="ml-10 mr-4 border-l border-border-subtle pl-3"
-                            aria-label="Thread replies"
-                          >
-                            {threadReplies.map((reply) => (
-                              <MessageComponent
-                                key={reply.id}
-                                message={reply}
-                                isGrouped={false}
-                                surface="dm"
-                                disableMotion
-                                limitedActions
-                                trust={trust}
-                                onReply={() => beginThreadReply(message, reply)}
-                                onRetry={handleRetry}
-                                onCancel={handleCancelQueued}
-                                onEdit={handleEdit}
-                                onDelete={handleDelete}
-                                onReact={handleReaction}
-                              />
-                            ))}
-                            <button
-                              type="button"
-                              onClick={() => beginThreadReply(message)}
-                              className="mb-2 mt-1 min-h-8 rounded-control px-2 text-xs font-medium text-text-link transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                            >
-                              Reply in thread
-                            </button>
-                          </div>
-                        )}
                       </>
                     )}
                   </DmMessageBoundary>
@@ -863,8 +918,7 @@ export function DmView() {
 
       {isBlocked && (
         <div className="mx-4 mb-2 rounded-panel border border-status-danger/20 bg-status-danger/5 px-3 py-2 text-xs text-status-danger">
-          Messages from this user are blocked. Unblock them to resume this
-          conversation.
+          Messages from this user are blocked. Unblock {peerName} to send a message.
         </div>
       )}
       {replyingTo && (
@@ -889,6 +943,20 @@ export function DmView() {
           </button>
         </div>
       )}
+      <OfflineQueueSummary
+        count={savedMessages.length}
+        onReview={() => {
+          const firstSaved = savedMessages[0]
+          if (!firstSaved) return
+          const row = [...document.querySelectorAll<HTMLElement>('[data-message-id]')]
+            .find((candidate) => candidate.dataset.messageId === firstSaved.id)
+          row?.scrollIntoView({ block: 'center' })
+          if (row) {
+            row.tabIndex = -1
+            row.focus({ preventScroll: true })
+          }
+        }}
+      />
       {sendingProtectionUnavailable && (
         <div
           role="status"
@@ -923,6 +991,43 @@ export function DmView() {
           }))
         }}
       />
+      </div>
+      {(matrixMode && safetyOpen) || openThreadId ? (
+        <button
+          type="button"
+          className="mesh-room-context-backdrop"
+          aria-label={safetyOpen ? 'Dismiss Safety' : 'Dismiss thread'}
+          onClick={safetyOpen ? closeSafety : closeThread}
+        />
+      ) : null}
+      {matrixMode && safetyOpen && (
+        <DmSafetyPanel
+          key={activeConversationId}
+          conversationId={activeConversationId}
+          peerName={peerName}
+          accountAddress={conversation.peerPublicKey}
+          trust={trust}
+          reportMessages={reportMessages}
+          isBlocked={isBlocked}
+          isBlockBusy={isBlockBusy}
+          blockError={blockError}
+          onReviewDevices={openSecurityFrom}
+          onToggleBlocked={() => void handleToggleBlocked()}
+          onClose={closeSafety}
+        />
+      )}
+      {openThreadId && (
+        <ThreadPanel
+          key={`${activeConversationId}:${openThreadId}`}
+          title={peerName}
+          root={messageById.get(openThreadId) ?? null}
+          replies={repliesByRoot.get(openThreadId) ?? EMPTY_MESSAGES}
+          surface="dm"
+          trust={trust}
+          onReply={beginThreadReply}
+          onClose={closeThread}
+        />
+      )}
     </div>
   )
 }

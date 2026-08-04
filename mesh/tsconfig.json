@@ -8,6 +8,11 @@
 
     /* Bundler mode */
     "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@mesh/matrix-voice-runtime": ["src/lib/matrix-voice-runtime.contract.ts"],
+      "@mesh/legacy-voice-runtime": ["src/lib/legacy-voice-runtime.contract.ts"]
+    },
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
@@ -21,5 +26,12 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
+  "exclude": [
+    "src/lib/livekit-voice.ts",
+    "src/lib/livekit-voice.test.ts",
+    "src/lib/voice-engine.ts",
+    "src/lib/voice-engine.test.ts",
+    "src/lib/voice-peer.ts"
+  ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

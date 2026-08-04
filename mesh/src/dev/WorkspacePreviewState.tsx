@@ -1,8 +1,11 @@
 import { useEffect } from 'react'
 import { useVoiceStore } from '../store/voice'
 import type { Peer } from '../types/ipc'
+import lanternGuildEnvironment from '../assets/lantern-guild-environment.png'
 
-const previewPeers: Peer[] = [
+type PreviewPeer = Peer & { designPreviewImageUrl?: string }
+
+const previewPeers: PreviewPeer[] = [
   {
     publicKey: '@maya:mesh.test',
     peerId: 'maya-preview',
@@ -11,6 +14,7 @@ const previewPeers: Peer[] = [
     latency: 28,
     connectionState: 'connected',
     speaking: true,
+    designPreviewImageUrl: lanternGuildEnvironment,
   },
   {
     publicKey: '@rohan:mesh.test',
@@ -30,22 +34,13 @@ const previewPeers: Peer[] = [
     connectionState: 'connected',
     speaking: false,
   },
-  {
-    publicKey: '@devon:mesh.test',
-    peerId: 'devon-preview',
-    displayName: 'Devon',
-    avatarColor: '#55a8df',
-    latency: 42,
-    connectionState: 'connected',
-    speaking: false,
-  },
 ]
 
 function seedPreviewVoiceSession() {
   const voice = useVoiceStore.getState()
   voice.setLocalPublicKey('@taylor:mesh.test')
   voice.setCurrentVoiceSession('!lantern-guild:mesh.test', '!studio:mesh.test')
-  voice.setPeers(previewPeers)
+  useVoiceStore.setState({ peers: previewPeers })
   voice.setConnectionState('connected')
 }
 

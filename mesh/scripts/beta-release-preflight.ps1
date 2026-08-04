@@ -2,6 +2,7 @@
 param(
     [string]$Tag = "",
     [string]$ReleaseVersion = "",
+    [switch]$ValidationOnly,
     [switch]$RequireCleanSource,
     [string]$ExpectedSourceSha = "",
     [switch]$RequireProtectedMainAncestry,
@@ -30,6 +31,14 @@ function Assert-Condition {
     if (-not $Condition) {
         throw $Message
     }
+}
+
+if ($ValidationOnly) {
+    Assert-Condition ([string]::IsNullOrWhiteSpace($Tag)) `
+        "Validation-only preflight cannot name a release tag."
+    Assert-Condition (-not $RequireCleanSource -and -not $RequireProtectedMainAncestry -and
+        -not $RequireSigningEnvironment -and -not $VerifyArtifacts) `
+        "Validation-only preflight cannot request candidate, signing, or artifact verification."
 }
 
 function Read-JsonFile {
@@ -307,7 +316,9 @@ $packagePath = Join-Path $repoRoot "package.json"
 $cargoPath = Join-Path $tauriRoot "Cargo.toml"
 $tauriConfigPath = Join-Path $tauriRoot "tauri.conf.json"
 $capabilitiesPath = Join-Path $tauriRoot "capabilities/default.json"
+$legacyCapabilitiesPath = Join-Path $tauriRoot "capabilities/legacy.json"
 $applicationPermissionPath = Join-Path $tauriRoot "permissions/mesh-main.toml"
+$legacyPermissionPath = Join-Path $tauriRoot "permissions/mesh-legacy.toml"
 $tauriBuildPath = Join-Path $tauriRoot "build.rs"
 $nestedWorkflowRoot = Join-Path $repoRoot ".github/workflows"
 $ciWorkflowPath = Join-Path $gitRoot ".github/workflows/ci.yml"
@@ -330,6 +341,8 @@ $externalAcceptanceTestPath = Join-Path $repoRoot "scripts/check-external-accept
 $externalAcceptanceTemplatePath = Join-Path $repoRoot "release/external-acceptance.example.json"
 $externalAcceptanceSchemaPath = Join-Path $repoRoot "release/external-acceptance.schema.json"
 $betaContractPath = Join-Path $repoRoot "release/beta-contract.json"
+$ownerDecisionsPath = Join-Path $repoRoot "release/owner-decisions.json"
+$ownerDecisionsCheckerPath = Join-Path $repoRoot "scripts/check-owner-decisions.mjs"
 $operationsContractCheckerPath = Join-Path $repoRoot "scripts/check-operations-contract.mjs"
 $dependabotPath = Join-Path $gitRoot ".github/dependabot.yml"
 $dependencyReviewConfigPath = Join-Path $gitRoot ".github/dependency-review-config.yml"
@@ -342,7 +355,9 @@ $packageConfig = Read-JsonFile $packagePath
 $tauriConfig = Read-JsonFile $tauriConfigPath
 $cargoText = Read-Utf8Text $cargoPath
 $capabilitiesText = Read-Utf8Text $capabilitiesPath
+$legacyCapabilitiesText = Read-Utf8Text $legacyCapabilitiesPath
 $applicationPermissionText = Read-Utf8Text $applicationPermissionPath
+$legacyPermissionText = Read-Utf8Text $legacyPermissionPath
 $tauriBuildText = Read-Utf8Text $tauriBuildPath
 $ciWorkflowText = Read-Utf8Text $ciWorkflowPath
 $nightlyWorkflowText = Read-Utf8Text $nightlyWorkflowPath
@@ -364,6 +379,8 @@ $externalAcceptanceTestText = Read-Utf8Text $externalAcceptanceTestPath
 $externalAcceptanceTemplateText = Read-Utf8Text $externalAcceptanceTemplatePath
 $externalAcceptanceSchemaText = Read-Utf8Text $externalAcceptanceSchemaPath
 $betaContract = Read-JsonFile $betaContractPath
+$ownerDecisions = Read-JsonFile $ownerDecisionsPath
+$ownerDecisionsCheckerText = Read-Utf8Text $ownerDecisionsCheckerPath
 $operationsContractCheckerText = Read-Utf8Text $operationsContractCheckerPath
 $dependabotText = Read-Utf8Text $dependabotPath
 $dependencyReviewConfigText = Read-Utf8Text $dependencyReviewConfigPath
@@ -388,6 +405,24 @@ Assert-Condition ($packageVersion -eq $tauriVersion) `
     "Version mismatch: package.json is $packageVersion but tauri.conf.json is $tauriVersion."
 Assert-Condition ($cargoVersion -eq $tauriVersion) `
     "Version mismatch: Cargo.toml is $cargoVersion but tauri.conf.json is $tauriVersion."
+Assert-Condition ($ownerDecisions.schemaVersion -eq 1 -and
+    $ownerDecisions.releaseScope -eq "first-public-beta" -and
+    $ownerDecisions.release.version -eq $tauriVersion -and
+    $ownerDecisions.release.tag -eq "v$tauriVersion" -and
+    [bool]$ownerDecisions.release.githubPrerelease -and
+    -not [bool]$ownerDecisions.release.updaterEnabled) `
+    "The approved first-beta release decision must exactly match the application version and keep updater publication disabled."
+Assert-Condition (@($ownerDecisions.decisions.PSObject.Properties).Count -eq 11 -and
+    @($ownerDecisions.decisions.PSObject.Properties | Where-Object { $_.Value.status -ne "approved" }).Count -eq 0) `
+    "owner-decisions.json must contain approved D1-D11 contracts."
+$candidateDecisionBlockers = @($ownerDecisions.implementation.candidateBlockers)
+Assert-Condition ([bool]$ownerDecisions.implementation.candidateSourceReady -eq ($candidateDecisionBlockers.Count -eq 0)) `
+    "owner-decisions.json candidateSourceReady must exactly reflect the blocker list."
+if (-not $ValidationOnly) {
+    $candidateBlockerIds = @($candidateDecisionBlockers | ForEach-Object { [string]$_.id }) -join ", "
+    Assert-Condition ($candidateDecisionBlockers.Count -eq 0) `
+        "Signed candidate creation is blocked by incomplete approved decisions: $candidateBlockerIds."
+}
 if (-not [string]::IsNullOrWhiteSpace($ReleaseVersion)) {
     $normalizedReleaseVersion = $ReleaseVersion.Trim()
     if ($normalizedReleaseVersion.StartsWith("v", [StringComparison]::OrdinalIgnoreCase)) {
@@ -397,21 +432,30 @@ if (-not [string]::IsNullOrWhiteSpace($ReleaseVersion)) {
         "ReleaseVersion must be an explicit semantic version."
     Assert-Condition ($normalizedReleaseVersion -eq $tauriVersion) `
         "ReleaseVersion $normalizedReleaseVersion does not match the application version $tauriVersion."
-    Assert-Condition ($normalizedReleaseVersion -ne "0.1.0") `
-        "Version 0.1.0 is a placeholder and cannot be published as a Matrix beta."
+    Assert-Condition ($normalizedReleaseVersion -ne "0.1.0" -or $ValidationOnly) `
+        "Version 0.1.0 is a placeholder and is allowed only in explicit validation-only preflight."
 }
 Assert-Condition ($tauriConfig.identifier -eq "com.mesh.desktop") `
     "The production application identifier must remain com.mesh.desktop."
 Assert-Condition ($capabilitiesText -match '"mesh-main"' -and
     $applicationPermissionText -match 'identifier\s*=\s*"mesh-main"' -and
     $applicationPermissionText -match 'commands\.allow' -and
+    $legacyCapabilitiesText -match '"mesh-legacy"' -and
+    $legacyPermissionText -match 'identifier\s*=\s*"mesh-legacy"' -and
+    $legacyPermissionText -match 'commands\.allow' -and
     $tauriBuildText -match 'AppManifest::new\(\)\.commands\(application_commands\(\)\)' -and
-    $tauriBuildText -match 'include_str!\("permissions/mesh-main\.toml"\)') `
-    "Tauri application commands must remain behind the reviewed mesh-main renderer permission."
+    $tauriBuildText -match 'include_str!\("permissions/mesh-main\.toml"\)' -and
+    $tauriBuildText -match 'include_str!\("permissions/mesh-legacy\.toml"\)') `
+    "Tauri application commands must remain behind reviewed per-build renderer permissions."
 Assert-WindowsOnlyBundleTargets -TauriConfig $tauriConfig
 Assert-Condition ($betaContract.releaseState -eq "developer-preview" -and
     $betaContract.candidate.platform -eq "windows" -and
-    $betaContract.candidate.backend -eq "matrix") `
+    $betaContract.candidate.backend -eq "matrix" -and
+    $betaContract.candidate.version -eq $ownerDecisions.release.version -and
+    $betaContract.distribution.canonicalInstaller -eq "nsis" -and
+    $betaContract.distribution.canonicalInstallMode -eq "currentUser" -and
+    $betaContract.distribution.secondaryInstaller -eq "msi" -and
+    $tauriConfig.bundle.windows.nsis.installMode -eq "currentUser") `
     "The checked beta contract must describe the Windows Matrix developer-preview candidate."
 $excludedBetaCapabilities = @($betaContract.candidate.excludedCapabilities | ForEach-Object { [string]$_ })
 foreach ($excludedCapability in @("matrix-voice", "legacy-p2p", "automatic-updates")) {
@@ -494,6 +538,12 @@ Assert-Condition ($releaseWorkflowText -match 'npm run check:public-site') `
     "The beta workflow must validate the public site source."
 Assert-Condition ($releaseWorkflowText -match 'npm run check:beta-contract') `
     "The beta workflow must validate the machine-readable product boundary."
+Assert-Condition ($releaseWorkflowText -match 'npm run check:owner-decisions' -and
+    $ciWorkflowText -match 'npm run check:owner-decisions' -and
+    $ownerDecisionsCheckerText -match 'DCO-1\.1-inbound-equals-outbound-no-CLA' -and
+    $ownerDecisionsCheckerText -match 'session-only-decrypted-media' -and
+    $ownerDecisionsCheckerText -match 'risk-tiered-native-presence-plus-provider-reauth') `
+    "CI and the beta workflow must validate every approved owner decision before candidate creation."
 Assert-Condition ($releaseWorkflowText -match 'npm run check:operations-contract' -and
     $ciWorkflowText -match 'npm run check:operations-contract' -and
     $operationsContractCheckerText -match 'crash_report\.rs' -and
@@ -578,6 +628,9 @@ Assert-Condition ($releaseWorkflowText -match 'check:bundle-size.+--report' -and
     "Release evidence must include a generated bundle-budget report without raising budgets."
 Assert-Condition ($releaseWorkflowText -match 'scan-release-artifacts\.ps1') `
     "The beta workflow must scan generated release artifacts for configured secrets."
+Assert-Condition ($releaseWorkflowText -match 'check-compiled-installer-coexistence\.ps1' -and
+    $developerPreviewWorkflowText -match 'check-compiled-installer-coexistence\.ps1') `
+    "Signed candidates and unsigned previews must inspect the compiled MSI coexistence controls after bundling."
 Assert-Condition ($releaseArtifactScanText -match 'WINDOWS_CERTIFICATE_PASSWORD' -and
     $releaseArtifactScanText -match 'Test-ByteSequence') `
     "Release artifact scanning must check configured secret values without printing them."

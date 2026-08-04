@@ -277,17 +277,8 @@ pub(crate) fn classify_attachment(
     }
 }
 
-pub(crate) fn is_file_in_named_directory_under(
-    path: &Path,
-    root: &Path,
-    directory_name: &str,
-) -> bool {
-    path.is_file()
-        && path.starts_with(root)
-        && path
-            .parent()
-            .and_then(Path::file_name)
-            .is_some_and(|name| name == directory_name)
+pub(crate) fn is_file_directly_under(path: &Path, root: &Path) -> bool {
+    path.is_file() && path.parent().is_some_and(|parent| parent == root)
 }
 
 #[cfg(any(feature = "matrix-backend", all(test, unix)))]
@@ -398,7 +389,9 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let matrix_root = root.path().join("matrix");
         let active_account = matrix_root.join("accounts").join("active-profile");
-        let cache = active_account.join("media-cache");
+        let cache = active_account
+            .join("session-media-cache")
+            .join("current-session");
         std::fs::create_dir_all(&cache).unwrap();
         let allowed = cache.join("photo.png");
         std::fs::write(&allowed, b"image").unwrap();
@@ -407,35 +400,31 @@ mod tests {
         let other_account_cache = matrix_root
             .join("accounts")
             .join("other-profile")
-            .join("media-cache");
+            .join("session-media-cache")
+            .join("current-session");
         std::fs::create_dir_all(&other_account_cache).unwrap();
         let other_account_file = other_account_cache.join("private.png");
         std::fs::write(&other_account_file, b"image").unwrap();
-        let spoof = root.path().join("outside").join("media-cache");
+        let previous_session = active_account
+            .join("session-media-cache")
+            .join("previous-session");
+        std::fs::create_dir_all(&previous_session).unwrap();
+        let previous_session_file = previous_session.join("old-private.png");
+        std::fs::write(&previous_session_file, b"image").unwrap();
+        let spoof = root
+            .path()
+            .join("outside")
+            .join("session-media-cache")
+            .join("current-session");
         std::fs::create_dir_all(&spoof).unwrap();
         let spoofed_file = spoof.join("photo.png");
         std::fs::write(&spoofed_file, b"image").unwrap();
 
-        assert!(is_file_in_named_directory_under(
-            &allowed,
-            &active_account,
-            "media-cache"
-        ));
-        assert!(!is_file_in_named_directory_under(
-            &sibling,
-            &active_account,
-            "media-cache"
-        ));
-        assert!(!is_file_in_named_directory_under(
-            &other_account_file,
-            &active_account,
-            "media-cache"
-        ));
-        assert!(!is_file_in_named_directory_under(
-            &spoofed_file,
-            &active_account,
-            "media-cache"
-        ));
+        assert!(is_file_directly_under(&allowed, &cache));
+        assert!(!is_file_directly_under(&sibling, &cache));
+        assert!(!is_file_directly_under(&other_account_file, &cache));
+        assert!(!is_file_directly_under(&previous_session_file, &cache));
+        assert!(!is_file_directly_under(&spoofed_file, &cache));
     }
 
     #[cfg(unix)]

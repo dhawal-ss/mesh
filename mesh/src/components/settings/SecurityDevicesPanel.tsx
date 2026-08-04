@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ComponentProps, type ReactNode } from 'react'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
@@ -13,9 +13,14 @@ import { clearRendererAccountState } from '../../lib/account-transition'
 interface SecurityDevicesPanelProps {
   open: boolean
   onClose: () => void
+  embedded?: boolean
 }
 
-export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProps) {
+export function SecurityDevicesPanel({
+  open,
+  onClose,
+  embedded = false,
+}: SecurityDevicesPanelProps) {
   const [status, setStatus] = useState<bridge.BackendStatus | null>(null)
   const [devices, setDevices] = useState<bridge.MatrixDevice[]>([])
   const [loadingDevices, setLoadingDevices] = useState(false)
@@ -233,7 +238,11 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
     setBusy(true)
     setError(null)
     try {
-      await bridge.matrixRevokeDevice(revokeTarget.deviceId, accountPassword)
+      const revoked = await bridge.matrixRevokeDevice(revokeTarget.deviceId, accountPassword)
+      if (!revoked) {
+        setAccountPassword('')
+        return
+      }
       setRevokeTarget(null)
       setAccountPassword('')
       setLostDeviceId('')
@@ -270,7 +279,11 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
     setError(null)
     const removedAccountId = status?.userId ?? bridge.getMatrixUserId()
     try {
-      await bridge.matrixRemoveLocalAccount()
+      const removed = await bridge.matrixRemoveLocalAccount()
+      if (!removed) {
+        setBusy(false)
+        return
+      }
     } catch (cause) {
       setError(errorMessage(cause))
       setBusy(false)
@@ -322,7 +335,12 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
     setError(null)
     const removedAccountId = status?.userId ?? bridge.getMatrixUserId()
     try {
-      await bridge.matrixDeactivateAccount(deactivationPassword)
+      const deactivated = await bridge.matrixDeactivateAccount(deactivationPassword)
+      if (!deactivated) {
+        setDeactivationPassword('')
+        setBusy(false)
+        return
+      }
     } catch (cause) {
       setDeactivationPassword('')
       setError(errorMessage(cause))
@@ -345,7 +363,7 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
   const lostDevice = revocableDevices.find((device) => device.deviceId === lostDeviceId) ?? null
 
   return (
-    <Modal open={open} onClose={onClose} title="Your devices">
+    <SecurityDevicesFrame embedded={embedded} open={open} onClose={onClose} title="Your devices">
       <div className="max-h-settings space-y-5 overflow-y-auto pr-1">
         <section className="rounded-panel border border-border-subtle bg-surface-sunken p-4">
           <p className="text-2xs uppercase tracking-signal text-muted">This device</p>
@@ -1188,6 +1206,55 @@ export function SecurityDevicesPanel({ open, onClose }: SecurityDevicesPanelProp
           </div>
         </section>
       </div>
+    </SecurityDevicesFrame>
+  )
+}
+
+function SecurityDevicesFrame({
+  embedded,
+  open,
+  onClose,
+  title,
+  children,
+  ...modalProps
+}: ComponentProps<typeof Modal> & { embedded: boolean; children: ReactNode }) {
+  useEffect(() => {
+    if (!embedded || !open) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      event.preventDefault()
+      onClose()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [embedded, onClose, open])
+
+  if (embedded) {
+    if (!open) return null
+    return (
+      <section
+        aria-labelledby="embedded-security-devices-heading"
+        className="mt-4 rounded-panel border border-border-subtle bg-surface-base p-4"
+      >
+        <header className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-border-subtle pb-3">
+          <div>
+            <h2 id="embedded-security-devices-heading" className="text-sm font-semibold text-primary">
+              Safety and devices
+            </h2>
+            <p className="mt-1 text-xs text-muted">
+              Review sessions, message backup, recovery, exports, and account actions without leaving You.
+            </p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onClose}>Close devices</Button>
+        </header>
+        {children}
+      </section>
+    )
+  }
+
+  return (
+    <Modal {...modalProps} open={open} onClose={onClose} title={title}>
+      {children}
     </Modal>
   )
 }

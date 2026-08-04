@@ -7,6 +7,12 @@ import {
   updateMatrixUserPreferences,
 } from '../lib/bridge'
 import { createSafeStorageAdapter, getSafeLocalStorage } from '../lib/safe-storage'
+import { applyConfirmedTheme } from '../lib/theme-package'
+import {
+  DEFAULT_INTERFACE_SOUND_EVENTS,
+  INTERFACE_SOUND_IDS,
+  type InterfaceSoundId,
+} from '../lib/interface-sound-contract'
 import type { MatrixUserPreferences } from '../types/ipc'
 
 const MINUTE_MS = 60 * 1_000
@@ -32,8 +38,12 @@ export interface NotificationPreferences {
   enabled: boolean
   /** Whether notification sounds are enabled */
   sound: boolean
-  /** The built-in sound played for message notifications. */
+  /** The retired generic selector, retained only for older account-data readers. */
   soundId: NotificationSoundId
+  /** Master level applied after each Party Steps event's relative loudness. */
+  soundVolume: number
+  /** Independent controls for the eight bounded Party Steps events. */
+  soundEvents: Record<InterfaceSoundId, boolean>
   /** Explicit opt-in for bounded message text in native notifications. */
   showMessageContent: boolean
   /** Suppress all notification surfaces until explicitly disabled. */
@@ -73,6 +83,7 @@ export interface AppearancePreferences {
   density: AppearanceDensity
   accent: AppearanceAccent
   transparency: AppearanceTransparency
+  reduceMotion: boolean
 }
 
 export interface BackupPreferences {
@@ -103,20 +114,24 @@ export interface MatrixPreferenceSyncState {
   error: unknown | null
 }
 
-const PREFERENCES_SCHEMA_VERSION = 6
+export const PREFERENCES_SCHEMA_VERSION = 7
+export const LOCAL_SETTINGS_SCHEMA_VERSION = 7
 const MAX_CONVERSATION_PRIVACY_OVERRIDES = 256
 const MATRIX_SAVE_DEBOUNCE_MS = 350
 const BACKUP_REMINDER_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000
 const DEFAULT_APPEARANCE: AppearancePreferences = {
   theme: 'dark',
   density: 'default',
-  accent: 'violet',
-  transparency: 'readable',
+  accent: 'ember',
+  transparency: 'opaque',
+  reduceMotion: false,
 }
 const DEFAULT_NOTIFICATIONS: NotificationPreferences = {
   enabled: true,
   sound: true,
   soundId: 'mesh',
+  soundVolume: 0.6,
+  soundEvents: { ...DEFAULT_INTERFACE_SOUND_EVENTS },
   showMessageContent: false,
   doNotDisturb: false,
   quietHours: {
@@ -168,6 +183,35 @@ type ExtendedMatrixUserPreferences = MatrixUserPreferences & {
   mutedCommunityUntil?: Record<string, string | null>
   channelNotificationLevels?: Record<string, NotificationLevel>
   conversationPrivacy?: Record<string, ConversationPrivacyPreference>
+  interfaceSoundVolume?: number
+  interfaceSoundEvents?: Partial<Record<InterfaceSoundId, boolean>>
+}
+
+function normalizeSoundVolume(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, Math.min(1, value))
+    : DEFAULT_NOTIFICATIONS.soundVolume
+}
+
+function normalizeSoundEvents(
+  value: unknown,
+  legacySoundEnabled: boolean,
+): Record<InterfaceSoundId, boolean> {
+  if (!value || typeof value !== 'object') {
+    return Object.fromEntries(
+      INTERFACE_SOUND_IDS.map((id) => [id, legacySoundEnabled && DEFAULT_INTERFACE_SOUND_EVENTS[id]]),
+    ) as Record<InterfaceSoundId, boolean>
+  }
+
+  const candidate = value as Partial<Record<InterfaceSoundId, unknown>>
+  return Object.fromEntries(
+    INTERFACE_SOUND_IDS.map((id) => [
+      id,
+      typeof candidate[id] === 'boolean'
+        ? candidate[id]
+        : legacySoundEnabled && DEFAULT_INTERFACE_SOUND_EVENTS[id],
+    ]),
+  ) as Record<InterfaceSoundId, boolean>
 }
 
 function normalizeWallClockTime(value: unknown, fallback: string): string {
@@ -224,6 +268,7 @@ export function normalizeNotificationPreferences(
   preferences: Partial<NotificationPreferences> | undefined,
   now = Date.now(),
 ): NotificationPreferences {
+  const sound = preferences?.sound ?? DEFAULT_NOTIFICATIONS.sound
   const channels = normalizeMuteExpirations(
     preferences?.mutedChannels,
     preferences?.channelMuteUntil,
@@ -237,11 +282,13 @@ export function normalizeNotificationPreferences(
 
   return {
     enabled: preferences?.enabled ?? DEFAULT_NOTIFICATIONS.enabled,
-    sound: preferences?.sound ?? DEFAULT_NOTIFICATIONS.sound,
+    sound,
     soundId:
       preferences?.soundId && NOTIFICATION_SOUNDS.has(preferences.soundId)
         ? preferences.soundId
         : DEFAULT_NOTIFICATIONS.soundId,
+    soundVolume: normalizeSoundVolume(preferences?.soundVolume),
+    soundEvents: normalizeSoundEvents(preferences?.soundEvents, sound),
     showMessageContent: preferences?.showMessageContent === true,
     doNotDisturb: preferences?.doNotDisturb ?? DEFAULT_NOTIFICATIONS.doNotDisturb,
     quietHours: {
@@ -283,6 +330,7 @@ function normalizeAppearancePreferences(
       preferences?.transparency && APPEARANCE_TRANSPARENCIES.has(preferences.transparency)
         ? preferences.transparency
         : DEFAULT_APPEARANCE.transparency,
+    reduceMotion: preferences?.reduceMotion === true,
   }
 }
 
@@ -357,6 +405,8 @@ export function applyAppearancePreferences(preferences: AppearancePreferences): 
   root.dataset.density = preferences.density
   root.dataset.accent = preferences.accent
   root.dataset.transparency = preferences.transparency
+  root.dataset.reduceMotion = preferences.reduceMotion ? 'true' : 'false'
+  applyConfirmedTheme(preferences.theme)
 }
 
 export function matrixPreferencesToNotifications(
@@ -367,6 +417,11 @@ export function matrixPreferencesToNotifications(
     enabled: preferences.notificationsEnabled,
     sound: preferences.notificationSound,
     soundId: extended.notificationSoundId,
+    soundVolume: extended.interfaceSoundVolume,
+    soundEvents: normalizeSoundEvents(
+      extended.interfaceSoundEvents,
+      preferences.notificationSound,
+    ),
     showMessageContent: preferences.showNotificationContent,
     doNotDisturb: extended.doNotDisturb,
     quietHours: {
@@ -409,6 +464,8 @@ function settingsToMatrixPreferences(
     mutedChannels: [],
     mutedCommunities: [],
     notificationSoundId: notifications.soundId,
+    interfaceSoundVolume: notifications.soundVolume,
+    interfaceSoundEvents: notifications.soundEvents,
     doNotDisturb: notifications.doNotDisturb,
     quietHoursEnabled: notifications.quietHours.enabled,
     quietHoursStart: notifications.quietHours.start,
@@ -433,9 +490,13 @@ export interface SettingsStore {
   backup: BackupPreferences
   privacy: PrivacyPreferences
   matrixPreferenceSync: MatrixPreferenceSyncState
+  /** Explicit per-device opt-in for contextual, redacted diagnostic probes. */
+  signalCheckEnabled: boolean
   setNotificationsEnabled: (enabled: boolean) => void
   setNotificationSound: (sound: boolean) => void
   setNotificationSoundId: (soundId: NotificationSoundId) => void
+  setInterfaceSoundVolume: (volume: number) => void
+  setInterfaceSoundEnabled: (sound: InterfaceSoundId, enabled: boolean) => void
   setShowMessageContent: (enabled: boolean) => void
   setDoNotDisturb: (enabled: boolean) => void
   setQuietHoursEnabled: (enabled: boolean) => void
@@ -444,6 +505,8 @@ export interface SettingsStore {
   setAppearanceDensity: (density: AppearanceDensity) => void
   setAppearanceAccent: (accent: AppearanceAccent) => void
   setAppearanceTransparency: (transparency: AppearanceTransparency) => void
+  setReduceMotion: (reduceMotion: boolean) => void
+  setSignalCheckEnabled: (enabled: boolean) => void
   setBackupConfigured: (configured: boolean) => void
   scheduleBackupReminder: () => void
   dismissBackupReminder: () => void
@@ -575,6 +638,30 @@ export function getEffectiveChannelNotificationLevel(
   return notifications.channelNotificationLevels[channelId] ?? 'all'
 }
 
+export function migrateSettingsPersistence(
+  persistedState: unknown,
+  _storedVersion: number,
+): Partial<SettingsStore> {
+  if (!persistedState || typeof persistedState !== 'object') return {}
+  const persisted = persistedState as Partial<SettingsStore>
+  const rawNotifications = persisted.notifications as Partial<NotificationPreferences> | undefined
+  const legacySoundEnabled = rawNotifications?.sound ?? DEFAULT_NOTIFICATIONS.sound
+  const rawAppearance = persisted.appearance as Partial<AppearancePreferences> | undefined
+
+  return {
+    ...persisted,
+    notifications: normalizeNotificationPreferences({
+      ...rawNotifications,
+      soundVolume: normalizeSoundVolume(rawNotifications?.soundVolume),
+      soundEvents: normalizeSoundEvents(rawNotifications?.soundEvents, legacySoundEnabled),
+    }),
+    appearance: normalizeAppearancePreferences({
+      ...rawAppearance,
+      reduceMotion: rawAppearance?.reduceMotion === true,
+    }),
+  }
+}
+
 export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set, get) => ({
@@ -587,6 +674,7 @@ export const useSettingsStore = create<SettingsStore>()(
       },
       privacy: { ...DEFAULT_PRIVACY, conversationPrivacy: {} },
       matrixPreferenceSync: DEFAULT_MATRIX_PREFERENCE_SYNC,
+      signalCheckEnabled: false,
 
       setNotificationsEnabled: (enabled) =>
         set((state) => ({
@@ -601,6 +689,22 @@ export const useSettingsStore = create<SettingsStore>()(
       setNotificationSoundId: (soundId) =>
         set((state) => ({
           notifications: { ...state.notifications, soundId },
+        })),
+
+      setInterfaceSoundVolume: (soundVolume) =>
+        set((state) => ({
+          notifications: {
+            ...state.notifications,
+            soundVolume: normalizeSoundVolume(soundVolume),
+          },
+        })),
+
+      setInterfaceSoundEnabled: (soundId, enabled) =>
+        set((state) => ({
+          notifications: {
+            ...state.notifications,
+            soundEvents: { ...state.notifications.soundEvents, [soundId]: enabled },
+          },
         })),
 
       setShowMessageContent: (showMessageContent) =>
@@ -656,6 +760,14 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ appearance })
         applyAppearancePreferences(appearance)
       },
+
+      setReduceMotion: (reduceMotion) => {
+        const appearance = { ...get().appearance, reduceMotion }
+        set({ appearance })
+        applyAppearancePreferences(appearance)
+      },
+
+      setSignalCheckEnabled: (signalCheckEnabled) => set({ signalCheckEnabled }),
 
       setBackupConfigured: (configured) =>
         set({
@@ -846,6 +958,7 @@ export const useSettingsStore = create<SettingsStore>()(
         appearance: state.appearance,
         backup: state.backup,
         privacy: state.privacy,
+        signalCheckEnabled: state.signalCheckEnabled,
       }),
       merge: (persistedState, currentState) => {
         const persisted = (persistedState ?? {}) as Partial<SettingsStore>
@@ -861,8 +974,11 @@ export const useSettingsStore = create<SettingsStore>()(
             dismissedAt: persisted.backup?.dismissedAt ?? null,
           },
           matrixPreferenceSync: DEFAULT_MATRIX_PREFERENCE_SYNC,
+          signalCheckEnabled: persisted.signalCheckEnabled === true,
         }
       },
+      version: LOCAL_SETTINGS_SCHEMA_VERSION,
+      migrate: migrateSettingsPersistence,
       onRehydrateStorage: () => (state) => {
         if (state) applyAppearancePreferences(state.appearance)
       },
@@ -913,6 +1029,7 @@ export function resetMatrixAccountPreferences(): void {
   useSettingsStore.setState({
     notifications: {
       ...DEFAULT_NOTIFICATIONS,
+      soundEvents: { ...DEFAULT_NOTIFICATIONS.soundEvents },
       quietHours: { ...DEFAULT_NOTIFICATIONS.quietHours },
       mutedChannels: [],
       mutedCommunities: [],

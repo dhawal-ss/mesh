@@ -18,6 +18,7 @@ pub mod identity;
 pub mod messaging;
 #[cfg(feature = "legacy-p2p")]
 pub mod moderation;
+pub mod native_requests;
 pub mod notifications;
 pub mod pending_invitation;
 #[cfg(feature = "legacy-p2p")]

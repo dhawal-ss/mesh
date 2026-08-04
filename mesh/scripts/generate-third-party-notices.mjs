@@ -8,7 +8,11 @@ export const UNKNOWN_LICENSE = 'UNKNOWN - REVIEW REQUIRED'
 const scriptPath = fileURLToPath(import.meta.url)
 const scriptDirectory = dirname(scriptPath)
 
-export async function collectJavaScriptPackages(projectRoot, packageLock) {
+export async function collectJavaScriptPackages(
+  projectRoot,
+  packageLock,
+  { allowMissingLockedManifest = false } = {},
+) {
   if (!packageLock || typeof packageLock !== 'object'
       || !packageLock.packages || typeof packageLock.packages !== 'object'
       || Array.isArray(packageLock.packages)) {
@@ -30,13 +34,26 @@ export async function collectJavaScriptPackages(projectRoot, packageLock) {
         throw new Error('package manifest must contain a JSON object')
       }
     } catch (error) {
-      if (error?.code !== 'ENOENT' || lockEntry.optional !== true) {
+      const lockedLicense = normalizePackageLicense(lockEntry.license, lockEntry.licenses)
+      const completeLockedMetadata = Boolean(
+        lockEntry.version
+        && lockedLicense !== UNKNOWN_LICENSE
+        && (
+          normalizeSource(lockEntry.repository, lockEntry.homepage)
+          || normalizeSource(lockEntry.resolved)
+        ),
+      )
+      if (
+        error?.code !== 'ENOENT'
+        || (lockEntry.optional !== true
+          && !(allowMissingLockedManifest && completeLockedMetadata))
+      ) {
         throw new Error(`Unable to read dependency metadata at ${manifestPath}: ${error.message}`, { cause: error })
       }
     }
 
-    const lockLicense = normalizeLicense(lockEntry.license ?? lockEntry.licenses)
-    const manifestLicense = normalizeLicense(manifest?.license ?? manifest?.licenses)
+    const lockLicense = normalizePackageLicense(lockEntry.license, lockEntry.licenses)
+    const manifestLicense = normalizePackageLicense(manifest?.license, manifest?.licenses)
     const lockSource = normalizeSource(lockEntry.repository, lockEntry.homepage)
       || normalizeSource(lockEntry.resolved)
     const manifestSource = normalizeSource(manifest?.repository, manifest?.homepage)
@@ -159,6 +176,13 @@ export function normalizeLicense(value) {
   return UNKNOWN_LICENSE
 }
 
+function normalizePackageLicense(license, licenses) {
+  const normalizedLicense = normalizeLicense(license)
+  return normalizedLicense !== UNKNOWN_LICENSE
+    ? normalizedLicense
+    : normalizeLicense(licenses)
+}
+
 export function normalizeSource(repository, homepage = '') {
   if (typeof repository === 'string' && repository.trim()) {
     return repository.trim().replace(/^git\+/, '')
@@ -178,15 +202,29 @@ export async function main({
   checkOnly = process.argv.includes('--check'),
 } = {}) {
   const noticesPath = resolve(projectRoot, 'THIRD_PARTY_NOTICES.md')
-  const packageLock = JSON.parse(await readFile(resolve(projectRoot, 'package-lock.json'), 'utf8'))
-  const jsPackages = await collectJavaScriptPackages(projectRoot, packageLock)
-  const cargoMetadata = JSON.parse(execFileSync('cargo', [
-    'metadata',
-    '--format-version', '1',
-    '--locked',
-    '--manifest-path', resolve(projectRoot, 'src-tauri', 'Cargo.toml'),
-  ], { cwd: projectRoot, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }))
-  const rustPackages = collectRustPackages(cargoMetadata)
+  const javascriptGraphs = [
+    projectRoot,
+    resolve(projectRoot, 'feature-deps', 'matrix-voice'),
+    resolve(projectRoot, 'feature-deps', 'legacy-lan'),
+  ]
+  const jsPackages = (await Promise.all(javascriptGraphs.map(async (graphRoot) => {
+    const packageLock = JSON.parse(await readFile(resolve(graphRoot, 'package-lock.json'), 'utf8'))
+    return collectJavaScriptPackages(graphRoot, packageLock, {
+      allowMissingLockedManifest: graphRoot !== projectRoot,
+    })
+  }))).flat()
+  const cargoManifest = resolve(projectRoot, 'src-tauri', 'Cargo.toml')
+  const rustPackages = ['matrix-backend', 'legacy-p2p'].flatMap((feature) => {
+    const cargoMetadata = JSON.parse(execFileSync('cargo', [
+      'metadata',
+      '--format-version', '1',
+      '--locked',
+      '--no-default-features',
+      '--features', feature,
+      '--manifest-path', cargoManifest,
+    ], { cwd: projectRoot, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }))
+    return collectRustPackages(cargoMetadata)
+  })
   const { document, javascript, rust, unknown } = createNoticeDocument(jsPackages, rustPackages)
 
   if (checkOnly) {

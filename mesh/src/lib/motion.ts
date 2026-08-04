@@ -3,25 +3,31 @@ import type { Transition, Variants } from 'framer-motion'
 type CubicBezier = [number, number, number, number]
 
 export interface MotionTokens {
+  none: number
+  press: number
+  micro: number
   fast: number
-  normal: number
-  slow: number
-  exit: number
-  easing: CubicBezier
-  exitEasing: CubicBezier
-  moveEasing: CubicBezier
-  hoverEasing: CubicBezier
+  base: number
+  deliberate: number
+  maximum: number
+  arriveEasing: CubicBezier
+  emphasizeEasing: CubicBezier
+  repositionEasing: CubicBezier
+  progressEasing: CubicBezier
 }
 
 const FALLBACK_TOKENS: MotionTokens = {
+  none: 0,
+  press: 0.05,
+  micro: 0.1,
   fast: 0.15,
-  normal: 0.2,
-  slow: 0.25,
-  exit: 0.15,
-  easing: [0.165, 0.84, 0.44, 1],
-  exitEasing: [0.165, 0.84, 0.44, 1],
-  moveEasing: [0.645, 0.045, 0.355, 1],
-  hoverEasing: [0.25, 0.1, 0.25, 1],
+  base: 0.2,
+  deliberate: 0.25,
+  maximum: 0.3,
+  arriveEasing: [0.165, 0.84, 0.44, 1],
+  emphasizeEasing: [0.23, 1, 0.32, 1],
+  repositionEasing: [0.645, 0.045, 0.355, 1],
+  progressEasing: [0, 0, 1, 1],
 }
 
 const CSS_EASINGS: Record<string, CubicBezier> = {
@@ -60,37 +66,34 @@ export function readMotionTokens(
 ): MotionTokens {
   if (!style) return FALLBACK_TOKENS
   return {
-    fast: durationSeconds(
-      style.getPropertyValue('--motion-dur-fast'),
-      FALLBACK_TOKENS.fast,
+    none: durationSeconds(style.getPropertyValue('--motion-dur-none'), FALLBACK_TOKENS.none),
+    press: durationSeconds(style.getPropertyValue('--motion-dur-press'), FALLBACK_TOKENS.press),
+    micro: durationSeconds(style.getPropertyValue('--motion-dur-micro'), FALLBACK_TOKENS.micro),
+    fast: durationSeconds(style.getPropertyValue('--motion-dur-fast'), FALLBACK_TOKENS.fast),
+    base: durationSeconds(style.getPropertyValue('--motion-dur-base'), FALLBACK_TOKENS.base),
+    deliberate: durationSeconds(
+      style.getPropertyValue('--motion-dur-deliberate'),
+      FALLBACK_TOKENS.deliberate,
     ),
-    normal: durationSeconds(
-      style.getPropertyValue('--motion-dur-base'),
-      FALLBACK_TOKENS.normal,
+    maximum: durationSeconds(
+      style.getPropertyValue('--motion-dur-maximum'),
+      FALLBACK_TOKENS.maximum,
     ),
-    slow: durationSeconds(
-      style.getPropertyValue('--motion-dur-slow'),
-      FALLBACK_TOKENS.slow,
+    arriveEasing: easingCurve(
+      style.getPropertyValue('--motion-ease-arrive'),
+      FALLBACK_TOKENS.arriveEasing,
     ),
-    exit: durationSeconds(
-      style.getPropertyValue('--motion-dur-exit'),
-      FALLBACK_TOKENS.exit,
+    emphasizeEasing: easingCurve(
+      style.getPropertyValue('--motion-ease-emphasize'),
+      FALLBACK_TOKENS.emphasizeEasing,
     ),
-    easing: easingCurve(
-      style.getPropertyValue('--motion-ease-enter'),
-      FALLBACK_TOKENS.easing,
+    repositionEasing: easingCurve(
+      style.getPropertyValue('--motion-ease-reposition'),
+      FALLBACK_TOKENS.repositionEasing,
     ),
-    exitEasing: easingCurve(
-      style.getPropertyValue('--motion-ease-exit'),
-      FALLBACK_TOKENS.exitEasing,
-    ),
-    moveEasing: easingCurve(
-      style.getPropertyValue('--motion-ease-move'),
-      FALLBACK_TOKENS.moveEasing,
-    ),
-    hoverEasing: easingCurve(
-      style.getPropertyValue('--motion-ease-hover'),
-      FALLBACK_TOKENS.hoverEasing,
+    progressEasing: easingCurve(
+      style.getPropertyValue('--motion-ease-progress'),
+      FALLBACK_TOKENS.progressEasing,
     ),
   }
 }
@@ -98,109 +101,125 @@ export function readMotionTokens(
 export const motionTokens = readMotionTokens()
 
 export const motionDurations = {
+  none: motionTokens.none,
+  press: motionTokens.press,
+  micro: motionTokens.micro,
   fast: motionTokens.fast,
-  normal: motionTokens.normal,
-  staggerFast: motionTokens.fast * 0.8,
-  stagger: motionTokens.fast * 1.2,
-  celebration: motionTokens.normal * 3.5,
-  ambientLoop: motionTokens.normal * 5.75,
+  base: motionTokens.base,
+  deliberate: motionTokens.deliberate,
+  maximum: motionTokens.maximum,
 } as const
 
 export const transitions = {
-  reduced: {
-    duration: 0,
+  reduced: { duration: motionTokens.none } satisfies Transition,
+  none: { duration: motionTokens.none } satisfies Transition,
+  press: {
+    duration: motionTokens.press,
+    ease: motionTokens.arriveEasing,
   } satisfies Transition,
-  enter: {
-    duration: motionTokens.normal,
-    ease: motionTokens.easing,
-  } satisfies Transition,
-  exit: {
-    duration: motionTokens.exit,
-    ease: motionTokens.exitEasing,
+  micro: {
+    duration: motionTokens.micro,
+    ease: motionTokens.arriveEasing,
   } satisfies Transition,
   fast: {
     duration: motionTokens.fast,
-    ease: motionTokens.easing,
+    ease: motionTokens.arriveEasing,
+  } satisfies Transition,
+  base: {
+    duration: motionTokens.base,
+    ease: motionTokens.arriveEasing,
+  } satisfies Transition,
+  deliberate: {
+    duration: motionTokens.deliberate,
+    ease: motionTokens.emphasizeEasing,
+  } satisfies Transition,
+  maximum: {
+    duration: motionTokens.maximum,
+    ease: motionTokens.emphasizeEasing,
+  } satisfies Transition,
+  reposition: {
+    duration: motionTokens.base,
+    ease: motionTokens.repositionEasing,
+  } satisfies Transition,
+  progress: {
+    duration: motionTokens.none,
+    ease: motionTokens.progressEasing,
+  } satisfies Transition,
+  // Compatibility aliases now point only to approved Party Response tokens.
+  enter: {
+    duration: motionTokens.base,
+    ease: motionTokens.arriveEasing,
+  } satisfies Transition,
+  exit: {
+    duration: motionTokens.fast,
+    ease: motionTokens.arriveEasing,
   } satisfies Transition,
   failure: {
-    duration: motionTokens.normal,
-    ease: motionTokens.moveEasing,
+    duration: motionTokens.fast,
+    ease: motionTokens.arriveEasing,
   } satisfies Transition,
   move: {
-    duration: motionTokens.normal,
-    ease: motionTokens.moveEasing,
+    duration: motionTokens.base,
+    ease: motionTokens.repositionEasing,
   } satisfies Transition,
-  reaction: {
-    type: 'spring',
-    duration: 0.3,
-    bounce: 0.2,
-  } satisfies Transition,
-  celebration: {
-    duration: motionDurations.celebration,
-    ease: motionTokens.easing,
-  } satisfies Transition,
-  ambientLoop: {
-    duration: motionDurations.ambientLoop,
-    repeat: Infinity,
-    ease: 'linear',
-  } satisfies Transition,
-  // Compatibility name for call sites that treat a short exit as instant.
   instant: {
-    duration: motionTokens.fast,
-    ease: motionTokens.easing,
+    duration: motionTokens.press,
+    ease: motionTokens.arriveEasing,
   } satisfies Transition,
 }
 
 export function createMotionVariants(tokens: MotionTokens) {
-  const enter = { duration: tokens.normal, ease: tokens.easing } satisfies Transition
-  const slowEnter = { duration: tokens.slow, ease: tokens.easing } satisfies Transition
-  const exit = { duration: tokens.exit, ease: tokens.exitEasing } satisfies Transition
-  const move = { duration: tokens.normal, ease: tokens.moveEasing } satisfies Transition
+  const fast = { duration: tokens.fast, ease: tokens.arriveEasing } satisfies Transition
+  const base = { duration: tokens.base, ease: tokens.arriveEasing } satisfies Transition
+  const reposition = {
+    duration: tokens.base,
+    ease: tokens.repositionEasing,
+  } satisfies Transition
 
   const messageEnter = {
     initial: { opacity: 0, y: 4 },
-    animate: { opacity: 1, y: 0, transition: enter },
-    exit: { opacity: 0, transition: exit },
+    animate: { opacity: 1, y: 0, transition: fast },
+    exit: { opacity: 0, transition: fast },
   } satisfies Variants
 
   return {
+    // First paint and route-level shell swaps do not animate the whole app.
     screen: {
-      initial: { opacity: 0, scale: 0.98 },
-      animate: { opacity: 1, scale: 1, transition: enter },
-      exit: { opacity: 0, scale: 0.98, transition: exit },
+      initial: { opacity: 1 },
+      animate: { opacity: 1 },
+      exit: { opacity: 1 },
     } satisfies Variants,
     panel: {
       initial: { opacity: 0, x: -8 },
-      animate: { opacity: 1, x: 0, transition: slowEnter },
-      exit: { opacity: 0, x: -8, transition: exit },
+      animate: { opacity: 1, x: 0, transition: base },
+      exit: { opacity: 0, x: -8, transition: fast },
     } satisfies Variants,
     messageEnter,
-    // Backwards-compatible alias. Message-list rows deliberately do not consume it.
     message: messageEnter,
     overlay: {
       initial: { opacity: 0 },
-      animate: { opacity: 1, transition: enter },
-      exit: { opacity: 0, transition: exit },
+      animate: { opacity: 1, transition: base },
+      exit: { opacity: 0, transition: fast },
     } satisfies Variants,
     modal: {
-      initial: { opacity: 0, scale: 0.97 },
-      animate: { opacity: 1, scale: 1, transition: slowEnter },
-      exit: { opacity: 0, scale: 0.97, transition: exit },
+      initial: { opacity: 0, y: 8 },
+      animate: { opacity: 1, y: 0, transition: base },
+      exit: { opacity: 0, y: 8, transition: fast },
     } satisfies Variants,
     popover: {
       initial: { opacity: 1 },
       animate: { opacity: 1 },
-      exit: { opacity: 0, transition: { duration: 0.1, ease: tokens.hoverEasing } },
+      exit: { opacity: 0, transition: fast },
     } satisfies Variants,
     toast: {
       initial: { opacity: 0, y: 8 },
-      animate: { opacity: 1, y: 0, transition: enter },
-      exit: { opacity: 0, y: -4, transition: exit },
+      animate: { opacity: 1, y: 0, transition: base },
+      exit: { opacity: 0, y: -4, transition: fast },
     } satisfies Variants,
     listItem: {
       initial: { opacity: 0, y: 4 },
-      animate: { opacity: 1, y: 0, transition: move },
-      exit: { opacity: 0, transition: exit },
+      animate: { opacity: 1, y: 0, transition: reposition },
+      exit: { opacity: 0, transition: fast },
     } satisfies Variants,
   }
 }

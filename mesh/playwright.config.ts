@@ -52,6 +52,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      testIgnore: ['**/diagnostics.spec.ts', '**/legacy-voice-session.spec.ts'],
       use: {
         ...devices['Desktop Chrome'],
         // Enable fake media devices for WebRTC tests — required for
@@ -67,12 +68,35 @@ export default defineConfig({
         },
       },
     },
+    {
+      name: 'chromium-lan',
+      testMatch: ['**/diagnostics.spec.ts', '**/legacy-voice-session.spec.ts'],
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: 'http://localhost:1422',
+        launchOptions: {
+          args: [
+            '--use-fake-ui-for-media-stream',
+            '--use-fake-device-for-media-stream',
+            '--autoplay-policy=no-user-gesture-required',
+          ],
+        },
+      },
+    },
   ],
 
-  webServer: {
-    command: 'npm run dev',
-    port: 1420,
-    reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
-  },
+  webServer: [
+    {
+      command: 'npm run dev',
+      port: 1420,
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+    },
+    {
+      command: 'npm run dev:lan:e2e',
+      port: 1422,
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+    },
+  ],
 })

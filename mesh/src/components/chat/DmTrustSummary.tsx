@@ -17,6 +17,13 @@ export function DmTrustSummary({
   const triggerRef = useRef<HTMLButtonElement>(null)
   const protection = protectionLabel(trust)
   const needsReview = !trust.loadingAccountTrust && trust.devicesNeedReview > 0
+  const triggerLabel = needsReview
+    || trust.protection === 'unencrypted'
+    || trust.protection === 'unavailable'
+      ? 'Needs attention'
+      : trust.protection === 'checking'
+        ? 'Checking'
+        : 'Safety'
   const description = trust.protection === 'protected'
     ? `Only you, ${peerName}, and approved devices can read these messages.`
     : trust.protection === 'unencrypted'
@@ -45,18 +52,16 @@ export function DmTrustSummary({
           ref={triggerRef}
           type="button"
           className={`flex min-h-8 max-w-48 items-center gap-1.5 rounded-control px-2 text-caption font-medium transition-colors ${
-            trust.protection === 'protected'
-              ? 'bg-status-success/10 text-status-success hover:bg-status-success/20'
-              : trust.protection === 'unencrypted'
+            trust.protection === 'unencrypted' || needsReview
                 ? 'bg-status-warning/10 text-status-warning hover:bg-status-warning/20'
                 : 'bg-surface-hover text-muted hover:bg-surface-active hover:text-secondary'
           }`}
-          aria-label={`${protection}. Open conversation trust details.`}
+          aria-label={`${triggerLabel}. Open conversation safety details.`}
         >
           <Icon
             name={
               trust.protection === 'protected'
-                ? 'lock'
+                ? 'users'
                 : trust.protection === 'checking'
                   ? 'loader'
                   : 'triangleAlert'
@@ -64,7 +69,7 @@ export function DmTrustSummary({
             size="xs"
             className={trust.protection === 'checking' ? 'animate-spin' : undefined}
           />
-          <span className="truncate">{protection}</span>
+          <span className="truncate">{triggerLabel}</span>
         </button>
       )}
     >

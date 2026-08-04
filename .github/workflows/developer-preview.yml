@@ -56,6 +56,10 @@ jobs:
         shell: pwsh
         run: npm run tauri -- build --features matrix-backend -- --no-default-features --locked --jobs 1
 
+      - name: Verify compiled installer coexistence controls
+        shell: pwsh
+        run: ./mesh/scripts/check-compiled-installer-coexistence.ps1 -BundleRoot mesh/src-tauri/target/release/bundle
+
       - name: Generate SBOMs and preview evidence
         shell: pwsh
         run: |

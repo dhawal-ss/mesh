@@ -131,7 +131,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: mesh/package-lock.json
+          cache-dependency-path: |
+            mesh/package-lock.json
+            mesh/feature-deps/matrix-voice/package-lock.json
+            mesh/feature-deps/legacy-lan/package-lock.json
 
       - name: Install dependencies
         working-directory: mesh
@@ -157,6 +160,10 @@ jobs:
         working-directory: mesh
         run: npm run check:icons
 
+      - name: Check bundled interface sounds
+        working-directory: mesh
+        run: npm run check:interface-sounds
+
       - name: Check reviewed public services
         working-directory: mesh
         run: npm run check:public-services
@@ -176,6 +183,10 @@ jobs:
       - name: Check public site source
         working-directory: mesh
         run: npm run check:public-site
+
+      - name: Check approved owner decisions
+        working-directory: mesh
+        run: npm run check:owner-decisions
 
       - name: Check beta product boundary
         working-directory: mesh
@@ -206,13 +217,23 @@ jobs:
         working-directory: mesh
         run: npm run test -- --maxWorkers=4
 
+      - name: Test isolated voice dependency graphs
+        working-directory: mesh
+        run: npm run test:voice-features
+
+      - name: Build isolated acceptance frontends
+        working-directory: mesh
+        run: |
+          npm run build:matrix-voice
+          npm run build:lan
+
       - name: Build frontend
         working-directory: mesh
         run: npm run build
 
       - name: Enforce frontend entry bundle budget
         working-directory: mesh
-        run: npm run check:bundle-size
+        run: npm run check:bundle-size -- --report release/bundle-report.json
 
       - name: Install Playwright browser
         working-directory: mesh
@@ -221,3 +242,57 @@ jobs:
       - name: Run browser E2E tests and WCAG scans
         working-directory: mesh
         run: npm run e2e
+
+  protected-evidence:
+    name: Protected CI evidence manifest
+    if: always()
+    needs: [matrix-rust, legacy-rust, check-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Fail closed unless every protected job passed
+        env:
+          MATRIX_RUST: ${{ needs.matrix-rust.result }}
+          LEGACY_RUST: ${{ needs.legacy-rust.result }}
+          FRONTEND: ${{ needs.check-frontend.result }}
+        run: |
+          node -e "const fs=require('fs'); const results={matrixRust:process.env.MATRIX_RUST,legacyRust:process.env.LEGACY_RUST,frontend:process.env.FRONTEND}; fs.mkdirSync('mesh/release',{recursive:true}); fs.writeFileSync('mesh/release/ci-run-results.json',JSON.stringify({schemaVersion:1,sourceSha:process.env.GITHUB_SHA,results},null,2)+'\n'); if(Object.values(results).some(v=>v!=='success')) process.exit(1)"
+      - name: Upload protected CI payload
+        id: payload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-r0-payload-${{ github.sha }}
+          path: mesh/release/ci-run-results.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Generate protected CI evidence manifest
+        working-directory: mesh
+        run: |
+          node scripts/protected-evidence-manifest.mjs \
+            --source-sha "${{ github.sha }}" \
+            --tree-hash "$(git rev-parse HEAD^{tree})" \
+            --workflow-name CI \
+            --run-id "${{ github.run_id }}" \
+            --run-attempt "${{ github.run_attempt }}" \
+            --workflow-uri "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --payload-path release/ci-run-results.json \
+            --payload-name ci-r0-payload-${{ github.sha }} \
+            --payload-uri "${{ steps.payload.outputs.artifact-url }}" \
+            --payload-digest "${{ steps.payload.outputs.artifact-digest }}" \
+            --command "matrix-rust + legacy-rust + check-frontend protected jobs" \
+            --build-mode matrix-text \
+            --features matrix-backend,legacy-p2p \
+            --retention-days 90 \
+            --output release/ci-protected-evidence-manifest.json
+      - name: Upload protected CI evidence manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-protected-evidence-${{ github.sha }}
+          path: mesh/release/ci-protected-evidence-manifest.json
+          if-no-files-found: error
+          retention-days: 90

@@ -79,6 +79,18 @@ describe('MatrixAccountScreen', () => {
     expect(container.textContent).not.toContain('registration-token')
   })
 
+  it('does not let a configured service silently override an invitation choice', async () => {
+    await renderScreen({
+      initialPendingInvitation: pendingInvitationMetadata(),
+      initialAccountService: 'matrix.org',
+    })
+
+    expect(container.textContent).toContain('Choose your account service')
+    expect(container.querySelector('form')).toBeNull()
+    expect(findButton('Sign in')).toBeTruthy()
+    expect(findButton('Use another service')).toBeTruthy()
+  })
+
   it('does not offer a hard-coded Mesh account service without an invitation', async () => {
     await renderScreen()
 
@@ -819,6 +831,7 @@ describe('MatrixAccountScreen', () => {
     onMatrixOidcLogin?: (homeserver: string) => Promise<void>
     onMatrixSwitchAccount?: (profileId: string) => Promise<void>
     initialPendingInvitation?: PendingInvitationMetadata
+    initialAccountService?: string
     onDiscardPendingInvitation?: () => Promise<void>
     onNext?: (outcome: 'registered' | 'signed-in') => void
   } = {}) {
@@ -835,6 +848,7 @@ describe('MatrixAccountScreen', () => {
           onMatrixOidcLogin={overrides.onMatrixOidcLogin ?? vi.fn(async () => {})}
           onMatrixSwitchAccount={overrides.onMatrixSwitchAccount}
           initialPendingInvitation={overrides.initialPendingInvitation}
+          initialAccountService={overrides.initialAccountService}
           onDiscardPendingInvitation={overrides.onDiscardPendingInvitation}
           onNext={overrides.onNext ?? (() => {})}
         />,

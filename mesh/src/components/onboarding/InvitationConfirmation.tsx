@@ -1,23 +1,27 @@
+import { useEffect, useRef, useState } from 'react'
 import type { PendingInvitationMetadata } from '../../types/ipc'
 import { describeJoinRule, joinRuleRequiresApproval } from '../../lib/community-access'
-import { displayServiceAddress } from './matrixSignIn'
+import * as bridge from '../../lib/bridge'
+import { describeError } from '../../lib/errors'
+import {
+  clearInvitationActivation,
+  recordInvitationMilestone,
+} from '../../lib/invitation-activation'
+import { useCommunityStore } from '../../store/communities'
+import { useMeshNavigationStore } from '../../store/navigation'
+import { useShellStore } from '../../store/shell'
+import { showToast } from '../ui/Toast'
 import { Avatar } from '../ui/Avatar'
 import { Button } from '../ui/Button'
-import { ErrorState } from '../ui/ErrorState'
-import { Modal } from '../ui/Modal'
 import { Spinner } from '../ui/Spinner'
+import { displayServiceAddress } from './matrixSignIn'
 
-interface InvitationConfirmationProps {
-  pending: PendingInvitationMetadata
-  confirming?: boolean
-  confirmationError?: unknown
-  onConfirm: () => void
-  onDiscard: () => void
-}
+type InvitationPhase = 'entry' | 'arriving' | 'delayed' | 'failed' | 'discarding'
+
+const INVITATION_DELAY_MS = 15_000
 
 function invitationCommunityName(pending: PendingInvitationMetadata): string {
-  return pending.communityName?.trim()
-    || 'Invited community'
+  return pending.communityName?.trim() || 'Invited community'
 }
 
 function invitationServiceName(pending: PendingInvitationMetadata): string | null {
@@ -28,88 +32,303 @@ function invitationServiceName(pending: PendingInvitationMetadata): string | nul
   return address ? displayServiceAddress(address) : null
 }
 
-export function InvitationConfirmation({
+export function InvitationDestinationCard({
   pending,
-  confirming = false,
-  confirmationError = null,
-  onConfirm,
-  onDiscard,
-}: InvitationConfirmationProps) {
+  compact = false,
+}: {
+  pending: PendingInvitationMetadata
+  compact?: boolean
+}) {
   const communityName = invitationCommunityName(pending)
   const inviterName = pending.inviterDisplayName?.trim()
-  const inviterId = pending.inviterUserId?.trim()
-  const joinRule = pending.joinRule
-  const requiresApproval = joinRuleRequiresApproval(joinRule)
   const serviceName = invitationServiceName(pending)
+  const requiresApproval = joinRuleRequiresApproval(pending.joinRule)
 
   return (
-    <Modal
-      open
-      onClose={onDiscard}
-      title="Review community invitation"
-      description="Check where this invitation leads before Mesh takes any action."
-      closeLabel="Discard invitation"
+    <section
+      aria-label="Invitation destination"
+      className="border border-border-subtle bg-surface-sunken p-3 sm:p-4"
     >
-      <div className="mt-5 space-y-5">
-        <div className="flex items-center gap-3 rounded-panel border border-border-subtle bg-surface-sunken p-4">
-          <Avatar color="var(--avatar-blue)" size={52} name={communityName} />
-          <div className="min-w-0">
-            <p className="truncate text-base font-semibold text-primary">{communityName}</p>
-            <p className="mt-1 text-sm text-secondary">
-              {inviterName
-                ? `Invited by ${inviterName}`
-                : inviterId
-                  ? `Invited by ${inviterId}`
-                  : 'Inviter information is not available for this invitation.'}
-            </p>
-          </div>
-        </div>
-
-        <dl className="grid gap-3 text-sm">
-            <div className="rounded-panel bg-surface-hover p-3">
-              <dt className="font-medium text-primary">What happens next</dt>
-              <dd className="mt-1 text-secondary">
-                {requiresApproval
-                  ? 'Requires administrator approval. Mesh will send a request after you confirm.'
-                  : joinRule
-                    ? `${describeJoinRule(joinRule)}. Mesh will open the community after you confirm.`
-                    : 'Mesh will check access after you confirm. If approval is required, you will see that before anything else happens.'}
-              </dd>
-            </div>
-            <div className="rounded-panel bg-surface-hover p-3">
-              <dt className="font-medium text-primary">Service suggested by this invitation</dt>
-              <dd className="mt-1 text-secondary">
-                {serviceName ?? 'No account service is suggested.'}
-              </dd>
-            </div>
-        </dl>
-
-        <p className="text-sm leading-6 text-secondary">
-          Your account service and this community are separate. You can keep your current
-          account service, or use another compatible service when signing in.
-        </p>
-
-        {confirmationError ? (
-          <ErrorState
-            error={confirmationError}
-            context={{ operation: 'open this invitation', resource: 'community' }}
-          />
-        ) : null}
-
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="ghost" onClick={onDiscard} disabled={confirming}>
-            Discard invitation
-          </Button>
-          <Button
-            variant="primary"
-            onClick={onConfirm}
-            disabled={confirming}
-          >
-            {confirming ? <Spinner size={16} /> : null}
-            {requiresApproval ? 'Request to join' : 'Confirm and continue'}
-          </Button>
+      <div className="flex items-start gap-3">
+        <Avatar
+          color="var(--accent)"
+          size={compact ? 40 : 48}
+          name={communityName}
+          variant="community"
+          className="flex-none !rounded-panel"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">
+            Invitation destination
+          </p>
+          <h2 className="truncate text-md font-semibold text-primary">{communityName}</h2>
+          <p className="mt-0.5 text-sm text-secondary">Community</p>
         </div>
       </div>
-    </Modal>
+
+      <dl className="mt-3 grid gap-2 border-t border-border-subtle pt-3 text-caption text-secondary sm:grid-cols-3">
+        <div>
+          <dt className="font-semibold uppercase tracking-signal text-muted">Invited by</dt>
+          <dd className="mt-0.5 truncate text-primary">{inviterName || 'Not provided'}</dd>
+        </div>
+        <div>
+          <dt className="font-semibold uppercase tracking-signal text-muted">Access</dt>
+          <dd className="mt-0.5 text-primary">
+            {requiresApproval
+              ? 'Approval required'
+              : pending.joinRule
+                ? describeJoinRule(pending.joinRule)
+                : 'Checked when you join'}
+          </dd>
+        </div>
+        <div>
+          <dt className="font-semibold uppercase tracking-signal text-muted">
+            Suggested service
+          </dt>
+          <dd className="mt-0.5 truncate text-primary">{serviceName || 'None'}</dd>
+        </div>
+      </dl>
+    </section>
+  )
+}
+
+export function InvitationSurface({ handle }: { handle: string }) {
+  const pending = useShellStore((state) => state.pendingInvitation)
+  const setPendingInvitation = useShellStore((state) => state.setPendingInvitation)
+  const savePendingInvitationForLater = useShellStore(
+    (state) => state.savePendingInvitationForLater,
+  )
+  const upsertCommunity = useCommunityStore((state) => state.upsertCommunity)
+  const setActiveCommunity = useCommunityStore((state) => state.setActiveCommunity)
+  const navigate = useMeshNavigationStore((state) => state.navigate)
+  const [phase, setPhase] = useState<InvitationPhase>('entry')
+  const [failure, setFailure] = useState<unknown>(null)
+  const operationRef = useRef(0)
+  const joinStartedRef = useRef(false)
+
+  const matchingPending = pending?.handle === handle ? pending : null
+
+  useEffect(() => {
+    if (!matchingPending) return
+    recordInvitationMilestone(handle, 'destination-visible')
+    const focusFrame = window.requestAnimationFrame(() => {
+      document.getElementById('mesh-invitation-heading')?.focus({ preventScroll: true })
+    })
+    return () => window.cancelAnimationFrame(focusFrame)
+  }, [handle, matchingPending])
+
+  useEffect(() => () => {
+    operationRef.current += 1
+  }, [])
+
+  const join = async () => {
+    if (!matchingPending || phase === 'arriving' || phase === 'delayed') return
+    const operation = ++operationRef.current
+    joinStartedRef.current = true
+    setFailure(null)
+    setPhase('arriving')
+    recordInvitationMilestone(handle, 'join-started')
+    const delayedTimer = window.setTimeout(() => {
+      if (operationRef.current === operation) setPhase('delayed')
+    }, INVITATION_DELAY_MS)
+
+    try {
+      const community = await bridge.joinPendingInvitation(handle)
+      if (
+        operationRef.current !== operation
+        || useShellStore.getState().pendingInvitation?.handle !== handle
+      ) return
+      window.clearTimeout(delayedTimer)
+      recordInvitationMilestone(handle, 'community-ready')
+      setPendingInvitation(null)
+      upsertCommunity(community)
+      setActiveCommunity(community.id)
+      navigate({ kind: 'community', communityId: community.id }, { replace: true })
+      showToast(`Welcome to ${community.name}.`, 'success')
+    } catch (error) {
+      if (
+        operationRef.current !== operation
+        || useShellStore.getState().pendingInvitation?.handle !== handle
+      ) return
+      window.clearTimeout(delayedTimer)
+      setFailure(error)
+      setPhase('failed')
+    }
+  }
+
+  const saveForLater = () => {
+    if (!matchingPending) return
+    savePendingInvitationForLater()
+    navigate({ kind: 'home' })
+    showToast(`${invitationCommunityName(matchingPending)} is saved for later.`, 'success')
+  }
+
+  const discard = async () => {
+    if (!matchingPending) return
+    if (joinStartedRef.current && phase !== 'discarding') {
+      setPhase('discarding')
+      return
+    }
+
+    const operation = ++operationRef.current
+    setFailure(null)
+    try {
+      await bridge.clearPendingInvitation(handle)
+      if (
+        operationRef.current !== operation
+        || useShellStore.getState().pendingInvitation?.handle !== handle
+      ) return
+      setPendingInvitation(null)
+      clearInvitationActivation(handle)
+      navigate({ kind: 'home' }, { replace: true })
+      showToast('Invitation discarded.', 'success')
+    } catch (error) {
+      if (operationRef.current !== operation) return
+      setFailure(error)
+      setPhase('failed')
+    }
+  }
+
+  if (!matchingPending) {
+    return (
+      <section className="flex min-h-0 flex-1 flex-col" aria-labelledby="mesh-invitation-heading">
+        <InvitationHeader
+          title="Invitation unavailable"
+          detail="This invitation was completed, replaced, or is no longer saved on this device."
+        />
+        <div className="p-party-gutter">
+          <Button onClick={() => navigate({ kind: 'home' }, { replace: true })}>Back to Home</Button>
+        </div>
+      </section>
+    )
+  }
+
+  const communityName = invitationCommunityName(matchingPending)
+  const requiresApproval = joinRuleRequiresApproval(matchingPending.joinRule)
+  const errorDescription = failure
+    ? describeError(failure, { operation: 'open this invitation', resource: 'community' })
+    : null
+
+  return (
+    <section className="flex min-h-0 flex-1 flex-col overflow-y-auto" aria-labelledby="mesh-invitation-heading">
+      <InvitationHeader
+        title={`Invitation to ${communityName}`}
+        detail="This destination stays ready while you decide."
+      />
+
+      <div className="mx-auto grid w-full max-w-onboarding-shell items-start gap-5 p-party-gutter lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)]">
+        <InvitationDestinationCard pending={matchingPending} />
+
+        <section className="border border-border-subtle bg-surface-base p-4" aria-label="Invitation actions">
+          {phase === 'discarding' ? (
+            <div className="space-y-4">
+              <div>
+                <p className="text-caption font-semibold uppercase tracking-eyebrow text-status-warning">
+                  Leave this destination
+                </p>
+                <h2 className="mt-1 text-md font-semibold text-primary">Discard the invitation?</h2>
+                <p className="mt-2 text-sm leading-6 text-secondary">
+                  Mesh will remove the saved invitation from this device. A join request already
+                  sent to the community may still remain active.
+                </p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Button variant="secondary" onClick={() => setPhase(failure ? 'failed' : 'entry')}>
+                  Keep invitation
+                </Button>
+                <Button variant="solid" tone="danger" onClick={() => void discard()}>
+                  Discard
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">
+                  Your next move
+                </p>
+                <h2 className="mt-1 text-md font-semibold text-primary">
+                  {phase === 'arriving' || phase === 'delayed'
+                    ? `Entering ${communityName}`
+                    : phase === 'failed'
+                      ? `Mesh could not enter ${communityName}`
+                      : requiresApproval
+                        ? `Request access to ${communityName}`
+                        : `Join ${communityName}`}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-secondary">
+                  {phase === 'delayed'
+                    ? 'This is taking longer than expected. Your destination is still saved and the current attempt is still running.'
+                    : phase === 'arriving'
+                      ? 'Your account service and this community can be different. Mesh is checking access now.'
+                      : phase === 'failed'
+                        ? errorDescription?.body
+                        : 'Use your current account. Mesh will check the invitation and community rules only after you continue.'}
+                </p>
+              </div>
+
+              {phase === 'failed' && errorDescription ? (
+                <div role="alert" className="border border-status-danger/40 bg-status-danger/10 p-3 text-sm text-secondary">
+                  <p className="font-semibold text-primary">{errorDescription.title}</p>
+                  <p className="mt-1">{errorDescription.action}</p>
+                </div>
+              ) : null}
+
+              <p className="border-t border-border-subtle pt-3 text-caption leading-5 text-muted">
+                Your account service stores your account. This community can use a different
+                compatible service.
+              </p>
+
+              <div className="grid gap-2">
+                <Button
+                  variant="primary"
+                  onClick={() => void join()}
+                  disabled={phase === 'arriving' || phase === 'delayed'}
+                >
+                  {phase === 'arriving' || phase === 'delayed' ? <Spinner size={16} /> : null}
+                  {phase === 'failed'
+                    ? 'Try again'
+                    : requiresApproval
+                      ? 'Request to join'
+                      : `Join ${communityName}`}
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={saveForLater}
+                  disabled={phase === 'arriving' || phase === 'delayed'}
+                >
+                  Save for later
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => void discard()}
+                  disabled={phase === 'arriving' || phase === 'delayed'}
+                >
+                  Discard invitation
+                </Button>
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
+    </section>
+  )
+}
+
+function InvitationHeader({ title, detail }: { title: string; detail: string }) {
+  return (
+    <header className="flex h-party-header flex-shrink-0 items-center border-b border-border-subtle px-party-gutter">
+      <div className="min-w-0">
+        <h1
+          id="mesh-invitation-heading"
+          data-mesh-route-heading
+          tabIndex={-1}
+          className="truncate text-title font-semibold tracking-tight text-primary outline-none"
+        >
+          {title}
+        </h1>
+        <p className="truncate text-meta text-muted">{detail}</p>
+      </div>
+    </header>
   )
 }

@@ -16,8 +16,8 @@ describe('pixelColorForSeed', () => {
 
     expect(css).toContain('@keyframes mesh-pixel-reveal')
     expect(css).toContain('clip-path: inset(0 0 100% 0)')
-    expect(css).toContain('clip-path: inset(100% 0 0 0)')
-    expect(css).toContain('animation: mesh-pixel-reveal 1320ms steps(8, end) infinite')
+    expect(css).toContain('clip-path: inset(0)')
+    expect(css).toContain('animation: mesh-pixel-reveal var(--motion-dur-fast) steps(8, end) 1')
     expect(css).toContain('button:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark')
     expect(css).toContain('animation: none !important')
   })

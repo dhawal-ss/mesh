@@ -828,6 +828,61 @@ fn personal_data_export_cache_prefix_matches_the_private_media_cache_contract() 
     );
 }
 
+#[test]
+fn security_boundary_decrypted_media_cache_is_process_scoped_and_cleanup_is_bounded() {
+    let root = tempfile::tempdir().unwrap();
+    let matrix_root = root.path().join("matrix");
+    let backend = MatrixBackend::new(matrix_root.clone());
+    let next_backend = MatrixBackend::new(matrix_root.clone());
+    let storage = backend.storage_for_profile("default");
+    let current_cache = backend.media_cache_root(&storage);
+    let next_cache = next_backend.media_cache_root(&storage);
+
+    assert_ne!(current_cache, next_cache);
+    assert_eq!(
+        current_cache.parent().unwrap(),
+        matrix_root.join(SESSION_MEDIA_CACHE_DIRECTORY)
+    );
+
+    std::fs::create_dir_all(&current_cache).unwrap();
+    std::fs::write(current_cache.join("decrypted-current"), b"plaintext").unwrap();
+    let legacy_cache = matrix_root.join(LEGACY_MEDIA_CACHE_DIRECTORY);
+    std::fs::create_dir_all(&legacy_cache).unwrap();
+    std::fs::write(legacy_cache.join("decrypted-legacy"), b"plaintext").unwrap();
+    std::fs::write(matrix_root.join("matrix-sdk-crypto.sqlite3"), b"encrypted").unwrap();
+    let outside = root.path().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("preserve"), b"not a cache").unwrap();
+
+    backend.cleanup_session_media_for_storage(&storage).unwrap();
+
+    assert!(!matrix_root.join(SESSION_MEDIA_CACHE_DIRECTORY).exists());
+    assert!(!legacy_cache.exists());
+    assert_eq!(
+        std::fs::read(matrix_root.join("matrix-sdk-crypto.sqlite3")).unwrap(),
+        b"encrypted"
+    );
+    assert_eq!(
+        std::fs::read(outside.join("preserve")).unwrap(),
+        b"not a cache"
+    );
+}
+
+#[test]
+fn security_boundary_decrypted_media_cleanup_rejects_an_out_of_store_profile() {
+    let root = tempfile::tempdir().unwrap();
+    let backend = MatrixBackend::new(root.path().join("matrix"));
+    let unsafe_storage = AccountStorage {
+        profile_id: "unsafe".into(),
+        store_root: root.path().join("outside"),
+        key_namespace: "unsafe".into(),
+    };
+
+    assert!(backend
+        .cleanup_session_media_for_storage(&unsafe_storage)
+        .is_err());
+}
+
 #[tokio::test]
 async fn personal_data_export_copies_only_matching_private_media() {
     let root = tempfile::tempdir().unwrap();
@@ -3862,6 +3917,10 @@ fn mixed_protected_entities_are_partitioned_without_hiding_valid_items() {
             "!missing:example.org",
             Err(BackendError::NotFound("fixture".into())),
         ),
+        (
+            "!malformed:example.org",
+            Err(BackendError::Serialization("fixture".into())),
+        ),
         ("!valid-b:example.org", Ok("valid-b")),
     ];
     for (entity_id, result) in fixtures {
@@ -3875,10 +3934,46 @@ fn mixed_protected_entities_are_partitioned_without_hiding_valid_items() {
         .unwrap();
     }
     assert_eq!(entities, ["valid-a", "valid-b"]);
-    assert_eq!(blocked.len(), 3);
+    assert_eq!(blocked.len(), 4);
     assert_eq!(blocked[0].reason, BlockedEntityReason::Unencrypted);
     assert_eq!(blocked[1].reason, BlockedEntityReason::Unsupported);
     assert_eq!(blocked[2].reason, BlockedEntityReason::Inaccessible);
+    assert_eq!(blocked[3].reason, BlockedEntityReason::Unsupported);
+}
+
+#[test]
+fn malformed_space_children_are_quarantined_without_hiding_valid_room_ids() {
+    let mut child_ids = Vec::new();
+    let mut blocked = Vec::new();
+    MatrixBackend::quarantine_space_child_state_key(
+        &mut child_ids,
+        &mut blocked,
+        "!space:example.org#child-0".into(),
+        Some("!valid:example.org".into()),
+    )
+    .unwrap();
+    MatrixBackend::quarantine_space_child_state_key(
+        &mut child_ids,
+        &mut blocked,
+        "!space:example.org#child-1".into(),
+        Some("not-a-room-id".into()),
+    )
+    .unwrap();
+    MatrixBackend::quarantine_space_child_state_key(
+        &mut child_ids,
+        &mut blocked,
+        "!space:example.org#child-2".into(),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(child_ids.len(), 1);
+    assert_eq!(child_ids[0].as_str(), "!valid:example.org");
+    assert_eq!(blocked.len(), 2);
+    assert_eq!(blocked[0].entity_id, "not-a-room-id");
+    assert_eq!(blocked[0].reason, BlockedEntityReason::Unsupported);
+    assert_eq!(blocked[1].entity_id, "!space:example.org#child-2");
+    assert_eq!(blocked[1].reason, BlockedEntityReason::Unsupported);
 }
 
 #[test]
@@ -3957,6 +4052,58 @@ fn message_search_retains_only_bounded_top_k_results() {
         pair[0].timestamp > pair[1].timestamp
             || (pair[0].timestamp == pair[1].timestamp && pair[0].id > pair[1].id)
     }));
+}
+
+#[test]
+fn message_search_budget_stops_before_any_dimension_is_exceeded() {
+    let mut budget = MessageSearchBudget {
+        rooms_remaining: 1,
+        events_remaining: 2,
+        scanned_bytes_remaining: 10,
+    };
+
+    assert!(budget.reserve_room());
+    assert!(!budget.reserve_room());
+    assert!(budget.reserve_event(4));
+    assert!(!budget.reserve_event(7));
+    assert_eq!(budget.events_remaining, 1);
+    assert_eq!(budget.scanned_bytes_remaining, 6);
+    assert!(budget.reserve_event(6));
+    assert!(!budget.reserve_event(0));
+}
+
+#[test]
+fn message_search_retained_memory_budget_keeps_newest_fitting_results() {
+    let newest = search_fixture("$newest", "2026-08-02T00:03:00Z");
+    let middle = search_fixture("$middle", "2026-08-02T00:02:00Z");
+    let oldest = search_fixture("$oldest", "2026-08-02T00:01:00Z");
+    let two_result_budget = message_search_retained_bytes(&newest)
+        .saturating_add(message_search_retained_bytes(&middle));
+    let mut results = BoundedMessageSearchResults::new(10, two_result_budget);
+
+    results.insert(oldest);
+    results.insert(newest);
+    results.insert(middle);
+
+    assert!(results.retained_bytes <= two_result_budget);
+    assert_eq!(
+        results
+            .into_entries()
+            .into_iter()
+            .map(|message| message.id)
+            .collect::<Vec<_>>(),
+        ["$newest", "$middle"]
+    );
+}
+
+#[test]
+fn oversized_message_search_result_is_never_retained() {
+    let mut oversized = search_fixture("$oversized", "2026-08-02T00:03:00Z");
+    oversized.content = "x".repeat(1_024);
+    let mut results = BoundedMessageSearchResults::new(10, 512);
+    results.insert(oversized);
+
+    assert!(results.into_entries().is_empty());
 }
 
 #[tokio::test]

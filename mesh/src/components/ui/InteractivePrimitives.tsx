@@ -463,7 +463,7 @@ export function Sheet({
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay asChild>
           <motion.div
-            className="fixed inset-0 z-overlay bg-surface-scrim"
+            className="fixed inset-0 z-overlay bg-surface-scrim backdrop-blur-sm"
             variants={variants.overlay}
             initial="initial"
             animate="animate"

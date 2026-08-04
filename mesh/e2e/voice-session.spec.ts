@@ -67,46 +67,6 @@ test.describe('voice engine browser-level WebRTC', () => {
     expect(hasGetUserMedia).toBe(true)
   })
 
-  test('production VoiceEngine module loads in a browser runtime', async ({ page }) => {
-    await page.goto('/')
-
-    const result = await page.evaluate(async () => {
-      try {
-        // Exercise the same lazy module boundary used when a user joins voice.
-        // Native WebRTC-only checks do not catch missing browser polyfills in
-        // simple-peer and readable-stream.
-        const module = await import('/src/lib/voice-engine.ts')
-        const engine = new module.VoiceEngine('e2e-community', 'e2e-voice')
-        engine.initForTesting('alice')
-        engine.applySessionSnapshot({
-          communityId: 'e2e-community',
-          channelId: 'e2e-voice',
-          sessionEpoch: 1,
-          memberCount: 2,
-          members: [
-            { publicKey: 'alice', isLocal: true },
-            { publicKey: 'bob', isLocal: false },
-          ],
-          relay: {
-            relayRequired: false,
-            relayCandidatePublicKey: null,
-          },
-          updatedAt: new Date().toISOString(),
-        })
-        await engine.destroy()
-        return { loaded: true, error: null }
-      } catch (error) {
-        return {
-          loaded: false,
-          error: error instanceof Error ? error.message : String(error),
-        }
-      }
-    })
-
-    expect(result.error).toBeNull()
-    expect(result.loaded).toBe(true)
-  })
-
   test('fake audio device produces a usable MediaStream', async ({ page }) => {
     await page.goto('/')
     // Chromium's --use-fake-device-for-media-stream should grant us

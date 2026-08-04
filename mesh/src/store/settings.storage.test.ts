@@ -12,7 +12,9 @@ describe('settings storage resilience', () => {
         density: 'default',
         accent: 'violet',
         transparency: 'readable',
+        reduceMotion: false,
       },
+      signalCheckEnabled: false,
     })
   })
 
@@ -53,5 +55,13 @@ describe('settings storage resilience', () => {
     await expect(useSettingsStore.persist.rehydrate()).resolves.toBeUndefined()
     expect(() => useSettingsStore.persist.clearStorage()).not.toThrow()
     expect(useSettingsStore.getState().appearance.theme).toBe('dark')
+  })
+
+  it('stores Signal Check as an explicit per-device choice', () => {
+    useSettingsStore.getState().setSignalCheckEnabled(true)
+
+    const stored = window.localStorage.getItem('mesh-settings')
+    expect(stored).toContain('"signalCheckEnabled":true')
+    expect(useSettingsStore.getState().signalCheckEnabled).toBe(true)
   })
 })

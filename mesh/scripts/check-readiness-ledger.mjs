@@ -32,6 +32,12 @@ export const REQUIRED_RELEASE_GATES = Object.freeze([
   { id: 'r0.dependency-advisory-policy', milestone: 'R0', required: true, releaseStatus: 'local-pass' },
 ])
 
+export const DEFERRED_RELEASE_GATES = Object.freeze([
+  { id: 'r1.admission-openid-verifier', required: false },
+  { id: 'r1.admission-service-authority', required: false },
+  { id: 'r1.moderation-audit-authority', required: false },
+])
+
 export function ledgerPathFromGitRoot(gitRoot) {
   const pathFromGitRoot = relative(resolve(gitRoot), ledgerPath).replaceAll('\\', '/')
   return pathFromGitRoot || LEDGER_RELATIVE_PATH
@@ -126,6 +132,9 @@ export function validateReadinessLedger(ledger, {
         const artifactUrl = new URL(evidence.artifactUri)
         if (artifactUrl.protocol !== 'https:') fail(`${path}.evidence.artifactUri must use HTTPS`)
         if (artifactUrl.username || artifactUrl.password || artifactUrl.search || artifactUrl.hash) fail(`${path}.evidence.artifactUri must not contain credentials, query parameters, or fragments`)
+        if (/(?:^|\/)(?:latest|mutable)(?:\/|$)/i.test(artifactUrl.pathname)) fail(`${path}.evidence.artifactUri must not use a mutable or latest URL`)
+        const embeddedShas = artifactUrl.pathname.match(/[0-9a-f]{40}/g) ?? []
+        if (embeddedShas.some((sha) => sha !== ledger.sourceCommit)) fail(`${path}.evidence.artifactUri refers to another source SHA`)
       } catch {
         fail(`${path}.evidence.artifactUri must be a valid HTTPS URI or null`)
       }
@@ -181,6 +190,11 @@ export function validateReadinessLedger(ledger, {
         ? gate.status === 'local-pass' || gate.status === 'live-pass'
         : gate.status === 'live-pass'
       if (!satisfiesReleaseStatus) fail(`${path} (${gate.id}) is required for ${milestone} but status is ${gate.status}; minimum is ${gate.releaseStatus}`)
+      if (gate.milestone === 'R0') {
+        if (!isNonEmptyString(evidence.artifactUri)) fail(`${path} (${gate.id}) release-relevant R0 evidence requires an immutable protected artifact URI`)
+        if (!SHA256_PATTERN.test(evidence.artifactSha256 ?? '')) fail(`${path} (${gate.id}) release-relevant R0 evidence requires an artifact digest`)
+        if (!isIsoDate(evidence.expiresAt) || Date.parse(evidence.expiresAt) <= now.getTime()) fail(`${path} (${gate.id}) release-relevant R0 evidence requires an unexpired evidence manifest`)
+      }
     }
   }
 
@@ -194,6 +208,16 @@ export function validateReadinessLedger(ledger, {
       }
       for (const property of ['milestone', 'required', 'releaseStatus']) {
         if (actual[property] !== expected[property]) fail(`${expected.id}.${property} must be ${expected[property]}`)
+      }
+    }
+    for (const expected of DEFERRED_RELEASE_GATES) {
+      const actual = gatesById.get(expected.id)
+      if (!actual) {
+        fail(`deferred release gate is missing: ${expected.id}`)
+        continue
+      }
+      if (actual.required !== expected.required) {
+        fail(`${expected.id}.required must be false because the capability is disabled or outside the beta claim`)
       }
     }
   }

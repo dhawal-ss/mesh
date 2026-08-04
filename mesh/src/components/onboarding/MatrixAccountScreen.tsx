@@ -42,6 +42,10 @@ import {
   type RegistrationContinuation,
 } from '../../lib/registration-continuation'
 import { clearRendererAccountState } from '../../lib/account-transition'
+import {
+  beginInvitationActivation,
+  recordInvitationMilestone,
+} from '../../lib/invitation-activation'
 
 type AccountMode =
   | 'select'
@@ -75,6 +79,7 @@ type MatrixAccountScreenProps = Pick<
   onNext: (outcome: MatrixAccountOutcome) => void
   initialPendingInvitation?: PendingInvitationMetadata | null
   initialAccountService?: string
+  hideInvitationSummary?: boolean
 }
 
 // Read wall-clock time only from explicit user-action handlers. Keeping this
@@ -93,9 +98,12 @@ export function MatrixAccountScreen({
   onNext,
   initialPendingInvitation = null,
   initialAccountService,
+  hideInvitationSummary = false,
 }: MatrixAccountScreenProps) {
   const [registrationStartup] = useState(initializeRegistrationContinuation)
-  const normalizedInitialService = normalizeServiceAddress(initialAccountService ?? '')
+  const normalizedInitialService = initialPendingInvitation
+    ? null
+    : normalizeServiceAddress(initialAccountService ?? '')
   const [mode, setMode] = useState<AccountMode>(
     registrationStartup.service
       ? 'registration-return'
@@ -160,6 +168,30 @@ export function MatrixAccountScreen({
     ? initialPendingInvitation
     : null
   const pendingInvitationHandle = storedPendingInvitation?.handle ?? null
+
+  useEffect(() => {
+    if (!storedPendingInvitation) return
+    beginInvitationActivation(
+      storedPendingInvitation.handle,
+      storedPendingInvitation.storedAt,
+    )
+    recordInvitationMilestone(storedPendingInvitation.handle, 'destination-visible')
+    if (
+      registrationContinuation?.invitationTarget === storedPendingInvitation.handle
+    ) {
+      recordInvitationMilestone(
+        storedPendingInvitation.handle,
+        'service-selected',
+        registrationContinuation.createdAt,
+      )
+      recordInvitationMilestone(
+        storedPendingInvitation.handle,
+        'account-handoff-started',
+        registrationContinuation.createdAt,
+      )
+    }
+  }, [registrationContinuation, storedPendingInvitation])
+
   const offeredCommunityService = storedPendingInvitation?.service
     && storedPendingInvitation.admissionService
     ? storedPendingInvitation.service
@@ -329,6 +361,10 @@ export function MatrixAccountScreen({
       setSelectedService({ kind: 'public', service })
       setRegistrationContinuation(continuation)
       setMode('registration-return')
+      if (pendingInvitationHandle) {
+        recordInvitationMilestone(pendingInvitationHandle, 'service-selected')
+        recordInvitationMilestone(pendingInvitationHandle, 'account-handoff-started')
+      }
       setPassword('')
       setPasswordConfirmation('')
       setCapabilities(null)
@@ -435,6 +471,9 @@ export function MatrixAccountScreen({
     capabilityGenerationRef.current += 1
     availabilityGenerationRef.current += 1
     setSelectedService({ kind: 'public', service })
+    if (pendingInvitationHandle) {
+      recordInvitationMilestone(pendingInvitationHandle, 'service-selected')
+    }
     setServiceAddress('')
     setCapabilities(null)
     setAvailabilityCheck(null)
@@ -451,6 +490,7 @@ export function MatrixAccountScreen({
       name: storedPendingInvitation?.communityServiceDisplayName?.trim() || address,
       address: offeredCommunityService,
     })
+    recordInvitationMilestone(pendingInvitationHandle, 'service-selected')
     setServiceAddress('')
     setCapabilities(null)
     setAvailabilityCheck(null)
@@ -502,6 +542,9 @@ export function MatrixAccountScreen({
           }
       if (generation === capabilityGenerationRef.current) {
         setCapabilities(nextCapabilities)
+        if (pendingInvitationHandle) {
+          recordInvitationMilestone(pendingInvitationHandle, 'service-selected')
+        }
       }
     } catch (cause) {
       if (generation === capabilityGenerationRef.current) {
@@ -540,6 +583,7 @@ export function MatrixAccountScreen({
 
       setSubmitting(true)
       try {
+        recordInvitationMilestone(pendingInvitationHandle, 'account-handoff-started')
         await onMatrixRegisterAccount({
           homeserver: resolvedService,
           username: normalizedUsername,
@@ -549,6 +593,7 @@ export function MatrixAccountScreen({
         })
         setPassword('')
         setPasswordConfirmation('')
+        recordInvitationMilestone(pendingInvitationHandle, 'account-ready')
         onNext('registered')
       } catch (cause) {
         setError(friendlyAccountCreationError(cause), cause)
@@ -574,6 +619,9 @@ export function MatrixAccountScreen({
 
     setSubmitting(true)
     try {
+      if (pendingInvitationHandle) {
+        recordInvitationMilestone(pendingInvitationHandle, 'account-handoff-started')
+      }
       await onMatrixLogin({
         homeserver: resolvedService,
         username: username.trim().startsWith('@') ? username.trim() : normalizedUsername,
@@ -582,6 +630,9 @@ export function MatrixAccountScreen({
       })
       if (!completeRegistrationContinuation()) return
       setPassword('')
+      if (pendingInvitationHandle) {
+        recordInvitationMilestone(pendingInvitationHandle, 'account-ready')
+      }
       onNext('signed-in')
     } catch (cause) {
       setError(friendlySignInError(cause), cause)
@@ -595,8 +646,14 @@ export function MatrixAccountScreen({
     setSwitchingProfile(profileId)
     setError(null)
     try {
+      if (pendingInvitationHandle) {
+        recordInvitationMilestone(pendingInvitationHandle, 'account-handoff-started')
+      }
       await onMatrixSwitchAccount(profileId)
       clearRendererAccountState()
+      if (pendingInvitationHandle) {
+        recordInvitationMilestone(pendingInvitationHandle, 'account-ready')
+      }
       onNext('signed-in')
     } catch (cause) {
       setError(friendlySignInError(cause), cause)
@@ -639,8 +696,14 @@ export function MatrixAccountScreen({
     setBrowserSigningIn(true)
     setError(null)
     try {
+      if (pendingInvitationHandle) {
+        recordInvitationMilestone(pendingInvitationHandle, 'account-handoff-started')
+      }
       await onMatrixOidcLogin(resolvedService)
       if (!completeRegistrationContinuation()) return
+      if (pendingInvitationHandle) {
+        recordInvitationMilestone(pendingInvitationHandle, 'account-ready')
+      }
       onNext('signed-in')
     } catch (cause) {
       setError(friendlySignInError(cause), cause)
@@ -789,6 +852,13 @@ export function MatrixAccountScreen({
           More account service choices are below
         </p>
 
+        {storedPendingInvitation && !hideInvitationSummary ? (
+          <CommunityInvitationPassport
+            pending={storedPendingInvitation}
+            onDiscard={() => void discardPendingInvitation()}
+          />
+        ) : null}
+
         {savedAccounts.length > 0 ? (
           <SavedAccounts
             accounts={savedAccounts}
@@ -821,13 +891,6 @@ export function MatrixAccountScreen({
             onSelect={() => selectPublicService(MATRIX_ORG_SERVICE)}
             termsUrl={MATRIX_ORG_SERVICE.termsUrl}
             privacyUrl={MATRIX_ORG_SERVICE.privacyUrl}
-          />
-        ) : null}
-
-        {storedPendingInvitation ? (
-          <CommunityInvitationPassport
-            pending={storedPendingInvitation}
-            onDiscard={() => void discardPendingInvitation()}
           />
         ) : null}
 
@@ -1124,7 +1187,7 @@ export function MatrixAccountScreen({
           </label>
         </div>
 
-        {isCreate && storedPendingInvitation ? (
+        {isCreate && storedPendingInvitation && !hideInvitationSummary ? (
           <CommunityInvitationPassport
             pending={storedPendingInvitation}
             onDiscard={() => void discardPendingInvitation()}

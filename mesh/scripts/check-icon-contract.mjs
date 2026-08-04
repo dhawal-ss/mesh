@@ -51,6 +51,10 @@ if (!/size === ['"]lg['"] \? 1\.75 : 1\.5/.test(rendererSource)) {
   errors.push('src/components/ui/Icon.tsx must render 14–20px icons at 1.5px and 24px icons at 1.75px')
 }
 
+if (!/sm:\s*16[\s\S]*md:\s*18/.test(rendererSource)) {
+  errors.push('src/components/ui/Icon.tsx must keep 16px utility and 18px primary Party Room icons')
+}
+
 for (const filePath of await componentFiles(componentsRoot)) {
   if (filePath === centralRenderer || isTestFixture(filePath)) continue
   const source = await readFile(filePath, 'utf8')
@@ -65,5 +69,5 @@ if (errors.length > 0) {
 }
 
 console.log(
-  'Icon contract check passed: production components use the central absolute-stroke Icon renderer without inline SVG.',
+  'Icon contract check passed: production components use the central 16px and 18px absolute-stroke Icon renderer without inline SVG.',
 )

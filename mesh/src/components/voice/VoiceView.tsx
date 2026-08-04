@@ -1,36 +1,37 @@
-import { useCallback, useEffect, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useVoiceEngine } from '../../hooks/useVoiceEngine'
-import { useVoiceStore } from '../../store/voice'
-import { transitions, variants } from '../../lib/motion'
-import { VoicePeerGrid } from './VoicePeerGrid'
-import { VoiceControls } from './VoiceControls'
-import { Icon } from '../ui/Icon'
+import { playInterfaceSound } from '../../lib/interface-sounds'
+import {
+  resolveVoiceLifecycle,
+  VOICE_FAILURE_THRESHOLD_MS,
+  VOICE_RECONNECT_GRACE_MS,
+  type VoiceLifecycleState,
+} from '../../lib/voice-lifecycle'
 import { voiceConnectionLabel } from '../../lib/voice-runtime'
-import { StatusDot } from '../ui/StatusDot'
+import { useVoiceStore } from '../../store/voice'
+import type { VoiceConnectionState } from '../../types/ipc'
+import { Button } from '../ui/Button'
+import { Icon } from '../ui/Icon'
+import { AsyncStatus } from '../ui/AsyncStatus'
+import { VoiceControls } from './VoiceControls'
+import { VoicePeerGrid } from './VoicePeerGrid'
 
 interface VoiceViewProps {
   channelId: string
   channelName: string
-  onCheckAgain?: () => void
-  onOpenDiagnostics: () => void
   onBackToChat: () => void
 }
 
 export function VoiceView({
   channelId,
   channelName,
-  onCheckAgain,
-  onOpenDiagnostics,
   onBackToChat,
 }: VoiceViewProps) {
   const {
     connectionWarning,
     microphonePermission,
-    relayChanged,
     voiceService,
     matrixVoiceReady,
-    matrixUnavailableReason,
     devices,
     refreshDevices,
     switchInputDevice,
@@ -40,265 +41,334 @@ export function VoiceView({
     toggleScreenShare,
   } = useVoiceEngine()
   const connectionState = useVoiceStore((state) => state.connectionState)
-  const connectionLabel = voiceConnectionLabel(connectionState)
-  const [showRelayToast, setShowRelayToast] = useState(false)
-
-  /*
-   * Retry re-enters the same voice session. This is the same mechanism the
-   * Leave control uses, run in reverse, so it does not need new engine surface.
-   */
   const currentCommunityId = useVoiceStore((state) => state.currentCommunityId)
   const currentChannelId = useVoiceStore((state) => state.currentChannelId)
+  const peers = useVoiceStore((state) => state.peers)
   const setCurrentVoiceSession = useVoiceStore((state) => state.setCurrentVoiceSession)
+  const setMuted = useVoiceStore((state) => state.setMuted)
+  const setCameraEnabled = useVoiceStore((state) => state.setCameraEnabled)
+  const setScreenSharing = useVoiceStore((state) => state.setScreenSharing)
+  const [leaving, setLeaving] = useState(false)
+  const [rosterOpen, setRosterOpen] = useState(false)
+  const rosterButtonRef = useRef<HTMLButtonElement>(null)
+  const previousConnectionState = useRef(connectionState)
+  const reconnectStartedAt = useRef<number | null>(null)
+  const previewVoice = import.meta.env.DEV
+    && typeof document !== 'undefined'
+    && document.documentElement.dataset.meshSimulateVoice === 'true'
+  const capabilityAvailable = previewVoice || (
+    voiceService.provider === 'matrix-rtc'
+      ? matrixVoiceReady
+      : voiceService.availability === 'ready'
+  )
+  const lifecycle = useVoiceLifecycle(
+    connectionState,
+    Boolean(currentCommunityId && currentChannelId),
+    capabilityAvailable,
+    leaving,
+  )
+  const connectedOccupancy = ['connected', 'reconnect-grace', 'reconnecting'].includes(lifecycle)
+    ? peers.length + 1
+    : 0
+
+  useEffect(() => {
+    const previous = previousConnectionState.current
+    if (connectionState === 'reconnecting' && previous !== 'reconnecting') {
+      reconnectStartedAt.current = Date.now()
+    }
+    if (connectionState === 'connected') {
+      if (previous === 'connecting') void playInterfaceSound('voice-self-join')
+      if (
+        previous === 'reconnecting'
+        && reconnectStartedAt.current !== null
+        && Date.now() - reconnectStartedAt.current >= 3_000
+      ) {
+        void playInterfaceSound('connection-recovered', {
+          disruptionDurationMs: Date.now() - reconnectStartedAt.current,
+        })
+      }
+      reconnectStartedAt.current = null
+    }
+    if (connectionState === 'disconnected' || connectionState === 'idle') {
+      reconnectStartedAt.current = null
+    }
+    previousConnectionState.current = connectionState
+  }, [connectionState])
+
   const retryJoin = useCallback(() => {
     const retryChannelId = currentChannelId ?? channelId
     const communityId = currentCommunityId
+    if (!communityId) return
     setCurrentVoiceSession(null, null)
-    // Let the engine tear down before the join effect keys on the new session.
     requestAnimationFrame(() => setCurrentVoiceSession(communityId, retryChannelId))
   }, [channelId, currentChannelId, currentCommunityId, setCurrentVoiceSession])
 
-  useEffect(() => {
-    if (!relayChanged) return
-    const showTimer = setTimeout(() => setShowRelayToast(true), 0)
-    const hideTimer = setTimeout(() => setShowRelayToast(false), 4000)
-    return () => {
-      clearTimeout(showTimer)
-      clearTimeout(hideTimer)
-    }
-  }, [relayChanged])
+  const leaveVoice = useCallback(() => {
+    if (leaving) return
+    setLeaving(true)
+    setMuted(true)
+    setCameraEnabled(false)
+    setScreenSharing(false)
+    setCurrentVoiceSession(null, null)
+    void playInterfaceSound('voice-self-leave')
+    requestAnimationFrame(onBackToChat)
+  }, [leaving, onBackToChat, setCameraEnabled, setCurrentVoiceSession, setMuted, setScreenSharing])
 
-  if (voiceService.provider === 'matrix-rtc' && !matrixVoiceReady) {
-    const statusLabel =
-      voiceService.availability === 'invalid-configuration'
-        ? 'Needs setup'
-        : voiceService.availability === 'client-unavailable'
-          ? 'Safety check'
-          : 'Unavailable'
-    const blocker = microphonePermission === 'denied'
-      ? {
-          label: 'Permission',
-          explanation: 'Mesh cannot use the microphone until system permission is restored.',
-        }
-      : voiceService.availability === 'invalid-configuration'
-        ? {
-            label: 'Service capability',
-            explanation: 'This account service has not advertised a complete calling setup.',
-          }
-        : !voiceService.mediaE2eeVerified
-          ? {
-              label: 'Verification',
-              explanation: 'Mesh has not verified private media for this calling service.',
-            }
-          : {
-              label: 'Device or network',
-              explanation: 'The local calling client, device, or network check is not ready.',
-            }
-
+  if (lifecycle === 'unavailable' || lifecycle === 'idle') {
     return (
-      <div className="flex h-full w-full flex-col bg-surface-canvas">
-        <div className="flex h-12 items-center gap-2 border-b border-border-subtle px-4">
-          <Icon name="volume" className="text-muted" />
-          <span className="text-sm font-semibold text-primary">{channelName}</span>
-          <span className="ml-auto font-mono text-meta text-status-warning">
-            {statusLabel}
-          </span>
-        </div>
-
-        <div className="flex flex-1 items-center justify-center p-6">
-          <section
-            className="w-full max-w-lg rounded-panel border border-border-subtle bg-surface-sidebar p-6 text-center"
-            aria-labelledby="calling-unavailable-title"
-          >
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-panel border border-border-subtle bg-surface-sunken">
-              <Icon name="triangleAlert" className="text-muted" />
-            </div>
-            <h2 id="calling-unavailable-title" className="text-lg font-semibold text-primary">
-              Calling is not ready yet
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-secondary">
-              {matrixUnavailableReason ??
-                'Mesh keeps calling off until it can protect the whole conversation. Messaging still works normally.'}
-            </p>
-            <div className="mt-5 grid gap-2 text-left text-xs sm:grid-cols-2">
-              <VoiceReadinessItem label="Current blocker" value={blocker.label} warning />
-              <VoiceReadinessItem label="Calling service" value={statusLabel} />
-              <VoiceReadinessItem
-                label="Private audio and video"
-                value={voiceService.mediaE2eeVerified ? 'Ready' : 'Not verified'}
-                warning={!voiceService.mediaE2eeVerified}
-              />
-            </div>
-            <p className="mt-4 text-xs text-muted">
-              {blocker.explanation} Your microphone, camera, and screen stay off until every safety
-              check passes.
-            </p>
-            <div className="mt-5 flex flex-wrap justify-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  onCheckAgain?.()
-                  void refreshDevices(true)
-                  retryJoin()
-                }}
-                className="min-h-11 rounded-control bg-accent px-4 text-sm font-semibold text-content-on-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
-              >
-                Check again
-              </button>
-              <button
-                type="button"
-                onClick={onOpenDiagnostics}
-                className="min-h-11 rounded-control border border-border px-4 text-sm font-semibold text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
-              >
-                Open call diagnostics
-              </button>
-              <button
-                type="button"
-                onClick={onBackToChat}
-                className="min-h-11 rounded-control px-4 text-sm font-semibold text-secondary hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
-              >
-                Back to chat
-              </button>
-            </div>
-          </section>
-        </div>
-      </div>
+      <VoiceUnavailable
+        channelName={channelName}
+        onBackToChat={onBackToChat}
+      />
     )
   }
 
   return (
-      <div className="relative flex h-full w-full flex-col bg-surface-base">
-      {/*
-        A blocked microphone is a permissions problem with a specific remedy,
-        not a call-quality warning. It gets its own banner above the generic one.
-      */}
-      {microphonePermission === 'denied' && (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center gap-2 border-b border-status-danger/30 bg-status-danger/5 px-4 py-2 text-xs text-status-danger"
+    <section className="relative flex h-full min-h-0 w-full flex-col bg-surface-canvas" aria-labelledby="mesh-voice-heading">
+      <header className="flex h-14 flex-none items-center gap-3 border-b border-border-subtle bg-surface-base px-4">
+        <Icon name="volume" size="sm" className="flex-none text-accent" aria-hidden="true" />
+        <span className="min-w-0 flex-1">
+          <h1
+            id="mesh-voice-heading"
+            className="truncate text-sm font-semibold text-content outline-none"
+            data-mesh-route-heading
+            tabIndex={-1}
+          >
+            {channelName} voice
+          </h1>
+          <span className="block truncate text-caption text-content-muted">
+            {connectedOccupancy > 0
+              ? `${connectedOccupancy} in party`
+              : voiceLifecycleLabel(lifecycle, channelName)}
+          </span>
+        </span>
+        <button
+          ref={rosterButtonRef}
+          type="button"
+          onClick={() => setRosterOpen(true)}
+          className="flex min-h-10 items-center gap-2 px-2 text-xs font-semibold text-content-secondary hover:bg-surface-hover hover:text-content min-[1100px]:hidden"
+          aria-controls="mesh-voice-roster-drawer"
+          aria-expanded={rosterOpen}
+          aria-label="Open party roster"
         >
-          <Icon name="micOff" size="xs" className="flex-shrink-0" aria-hidden="true" />
-          <span className="min-w-0">
-            Mesh can’t reach your microphone. Allow microphone access for Mesh in your
-            system settings, then try again.
+          <Icon name="users" size="sm" />
+          <span className="hidden sm:inline">People</span>
+        </button>
+        <button
+          type="button"
+          onClick={onBackToChat}
+          className="flex min-h-10 items-center gap-2 border border-border-subtle px-3 text-xs font-semibold text-content-secondary hover:bg-surface-hover hover:text-content"
+        >
+          <Icon name="messageCircle" size="sm" />
+          Open messages
+        </button>
+      </header>
+
+      {microphonePermission === 'denied' ? (
+        <div className="flex flex-none items-center gap-2 border-b border-status-danger/40 bg-status-danger/5 px-4 py-2 text-xs text-status-danger" role="alert">
+          <Icon name="micOff" size="sm" aria-hidden="true" />
+          <span className="min-w-0 flex-1">
+            Mesh cannot use your microphone. Allow microphone access in system settings, then check again.
           </span>
           <button
             type="button"
             onClick={() => void refreshDevices(true)}
-            className="ml-auto min-h-8 rounded-control px-2 font-semibold underline underline-offset-2 transition-colors hover:bg-status-danger/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+            className="min-h-9 px-2 font-semibold underline underline-offset-2"
           >
             Check again
           </button>
         </div>
+      ) : null}
+
+      {connectionWarning ? (
+        <div className="flex flex-none items-center gap-2 border-b border-status-warning/40 bg-status-warning/5 px-4 py-2 text-xs text-status-warning" role="status">
+          <Icon name="triangleAlert" size="sm" aria-hidden="true" />
+          <span>Party audio needs attention. Messages still work.</span>
+        </div>
+      ) : null}
+
+      {lifecycle === 'requesting' ? (
+        <VoiceProgressState
+          title={`Joining ${channelName}`}
+          detail="Saving your place in the party while voice connects."
+          actionLabel="Cancel"
+          onAction={leaveVoice}
+        />
+      ) : lifecycle === 'failed' ? (
+        <VoiceFailureState channelName={channelName} onRetry={retryJoin} onLeave={leaveVoice} />
+      ) : lifecycle === 'leaving' ? (
+        <VoiceProgressState
+          title={`Leaving ${channelName}`}
+          detail="Your microphone and shared media are stopping now."
+        />
+      ) : (
+        <VoicePeerGrid
+          channelName={channelName}
+          reconnecting={lifecycle === 'reconnecting'}
+          rosterOpen={rosterOpen}
+          onCloseRoster={() => {
+            setRosterOpen(false)
+            requestAnimationFrame(() => rosterButtonRef.current?.focus())
+          }}
+          onParticipantVolume={setParticipantVolume}
+        />
       )}
 
-      <AnimatePresence>
-        {connectionWarning && (
-          <motion.div
-            initial={{ y: -4, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -4, opacity: 0 }}
-            className="flex items-center gap-2 border-b border-status-warning/30 bg-status-warning/5 px-4 py-2 text-xs text-status-warning"
-          >
-            <Icon name="triangleAlert" size="xs" className="flex-shrink-0" />
-            <span>Call quality needs attention.</span>
-            <details className="ml-auto">
-              <summary className="flex min-h-8 cursor-pointer items-center rounded-control px-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus">
-                Details
-              </summary>
-              <span className="mt-1 block max-w-md break-words text-meta">
-                {connectionWarning}
-              </span>
-            </details>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showRelayToast && (
-          <motion.div
-            variants={variants.toast}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="absolute left-1/2 top-14 z-dropdown -translate-x-1/2 rounded-control border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs text-accent"
-          >
-            Call connection updated
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <motion.div
-        initial={{ y: -4, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={transitions.enter}
-        className="flex h-12 items-center justify-between border-b border-border-subtle px-4"
-        data-tauri-drag-region
-      >
-        <div className="flex min-w-0 items-center gap-2">
-          <Icon name="volume" className="flex-shrink-0 text-muted" />
-          <span className="min-w-0 truncate text-sm font-semibold text-primary">{channelName}</span>
-        </div>
-
-        <span
-          role="status"
-          className={`ml-3 inline-flex flex-shrink-0 items-center gap-1.5 text-caption font-medium ${
-            connectionState === 'connected'
-              ? 'text-status-success'
-              : connectionState === 'disconnected' || connectionState === 'degraded'
-                ? 'text-status-warning'
-                : 'text-muted'
-          }`}
-        >
-          <StatusDot
-            state={
-              connectionState === 'reconnecting'
-                ? 'connecting'
-                : connectionState === 'idle'
-                  ? 'disconnected'
-                  : connectionState
-            }
-            label={`Voice: ${connectionLabel}`}
-          />
-          {connectionLabel}
-        </span>
-      </motion.div>
-
-      <motion.div
-        className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto p-3 sm:overflow-hidden sm:p-8"
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={transitions.enter}
-      >
-        <VoicePeerGrid onParticipantVolume={setParticipantVolume} onRetry={retryJoin} />
-      </motion.div>
-
-      <div className="z-sticky w-full flex-shrink-0 border-t border-border-subtle bg-surface-base p-2 sm:absolute sm:bottom-4 sm:left-1/2 sm:w-auto sm:-translate-x-1/2 sm:border-0 sm:bg-transparent sm:p-0 lg:bottom-8">
+      <div className="flex-none border-t border-border-subtle bg-surface-base px-3 py-2">
         <VoiceControls
           devices={devices}
+          roomName={channelName}
+          leaving={leaving}
+          onOpenMessages={onBackToChat}
+          onLeave={leaveVoice}
           onInputDeviceChange={switchInputDevice}
           onOutputDeviceChange={switchOutputDevice}
           onCameraChange={toggleCamera}
           onScreenShareChange={toggleScreenShare}
         />
       </div>
+    </section>
+  )
+}
+
+function VoiceUnavailable({
+  channelName,
+  onBackToChat,
+}: {
+  channelName: string
+  onBackToChat: () => void
+}) {
+  return (
+    <section className="flex h-full min-h-0 w-full flex-col bg-surface-canvas" aria-labelledby="mesh-voice-heading">
+      <header className="flex h-14 flex-none items-center gap-3 border-b border-border-subtle bg-surface-base px-4">
+        <Icon name="volume" size="sm" className="text-content-muted" aria-hidden="true" />
+        <h1
+          id="mesh-voice-heading"
+          className="truncate text-sm font-semibold text-content outline-none"
+          data-mesh-route-heading
+          tabIndex={-1}
+        >
+          {channelName} voice
+        </h1>
+        <span className="ml-auto text-caption text-content-muted">Unavailable</span>
+      </header>
+      <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+        <div className="w-full max-w-lg border-y border-border-subtle px-6 py-10 text-center">
+          <Icon name="phoneOff" size="lg" className="mx-auto text-content-muted" aria-hidden="true" />
+          <h2 className="mt-5 text-lg font-semibold text-content">Voice is not available for this room</h2>
+          <p className="mt-2 text-sm leading-6 text-content-secondary">You can keep using messages.</p>
+          <Button className="mt-6" onClick={onBackToChat}>
+            Back to messages
+          </Button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function VoiceProgressState({
+  title,
+  detail,
+  actionLabel,
+  onAction,
+}: {
+  title: string
+  detail: string
+  actionLabel?: string
+  onAction?: () => void
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center px-6">
+      <AsyncStatus
+        title={title}
+        detail={detail}
+        actions={actionLabel && onAction ? (
+          <Button variant="secondary" onClick={onAction}>{actionLabel}</Button>
+        ) : undefined}
+      />
     </div>
   )
 }
 
-function VoiceReadinessItem({
-  label,
-  value,
-  warning = false,
+function VoiceFailureState({
+  channelName,
+  onRetry,
+  onLeave,
 }: {
-  label: string
-  value: string
-  warning?: boolean
+  channelName: string
+  onRetry: () => void
+  onLeave: () => void
 }) {
+  const reason = useVoiceStore((state) => state.lastReconnectReason)
   return (
-    <div className="rounded-control border border-border-subtle bg-surface-base px-3 py-2">
-      <div className="text-caption uppercase tracking-wide text-muted">{label}</div>
-      <div className={`mt-1 font-medium ${warning ? 'text-status-warning' : 'text-primary'}`}>{value}</div>
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center" role="alert">
+      <Icon name="phoneOff" size="lg" className="text-status-danger" aria-hidden="true" />
+      <h2 className="mt-4 text-base font-semibold text-content">Voice could not connect</h2>
+      <p className="mt-2 max-w-md text-sm leading-6 text-content-secondary">
+        {reason || `Try ${channelName} again, or leave voice and keep using messages.`}
+      </p>
+      <div className="mt-5 flex gap-2">
+        <Button onClick={onRetry}>Try again</Button>
+        <Button variant="secondary" onClick={onLeave}>Leave voice</Button>
+      </div>
     </div>
   )
+}
+
+function useVoiceLifecycle(
+  connectionState: VoiceConnectionState,
+  hasOwnedSession: boolean,
+  capabilityAvailable: boolean,
+  leaving: boolean,
+): VoiceLifecycleState {
+  const [timing, setTiming] = useState<{
+    connectionState: VoiceConnectionState
+    elapsedMs: number
+  }>({ connectionState, elapsedMs: 0 })
+
+  useEffect(() => {
+    const timers = [window.setTimeout(() => {
+      setTiming({ connectionState, elapsedMs: 0 })
+    }, 0)]
+    if (!hasOwnedSession || !capabilityAvailable || leaving) {
+      return () => timers.forEach(window.clearTimeout)
+    }
+    const thresholds = connectionState === 'reconnecting'
+      ? [VOICE_RECONNECT_GRACE_MS, VOICE_FAILURE_THRESHOLD_MS]
+      : connectionState === 'connecting' || connectionState === 'idle'
+        ? [VOICE_FAILURE_THRESHOLD_MS]
+        : []
+    timers.push(...thresholds.map((threshold) => window.setTimeout(() => {
+        setTiming((current) => current.connectionState === connectionState
+          ? { ...current, elapsedMs: threshold }
+          : current)
+      }, threshold)))
+    return () => timers.forEach(window.clearTimeout)
+  }, [capabilityAvailable, connectionState, hasOwnedSession, leaving])
+
+  return resolveVoiceLifecycle({
+    hasOwnedSession,
+    capabilityAvailable,
+    connectionState,
+    stateElapsedMs: timing.connectionState === connectionState ? timing.elapsedMs : 0,
+    leaving,
+  })
+}
+
+function voiceLifecycleLabel(state: VoiceLifecycleState, channelName: string): string {
+  switch (state) {
+    case 'requesting':
+      return `Joining ${channelName}`
+    case 'reconnect-grace':
+    case 'connected':
+      return 'Voice connected'
+    case 'reconnecting':
+      return `Reconnecting to ${channelName}`
+    case 'failed':
+      return 'Voice could not connect'
+    case 'leaving':
+      return `Leaving ${channelName}`
+    default:
+      return voiceConnectionLabel('idle')
+  }
 }

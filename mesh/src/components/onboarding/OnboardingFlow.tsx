@@ -1,14 +1,12 @@
 import { AnimatePresence, motion } from '../../lib/lazy-motion'
 import { lazy, Suspense, useRef, useState } from 'react'
 import { MatrixAccountScreen, type MatrixAccountOutcome } from './MatrixAccountScreen'
-import { Button } from '../ui/Button'
-import { ErrorState } from '../ui/ErrorState'
 import { Spinner } from '../ui/Spinner'
 import { Icon, type IconName } from '../ui/Icon'
 import { PixelMark } from '../ui/PixelMark'
 import { variants } from '../../lib/motion'
 import { DEFAULT_AVATAR_COLORS, type OnboardingFlowProps, type OnboardingProfile } from './types'
-import type { MatrixRecoverySetupResult } from '../../types/ipc'
+import { InvitationDestinationCard } from './InvitationConfirmation'
 
 const IdentityScreen = lazy(() =>
   import('./IdentityScreen').then((module) => ({
@@ -21,19 +19,12 @@ const JoinScreen = lazy(() =>
 const ReadyScreen = lazy(() =>
   import('./ReadyScreen').then((module) => ({ default: module.ReadyScreen })),
 )
-const BackupCodeScreen = lazy(() =>
-  import('./BackupCodeScreen').then((module) => ({
-    default: module.BackupCodeScreen,
-  })),
-)
-
-type Step = 'account' | 'identity' | 'profile' | 'backup' | 'bootstrap'
+type Step = 'account' | 'identity' | 'profile' | 'bootstrap'
 
 const STEP_LABELS: Record<Step, string> = {
   account: 'Account',
   identity: 'Identity',
   profile: 'Profile',
-  backup: 'Backup',
   bootstrap: 'Ready',
 }
 
@@ -69,8 +60,6 @@ export function OnboardingFlow({
   onMatrixOidcLogin,
   onMatrixSwitchAccount,
   onDiscardPendingInvitation,
-  onCreateBackupCode,
-  onBackupConfigured,
   onBackupSkipped,
   onGenerateIdentity,
   onUpdateProfile,
@@ -80,13 +69,10 @@ export function OnboardingFlow({
   avatarColors = DEFAULT_AVATAR_COLORS,
 }: OnboardingFlowProps) {
   const needsMatrixLogin = backendKind === 'matrix' && !backendAuthenticated
-  const [newAccount, setNewAccount] = useState(false)
   const steps: Step[] =
     backendKind === 'matrix'
       ? needsMatrixLogin
-        ? newAccount
-          ? ['account', 'backup', 'bootstrap']
-          : ['account', 'bootstrap']
+        ? ['account', 'bootstrap']
         : ['bootstrap']
       : ['identity', 'profile', 'bootstrap']
   const [step, setStep] = useState<Step>(
@@ -109,50 +95,15 @@ export function OnboardingFlow({
     displayName: initialProfile?.displayName ?? '',
     avatarColor: initialProfile?.avatarColor ?? avatarColors[0] ?? DEFAULT_AVATAR_COLORS[0],
   })
-  const [backupCode, setBackupCode] = useState<string | null>(null)
-  const [backupSetup, setBackupSetup] = useState<MatrixRecoverySetupResult | null>(null)
-  const [backupError, setBackupError] = useState<unknown | null>(null)
-  const [preparingBackup, setPreparingBackup] = useState(false)
-  /** True only after the user explicitly asks to enable recovery. */
-  const [recoveryRequested, setRecoveryRequested] = useState(false)
-
   const currentIndex = steps.indexOf(step)
 
-  const prepareBackupCode = async () => {
-    setPreparingBackup(true)
-    setBackupError(null)
-    setBackupSetup(null)
-    setBackupCode(null)
-    try {
-      if (!onCreateBackupCode) {
-        throw new Error('Message backup is unavailable in this build.')
-      }
-      const setup = await onCreateBackupCode()
-      setBackupSetup(setup)
-      setBackupCode(setup.recoveryKey)
-    } catch (error) {
-      setBackupError(error)
-    } finally {
-      setPreparingBackup(false)
-    }
+  const handleMatrixAccount = (outcome: MatrixAccountOutcome) => {
+    if (outcome === 'registered') onBackupSkipped?.()
+    setStep('bootstrap')
   }
 
-  const handleMatrixAccount = (outcome: MatrixAccountOutcome) => {
-    if (outcome === 'signed-in') {
-      setStep('bootstrap')
-      return
-    }
-    setNewAccount(true)
-    setStep('backup')
-    /*
-     * Deliberately does NOT call prepareBackupCode() here. Preparing the code
-     * enables cross-signing recovery on the account, and doing that as a side
-     * effect of navigation meant a user who then chose "Remind me later" ended
-     * up in the worst possible state: the account believing it was
-     * recoverable, with a key the human had never seen. Recovery is now
-     * enabled only by the explicit action on the consent step below.
-     */
-  }
+  const invitationCommunity = initialPendingInvitation?.communityName?.trim()
+    || 'your community'
 
   return (
     <main className="mesh-onboarding-root h-screen overflow-hidden bg-surface-sunken p-3 sm:p-4">
@@ -173,29 +124,34 @@ export function OnboardingFlow({
             <span>
               <span className="block text-base font-semibold tracking-tight text-content">Mesh</span>
               <span className="block text-caption uppercase tracking-section text-content-muted">
-                Private community chat
+                Party chat for players
               </span>
             </span>
           </div>
 
           <div className="mt-6 sm:mt-0 lg:mt-14">
             <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">
-              Your account, your trust
+              {initialPendingInvitation ? 'Invitation ready' : 'Your account, your crew'}
             </p>
             <h2 className="mt-3 max-w-sm text-title font-semibold tracking-tight text-content lg:text-lg">
-              Conversations that stay yours.
+              {initialPendingInvitation
+                ? `${invitationCommunity} is waiting.`
+                : 'Find your people. Keep the party close.'}
             </h2>
             <p className="mt-3 max-w-sm text-sm leading-6 text-content-secondary">
-              Familiar rooms and messages, with privacy and service choice built in from the
-              beginning.
+              {initialPendingInvitation
+                ? 'Choose where your account lives, then join the community that brought you here.'
+                : 'Pick an independent account service, then join rooms built around the games you play.'}
             </p>
           </div>
 
-          <div className="mesh-onboarding-trust mt-9 hidden space-y-5 lg:block">
-            {TRUST_CUES.map((cue) => (
-              <TrustCue key={cue.title} {...cue} />
-            ))}
-          </div>
+          {!initialPendingInvitation ? (
+            <div className="mesh-onboarding-trust mt-9 hidden space-y-5 lg:block">
+              {TRUST_CUES.map((cue) => (
+                <TrustCue key={cue.title} {...cue} />
+              ))}
+            </div>
+          ) : null}
 
           <p className="mt-auto hidden pt-6 text-caption leading-5 text-content-muted lg:block">
             Mesh explains who can read a conversation and which devices need your attention.
@@ -203,10 +159,15 @@ export function OnboardingFlow({
         </aside>
 
         <div className="mesh-onboarding-content flex min-h-0 min-w-0 flex-col bg-surface-raised px-5 py-4 sm:px-8 sm:py-5 lg:px-12">
+          {initialPendingInvitation ? (
+            <div className="mb-4 flex-none">
+              <InvitationDestinationCard pending={initialPendingInvitation} compact />
+            </div>
+          ) : null}
           <div className="mb-4 flex-none">
             <div className="flex items-center justify-between gap-4">
               <p className="text-caption font-semibold uppercase tracking-section text-content-muted">
-                Setup progress
+                {initialPendingInvitation ? 'Invitation progress' : 'Setup progress'}
               </p>
               <p className="text-caption text-content-secondary" aria-live="polite">
                 Step {Math.max(currentIndex + 1, 1)} of {steps.length}
@@ -244,11 +205,23 @@ export function OnboardingFlow({
             <Suspense
               fallback={
                 <div
-                  className="flex min-h-64 items-center justify-center"
+                  className="flex min-h-64 flex-col items-center justify-center gap-3 text-center"
                   role="status"
                   aria-label="Loading setup step"
                 >
                   <Spinner />
+                  <div>
+                    <p className="text-sm font-semibold text-primary">
+                      {initialPendingInvitation
+                        ? `Keeping ${invitationCommunity} ready`
+                        : 'Opening account setup'}
+                    </p>
+                    <p className="mt-1 text-caption text-muted">
+                      {initialPendingInvitation
+                        ? 'Your invitation will stay here while the next step opens.'
+                        : 'Your current setup step will appear here.'}
+                    </p>
+                  </div>
                 </div>
               }
             >
@@ -264,6 +237,7 @@ export function OnboardingFlow({
                   >
                     <MatrixAccountScreen
                       initialPendingInvitation={initialPendingInvitation}
+                      hideInvitationSummary={Boolean(initialPendingInvitation)}
                       onDiscardPendingInvitation={onDiscardPendingInvitation}
                       onMatrixCheckUsernameAvailable={onMatrixCheckUsernameAvailable}
                       onMatrixRegisterAccount={onMatrixRegisterAccount}
@@ -272,101 +246,6 @@ export function OnboardingFlow({
                       onMatrixSwitchAccount={onMatrixSwitchAccount}
                       onNext={handleMatrixAccount}
                     />
-                  </motion.div>
-                )}
-
-                {step === 'backup' && (
-                  <motion.div
-                    key="backup"
-                    variants={variants.screen}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    onAnimationComplete={focusCurrentStepHeading}
-                  >
-                    {!recoveryRequested ? (
-                      <section aria-labelledby="recovery-consent-title" className="space-y-6">
-                        <header className="space-y-2">
-                          <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">
-                            Protect your messages
-                          </p>
-                          <h1
-                            id="recovery-consent-title"
-                            className="text-lg font-semibold tracking-tight text-content"
-                          >
-                            Set up message recovery
-                          </h1>
-                          <p className="max-w-lg text-sm leading-6 text-content-secondary">
-                            Your messages are locked so only you can read them: not even we can see
-                            them. That also means that if you lose this device, there is no way back
-                            into your history unless you set up recovery now.
-                          </p>
-                        </header>
-
-                        <ul className="space-y-2 text-sm text-content-secondary">
-                          <li>Mesh creates a one-time backup code that only you hold.</li>
-                          <li>You save it somewhere safe, then confirm a few words of it.</li>
-                          <li>You can turn recovery on later in Settings instead.</li>
-                        </ul>
-
-                        <div className="space-y-3">
-                          <Button
-                            className="w-full"
-                            onClick={() => {
-                              setRecoveryRequested(true)
-                              void prepareBackupCode()
-                            }}
-                          >
-                            Set up recovery
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            className="w-full"
-                            onClick={() => {
-                              onBackupSkipped?.()
-                              setStep('bootstrap')
-                            }}
-                          >
-                            Not now (you could lose your messages)
-                          </Button>
-                        </div>
-                      </section>
-                    ) : preparingBackup ? (
-                      <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-center">
-                        <Spinner />
-                        <p className="text-sm text-content-secondary">
-                          Preparing your backup code…
-                        </p>
-                      </div>
-                    ) : backupError != null || !backupCode ? (
-                      <div className="space-y-4">
-                        <h1 className="text-lg font-semibold text-content">
-                          Protect your messages
-                        </h1>
-                        <ErrorState
-                          error={backupError ?? new Error('The backup code could not be prepared.')}
-                          context={{ operation: 'prepare your message backup' }}
-                          onAction={() => void prepareBackupCode()}
-                        />
-                      </div>
-                    ) : (
-                      <BackupCodeScreen
-                        backupCode={backupCode}
-                        secureStorageState={backupSetup?.secureStorageState}
-                        verificationState={backupSetup?.verificationState}
-                        onCopy={(code) => navigator.clipboard.writeText(code)}
-                        onPrint={() => window.print()}
-                        onContinue={() => {
-                          onBackupConfigured?.()
-                          setStep('bootstrap')
-                        }}
-                        onSkip={() => {
-                          onBackupSkipped?.()
-                          setStep('bootstrap')
-                        }}
-                      />
-                    )}
                   </motion.div>
                 )}
 

@@ -114,7 +114,7 @@ describe('Matrix preference sync state', () => {
 
     expect(bridge.updateMatrixUserPreferences).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        schemaVersion: 6,
+        schemaVersion: 7,
         conversationPrivacy: {
           ...remotePreferences.conversationPrivacy,
           '!private:example.org': { readReceiptMode: 'off' },

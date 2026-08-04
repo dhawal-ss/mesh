@@ -2,6 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'Spline Sans Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 300 700;
+  src: url('@fontsource-variable/spline-sans/files/spline-sans-latin-wght-normal.woff2')
+    format('woff2-variations');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url('@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2') format('woff2');
+}
+
 :root {
   color-scheme: dark;
   font-feature-settings: 'liga' 1, 'calt' 1;
@@ -37,6 +62,75 @@
   --ref-neutral-11-rgb: 198 200 204;
   --ref-neutral-12: #f0f1f2;
   --ref-neutral-12-rgb: 240 241 242;
+
+  /* Legacy reference colors retained while Party Room consumers migrate. */
+  --ref-mesh-ink: #08090d;
+  --ref-mesh-ink-rgb: 8 9 13;
+  --ref-mesh-rail: #0c0d13;
+  --ref-mesh-rail-rgb: 12 13 19;
+  --ref-mesh-sidebar: #10121a;
+  --ref-mesh-sidebar-rgb: 16 18 26;
+  --ref-mesh-canvas: #151720;
+  --ref-mesh-canvas-rgb: 21 23 32;
+  --ref-mesh-raised: #1a1d28;
+  --ref-mesh-raised-rgb: 26 29 40;
+  --ref-mesh-hover: #222633;
+  --ref-mesh-hover-rgb: 34 38 51;
+  --ref-mesh-active: #2a2f40;
+  --ref-mesh-active-rgb: 42 47 64;
+  --ref-mesh-line: #303547;
+  --ref-mesh-line-rgb: 48 53 71;
+  --ref-mesh-muted: #9299aa;
+  --ref-mesh-muted-rgb: 146 153 170;
+  --ref-mesh-secondary: #c7cbd5;
+  --ref-mesh-secondary-rgb: 199 203 213;
+  --ref-mesh-primary: #f4f6fb;
+  --ref-mesh-primary-rgb: 244 246 251;
+  --ref-mesh-violet-8: #5948b8;
+  --ref-mesh-violet-8-rgb: 89 72 184;
+  --ref-mesh-violet-9: #8c7cff;
+  --ref-mesh-violet-9-rgb: 140 124 255;
+  --ref-mesh-violet-10: #a99cff;
+  --ref-mesh-violet-10-rgb: 169 156 255;
+
+  /* Party Room is the canonical product palette. */
+  --ref-party-canvas: #141311;
+  --ref-party-canvas-rgb: 20 19 17;
+  --ref-party-primary: #F5F0E8;
+  --ref-party-primary-rgb: 245 240 232;
+  --ref-party-secondary: #B9B2A8;
+  --ref-party-secondary-rgb: 185 178 168;
+  --ref-party-rule: #696257;
+  --ref-party-rule-rgb: 105 98 87;
+  --ref-party-amber: #F3A64A;
+  --ref-party-amber-rgb: 243 166 74;
+  --ref-party-green: #74C991;
+  --ref-party-green-rgb: 116 201 145;
+  --ref-party-light-canvas: #F7F3EB;
+  --ref-party-light-canvas-rgb: 247 243 235;
+  --ref-party-light-primary: #1A1916;
+  --ref-party-light-primary-rgb: 26 25 22;
+  --ref-party-light-secondary: #686159;
+  --ref-party-light-secondary-rgb: 104 97 89;
+  --ref-party-light-rule: #948B7F;
+  --ref-party-light-rule-rgb: 148 139 127;
+  --ref-party-light-amber: #A34E00;
+  --ref-party-light-amber-rgb: 163 78 0;
+  --ref-party-light-green: #237548;
+  --ref-party-light-green-rgb: 35 117 72;
+
+  --party-theme-canvas: var(--ref-party-canvas);
+  --party-theme-canvas-rgb: var(--ref-party-canvas-rgb);
+  --party-theme-primary: var(--ref-party-primary);
+  --party-theme-primary-rgb: var(--ref-party-primary-rgb);
+  --party-theme-secondary: var(--ref-party-secondary);
+  --party-theme-secondary-rgb: var(--ref-party-secondary-rgb);
+  --party-theme-rule: var(--ref-party-rule);
+  --party-theme-rule-rgb: var(--ref-party-rule-rgb);
+  --party-theme-amber: var(--ref-party-amber);
+  --party-theme-amber-rgb: var(--ref-party-amber-rgb);
+  --party-theme-green: var(--ref-party-green);
+  --party-theme-green-rgb: var(--ref-party-green-rgb);
 
   --ref-accent-5: #3d362b;
   --ref-accent-5-rgb: 61 54 43;
@@ -99,8 +193,8 @@
   --ref-accent-forest-light-10-rgb: 23 92 52;
   --ref-accent-forest-light-8: #5aa77c;
   --ref-accent-forest-light-8-rgb: 90 167 124;
-  --ref-accent-ember-light-9: #9a4a12;
-  --ref-accent-ember-light-9-rgb: 154 74 18;
+  --ref-accent-ember-light-9: var(--ref-party-light-amber);
+  --ref-accent-ember-light-9-rgb: var(--ref-party-light-amber-rgb);
   --ref-accent-ember-light-10: #74380e;
   --ref-accent-ember-light-10-rgb: 116 56 14;
   --ref-accent-ember-light-8: #c0824f;
@@ -135,20 +229,20 @@
   --ref-accent-ocean-10-rgb: 133 188 255;
   --ref-accent-ocean-8: #2f609e;
   --ref-accent-ocean-8-rgb: 47 96 158;
-  --ref-accent-violet-9: #a884ff;
-  --ref-accent-violet-9-rgb: 168 132 255;
-  --ref-accent-violet-10: #c7b2ff;
-  --ref-accent-violet-10-rgb: 199 178 255;
-  --ref-accent-violet-8: #664ea6;
-  --ref-accent-violet-8-rgb: 102 78 166;
+  --ref-accent-violet-9: var(--ref-mesh-violet-9);
+  --ref-accent-violet-9-rgb: var(--ref-mesh-violet-9-rgb);
+  --ref-accent-violet-10: var(--ref-mesh-violet-10);
+  --ref-accent-violet-10-rgb: var(--ref-mesh-violet-10-rgb);
+  --ref-accent-violet-8: var(--ref-mesh-violet-8);
+  --ref-accent-violet-8-rgb: var(--ref-mesh-violet-8-rgb);
   --ref-accent-forest-9: #40b87e;
   --ref-accent-forest-9-rgb: 64 184 126;
   --ref-accent-forest-10: #72d6a4;
   --ref-accent-forest-10-rgb: 114 214 164;
   --ref-accent-forest-8: #2b7452;
   --ref-accent-forest-8-rgb: 43 116 82;
-  --ref-accent-ember-9: #ee8b43;
-  --ref-accent-ember-9-rgb: 238 139 67;
+  --ref-accent-ember-9: var(--ref-party-amber);
+  --ref-accent-ember-9-rgb: var(--ref-party-amber-rgb);
   --ref-accent-ember-10: #ffb477;
   --ref-accent-ember-10-rgb: 255 180 119;
   --ref-accent-ember-8: #975529;
@@ -182,42 +276,42 @@
   --ref-avatar-cyan-rgb: 56 189 248;
 
   /* Tier 2: semantic roles. Feature code should use this tier. */
-  --surface-canvas-rgb: var(--ref-neutral-2-rgb);
-  --surface-canvas: var(--ref-neutral-2);
-  --surface-rail-rgb: var(--ref-neutral-1-rgb);
-  --surface-rail: var(--ref-neutral-1);
+  --surface-canvas-rgb: var(--party-theme-canvas-rgb);
+  --surface-canvas: var(--party-theme-canvas);
+  --surface-rail-rgb: var(--party-theme-canvas-rgb);
+  --surface-rail: var(--party-theme-canvas);
   --surface-sunken-rgb: var(--surface-rail-rgb);
   --surface-sunken: var(--surface-rail);
-  --surface-sidebar-rgb: var(--ref-neutral-sidebar-rgb);
-  --surface-sidebar: var(--ref-neutral-sidebar);
+  --surface-sidebar-rgb: var(--party-theme-canvas-rgb);
+  --surface-sidebar: var(--party-theme-canvas);
   --surface-base-rgb: var(--surface-canvas-rgb);
   --surface-base: var(--surface-canvas);
-  --surface-raised-rgb: var(--ref-neutral-3-rgb);
-  --surface-raised: var(--ref-neutral-3);
+  --surface-raised-rgb: var(--party-theme-canvas-rgb);
+  --surface-raised: var(--party-theme-canvas);
   --surface-overlay-rgb: var(--surface-raised-rgb);
   --surface-overlay: var(--surface-raised);
-  --surface-hover-rgb: var(--ref-neutral-4-rgb);
-  --surface-hover: var(--ref-neutral-4);
-  --surface-active-rgb: var(--ref-neutral-5-rgb);
-  --surface-active: var(--ref-neutral-5);
-  --surface-selected-rgb: var(--ref-neutral-4-rgb);
-  --surface-selected: var(--ref-neutral-4);
+  --surface-hover-rgb: var(--party-theme-canvas-rgb);
+  --surface-hover: var(--party-theme-canvas);
+  --surface-active-rgb: var(--party-theme-canvas-rgb);
+  --surface-active: var(--party-theme-canvas);
+  --surface-selected-rgb: var(--party-theme-canvas-rgb);
+  --surface-selected: var(--party-theme-canvas);
   --surface-scrim: rgb(var(--ref-black-rgb) / 0.7);
   --surface-nav-scrim: rgb(var(--ref-black-rgb) / 0.58);
-  --surface-pane-tint: rgb(var(--ref-white-rgb) / 0.015);
+  --surface-pane-tint: transparent;
   --surface-qr-rgb: var(--ref-white-rgb);
   --surface-qr: var(--ref-white);
 
-  --content-normal-rgb: var(--ref-neutral-12-rgb);
-  --content-normal: var(--ref-neutral-12);
-  --content-primary-rgb: var(--ref-neutral-12-rgb);
-  --content-primary: var(--ref-neutral-12);
-  --content-secondary-rgb: var(--ref-neutral-11-rgb);
-  --content-secondary: var(--ref-neutral-11);
-  --content-muted-rgb: var(--ref-neutral-11-rgb);
-  --content-muted: var(--ref-neutral-11);
-  --content-disabled-rgb: var(--ref-neutral-10-rgb);
-  --content-disabled: var(--ref-neutral-10);
+  --content-normal-rgb: var(--party-theme-primary-rgb);
+  --content-normal: var(--party-theme-primary);
+  --content-primary-rgb: var(--party-theme-primary-rgb);
+  --content-primary: var(--party-theme-primary);
+  --content-secondary-rgb: var(--party-theme-secondary-rgb);
+  --content-secondary: var(--party-theme-secondary);
+  --content-muted-rgb: var(--party-theme-secondary-rgb);
+  --content-muted: var(--party-theme-secondary);
+  --content-disabled-rgb: var(--ref-neutral-9-rgb);
+  --content-disabled: var(--ref-neutral-9);
   --content-link-rgb: var(--ref-blue-11-rgb);
   --content-link: var(--ref-blue-11);
   --content-accent-rgb: var(--accent-rgb);
@@ -230,32 +324,32 @@
   --content-on-avatar: var(--ref-neutral-1);
   --content-on-media-overlay-rgb: var(--ref-white-rgb);
   --content-on-media-overlay: var(--ref-white);
-  --border-default-rgb: var(--ref-neutral-6-rgb);
-  --border-default: var(--ref-neutral-6);
-  --border-emphasis-rgb: var(--ref-neutral-7-rgb);
-  --border-emphasis: var(--ref-neutral-7);
-  --border-subtle: rgb(var(--ref-white-rgb) / 0.06);
-  --border-strong: rgb(var(--ref-white-rgb) / 0.1);
+  --border-default-rgb: var(--party-theme-rule-rgb);
+  --border-default: var(--party-theme-rule);
+  --border-emphasis-rgb: var(--party-theme-rule-rgb);
+  --border-emphasis: var(--party-theme-rule);
+  --border-subtle: var(--party-theme-rule);
+  --border-strong: var(--party-theme-rule);
   /*
    * --border-control is the boundary of an interactive control whose shape is
    * not otherwise conveyed by a fill. WCAG 1.4.11 requires 3:1 there, which
    * --border-default (1.50:1 dark / 1.68:1 light) does not meet. Decorative
    * separators keep using --border-subtle; only controls use this.
    */
-  --border-control-rgb: var(--ref-neutral-9-rgb);
-  --border-control: var(--ref-neutral-9);
-  --border-focus-rgb: var(--ref-accent-11-rgb);
-  --border-focus: var(--ref-accent-11);
+  --border-control-rgb: var(--party-theme-rule-rgb);
+  --border-control: var(--party-theme-rule);
+  --border-focus-rgb: var(--party-theme-amber-rgb);
+  --border-focus: var(--party-theme-amber);
   --presence-offline-rgb: var(--ref-neutral-9-rgb);
   --presence-offline: var(--ref-neutral-9);
-  --accent-rgb: var(--ref-accent-9-rgb);
-  --accent: var(--ref-accent-9);
-  --accent-hover-rgb: var(--ref-accent-10-rgb);
-  --accent-hover: var(--ref-accent-10);
-  --accent-muted-rgb: var(--ref-accent-8-rgb);
-  --accent-muted: var(--ref-accent-8);
-  --status-success-rgb: var(--ref-green-11-rgb);
-  --status-success: var(--ref-green-11);
+  --accent-rgb: var(--party-theme-amber-rgb);
+  --accent: var(--party-theme-amber);
+  --accent-hover-rgb: var(--party-theme-amber-rgb);
+  --accent-hover: var(--party-theme-amber);
+  --accent-muted-rgb: var(--party-theme-amber-rgb);
+  --accent-muted: var(--party-theme-amber);
+  --status-success-rgb: var(--party-theme-green-rgb);
+  --status-success: var(--party-theme-green);
   --status-danger-rgb: var(--ref-red-11-rgb);
   --status-danger: var(--ref-red-11);
   --status-warning-rgb: var(--ref-amber-11-rgb);
@@ -366,8 +460,8 @@
   --ref-size-18: 18px;
   --ref-size-22: 22px;
   --ref-size-28: 28px;
-  --font-sans: 'Inter Variable', 'InterVariable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+  --font-sans: 'Spline Sans Variable', 'Spline Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --font-size-2xs: var(--ref-size-11);
   --font-size-xs: var(--ref-size-12);
   --font-size-code: var(--ref-size-13);
@@ -380,35 +474,35 @@
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
-  --line-height-11: 1.45;
+  --line-height-11: 15px;
   --line-height-12: 1.33;
   --line-height-13: 1.54;
-  --line-height-14: 1.57;
-  --line-height-15: 1.47;
+  --line-height-14: 18px;
+  --line-height-15: 21px;
   --line-height-18: 1.33;
   --line-height-22: 1.27;
   --line-height-28: 1.14;
   --line-height-prose: 22px;
-  --letter-spacing-11: 0.01em;
+  --letter-spacing-11: 0.05em;
   --letter-spacing-12: 0.005em;
   --letter-spacing-13: 0;
-  --letter-spacing-14: 0;
+  --letter-spacing-14: -0.01em;
   --letter-spacing-15: -0.005em;
   --letter-spacing-18: -0.01em;
   --letter-spacing-22: -0.015em;
   --letter-spacing-28: -0.02em;
 
   /* Radii */
-  --radius-sm: 4px;
-  --radius-default: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-control: var(--radius-md);
-  --radius-panel: var(--radius-lg);
-  --radius-community-rest: 10px;
-  --radius-community-active: 8px;
-  --border-width-status: 3px;
+  --radius-sm: 3px;
+  --radius-default: 3px;
+  --radius-md: 3px;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-control: 3px;
+  --radius-panel: 0;
+  --radius-community-rest: 0;
+  --radius-community-active: 0;
+  --border-width-status: 1px;
 
   /* Motion reference values */
   --ref-dur-50: 50ms;
@@ -423,18 +517,19 @@
   --ref-ease-hover: ease;
 
   /* Motion semantic roles */
+  --motion-dur-none: 0ms;
+  --motion-dur-press: var(--ref-dur-50);
   --motion-dur-micro: var(--ref-dur-100);
   --motion-dur-fast: var(--ref-dur-150);
   --motion-dur-base: var(--ref-dur-200);
-  --motion-dur-slow: var(--ref-dur-250);
-  --motion-dur-exit: var(--ref-dur-150);
-  --motion-ease-enter: var(--ref-ease-out-quart);
-  --motion-ease-exit: var(--ref-ease-out-quart);
-  --motion-ease-move: var(--ref-ease-in-out-cubic);
-  --motion-ease-hover: var(--ref-ease-hover);
-  --transition-fast: var(--motion-dur-micro) var(--motion-ease-hover);
-  --transition-normal: var(--motion-dur-base) var(--motion-ease-move);
-  --animation-pulse-soft: pulseSoft 2s var(--motion-ease-move) infinite;
+  --motion-dur-deliberate: var(--ref-dur-250);
+  --motion-dur-maximum: var(--ref-dur-300);
+  --motion-ease-arrive: var(--ref-ease-out-quart);
+  --motion-ease-emphasize: var(--ref-ease-out-quint);
+  --motion-ease-reposition: var(--ref-ease-in-out-cubic);
+  --motion-ease-progress: linear;
+  --transition-fast: var(--motion-dur-micro) var(--ref-ease-hover);
+  --transition-normal: var(--motion-dur-base) var(--motion-ease-reposition);
 
   /* Density and component geometry. */
   --density-row-block: 4px;
@@ -442,12 +537,12 @@
   --density-control-md: 36px;
   --density-control-lg: 44px;
   --density-panel-gap: 16px;
-  --density-line-height: var(--line-height-14);
+  --density-line-height: var(--line-height-15);
   --message-gutter: 64px;
   --message-group-gap: 12px;
   --empty-state-icon: 56px;
   --community-marker: 4px;
-  --member-list-width: 264px;
+  --member-list-width: var(--party-roster-width);
   --settings-drawer-width: 420px;
   --attachment-name-width: 140px;
   --modal-content-height: 90vh;
@@ -456,13 +551,29 @@
   --context-action-width: calc(100% - 8px);
   --content-error-width: 224px;
   --user-panel-height: 56px;
-  --conversation-header-height: 56px;
+  --conversation-header-height: var(--party-header-height);
   --onboarding-shell-height: calc(100vh - 3rem);
   --onboarding-shell-width: 1040px;
   --privacy-table-width: 36rem;
   --voice-controls-label-width: 140px;
   --voice-tile-min-height: 180px;
   --rail-separator-height: 2px;
+
+  /* Party Room responsive geometry. The base is the 1280 x 720 matrix. */
+  --party-rail-width: 56px;
+  --party-channel-width: 208px;
+  --party-roster-width: 220px;
+  --party-header-height: 50px;
+  --party-pin-height: 40px;
+  --party-composer-height: 46px;
+  --party-strip-height: 60px;
+  --party-media-max-height: 274px;
+  --party-conversation-padding: 20px;
+  --party-channel-row-height: 34px;
+  --party-occupant-row-height: 40px;
+  --party-message-padding-block: 4px;
+  --party-message-measure: 65ch;
+  --party-media-max-width: 960px;
 
   /* Layering */
   --z-base: 0;
@@ -475,11 +586,49 @@
   --z-toast: 70;
   --z-tooltip: 80;
 
-  /* Floating elevation pairs a brighter surface with one contained shadow. */
-  --elev-overlay:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.05),
-    0 0 0 1px rgb(0 0 0 / 0.6),
-    0 12px 32px -8px rgb(0 0 0 / 0.5);
+  --elev-overlay: none;
+}
+
+@media (min-width: 1366px) {
+  :root {
+    --party-channel-width: 220px;
+    --party-roster-width: 232px;
+    --party-header-height: 52px;
+    --party-composer-height: 48px;
+    --party-strip-height: 64px;
+    --party-media-max-height: 292px;
+  }
+}
+
+@media (min-width: 1600px) {
+  :root {
+    --party-rail-width: 60px;
+    --party-channel-width: 250px;
+    --party-roster-width: 280px;
+    --party-header-height: 56px;
+    --party-composer-height: 50px;
+    --party-strip-height: 72px;
+    --party-media-max-height: 342px;
+  }
+}
+
+@media (min-width: 1920px) {
+  :root {
+    --party-rail-width: 64px;
+    --party-channel-width: 264px;
+    --party-roster-width: 300px;
+    --party-composer-height: 52px;
+    --party-media-max-height: 410px;
+  }
+}
+
+@media (min-width: 2560px) {
+  :root {
+    --party-channel-width: 280px;
+    --party-roster-width: 320px;
+    --party-strip-height: 76px;
+    --party-media-max-height: 420px;
+  }
 }
 
 @supports (color: color-mix(in oklch, white, black)) {
@@ -515,77 +664,72 @@
 :root[data-theme='light'],
 [data-theme='light'] {
   color-scheme: light;
-  --surface-canvas-rgb: var(--ref-light-canvas-rgb);
-  --surface-canvas: var(--ref-light-canvas);
-  --surface-rail-rgb: var(--ref-light-rail-rgb);
-  --surface-rail: var(--ref-light-rail);
-  --surface-sunken-rgb: var(--ref-light-rail-rgb);
-  --surface-sunken: var(--ref-light-rail);
-  --surface-sidebar-rgb: var(--ref-light-rail-rgb);
-  --surface-sidebar: var(--ref-light-rail);
-  --surface-base-rgb: var(--ref-light-canvas-rgb);
-  --surface-base: var(--ref-light-canvas);
-  --surface-raised-rgb: var(--ref-white-rgb);
-  --surface-raised: var(--ref-white);
-  --surface-overlay-rgb: var(--ref-white-rgb);
-  --surface-overlay: var(--ref-white);
-  --surface-hover-rgb: var(--ref-light-hover-rgb);
-  --surface-hover: var(--ref-light-hover);
-  --surface-active-rgb: var(--ref-light-active-rgb);
-  --surface-active: var(--ref-light-active);
-  --surface-selected-rgb: var(--ref-light-hover-rgb);
-  --surface-selected: var(--ref-light-hover);
-  --content-normal-rgb: var(--ref-neutral-2-rgb);
-  --content-normal: var(--ref-neutral-2);
-  --content-primary-rgb: var(--ref-neutral-2-rgb);
-  --content-primary: var(--ref-neutral-2);
-  --content-secondary-rgb: var(--ref-neutral-7-rgb);
-  --content-secondary: var(--ref-neutral-7);
-  --content-muted-rgb: var(--ref-neutral-8-rgb);
-  --content-muted: var(--ref-neutral-8);
-  /* The dark disabled tone lands at 2.37:1 here; neutral-8 restores 5.62:1. */
-  --content-disabled-rgb: var(--ref-neutral-8-rgb);
-  --content-disabled: var(--ref-neutral-8);
+  --party-theme-canvas: var(--ref-party-light-canvas);
+  --party-theme-canvas-rgb: var(--ref-party-light-canvas-rgb);
+  --party-theme-primary: var(--ref-party-light-primary);
+  --party-theme-primary-rgb: var(--ref-party-light-primary-rgb);
+  --party-theme-secondary: var(--ref-party-light-secondary);
+  --party-theme-secondary-rgb: var(--ref-party-light-secondary-rgb);
+  --party-theme-rule: var(--ref-party-light-rule);
+  --party-theme-rule-rgb: var(--ref-party-light-rule-rgb);
+  --party-theme-amber: var(--ref-party-light-amber);
+  --party-theme-amber-rgb: var(--ref-party-light-amber-rgb);
+  --party-theme-green: var(--ref-party-light-green);
+  --party-theme-green-rgb: var(--ref-party-light-green-rgb);
+  /*
+   * Semantic aliases are repeated here so a nested theme preview resolves
+   * against its own palette. Inherited custom properties have already been
+   * computed on their parent and cannot be redirected only by changing the
+   * Tier 1 party references below that parent.
+  */
+  --surface-canvas: var(--ref-party-light-canvas);
+  --surface-base: var(--ref-party-light-canvas);
+  --surface-base-rgb: var(--ref-party-light-canvas-rgb);
+  --content-normal: var(--ref-party-light-primary);
+  --content-normal-rgb: var(--ref-party-light-primary-rgb);
+  --content-primary: var(--ref-party-light-primary);
+  --content-primary-rgb: var(--ref-party-light-primary-rgb);
+  --content-secondary: var(--ref-party-light-secondary);
+  --content-secondary-rgb: var(--ref-party-light-secondary-rgb);
+  --content-muted: var(--ref-party-light-secondary);
+  --content-muted-rgb: var(--ref-party-light-secondary-rgb);
+  --border-default: var(--ref-party-light-rule);
+  --border-default-rgb: var(--ref-party-light-rule-rgb);
+  --border-emphasis: var(--ref-party-light-rule);
+  --border-emphasis-rgb: var(--ref-party-light-rule-rgb);
+  --border-subtle: var(--ref-party-light-rule);
+  --border-strong: var(--ref-party-light-rule);
+  --border-control: var(--ref-party-light-rule);
+  --border-control-rgb: var(--ref-party-light-rule-rgb);
+  --border-focus: var(--ref-party-light-amber);
+  --border-focus-rgb: var(--ref-party-light-amber-rgb);
+  --accent: var(--ref-party-light-amber);
+  --accent-rgb: var(--ref-party-light-amber-rgb);
+  --accent-hover: var(--ref-party-light-amber);
+  --accent-hover-rgb: var(--ref-party-light-amber-rgb);
+  --accent-muted: var(--ref-party-light-amber);
+  --accent-muted-rgb: var(--ref-party-light-amber-rgb);
+  --status-success: var(--ref-party-light-green);
+  --status-success-rgb: var(--ref-party-light-green-rgb);
+  --content-disabled-rgb: var(--ref-party-light-secondary-rgb);
+  --content-disabled: var(--ref-party-light-secondary);
   --content-link-rgb: var(--ref-blue-light-11-rgb);
   --content-link: var(--ref-blue-light-11);
-  --border-default-rgb: var(--ref-neutral-11-rgb);
-  --border-default: var(--ref-neutral-11);
-  --border-control-rgb: var(--ref-neutral-9-rgb);
-  --border-control: var(--ref-neutral-9);
   /*
    * Light accent fills are dark, so accent-borne text flips to white. The dark
    * theme keeps near-black on its pale accents.
    */
   --content-on-accent-rgb: var(--ref-white-rgb);
   --content-on-accent: var(--ref-white);
-  --accent-rgb: var(--ref-accent-sand-light-9-rgb);
-  --accent: var(--ref-accent-sand-light-9);
-  --accent-hover-rgb: var(--ref-accent-sand-light-10-rgb);
-  --accent-hover: var(--ref-accent-sand-light-10);
-  --accent-muted-rgb: var(--ref-accent-sand-light-8-rgb);
-  --accent-muted: var(--ref-accent-sand-light-8);
-  --border-emphasis-rgb: var(--ref-neutral-8-rgb);
-  --border-emphasis: var(--ref-neutral-8);
-  --border-subtle: rgb(var(--ref-neutral-2-rgb) / 0.12);
-  --border-strong: rgb(var(--ref-neutral-2-rgb) / 0.18);
   --content-on-status-rgb: var(--ref-white-rgb);
   --content-on-status: var(--ref-white);
-  --content-accent-rgb: var(--ref-accent-light-11-rgb);
-  --content-accent: var(--ref-accent-light-11);
-  --border-focus-rgb: var(--ref-accent-light-11-rgb);
-  --border-focus: var(--ref-accent-light-11);
-  --status-success-rgb: var(--ref-green-light-11-rgb);
-  --status-success: var(--ref-green-light-11);
   --status-danger-rgb: var(--ref-red-light-11-rgb);
   --status-danger: var(--ref-red-light-11);
   --status-warning-rgb: var(--ref-amber-light-11-rgb);
   --status-warning: var(--ref-amber-light-11);
   --status-info-rgb: var(--ref-blue-light-11-rgb);
   --status-info: var(--ref-blue-light-11);
-  --elev-overlay:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.8),
-    0 0 0 1px rgb(var(--ref-neutral-2-rgb) / 0.06),
-    0 12px 32px -8px rgb(var(--ref-neutral-2-rgb) / 0.18);
+  --elev-overlay: none;
 }
 
 :root[data-theme='high-contrast'],
@@ -593,6 +737,10 @@
 [data-theme='high-contrast'],
 [data-contrast='high'] {
   color-scheme: dark;
+  --surface-canvas-rgb: var(--ref-black-rgb);
+  --surface-canvas: var(--ref-black);
+  --surface-rail-rgb: var(--ref-black-rgb);
+  --surface-rail: var(--ref-black);
   --surface-sunken-rgb: var(--ref-black-rgb);
   --surface-sunken: var(--ref-black);
   --surface-sidebar-rgb: var(--ref-black-rgb);
@@ -811,7 +959,7 @@
   --density-control-md: 36px;
   --density-control-lg: 44px;
   --density-panel-gap: 16px;
-  --density-line-height: var(--line-height-14);
+  --density-line-height: var(--line-height-15);
   --message-group-gap: 12px;
 }
 
@@ -849,16 +997,10 @@ body {
   background: var(--bg-primary);
   color: var(--text-normal);
   font-family: var(--font-sans);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
   line-height: var(--density-line-height);
-  letter-spacing: 0;
-  font-variation-settings: 'opsz' 14;
-}
-
-.display,
-h1,
-h2 {
-  font-variation-settings: 'opsz' 28;
+  letter-spacing: var(--letter-spacing-15);
+  font-optical-sizing: auto;
 }
 
 .tnum,
@@ -866,6 +1008,11 @@ time,
 .badge-count,
 .member-count,
 .file-size {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-11);
+  letter-spacing: var(--letter-spacing-11);
   font-feature-settings: 'tnum' 1, 'calt' 1;
 }
 
@@ -873,6 +1020,7 @@ time,
 .device-id,
 .recovery-key,
 code {
+  font-family: var(--font-mono);
   font-feature-settings: 'ss02' 1, 'zero' 1, 'tnum' 1, 'calt' 0, 'liga' 0;
 }
 
@@ -957,6 +1105,14 @@ textarea {
   }
 }
 
+html[data-reduce-motion='true']:focus-within,
+html[data-reduce-motion='true'] * {
+  scroll-behavior: auto;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
 @media (forced-colors: active) {
   :focus-visible {
     outline-color: Highlight !important;
@@ -976,13 +1132,8 @@ textarea {
  * Conversation panes and scrolling timelines always remain opaque.
  */
 [data-transparency='readable'] .mesh-overlay-surface:not(.overflow-auto) {
-  background-color: rgb(var(--surface-overlay-rgb) / 0.94);
-}
-
-@supports (backdrop-filter: blur(1px)) {
-  [data-transparency='readable'] .mesh-overlay-surface:not(.overflow-auto) {
-    backdrop-filter: blur(8px);
-  }
+  background-color: var(--surface-overlay);
+  backdrop-filter: none;
 }
 
 [data-transparency='opaque'] .mesh-overlay-surface {
@@ -1003,7 +1154,7 @@ textarea {
 }
 
 .mesh-button {
-  box-shadow: inset 0 1px 0 rgb(var(--ref-white-rgb) / 0.06);
+  box-shadow: none;
 }
 
 .mesh-button:not(:disabled):active {
@@ -1011,19 +1162,16 @@ textarea {
 }
 
 .mesh-input {
-  box-shadow: inset 0 1px 2px rgb(var(--ref-black-rgb) / 0.18);
+  border-radius: var(--radius-control);
+  box-shadow: none;
 }
 
 .mesh-input:focus {
-  box-shadow:
-    0 0 0 3px rgb(var(--accent-rgb) / 0.12),
-    inset 0 1px 2px rgb(var(--ref-black-rgb) / 0.18);
+  box-shadow: none;
 }
 
 .mesh-modal-surface {
-  box-shadow:
-    0 28px 80px rgb(var(--ref-black-rgb) / 0.58),
-    inset 0 1px 0 rgb(var(--ref-white-rgb) / 0.045);
+  box-shadow: none;
 }
 
 .mesh-onboarding-root {
@@ -1033,9 +1181,7 @@ textarea {
 .mesh-onboarding-shell {
   max-height: 920px;
   background-color: var(--surface-base);
-  box-shadow:
-    0 32px 90px rgb(var(--ref-black-rgb) / 0.5),
-    inset 0 1px 0 rgb(var(--ref-white-rgb) / 0.035);
+  box-shadow: none;
 }
 
 .mesh-onboarding-aside {
@@ -1060,7 +1206,7 @@ textarea {
 .mesh-service-card,
 .mesh-form-card,
 .mesh-inline-card {
-  box-shadow: inset 0 1px 0 rgb(var(--ref-white-rgb) / 0.03);
+  box-shadow: none;
 }
 
 .mesh-service-card {
@@ -1077,27 +1223,138 @@ textarea {
 
 .mesh-profile-choice {
   background-color: var(--ref-black) !important;
-  box-shadow: inset 0 0 0 1px rgb(var(--ref-white-rgb) / 0.025);
+  box-shadow: none;
 }
 
 #root {
   isolation: isolate;
 }
 
+/* Full-bleed social workspace: quiet chrome, vivid identity, media-first canvas. */
+.mesh-app-shell {
+  padding: 0;
+  background: var(--surface-rail);
+}
+
+.mesh-workspace-frame {
+  gap: 0;
+}
+
+.mesh-community-rail,
+.mesh-context-sidebar,
+.mesh-workspace-main {
+  border-radius: 0;
+}
+
 .mesh-community-rail {
-  width: 74px;
+  overflow-x: hidden;
+  border-right: 1px solid var(--border-subtle) !important;
+  background: var(--surface-rail);
+}
+
+.mesh-home-row {
+  display: flex;
+  min-height: var(--party-strip-height);
+  align-items: center;
+  gap: var(--density-panel-gap);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: var(--density-row-block) var(--party-conversation-padding);
 }
 
 .mesh-context-sidebar {
-  width: var(--mesh-context-sidebar-width, 220px);
+  overflow: hidden;
+  border-right: 1px solid var(--border-subtle) !important;
+  background: var(--surface-sidebar);
+}
+
+.mesh-workspace-main {
+  overflow: hidden;
+  background: var(--surface-canvas);
+}
+
+.mesh-rail-action {
+  width: 52px;
+  padding-block: 3px;
+}
+
+.mesh-user-panel {
+  margin: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: var(--surface-raised);
+}
+
+.mesh-composer-shell {
+  margin-right: 18px;
+  margin-bottom: 14px;
+  margin-left: 18px;
+}
+
+.mesh-composer {
+  border-color: var(--border-strong);
+  background: var(--surface-raised);
+  border-radius: var(--radius-control);
+  box-shadow: none;
+}
+
+.mesh-composer:focus-within {
+  border-color: var(--accent-container-line);
+}
+
+.mesh-composer button[aria-label='Send message']:not(:disabled) {
+  color: var(--content-on-accent);
+  background: var(--accent);
+}
+
+.mesh-composer-formatting {
+  border-color: rgb(var(--ref-white-rgb) / 0.045);
+  background: var(--surface-canvas);
+}
+
+.mesh-modal-surface {
+  border-color: var(--border-strong);
+  border-radius: 0;
+}
+
+.mesh-onboarding-shell {
+  border-color: var(--border-strong);
+  border-radius: 0;
+}
+
+.mesh-community-rail {
+  width: var(--party-rail-width);
+}
+
+.mesh-context-sidebar {
+  width: min(var(--mesh-context-sidebar-width, var(--party-channel-width)), var(--party-channel-width));
 }
 
 .mesh-room-context-panel {
-  width: var(--mesh-room-context-width, var(--member-list-width));
+  width: min(var(--mesh-room-context-width, var(--party-roster-width)), var(--party-roster-width));
+}
+
+.mesh-secondary-pane {
+  width: min(20rem, var(--party-roster-width));
 }
 
 .mesh-voice-dock {
-  min-height: 100px;
+  height: var(--party-strip-height);
+  min-height: var(--party-strip-height);
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-block: 0;
+}
+
+.mesh-party-strip-rail-spacer {
+  width: var(--party-rail-width);
+}
+
+.mesh-community-header {
+  background: var(--surface-sidebar);
+}
+
+.mesh-community-shortcuts {
+  background: var(--surface-sidebar);
 }
 
 .mesh-settings-scroll {
@@ -1112,7 +1369,7 @@ textarea {
   border: 1px solid rgb(var(--ref-white-rgb) / 0.12);
   background: var(--ref-black);
   color: var(--mesh-accent-preview);
-  box-shadow: inset 0 0 0 1px rgb(var(--ref-white-rgb) / 0.025);
+  box-shadow: none;
 }
 
 .mesh-accent-choice[data-accent-preview='violet'] {
@@ -1162,15 +1419,22 @@ textarea {
   --mesh-pixel-mask: url('../assets/pixel/profile-signal.png');
 }
 
-.mesh-pixel-avatar-default,
-.mesh-pixel-brand {
+.mesh-pixel-avatar-default {
   background-color: var(--ref-black) !important;
-  box-shadow: inset 0 0 0 1px var(--border-subtle);
+  box-shadow: none;
 }
 
 .mesh-pixel-brand {
   overflow: hidden;
+  border: 1px solid var(--accent-container-line);
   border-radius: var(--radius-community-active);
+  background-color: var(--accent) !important;
+  color: var(--content-on-accent) !important;
+  box-shadow: none;
+}
+
+.mesh-pixel-brand .mesh-pixel-mark {
+  color: var(--content-on-accent) !important;
 }
 
 .mesh-pixel-avatar-default:hover .mesh-pixel-mark,
@@ -1179,22 +1443,16 @@ textarea {
 .mesh-profile-choice:hover .mesh-pixel-mark,
 button:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark,
 a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
-  animation: mesh-pixel-reveal 1320ms steps(8, end) infinite;
+  animation: mesh-pixel-reveal var(--motion-dur-fast) steps(8, end) 1;
 }
 
 @keyframes mesh-pixel-reveal {
-  0%,
-  8% {
+  0% {
     clip-path: inset(0 0 100% 0);
   }
 
-  62%,
-  78% {
-    clip-path: inset(0);
-  }
-
   100% {
-    clip-path: inset(100% 0 0 0);
+    clip-path: inset(0);
   }
 }
 
@@ -1296,7 +1554,20 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 }
 
 .mesh-message-content {
-  max-width: 72ch;
+  max-width: min(var(--party-message-measure), 100%);
+}
+
+.mesh-message-content .markdown-content {
+  font-size: var(--font-size-base);
+}
+
+.mesh-message-media {
+  width: min(100%, var(--party-media-max-width));
+  aspect-ratio: 16 / 9;
+  height: clamp(260px, 38vh, var(--party-media-max-height));
+  max-height: var(--party-media-max-height);
+  object-position: center;
+  box-shadow: none;
 }
 
 .mesh-compact-header,
@@ -1306,12 +1577,14 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 }
 
 .mesh-conversation-header {
-  min-height: var(--conversation-header-height);
+  height: var(--party-header-height);
+  min-height: var(--party-header-height);
   background: var(--surface-canvas);
 }
 
 .mesh-channel-active {
-  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--accent);
+  box-shadow: inset 1px 0 0 var(--accent);
 }
 
 .mesh-search-popover {
@@ -1327,10 +1600,6 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 .mesh-voice-controls {
   max-height: min(22rem, 45vh);
   overflow-y: auto;
-}
-
-.mesh-voice-peer-grid {
-  container-type: inline-size;
 }
 
 .mesh-dm-trust-popover {
@@ -1374,22 +1643,6 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
     display: none;
   }
 
-  .mesh-context-sidebar[data-open='false'] {
-    display: none;
-  }
-
-  .mesh-compact-header {
-    display: flex;
-    height: 44px;
-    flex: 0 0 44px;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    border-bottom: 1px solid var(--border-subtle);
-    padding: 0 10px;
-    background: var(--bg-primary);
-  }
-
   .mesh-member-list {
     display: none;
   }
@@ -1400,13 +1653,23 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
     right: 0;
     z-index: 44;
     display: flex;
-    width: min(320px, calc(100vw - 64px));
-    box-shadow: var(--elev-overlay);
+    width: min(var(--party-roster-width), calc(100vw - var(--party-rail-width)));
+    box-shadow: none;
+  }
+
+  .mesh-secondary-pane {
+    position: fixed;
+    inset-block: 0;
+    right: 0;
+    z-index: 44;
+    display: flex;
+    width: min(var(--party-roster-width), calc(100vw - var(--party-rail-width)));
+    box-shadow: none;
   }
 
   .mesh-room-context-backdrop {
     position: fixed;
-    inset: 0 0 0 72px;
+    inset: 0 0 0 var(--party-rail-width);
     z-index: 43;
     display: block;
     border: 0;
@@ -1415,32 +1678,21 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   }
 }
 
-@media (max-width: 999px) {
-  .mesh-community-rail {
-    width: 56px;
-  }
-
-  .mesh-context-sidebar {
-    width: 216px;
-  }
-
-  .mesh-room-context-panel {
-    width: min(320px, calc(100vw - 60px));
-  }
-
-  .mesh-room-context-backdrop {
-    left: 56px;
-  }
-}
-
 @media (max-width: 799px) {
+  .mesh-community-rail,
+  .mesh-context-sidebar,
+  .mesh-workspace-main {
+    border-block: 0;
+    border-radius: 0;
+  }
+
   .mesh-context-sidebar {
     position: fixed;
     inset-block: 0;
-    left: 56px;
+    left: var(--party-rail-width);
     z-index: 45;
-    width: min(280px, calc(100vw - 56px));
-    box-shadow: var(--elev-overlay);
+    width: min(var(--party-channel-width), calc(100vw - var(--party-rail-width)));
+    box-shadow: none;
     transform: translateX(-110%);
     transition: transform var(--transition-normal);
   }
@@ -1484,10 +1736,59 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 }
 
 @media (max-width: 639px) {
-  .mesh-voice-peer-grid {
-    grid-template-columns: minmax(0, 1fr) !important;
-    gap: 12px;
-    padding: 12px;
+  .mesh-voice-dock {
+    gap: 4px;
+    padding-inline: 8px;
+  }
+
+  .mesh-voice-dock-room {
+    min-width: 0;
+    flex: 1 1 auto;
+    gap: 0;
+    padding-inline: 4px;
+  }
+
+  .mesh-voice-dock-room-icon,
+  .mesh-voice-dock-status,
+  .mesh-voice-dock-participants {
+    display: none;
+  }
+
+  .mesh-voice-dock-controls {
+    gap: 2px;
+    padding-left: 4px;
+  }
+
+  .mesh-voice-dock-controls > button,
+  .mesh-voice-dock-controls .mesh-voice-dock-open {
+    display: flex;
+    min-width: 36px;
+    min-height: 40px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .mesh-voice-dock-control-label,
+  .mesh-voice-dock-controls > button > span {
+    display: none;
+  }
+
+  .mesh-composer-shell {
+    margin-right: 10px;
+    margin-bottom: 10px;
+    margin-left: 10px;
+  }
+}
+
+@media (min-width: 1600px) {
+  .mesh-voice-dock-participant {
+    min-width: 0;
+    flex-direction: row;
+    gap: 8px;
+  }
+
+  .mesh-voice-dock-participant-copy {
+    display: block;
   }
 }
 
@@ -1507,28 +1808,5 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
      that cannot hover: the timestamp would simply never appear. */
   .mesh-message-time {
     opacity: 1;
-  }
-}
-
-@media (max-width: 420px) {
-  .mesh-community-rail {
-    width: 56px;
-  }
-
-  .mesh-context-sidebar {
-    left: 56px;
-    width: calc(100vw - 56px);
-  }
-
-  .mesh-nav-backdrop {
-    left: 0;
-  }
-
-  .mesh-room-context-panel {
-    width: calc(100vw - 56px);
-  }
-
-  .mesh-room-context-backdrop {
-    left: 56px;
   }
 }

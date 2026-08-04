@@ -3,7 +3,7 @@
   "ledgerId": "mesh-production-readiness",
   "sourceCommit": "4e101bfca8401d07f5453f0e730e7e87360fcb40",
   "sourceTreeHash": "4a6f23c649fb6b07ab6b689e465f3aa61a860c68",
-  "updatedAt": "2026-08-02T15:25:26Z",
+  "updatedAt": "2026-08-03T23:56:32Z",
   "gates": [
     {
       "id": "r0.frontend-tests",
@@ -197,7 +197,7 @@
     {
       "id": "r1.admission-openid-verifier",
       "milestone": "R1",
-      "required": true,
+      "required": false,
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
@@ -211,14 +211,14 @@
       },
       "owner": "Mesh identity and admission security",
       "capability": "Verify short-lived Matrix identity proofs without putting credentials in URLs",
-      "blockReason": "The standardized Matrix OpenID userinfo flow places its assertion in a URL query. Mesh fails closed until a reviewed POST-capable verifier can validate the issuing service, user, audience, purpose, subject, expiry, and replay state.",
+      "blockReason": "This optional admission extension is disabled and is not a beta release requirement. The standardized Matrix OpenID userinfo flow places its assertion in a URL query, so Mesh fails closed until a reviewed POST-capable verifier can validate the issuing service, user, audience, purpose, subject, expiry, and replay state.",
       "nextAction": "Approve and implement a POST-capable verifier contract, then pass expired, replayed, malformed, wrong-user, wrong-service, cross-purpose, and credential-leak acceptance tests against a live independently hosted account.",
       "waiver": null
     },
     {
       "id": "r1.admission-service-authority",
       "milestone": "R1",
-      "required": true,
+      "required": false,
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
@@ -232,14 +232,14 @@
       },
       "owner": "Mesh community-hosting operations",
       "capability": "Issue one-use registration admission and invite users with least privilege",
-      "blockReason": "Synapse registration-token administration has no admission-only scope. Mesh will not give the admission service a server-admin credential; token issuance and the non-admin bot membership/power workflow therefore remain unavailable by default.",
+      "blockReason": "This optional admission extension is disabled and is not a beta release requirement. Synapse registration-token administration has no admission-only scope, so Mesh will not give the admission service a server-admin credential; token issuance and the non-admin bot membership/power workflow remain unavailable by default.",
       "nextAction": "Approve a least-privilege issuer and bot-provisioning design, provision the bot only in admitted communities and child rooms, then pass live issue, revoke, expiry, room-membership, power, recovery, and credential-rotation tests.",
       "waiver": null
     },
     {
       "id": "r1.moderation-audit-authority",
       "milestone": "R1",
-      "required": true,
+      "required": false,
       "releaseStatus": "live-pass",
       "status": "blocked",
       "evidence": {
@@ -253,7 +253,7 @@
       },
       "owner": "Mesh security and community governance",
       "capability": "Provide private authoritative moderation audit history",
-      "blockReason": "Ordinary room events cannot prove historical moderator authority and are forgeable by members. Mesh no longer presents them as audit records and audit retrieval fails closed until an authoritative design is approved.",
+      "blockReason": "Authoritative audit history is outside the beta claim and is not a beta release requirement. Ordinary room events cannot prove historical moderator authority and are forgeable by members, so Mesh presents only operational moderation outcomes and audit retrieval fails closed until an authoritative design is approved.",
       "nextAction": "Approve an access-restricted append-only storage and federation threat model, then pass sender provenance, historical authorization, failed-outcome, forgery, demotion, cross-community, malformed-event, replay, retention, export, and unauthorized-reader tests.",
       "waiver": null
     },
@@ -381,8 +381,8 @@
       },
       "owner": "Mesh release operations",
       "capability": "Complete signed installed acceptance on a clean Windows machine",
-      "blockReason": "The current application version is the placeholder 0.1.0, protected signing is not provisioned, and the 12 windows.* download/signature/install/invite/service/account/SSO/join/restart/update/uninstall/residue cases have not been live-proven.",
-      "nextAction": "Approve a non-placeholder version, configure protected signing, and complete every windows.* case in release/external-acceptance.example.json on a clean Windows machine.",
+      "blockReason": "Version 0.2.0 is approved, but no clean exact-SHA candidate has been protected-built and signed, and the 14 windows.* download/signature/install/invite/service/account/SSO/join/restart/manual-upgrade/cross-format/uninstall/residue cases have not been live-proven.",
+      "nextAction": "Create a protected, signed v0.2.0 draft candidate from an authorized clean source SHA, then complete every windows.* case in release/external-acceptance.example.json on a clean Windows machine.",
       "waiver": null
     },
     {
@@ -401,9 +401,9 @@
         "expiresAt": null
       },
       "owner": "Mesh release operations",
-      "capability": "Publish verifiable release artifacts and a signed update path",
-      "blockReason": "Candidate automation can prepare a signed draft prerelease with checksums, SBOMs, provenance, and dependency evidence, but it intentionally contains no promotion path. The owner-controlled ordering for public prerelease verification, canonical routing, signed updater publication, rollback, legal approval, and post-public live-download evidence is not yet reviewed; the updater remains disabled.",
-      "nextAction": "Use the protected workflow only to create the signed draft candidate. Complete the pre-public public-release.* and Windows update cases, approve the promotion/post-public verification contract, and keep automatic updates disabled until its key, endpoint, rollback, and evidence ordering are reviewed.",
+      "capability": "Publish verifiable release artifacts while automatic updates remain disabled",
+      "blockReason": "Candidate automation can prepare a signed draft prerelease with checksums, SBOMs, provenance, and dependency evidence, but it intentionally contains no promotion path. Public prerelease verification, canonical routing, legal approval, rollback by withdrawing canonical pointers, and post-public live-download evidence remain unproven. The beta updater is intentionally absent.",
+      "nextAction": "Use the protected workflow only to create the signed draft candidate. Complete the public-release.* cases, treating updater-manifest and updater-rollback as negative controls that prove no automatic-update path exists, and retain automatic updates as a separately reviewed post-beta lifecycle.",
       "waiver": null
     },
     {

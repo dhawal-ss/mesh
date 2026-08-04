@@ -2,6 +2,9 @@
   "schemaVersion": 1,
   "releaseState": "developer-preview",
   "candidate": {
+    "version": "0.2.0",
+    "releaseChannel": "beta",
+    "publicationState": "draft-prerelease-until-acceptance",
     "platform": "windows",
     "backend": "matrix",
     "capabilities": [
@@ -18,6 +21,15 @@
       "legacy-p2p",
       "automatic-updates"
     ]
+  },
+  "distribution": {
+    "canonicalInstaller": "nsis",
+    "canonicalInstallMode": "currentUser",
+    "secondaryInstaller": "msi",
+    "secondaryAudience": "managed-deployment",
+    "crossFormatBehavior": "block-with-guidance",
+    "userDataOnUninstall": "retain-by-default",
+    "automaticUpdates": false
   },
   "supportTiers": {
     "candidate": ["windows"],
