@@ -23,7 +23,7 @@
       "signaturePolicy": "discover-upstream-support-before-candidate"
     },
     {
-      "image": "livekit/livekit-server:v1.13.1@sha256:2c6869d2d5ff6c9c0166f47be1c92dad6928bfecfa5e4060a6ece48db8accfa3",
+      "image": "livekit/livekit-server:v1.13.5@sha256:3497163e091d8418a915d41d99a2dfba6715e6b44a3ba662c979819b618f7af4",
       "signaturePolicy": "discover-upstream-support-before-candidate"
     },
     {
@@ -31,7 +31,7 @@
       "signaturePolicy": "discover-upstream-support-before-candidate"
     },
     {
-      "image": "nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de",
+      "image": "nginx:1.30.4-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46",
       "signaturePolicy": "discover-upstream-support-before-candidate"
     },
     {

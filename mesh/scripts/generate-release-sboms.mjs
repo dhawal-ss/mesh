@@ -6,6 +6,28 @@ import { fileURLToPath } from 'node:url'
 
 const FORBIDDEN_TEXT_PACKAGES = new Set(['simple-peer', 'livekit-client'])
 
+function encodePurlComponent(value) {
+  return encodeURIComponent(value)
+    .replace(/[!'()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
+    .replace(/%3A/gi, ':')
+}
+
+export function npmPackageUrl(name, version) {
+  if (typeof name !== 'string' || !name || typeof version !== 'string' || !version) {
+    throw new TypeError('npm Package URLs require a package name and version')
+  }
+  const versionComponent = encodePurlComponent(version)
+  if (!name.startsWith('@')) {
+    if (name.includes('/')) throw new TypeError(`invalid unscoped npm package name: ${name}`)
+    return `pkg:npm/${encodePurlComponent(name)}@${versionComponent}`
+  }
+  const segments = name.split('/')
+  if (segments.length !== 2 || segments.some((segment) => !segment)) {
+    throw new TypeError(`invalid scoped npm package name: ${name}`)
+  }
+  return `pkg:npm/${encodePurlComponent(segments[0])}/${encodePurlComponent(segments[1])}@${versionComponent}`
+}
+
 function npmComponents(lock, graph) {
   const components = []
   for (const [packagePath, metadata] of Object.entries(lock.packages ?? {})) {
@@ -17,7 +39,7 @@ function npmComponents(lock, graph) {
       type: 'library',
       name,
       version: metadata.version,
-      purl: `pkg:npm/${name.replace('/', '%2F')}@${metadata.version}`,
+      purl: npmPackageUrl(name, metadata.version),
       properties: [{ name: 'mesh:dependency-graph', value: graph }],
     })
   }
