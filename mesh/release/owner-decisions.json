@@ -24,9 +24,9 @@
   },
   "acceptance": {
     "windowsMilestone": "R2",
-    "windowsRequiredCases": 54,
+    "windowsRequiredCases": 55,
     "allPlatformMilestone": "R4",
-    "allPlatformRequiredCases": 62
+    "allPlatformRequiredCases": 63
   },
   "implementation": {
     "candidateSourceReady": true,

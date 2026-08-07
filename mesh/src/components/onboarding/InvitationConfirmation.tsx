@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { PendingInvitationMetadata } from '../../types/ipc'
 import { describeJoinRule, joinRuleRequiresApproval } from '../../lib/community-access'
 import * as bridge from '../../lib/bridge'
-import { describeError } from '../../lib/errors'
+import { describeError, normalizeError } from '../../lib/errors'
 import {
   clearInvitationActivation,
   recordInvitationMilestone,
@@ -17,6 +17,7 @@ import { Spinner } from '../ui/Spinner'
 import { displayServiceAddress } from './matrixSignIn'
 
 type InvitationPhase = 'entry' | 'arriving' | 'delayed' | 'failed' | 'discarding'
+type InvitationFailureAction = 'retry' | 'sign-in' | 'home' | 'none'
 
 const INVITATION_DELAY_MS = 15_000
 
@@ -66,7 +67,9 @@ export function InvitationDestinationCard({
         </div>
       </div>
 
-      <dl className="mt-3 grid gap-2 border-t border-border-subtle pt-3 text-caption text-secondary sm:grid-cols-3">
+      <dl className={`mt-3 grid gap-2 border-t border-border-subtle pt-3 text-caption text-secondary ${
+        compact ? 'grid-cols-3' : 'sm:grid-cols-3'
+      }`}>
         <div>
           <dt className="font-semibold uppercase tracking-signal text-muted">Invited by</dt>
           <dd className="mt-0.5 truncate text-primary">{inviterName || 'Not provided'}</dd>
@@ -85,14 +88,20 @@ export function InvitationDestinationCard({
           <dt className="font-semibold uppercase tracking-signal text-muted">
             Suggested service
           </dt>
-          <dd className="mt-0.5 truncate text-primary">{serviceName || 'None'}</dd>
+          <dd className="mt-0.5 break-words leading-4 text-primary">{serviceName || 'None'}</dd>
         </div>
       </dl>
     </section>
   )
 }
 
-export function InvitationSurface({ handle }: { handle: string }) {
+export function InvitationSurface({
+  handle,
+  onSignInRequired,
+}: {
+  handle: string
+  onSignInRequired: () => void
+}) {
   const pending = useShellStore((state) => state.pendingInvitation)
   const setPendingInvitation = useShellStore((state) => state.setPendingInvitation)
   const savePendingInvitationForLater = useShellStore(
@@ -208,6 +217,10 @@ export function InvitationSurface({ handle }: { handle: string }) {
   const errorDescription = failure
     ? describeError(failure, { operation: 'open this invitation', resource: 'community' })
     : null
+  const failureAction: InvitationFailureAction = failure
+    ? invitationFailureAction(failure)
+    : 'none'
+  const joinInProgress = phase === 'arriving' || phase === 'delayed'
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-y-auto" aria-labelledby="mesh-invitation-heading">
@@ -248,7 +261,7 @@ export function InvitationSurface({ handle }: { handle: string }) {
                   Your next move
                 </p>
                 <h2 className="mt-1 text-md font-semibold text-primary">
-                  {phase === 'arriving' || phase === 'delayed'
+                  {joinInProgress
                     ? `Entering ${communityName}`
                     : phase === 'failed'
                       ? `Mesh could not enter ${communityName}`
@@ -280,29 +293,41 @@ export function InvitationSurface({ handle }: { handle: string }) {
               </p>
 
               <div className="grid gap-2">
-                <Button
-                  variant="primary"
-                  onClick={() => void join()}
-                  disabled={phase === 'arriving' || phase === 'delayed'}
-                >
-                  {phase === 'arriving' || phase === 'delayed' ? <Spinner size={16} /> : null}
-                  {phase === 'failed'
-                    ? 'Try again'
-                    : requiresApproval
-                      ? 'Request to join'
-                      : `Join ${communityName}`}
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={saveForLater}
-                  disabled={phase === 'arriving' || phase === 'delayed'}
-                >
-                  Save for later
-                </Button>
+                {phase !== 'failed' ? (
+                  <Button
+                    variant="primary"
+                    onClick={() => void join()}
+                    disabled={joinInProgress}
+                  >
+                    {joinInProgress ? <Spinner size={16} /> : null}
+                    {requiresApproval ? 'Request to join' : `Join ${communityName}`}
+                  </Button>
+                ) : failureAction === 'retry' ? (
+                  <Button variant="primary" onClick={() => void join()}>
+                    Try again
+                  </Button>
+                ) : failureAction === 'sign-in' ? (
+                  <Button variant="primary" onClick={onSignInRequired}>
+                    Sign in again
+                  </Button>
+                ) : failureAction === 'home' ? (
+                  <Button variant="primary" onClick={saveForLater}>
+                    Back to Home
+                  </Button>
+                ) : null}
+                {failureAction !== 'home' ? (
+                  <Button
+                    variant="secondary"
+                    onClick={saveForLater}
+                    disabled={joinInProgress}
+                  >
+                    Save for later
+                  </Button>
+                ) : null}
                 <Button
                   variant="ghost"
                   onClick={() => void discard()}
-                  disabled={phase === 'arriving' || phase === 'delayed'}
+                  disabled={joinInProgress}
                 >
                   Discard invitation
                 </Button>
@@ -315,9 +340,23 @@ export function InvitationSurface({ handle }: { handle: string }) {
   )
 }
 
+function invitationFailureAction(failure: unknown): InvitationFailureAction {
+  const error = normalizeError(failure)
+  if (error.code === 'not_authenticated') return 'sign-in'
+  if (
+    error.code === 'community_invite_invalid'
+    || error.code === 'community_invite_requires_native_open'
+    || error.code === 'room_not_found'
+    || error.code === 'not_found'
+  ) {
+    return 'home'
+  }
+  return error.retryable ? 'retry' : 'none'
+}
+
 function InvitationHeader({ title, detail }: { title: string; detail: string }) {
   return (
-    <header className="flex h-party-header flex-shrink-0 items-center border-b border-border-subtle px-party-gutter">
+    <header className="mesh-route-header flex flex-shrink-0 items-center border-b border-border-subtle px-party-gutter py-2">
       <div className="min-w-0">
         <h1
           id="mesh-invitation-heading"

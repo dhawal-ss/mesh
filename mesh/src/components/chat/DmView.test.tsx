@@ -6,6 +6,7 @@ const composerHarness = vi.hoisted(() => ({
   onSend: null as null | ((content: string) => Promise<void>),
   onEditLastMessage: null as null | (() => void),
   disabled: false,
+  placeholder: null as string | null,
 }))
 
 const interfaceSoundHarness = vi.hoisted(() => ({
@@ -21,14 +22,17 @@ vi.mock('./MessageInput', () => ({
     onSend,
     onEditLastMessage,
     disabled,
+    placeholder,
   }: {
     onSend: (content: string) => Promise<void>
     onEditLastMessage?: () => void
     disabled?: boolean
+    placeholder?: string
   }) => {
     composerHarness.onSend = onSend
     composerHarness.onEditLastMessage = onEditLastMessage ?? null
     composerHarness.disabled = Boolean(disabled)
+    composerHarness.placeholder = placeholder ?? null
     return <div>Message composer remains available</div>
   },
 }))
@@ -138,6 +142,7 @@ describe('DmView message containment', () => {
     composerHarness.onSend = null
     composerHarness.onEditLastMessage = null
     composerHarness.disabled = false
+    composerHarness.placeholder = null
     interfaceSoundHarness.play.mockClear()
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(false)
@@ -190,6 +195,7 @@ describe('DmView message containment', () => {
     expect(emptyState?.getAttribute('aria-labelledby')).toBe(title?.id)
     expect(emptyState?.getAttribute('aria-describedby')).toBe(description?.id)
     expect(emptyState?.querySelector('.border-dashed')).toBeNull()
+    expect(composerHarness.placeholder).toBe('Message Peer')
   })
 
   it('does not show or mark an empty conversation after a failed hydration and retries', async () => {
@@ -240,6 +246,45 @@ describe('DmView message containment', () => {
     expect(container.textContent).toContain(
       'Sending is unavailable because this conversation is not protected end to end.',
     )
+  })
+
+  it('fails closed and retries when the blocked-account setting cannot be checked', async () => {
+    vi.mocked(bridge.isMatrixBackend).mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@me:example.org')
+    vi.spyOn(bridge, 'getDmMessages').mockResolvedValue([])
+    const blockedLookup = vi.spyOn(bridge, 'matrixDmBlocked')
+      .mockRejectedValueOnce(new Error('account data unavailable'))
+      .mockResolvedValueOnce(false)
+    vi.spyOn(bridge, 'matrixRoomIsEncrypted').mockResolvedValue(true)
+    vi.spyOn(bridge, 'matrixWaitForRoomUpdate').mockReturnValue(new Promise(() => {}))
+    const sendMessage = vi.spyOn(bridge, 'sendMessage')
+
+    await act(async () => {
+      root.render(<DmView />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(composerHarness.disabled).toBe(true)
+    expect(container.textContent).toContain(
+      "Mesh couldn't check whether this account is blocked. Sending stays off until that check succeeds.",
+    )
+    await act(async () => {
+      await composerHarness.onSend?.('Do not send while safety state is unknown')
+    })
+    expect(sendMessage).not.toHaveBeenCalled()
+
+    const retry = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Retry safety check')
+    await act(async () => {
+      retry?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(blockedLookup).toHaveBeenCalledTimes(2)
+    expect(composerHarness.disabled).toBe(false)
+    expect(container.textContent).not.toContain('Retry safety check')
   })
 
   it('surfaces and retries a DM mark-read failure after hydration', async () => {
@@ -356,13 +401,11 @@ describe('DmView message containment', () => {
       await Promise.resolve()
     })
     expect(bridge.matrixSetDmBlocked).toHaveBeenCalledWith('@peer:example.org', true)
-    expect(safetyPanel?.textContent).toContain('Unblock Peer')
-
-    const close = safetyPanel?.querySelector<HTMLButtonElement>('button[aria-label="Close Safety"]')
-    await act(async () => close?.click())
     expect(container.querySelector('#mesh-dm-safety-panel')).toBeNull()
+    expect(useDmStore.getState().conversationEntities['conversation-1']).toBeUndefined()
+    expect(useDmStore.getState().activeConversationId).toBeNull()
+    expect(container.textContent).toContain('Select a conversation')
     expect(container.textContent).not.toContain('@peer:example.org')
-    expect(document.activeElement?.getAttribute('aria-label')).toBe('Open Safety with Peer')
   })
 
   it('uses the same no-read-receipt presentation as channel rows', async () => {

@@ -8,8 +8,10 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  MESH_MATRIX_VOICE_FRONTEND: matrix-voice
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -73,6 +75,12 @@ jobs:
       - name: Test Matrix backend
         working-directory: mesh/src-tauri
         run: cargo test --no-default-features --features matrix-backend --locked --jobs 1
+
+      - name: Check and test signed-candidate Matrix voice backend
+        working-directory: mesh/src-tauri
+        run: |
+          cargo check --no-default-features --features matrix-voice --locked --jobs 1
+          cargo test --no-default-features --features matrix-voice --locked --jobs 1
 
   legacy-rust:
     name: Legacy LAN Rust
@@ -168,10 +176,10 @@ jobs:
         working-directory: mesh
         run: npm run check:public-services
 
-      - name: Check production readiness ledger
+      - name: Check protected evidence and production readiness ledger
         working-directory: mesh
         run: |
-          node --test scripts/check-readiness-ledger.test.mjs
+          npm run check:protected-evidence
           npm run check:readiness-ledger
 
       - name: Check fail-closed external acceptance contract
@@ -221,15 +229,15 @@ jobs:
         working-directory: mesh
         run: npm run test:voice-features
 
-      - name: Build isolated acceptance frontends
+      - name: Build non-shipping comparison frontends
         working-directory: mesh
         run: |
-          npm run build:matrix-voice
           npm run build:lan
+          npm run build:matrix
 
-      - name: Build frontend
+      - name: Build signed-candidate Matrix voice frontend
         working-directory: mesh
-        run: npm run build
+        run: npm run build:matrix-voice
 
       - name: Enforce frontend entry bundle budget
         working-directory: mesh
@@ -261,7 +269,7 @@ jobs:
           LEGACY_RUST: ${{ needs.legacy-rust.result }}
           FRONTEND: ${{ needs.check-frontend.result }}
         run: |
-          node -e "const fs=require('fs'); const results={matrixRust:process.env.MATRIX_RUST,legacyRust:process.env.LEGACY_RUST,frontend:process.env.FRONTEND}; fs.mkdirSync('mesh/release',{recursive:true}); fs.writeFileSync('mesh/release/ci-run-results.json',JSON.stringify({schemaVersion:1,sourceSha:process.env.GITHUB_SHA,results},null,2)+'\n'); if(Object.values(results).some(v=>v!=='success')) process.exit(1)"
+          node mesh/scripts/protected-ci-results.mjs
       - name: Upload protected CI payload
         id: payload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -270,6 +278,12 @@ jobs:
           path: mesh/release/ci-run-results.json
           if-no-files-found: error
           retention-days: 90
+      - name: Resolve protected CI payload archive size
+        id: payload-metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.payload.outputs.artifact-id }}
+        run: echo "size=$(gh api repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID} --jq .size_in_bytes)" >> "$GITHUB_OUTPUT"
       - name: Generate protected CI evidence manifest
         working-directory: mesh
         run: |
@@ -284,9 +298,10 @@ jobs:
             --payload-name ci-r0-payload-${{ github.sha }} \
             --payload-uri "${{ steps.payload.outputs.artifact-url }}" \
             --payload-digest "${{ steps.payload.outputs.artifact-digest }}" \
+            --payload-size "${{ steps.payload-metadata.outputs.size }}" \
             --command "matrix-rust + legacy-rust + check-frontend protected jobs" \
-            --build-mode matrix-text \
-            --features matrix-backend,legacy-p2p \
+            --build-mode matrix-voice \
+            --features matrix-voice,legacy-p2p \
             --retention-days 90 \
             --output release/ci-protected-evidence-manifest.json
       - name: Upload protected CI evidence manifest

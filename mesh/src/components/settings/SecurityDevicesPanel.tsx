@@ -1,14 +1,19 @@
-import { useEffect, useState, type ComponentProps, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ComponentProps, type ReactNode } from 'react'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Icon } from '../ui/Icon'
 import { EmptyState } from '../ui/Primitives'
 import { StatusDot } from '../ui/StatusDot'
+import { ErrorState } from '../ui/ErrorState'
 import * as bridge from '../../lib/bridge'
 import { describeError, normalizeError } from '../../lib/errors'
 import { clearRegistrationContinuation } from '../../lib/registration-continuation'
 import { clearRendererAccountState } from '../../lib/account-transition'
+import { PUBLIC_SERVICES } from '../../config/public-services'
+import { BackupCodeScreen } from '../onboarding/BackupCodeScreen'
+import { copyText } from '../../lib/notifications'
+import { useSettingsStore } from '../../store/settings'
 
 interface SecurityDevicesPanelProps {
   open: boolean
@@ -24,6 +29,11 @@ export function SecurityDevicesPanel({
   const [status, setStatus] = useState<bridge.BackendStatus | null>(null)
   const [devices, setDevices] = useState<bridge.MatrixDevice[]>([])
   const [loadingDevices, setLoadingDevices] = useState(false)
+  const [loadingRecovery, setLoadingRecovery] = useState(false)
+  const [statusError, setStatusError] = useState<unknown | null>(null)
+  const [devicesError, setDevicesError] = useState<unknown | null>(null)
+  const [recoveryError, setRecoveryError] = useState<unknown | null>(null)
+  const [recoveryAttentionNotice, setRecoveryAttentionNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -45,61 +55,93 @@ export function SecurityDevicesPanel({
   const [deactivationPassword, setDeactivationPassword] = useState('')
   const [deactivationPhrase, setDeactivationPhrase] = useState('')
   const [deactivationAcknowledged, setDeactivationAcknowledged] = useState(false)
+  const setBackupConfigured = useSettingsStore((state) => state.setBackupConfigured)
+  const scheduleBackupReminder = useSettingsStore((state) => state.scheduleBackupReminder)
   const verificationId = verification?.verificationId
   const verificationPhase = verification?.phase
 
-  const loadDevices = async () => {
+  const loadDevices = useCallback(async () => {
     setLoadingDevices(true)
+    setDevicesError(null)
     try {
       setDevices(await bridge.matrixDevices())
+    } catch (cause) {
+      setDevices([])
+      setDevicesError(cause)
     } finally {
       setLoadingDevices(false)
     }
-  }
+  }, [])
 
-  const loadRecoveryHealth = async (verifyStoredIfDue = false) => {
-    const health = await bridge.matrixRecoveryHealth()
-    const testedAt = health.lastSuccessfulTestAt
-      ? Date.parse(health.lastSuccessfulTestAt)
-      : Number.NaN
-    const testIsDue =
-      !Number.isFinite(testedAt) || testedAt < Date.now() - 90 * 24 * 60 * 60 * 1_000
-    if (verifyStoredIfDue && health.secureStorageState === 'saved' && testIsDue) {
-      try {
-        const verified = await bridge.matrixTestStoredRecovery()
-        setRecoveryHealth(verified)
-        return
-      } catch {
-        setRecoveryHealth({
-          ...health,
-          healthy: false,
-          warnings: [
-            ...health.warnings,
-            'The saved backup code could not be verified. Open Your devices and try again.',
-          ],
-        })
-        return
+  const loadRecoveryHealth = useCallback(async (verifyStoredIfDue = false) => {
+    setLoadingRecovery(true)
+    setRecoveryError(null)
+    try {
+      const health = await bridge.matrixRecoveryHealth()
+      const testedAt = health.lastSuccessfulTestAt
+        ? Date.parse(health.lastSuccessfulTestAt)
+        : Number.NaN
+      const testIsDue =
+        !Number.isFinite(testedAt) || testedAt < Date.now() - 90 * 24 * 60 * 60 * 1_000
+      if (verifyStoredIfDue && health.secureStorageState === 'saved' && testIsDue) {
+        try {
+          const verified = await bridge.matrixTestStoredRecovery()
+          setRecoveryHealth(verified)
+          if (verified.healthy) {
+            setBackupConfigured(true)
+            setRecoveryAttentionNotice(null)
+          }
+          return
+        } catch {
+          setRecoveryHealth({
+            ...health,
+            healthy: false,
+            warnings: [
+              ...health.warnings,
+              'The saved backup code could not be verified. Open Your devices and try again.',
+            ],
+          })
+          return
+        }
       }
+      setRecoveryHealth(health)
+      if (health.healthy) {
+        setBackupConfigured(true)
+        setRecoveryAttentionNotice(null)
+      }
+    } catch (cause) {
+      setRecoveryHealth(null)
+      setRecoveryError(cause)
+    } finally {
+      setLoadingRecovery(false)
     }
-    setRecoveryHealth(health)
-  }
+  }, [setBackupConfigured])
+
+  const loadSecurityData = useCallback(async () => {
+    setStatusError(null)
+    setDevicesError(null)
+    setRecoveryError(null)
+    try {
+      const nextStatus = await bridge.getBackendStatus()
+      setStatus(nextStatus)
+      if (nextStatus.authenticated && nextStatus.capabilities.deviceManagement) {
+        await Promise.all([loadDevices(), loadRecoveryHealth(true)])
+      } else {
+        setDevices([])
+        setRecoveryHealth(null)
+      }
+    } catch (cause) {
+      setStatus(null)
+      setDevices([])
+      setRecoveryHealth(null)
+      setStatusError(cause)
+    }
+  }, [loadDevices, loadRecoveryHealth])
 
   useEffect(() => {
     if (!open) return
-    void bridge
-      .getBackendStatus()
-      .then(async (nextStatus) => {
-        setStatus(nextStatus)
-        if (nextStatus.authenticated && nextStatus.capabilities.deviceManagement) {
-          await Promise.all([loadDevices(), loadRecoveryHealth(true)])
-        } else {
-          setDevices([])
-        }
-      })
-      .catch((cause) => {
-        setError(errorMessage(cause))
-      })
-  }, [open])
+    void Promise.resolve().then(loadSecurityData)
+  }, [loadSecurityData, open])
 
   useEffect(() => {
     if (
@@ -122,11 +164,12 @@ export function SecurityDevicesPanel({
         })
     }, 1_000)
     return () => window.clearInterval(interval)
-  }, [open, verificationId, verificationPhase])
+  }, [loadDevices, open, verificationId, verificationPhase])
 
   const enableRecovery = async () => {
     setBusy(true)
     setError(null)
+    setRecoveryAttentionNotice(null)
     try {
       setNewRecovery(await bridge.matrixEnableRecovery())
       await loadRecoveryHealth()
@@ -135,6 +178,37 @@ export function SecurityDevicesPanel({
     } finally {
       setBusy(false)
     }
+  }
+
+  const finishNewRecovery = () => {
+    const strictlyHealthy = newRecovery?.secureStorageState === 'saved'
+      && newRecovery.verificationState === 'verified'
+      && recoveryHealth?.healthy === true
+    if (strictlyHealthy) {
+      setBackupConfigured(true)
+      setRecoveryAttentionNotice(null)
+    } else {
+      scheduleBackupReminder()
+      setRecoveryAttentionNotice(
+        'Your backup code was saved, but Mesh has not confirmed that message backup is ready. Keep the code private, then use Check again or Test saved copy.',
+      )
+    }
+    setNewRecovery(null)
+  }
+
+  const deferNewRecovery = () => {
+    scheduleBackupReminder()
+    setNewRecovery(null)
+  }
+
+  const closePanel = () => {
+    if (newRecovery) {
+      scheduleBackupReminder()
+      setNewRecovery(null)
+    }
+    setRecoveryInput('')
+    setRecoveryTestInput('')
+    onClose()
   }
 
   const recover = async () => {
@@ -361,10 +435,42 @@ export function SecurityDevicesPanel({
   const warningDevices = devices.filter((device) => device.newDevice || device.identityChanged)
   const revocableDevices = devices.filter((device) => !device.current)
   const lostDevice = revocableDevices.find((device) => device.deviceId === lostDeviceId) ?? null
+  const accountDomain = status?.userId
+    ? status.userId.split(':').slice(1).join(':').trim().toLowerCase() || null
+    : null
+  const publicAccountService = PUBLIC_SERVICES.find((service) => (
+    service.accountDomain.toLowerCase() === accountDomain
+    || sameHttpsOrigin(service.homeserverUrl, status?.homeserver)
+  )) ?? null
+  const serviceSite = safeHttpsOrigin(status?.homeserver)
+  const accountServiceName = publicAccountService?.displayName
+    ?? accountDomain
+    ?? serviceSite?.hostname
+    ?? 'your account service'
+  const accountHelp = publicAccountService
+    ? {
+        href: publicAccountService.accountHelpUrl ?? publicAccountService.supportUrl,
+        label: publicAccountService.accountHelpUrl
+          ? `Manage account on ${publicAccountService.displayName}`
+          : `Contact ${publicAccountService.displayName} support`,
+      }
+    : serviceSite
+      ? { href: serviceSite.href, label: `Open ${accountServiceName} service site` }
+      : null
 
   return (
-    <SecurityDevicesFrame embedded={embedded} open={open} onClose={onClose} title="Your devices">
+    <SecurityDevicesFrame embedded={embedded} open={open} onClose={closePanel} title="Your devices">
       <div className="max-h-settings space-y-5 overflow-y-auto pr-1">
+        {statusError != null && (
+          <ErrorState
+            error={statusError}
+            context={{ operation: 'open safety and devices' }}
+            actionLabel="Retry safety check"
+            onAction={() => void loadSecurityData()}
+            compact
+          />
+        )}
+
         <section className="rounded-panel border border-border-subtle bg-surface-sunken p-4">
           <p className="text-2xs uppercase tracking-signal text-muted">This device</p>
           <dl className="mt-3 space-y-2 text-sm">
@@ -392,6 +498,28 @@ export function SecurityDevicesPanel({
               Back up your messages or bring them back with your backup code or passphrase.
             </p>
           </div>
+          {loadingRecovery && !recoveryHealth && !recoveryError && (
+            <p role="status" className="text-xs text-muted">
+              Checking message backup…
+            </p>
+          )}
+          {recoveryError != null && (
+            <ErrorState
+              error={recoveryError}
+              context={{ operation: 'check your message backup' }}
+              actionLabel="Retry backup check"
+              onAction={() => void loadRecoveryHealth()}
+              compact
+            />
+          )}
+          {recoveryAttentionNotice && (
+            <p
+              role="status"
+              className="rounded-panel border border-status-warning/40 bg-status-warning/10 p-3 text-xs leading-5 text-secondary"
+            >
+              {recoveryAttentionNotice}
+            </p>
+          )}
           {recoveryHealth && (
             <div
               className={`rounded-panel border p-3 ${recoveryHealth.healthy ? 'border-status-success/40 bg-status-success/10' : 'border-status-warning/40 bg-status-warning/10'}`}
@@ -439,80 +567,77 @@ export function SecurityDevicesPanel({
               )}
             </div>
           )}
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={busy || !status?.capabilities.recovery}
-            onClick={enableRecovery}
-          >
-            Create backup code
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={busy || recoveryHealth?.secureStorageState !== 'saved'}
-            onClick={testStoredRecovery}
-          >
-            Test saved copy
-          </Button>
-          {newRecovery && (
-            <div
-              role="status"
-              className="rounded-panel border border-status-warning/40 bg-status-warning/10 p-3"
-            >
-              <p className="text-xs font-medium text-primary">
-                Save this backup code somewhere private. It is shown here once.
-              </p>
-              <p className="mt-2 break-all font-mono text-xs text-secondary">
-                {newRecovery.recoveryKey}
-              </p>
-              <p className="mt-2 text-xs leading-5 text-muted">
-                {newRecovery.secureStorageState === 'saved'
-                  ? "Mesh also saved a copy in this device's protected credential store."
-                  : "Mesh could not save a copy in this device's protected credential store. Copy this code before closing this panel."}
-                {newRecovery.verificationState === 'verified'
-                  ? ' The code was verified against your encrypted backup.'
-                  : ' The backup check did not finish; keep the code and test it again before relying on a new device.'}
-              </p>
+          {newRecovery ? (
+            <div className="rounded-panel border border-status-warning/40 bg-status-warning/10 p-3">
+              <BackupCodeScreen
+                backupCode={newRecovery.recoveryKey}
+                secureStorageState={newRecovery.secureStorageState}
+                verificationState={newRecovery.verificationState}
+                onCopy={copyText}
+                onContinue={finishNewRecovery}
+                onSkip={deferNewRecovery}
+                embedded
+              />
             </div>
+          ) : (
+            <>
+              {recoveryHealth && !recoveryHealth.backupEnabled && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy || loadingRecovery || !status?.capabilities.recovery}
+                  onClick={enableRecovery}
+                >
+                  Create backup code
+                </Button>
+              )}
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={busy || loadingRecovery || recoveryHealth?.secureStorageState !== 'saved'}
+                onClick={testStoredRecovery}
+              >
+                Test saved copy
+              </Button>
+              <Input
+                label="Backup code or passphrase"
+                name="recovery-credential"
+                type="password"
+                value={recoveryInput}
+                onChange={setRecoveryInput}
+                autoComplete="off"
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={busy || !recoveryInput.trim()}
+                onClick={recover}
+              >
+                Restore messages
+              </Button>
+              <div className="space-y-2 border-t border-border-subtle pt-3">
+                <p className="text-xs leading-5 text-muted">
+                  Check that your backup code works before you need it on another device.
+                </p>
+                <Input
+                  label="Backup code to check"
+                  name="recovery-test-credential"
+                  type="password"
+                  value={recoveryTestInput}
+                  onChange={setRecoveryTestInput}
+                  autoComplete="off"
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy || !recoveryTestInput.trim()}
+                  onClick={testRecovery}
+                >
+                  Check backup code
+                </Button>
+              </div>
+            </>
           )}
-          <Input
-            label="Backup code or passphrase"
-            name="recovery-credential"
-            type="password"
-            value={recoveryInput}
-            onChange={setRecoveryInput}
-            autoComplete="off"
-          />
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={busy || !recoveryInput.trim()}
-            onClick={recover}
-          >
-            Restore messages
-          </Button>
-          <div className="space-y-2 border-t border-border-subtle pt-3">
-            <p className="text-xs leading-5 text-muted">
-              Check that your backup code works before you need it on another device.
-            </p>
-            <Input
-              label="Backup code to check"
-              name="recovery-test-credential"
-              type="password"
-              value={recoveryTestInput}
-              onChange={setRecoveryTestInput}
-              autoComplete="off"
-            />
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={busy || !recoveryTestInput.trim()}
-              onClick={testRecovery}
-            >
-              Check backup code
-            </Button>
-          </div>
         </section>
 
         <section className="space-y-3 rounded-panel border border-border-subtle bg-surface-sunken p-4">
@@ -625,10 +750,13 @@ export function SecurityDevicesPanel({
                   ))}
                 </fieldset>
               ) : (
-                <p className="text-xs leading-5 text-muted">
-                  No other device is available to sign out. Check your account website if the lost
-                  device is missing from this list.
-                </p>
+                <div className="space-y-1 text-xs leading-5 text-muted">
+                  <p>
+                    No other device is available to sign out. If the lost device is missing, manage
+                    it through {accountServiceName}.
+                  </p>
+                  <AccountHelpLink action={accountHelp} serviceName={accountServiceName} />
+                </div>
               )}
 
               {lostDevice && (
@@ -693,7 +821,16 @@ export function SecurityDevicesPanel({
               Loading registered devices…
             </p>
           )}
-          {!loadingDevices && devices.length === 0 && (
+          {!loadingDevices && devicesError != null && (
+            <ErrorState
+              error={devicesError}
+              context={{ operation: 'load your devices' }}
+              actionLabel="Retry device list"
+              onAction={() => void loadDevices()}
+              compact
+            />
+          )}
+          {!loadingDevices && !statusError && !devicesError && devices.length === 0 && (
             <EmptyState
               variant="compact"
               icon={<Icon name="shieldCheck" size="lg" />}
@@ -911,9 +1048,11 @@ export function SecurityDevicesPanel({
                 </p>
                 <p className="mt-1 text-xs leading-5 text-muted">
                   This signs that device out. It cannot delete what is already saved on it. Confirm
-                  your account password to continue; Mesh does not save it. If you normally sign in
-                  through a browser, you can also use your account website.
+                  your account password to continue; Mesh does not save it.
                 </p>
+                <div className="mt-1 text-xs leading-5 text-muted">
+                  <AccountHelpLink action={accountHelp} serviceName={accountServiceName} />
+                </div>
               </div>
               <Input
                 label="Account password"
@@ -1081,10 +1220,13 @@ export function SecurityDevicesPanel({
                 I understand that shared copies may remain and that I will not be able to sign in
                 again.
               </label>
-              <p className="text-xs leading-5 text-muted">
-                If you normally sign in through a browser, complete deletion from your account
-                website until browser confirmation is available in Mesh.
-              </p>
+              <div className="space-y-1 text-xs leading-5 text-muted">
+                <p>
+                  If you normally sign in through a browser, use {accountServiceName} account help
+                  if Mesh asks you to finish there.
+                </p>
+                <AccountHelpLink action={accountHelp} serviceName={accountServiceName} />
+              </div>
               <div className="flex flex-wrap gap-2">
                 <Button
                   tone="danger"
@@ -1150,9 +1292,11 @@ export function SecurityDevicesPanel({
               <div className="w-full space-y-3 rounded-panel border border-status-danger/40 bg-status-danger/5 p-3">
                 <p id="local-removal-description" className="text-xs leading-5 text-muted">
                   This cannot be undone. Mesh will sign this device out and delete its saved account
-                  data. If that sign-out cannot finish, use another trusted device or your account
-                  website.
+                  data. If that sign-out cannot finish, use another trusted device.
                 </p>
+                <div className="text-xs leading-5 text-muted">
+                  <AccountHelpLink action={accountHelp} serviceName={accountServiceName} />
+                </div>
                 <Input
                   label='Type "REMOVE LOCAL DATA" to confirm'
                   id="local-removal-confirmation"
@@ -1256,6 +1400,50 @@ function SecurityDevicesFrame({
     <Modal {...modalProps} open={open} onClose={onClose} title={title}>
       {children}
     </Modal>
+  )
+}
+
+function safeHttpsOrigin(value: string | null | undefined): URL | null {
+  if (!value) return null
+  try {
+    const parsed = new URL(value)
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) return null
+    return new URL(parsed.origin)
+  } catch {
+    return null
+  }
+}
+
+function sameHttpsOrigin(left: string, right: string | null | undefined): boolean {
+  const leftOrigin = safeHttpsOrigin(left)
+  const rightOrigin = safeHttpsOrigin(right)
+  return leftOrigin !== null && rightOrigin !== null && leftOrigin.origin === rightOrigin.origin
+}
+
+function AccountHelpLink({
+  action,
+  serviceName,
+}: {
+  action: { href: string; label: string } | null
+  serviceName: string
+}) {
+  if (!action) {
+    return (
+      <p>
+        Mesh can&apos;t open account management for this service. Contact {serviceName} support
+        from another trusted device.
+      </p>
+    )
+  }
+  return (
+    <a
+      href={action.href}
+      target="_blank"
+      rel="noreferrer noopener"
+      className="font-medium text-accent underline-offset-2 hover:underline"
+    >
+      {action.label}
+    </a>
   )
 }
 

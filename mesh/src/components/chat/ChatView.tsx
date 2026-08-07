@@ -1374,7 +1374,7 @@ export function ChatView({
         <button
           type="button"
           onClick={() => onOpenContext('pins')}
-          className="flex h-10 min-w-0 max-w-full flex-shrink-0 items-center gap-3 overflow-hidden border-b border-border-subtle bg-surface-sunken px-4 text-left transition-colors hover:bg-surface-hover"
+          className="mesh-pinned-message-bar flex h-10 min-w-0 max-w-full flex-shrink-0 items-center gap-3 overflow-hidden border-b border-border-subtle bg-surface-sunken px-4 text-left transition-colors hover:bg-surface-hover"
           aria-label={`Open pinned message from ${pinnedMessage.authorDisplayName}`}
         >
           <Icon name="pin" size="sm" className="flex-shrink-0 text-accent" />

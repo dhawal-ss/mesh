@@ -36,8 +36,8 @@ export function validateOwnerDecisions(contract) {
   if (windows.userDataOnUninstall !== 'retain-by-default') fail('uninstall must retain user data by default')
 
   const acceptance = contract.acceptance ?? {}
-  if (acceptance.windowsMilestone !== 'R2' || acceptance.windowsRequiredCases !== 54) fail('R2 must require 54 Windows and operations cases')
-  if (acceptance.allPlatformMilestone !== 'R4' || acceptance.allPlatformRequiredCases !== 62) fail('R4 must require all 62 cases')
+  if (acceptance.windowsMilestone !== 'R2' || acceptance.windowsRequiredCases !== 55) fail('R2 must require 55 Windows and operations cases')
+  if (acceptance.allPlatformMilestone !== 'R4' || acceptance.allPlatformRequiredCases !== 63) fail('R4 must require all 63 cases')
 
   const implementation = contract.implementation ?? {}
   const candidateBlockers = Array.isArray(implementation.candidateBlockers) ? implementation.candidateBlockers : []

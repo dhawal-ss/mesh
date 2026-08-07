@@ -19,6 +19,33 @@ pub struct DmConversationDto {
     pub created_at: String,
 }
 
+/// A quarantined incoming direct-message invitation. Message content is
+/// deliberately unavailable until the user accepts the protected room.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DmRequestDto {
+    pub room_id: String,
+    pub inviter_user_id: String,
+    pub inviter_display_name: String,
+    pub inviter_avatar_color: String,
+    pub can_accept: bool,
+}
+
+/// An account ignored through Matrix's standard account-wide block list.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockedAccountDto {
+    pub user_id: String,
+}
+
+/// A bounded, stable page of accounts from the account-wide block list.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockedAccountPageDto {
+    pub accounts: Vec<BlockedAccountDto>,
+    pub next_cursor: Option<String>,
+}
+
 /// A person whose public Matrix read receipt covers a direct message.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]

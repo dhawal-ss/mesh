@@ -8,6 +8,7 @@ on:
     branches: [main]
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -147,21 +148,17 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  container-supply-chain:
-    name: Container SBOM and fixable high scan (${{ matrix.name }})
+  container-supply-chain-r2:
+    name: R2 container SBOM and fixable high scan (${{ matrix.name }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: caddy
-            image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
-          - name: lk-jwt-service
-            image: ghcr.io/element-hq/lk-jwt-service:0.4.4@sha256:9c715697c6f7c1f538f2ee41b7b59b04a8d06bf790a7cc8c8517ccac8d28813d
-          - name: livekit-server
-            image: livekit/livekit-server:v1.13.5@sha256:3497163e15c48fef6e7830c78716f9e9d5edc28abf7aa90b61c86e93bbc306b1
+            image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
           - name: synapse
-            image: matrixdotorg/synapse:v1.157.1@sha256:d1fce43d7501428c461f2758dc10342555b946dc9f1d03c1b1b8aec1a4e8d130
+            image: matrixdotorg/synapse:v1.157.2@sha256:097e3120b8ecf97e4f92537d7af2da41564c706e33fc740f3741c9defacc2af1
           - name: nginx
             image: nginx:1.30.4-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46
           - name: postgres
@@ -179,7 +176,7 @@ jobs:
         with:
           image: ${{ matrix.image }}
           format: cyclonedx-json
-          output-file: container-${{ matrix.name }}.cdx.json
+          output-file: r2-container-${{ matrix.name }}.cdx.json
           upload-artifact: false
           upload-release-assets: false
       - name: Scan fixable high and critical vulnerabilities
@@ -189,8 +186,19 @@ jobs:
           fail-build: true
           severity-cutoff: high
           only-fixed: true
+          grype-version: 0.116.1
           output-format: json
-          output-file: container-${{ matrix.name }}-grype.json
+          output-file: r2-container-${{ matrix.name }}-grype.json
+      - name: Upload container scan findings
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: r2-container-scan-findings-${{ matrix.name }}-${{ github.sha }}
+          path: |
+            r2-container-${{ matrix.name }}.cdx.json
+            r2-container-${{ matrix.name }}-grype.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Install pinned Cosign for signature discovery
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: Discover upstream keyless signature and provenance
@@ -201,27 +209,27 @@ jobs:
             --certificate-identity-regexp='.*' \
             --certificate-oidc-issuer-regexp='.*' \
             --output=json \
-            '${{ matrix.image }}' > container-${{ matrix.name }}-signature.json 2> container-${{ matrix.name }}-signature-error.txt
+            '${{ matrix.image }}' > r2-container-${{ matrix.name }}-signature.json 2> r2-container-${{ matrix.name }}-signature-error.txt
           status=$?
           if [[ $status -ne 0 ]]; then
-            rm -f container-${{ matrix.name }}-signature-error.txt
-            printf '{"status":"upstream-signature-not-discovered","requiresReviewer":true}\n' > container-${{ matrix.name }}-signature.json
+            rm -f r2-container-${{ matrix.name }}-signature-error.txt
+            printf '{"status":"upstream-signature-not-discovered","requiresReviewer":true}\n' > r2-container-${{ matrix.name }}-signature.json
           fi
       - name: Upload immutable container supply-chain evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: container-supply-chain-${{ matrix.name }}-${{ github.sha }}
+          name: r2-container-supply-chain-${{ matrix.name }}-${{ github.sha }}
           path: |
-            container-${{ matrix.name }}.cdx.json
-            container-${{ matrix.name }}-grype.json
-            container-${{ matrix.name }}-signature.json
+            r2-container-${{ matrix.name }}.cdx.json
+            r2-container-${{ matrix.name }}-grype.json
+            r2-container-${{ matrix.name }}-signature.json
           if-no-files-found: error
           retention-days: 30
 
   protected-evidence:
     name: Protected security evidence manifest
     if: always()
-    needs: [codeql, dependency-review, feature-matrix, dependency-and-secret-audit, sbom, container-supply-chain]
+    needs: [codeql, dependency-review, feature-matrix, dependency-and-secret-audit, sbom, container-supply-chain-r2]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -237,9 +245,9 @@ jobs:
           FEATURE_MATRIX: ${{ needs.feature-matrix.result }}
           DEPENDENCY_AUDIT: ${{ needs.dependency-and-secret-audit.result }}
           SBOM: ${{ needs.sbom.result }}
-          CONTAINERS: ${{ needs.container-supply-chain.result }}
+          R2_CONTAINERS: ${{ needs.container-supply-chain-r2.result }}
         run: |
-          node -e "const fs=require('fs'); const results={codeql:process.env.CODEQL,dependencyReview:process.env.DEPENDENCY_REVIEW,featureMatrix:process.env.FEATURE_MATRIX,dependencyAudit:process.env.DEPENDENCY_AUDIT,sbom:process.env.SBOM,containers:process.env.CONTAINERS}; const allowed=v=>v==='success'||(process.env.GITHUB_EVENT_NAME!=='pull_request'&&v==='skipped')||(process.env.GITHUB_EVENT_NAME==='pull_request'&&v==='success'); fs.mkdirSync('mesh/release',{recursive:true}); fs.writeFileSync('mesh/release/security-run-results.json',JSON.stringify({schemaVersion:1,sourceSha:process.env.GITHUB_SHA,results},null,2)+'\n'); if(Object.values(results).some(v=>!allowed(v))) process.exit(1)"
+          node mesh/scripts/protected-security-results.mjs
       - name: Upload protected security payload
         id: payload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -248,6 +256,12 @@ jobs:
           path: mesh/release/security-run-results.json
           if-no-files-found: error
           retention-days: 90
+      - name: Resolve protected security payload archive size
+        id: payload-metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.payload.outputs.artifact-id }}
+        run: echo "size=$(gh api repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID} --jq .size_in_bytes)" >> "$GITHUB_OUTPUT"
       - name: Generate protected security evidence manifest
         working-directory: mesh
         run: |
@@ -262,9 +276,10 @@ jobs:
             --payload-name security-r0-payload-${{ github.sha }} \
             --payload-uri "${{ steps.payload.outputs.artifact-url }}" \
             --payload-digest "${{ steps.payload.outputs.artifact-digest }}" \
-            --command "all protected security workflow jobs" \
-            --build-mode source-and-container-security \
-            --features matrix-backend,legacy-p2p,container-scan \
+            --payload-size "${{ steps.payload-metadata.outputs.size }}" \
+            --command "all protected R2 security workflow jobs" \
+            --build-mode r2-source-and-container-security \
+            --features matrix-backend,legacy-p2p,r2-container-scan \
             --retention-days 90 \
             --output release/security-protected-evidence-manifest.json
       - name: Upload protected security evidence manifest

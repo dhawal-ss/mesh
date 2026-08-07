@@ -77,6 +77,8 @@ async function installKeyboardActionsMock(page: Page): Promise<void> {
       args: Record<string, unknown>,
     ): unknown | Promise<unknown> => {
       switch (command) {
+        case 'get_notification_account_scope':
+          return { accountGeneration: 0, userId: args.expectedUserId }
         case 'set_notification_context':
         case 'matrix_set_room_notification_mode':
         case 'send_test_notification':
@@ -106,7 +108,7 @@ async function installKeyboardActionsMock(page: Page): Promise<void> {
               tokenEndpoint: null,
               livekitSfuUrl: null,
               cspReady: false,
-              mediaE2eeVerified: false,
+              mediaE2eeReady: false,
               reason: 'MatrixRTC services are not configured',
             },
             authenticated: true,
@@ -128,7 +130,7 @@ async function installKeyboardActionsMock(page: Page): Promise<void> {
         case 'matrix_list_channels':
           return { entities: channels, blockedEntities: [] }
         case 'matrix_list_members':
-          return [
+          return { members: [
             {
               publicKey: '@alice:mesh.test',
               displayName: 'alice',
@@ -149,7 +151,7 @@ async function installKeyboardActionsMock(page: Page): Promise<void> {
               lastSeen: '2026-07-24T00:00:00.000Z',
               online: true,
             },
-          ]
+          ], nextCursor: null, stateComplete: true }
         case 'matrix_get_messages':
           return timeline.filter((message) => message.channelId === args.roomId)
         case 'matrix_queued_messages':

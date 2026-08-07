@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-blocked-accounts"
+description = "Enables the matrix_blocked_accounts command without any pre-configured scope."
+commands.allow = ["matrix_blocked_accounts"]
+
+[[permission]]
+identifier = "deny-matrix-blocked-accounts"
+description = "Denies the matrix_blocked_accounts command without any pre-configured scope."
+commands.deny = ["matrix_blocked_accounts"]

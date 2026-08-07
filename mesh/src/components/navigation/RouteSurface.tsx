@@ -1,5 +1,10 @@
 import { lazy, Suspense, useRef } from 'react'
-import type { CommunityAdminSection, MeshRoute, YouSection } from '../../lib/mesh-navigation'
+import type {
+  CommunityAdminSection,
+  MeshRecentDestination,
+  MeshRoute,
+  YouSection,
+} from '../../lib/mesh-navigation'
 import { matrixProfileIdentity, resolveSenderIdentity } from '../../lib/matrixIdentity'
 import * as bridge from '../../lib/bridge'
 import { useChannelStore } from '../../store/channels'
@@ -15,6 +20,7 @@ import type { UserSettingsTab } from '../settings/UserSettingsPanel'
 import type { CreateCommunityTab } from '../community/CreateCommunityModal'
 import { clearVolatileInviteLink, getVolatileInviteLink } from '../../lib/pending-invitation-runtime'
 import { playInterfaceSound } from '../../lib/interface-sounds'
+import type { Channel } from '../../types/ipc'
 
 const InvitationSurface = lazy(() =>
   import('../onboarding/InvitationConfirmation').then((module) => ({
@@ -40,11 +46,19 @@ const CommunitySettings = lazy(() =>
   })),
 )
 
-export function RouteSurface({ route }: { route: Exclude<MeshRoute, { kind: 'home' | 'room' | 'direct' | 'voice' }> }) {
+export function RouteSurface({
+  route,
+  onSignInRequired,
+}: {
+  route: Exclude<MeshRoute, { kind: 'home' | 'room' | 'direct' | 'voice' }>
+  onSignInRequired: () => void
+}) {
   if (route.kind === 'community') return <CommunityLandingSurface communityId={route.communityId} />
   if (route.kind === 'communities') return <CommunitiesRouteSurface mode={route.mode} />
   if (route.kind === 'you') return <YouRouteSurface section={route.section} />
-  if (route.kind === 'invitation') return <InvitationRouteSurface handle={route.handle} />
+  if (route.kind === 'invitation') {
+    return <InvitationRouteSurface handle={route.handle} onSignInRequired={onSignInRequired} />
+  }
   return <CommunityAdminRouteSurface communityId={route.communityId} section={route.section} />
 }
 
@@ -57,6 +71,7 @@ function CommunityLandingSurface({ communityId }: { communityId: string }) {
   const voicePeers = useVoiceStore((state) => state.peers)
   const voiceConnection = useVoiceStore((state) => state.connectionState)
   const navigate = useMeshNavigationStore((state) => state.navigate)
+  const navigationRecents = useMeshNavigationStore((state) => state.recents)
   const communityChannels = channels.filter((channel) => channel.communityId === communityId)
   const liveRooms = communityChannels.filter((channel) => {
     if (channel.channelType !== 'voice') return false
@@ -65,10 +80,9 @@ function CommunityLandingSurface({ communityId }: { communityId: string }) {
       && voicePeers.length > 0
       && ['connected', 'reconnecting', 'degraded'].includes(voiceConnection)
   })
-  const recentRooms = [...communityChannels]
-    .filter((channel) => channel.channelType === 'text')
-    .sort((left, right) => right.unreadCount - left.unreadCount)
-    .slice(0, 5)
+  const recentRooms = recentCommunityTextRooms(channels, navigationRecents, communityId)
+  const starterRooms = starterCommunityTextRooms(channels, communityId)
+  const shownRooms = recentRooms.length > 0 ? recentRooms : starterRooms
 
   if (!community) {
     return (
@@ -115,10 +129,13 @@ function CommunityLandingSurface({ communityId }: { communityId: string }) {
           )
         })}
       </RuledSection>
-      <RuledSection title="Recent rooms" count={recentRooms.length}>
-        {recentRooms.length === 0 ? (
+      <RuledSection
+        title={recentRooms.length > 0 ? 'Recently opened' : 'Start here'}
+        count={shownRooms.length}
+      >
+        {shownRooms.length === 0 ? (
           <RouteEmpty text="Choose a room from the community navigation." />
-        ) : recentRooms.map((channel) => (
+        ) : shownRooms.map((channel) => (
           <button
             key={channel.id}
             type="button"
@@ -133,11 +150,45 @@ function CommunityLandingSurface({ communityId }: { communityId: string }) {
             {channel.unreadCount > 0 && (
               <span className="font-mono text-meta text-accent">{channel.unreadCount}</span>
             )}
+            {recentRooms.length === 0 && <span className="font-semibold text-accent">Open</span>}
           </button>
         ))}
       </RuledSection>
     </section>
   )
+}
+
+export function recentCommunityTextRooms(
+  channels: Channel[],
+  recents: MeshRecentDestination[],
+  communityId: string,
+  limit = 5,
+): Channel[] {
+  const channelsById = new Map(channels.map((channel) => [channel.id, channel] as const))
+  const seen = new Set<string>()
+
+  return [...recents]
+    .sort((left, right) => right.lastOpenedAt - left.lastOpenedAt)
+    .flatMap((recent) => {
+      if (recent.route.kind !== 'room' || recent.route.communityId !== communityId) return []
+      const channel = channelsById.get(recent.route.roomId)
+      if (!channel || channel.channelType !== 'text' || seen.has(channel.id)) return []
+      seen.add(channel.id)
+      return [channel]
+    })
+    .slice(0, Math.max(0, limit))
+}
+
+export function starterCommunityTextRooms(
+  channels: Channel[],
+  communityId: string,
+  limit = 3,
+): Channel[] {
+  return channels
+    .filter((channel) => (
+      channel.communityId === communityId && channel.channelType === 'text'
+    ))
+    .slice(0, Math.max(0, limit))
 }
 
 const COMMUNITY_MODES: Array<{
@@ -156,8 +207,8 @@ const COMMUNITY_MODES: Array<{
   },
   {
     mode: 'browse',
-    title: 'Browse communities',
-    detail: 'Look through communities available from your current service.',
+    title: 'Find a community',
+    detail: 'Use an invitation, a compatible directory, or start your own.',
     icon: 'compass',
     tab: 'discover',
   },
@@ -194,11 +245,11 @@ function CommunitiesRouteSurface({ mode }: { mode: 'join' | 'browse' | 'create' 
   }
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden" aria-labelledby="mesh-communities-heading">
+    <section className="mesh-route-surface flex min-h-0 flex-1 flex-col overflow-hidden" aria-labelledby="mesh-communities-heading">
       <SurfaceHeader
         id="mesh-communities-heading"
         title="Communities"
-        detail="Join a crew, find a public space, or start your own."
+        detail="Join a crew from an invitation or start a space of your own."
       />
       <label className="border-b border-border-subtle bg-surface-sunken px-party-gutter py-3 text-xs font-medium text-secondary md:hidden">
         Community action
@@ -214,7 +265,7 @@ function CommunitiesRouteSurface({ mode }: { mode: 'join' | 'browse' | 'create' 
         </select>
       </label>
       <div className="grid min-h-0 flex-1 md:grid-cols-[250px_minmax(0,1fr)]">
-        <nav className="hidden min-h-0 border-r border-border-subtle bg-surface-sunken px-3 py-3 md:block" aria-label="Community actions">
+        <nav className="mesh-route-navigation hidden min-h-0 border-r border-border-subtle bg-surface-sunken px-3 py-3 md:block" aria-label="Community actions">
           <div role="tablist" aria-orientation="vertical" className="flex flex-col gap-1">
             {COMMUNITY_MODES.map((entry) => (
               <button
@@ -224,7 +275,7 @@ function CommunitiesRouteSurface({ mode }: { mode: 'join' | 'browse' | 'create' 
                 role="tab"
                 aria-selected={mode === entry.mode}
                 tabIndex={mode === entry.mode ? 0 : -1}
-                className={`min-h-11 rounded-control px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
+                className={`mesh-route-tab min-h-11 rounded-control px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
                   mode === entry.mode ? 'bg-accent/15 text-primary' : 'text-secondary hover:bg-surface-hover hover:text-primary'
                 }`}
                 onClick={() => selectMode(entry)}
@@ -236,25 +287,33 @@ function CommunitiesRouteSurface({ mode }: { mode: 'join' | 'browse' | 'create' 
             ))}
           </div>
         </nav>
-        <main className="min-h-0 overflow-hidden" aria-labelledby={`mesh-communities-mode-${currentEntry.mode}`}>
-          <h2 id={`mesh-communities-mode-${currentEntry.mode}`} className="sr-only">{currentEntry.title}</h2>
-          <Suspense fallback={<SimpleSurface title={`Opening ${currentEntry.title}`} detail="Keeping the community action ready." />}>
-            <CreateCommunityModal
-              embedded
-              isOpen
-              initialInvite={getVolatileInviteLink()}
-              activeTab={currentEntry.tab}
-              onTabChange={(tab) => {
-                const next = COMMUNITY_MODES.find((entry) => entry.tab === tab)
-                if (next) selectMode(next)
-              }}
-              onClose={() => {
-                clearVolatileInviteLink()
-                const communityId = useCommunityStore.getState().activeCommunityId ?? activeCommunityId
-                navigate(communityId ? { kind: 'community', communityId } : { kind: 'home' })
-              }}
-            />
-          </Suspense>
+        <main className="mesh-route-main min-h-0 overflow-y-auto" aria-labelledby={`mesh-communities-mode-${currentEntry.mode}`}>
+          <div className="mx-auto w-full max-w-3xl px-party-gutter py-6">
+            <div className="mb-5">
+              <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">Community action</p>
+              <h2 id={`mesh-communities-mode-${currentEntry.mode}`} className="mt-1 text-title font-semibold tracking-tight text-primary">
+                {currentEntry.title}
+              </h2>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">{currentEntry.detail}</p>
+            </div>
+            <Suspense fallback={<SimpleSurface title={`Opening ${currentEntry.title}`} detail="Keeping the community action ready." />}>
+              <CreateCommunityModal
+                embedded
+                isOpen
+                initialInvite={getVolatileInviteLink()}
+                activeTab={currentEntry.tab}
+                onTabChange={(tab) => {
+                  const next = COMMUNITY_MODES.find((entry) => entry.tab === tab)
+                  if (next) selectMode(next)
+                }}
+                onClose={() => {
+                  clearVolatileInviteLink()
+                  const communityId = useCommunityStore.getState().activeCommunityId ?? activeCommunityId
+                  navigate(communityId ? { kind: 'community', communityId } : { kind: 'home' })
+                }}
+              />
+            </Suspense>
+          </div>
         </main>
       </div>
     </section>
@@ -276,7 +335,13 @@ const YOU_SECTIONS: Array<{
   { section: 'advanced', settingsSection: 'advanced', title: 'Advanced', detail: 'Signal Check and compatible service details.' },
 ]
 
-function InvitationRouteSurface({ handle }: { handle: string }) {
+function InvitationRouteSurface({
+  handle,
+  onSignInRequired,
+}: {
+  handle: string
+  onSignInRequired: () => void
+}) {
   const pending = useShellStore((state) => state.pendingInvitation)
   const communityName = pending?.handle === handle
     ? pending.communityName?.trim() || 'your community'
@@ -290,7 +355,7 @@ function InvitationRouteSurface({ handle }: { handle: string }) {
         />
       )}
     >
-      <InvitationSurface handle={handle} />
+      <InvitationSurface handle={handle} onSignInRequired={onSignInRequired} />
     </Suspense>
   )
 }
@@ -325,15 +390,18 @@ function YouRouteSurface({ section }: { section: YouSection }) {
   }
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden" aria-labelledby="mesh-you-heading">
+    <section className="mesh-route-surface flex min-h-0 flex-1 flex-col overflow-hidden" aria-labelledby="mesh-you-heading">
       <SurfaceHeader
         id="mesh-you-heading"
         title="You"
         detail={identity?.displayName ? `${identity.displayName} · Your Mesh` : 'Your Mesh'}
       />
-      <label className="border-b border-border-subtle bg-surface-sunken px-party-gutter py-3 text-xs font-medium text-secondary md:hidden">
-        You section
+      <div className="border-b border-border-subtle bg-surface-sunken px-party-gutter py-3 md:hidden">
+        <label htmlFor="mesh-you-section" className="block text-xs font-medium text-secondary">
+          You section
+        </label>
         <select
+          id="mesh-you-section"
           value={section}
           onChange={(event) => {
             const next = YOU_SECTIONS.find((entry) => entry.section === event.target.value)
@@ -343,9 +411,9 @@ function YouRouteSurface({ section }: { section: YouSection }) {
         >
           {YOU_SECTIONS.map((entry) => <option key={entry.section} value={entry.section}>{entry.title}</option>)}
         </select>
-      </label>
+      </div>
       <div className="grid min-h-0 flex-1 md:grid-cols-[250px_minmax(0,1fr)]">
-        <nav className="hidden min-h-0 border-r border-border-subtle bg-surface-sunken px-3 py-3 md:block" aria-label="You sections">
+        <nav className="mesh-route-navigation hidden min-h-0 border-r border-border-subtle bg-surface-sunken px-3 py-3 md:block" aria-label="You sections">
           <div role="tablist" aria-orientation="vertical" className="flex flex-col gap-1">
             {YOU_SECTIONS.map((entry) => (
               <button
@@ -355,7 +423,7 @@ function YouRouteSurface({ section }: { section: YouSection }) {
                 role="tab"
                 aria-selected={section === entry.section}
                 tabIndex={section === entry.section ? 0 : -1}
-                className={`min-h-11 rounded-control px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
+                className={`mesh-route-tab min-h-11 rounded-control px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
                   section === entry.section ? 'bg-accent/15 text-primary' : 'text-secondary hover:bg-surface-hover hover:text-primary'
                 }`}
                 onClick={() => selectSection(entry)}
@@ -367,7 +435,7 @@ function YouRouteSurface({ section }: { section: YouSection }) {
             ))}
           </div>
         </nav>
-        <main className="min-h-0 overflow-hidden" aria-labelledby={`mesh-you-section-${currentEntry.section}`}>
+        <main className="mesh-route-main min-h-0 overflow-hidden" aria-labelledby={`mesh-you-section-${currentEntry.section}`}>
           <h2 id={`mesh-you-section-${currentEntry.section}`} className="sr-only">{currentEntry.title}</h2>
           <Suspense
             fallback={<SimpleSurface title={`Opening ${currentEntry.title}`} detail="Keeping your saved settings available while this section opens." />}
@@ -462,14 +530,20 @@ function CommunityAdminRouteSurface({
   }
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden" aria-labelledby="mesh-community-admin-heading">
+    <section className="mesh-route-surface flex min-h-0 flex-1 flex-col overflow-hidden" aria-labelledby="mesh-community-admin-heading">
       <SurfaceHeader
         id="mesh-community-admin-heading"
         title="Community administration"
         detail={`${community.name} · Changes stay limited to the permissions this community reports.`}
         action={(
-          <Button variant="secondary" size="sm" onClick={() => navigate({ kind: 'community', communityId })}>
-            Back to community
+          <Button
+            variant="secondary"
+            size="sm"
+            aria-label="Back to community"
+            onClick={() => navigate({ kind: 'community', communityId })}
+          >
+            <span aria-hidden="true" className="sm:hidden">Back</span>
+            <span className="hidden sm:inline">Back to community</span>
           </Button>
         )}
       />
@@ -489,7 +563,7 @@ function CommunityAdminRouteSurface({
         </select>
       </label>
       <div className="grid min-h-0 flex-1 md:grid-cols-[250px_minmax(0,1fr)]">
-        <nav className="hidden min-h-0 overflow-y-auto border-r border-border-subtle bg-surface-sunken px-3 py-3 md:block" aria-label="Community administration sections">
+        <nav className="mesh-route-navigation hidden min-h-0 overflow-y-auto border-r border-border-subtle bg-surface-sunken px-3 py-3 md:block" aria-label="Community administration sections">
           <div role="tablist" aria-orientation="vertical" className="flex flex-col gap-1">
             {COMMUNITY_ADMIN_SECTIONS.map((entry) => (
               <button
@@ -499,7 +573,7 @@ function CommunityAdminRouteSurface({
                 role="tab"
                 aria-selected={section === entry.section}
                 tabIndex={section === entry.section ? 0 : -1}
-                className={`min-h-11 rounded-control px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
+                className={`mesh-route-tab min-h-11 rounded-control px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
                   section === entry.section ? 'bg-accent/15 text-primary' : 'text-secondary hover:bg-surface-hover hover:text-primary'
                 }`}
                 onClick={() => selectSection(entry)}
@@ -511,7 +585,7 @@ function CommunityAdminRouteSurface({
             ))}
           </div>
         </nav>
-        <main className="min-h-0 overflow-hidden" aria-labelledby={`mesh-community-admin-section-${currentEntry.section}`}>
+        <main className="mesh-route-main min-h-0 overflow-hidden" aria-labelledby={`mesh-community-admin-section-${currentEntry.section}`}>
           <h2 id={`mesh-community-admin-section-${currentEntry.section}`} className="sr-only">
             {currentEntry.title} for {community.name}
           </h2>
@@ -539,7 +613,7 @@ function SimpleSurface({
   action?: React.ReactNode
 }) {
   return (
-    <section className="flex min-h-0 flex-1 flex-col" aria-labelledby="mesh-simple-route-heading">
+    <section className="mesh-route-surface flex min-h-0 flex-1 flex-col" aria-labelledby="mesh-simple-route-heading">
       <SurfaceHeader id="mesh-simple-route-heading" title={title} detail={detail} action={action} />
     </section>
   )
@@ -557,17 +631,17 @@ function SurfaceHeader({
   action?: React.ReactNode
 }) {
   return (
-    <header className="flex h-party-header flex-shrink-0 items-center gap-3 border-b border-border-subtle px-party-gutter">
+    <header className="mesh-route-header flex flex-shrink-0 items-center gap-3 border-b border-border-subtle px-party-gutter py-2">
       <div className="min-w-0 flex-1">
         <h1
           id={id}
           data-mesh-route-heading
           tabIndex={-1}
-          className="truncate text-title font-semibold tracking-tight text-primary outline-none"
+          className="text-title font-semibold tracking-tight text-primary outline-none sm:truncate"
         >
           {title}
         </h1>
-        <p className="truncate text-meta text-muted">{detail}</p>
+        <p className="text-meta text-muted sm:truncate">{detail}</p>
       </div>
       {action}
     </header>

@@ -35,8 +35,10 @@ import {
   canStartMatrixVoice,
   isPermissionDeniedError,
   isPushToTalkInteractiveTarget,
+  PRIVATE_VOICE_FAILURE_MESSAGE,
   shouldReleasePushToTalk,
   shouldPublishInitialMicrophone,
+  voiceConnectionUserMessage,
 } from '../lib/voice-runtime'
 import { describeError } from '../lib/errors'
 import { showToast } from '../components/ui/Toast'
@@ -344,7 +346,9 @@ export function useVoiceEngine() {
         if (disposed) return
 
         const engine = new LiveKitVoiceEngine({
-          onConnectionState: (state, reason) => setConnectionState(state, reason),
+          onConnectionState: (state, reason) => {
+            setConnectionState(state, voiceConnectionUserMessage(reason))
+          },
           onPeers: setPeers,
           onLocalMediaState: ({ cameraEnabled, screenShareEnabled }) => {
             setCameraEnabled(cameraEnabled)
@@ -358,6 +362,7 @@ export function useVoiceEngine() {
             setConnectionWarning(`${description.title}. ${description.body}`)
           },
           onEncryptionFailure: (reason, sessionId) => {
+            console.warn('Private voice protection stopped:', reason)
             stopMatrixStats()
             stopMatrixLeaseRenewal()
             pendingMediaKeys.clear()
@@ -368,7 +373,8 @@ export function useVoiceEngine() {
             matrixMediaKeyFailureUnlisten = null
             matrixMediaKeyPauseUnlisten?.()
             matrixMediaKeyPauseUnlisten = null
-            setConnectionWarning(reason)
+            setConnectionWarning(PRIVATE_VOICE_FAILURE_MESSAGE)
+            setConnectionState('disconnected', PRIVATE_VOICE_FAILURE_MESSAGE)
             setCameraEnabled(false)
             setScreenSharing(false)
             setMuted(true)
@@ -537,7 +543,7 @@ export function useVoiceEngine() {
             return
           }
           if (
-            !credentials.mediaE2eeVerified ||
+            !credentials.mediaE2eeReady ||
             mediaKeyBufferOverflowed ||
             mediaKeyPauseBufferOverflowed ||
             mediaKeyDistributionFailed
@@ -926,11 +932,11 @@ export function useVoiceEngine() {
 
   const matrixUnavailableReason = useMemo(() => {
     if (backendStatus?.kind !== 'matrix' || matrixVoiceReady) return null
-    if (!voiceService.mediaE2eeVerified) {
+    if (!voiceService.mediaE2eeReady) {
       return 'Private media encryption has not passed verification, so Mesh will not start the microphone.'
     }
     return voiceService.reason ?? 'Calling is unavailable.'
-  }, [backendStatus?.kind, matrixVoiceReady, voiceService.mediaE2eeVerified, voiceService.reason])
+  }, [backendStatus?.kind, matrixVoiceReady, voiceService.mediaE2eeReady, voiceService.reason])
 
   return {
     connectionWarning,

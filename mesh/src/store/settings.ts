@@ -92,6 +92,8 @@ export interface BackupPreferences {
   dismissedAt: string | null
 }
 
+export type AccountBackupPreferences = Record<string, BackupPreferences>
+
 export interface PrivacyPreferences {
   readReceiptMode: ReadReceiptMode
   sendTypingIndicators: boolean
@@ -115,10 +117,17 @@ export interface MatrixPreferenceSyncState {
 }
 
 export const PREFERENCES_SCHEMA_VERSION = 7
-export const LOCAL_SETTINGS_SCHEMA_VERSION = 7
+export const LOCAL_SETTINGS_SCHEMA_VERSION = 8
 const MAX_CONVERSATION_PRIVACY_OVERRIDES = 256
+const MAX_ACCOUNT_BACKUP_PREFERENCES = 16
+const LEGACY_UNSCOPED_BACKUP_KEY = '__legacy_unscoped__'
 const MATRIX_SAVE_DEBOUNCE_MS = 350
 const BACKUP_REMINDER_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000
+const DEFAULT_BACKUP: BackupPreferences = {
+  configured: false,
+  reminderPending: false,
+  dismissedAt: null,
+}
 const DEFAULT_APPEARANCE: AppearancePreferences = {
   theme: 'dark',
   density: 'default',
@@ -334,6 +343,74 @@ function normalizeAppearancePreferences(
   }
 }
 
+function normalizeBackupPreferences(value: unknown): BackupPreferences {
+  if (!value || typeof value !== 'object') return { ...DEFAULT_BACKUP }
+  const candidate = value as Partial<BackupPreferences>
+  const dismissedAt = typeof candidate.dismissedAt === 'string'
+    && Number.isFinite(Date.parse(candidate.dismissedAt))
+    ? new Date(candidate.dismissedAt).toISOString()
+    : null
+  return {
+    configured: candidate.configured === true,
+    reminderPending: candidate.configured === true
+      ? false
+      : candidate.reminderPending === true,
+    dismissedAt,
+  }
+}
+
+function normalizeBackupAccountId(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const accountId = value.trim()
+  return accountId.startsWith('@')
+    && accountId.includes(':')
+    && accountId.length <= 255
+    && !/\s/.test(accountId)
+    ? accountId
+    : null
+}
+
+function normalizeAccountBackupPreferences(value: unknown): AccountBackupPreferences {
+  if (!value || typeof value !== 'object') return {}
+  const normalized: AccountBackupPreferences = {}
+  for (const [rawAccountId, rawPreferences] of Object.entries(value as Record<string, unknown>)) {
+    if (Object.keys(normalized).length >= MAX_ACCOUNT_BACKUP_PREFERENCES) break
+    const accountId = rawAccountId === LEGACY_UNSCOPED_BACKUP_KEY
+      ? rawAccountId
+      : normalizeBackupAccountId(rawAccountId)
+    if (!accountId) continue
+    normalized[accountId] = normalizeBackupPreferences(rawPreferences)
+  }
+  return normalized
+}
+
+function withActiveBackup(
+  state: Pick<SettingsStore, 'backupAccountId' | 'backupByAccount'>,
+  backup: BackupPreferences,
+) {
+  if (!state.backupAccountId) {
+    return { backup, backupByAccount: state.backupByAccount }
+  }
+
+  const backupByAccount = { ...state.backupByAccount }
+  // Reinsert the active account at the end so insertion order is a bounded,
+  // deterministic approximation of most recently updated state.
+  delete backupByAccount[state.backupAccountId]
+  backupByAccount[state.backupAccountId] = backup
+  while (Object.keys(backupByAccount).length > MAX_ACCOUNT_BACKUP_PREFERENCES) {
+    const oldestAccountId = Object.keys(backupByAccount).find(
+      (accountId) => accountId !== state.backupAccountId,
+    )
+    if (!oldestAccountId) break
+    delete backupByAccount[oldestAccountId]
+  }
+
+  return {
+    backup,
+    backupByAccount,
+  }
+}
+
 export function normalizePrivacyPreferences(
   preferences: (Partial<PrivacyPreferences> & { sendReadReceipts?: boolean }) | undefined,
 ): PrivacyPreferences {
@@ -488,6 +565,8 @@ export interface SettingsStore {
   notifications: NotificationPreferences
   appearance: AppearancePreferences
   backup: BackupPreferences
+  backupAccountId: string | null
+  backupByAccount: AccountBackupPreferences
   privacy: PrivacyPreferences
   matrixPreferenceSync: MatrixPreferenceSyncState
   /** Explicit per-device opt-in for contextual, redacted diagnostic probes. */
@@ -507,6 +586,7 @@ export interface SettingsStore {
   setAppearanceTransparency: (transparency: AppearanceTransparency) => void
   setReduceMotion: (reduceMotion: boolean) => void
   setSignalCheckEnabled: (enabled: boolean) => void
+  activateBackupAccount: (accountId: string | null) => void
   setBackupConfigured: (configured: boolean) => void
   scheduleBackupReminder: () => void
   dismissBackupReminder: () => void
@@ -647,6 +727,22 @@ export function migrateSettingsPersistence(
   const rawNotifications = persisted.notifications as Partial<NotificationPreferences> | undefined
   const legacySoundEnabled = rawNotifications?.sound ?? DEFAULT_NOTIFICATIONS.sound
   const rawAppearance = persisted.appearance as Partial<AppearancePreferences> | undefined
+  const persistedWithScopedBackup = persisted as Partial<SettingsStore> & {
+    backupByAccount?: unknown
+  }
+  const backupByAccount = normalizeAccountBackupPreferences(
+    persistedWithScopedBackup.backupByAccount,
+  )
+  if (
+    Object.keys(backupByAccount).length === 0
+    && persisted.backup
+  ) {
+    // Version 7 stored one unscoped device value. Preserve it for audit and
+    // rollback, but never apply it to an account whose ownership is unknown.
+    backupByAccount[LEGACY_UNSCOPED_BACKUP_KEY] = normalizeBackupPreferences(
+      persisted.backup,
+    )
+  }
 
   return {
     ...persisted,
@@ -659,6 +755,9 @@ export function migrateSettingsPersistence(
       ...rawAppearance,
       reduceMotion: rawAppearance?.reduceMotion === true,
     }),
+    backup: { ...DEFAULT_BACKUP },
+    backupAccountId: null,
+    backupByAccount,
   }
 }
 
@@ -667,11 +766,9 @@ export const useSettingsStore = create<SettingsStore>()(
     (set, get) => ({
       notifications: DEFAULT_NOTIFICATIONS,
       appearance: DEFAULT_APPEARANCE,
-      backup: {
-        configured: false,
-        reminderPending: false,
-        dismissedAt: null,
-      },
+      backup: { ...DEFAULT_BACKUP },
+      backupAccountId: null,
+      backupByAccount: {},
       privacy: { ...DEFAULT_PRIVACY, conversationPrivacy: {} },
       matrixPreferenceSync: DEFAULT_MATRIX_PREFERENCE_SYNC,
       signalCheckEnabled: false,
@@ -769,30 +866,35 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setSignalCheckEnabled: (signalCheckEnabled) => set({ signalCheckEnabled }),
 
+      activateBackupAccount: (accountId) =>
+        set((state) => {
+          const normalizedAccountId = normalizeBackupAccountId(accountId)
+          return {
+            backupAccountId: normalizedAccountId,
+            backup: normalizedAccountId
+              ? state.backupByAccount[normalizedAccountId] ?? { ...DEFAULT_BACKUP }
+              : { ...DEFAULT_BACKUP },
+          }
+        }),
+
       setBackupConfigured: (configured) =>
-        set({
-          backup: {
+        set((state) => withActiveBackup(state, {
             configured,
             reminderPending: !configured,
             dismissedAt: null,
-          },
-        }),
+        })),
 
       scheduleBackupReminder: () =>
-        set({
-          backup: {
+        set((state) => withActiveBackup(state, {
             configured: false,
             reminderPending: true,
             dismissedAt: null,
-          },
-        }),
+        })),
 
       dismissBackupReminder: () =>
-        set((state) => ({
-          backup: {
+        set((state) => withActiveBackup(state, {
             ...state.backup,
             dismissedAt: new Date().toISOString(),
-          },
         })),
 
       setReadReceiptMode: (readReceiptMode) =>
@@ -956,7 +1058,9 @@ export const useSettingsStore = create<SettingsStore>()(
         // Appearance stays device-local; MatrixUserPreferences contains only
         // portable notification and wire-privacy fields.
         appearance: state.appearance,
-        backup: state.backup,
+        // Backup/recovery evidence belongs to a Matrix account, not to the
+        // device-wide appearance/settings projection.
+        backupByAccount: state.backupByAccount,
         privacy: state.privacy,
         signalCheckEnabled: state.signalCheckEnabled,
       }),
@@ -968,11 +1072,9 @@ export const useSettingsStore = create<SettingsStore>()(
           notifications: normalizeNotificationPreferences(persisted.notifications),
           appearance: normalizeAppearancePreferences(persisted.appearance),
           privacy: normalizePrivacyPreferences(persisted.privacy),
-          backup: {
-            configured: persisted.backup?.configured ?? false,
-            reminderPending: persisted.backup?.reminderPending ?? false,
-            dismissedAt: persisted.backup?.dismissedAt ?? null,
-          },
+          backup: { ...DEFAULT_BACKUP },
+          backupAccountId: null,
+          backupByAccount: normalizeAccountBackupPreferences(persisted.backupByAccount),
           matrixPreferenceSync: DEFAULT_MATRIX_PREFERENCE_SYNC,
           signalCheckEnabled: persisted.signalCheckEnabled === true,
         }
@@ -1038,10 +1140,9 @@ export function resetMatrixAccountPreferences(): void {
       channelNotificationLevels: {},
     },
     backup: {
-      configured: false,
-      reminderPending: false,
-      dismissedAt: null,
+      ...DEFAULT_BACKUP,
     },
+    backupAccountId: null,
     privacy: { ...DEFAULT_PRIVACY, conversationPrivacy: {} },
     matrixPreferenceSync: { ...DEFAULT_MATRIX_PREFERENCE_SYNC },
   })

@@ -2,6 +2,10 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CreateCommunityModal } from './CreateCommunityModal'
+import {
+  COMMUNITY_DESCRIPTION_MAX_LENGTH,
+  COMMUNITY_NAME_MAX_LENGTH,
+} from '../../lib/community-metadata-limits'
 
 const bridgeMocks = vi.hoisted(() => ({
   createCommunity: vi.fn(),
@@ -112,22 +116,41 @@ describe('CreateCommunityModal', () => {
     expect(bridgeMocks.createChannel).toHaveBeenCalledWith('!server:example.org', 'playtest-notes', 'text')
   })
 
-  it('renders Browse as a route surface and requires an explicit advanced directory', async () => {
+  it('turns Find into an invitation-or-create path and keeps directories advanced', async () => {
+    const onTabChange = vi.fn()
     await act(async () => {
       root.render(
         <CreateCommunityModal
           embedded
           isOpen
           activeTab="discover"
+          onTabChange={onTabChange}
           onClose={() => {}}
         />,
       )
     })
 
     expect(document.body.querySelector('[role="dialog"]')).toBeNull()
-    expect(document.body.textContent).toContain('Browsing is not available yet')
-    expect(document.body.textContent).toContain('Use another directory')
+    expect(document.body.textContent).toContain('Find your next crew')
+    expect(document.body.textContent).toContain('Use an invitation')
+    expect(document.body.textContent).toContain('Create a community')
+    expect(document.body.textContent).toContain('Advanced: use another directory')
+    expect(document.body.textContent).not.toContain('public directory source configured')
     expect(document.body.textContent).not.toContain('Leave blank to search Mesh')
+
+    await act(async () => {
+      [...document.body.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'Use an invitation')
+        ?.click()
+    })
+    expect(onTabChange).toHaveBeenCalledWith('join')
+
+    await act(async () => {
+      [...document.body.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'Create a community')
+        ?.click()
+    })
+    expect(onTabChange).toHaveBeenCalledWith('create')
   })
 
   it('keeps the dialog open and exposes a retryable error when creation fails', async () => {
@@ -255,6 +278,62 @@ describe('CreateCommunityModal', () => {
     })
     expect(document.body.textContent).toContain('Name and identity')
     expect(document.body.textContent).not.toContain('Access and starter rooms')
+  })
+
+  it('bounds community details and blocks overlong values with accessible guidance', async () => {
+    await act(async () => {
+      root.render(<CreateCommunityModal isOpen onClose={() => {}} />)
+    })
+
+    const nameInput = document.body.querySelector<HTMLInputElement>(
+      'input[placeholder="e.g. Canyon Raiders"]',
+    )
+    const description = document.body.querySelector<HTMLTextAreaElement>(
+      '#create-community-description',
+    )
+    expect(nameInput?.maxLength).toBe(COMMUNITY_NAME_MAX_LENGTH)
+    expect(description?.maxLength).toBe(COMMUNITY_DESCRIPTION_MAX_LENGTH)
+    expect(nameInput?.getAttribute('aria-describedby')).toBeTruthy()
+    expect(description?.getAttribute('aria-describedby')).toBe(
+      'create-community-description-supporting',
+    )
+    expect(document.body.textContent).toContain(
+      `${COMMUNITY_NAME_MAX_LENGTH} characters remaining.`,
+    )
+    expect(document.body.textContent).toContain(
+      `${COMMUNITY_DESCRIPTION_MAX_LENGTH} characters remaining.`,
+    )
+
+    await act(async () => {
+      const setInputValue = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set
+      setInputValue?.call(nameInput, 'n'.repeat(COMMUNITY_NAME_MAX_LENGTH + 1))
+      nameInput?.dispatchEvent(new Event('input', { bubbles: true }))
+      const setTextareaValue = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        'value',
+      )?.set
+      setTextareaValue?.call(
+        description,
+        'd'.repeat(COMMUNITY_DESCRIPTION_MAX_LENGTH + 1),
+      )
+      description?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    expect(nameInput?.getAttribute('aria-invalid')).toBe('true')
+    expect(description?.getAttribute('aria-invalid')).toBe('true')
+    expect(document.body.textContent).toContain(
+      `Community name must be ${COMMUNITY_NAME_MAX_LENGTH} characters or fewer.`,
+    )
+    expect(document.body.textContent).toContain(
+      `Description must be ${COMMUNITY_DESCRIPTION_MAX_LENGTH} characters or fewer.`,
+    )
+    const next = [...document.body.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Next')
+    expect(next?.disabled).toBe(true)
+    expect(bridgeMocks.createCommunity).not.toHaveBeenCalled()
   })
 
   it('retries refresh after creation without recreating the community or starter rooms', async () => {

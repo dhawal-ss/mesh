@@ -5,13 +5,22 @@ import { npmPackageUrl, validateSbomBoundary } from './generate-release-sboms.mj
 const component = (name) => ({ name })
 const source = { components: [component('react'), component('simple-peer'), component('livekit-client')] }
 
-test('accepts excluded voice packages in source but not the Matrix text artifact', () => {
-  assert.deepEqual(validateSbomBoundary(source, { components: [component('react')] }), [])
+test('accepts LiveKit in the Matrix voice artifact while keeping legacy P2P excluded', () => {
+  assert.deepEqual(validateSbomBoundary(source, {
+    components: [component('react'), component('livekit-client')],
+  }), [])
 })
 
-test('fails forbidden P2P or media packages in the artifact inventory', () => {
-  const errors = validateSbomBoundary(source, { components: [component('react'), component('simple-peer')] })
+test('fails legacy P2P in the voice artifact inventory', () => {
+  const errors = validateSbomBoundary(source, {
+    components: [component('react'), component('simple-peer'), component('livekit-client')],
+  })
   assert.ok(errors.some((error) => error.includes('forbidden simple-peer')))
+})
+
+test('fails a voice artifact that omits LiveKit', () => {
+  const errors = validateSbomBoundary(source, { components: [component('react')] })
+  assert.ok(errors.some((error) => error.includes('missing livekit-client')))
 })
 
 test('does not erase excluded packages from the complete source inventory', () => {

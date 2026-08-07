@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { canStartMatrixVoice, shouldActivateVoiceSession } from '../../lib/voice-runtime'
-import { openCommandPalette } from '../../lib/command-palette'
+import { openCommandPalette, openPeopleCommandPalette } from '../../lib/command-palette'
 import * as bridge from '../../lib/bridge'
 import { useChannelStore } from '../../store/channels'
 import { useCommunityStore } from '../../store/communities'
@@ -103,18 +103,23 @@ export function HomeSurface() {
     voicePeers,
   ])
 
-  const recentRows = useMemo(() => recents.flatMap((recent) => {
-    const row = resolveRecentRow(
-      recent,
-      communities,
-      channelEntities,
-      conversations,
-      channelMessages,
-      directMessages,
-      showMessageContent,
-    )
-    return row ? [row] : []
-  }), [
+  const recentRows = useMemo(() => {
+    const seen = new Set<string>()
+    return recents.flatMap((recent) => {
+      const row = resolveRecentRow(
+        recent,
+        communities,
+        channelEntities,
+        conversations,
+        channelMessages,
+        directMessages,
+        showMessageContent,
+      )
+      if (!row || seen.has(row.key)) return []
+      seen.add(row.key)
+      return [row]
+    })
+  }, [
     channelEntities,
     channelMessages,
     communities,
@@ -141,8 +146,8 @@ export function HomeSurface() {
   }
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden" aria-labelledby="mesh-home-heading">
-      <header className="flex h-party-header flex-shrink-0 items-center gap-3 border-b border-border-subtle px-party-gutter">
+    <section className="mesh-home-surface flex min-h-0 flex-1 flex-col overflow-hidden" aria-labelledby="mesh-home-heading">
+      <header className="mesh-route-header mesh-home-header flex flex-shrink-0 items-center gap-3 border-b border-border-subtle px-party-gutter py-2">
         <div className="min-w-0 flex-1">
           <h1
             id="mesh-home-heading"
@@ -158,15 +163,16 @@ export function HomeSurface() {
         </div>
         <Button variant="outline" size="sm" onClick={openCommandPalette}>
           <Icon name="search" size="sm" />
-          Search
+          Jump to…
           <span className="font-mono text-meta text-muted">Ctrl K</span>
         </Button>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="mesh-home-body min-h-0 flex-1 overflow-y-auto pb-3 sm:pb-5">
         {joinedCommunities.length === 0 ? (
-          <div className="flex min-h-full items-center justify-center">
+          <div className="mesh-home-empty-wrap flex min-h-full items-center justify-center p-6 sm:p-10">
             <EmptyState
+              className="mesh-home-empty-state w-full max-w-2xl rounded-lg border border-border-subtle bg-surface-raised"
               icon={<Icon name="headphones" size="lg" />}
               title="Your next party starts here"
               description="Open an invitation or find a community built around the games you play."
@@ -187,8 +193,9 @@ export function HomeSurface() {
             />
           </div>
         ) : liveParties.length === 0 && !pendingInvitation && recentRows.length === 0 ? (
-          <div className="flex min-h-full items-center justify-center">
+          <div className="mesh-home-empty-wrap flex min-h-full items-center justify-center p-6 sm:p-10">
             <EmptyState
+              className="mesh-home-empty-state w-full max-w-2xl rounded-lg border border-border-subtle bg-surface-raised"
               icon={<Icon name="headphones" size="lg" />}
               title="Quiet for now"
               description="Recent rooms, invitations, and live parties will collect here."
@@ -201,9 +208,7 @@ export function HomeSurface() {
                   </Button>
                   <Button
                     variant="secondary"
-                    onClick={() => {
-                      window.dispatchEvent(new CustomEvent('mesh:open-room-context', { detail: 'people' }))
-                    }}
+                    onClick={openPeopleCommandPalette}
                   >
                     Start a direct message
                   </Button>
@@ -213,6 +218,7 @@ export function HomeSurface() {
           </div>
         ) : (
         <>
+        <div className="grid items-stretch lg:grid-cols-2">
         <HomeSection title="Live now" count={liveParties.length}>
           {liveParties.length === 0 ? (
             <HomeEmpty
@@ -336,6 +342,7 @@ export function HomeSurface() {
             />
           )}
         </HomeSection>
+        </div>
 
         <HomeSection title="Recent conversations" count={recentRows.length}>
           {recentRows.length === 0 ? (
@@ -390,7 +397,10 @@ function HomeSection({
   children: React.ReactNode
 }) {
   return (
-    <section aria-labelledby={`mesh-home-${title.toLocaleLowerCase().replace(/\s+/g, '-')}`}>
+    <section
+      className="mx-3 mt-3 overflow-hidden rounded-lg border border-border-subtle bg-surface-raised sm:mx-5 sm:mt-5"
+      aria-labelledby={`mesh-home-${title.toLocaleLowerCase().replace(/\s+/g, '-')}`}
+    >
       <div className="flex items-center gap-2 border-b border-border-subtle px-party-gutter py-2">
         <h2
           id={`mesh-home-${title.toLocaleLowerCase().replace(/\s+/g, '-')}`}

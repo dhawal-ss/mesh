@@ -146,6 +146,8 @@ test('renders the command palette as one compact surface', async ({ page }) => {
   await expect(input).toHaveCSS('border-top-width', '0px')
   await expect(listbox).toHaveCSS('position', 'static')
   await expect(listbox).toHaveCSS('box-shadow', 'none')
+  await expect(dialog).not.toContainText('Mute microphone')
+  await expect(dialog).not.toContainText('Deafen audio')
 })
 
 test('runs bounded Party Response motion when the operating system allows it', async ({ page }) => {

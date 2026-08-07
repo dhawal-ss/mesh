@@ -17,7 +17,7 @@ describe('support bundle privacy boundary', () => {
       warnings: ['Room !private:example.org failed with access_token=secret'],
       voiceService: {
         availability: 'not-configured',
-        mediaE2eeVerified: false,
+        mediaE2eeReady: false,
       },
     } as BackendStatus
 

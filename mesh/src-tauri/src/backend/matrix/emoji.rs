@@ -1,10 +1,28 @@
 const CUSTOM_EMOJI_PACK_STATE_KEY: &str = "org.mesh.custom_emoji";
 const CUSTOM_EMOJI_PACK_NAME: &str = "Mesh server emoji";
+const CUSTOM_EMOJI_EVENT_TYPE: &str = "im.ponies.room_emotes";
 const MAX_CUSTOM_EMOJI_COUNT: usize = 100;
 const MAX_CUSTOM_EMOJI_UPLOAD_BYTES: usize = 512 * 1024;
 const MAX_CUSTOM_EMOJI_DIMENSION: u32 = 128;
 
 impl MatrixBackend {
+    fn user_can_update_custom_emoji(
+        power_levels: &RoomPowerLevelsEventContent,
+        user_id: &UserId,
+    ) -> bool {
+        let user_level = power_levels
+            .users
+            .get(user_id)
+            .copied()
+            .unwrap_or(power_levels.users_default);
+        let required_level = power_levels
+            .events
+            .get(&TimelineEventType::from(CUSTOM_EMOJI_EVENT_TYPE))
+            .copied()
+            .unwrap_or(power_levels.state_default);
+        user_level >= required_level
+    }
+
     fn normalize_custom_emoji_shortcode(shortcode: &str) -> BackendResult<String> {
         let shortcode = shortcode
             .trim()

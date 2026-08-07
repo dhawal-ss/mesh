@@ -13,7 +13,9 @@ use ts_rs::TS;
 
 use crate::types::{
     community::{ChannelDto, CommunityDto},
-    dm::{DirectMessageDto, DmConversationDto},
+    dm::{
+        BlockedAccountDto, BlockedAccountPageDto, DirectMessageDto, DmConversationDto, DmRequestDto,
+    },
     message::MessageDto,
 };
 
@@ -21,6 +23,7 @@ pub const LEGACY_MATRIX_EVENT_TYPE: &str = "org.mesh.legacy_archive.v1";
 pub const MATRIX_TRANSFER_PROGRESS_EVENT: &str = "matrix:transfer-progress";
 pub const MATRIX_NOTIFICATION_EVENT: &str = "matrix:notification";
 pub const MATRIX_UNREAD_UPDATE_EVENT: &str = "matrix:unread-update";
+pub const MATRIX_IGNORED_USERS_CHANGED_EVENT: &str = "matrix:ignored-users-changed";
 pub const MATRIX_QUEUED_MESSAGE_EVENT: &str = "matrix:queued-message";
 pub const MATRIX_ROOM_PINS_EVENT: &str = "matrix:room-pins";
 pub const MATRIX_RTC_MEMBERSHIP_EVENT: &str = "matrix:rtc-membership";
@@ -129,7 +132,9 @@ pub struct MatrixRtcJoinResult {
     pub token: String,
     pub room_name: String,
     pub participant_identity: String,
-    pub media_e2ee_verified: bool,
+    /// The client has the media-encryption worker and key material needed to
+    /// attempt a protected call. This is not proof of a successful live call.
+    pub media_e2ee_ready: bool,
     pub media_key: MatrixRtcMediaKey,
 }
 
@@ -144,7 +149,7 @@ impl std::fmt::Debug for MatrixRtcJoinResult {
             .field("token", &"[REDACTED]")
             .field("room_name", &self.room_name)
             .field("participant_identity", &self.participant_identity)
-            .field("media_e2ee_verified", &self.media_e2ee_verified)
+            .field("media_e2ee_ready", &self.media_e2ee_ready)
             .field("media_key", &self.media_key)
             .finish()
     }
@@ -229,7 +234,6 @@ pub struct MatrixRoomPowerLevelProjection {
     pub notifications: std::collections::BTreeMap<String, i64>,
     pub creator_user_ids: Vec<String>,
     pub privileged_creator_user_ids: Vec<String>,
-    pub joined_user_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -303,10 +307,22 @@ pub struct MatrixQueuedMessageUpdate {
     pub message: Option<MessageDto>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixIgnoredUsersChanged {
+    /// Newly ignored accounts that can be removed from bounded renderer caches
+    /// without discarding unrelated conversations.
+    pub blocked_user_ids: Vec<String>,
+    /// The change was too large or the previous account state was unknown, so
+    /// renderer message projections must be cleared and loaded again.
+    pub reset_all: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MatrixBackendEvent {
     Notification(MatrixNotification),
     UnreadUpdate(MatrixUnreadUpdate),
+    IgnoredUsersChanged(MatrixIgnoredUsersChanged),
     QueuedMessage(Box<MatrixQueuedMessageUpdate>),
     RoomPins(MatrixRoomPinsUpdate),
     RtcMembership(MatrixRtcMembershipUpdate),
@@ -507,7 +523,9 @@ pub struct VoiceServiceStatus {
     pub token_endpoint: Option<String>,
     pub livekit_sfu_url: Option<String>,
     pub csp_ready: bool,
-    pub media_e2ee_verified: bool,
+    /// The selected build contains the media-encryption client and its
+    /// required network policy. Live media verification is a release gate.
+    pub media_e2ee_ready: bool,
     pub reason: Option<String>,
 }
 
@@ -515,7 +533,15 @@ impl VoiceServiceStatus {
     const MATRIXRTC_DISCOVERY_KEY: &'static str = "org.matrix.msc4143.rtc_foci";
     const MATRIXRTC_SERVICE_ENV: &'static str = "MESH_MATRIXRTC_LIVEKIT_SERVICE_URL";
     const MATRIXRTC_SFU_ENV: &'static str = "MESH_MATRIXRTC_LIVEKIT_SFU_URL";
+    #[cfg(not(feature = "matrix-voice"))]
     const TAURI_CSP: &'static str = include_str!("../../tauri.conf.json");
+    #[cfg(feature = "matrix-voice")]
+    const TAURI_CSP: &'static str = include_str!("../../tauri.matrix-voice.conf.json");
+
+    fn matrix_rtc_client_included() -> bool {
+        cfg!(feature = "matrix-voice")
+            && option_env!("MESH_MATRIX_VOICE_FRONTEND") == Some("matrix-voice")
+    }
 
     pub fn for_kind(kind: BackendKind) -> Self {
         match kind {
@@ -532,7 +558,7 @@ impl VoiceServiceStatus {
                 token_endpoint: None,
                 livekit_sfu_url: None,
                 csp_ready: true,
-                media_e2ee_verified: false,
+                media_e2ee_ready: false,
                 reason: Some(
                     "Experimental peer-to-peer WebRTC transport; not used by Matrix production"
                         .into(),
@@ -546,6 +572,20 @@ impl VoiceServiceStatus {
         livekit_sfu_url: Option<String>,
         tauri_config: &str,
     ) -> Self {
+        Self::matrix_rtc_with_client(
+            livekit_service_url,
+            livekit_sfu_url,
+            tauri_config,
+            Self::matrix_rtc_client_included(),
+        )
+    }
+
+    fn matrix_rtc_with_client(
+        livekit_service_url: Option<String>,
+        livekit_sfu_url: Option<String>,
+        tauri_config: &str,
+        client_included: bool,
+    ) -> Self {
         let livekit_service_url = livekit_service_url.and_then(Self::non_empty);
         let livekit_sfu_url = livekit_sfu_url.and_then(Self::non_empty);
         let base = Self {
@@ -556,35 +596,24 @@ impl VoiceServiceStatus {
             token_endpoint: None,
             livekit_sfu_url: livekit_sfu_url.clone(),
             csp_ready: false,
-            media_e2ee_verified: false,
+            media_e2ee_ready: false,
             reason: None,
         };
 
-        if livekit_service_url.is_none() && livekit_sfu_url.is_none() {
+        if livekit_service_url.is_none() {
             return Self {
                 reason: Some(format!(
-                    "Discover {}.livekit_service_url or set {}; also set {} to the expected WSS origin returned by MSC4195",
+                    "Discover {}.livekit_service_url or set {}",
                     Self::MATRIXRTC_DISCOVERY_KEY,
-                    Self::MATRIXRTC_SERVICE_ENV,
-                    Self::MATRIXRTC_SFU_ENV
+                    Self::MATRIXRTC_SERVICE_ENV
                 )),
                 ..base
             };
         }
 
-        let (Some(livekit_service_url), Some(livekit_sfu_url)) =
-            (livekit_service_url.as_deref(), livekit_sfu_url.as_deref())
-        else {
-            return Self {
-                availability: VoiceServiceAvailability::InvalidConfiguration,
-                reason: Some(format!(
-                    "{} and {} must be configured together",
-                    Self::MATRIXRTC_SERVICE_ENV,
-                    Self::MATRIXRTC_SFU_ENV
-                )),
-                ..base
-            };
-        };
+        let livekit_service_url = livekit_service_url
+            .as_deref()
+            .expect("checked MatrixRTC service URL");
 
         let service =
             match Self::secure_url(Self::MATRIXRTC_SERVICE_ENV, livekit_service_url, "https") {
@@ -597,20 +626,27 @@ impl VoiceServiceStatus {
                     };
                 }
             };
-        let sfu = match Self::secure_url(Self::MATRIXRTC_SFU_ENV, livekit_sfu_url, "wss") {
-            Ok(url) => url,
-            Err(reason) => {
-                return Self {
-                    availability: VoiceServiceAvailability::InvalidConfiguration,
-                    reason: Some(reason),
-                    ..base
-                };
-            }
+        let sfu = match livekit_sfu_url.as_deref() {
+            Some(url) => match Self::secure_url(Self::MATRIXRTC_SFU_ENV, url, "wss") {
+                Ok(url) => Some(url),
+                Err(reason) => {
+                    return Self {
+                        availability: VoiceServiceAvailability::InvalidConfiguration,
+                        reason: Some(reason),
+                        ..base
+                    };
+                }
+            },
+            None => None,
         };
         let token_endpoint = format!("{}/get_token", service.as_str().trim_end_matches('/'));
         let service_origin = service.origin().ascii_serialization();
-        let sfu_origin = sfu.origin().ascii_serialization();
-        let csp_ready = Self::connect_src_allows(tauri_config, &[&service_origin, &sfu_origin]);
+        let sfu_origin = sfu.as_ref().map(|sfu| sfu.origin().ascii_serialization());
+        let mut required_origins = vec![service_origin.as_str()];
+        if let Some(sfu_origin) = sfu_origin.as_deref() {
+            required_origins.push(sfu_origin);
+        }
+        let csp_ready = Self::connect_src_allows(tauri_config, &required_origins);
         let base = Self {
             token_endpoint: Some(token_endpoint),
             csp_ready,
@@ -618,23 +654,61 @@ impl VoiceServiceStatus {
         };
 
         if !csp_ready {
+            let required = sfu_origin.as_deref().map_or_else(
+                || service_origin.clone(),
+                |sfu| format!("{service_origin} and {sfu}"),
+            );
             return Self {
                 availability: VoiceServiceAvailability::InvalidConfiguration,
                 reason: Some(format!(
-                    "Tauri connect-src must explicitly allow {service_origin} and {sfu_origin} before MatrixRTC network access"
+                    "Tauri connect-src must explicitly allow {required} before MatrixRTC network access"
                 )),
                 ..base
             };
         }
 
+        if !client_included {
+            return Self {
+                availability: VoiceServiceAvailability::ClientUnavailable,
+                reason: Some(
+                    "Calling is not included in this Mesh build. Use the separately identified Matrix voice acceptance build."
+                        .into(),
+                ),
+                ..base
+            };
+        }
+
         Self {
-            availability: VoiceServiceAvailability::ClientUnavailable,
-            reason: Some(
-                "MatrixRTC membership and MSC4195 /get_token are implemented, but focus reachability, federated focus election, LiveKit media transport, delayed-leave delegation, and media E2EE are not verified"
-                    .into(),
-            ),
+            availability: VoiceServiceAvailability::Ready,
+            media_e2ee_ready: true,
+            reason: None,
             ..base
         }
+    }
+
+    #[cfg(feature = "matrix-backend")]
+    fn matrix_rtc_for_discovered_service(discovered_service_url: String) -> Self {
+        Self::matrix_rtc(
+            Some(discovered_service_url),
+            std::env::var(Self::MATRIXRTC_SFU_ENV).ok(),
+            Self::TAURI_CSP,
+        )
+    }
+
+    #[cfg(feature = "matrix-backend")]
+    fn matrix_rtc_discovery_unavailable() -> Self {
+        let mut status = Self::matrix_rtc(
+            std::env::var(Self::MATRIXRTC_SERVICE_ENV).ok(),
+            std::env::var(Self::MATRIXRTC_SFU_ENV).ok(),
+            Self::TAURI_CSP,
+        );
+        status.availability = VoiceServiceAvailability::ClientUnavailable;
+        status.media_e2ee_ready = false;
+        status.reason = Some(
+            "Calling service discovery is temporarily unavailable. Try again after Mesh reconnects."
+                .into(),
+        );
+        status
     }
 
     fn secure_url(name: &str, value: &str, required_scheme: &str) -> Result<url::Url, String> {
@@ -668,9 +742,30 @@ impl VoiceServiceStatus {
             return false;
         };
         let allowed = connect_src.split_whitespace().skip(1);
-        required_origins
-            .iter()
-            .all(|required| allowed.clone().any(|candidate| candidate == *required))
+        required_origins.iter().all(|required| {
+            allowed
+                .clone()
+                .any(|candidate| Self::connect_src_candidate_allows(candidate, required))
+        })
+    }
+
+    fn connect_src_candidate_allows(candidate: &str, required_origin: &str) -> bool {
+        if candidate == required_origin {
+            return true;
+        }
+        let Some((scheme, host_suffix)) = candidate.split_once("://*.") else {
+            return false;
+        };
+        let Ok(required) = url::Url::parse(required_origin) else {
+            return false;
+        };
+        let Some(required_host) = required.host_str() else {
+            return false;
+        };
+        required.scheme() == scheme
+            && required.port().is_none()
+            && required_host != host_suffix
+            && required_host.ends_with(&format!(".{host_suffix}"))
     }
 
     fn non_empty(value: String) -> Option<String> {
@@ -1003,6 +1098,14 @@ pub struct CommunityMember {
     pub online: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunityMemberPage {
+    pub members: Vec<CommunityMember>,
+    pub next_cursor: Option<String>,
+    pub state_complete: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ModerationRoomOutcome {
@@ -1333,6 +1436,8 @@ pub enum BackendError {
     Cancelled(String),
     #[error("operation is unavailable on the {0} backend")]
     Unsupported(&'static str),
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
     #[error("invalid backend configuration: {0}")]
     InvalidConfiguration(String),
     #[error("community-hosted service is not configured")]
@@ -1358,6 +1463,13 @@ pub enum BackendError {
 }
 
 impl BackendError {
+    pub fn device_verification_required() -> Self {
+        Self::Crypto(
+            "Secure messaging is not ready on this device. Open Settings > Security and verify this device, then try again."
+                .into(),
+        )
+    }
+
     /// Classify errors from SDK boundaries before they cross IPC. The Matrix
     /// SDK exposes several error families through different concrete types, so
     /// the backend keeps this compatibility classifier in one place instead of
@@ -1365,6 +1477,14 @@ impl BackendError {
     pub fn from_sdk_error(error: impl std::fmt::Display) -> Self {
         let detail = error.to_string();
         let normalized = detail.to_ascii_lowercase();
+
+        if normalized.contains("your device is not verified")
+            || normalized.contains("cross-signing is not set up on your account")
+            || normalized.contains("sendingfromunverifieddevice")
+            || normalized.contains("crosssigningnotsetup")
+        {
+            return Self::device_verification_required();
+        }
 
         if normalized.contains("m_limit_exceeded")
             || normalized.contains("rate limit")
@@ -1464,6 +1584,9 @@ pub trait MeshBackend: Send + Sync {
     }
     fn set_matrix_event_callback(&self, _callback: Option<MatrixBackendEventCallback>) {}
     async fn start(&self) -> BackendResult<()>;
+    async fn active_user_id(&self) -> Option<String> {
+        None
+    }
     async fn status(&self) -> BackendStatus;
     async fn matrix_room_is_encrypted(&self, _room_id: String) -> BackendResult<bool> {
         Err(BackendError::Unsupported("room protection status"))
@@ -1491,7 +1614,11 @@ pub trait MeshBackend: Send + Sync {
             "Matrix room notification settings",
         ))
     }
-    async fn login(&self, request: MatrixLogin) -> BackendResult<BackendStatus>;
+    async fn reserve_login_attempt(&self) -> BackendResult<String> {
+        Err(BackendError::Unsupported("Matrix login reservation"))
+    }
+    async fn login(&self, request: MatrixLogin, attempt_id: String)
+        -> BackendResult<BackendStatus>;
     async fn register_account(&self, _request: MatrixRegistration) -> BackendResult<BackendStatus> {
         Err(BackendError::Unsupported("Matrix account registration"))
     }
@@ -1513,10 +1640,14 @@ pub trait MeshBackend: Send + Sync {
     async fn oidc_status(&self, _homeserver: String) -> BackendResult<MatrixOidcStatus> {
         Err(BackendError::Unsupported("Matrix OIDC discovery"))
     }
-    async fn start_oidc_login(&self, _homeserver: String) -> BackendResult<()> {
+    async fn start_oidc_login(
+        &self,
+        _homeserver: String,
+        _attempt_id: String,
+    ) -> BackendResult<()> {
         Err(BackendError::Unsupported("Matrix OIDC login"))
     }
-    async fn cancel_login(&self) -> BackendResult<()> {
+    async fn cancel_login(&self, _attempt_id: String) -> BackendResult<()> {
         Err(BackendError::Unsupported("Matrix login cancellation"))
     }
     async fn restore_session(&self) -> BackendResult<BackendStatus>;
@@ -1779,6 +1910,25 @@ pub trait MeshBackend: Send + Sync {
     async fn dm_conversations(&self) -> BackendResult<EntityList<DmConversationDto>> {
         Err(BackendError::Unsupported("Matrix direct messages"))
     }
+    async fn dm_requests(&self) -> BackendResult<Vec<DmRequestDto>> {
+        Err(BackendError::Unsupported("Matrix direct-message requests"))
+    }
+    async fn accept_dm_request(&self, _room_id: String) -> BackendResult<DmConversationDto> {
+        Err(BackendError::Unsupported("Matrix direct-message requests"))
+    }
+    async fn decline_dm_request(&self, _room_id: String) -> BackendResult<()> {
+        Err(BackendError::Unsupported("Matrix direct-message requests"))
+    }
+    async fn block_dm_request(&self, _room_id: String) -> BackendResult<BlockedAccountDto> {
+        Err(BackendError::Unsupported("Matrix direct-message requests"))
+    }
+    async fn blocked_accounts(
+        &self,
+        _after: Option<String>,
+        _limit: u32,
+    ) -> BackendResult<BlockedAccountPageDto> {
+        Err(BackendError::Unsupported("Matrix account blocking"))
+    }
     async fn ensure_dm(&self, _recipient_user_id: String) -> BackendResult<DmConversationDto> {
         Err(BackendError::Unsupported("Matrix direct messages"))
     }
@@ -1899,7 +2049,12 @@ pub trait MeshBackend: Send + Sync {
     ) -> BackendResult<bool> {
         Err(BackendError::Unsupported("room update subscription"))
     }
-    async fn list_members(&self, _community_id: String) -> BackendResult<Vec<CommunityMember>> {
+    async fn list_member_page(
+        &self,
+        _community_id: String,
+        _cursor: Option<String>,
+        _limit: Option<u32>,
+    ) -> BackendResult<CommunityMemberPage> {
         Err(BackendError::Unsupported("community membership"))
     }
     async fn invite_to_community(
@@ -2358,15 +2513,25 @@ mod tests {
     }
 
     #[test]
-    fn security_boundary_matrix_rtc_configuration_requires_service_and_sfu_endpoints() {
-        let missing_sfu = VoiceServiceStatus::matrix_rtc(
+    fn security_boundary_matrix_rtc_configuration_accepts_a_discovered_service() {
+        let discovered_sfu = VoiceServiceStatus::matrix_rtc(
             Some("https://rtc.example.org".into()),
             None,
             "connect-src https://rtc.example.org wss://livekit.example.org",
         );
         assert_eq!(
-            missing_sfu.availability,
-            VoiceServiceAvailability::InvalidConfiguration
+            discovered_sfu.availability,
+            if VoiceServiceStatus::matrix_rtc_client_included() {
+                VoiceServiceAvailability::Ready
+            } else {
+                VoiceServiceAvailability::ClientUnavailable
+            }
+        );
+        assert!(discovered_sfu.csp_ready);
+        assert!(discovered_sfu.livekit_sfu_url.is_none());
+        assert_eq!(
+            discovered_sfu.media_e2ee_ready,
+            VoiceServiceStatus::matrix_rtc_client_included()
         );
 
         let insecure = VoiceServiceStatus::matrix_rtc(
@@ -2385,7 +2550,7 @@ mod tests {
     }
 
     #[test]
-    fn security_boundary_matrix_rtc_stays_unavailable_until_client_and_e2ee_are_verified() {
+    fn security_boundary_matrix_rtc_readiness_tracks_the_compiled_client_and_e2ee_worker() {
         let status = VoiceServiceStatus::matrix_rtc(
             Some("https://rtc.example.org/livekit/jwt".into()),
             Some("wss://livekit.example.org".into()),
@@ -2394,7 +2559,11 @@ mod tests {
 
         assert_eq!(
             status.availability,
-            VoiceServiceAvailability::ClientUnavailable
+            if VoiceServiceStatus::matrix_rtc_client_included() {
+                VoiceServiceAvailability::Ready
+            } else {
+                VoiceServiceAvailability::ClientUnavailable
+            }
         );
         assert_eq!(
             status.discovery_key.as_deref(),
@@ -2405,8 +2574,26 @@ mod tests {
             Some("https://rtc.example.org/livekit/jwt/get_token")
         );
         assert!(status.csp_ready);
-        assert!(!status.media_e2ee_verified);
+        assert_eq!(
+            status.media_e2ee_ready,
+            VoiceServiceStatus::matrix_rtc_client_included()
+        );
         assert!(!BackendCapabilities::for_kind(BackendKind::Matrix).voice);
+    }
+
+    #[test]
+    fn security_boundary_matrix_rtc_acceptance_client_requires_secure_csp_config() {
+        let status = VoiceServiceStatus::matrix_rtc_with_client(
+            Some("https://rtc.example.org/livekit/jwt".into()),
+            None,
+            "connect-src https://rtc.example.org wss://livekit.example.org",
+            true,
+        );
+
+        assert_eq!(status.availability, VoiceServiceAvailability::Ready);
+        assert!(status.csp_ready);
+        assert!(status.media_e2ee_ready);
+        assert!(status.livekit_sfu_url.is_none());
     }
 
     #[test]
@@ -2426,6 +2613,23 @@ mod tests {
             .reason
             .as_deref()
             .is_some_and(|reason| reason.contains("Tauri connect-src")));
+    }
+
+    #[test]
+    fn security_boundary_matrix_rtc_csp_wildcard_is_scheme_and_subdomain_scoped() {
+        let csp = "connect-src https://livekit-jwt.call.matrix.org wss://*.call.matrix.org";
+        assert!(VoiceServiceStatus::connect_src_allows(
+            csp,
+            &["wss://livekit.call.matrix.org"],
+        ));
+        assert!(!VoiceServiceStatus::connect_src_allows(
+            csp,
+            &["wss://call.matrix.org"],
+        ));
+        assert!(!VoiceServiceStatus::connect_src_allows(
+            csp,
+            &["https://livekit.call.matrix.org"],
+        ));
     }
 
     #[test]
@@ -2462,7 +2666,7 @@ mod tests {
         let status = VoiceServiceStatus::for_kind(BackendKind::LegacyP2p);
         assert_eq!(status.provider, VoiceProvider::LegacySimplePeer);
         assert_eq!(status.availability, VoiceServiceAvailability::Ready);
-        assert!(!status.media_e2ee_verified);
+        assert!(!status.media_e2ee_ready);
     }
 
     #[test]
@@ -2483,5 +2687,12 @@ mod tests {
             BackendError::from_sdk_error("unrecognized response shape"),
             BackendError::Other(_)
         ));
+        let verification =
+            BackendError::from_sdk_error("Encryption failed because your device is not verified");
+        assert!(matches!(verification, BackendError::Crypto(_)));
+        assert!(verification.to_string().contains("Settings > Security"));
+        assert!(!verification
+            .to_string()
+            .contains("your device is not verified"));
     }
 }

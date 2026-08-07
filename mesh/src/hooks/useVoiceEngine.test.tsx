@@ -5,6 +5,7 @@ import type {
   MatrixRtcMediaKey,
   MatrixRtcMediaKeyPause,
 } from '../lib/bridge'
+import type { VoiceConnectionState } from '../types/ipc'
 import { useVoiceStore } from '../store/voice'
 
 const mocks = vi.hoisted(() => ({
@@ -27,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   mediaKeyFailureHandler: null as ((failure: { roomId: string; code: string }) => void) | null,
   mediaKeyPauseHandler: null as ((pause: MatrixRtcMediaKeyPause) => void) | null,
   engineHandlers: null as {
+    onConnectionState?: (state: VoiceConnectionState, reason: string | null) => void
     onEncryptionFailure?: (reason: string, sessionId: string | null) => void
   } | null,
 }))
@@ -73,7 +75,7 @@ vi.mock('../lib/bridge', () => {
     tokenEndpoint: 'https://livekit.example.org/token',
     livekitSfuUrl: 'wss://livekit.example.org',
     cspReady: true,
-    mediaE2eeVerified: true,
+    mediaE2eeReady: true,
     reason: null,
   }
 
@@ -149,8 +151,8 @@ vi.mock('../lib/bridge', () => {
 import { useVoiceEngine } from './useVoiceEngine'
 
 function Harness() {
-  useVoiceEngine()
-  return null
+  const { connectionWarning } = useVoiceEngine()
+  return <span data-testid="voice-warning">{connectionWarning}</span>
 }
 
 function joinedCredentials() {
@@ -162,7 +164,7 @@ function joinedCredentials() {
     token: 'signed-token',
     roomName: 'voice-room',
     participantIdentity: '@alice:example.org:DEVICE',
-    mediaE2eeVerified: true,
+    mediaE2eeReady: true,
     mediaKey: {
       roomId: '!voice:example.org',
       userId: '@alice:example.org',
@@ -371,7 +373,12 @@ describe('useVoiceEngine MatrixRTC lifecycle', () => {
       isMuted: true,
       isCameraEnabled: false,
       isScreenSharing: false,
+      lastReconnectReason: 'Private voice was stopped to keep this call secure. Try again.',
     })
+    expect(container.textContent).toContain(
+      'Private voice was stopped to keep this call secure. Try again.',
+    )
+    expect(container.textContent).not.toContain('media encryption')
   })
 
   it('fails closed if publisher-key distribution fails during join', async () => {

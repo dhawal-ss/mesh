@@ -52,7 +52,7 @@ export interface LiveKitVoiceEngineRuntime {
       sessionId: string
       url: string
       token: string
-      mediaE2eeVerified: boolean
+      mediaE2eeReady: boolean
     },
     inputDeviceId?: string | null,
     publishMicrophone?: boolean,

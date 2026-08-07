@@ -26,6 +26,7 @@ describe('InvitationSurface', () => {
   let root: Root
 
   beforeEach(() => {
+    vi.clearAllMocks()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -71,6 +72,10 @@ describe('InvitationSurface', () => {
     expect(container.textContent).toContain('Invited byAlice')
     expect(container.textContent).toContain('Approval required')
     expect(container.textContent).toContain('Suggested serviceGarden Accounts')
+    const suggestedService = Array.from(container.querySelectorAll('dd'))
+      .find((item) => item.textContent === 'Garden Accounts')
+    expect(suggestedService?.classList.contains('break-words')).toBe(true)
+    expect(suggestedService?.classList.contains('truncate')).toBe(false)
     expect(container.textContent).not.toContain(pending.handle)
   })
 
@@ -87,7 +92,7 @@ describe('InvitationSurface', () => {
     })
 
     await act(async () => {
-      root.render(<InvitationSurface handle={pending.handle} />)
+      root.render(<InvitationSurface handle={pending.handle} onSignInRequired={() => undefined} />)
     })
 
     expect(bridge.joinPendingInvitation).not.toHaveBeenCalled()
@@ -114,7 +119,7 @@ describe('InvitationSurface', () => {
     vi.mocked(bridge.joinPendingInvitation).mockRejectedValue(new Error('network down'))
 
     await act(async () => {
-      root.render(<InvitationSurface handle={pending.handle} />)
+      root.render(<InvitationSurface handle={pending.handle} onSignInRequired={() => undefined} />)
     })
     await act(async () => {
       findButton('Join Canyon Crew').click()
@@ -128,12 +133,84 @@ describe('InvitationSurface', () => {
     expect(useShellStore.getState().pendingInvitation).toEqual(pending)
   })
 
+  it('leaves an invalid invitation saved and returns home without retrying it', async () => {
+    const pending = pendingInvitation({ communityName: 'Canyon Crew' })
+    useShellStore.getState().setPendingInvitation(pending)
+    vi.mocked(bridge.joinPendingInvitation).mockRejectedValue({
+      code: 'community_invite_invalid',
+      detail: 'expired invitation',
+      retryable: false,
+    })
+
+    await act(async () => {
+      root.render(<InvitationSurface handle={pending.handle} onSignInRequired={() => undefined} />)
+    })
+    await act(async () => {
+      findButton('Join Canyon Crew').click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Invitation unavailable')
+    expect(queryButton('Try again')).toBeUndefined()
+    expect(queryButton('Save for later')).toBeUndefined()
+    expect(findButton('Back to Home')).toBeTruthy()
+    expect(bridge.joinPendingInvitation).toHaveBeenCalledTimes(1)
+    expect(useShellStore.getState().pendingInvitation).toEqual(pending)
+
+    await act(async () => {
+      findButton('Back to Home').click()
+    })
+
+    expect(bridge.joinPendingInvitation).toHaveBeenCalledTimes(1)
+    expect(useShellStore.getState()).toMatchObject({
+      pendingInvitation: pending,
+      foregroundInvitationHandle: null,
+    })
+    expect(useMeshNavigationStore.getState().entries.slice(-1)[0]).toEqual({ kind: 'home' })
+  })
+
+  it('routes an expired account session to sign-in without discarding the invitation', async () => {
+    const pending = pendingInvitation({ communityName: 'Canyon Crew' })
+    const onSignInRequired = vi.fn()
+    useShellStore.getState().setPendingInvitation(pending)
+    vi.mocked(bridge.joinPendingInvitation).mockRejectedValue({
+      code: 'not_authenticated',
+      detail: 'session expired',
+      retryable: false,
+    })
+
+    await act(async () => {
+      root.render(
+        <InvitationSurface
+          handle={pending.handle}
+          onSignInRequired={onSignInRequired}
+        />,
+      )
+    })
+    await act(async () => {
+      findButton('Join Canyon Crew').click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(queryButton('Try again')).toBeUndefined()
+    expect(findButton('Sign in again')).toBeTruthy()
+    await act(async () => {
+      findButton('Sign in again').click()
+    })
+
+    expect(onSignInRequired).toHaveBeenCalledOnce()
+    expect(bridge.joinPendingInvitation).toHaveBeenCalledTimes(1)
+    expect(useShellStore.getState().pendingInvitation).toEqual(pending)
+  })
+
   it('saves the invitation without clearing its native-backed destination', async () => {
     const pending = pendingInvitation({ communityName: 'Canyon Crew' })
     useShellStore.getState().setPendingInvitation(pending)
 
     await act(async () => {
-      root.render(<InvitationSurface handle={pending.handle} />)
+      root.render(<InvitationSurface handle={pending.handle} onSignInRequired={() => undefined} />)
     })
     await act(async () => {
       findButton('Save for later').click()
@@ -147,10 +224,14 @@ describe('InvitationSurface', () => {
   })
 
   function findButton(label: string): HTMLButtonElement {
-    const button = [...container.querySelectorAll<HTMLButtonElement>('button')]
-      .find((candidate) => candidate.textContent?.trim() === label)
+    const button = queryButton(label)
     if (!button) throw new Error(`Button not found: ${label}`)
     return button
+  }
+
+  function queryButton(label: string): HTMLButtonElement | undefined {
+    return [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((candidate) => candidate.textContent?.trim() === label)
   }
 })
 

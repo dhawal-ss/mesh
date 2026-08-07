@@ -23,8 +23,11 @@ use matrix_sdk::{
         oauth::{ClientId, OAuthSession, UserSession},
         AuthApi, AuthSession,
     },
-    config::SyncSettings,
-    deserialized_responses::{AlgorithmInfo, EncryptionInfo, TimelineEventKind},
+    config::{RequestConfig, SyncSettings},
+    deserialized_responses::{
+        AlgorithmInfo, EncryptionInfo, RawSyncOrStrippedState, SyncOrStrippedState,
+        TimelineEventKind,
+    },
     encryption::{
         backups::BackupState,
         recovery::RecoveryState,
@@ -52,6 +55,8 @@ use matrix_sdk::{
                     AuthorizationServerMetadata, CodeChallengeMethod, GrantType, ResponseMode,
                     ResponseType,
                 },
+                filter::FilterDefinition,
+                membership::get_member_events,
                 presence::set_presence::v3::Request as SetPresenceRequest,
                 push::{delete_pushrule, get_pushrules_all, set_pushrule},
                 receipt::create_receipt::v3::ReceiptType as MatrixReceiptType,
@@ -64,7 +69,9 @@ use matrix_sdk::{
                 },
                 rtc::{transports::v1::Request as MatrixRtcTransportsRequest, RtcTransport},
                 session::get_login_types::v3::LoginType,
+                space::get_hierarchy,
                 state::{get_state_event_for_key, get_state_events, send_state_event},
+                sync::sync_events::v3::Filter as SyncFilter,
                 uiaa::{self, AuthData, AuthType, Dummy, RegistrationToken, UiaaInfo},
             },
             error::ErrorKind,
@@ -72,7 +79,9 @@ use matrix_sdk::{
         },
         directory::{Filter, RoomTypeFilter},
         events::{
-            call::member::{CallMemberStateKey, Focus, OriginalSyncCallMemberEvent},
+            call::member::{
+                CallMemberEventContent, CallMemberStateKey, Focus, OriginalSyncCallMemberEvent,
+            },
             direct::{DirectEventContent, DirectUserIdentifier},
             ignored_user_list::{IgnoredUser, IgnoredUserListEventContent},
             image_pack::{PackImage, PackInfo, PackUsage, RoomImagePackEventContent},
@@ -84,13 +93,14 @@ use matrix_sdk::{
                 create::RoomCreateEventContent,
                 encryption::RoomEncryptionEventContent,
                 join_rules::{AllowRule, JoinRule, RoomJoinRulesEventContent},
+                member::{MembershipState, RoomMemberEvent, RoomMemberEventContent},
                 message::{
                     AddMentions, FileInfo, FileMessageEventContent, MessageType,
                     OriginalSyncRoomMessageEvent, ReplacementMetadata, ReplyWithinThread,
                     RoomMessageEventContent, RoomMessageEventContentWithoutRelation,
                 },
                 pinned_events::{OriginalSyncRoomPinnedEventsEvent, RoomPinnedEventsEventContent},
-                power_levels::OriginalSyncRoomPowerLevelsEvent,
+                power_levels::{OriginalSyncRoomPowerLevelsEvent, RoomPowerLevelsEventContent},
                 tombstone::RoomTombstoneEventContent,
                 EncryptedFile, EncryptedFileHash, EncryptedFileHashAlgorithm, ImageInfo,
                 MediaSource, ThumbnailInfo,
@@ -101,8 +111,9 @@ use matrix_sdk::{
             },
             typing::SyncTypingEvent,
             AnyGlobalAccountDataEventContent, AnyInitialStateEvent, AnyMessageLikeEventContent,
-            AnyStateEvent, AnyStateEventContent, AnyToDeviceEvent, AnyToDeviceEventContent,
-            GlobalAccountDataEventType, InitialStateEvent, Mentions, StateEvent, StateEventType,
+            AnyStateEventContent, AnyToDeviceEvent, AnyToDeviceEventContent,
+            GlobalAccountDataEvent, GlobalAccountDataEventType, InitialStateEvent, Mentions,
+            StateEventType, SyncStateEvent, TimelineEventType,
         },
         int,
         presence::PresenceState,
@@ -123,7 +134,9 @@ use matrix_sdk::{
     Client, ComposerDraft, ComposerDraftType, LoopCtrl, Room, RoomMemberships, RoomState,
     SessionChange,
 };
-use matrix_sdk_crypto::{AttachmentDecryptor, CollectStrategy};
+use matrix_sdk_crypto::{
+    AttachmentDecryptor, CollectStrategy, OlmError, SessionRecipientCollectionError,
+};
 use qrcode::render::svg;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
@@ -140,7 +153,10 @@ use crate::security::{
 };
 use crate::types::{
     community::{ChannelDto, CommunityDto},
-    dm::{DirectMessageDto, DmConversationDto, ReadReceiptDto},
+    dm::{
+        BlockedAccountDto, BlockedAccountPageDto, DirectMessageDto, DmConversationDto,
+        DmRequestDto, ReadReceiptDto,
+    },
     message::{
         AttachmentDto, AttachmentThumbnailDto, MessageDto, UndecryptableMessageDto,
         UndecryptableMessageReason,
@@ -150,22 +166,22 @@ use crate::types::{
 use super::{
     BackendError, BackendKind, BackendResult, BackendStatus, BlockedEntityDiagnostic,
     BlockedEntityKind, BlockedEntityReason, CommunityAccessResult, CommunityAccessSettings,
-    CommunityApplication, CommunityDirectoryEntry, CommunityMember, CommunityPermissionProjection,
-    ConversationPrivacyOverride, CreatedCommunity, CustomEmoji, EntityList, MatrixAccount,
-    MatrixAttachmentSendRequest, MatrixBackendEvent, MatrixBackendEventCallback, MatrixDevice,
-    MatrixLogin, MatrixNotification, MatrixOidcAvailability, MatrixOidcStatus,
-    MatrixPermissionStateChanged, MatrixPersonalDataExport, MatrixProfile,
-    MatrixQueuedMessageState, MatrixQueuedMessageUpdate, MatrixRecoveryHealth,
-    MatrixRecoverySecureStorageState, MatrixRecoverySetupResult, MatrixRecoveryVerificationState,
-    MatrixRegistration, MatrixRegistrationAvailability, MatrixRoomNotificationMode, MatrixRoomPins,
-    MatrixRoomPinsUpdate, MatrixRoomUpgrade, MatrixRtcJoinResult, MatrixRtcMediaKey,
-    MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember,
-    MatrixRtcMembershipUpdate, MatrixServiceCapabilities, MatrixTransferDirection,
-    MatrixTransferObserver, MatrixTransferProgress, MatrixTransferProgressCallback,
-    MatrixTransferResult, MatrixTransferRetryMode, MatrixTransferState, MatrixUnreadUpdate,
-    MatrixVerificationSession, MeshBackend, ModerationAuditEntry, PendingInvitationMetadata,
-    ReadReceiptMode, SentMessage, TypingUser, UserPreferences, VerificationEmoji,
-    VoiceServiceAvailability, VoiceServiceStatus,
+    CommunityApplication, CommunityDirectoryEntry, CommunityMember, CommunityMemberPage,
+    CommunityPermissionProjection, ConversationPrivacyOverride, CreatedCommunity, CustomEmoji,
+    EntityList, MatrixAccount, MatrixAttachmentSendRequest, MatrixBackendEvent,
+    MatrixBackendEventCallback, MatrixDevice, MatrixIgnoredUsersChanged, MatrixLogin,
+    MatrixNotification, MatrixOidcAvailability, MatrixOidcStatus, MatrixPermissionStateChanged,
+    MatrixPersonalDataExport, MatrixProfile, MatrixQueuedMessageState, MatrixQueuedMessageUpdate,
+    MatrixRecoveryHealth, MatrixRecoverySecureStorageState, MatrixRecoverySetupResult,
+    MatrixRecoveryVerificationState, MatrixRegistration, MatrixRegistrationAvailability,
+    MatrixRoomNotificationMode, MatrixRoomPins, MatrixRoomPinsUpdate, MatrixRoomUpgrade,
+    MatrixRtcJoinResult, MatrixRtcMediaKey, MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease,
+    MatrixRtcMediaKeyPause, MatrixRtcMember, MatrixRtcMembershipUpdate, MatrixServiceCapabilities,
+    MatrixTransferDirection, MatrixTransferObserver, MatrixTransferProgress,
+    MatrixTransferProgressCallback, MatrixTransferResult, MatrixTransferRetryMode,
+    MatrixTransferState, MatrixUnreadUpdate, MatrixVerificationSession, MeshBackend,
+    ModerationAuditEntry, PendingInvitationMetadata, ReadReceiptMode, SentMessage, TypingUser,
+    UserPreferences, VerificationEmoji, VoiceServiceAvailability, VoiceServiceStatus,
 };
 
 mod moderation;
@@ -186,12 +202,20 @@ const PENDING_INVITATION_MAX_BYTES: usize = 8 * 1024;
 const PENDING_INVITATION_MAX_CIPHERTEXT_BYTES: usize = PENDING_INVITATION_MAX_BYTES + 28;
 const PENDING_INVITATION_MAX_AGE_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
 const PENDING_INVITATION_JOIN_LEASE_MS: u64 = 90 * 1_000;
+const PENDING_INVITATION_JOIN_TIMEOUT_SECONDS: u64 = 90;
 const TRUSTED_DEVICES_KEY: &str = "matrix-trusted-devices-v1";
 const RECOVERY_TEST_KEY: &str = "matrix-recovery-test-v1";
 const RECOVERY_CREDENTIAL_KEY: &str = "matrix-recovery-credential-v1";
 const PREFERENCES_EVENT_TYPE: &str = "org.mesh.preferences.v1";
 const MAX_PINNED_EVENTS: usize = 100;
 const MAX_BLOCKED_ENTITY_DIAGNOSTICS: usize = 128;
+const MAX_COMMUNITY_APPLICATIONS: usize = 500;
+const SPACE_HIERARCHY_PAGE_SIZE: usize = 100;
+const MAX_COMMUNITY_CHANNELS: usize = 500;
+const MAX_SPACE_HIERARCHY_PAGES: usize =
+    MAX_COMMUNITY_CHANNELS.div_ceil(SPACE_HIERARCHY_PAGE_SIZE) + 2;
+const MAX_SPACE_HIERARCHY_TOKEN_BYTES: usize = 4 * 1024;
+const SPACE_HIERARCHY_TIMEOUT_SECONDS: u64 = 30;
 const MAX_SEARCH_ROOMS: usize = 5_000;
 const MAX_SEARCH_EVENTS: usize = 50_000;
 const MAX_SEARCH_EVENTS_PER_ROOM: u32 = 250;
@@ -202,8 +226,17 @@ const MAX_SEARCH_DEADLINE_MS: u64 = 15_000;
 const COMMUNITY_HOMESERVER_ENV: &str = "MESH_COMMUNITY_HOMESERVER";
 const COMMUNITY_SERVER_NAME_ENV: &str = "MESH_COMMUNITY_SERVER_NAME";
 const LOGIN_TIMEOUT_SECONDS: u64 = 45;
+const LOGIN_CANCELLATION_ACK_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_REMEMBERED_LOGIN_ATTEMPTS: usize = 128;
+const MAX_RESERVED_LOGIN_ATTEMPTS: usize = 4;
+const LOGIN_ATTEMPT_RESERVATION_TTL: Duration = Duration::from_secs(60);
 const SESSION_RESTORE_SYNC_TIMEOUT_SECONDS: u64 = 10;
 const REGISTRATION_TIMEOUT_SECONDS: u64 = 45;
+const MAX_ACCOUNT_SERVICE_INPUT_BYTES: usize = 2 * 1024;
+const MAX_LOGIN_IDENTIFIER_BYTES: usize = 255;
+const MAX_ACCOUNT_PASSWORD_BYTES: usize = 4 * 1024;
+const MAX_RECOVERY_CREDENTIAL_BYTES: usize = 4 * 1024;
+const MAX_DEVICE_DISPLAY_NAME_BYTES: usize = 255;
 const LOCAL_ACCOUNT_STORE_REMOVE_ATTEMPTS: usize = 8;
 const LOCAL_ACCOUNT_STORE_REMOVE_BASE_DELAY_MS: u64 = 50;
 const MAX_COMPOSER_DRAFT_BYTES: usize = 16 * 1024;
@@ -235,6 +268,10 @@ const MEDIA_DOWNLOAD_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 // cap isn't penalized for taking a while overall.
 const MEDIA_DOWNLOAD_READ_TIMEOUT: Duration = Duration::from_secs(30);
 const DIRECT_ACCOUNT_DATA_MERGE_ATTEMPTS: usize = 3;
+const MAX_DM_REQUESTS: usize = 100;
+const MAX_BLOCKED_ACCOUNT_PAGE_SIZE: usize = 100;
+const IGNORED_USER_WRITE_ATTEMPTS: usize = 3;
+const MAX_IGNORED_USER_CHANGE_IDS: usize = 256;
 const MATRIX_RTC_SLOT_ID: &str = "m.call#ROOM";
 const MATRIX_RTC_TRANSPORTS_PATH: &str =
     "/_matrix/client/unstable/org.matrix.msc4143/rtc/transports";
@@ -260,6 +297,8 @@ const MATRIX_SYNC_RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
 // response to five seconds.
 const MATRIX_RTC_SYNC_FRESHNESS: Duration = Duration::from_secs(2);
 const MATRIX_RTC_MAX_PARTICIPANTS: usize = 256;
+const MATRIX_RTC_MAX_CALL_MEMBER_EVENTS: usize = 512;
+const MATRIX_RTC_MAX_CALL_MEMBER_STATE_BYTES: usize = 2 * 1024 * 1024;
 const MATRIX_RTC_MAX_INBOUND_PUBLISHERS: usize = 512;
 const MATRIX_RTC_MAX_PENDING_KEYS: usize = 256;
 const MATRIX_RTC_MAX_PENDING_ACTIVATIONS: usize = 64;
@@ -625,7 +664,26 @@ struct LocalAccountRemovalPlan {
 
 struct LoginAttempt {
     id: u64,
+    cancellation_id: String,
     cancellation: CancellationToken,
+    completed: Arc<Notify>,
+}
+
+impl LoginAttempt {
+    fn matches_cancellation(&self, cancellation_id: &str) -> bool {
+        self.cancellation_id == cancellation_id
+    }
+}
+
+#[derive(Default)]
+struct LoginAttemptState {
+    active: Option<LoginAttempt>,
+    reservations: HashMap<String, Instant>,
+    reservation_order: VecDeque<String>,
+    completed: HashSet<String>,
+    completion_order: VecDeque<String>,
+    pre_cancelled: HashSet<String>,
+    pre_cancellation_order: VecDeque<String>,
 }
 
 // The SDK owns the room-key sharing decision. This registry is only the
@@ -649,6 +707,7 @@ enum DeviceVerificationFlow {
 #[derive(Default)]
 struct MatrixRuntime {
     client: Option<Client>,
+    ignored_users: Arc<RwLock<Option<HashSet<OwnedUserId>>>>,
     homeserver: Option<String>,
     profile_id: Option<String>,
     session_task: Option<JoinHandle<()>>,
@@ -933,9 +992,9 @@ pub struct MatrixBackend {
     dynamic_accounts: bool,
     media_cache_session_id: String,
     runtime: RwLock<MatrixRuntime>,
-    login_attempt: Mutex<Option<LoginAttempt>>,
+    login_attempt: Mutex<LoginAttemptState>,
     login_sequence: AtomicU64,
-    account_transition_gate: Arc<Mutex<()>>,
+    account_transition_gate: Arc<RwLock<()>>,
     verification_sessions: RwLock<HashMap<String, DeviceVerificationFlow>>,
     media_uploads: Mutex<HashMap<String, CancellationToken>>,
     media_downloads: Mutex<HashMap<String, CancellationToken>>,
@@ -943,6 +1002,7 @@ pub struct MatrixBackend {
     media_download_slots: Arc<Semaphore>,
     media_inflight_bytes: Arc<Semaphore>,
     custom_emoji_writes: Mutex<()>,
+    ignored_user_writes: Mutex<()>,
     verified_room_upgrades: RwLock<HashMap<OwnedRoomId, OwnedRoomId>>,
     send_queue_gate: Arc<Mutex<()>>,
     send_queue_reconcile: Arc<Notify>,
@@ -952,6 +1012,7 @@ pub struct MatrixBackend {
     rtc_sessions: Arc<Mutex<HashMap<(String, String), MatrixRtcLocalSession>>>,
     rtc_media_keys: Arc<Mutex<MatrixRtcMediaKeyRuntime>>,
     rtc_membership_writes: Arc<Mutex<()>>,
+    rtc_discovery: RwLock<Option<(String, MatrixRtcDiscovery)>>,
     matrix_sync_freshness: Arc<StdMutex<MatrixSyncFreshness>>,
     matrix_sync_control: Arc<Mutex<MatrixSyncControl>>,
     wire_privacy: Arc<RwLock<WirePrivacyPreferences>>,
@@ -978,12 +1039,25 @@ include!("matrix/dm.rs");
 include!("matrix/emoji.rs");
 include!("matrix/personal_data.rs");
 include!("matrix/search.rs");
+include!("matrix/member_page.rs");
+include!("matrix/input_bounds.rs");
 
 impl MatrixBackend {
+    fn lazy_loaded_sync_settings() -> SyncSettings {
+        // Initial and incremental sync should transfer only the member state
+        // needed for visible events. Explicit roster operations remain
+        // responsible for requesting complete membership when their semantics
+        // require it.
+        SyncSettings::default().filter(SyncFilter::FilterDefinition(
+            FilterDefinition::with_lazy_loading(),
+        ))
+    }
+
     fn blocked_entity_reason(error: &BackendError) -> Option<BlockedEntityReason> {
         match error {
             BackendError::NotEncrypted(_) => Some(BlockedEntityReason::Unencrypted),
             BackendError::Unsupported(_)
+            | BackendError::InvalidInput(_)
             | BackendError::InvalidConfiguration(_)
             | BackendError::Serialization(_) => Some(BlockedEntityReason::Unsupported),
             BackendError::NotFound(_)
@@ -1032,75 +1106,273 @@ impl MatrixBackend {
         Ok(())
     }
 
-    fn quarantine_space_child_state_key(
+    fn space_hierarchy_request(
+        space_id: &RoomId,
+        from: Option<String>,
+    ) -> get_hierarchy::v1::Request {
+        let mut request = get_hierarchy::v1::Request::new(space_id.to_owned());
+        request.from = from;
+        request.limit = Some(UInt::new(SPACE_HIERARCHY_PAGE_SIZE as u64).unwrap());
+        request.max_depth = Some(UInt::new(1).unwrap());
+        request.suggested_only = false;
+        request
+    }
+
+    fn append_bounded_space_hierarchy_room_ids(
+        space_id: &RoomId,
+        page_room_ids: impl IntoIterator<Item = OwnedRoomId>,
         child_ids: &mut Vec<OwnedRoomId>,
-        blocked_entities: &mut Vec<BlockedEntityDiagnostic>,
-        diagnostic_id: String,
-        state_key: Option<String>,
+        seen: &mut HashSet<OwnedRoomId>,
     ) -> BackendResult<()> {
-        let entity_id = state_key
-            .as_deref()
-            .filter(|value| !value.is_empty())
-            .unwrap_or(&diagnostic_id)
-            .to_owned();
-        let parsed = state_key
-            .ok_or_else(|| {
-                BackendError::InvalidConfiguration(
-                    "Matrix Space child state is missing its room ID".into(),
-                )
-            })
-            .and_then(|value| {
-                matrix_sdk::ruma::RoomId::parse(value).map_err(|error| {
-                    BackendError::InvalidConfiguration(format!(
-                        "Matrix Space child room ID is malformed: {error}"
-                    ))
-                })
-            });
-        Self::quarantine_entity(
-            child_ids,
-            blocked_entities,
-            entity_id,
-            BlockedEntityKind::Channel,
-            parsed,
+        for room_id in page_room_ids {
+            if room_id == space_id || !seen.insert(room_id.clone()) {
+                continue;
+            }
+            if child_ids.len() >= MAX_COMMUNITY_CHANNELS {
+                return Err(BackendError::InvalidConfiguration(format!(
+                    "This community has more than {MAX_COMMUNITY_CHANNELS} channels, which Mesh cannot open safely yet. Ask an owner to archive channels or open a smaller community."
+                )));
+            }
+            child_ids.push(room_id);
+        }
+        Ok(())
+    }
+
+    fn checked_space_hierarchy_next_batch(
+        next_batch: Option<String>,
+        seen_tokens: &mut HashSet<String>,
+    ) -> BackendResult<Option<String>> {
+        let Some(next_batch) = next_batch else {
+            return Ok(None);
+        };
+        if next_batch.is_empty() || next_batch.len() > MAX_SPACE_HIERARCHY_TOKEN_BYTES {
+            return Err(BackendError::InvalidConfiguration(
+                "The account service returned an invalid community channel cursor. Try again or use another compatible service."
+                    .into(),
+            ));
+        }
+        if !seen_tokens.insert(next_batch.clone()) {
+            return Err(BackendError::InvalidConfiguration(
+                "The account service repeated a community channel page. Try again or use another compatible service."
+                    .into(),
+            ));
+        }
+        Ok(Some(next_batch))
+    }
+
+    fn map_space_hierarchy_error(error: matrix_sdk::HttpError) -> BackendError {
+        if matches!(error.client_api_error_kind(), Some(ErrorKind::Unrecognized)) {
+            BackendError::Unsupported(
+                "This account service does not support standard community channel discovery. Update the service or use another compatible service.",
+            )
+        } else {
+            Self::map_error(error)
+        }
+    }
+
+    fn community_application_state_request(
+        space_id: &RoomId,
+        user_id: &UserId,
+    ) -> get_state_event_for_key::v3::Request {
+        get_state_event_for_key::v3::Request::new(
+            space_id.to_owned(),
+            StateEventType::RoomMember,
+            user_id.to_string(),
         )
+    }
+
+    fn community_applications_request(space_id: &RoomId) -> get_member_events::v3::Request {
+        let mut request = get_member_events::v3::Request::new(space_id.to_owned());
+        request.membership = Some(MembershipState::Knock);
+        request
+    }
+
+    fn community_application_from_member_event(
+        event: RoomMemberEvent,
+    ) -> Option<CommunityApplication> {
+        match event {
+            RoomMemberEvent::Original(event)
+                if event.content.membership == MembershipState::Knock =>
+            {
+                let requested_at = chrono::DateTime::from_timestamp_millis(i64::from(
+                    event.origin_server_ts.get(),
+                ))
+                .map(|value| value.to_rfc3339());
+                Some(CommunityApplication {
+                    user_id: event.state_key.to_string(),
+                    display_name: bounded_remote_member_display_name(
+                        event.content.displayname.as_deref().unwrap_or_default(),
+                        event.state_key.as_str(),
+                    ),
+                    reason: bounded_remote_application_reason(event.content.reason.as_deref()),
+                    requested_at,
+                })
+            }
+            RoomMemberEvent::Redacted(event)
+                if event.content.membership == MembershipState::Knock =>
+            {
+                let requested_at = chrono::DateTime::from_timestamp_millis(i64::from(
+                    event.origin_server_ts.get(),
+                ))
+                .map(|value| value.to_rfc3339());
+                Some(CommunityApplication {
+                    user_id: event.state_key.to_string(),
+                    display_name: bounded_remote_member_display_name("", event.state_key.as_str()),
+                    reason: None,
+                    requested_at,
+                })
+            }
+            _ => None,
+        }
+    }
+
+    fn community_application_is_pending(content: &RoomMemberEventContent) -> bool {
+        content.membership == MembershipState::Knock
+    }
+
+    async fn has_pending_community_application(
+        client: &Client,
+        space_id: &RoomId,
+        user_id: &UserId,
+    ) -> BackendResult<bool> {
+        let response = match client
+            .send(Self::community_application_state_request(space_id, user_id))
+            .await
+        {
+            Ok(response) => response,
+            Err(error) if matches!(error.client_api_error_kind(), Some(ErrorKind::NotFound)) => {
+                return Ok(false);
+            }
+            Err(error) => return Err(Self::map_error(error)),
+        };
+        let content = response
+            .into_content()
+            .deserialize_as_unchecked::<RoomMemberEventContent>()
+            .map_err(Self::map_error)?;
+        Ok(Self::community_application_is_pending(&content))
+    }
+
+    async fn validate_space_hierarchy_children(
+        space: &Room,
+        candidate_ids: Vec<OwnedRoomId>,
+    ) -> BackendResult<EntityList<OwnedRoomId>> {
+        let state_events = space
+            .get_state_events_for_keys_static::<SpaceChildEventContent, OwnedRoomId, _>(
+                &candidate_ids,
+            )
+            .await
+            .map_err(Self::map_error)?;
+        let mut active_children = HashSet::with_capacity(state_events.len());
+        for raw_event in state_events {
+            match raw_event.deserialize() {
+                Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(event)))
+                    if !event.content.via.is_empty() =>
+                {
+                    active_children.insert(event.state_key);
+                }
+                Ok(SyncOrStrippedState::Stripped(event))
+                    if event
+                        .content
+                        .via
+                        .as_ref()
+                        .is_some_and(|via| !via.is_empty()) =>
+                {
+                    active_children.insert(event.state_key);
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(
+                        target: "mesh::matrix",
+                        room_id = %space.room_id(),
+                        "Skipping malformed local Space child state: {error}"
+                    );
+                }
+            }
+        }
+
+        let mut child_ids = Vec::with_capacity(candidate_ids.len());
+        let mut blocked_entities = Vec::new();
+        for child_id in candidate_ids {
+            let entity_id = child_id.to_string();
+            let result = if active_children.remove(&child_id) {
+                Ok(child_id)
+            } else {
+                Err(BackendError::InvalidConfiguration(
+                    "The community channel relationship is missing or inactive.".into(),
+                ))
+            };
+            Self::quarantine_entity(
+                &mut child_ids,
+                &mut blocked_entities,
+                entity_id,
+                BlockedEntityKind::Channel,
+                result,
+            )?;
+        }
+        Ok(EntityList {
+            entities: child_ids,
+            blocked_entities,
+        })
     }
 
     async fn space_child_ids_for_listing(
         &self,
         space: &Room,
     ) -> BackendResult<EntityList<OwnedRoomId>> {
-        let response = self
-            .client()
-            .await?
-            .send(get_state_events::v3::Request::new(
-                space.room_id().to_owned(),
-            ))
-            .await
-            .map_err(Self::map_error)?;
-        let mut child_ids = Vec::new();
-        let mut blocked_entities = Vec::new();
+        let client = self.client().await?;
+        let listing = async {
+            let mut child_ids = Vec::new();
+            let mut seen_room_ids = HashSet::new();
+            let mut seen_tokens = HashSet::new();
+            let mut from = None;
 
-        for (index, event) in response.room_state.into_iter().enumerate() {
-            let event_type = match event.get_field::<String>("type") {
-                Ok(Some(event_type)) => event_type,
-                Ok(None) | Err(_) => continue,
-            };
-            if event_type != "m.space.child" {
-                continue;
+            for _ in 0..MAX_SPACE_HIERARCHY_PAGES {
+                let request = Self::space_hierarchy_request(space.room_id(), from);
+                let response = client
+                    .send(request)
+                    .with_request_config(
+                        RequestConfig::short_retry().timeout(Duration::from_secs(15)),
+                    )
+                    .await
+                    .map_err(Self::map_space_hierarchy_error)?;
+                if response.rooms.len() > SPACE_HIERARCHY_PAGE_SIZE + 1 {
+                    return Err(BackendError::InvalidConfiguration(
+                        "The account service returned too many community channels at once. Try again or use another compatible service."
+                            .into(),
+                    ));
+                }
+                Self::append_bounded_space_hierarchy_room_ids(
+                    space.room_id(),
+                    response.rooms.into_iter().map(|room| room.summary.room_id),
+                    &mut child_ids,
+                    &mut seen_room_ids,
+                )?;
+                let Some(next_batch) = Self::checked_space_hierarchy_next_batch(
+                    response.next_batch,
+                    &mut seen_tokens,
+                )?
+                else {
+                    return Self::validate_space_hierarchy_children(space, child_ids).await;
+                };
+                from = Some(next_batch);
             }
-            let state_key = event.get_field::<String>("state_key").ok().flatten();
-            Self::quarantine_space_child_state_key(
-                &mut child_ids,
-                &mut blocked_entities,
-                format!("{}#malformed-child-{index}", space.room_id()),
-                state_key,
-            )?;
-        }
 
-        Ok(EntityList {
-            entities: child_ids,
-            blocked_entities,
-        })
+            Err(BackendError::InvalidConfiguration(
+                "The account service returned too many community channel pages. Try again or use another compatible service."
+                    .into(),
+            ))
+        };
+
+        tokio::time::timeout(
+            Duration::from_secs(SPACE_HIERARCHY_TIMEOUT_SECONDS),
+            listing,
+        )
+        .await
+        .map_err(|_| {
+            BackendError::Network(
+                "Loading this community's channels took too long. Try again.".into(),
+            )
+        })?
     }
 
     fn media_reservation_bytes(declared_size: u64) -> u64 {
@@ -1171,9 +1443,9 @@ impl MatrixBackend {
             dynamic_accounts: true,
             media_cache_session_id: uuid::Uuid::new_v4().simple().to_string(),
             runtime: RwLock::new(MatrixRuntime::default()),
-            login_attempt: Mutex::new(None),
+            login_attempt: Mutex::new(LoginAttemptState::default()),
             login_sequence: AtomicU64::new(0),
-            account_transition_gate: Arc::new(Mutex::new(())),
+            account_transition_gate: Arc::new(RwLock::new(())),
             verification_sessions: RwLock::new(HashMap::new()),
             media_uploads: Mutex::new(HashMap::new()),
             media_downloads: Mutex::new(HashMap::new()),
@@ -1181,6 +1453,7 @@ impl MatrixBackend {
             media_download_slots: Arc::new(Semaphore::new(MAX_CONCURRENT_MEDIA_DOWNLOADS)),
             media_inflight_bytes: Arc::new(Semaphore::new(MAX_INFLIGHT_MEDIA_BYTES)),
             custom_emoji_writes: Mutex::new(()),
+            ignored_user_writes: Mutex::new(()),
             verified_room_upgrades: RwLock::new(HashMap::new()),
             send_queue_gate: Arc::new(Mutex::new(())),
             send_queue_reconcile: Arc::new(Notify::new()),
@@ -1190,6 +1463,7 @@ impl MatrixBackend {
             rtc_sessions: Arc::new(Mutex::new(HashMap::new())),
             rtc_media_keys: Arc::new(Mutex::new(MatrixRtcMediaKeyRuntime::default())),
             rtc_membership_writes: Arc::new(Mutex::new(())),
+            rtc_discovery: RwLock::new(None),
             matrix_sync_freshness: Arc::new(StdMutex::new(MatrixSyncFreshness::default())),
             matrix_sync_control: Arc::new(Mutex::new(MatrixSyncControl::default())),
             wire_privacy: Arc::new(RwLock::new(WirePrivacyPreferences::default())),
@@ -1222,9 +1496,9 @@ impl MatrixBackend {
             dynamic_accounts: false,
             media_cache_session_id: uuid::Uuid::new_v4().simple().to_string(),
             runtime: RwLock::new(MatrixRuntime::default()),
-            login_attempt: Mutex::new(None),
+            login_attempt: Mutex::new(LoginAttemptState::default()),
             login_sequence: AtomicU64::new(0),
-            account_transition_gate: Arc::new(Mutex::new(())),
+            account_transition_gate: Arc::new(RwLock::new(())),
             verification_sessions: RwLock::new(HashMap::new()),
             media_uploads: Mutex::new(HashMap::new()),
             media_downloads: Mutex::new(HashMap::new()),
@@ -1232,6 +1506,7 @@ impl MatrixBackend {
             media_download_slots: Arc::new(Semaphore::new(MAX_CONCURRENT_MEDIA_DOWNLOADS)),
             media_inflight_bytes: Arc::new(Semaphore::new(MAX_INFLIGHT_MEDIA_BYTES)),
             custom_emoji_writes: Mutex::new(()),
+            ignored_user_writes: Mutex::new(()),
             verified_room_upgrades: RwLock::new(HashMap::new()),
             send_queue_gate: Arc::new(Mutex::new(())),
             send_queue_reconcile: Arc::new(Notify::new()),
@@ -1241,6 +1516,7 @@ impl MatrixBackend {
             rtc_sessions: Arc::new(Mutex::new(HashMap::new())),
             rtc_media_keys: Arc::new(Mutex::new(MatrixRtcMediaKeyRuntime::default())),
             rtc_membership_writes: Arc::new(Mutex::new(())),
+            rtc_discovery: RwLock::new(None),
             matrix_sync_freshness: Arc::new(StdMutex::new(MatrixSyncFreshness::default())),
             matrix_sync_control: Arc::new(Mutex::new(MatrixSyncControl::default())),
             wire_privacy: Arc::new(RwLock::new(WirePrivacyPreferences::default())),
@@ -1379,6 +1655,20 @@ impl MatrixBackend {
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
             .unwrap_or(0)
+    }
+
+    async fn bounded_pending_invitation_join<T>(
+        timeout: Duration,
+        operation: impl std::future::Future<Output = BackendResult<T>>,
+    ) -> BackendResult<T> {
+        tokio::time::timeout(timeout, operation)
+            .await
+            .map_err(|_| {
+                BackendError::Network(
+                    "Joining this community timed out. The invitation is still saved; try again."
+                        .into(),
+                )
+            })?
     }
 
     fn pending_invitation_expired(metadata: &PendingInvitationMetadata, now_ms: u64) -> bool {
@@ -1800,16 +2090,30 @@ impl MatrixBackend {
             .map_err(Self::map_secure_storage_error)
     }
 
-    async fn verify_recovery_credential(
-        &self,
-        mut recovery_key_or_passphrase: String,
+    fn validate_recovery_credential(
+        recovery_key_or_passphrase: &mut String,
+        required: bool,
     ) -> BackendResult<()> {
-        if recovery_key_or_passphrase.trim().is_empty() {
+        if recovery_key_or_passphrase.len() > MAX_RECOVERY_CREDENTIAL_BYTES {
+            recovery_key_or_passphrase.zeroize();
+            return Err(BackendError::InvalidConfiguration(
+                "recovery key or passphrase is too long".into(),
+            ));
+        }
+        if required && recovery_key_or_passphrase.trim().is_empty() {
             recovery_key_or_passphrase.zeroize();
             return Err(BackendError::InvalidConfiguration(
                 "recovery key or passphrase cannot be empty".into(),
             ));
         }
+        Ok(())
+    }
+
+    async fn verify_recovery_credential(
+        &self,
+        mut recovery_key_or_passphrase: String,
+    ) -> BackendResult<()> {
+        Self::validate_recovery_credential(&mut recovery_key_or_passphrase, true)?;
         let client = self.client().await?;
         let result = tokio::time::timeout(
             Duration::from_secs(30),
@@ -1904,6 +2208,11 @@ impl MatrixBackend {
     }
 
     fn normalize_homeserver_input(input: &str) -> BackendResult<String> {
+        if input.len() > MAX_ACCOUNT_SERVICE_INPUT_BYTES {
+            return Err(BackendError::InvalidConfiguration(
+                "account service address is too long".into(),
+            ));
+        }
         let input = input.trim();
         if input.is_empty() {
             return Err(BackendError::InvalidConfiguration(
@@ -1955,6 +2264,11 @@ impl MatrixBackend {
                     "homeserver URL must not contain credentials".into(),
                 ));
             }
+            if url.query().is_some() || url.fragment().is_some() {
+                return Err(BackendError::InvalidConfiguration(
+                    "homeserver URL must not contain a query or fragment".into(),
+                ));
+            }
         } else {
             ServerName::parse(input).map_err(|error| {
                 BackendError::InvalidConfiguration(format!("invalid Matrix server name: {error}"))
@@ -1962,6 +2276,241 @@ impl MatrixBackend {
         }
 
         Ok(input.to_owned())
+    }
+
+    fn normalize_login_identifier(input: &str) -> BackendResult<&str> {
+        let identifier = input.trim();
+        if identifier.is_empty() {
+            return Err(BackendError::InvalidConfiguration(
+                "username or account ID is required".into(),
+            ));
+        }
+        if identifier.len() > MAX_LOGIN_IDENTIFIER_BYTES || identifier.chars().any(char::is_control)
+        {
+            return Err(BackendError::InvalidConfiguration(
+                "username or account ID is invalid or too long".into(),
+            ));
+        }
+        Ok(identifier)
+    }
+
+    fn validate_login_attempt_id(attempt_id: &str) -> BackendResult<()> {
+        if attempt_id.len() != 36 || uuid::Uuid::parse_str(attempt_id).is_err() {
+            return Err(BackendError::InvalidConfiguration(
+                "login attempt identifier is invalid".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn remember_login_attempt(
+        identifiers: &mut HashSet<String>,
+        order: &mut VecDeque<String>,
+        cancellation_id: String,
+    ) {
+        if identifiers.insert(cancellation_id.clone()) {
+            order.push_back(cancellation_id);
+        }
+        while order.len() > MAX_REMEMBERED_LOGIN_ATTEMPTS {
+            if let Some(expired) = order.pop_front() {
+                identifiers.remove(&expired);
+            }
+        }
+    }
+
+    fn purge_expired_login_reservations(state: &mut LoginAttemptState) {
+        let now = Instant::now();
+        while let Some(cancellation_id) = state.reservation_order.front() {
+            let is_expired = state
+                .reservations
+                .get(cancellation_id)
+                .is_none_or(|reserved_at| {
+                    now.saturating_duration_since(*reserved_at) > LOGIN_ATTEMPT_RESERVATION_TTL
+                });
+            if !is_expired {
+                break;
+            }
+            let cancellation_id = state
+                .reservation_order
+                .pop_front()
+                .expect("front was present");
+            state.reservations.remove(&cancellation_id);
+            state.pre_cancelled.remove(&cancellation_id);
+            state
+                .pre_cancellation_order
+                .retain(|remembered| remembered != &cancellation_id);
+        }
+    }
+
+    async fn reserve_login_attempt(&self) -> BackendResult<String> {
+        let mut state = self.login_attempt.lock().await;
+        Self::purge_expired_login_reservations(&mut state);
+        if state.reservations.len() >= MAX_RESERVED_LOGIN_ATTEMPTS {
+            return Err(BackendError::Other(
+                "Too many account sign-ins are waiting to start".into(),
+            ));
+        }
+
+        let cancellation_id = loop {
+            let candidate = uuid::Uuid::new_v4().to_string();
+            if !state.reservations.contains_key(&candidate)
+                && !state.completed.contains(&candidate)
+                && state
+                    .active
+                    .as_ref()
+                    .is_none_or(|active| active.cancellation_id != candidate)
+            {
+                break candidate;
+            }
+        };
+        state
+            .reservations
+            .insert(cancellation_id.clone(), Instant::now());
+        state.reservation_order.push_back(cancellation_id.clone());
+        Ok(cancellation_id)
+    }
+
+    async fn begin_login_attempt(
+        &self,
+        cancellation_id: String,
+    ) -> BackendResult<(u64, CancellationToken)> {
+        let attempt_id = self.login_sequence.fetch_add(1, Ordering::SeqCst) + 1;
+        let cancellation = CancellationToken::new();
+        let mut state = self.login_attempt.lock().await;
+        Self::purge_expired_login_reservations(&mut state);
+
+        if state.completed.contains(&cancellation_id) {
+            return Err(BackendError::InvalidConfiguration(
+                "login attempt identifier has already completed".into(),
+            ));
+        }
+        if state.reservations.remove(&cancellation_id).is_none() {
+            return Err(BackendError::InvalidConfiguration(
+                "login attempt was not reserved by Mesh or has expired".into(),
+            ));
+        }
+        state
+            .reservation_order
+            .retain(|reserved| reserved != &cancellation_id);
+        if state.pre_cancelled.remove(&cancellation_id) {
+            state
+                .pre_cancellation_order
+                .retain(|remembered| remembered != &cancellation_id);
+            let LoginAttemptState {
+                completed,
+                completion_order,
+                ..
+            } = &mut *state;
+            Self::remember_login_attempt(completed, completion_order, cancellation_id);
+            return Err(BackendError::LoginCancelled);
+        }
+        if state.active.is_some() {
+            return Err(BackendError::Other(
+                "Another account sign-in is already finishing".into(),
+            ));
+        }
+
+        state.active = Some(LoginAttempt {
+            id: attempt_id,
+            cancellation_id,
+            cancellation: cancellation.clone(),
+            completed: Arc::new(Notify::new()),
+        });
+        Ok((attempt_id, cancellation))
+    }
+
+    async fn finish_login_attempt(&self, attempt_id: u64) {
+        let completed = {
+            let mut state = self.login_attempt.lock().await;
+            let Some(active) = state.active.take_if(|attempt| attempt.id == attempt_id) else {
+                return;
+            };
+            let LoginAttemptState {
+                completed,
+                completion_order,
+                ..
+            } = &mut *state;
+            Self::remember_login_attempt(completed, completion_order, active.cancellation_id);
+            active.completed
+        };
+        completed.notify_waiters();
+    }
+
+    async fn cancel_login_attempt(&self, cancellation_id: String) -> BackendResult<()> {
+        let pending = {
+            let mut state = self.login_attempt.lock().await;
+            Self::purge_expired_login_reservations(&mut state);
+            if state.completed.contains(&cancellation_id) {
+                return Ok(());
+            }
+            if let Some(active) = state
+                .active
+                .as_ref()
+                .filter(|attempt| attempt.matches_cancellation(&cancellation_id))
+            {
+                // Register while the attempt record is locked so completion
+                // cannot be signalled between the snapshot and this waiter.
+                let mut completion = Box::pin(active.completed.clone().notified_owned());
+                completion.as_mut().enable();
+                Some((active.cancellation.clone(), completion))
+            } else if state.reservations.contains_key(&cancellation_id) {
+                // IPC delivery is concurrent. Remember a bounded tombstone so
+                // cancel-before-registration cannot start the attempt later.
+                let LoginAttemptState {
+                    pre_cancelled,
+                    pre_cancellation_order,
+                    ..
+                } = &mut *state;
+                Self::remember_login_attempt(
+                    pre_cancelled,
+                    pre_cancellation_order,
+                    cancellation_id,
+                );
+                None
+            } else {
+                return Err(BackendError::InvalidConfiguration(
+                    "login attempt was not reserved by Mesh or has expired".into(),
+                ));
+            }
+        };
+
+        let Some((cancellation, mut completion)) = pending else {
+            return Ok(());
+        };
+        cancellation.cancel();
+        tokio::time::timeout(LOGIN_CANCELLATION_ACK_TIMEOUT, completion.as_mut())
+            .await
+            .map_err(|_| {
+                BackendError::Other(
+                    "Account sign-in did not finish cancelling within 5 seconds".into(),
+                )
+            })?;
+        Ok(())
+    }
+
+    fn validate_account_password(password: &str) -> BackendResult<()> {
+        if password.is_empty() {
+            return Err(BackendError::InvalidConfiguration(
+                "account password is required".into(),
+            ));
+        }
+        if password.len() > MAX_ACCOUNT_PASSWORD_BYTES {
+            return Err(BackendError::InvalidConfiguration(
+                "account password is too long".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_device_display_name(device_name: Option<&str>) -> BackendResult<()> {
+        if device_name.is_some_and(|name| {
+            name.len() > MAX_DEVICE_DISPLAY_NAME_BYTES || name.chars().any(char::is_control)
+        }) {
+            return Err(BackendError::InvalidConfiguration(
+                "device name is invalid or too long".into(),
+            ));
+        }
+        Ok(())
     }
 
     fn normalize_report_reason(reason: String) -> BackendResult<String> {
@@ -2505,10 +3054,56 @@ impl MatrixBackend {
             .map_err(Self::map_error)
     }
 
+    async fn finish_new_session_e2ee_initialization(client: &Client) {
+        // The SDK deliberately bootstraps cross-signing in a background task.
+        // Identity-based room-key sharing rejects sends until that task has
+        // signed the current device, so a new session must not be exposed as
+        // ready while initialization is still racing the first message.
+        client
+            .encryption()
+            .wait_for_e2ee_initialization_tasks()
+            .await;
+    }
+
+    async fn client_e2ee_ready(client: &Client) -> bool {
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+        if client.device_id().is_none() {
+            return false;
+        }
+        client
+            .encryption()
+            .get_user_identity(user_id)
+            .await
+            .ok()
+            .flatten()
+            .is_some_and(|identity| identity.is_verified())
+    }
+
+    async fn require_client_e2ee_ready(client: &Client) -> BackendResult<()> {
+        if Self::client_e2ee_ready(client).await {
+            Ok(())
+        } else {
+            Err(BackendError::device_verification_required())
+        }
+    }
+
+    async fn finish_restored_session_e2ee_initialization_if_needed(client: &Client) {
+        // A healthy restored store already contains the verified own identity,
+        // so it remains available offline without waiting on the
+        // SDK's backup/recovery setup. Older or interrupted stores get one
+        // bounded repair attempt in the caller's existing restore timeout.
+        if !Self::client_e2ee_ready(client).await {
+            Self::finish_new_session_e2ee_initialization(client).await;
+        }
+    }
+
     async fn sync_once_for_session_restore(client: &Client) -> BackendResult<()> {
         match tokio::time::timeout(
             Duration::from_secs(SESSION_RESTORE_SYNC_TIMEOUT_SECONDS),
-            client.sync_once(SyncSettings::default().set_presence(PresenceState::Offline)),
+            client
+                .sync_once(Self::lazy_loaded_sync_settings().set_presence(PresenceState::Offline)),
         )
         .await
         {
@@ -2630,6 +3225,18 @@ impl MatrixBackend {
         }
     }
 
+    fn oidc_registration_failure_reason(error: &OidcRegistrationError) -> &'static str {
+        match error {
+            OidcRegistrationError::MissingConfiguration
+            | OidcRegistrationError::MissingIssuerRegistration { .. } => {
+                "Browser sign-in is not configured for this service in this Mesh build. Use another sign-in method or service."
+            }
+            _ => {
+                "Browser sign-in configuration is invalid in this Mesh build. Use another sign-in method or service."
+            }
+        }
+    }
+
     async fn discover_oidc_registration(
         &self,
         homeserver: String,
@@ -2668,7 +3275,11 @@ impl MatrixBackend {
                     None,
                 ));
             }
-            Err(error) => {
+            Err(_) => {
+                tracing::warn!(
+                    target: "mesh::matrix",
+                    "OAuth/OIDC metadata validation failed"
+                );
                 return Ok((
                     MatrixOidcStatus {
                         homeserver: resolved_homeserver,
@@ -2681,7 +3292,8 @@ impl MatrixBackend {
                         authorization_code_pkce: false,
                         native_callback_ready: false,
                         ready: false,
-                        reason: format!("OAuth/OIDC metadata could not be validated: {error}"),
+                        reason: "This service's browser sign-in details could not be verified. Use another sign-in method or service."
+                            .into(),
                     },
                     None,
                 ));
@@ -2691,6 +3303,7 @@ impl MatrixBackend {
         let authorization_endpoint = metadata.authorization_endpoint.to_string();
         let capabilities = Self::native_oidc_capabilities(&metadata);
         if let Err(error) = capabilities.require_all(&issuer) {
+            let reason = Self::oidc_registration_failure_reason(&error).to_owned();
             return Ok((
                 MatrixOidcStatus {
                     homeserver: resolved_homeserver,
@@ -2703,7 +3316,7 @@ impl MatrixBackend {
                     authorization_code_pkce: false,
                     native_callback_ready: false,
                     ready: false,
-                    reason: error.to_string(),
+                    reason,
                 },
                 None,
             ));
@@ -2721,6 +3334,7 @@ impl MatrixBackend {
                     }
                     _ => MatrixOidcAvailability::InvalidConfiguration,
                 };
+                let reason = Self::oidc_registration_failure_reason(&error).to_owned();
                 return Ok((
                     MatrixOidcStatus {
                         homeserver: resolved_homeserver,
@@ -2733,7 +3347,7 @@ impl MatrixBackend {
                         authorization_code_pkce: true,
                         native_callback_ready: true,
                         ready: false,
-                        reason: error.to_string(),
+                        reason,
                     },
                     None,
                 ));
@@ -2814,7 +3428,7 @@ impl MatrixBackend {
                 let callback_send_queue_reconcile = send_queue_reconcile.clone();
                 let result = client
                     .sync_with_result_callback(
-                        SyncSettings::default()
+                        Self::lazy_loaded_sync_settings()
                             .timeout(cadence.timeout())
                             .set_presence(presence.clone()),
                         move |result| {
@@ -3046,14 +3660,34 @@ impl MatrixBackend {
     }
 
     async fn install_client(&self, client: Client, homeserver: String, profile_id: String) {
+        let ignored_users = Arc::new(RwLock::new(None));
+        match Self::fetch_ignored_user_list(&client).await {
+            Ok(content) => {
+                *ignored_users.write().await = Some(content.ignored_users.into_keys().collect());
+            }
+            Err(error) => {
+                tracing::warn!(
+                    target: "mesh::security",
+                    "Notifications will remain suppressed until the account block list is available: {error}"
+                );
+            }
+        }
         client.add_event_handler({
             let event_callback = Arc::clone(&self.event_callback);
+            let ignored_users = Arc::clone(&ignored_users);
             move |event: OriginalSyncRoomMessageEvent, room: Room, push_actions: Vec<Action>| {
                 let event_callback = Arc::clone(&event_callback);
+                let ignored_users = Arc::clone(&ignored_users);
                 async move {
                     if !push_actions.iter().any(Action::should_notify)
                         || room.own_user_id() == event.sender
                     {
+                        return;
+                    }
+                    if MatrixBackend::notification_sender_is_ignored(
+                        ignored_users.read().await.as_ref(),
+                        &event.sender,
+                    ) {
                         return;
                     }
                     if let Err(error) =
@@ -3089,6 +3723,65 @@ impl MatrixBackend {
                             avatar_url,
                         }),
                     );
+                }
+            }
+        });
+        client.add_event_handler({
+            let ignored_users = Arc::clone(&ignored_users);
+            let queue_client = client.clone();
+            let queue_gate = Arc::clone(&self.send_queue_gate);
+            let event_callback = Arc::clone(&self.event_callback);
+            let send_queue_known = Arc::clone(&self.send_queue_known);
+            move |event: GlobalAccountDataEvent<IgnoredUserListEventContent>| {
+                let ignored_users = Arc::clone(&ignored_users);
+                let queue_client = queue_client.clone();
+                let queue_gate = Arc::clone(&queue_gate);
+                let event_callback = Arc::clone(&event_callback);
+                let send_queue_known = Arc::clone(&send_queue_known);
+                async move {
+                    let next_users = event
+                        .content
+                        .ignored_users
+                        .into_keys()
+                        .collect::<HashSet<_>>();
+                    let change = {
+                        let mut cache = ignored_users.write().await;
+                        let previous = cache.replace(next_users.clone());
+                        MatrixBackend::ignored_user_change(previous.as_ref(), &next_users)
+                    };
+                    let Some(change) = change else {
+                        return;
+                    };
+                    MatrixBackend::dispatch_backend_event(
+                        &event_callback,
+                        MatrixBackendEvent::IgnoredUsersChanged(change),
+                    );
+                    // Another device can block a peer while this device has a
+                    // durable DM waiting offline. Purge under the publication
+                    // gate immediately, but leave every queue paused until a
+                    // normal successful-sync reconciliation permits resume.
+                    let _queue_gate = queue_gate.lock().await;
+                    if let Err(error) =
+                        MatrixBackend::reconcile_protected_send_queues(&queue_client, false).await
+                    {
+                        tracing::warn!(
+                            target: "mesh::security",
+                            "Could not reconcile saved messages after the account block list changed: {error}"
+                        );
+                        return;
+                    }
+                    if let Err(error) = MatrixBackend::resnapshot_send_queue_updates(
+                        &queue_client,
+                        &event_callback,
+                        &send_queue_known,
+                    )
+                    .await
+                    {
+                        tracing::warn!(
+                            target: "mesh::matrix",
+                            "Could not refresh saved-message state after the account block list changed: {error}"
+                        );
+                    }
                 }
             }
         });
@@ -3324,6 +4017,7 @@ impl MatrixBackend {
         let mut room_updates = client.subscribe_to_all_room_updates();
         let room_updates_client = client.clone();
         let room_updates_callback = Arc::clone(&self.event_callback);
+        let room_updates_ignored_users = Arc::clone(&ignored_users);
         let room_updates_task = tokio::spawn(async move {
             loop {
                 match room_updates.recv().await {
@@ -3333,6 +4027,7 @@ impl MatrixBackend {
                             MatrixBackend::emit_room_unread(
                                 &room_updates_client,
                                 &room_updates_callback,
+                                &room_updates_ignored_users,
                                 &room_id,
                             )
                             .await;
@@ -3347,6 +4042,7 @@ impl MatrixBackend {
                         MatrixBackend::emit_all_room_unreads(
                             &room_updates_client,
                             &room_updates_callback,
+                            &room_updates_ignored_users,
                         )
                         .await;
                     }
@@ -3373,6 +4069,7 @@ impl MatrixBackend {
             previous.abort();
         }
         runtime.client = Some(client.clone());
+        runtime.ignored_users = ignored_users;
         runtime.homeserver = Some(homeserver);
         runtime.profile_id = Some(profile_id);
         runtime.session_task = session_task;
@@ -3660,7 +4357,7 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn shutdown(&self) -> BackendResult<()> {
-        if let Some(attempt) = self.login_attempt.lock().await.as_ref() {
+        if let Some(attempt) = self.login_attempt.lock().await.active.as_ref() {
             attempt.cancellation.cancel();
         }
         for cancellation in self.media_uploads.lock().await.values() {
@@ -3736,7 +4433,7 @@ impl MeshBackend for MatrixBackend {
         // Serialize against every operation that can replace or remove the
         // active account. Re-acquiring the runtime read lock from nested join
         // helpers is then safe even when a transition is queued.
-        let _account_transition = self.account_transition_gate.lock().await;
+        let _account_transition = self.account_transition_gate.write().await;
         let runtime = self.runtime.read().await;
         let profile_id = runtime
             .profile_id
@@ -3785,13 +4482,20 @@ impl MeshBackend for MatrixBackend {
             (storage, record.invite_link.clone())
         };
 
-        let result = match Self::parse_admission_invitation(&invite_link, None) {
-            Ok(_) => self.claim_community_invite(invite_link).await,
-            Err(_) => match Self::parse_direct_community_invitation(&invite_link) {
-                Ok((room_or_alias, via)) => self.join_community(room_or_alias, via).await,
-                Err(_) => Err(BackendError::RegistrationInvitationInvalid),
-            },
+        let operation = async {
+            match Self::parse_admission_invitation(&invite_link, None) {
+                Ok(_) => self.claim_community_invite(invite_link).await,
+                Err(_) => match Self::parse_direct_community_invitation(&invite_link) {
+                    Ok((room_or_alias, via)) => self.join_community(room_or_alias, via).await,
+                    Err(_) => Err(BackendError::RegistrationInvitationInvalid),
+                },
+            }
         };
+        let result = Self::bounded_pending_invitation_join(
+            Duration::from_secs(PENDING_INVITATION_JOIN_TIMEOUT_SECONDS),
+            operation,
+        )
+        .await;
         let _gate = self.pending_invitation_gate.lock().await;
         let current = self.read_pending_invitation_record(&storage).await?;
         if current
@@ -3878,6 +4582,16 @@ impl MeshBackend for MatrixBackend {
         Ok(())
     }
 
+    async fn active_user_id(&self) -> Option<String> {
+        self.runtime
+            .read()
+            .await
+            .client
+            .as_ref()
+            .and_then(|client| client.user_id())
+            .map(ToString::to_string)
+    }
+
     async fn status(&self) -> BackendStatus {
         let sync_running_task = self
             .matrix_sync_control
@@ -3890,19 +4604,63 @@ impl MeshBackend for MatrixBackend {
             Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness).last_success_ms;
         let sync_running = sync_running_task
             && Self::matrix_sync_is_fresh(last_success_ms, Self::matrix_rtc_monotonic_now_ms());
-        let runtime = self.runtime.read().await;
-        let user_id = runtime
-            .client
+        let (client, homeserver) = {
+            let runtime = self.runtime.read().await;
+            (runtime.client.clone(), runtime.homeserver.clone())
+        };
+        let user_id = client
             .as_ref()
             .and_then(|client| client.user_id())
             .map(ToString::to_string);
-        let device_id = runtime
-            .client
+        let device_id = client
             .as_ref()
             .and_then(|client| client.device_id())
             .map(ToString::to_string);
         let authenticated = user_id.is_some();
-        let session_e2ee_ready = authenticated && device_id.is_some();
+        let session_e2ee_ready = match client.as_ref() {
+            Some(client) => Self::client_e2ee_ready(client).await,
+            None => false,
+        };
+
+        let voice_service = if VoiceServiceStatus::matrix_rtc_client_included() {
+            match (client.as_ref(), user_id.as_deref()) {
+                (Some(client), Some(account_id)) => {
+                    let cached = self
+                        .rtc_discovery
+                        .read()
+                        .await
+                        .as_ref()
+                        .filter(|(cached_account, _)| cached_account == account_id)
+                        .map(|(_, discovery)| discovery.clone());
+                    let discovered = match cached {
+                        Some(discovery) => Ok(discovery),
+                        None => Self::discover_matrix_rtc_service_url(client).await,
+                    };
+                    match discovered {
+                        Ok(discovery) => {
+                            *self.rtc_discovery.write().await =
+                                Some((account_id.to_owned(), discovery.clone()));
+                            VoiceServiceStatus::matrix_rtc_for_discovered_service(
+                                discovery.service_url,
+                            )
+                        }
+                        Err(error) => {
+                            tracing::warn!(
+                                target: "mesh::matrixrtc",
+                                "Calling service discovery was unavailable while reading backend status: {error}"
+                            );
+                            VoiceServiceStatus::matrix_rtc_discovery_unavailable()
+                        }
+                    }
+                }
+                _ => VoiceServiceStatus::for_kind(BackendKind::Matrix),
+            }
+        } else {
+            VoiceServiceStatus::for_kind(BackendKind::Matrix)
+        };
+        let mut capabilities = super::BackendCapabilities::for_kind(BackendKind::Matrix);
+        capabilities.voice = voice_service.availability == VoiceServiceAvailability::Ready
+            && voice_service.media_e2ee_ready;
 
         let warnings = if !authenticated {
             vec!["Sign in to synchronize communities and messages".into()]
@@ -3916,12 +4674,12 @@ impl MeshBackend for MatrixBackend {
 
         BackendStatus {
             kind: BackendKind::Matrix,
-            capabilities: super::BackendCapabilities::for_kind(BackendKind::Matrix),
-            voice_service: super::VoiceServiceStatus::for_kind(BackendKind::Matrix),
+            capabilities,
+            voice_service,
             authenticated,
             user_id,
             device_id,
-            homeserver: runtime.homeserver.clone(),
+            homeserver,
             sync_running,
             durable_history: true,
             supports_e2ee: true,
@@ -4068,39 +4826,42 @@ impl MeshBackend for MatrixBackend {
         Self::set_room_notification_mode_server_authoritative(&client, &room_id, mode).await
     }
 
-    async fn login(&self, request: MatrixLogin) -> BackendResult<BackendStatus> {
-        let _account_transition = self.account_transition_gate.lock().await;
-        if request.username.trim().is_empty() || request.password.is_empty() {
-            return Err(BackendError::InvalidConfiguration(
-                "username and password are required".into(),
-            ));
-        }
+    async fn reserve_login_attempt(&self) -> BackendResult<String> {
+        MatrixBackend::reserve_login_attempt(self).await
+    }
 
-        let normalized_homeserver = Self::normalize_homeserver_input(&request.homeserver)?;
+    async fn login(
+        &self,
+        request: MatrixLogin,
+        cancellation_id: String,
+    ) -> BackendResult<BackendStatus> {
+        Self::validate_login_attempt_id(&cancellation_id)?;
+        let _account_transition = self.account_transition_gate.write().await;
+        let MatrixLogin {
+            homeserver,
+            username,
+            password,
+            device_name,
+        } = request;
+        let mut password = Zeroizing::new(password);
+        let username = Self::normalize_login_identifier(&username)?;
+        Self::validate_account_password(password.as_str())?;
+        Self::validate_device_display_name(device_name.as_deref())?;
+        let normalized_homeserver = Self::normalize_homeserver_input(&homeserver)?;
         let profile_id = if self.dynamic_accounts {
-            Self::profile_id(&normalized_homeserver, request.username.trim())
+            Self::profile_id(&normalized_homeserver, username)
         } else {
             self.profile_hint.clone()
         };
         let storage = self.storage_for_profile(&profile_id);
-        let attempt_id = self.login_sequence.fetch_add(1, Ordering::SeqCst) + 1;
-        let cancellation = CancellationToken::new();
-        {
-            let mut active = self.login_attempt.lock().await;
-            if let Some(previous) = active.replace(LoginAttempt {
-                id: attempt_id,
-                cancellation: cancellation.clone(),
-            }) {
-                previous.cancellation.cancel();
-            }
-        }
+        let (attempt_id, cancellation) = self.begin_login_attempt(cancellation_id).await?;
 
         let operation = async {
             let client = self.build_client(&normalized_homeserver, &storage).await?;
             let mut login = client
                 .matrix_auth()
-                .login_username(request.username.trim(), &request.password);
-            if let Some(device_name) = request.device_name.as_deref() {
+                .login_username(username, password.as_str());
+            if let Some(device_name) = device_name.as_deref() {
                 login = login.initial_device_display_name(device_name);
             }
             login.send().await.map_err(Self::map_error)?;
@@ -4113,40 +4874,38 @@ impl MeshBackend for MatrixBackend {
             // Complete one sync before exposing or persisting the account. A
             // cancelled/timed-out attempt therefore never becomes restorable.
             client
-                .sync_once(SyncSettings::default().set_presence(PresenceState::Offline))
+                .sync_once(Self::lazy_loaded_sync_settings().set_presence(PresenceState::Offline))
                 .await
                 .map_err(Self::map_error)?;
+            Self::finish_new_session_e2ee_initialization(&client).await;
             self.persist_session(&storage, &resolved_homeserver, &session)?;
             self.remember_account(&storage, &resolved_homeserver, &session)?;
             Ok::<_, BackendError>((client, resolved_homeserver, storage.profile_id.clone()))
         };
 
         let result = tokio::select! {
+            biased;
             _ = cancellation.cancelled() => Err(BackendError::LoginCancelled),
             timed = tokio::time::timeout(Duration::from_secs(LOGIN_TIMEOUT_SECONDS), operation) => {
                 timed.map_err(|_| BackendError::LoginTimedOut(LOGIN_TIMEOUT_SECONDS))?
             }
         };
+        password.zeroize();
 
-        {
-            let mut active = self.login_attempt.lock().await;
-            if active
-                .as_ref()
-                .is_some_and(|attempt| attempt.id == attempt_id)
-            {
-                *active = None;
-            }
+        let activation = async {
+            let (client, resolved_homeserver, profile_id) = result?;
+            self.stop_runtime().await;
+            self.install_client(client, resolved_homeserver, profile_id)
+                .await;
+            Ok(self.status().await)
         }
-
-        let (client, resolved_homeserver, profile_id) = result?;
-        self.stop_runtime().await;
-        self.install_client(client, resolved_homeserver, profile_id)
-            .await;
-        Ok(self.status().await)
+        .await;
+        self.finish_login_attempt(attempt_id).await;
+        activation
     }
 
     async fn register_account(&self, request: MatrixRegistration) -> BackendResult<BackendStatus> {
-        let _account_transition = self.account_transition_gate.lock().await;
+        let _account_transition = self.account_transition_gate.write().await;
         let MatrixRegistration {
             homeserver,
             username,
@@ -4171,11 +4930,19 @@ impl MeshBackend for MatrixBackend {
                 return Err(error);
             }
         };
+        if let Err(error) = Self::validate_account_password(password.as_str()) {
+            password.zeroize();
+            return Err(error);
+        }
         if password.len() < 8 {
             password.zeroize();
             return Err(BackendError::InvalidConfiguration(
                 "password must be at least 8 characters".into(),
             ));
+        }
+        if let Err(error) = Self::validate_device_display_name(device_name.as_deref()) {
+            password.zeroize();
+            return Err(error);
         }
         let profile_id = if self.dynamic_accounts {
             Self::profile_id(&normalized_homeserver, &username)
@@ -4186,11 +4953,12 @@ impl MeshBackend for MatrixBackend {
         let mut registration_token = None;
         let mut pending_handle = None;
         if let Some(handle) = pending_invitation_handle {
-            let handle = handle.trim().to_owned();
-            if uuid::Uuid::parse_str(&handle).is_err() {
+            let handle = handle.trim();
+            if handle.len() > 64 || uuid::Uuid::parse_str(handle).is_err() {
                 password.zeroize();
                 return Err(BackendError::RegistrationInvitationInvalid);
             }
+            let handle = handle.to_owned();
             let invite_link = {
                 let _gate = self.pending_invitation_gate.lock().await;
                 let Some((invitation_storage, mut record)) =
@@ -4360,9 +5128,12 @@ impl MeshBackend for MatrixBackend {
                 })?;
                 let resolved_homeserver = client.homeserver().to_string();
                 client
-                    .sync_once(SyncSettings::default().set_presence(PresenceState::Offline))
+                    .sync_once(
+                        Self::lazy_loaded_sync_settings().set_presence(PresenceState::Offline),
+                    )
                     .await
                     .map_err(Self::map_error)?;
+                Self::finish_new_session_e2ee_initialization(&client).await;
                 self.persist_session(&storage, &resolved_homeserver, &session)?;
                 self.remember_account(&storage, &resolved_homeserver, &session)?;
                 Ok::<_, BackendError>((client, resolved_homeserver, storage.profile_id.clone()))
@@ -4504,32 +5275,37 @@ impl MeshBackend for MatrixBackend {
         self.discover_oidc(homeserver).await
     }
 
-    async fn start_oidc_login(&self, homeserver: String) -> BackendResult<()> {
-        let _account_transition = self.account_transition_gate.lock().await;
-        let (status, registration) = self.discover_oidc_registration(homeserver).await?;
-        if !status.ready {
-            return Err(BackendError::InvalidConfiguration(format!(
-                "Matrix browser sign-in is unavailable: {}. Password sign-in remains available for an existing account",
-                status.reason
-            )));
-        }
-        let registration = registration.ok_or_else(|| {
-            BackendError::InvalidConfiguration(
-                "Matrix browser sign-in has no issuer-specific desktop registration".into(),
-            )
-        })?;
-
-        let attempt_id = self.login_sequence.fetch_add(1, Ordering::SeqCst) + 1;
-        let cancellation = CancellationToken::new();
-        {
-            let mut active = self.login_attempt.lock().await;
-            if let Some(previous) = active.replace(LoginAttempt {
-                id: attempt_id,
-                cancellation: cancellation.clone(),
-            }) {
-                previous.cancellation.cancel();
+    async fn start_oidc_login(
+        &self,
+        homeserver: String,
+        cancellation_id: String,
+    ) -> BackendResult<()> {
+        Self::validate_login_attempt_id(&cancellation_id)?;
+        let _account_transition = self.account_transition_gate.write().await;
+        let (attempt_id, cancellation) = self.begin_login_attempt(cancellation_id).await?;
+        let setup = async {
+            let (status, registration) = self.discover_oidc_registration(homeserver).await?;
+            if !status.ready {
+                return Err(BackendError::InvalidConfiguration(format!(
+                    "Matrix browser sign-in is unavailable: {}. Password sign-in remains available for an existing account",
+                    status.reason
+                )));
             }
+            let registration = registration.ok_or_else(|| {
+                BackendError::InvalidConfiguration(
+                    "Matrix browser sign-in has no issuer-specific desktop registration".into(),
+                )
+            })?;
+            Ok::<_, BackendError>((status, registration))
         }
+        .await;
+        let (status, registration) = match setup {
+            Ok(setup) => setup,
+            Err(error) => {
+                self.finish_login_attempt(attempt_id).await;
+                return Err(error);
+            }
+        };
 
         let operation = async {
             let listener =
@@ -4674,7 +5450,10 @@ impl MeshBackend for MatrixBackend {
                 result = tokio::time::timeout(
                     Duration::from_secs(LOGIN_TIMEOUT_SECONDS),
                     durable_client
-                        .sync_once(SyncSettings::default().set_presence(PresenceState::Offline)),
+                        .sync_once(
+                            Self::lazy_loaded_sync_settings()
+                                .set_presence(PresenceState::Offline),
+                        ),
                 ) => result
                     .map_err(|_| BackendError::LoginTimedOut(LOGIN_TIMEOUT_SECONDS))?
                     .map(|_| ())
@@ -4686,6 +5465,7 @@ impl MeshBackend for MatrixBackend {
                 self.rollback_unregistered_oauth_storage(&storage)?;
                 return Err(error);
             }
+            Self::finish_new_session_e2ee_initialization(&durable_client).await;
 
             let Some(current_session) = durable_client.oauth().full_session() else {
                 let _ = durable_client.oauth().logout().await;
@@ -4715,32 +5495,25 @@ impl MeshBackend for MatrixBackend {
         }
         .await;
 
-        {
-            let mut active = self.login_attempt.lock().await;
-            if active
-                .as_ref()
-                .is_some_and(|attempt| attempt.id == attempt_id)
-            {
-                *active = None;
-            }
+        let activation = async {
+            let (client, resolved_homeserver, profile_id) = operation?;
+            self.stop_runtime().await;
+            self.install_client(client, resolved_homeserver, profile_id)
+                .await;
+            Ok(())
         }
-
-        let (client, resolved_homeserver, profile_id) = operation?;
-        self.stop_runtime().await;
-        self.install_client(client, resolved_homeserver, profile_id)
-            .await;
-        Ok(())
+        .await;
+        self.finish_login_attempt(attempt_id).await;
+        activation
     }
 
-    async fn cancel_login(&self) -> BackendResult<()> {
-        if let Some(attempt) = self.login_attempt.lock().await.as_ref() {
-            attempt.cancellation.cancel();
-        }
-        Ok(())
+    async fn cancel_login(&self, cancellation_id: String) -> BackendResult<()> {
+        Self::validate_login_attempt_id(&cancellation_id)?;
+        self.cancel_login_attempt(cancellation_id).await
     }
 
     async fn restore_session(&self) -> BackendResult<BackendStatus> {
-        let _account_transition = self.account_transition_gate.lock().await;
+        let _account_transition = self.account_transition_gate.write().await;
         let storage = self.active_storage_from_registry()?;
         let persisted = self.load_session(&storage)?;
         let homeserver = persisted.homeserver.clone();
@@ -4752,6 +5525,7 @@ impl MeshBackend for MatrixBackend {
                 .await
                 .map_err(Self::map_error)?;
             Self::sync_once_for_session_restore(&client).await?;
+            Self::finish_restored_session_e2ee_initialization_if_needed(&client).await;
             Ok::<_, BackendError>(client)
         };
         let client = tokio::time::timeout(Duration::from_secs(LOGIN_TIMEOUT_SECONDS), operation)
@@ -4765,7 +5539,7 @@ impl MeshBackend for MatrixBackend {
     async fn logout(&self) -> BackendResult<()> {
         self.search_operations.cancel_all().await?;
         <Self as MeshBackend>::cancel_personal_data_export(self).await?;
-        let _account_transition = self.account_transition_gate.lock().await;
+        let _account_transition = self.account_transition_gate.write().await;
         let client = self.client().await?;
         let profile_id = self
             .runtime
@@ -4939,7 +5713,7 @@ impl MeshBackend for MatrixBackend {
     async fn remove_local_account(&self) -> BackendResult<()> {
         self.search_operations.cancel_all().await?;
         <Self as MeshBackend>::cancel_personal_data_export(self).await?;
-        let _account_transition = self.account_transition_gate.lock().await;
+        let _account_transition = self.account_transition_gate.write().await;
         let runtime_profile_id = self.runtime.read().await.profile_id.clone();
         let profile_id = match runtime_profile_id {
             Some(profile_id) => profile_id,
@@ -5009,18 +5783,20 @@ impl MeshBackend for MatrixBackend {
     }
 
     async fn cancel_personal_data_export(&self) -> BackendResult<()> {
-        let Some((cancellation, completed)) = self
-            .personal_export_operation
-            .lock()
-            .await
-            .as_ref()
-            .cloned()
-        else {
-            return Ok(());
+        let (cancellation, mut completion) = {
+            let active = self.personal_export_operation.lock().await;
+            let Some((cancellation, completed)) = active.as_ref().cloned() else {
+                return Ok(());
+            };
+            // Register while the operation record is still locked. Otherwise
+            // the exporter can take the record and notify_waiters between this
+            // snapshot and registration, losing the completion signal.
+            let mut completion = Box::pin(completed.notified_owned());
+            completion.as_mut().enable();
+            (cancellation, completion)
         };
-        let completion = completed.notified();
         cancellation.cancel();
-        tokio::time::timeout(Duration::from_secs(5), completion)
+        tokio::time::timeout(Duration::from_secs(5), completion.as_mut())
             .await
             .map_err(|_| {
                 BackendError::Other(
@@ -5129,7 +5905,7 @@ impl MeshBackend for MatrixBackend {
     async fn switch_account(&self, profile_id: String) -> BackendResult<BackendStatus> {
         self.search_operations.cancel_all().await?;
         <Self as MeshBackend>::cancel_personal_data_export(self).await?;
-        let _account_transition = self.account_transition_gate.lock().await;
+        let _account_transition = self.account_transition_gate.write().await;
         if self.runtime.read().await.profile_id.as_deref() == Some(profile_id.as_str()) {
             return Ok(self.status().await);
         }
@@ -5159,6 +5935,7 @@ impl MeshBackend for MatrixBackend {
                 .await
                 .map_err(Self::map_error)?;
             Self::sync_once_for_session_restore(&client).await?;
+            Self::finish_restored_session_e2ee_initialization_if_needed(&client).await;
             Ok::<_, BackendError>(client)
         };
         let client = tokio::time::timeout(Duration::from_secs(LOGIN_TIMEOUT_SECONDS), operation)
@@ -5534,11 +6311,12 @@ impl MeshBackend for MatrixBackend {
         name: String,
         description: String,
     ) -> BackendResult<CreatedCommunity> {
-        if name.trim().is_empty() {
-            return Err(BackendError::InvalidConfiguration(
-                "community name cannot be empty".into(),
-            ));
-        }
+        let name = normalize_required_metadata(name, "Community name", COMMUNITY_NAME_MAX_UTF16)?;
+        let description = normalize_optional_metadata(
+            description,
+            "Community description",
+            COMMUNITY_DESCRIPTION_MAX_UTF16,
+        )?;
         let client = self.client().await?;
         let user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
         let via = vec![user_id.server_name().to_owned()];
@@ -5546,9 +6324,8 @@ impl MeshBackend for MatrixBackend {
         let mut space_creation = CreationContent::new();
         space_creation.room_type = Some(RoomType::Space);
         let mut space_request = CreateRoomRequest::new();
-        space_request.name = Some(name.trim().to_owned());
-        space_request.topic =
-            (!description.trim().is_empty()).then(|| description.trim().to_owned());
+        space_request.name = Some(name.clone());
+        space_request.topic = (!description.is_empty()).then(|| description.clone());
         space_request.preset = Some(RoomPreset::PrivateChat);
         space_request.creation_content = Some(Raw::new(&space_creation).map_err(Self::map_error)?);
         space_request.power_level_content_override =
@@ -5564,7 +6341,7 @@ impl MeshBackend for MatrixBackend {
 
         let mut channel_request = CreateRoomRequest::new();
         channel_request.name = Some("general".into());
-        channel_request.topic = Some(format!("General discussion for {}", name.trim()));
+        channel_request.topic = Some(format!("General discussion for {name}"));
         channel_request.preset = Some(RoomPreset::PrivateChat);
         channel_request.power_level_content_override =
             Some(Self::community_role_power_level_override()?);
@@ -5588,7 +6365,7 @@ impl MeshBackend for MatrixBackend {
         Ok(CreatedCommunity {
             space_id: space.room_id().to_string(),
             channel_id: channel.room_id().to_string(),
-            name: name.trim().to_owned(),
+            name,
         })
     }
 
@@ -5763,11 +6540,7 @@ impl MeshBackend for MatrixBackend {
                 "channel type must be text or voice".into(),
             ));
         }
-        if name.trim().is_empty() {
-            return Err(BackendError::InvalidConfiguration(
-                "channel name cannot be empty".into(),
-            ));
-        }
+        let name = normalize_required_metadata(name, "Room name", CHANNEL_NAME_MAX_UTF16)?;
 
         let client = self.client().await?;
         let space_id = matrix_sdk::ruma::RoomId::parse(&community_id).map_err(Self::map_error)?;
@@ -5785,7 +6558,7 @@ impl MeshBackend for MatrixBackend {
         parent.canonical = true;
 
         let mut request = CreateRoomRequest::new();
-        request.name = Some(name.trim().to_owned());
+        request.name = Some(name.clone());
         request.preset = Some(RoomPreset::PrivateChat);
         request.power_level_content_override = Some(Self::community_role_power_level_override()?);
         if channel_type == "voice" {
@@ -5810,7 +6583,7 @@ impl MeshBackend for MatrixBackend {
         Ok(ChannelDto {
             id: channel.room_id().to_string(),
             community_id,
-            name: name.trim().to_owned(),
+            name,
             channel_type,
             unread_count: 0,
         })
@@ -5857,6 +6630,23 @@ impl MeshBackend for MatrixBackend {
         }
 
         let _write = self.custom_emoji_writes.lock().await;
+        let user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
+        let power_levels = client
+            .send(get_state_event_for_key::v3::Request::new(
+                space.room_id().to_owned(),
+                StateEventType::RoomPowerLevels,
+                String::new(),
+            ))
+            .await
+            .map_err(Self::map_error)?
+            .into_content()
+            .deserialize_as_unchecked::<RoomPowerLevelsEventContent>()
+            .map_err(Self::map_error)?;
+        if !Self::user_can_update_custom_emoji(&power_levels, user_id) {
+            return Err(BackendError::PermissionDenied(
+                "your current community role cannot manage custom emoji".into(),
+            ));
+        }
         let mut pack = Self::custom_emoji_pack(&space).await?;
         if pack.images.len() >= MAX_CUSTOM_EMOJI_COUNT && !pack.images.contains_key(&shortcode) {
             return Err(BackendError::InvalidConfiguration(
@@ -5965,41 +6755,47 @@ impl MeshBackend for MatrixBackend {
         // membership or requesting an SFU token. Renderer capability checks
         // are UX only and cannot protect against a compromised webview.
         Self::require_matrix_rtc_media_e2ee_ready()?;
-        let status = Self::matrix_rtc_config()?;
-        let configured_service_url = status.livekit_service_url.as_deref().ok_or_else(|| {
+        let client = self.client().await?;
+        let discovered = Self::discover_matrix_rtc_service_url(&client)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    target: "mesh::matrixrtc",
+                    "Calling service discovery failed: {error}"
+                );
+                match error {
+                    BackendError::NotAuthenticated => BackendError::NotAuthenticated,
+                    BackendError::RateLimited(_) => BackendError::RateLimited(
+                        "Calling service discovery is busy. Try again shortly.".into(),
+                    ),
+                    BackendError::InvalidConfiguration(_) | BackendError::NotFound(_) => {
+                        BackendError::InvalidConfiguration(
+                            "This account service does not currently offer compatible voice calling."
+                                .into(),
+                        )
+                    }
+                    _ => BackendError::Network(
+                        "Calling service discovery is temporarily unavailable. Try again."
+                            .into(),
+                    ),
+                }
+            })?;
+        let status = Self::matrix_rtc_config(discovered.service_url)?;
+        let local_service_url = status.livekit_service_url.as_deref().ok_or_else(|| {
             BackendError::InvalidConfiguration(
                 "MatrixRTC authorization service URL is not configured".into(),
             )
         })?;
-        let expected_sfu_url = status.livekit_sfu_url.as_deref().ok_or_else(|| {
-            BackendError::InvalidConfiguration("MatrixRTC LiveKit URL is not configured".into())
-        })?;
-        let client = self.client().await?;
+        let configured_sfu_url = status.livekit_sfu_url.as_deref();
         let parsed_room_id = matrix_sdk::ruma::RoomId::parse(&room_id).map_err(Self::map_error)?;
         let room =
             Self::protected_joined_room(&client, &parsed_room_id, "joining a MatrixRTC call")
                 .await?;
-        let discovered = Self::discover_matrix_rtc_service_url(&client).await?;
-        let configured_service = VoiceServiceStatus::secure_url(
-            "MESH_MATRIXRTC_LIVEKIT_SERVICE_URL",
-            configured_service_url,
-            "https",
-        )
-        .map_err(BackendError::InvalidConfiguration)?;
-        let discovered_service = VoiceServiceStatus::secure_url(
-            "discovered MatrixRTC LiveKit service URL",
-            &discovered.service_url,
-            "https",
-        )
-        .map_err(BackendError::InvalidConfiguration)?;
-        if discovered_service != configured_service {
-            return Err(BackendError::InvalidConfiguration(format!(
-                "MESH_MATRIXRTC_LIVEKIT_SERVICE_URL does not match the {} LiveKit service URL discovered from the homeserver",
-                discovered.source.label()
-            )));
-        }
         let livekit_service_url =
-            Self::select_matrix_rtc_service_url(&room, configured_service_url).await?;
+            Self::select_matrix_rtc_service_url(&room, local_service_url).await?;
+        let expected_sfu_url = (livekit_service_url == local_service_url)
+            .then_some(configured_sfu_url)
+            .flatten();
         let user_id = client
             .user_id()
             .ok_or(BackendError::NotAuthenticated)?
@@ -6213,7 +7009,7 @@ impl MeshBackend for MatrixBackend {
                 device_id.as_str(),
                 &member_id,
             )?,
-            media_e2ee_verified: false,
+            media_e2ee_ready: status.media_e2ee_ready,
             media_key,
         })
     }
@@ -6369,6 +7165,7 @@ impl MeshBackend for MatrixBackend {
     async fn send_text(&self, room_id: String, body: String) -> BackendResult<SentMessage> {
         Self::validate_message_body(&body, "message body")?;
         let client = self.client().await?;
+        Self::require_client_e2ee_ready(&client).await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let room = Self::protected_joined_room(&client, &room_id, "sending a message").await?;
         let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
@@ -6379,7 +7176,7 @@ impl MeshBackend for MatrixBackend {
             .send(content)
             .with_transaction_id(transaction_id)
             .await
-            .map_err(Self::map_error)?;
+            .map_err(Self::map_matrix_send_error)?;
         Ok(SentMessage {
             event_id: response.response.event_id.to_string(),
             room_id: room.room_id().to_string(),
@@ -6397,6 +7194,7 @@ impl MeshBackend for MatrixBackend {
         Self::validate_message_body(&body, "message body")?;
 
         let client = self.client().await?;
+        Self::require_client_e2ee_ready(&client).await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let action = if reply_to_id.is_some() {
             "sending a reply"
@@ -6404,6 +7202,11 @@ impl MeshBackend for MatrixBackend {
             "sending a message"
         };
         let room = Self::existing_protected_text_channel(&client, &room_id, action).await?;
+        // Serialize the authoritative block check with durable queue insertion.
+        // A concurrent block takes the same gate, pauses every queue, writes
+        // m.ignored_user_list, and cancels existing direct-room echoes.
+        let _queue_gate = self.send_queue_gate.lock().await;
+        self.reject_ignored_direct_room(&client, &room).await?;
         let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
         let base_content = RoomMessageEventContentWithoutRelation::text_plain(body.clone())
             .add_mentions(Self::mentions_for_body(body.as_str(), Some(own_user_id)));
@@ -6433,19 +7236,25 @@ impl MeshBackend for MatrixBackend {
             None => base_content.into(),
         };
         let client_request_id = Self::validate_transaction_id(&transaction_id)?.to_string();
-        let _queue_gate = self.send_queue_gate.lock().await;
         let queue = room.send_queue();
-        // Keep the queue asleep until the event is durably present and its SDK
-        // transaction ID has been recovered from the encrypted local echo.
-        queue.set_enabled(false);
-        let (existing_echoes, _) = queue.subscribe().await.map_err(Self::map_error)?;
-        for echo in existing_echoes {
-            if Self::queued_client_request_id(&echo).as_deref() != Some(client_request_id.as_str())
-            {
+        let send_queue = client.send_queue();
+        let echoes_by_room = send_queue.local_echoes().await.map_err(Self::map_error)?;
+        let existing_echoes = echoes_by_room
+            .get(&room_id)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        // Idempotent retries remain successful while the room is within the
+        // bounded recovery window. Legacy over-limit entries are exposed in
+        // successive windows as the user sends or cancels earlier entries.
+        for echo in existing_echoes
+            .iter()
+            .take(MAX_SEND_QUEUE_ROOM_MESSAGES + 1)
+        {
+            if Self::queued_client_request_id(echo).as_deref() != Some(client_request_id.as_str()) {
                 continue;
             }
             if let Some(message) =
-                Self::queued_message_from_local_echo(&client, &room, &echo).await?
+                Self::queued_message_from_local_echo(&client, &room, echo).await?
             {
                 let last_success_ms =
                     Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness).last_success_ms;
@@ -6469,27 +7278,88 @@ impl MeshBackend for MatrixBackend {
                 CLIENT_REQUEST_ID_KEY.into(),
                 serde_json::Value::String(client_request_id.clone()),
             );
-        let raw_content = Raw::<AnyMessageLikeEventContent>::from_json_string(
-            serde_json::to_string(&raw_content).map_err(Self::map_error)?,
-        )
-        .map_err(Self::map_error)?;
-        queue
-            .send_raw(raw_content, "m.room.message".into())
-            .await
+        let raw_content = serde_json::to_string(&raw_content).map_err(Self::map_error)?;
+        let account_usage = Self::bounded_send_queue_usage(
+            echoes_by_room.values().flat_map(|echoes| echoes.iter()),
+            MAX_SEND_QUEUE_ACCOUNT_MESSAGES,
+            MAX_SEND_QUEUE_ACCOUNT_UTF8_BYTES,
+        );
+        let room_usage = Self::bounded_send_queue_usage(
+            existing_echoes,
+            MAX_SEND_QUEUE_ROOM_MESSAGES,
+            MAX_SEND_QUEUE_ROOM_UTF8_BYTES,
+        );
+        Self::ensure_send_queue_capacity(account_usage, room_usage, raw_content.len())?;
+        let raw_content = Raw::<AnyMessageLikeEventContent>::from_json_string(raw_content)
             .map_err(Self::map_error)?;
 
-        let (echoes, _) = queue.subscribe().await.map_err(Self::map_error)?;
-        let queued = echoes
-            .iter()
-            .find(|echo| {
-                Self::queued_client_request_id(echo).as_deref() == Some(client_request_id.as_str())
-            })
-            .ok_or_else(|| {
-                BackendError::Other(
-                    "durable message was accepted but its local echo could not be recovered".into(),
-                )
-            })?;
-        let message = Self::queued_message_from_local_echo(&client, &room, queued)
+        // Subscribe before the durable insert. The SDK emits NewLocalEvent
+        // synchronously before send_raw returns, so normal recovery is indexed
+        // by that update instead of taking a second full queue snapshot.
+        let mut queue_updates = send_queue.subscribe();
+        queue.set_enabled(false);
+        let send_handle = match queue.send_raw(raw_content, "m.room.message".into()).await {
+            Ok(send_handle) => send_handle,
+            Err(error) => {
+                let last_success_ms =
+                    Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness).last_success_ms;
+                queue.set_enabled(Self::matrix_sync_is_fresh(
+                    last_success_ms,
+                    Self::matrix_rtc_monotonic_now_ms(),
+                ));
+                return Err(Self::map_error(error));
+            }
+        };
+        let queued = match Self::queued_local_echo_from_updates(
+            &mut queue_updates,
+            &room_id,
+            &client_request_id,
+        ) {
+            Some(echo) => echo,
+            None => {
+                // A lagged broadcast is exceptional. This fallback remains
+                // bounded because admission just proved the post-insert room
+                // queue fits the fixed count and byte policy.
+                let (echoes, _) = match queue.subscribe().await {
+                    Ok(snapshot) => snapshot,
+                    Err(error) => {
+                        let _ = send_handle.abort().await;
+                        let last_success_ms =
+                            Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness)
+                                .last_success_ms;
+                        queue.set_enabled(Self::matrix_sync_is_fresh(
+                            last_success_ms,
+                            Self::matrix_rtc_monotonic_now_ms(),
+                        ));
+                        return Err(Self::map_error(error));
+                    }
+                };
+                let Some(echo) =
+                    echoes
+                        .into_iter()
+                        .take(MAX_SEND_QUEUE_ROOM_MESSAGES)
+                        .find(|echo| {
+                            Self::queued_client_request_id(echo).as_deref()
+                                == Some(client_request_id.as_str())
+                        })
+                else {
+                    let _ = send_handle.abort().await;
+                    let last_success_ms =
+                        Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness)
+                            .last_success_ms;
+                    queue.set_enabled(Self::matrix_sync_is_fresh(
+                        last_success_ms,
+                        Self::matrix_rtc_monotonic_now_ms(),
+                    ));
+                    return Err(BackendError::Other(
+                        "Mesh could not confirm the saved message, so it was cancelled. Try sending it again."
+                            .into(),
+                    ));
+                };
+                echo
+            }
+        };
+        let message = Self::queued_message_from_local_echo(&client, &room, &queued)
             .await?
             .ok_or_else(|| {
                 BackendError::Other("durable message local echo was not displayable".into())
@@ -6514,16 +7384,19 @@ impl MeshBackend for MatrixBackend {
         transaction_id: String,
     ) -> BackendResult<()> {
         let client = self.client().await?;
+        Self::require_client_e2ee_ready(&client).await?;
         let _queue_gate = self.send_queue_gate.lock().await;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let transaction_id = Self::validate_transaction_id(&transaction_id)?;
         let room =
             Self::existing_protected_text_channel(&client, &room_id, "retrying a queued message")
                 .await?;
+        self.reject_ignored_direct_room(&client, &room).await?;
         let queue = room.send_queue();
         let (echoes, _) = queue.subscribe().await.map_err(Self::map_error)?;
         let echo = echoes
             .into_iter()
+            .take(MAX_SEND_QUEUE_ROOM_MESSAGES)
             .find(|echo| echo.transaction_id == transaction_id)
             .ok_or_else(|| BackendError::NotFound("queued message is no longer pending".into()))?;
         if !Self::is_supported_queued_text(&echo) {
@@ -6569,6 +7442,7 @@ impl MeshBackend for MatrixBackend {
         let (echoes, _) = queue.subscribe().await.map_err(Self::map_error)?;
         let echo = echoes
             .into_iter()
+            .take(MAX_SEND_QUEUE_ROOM_MESSAGES)
             .find(|echo| echo.transaction_id == transaction_id)
             .ok_or_else(|| BackendError::NotFound("queued message is no longer pending".into()))?;
         if !Self::is_supported_queued_text(&echo) {
@@ -6652,6 +7526,12 @@ impl MeshBackend for MatrixBackend {
 
         Self::validate_transfer_id(&transfer_id)?;
         let transaction_id = Self::validate_transaction_id(&transaction_id)?;
+        // Keep the authenticated runtime stable through publication. Account
+        // transitions take the write side of this gate and therefore cannot
+        // report success while an old-account upload can still publish.
+        let _account_transfer = self.account_transition_gate.read().await;
+        let client = self.client().await?;
+        Self::require_client_e2ee_ready(&client).await?;
         Self::emit_transfer_progress(
             &progress,
             &transfer_id,
@@ -6781,7 +7661,6 @@ impl MeshBackend for MatrixBackend {
                 .ok_or_else(|| BackendError::Other("attachment transfer size overflowed".into()))?;
             transfer_total_bytes.store(network_total_bytes, Ordering::Relaxed);
 
-            let client = self.client().await?;
             let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
             let room =
                 Self::protected_joined_room(&client, &room_id, "sending an attachment").await?;
@@ -6903,7 +7782,7 @@ impl MeshBackend for MatrixBackend {
                 .send(content)
                 .with_transaction_id(transaction_id)
                 .await
-                .map_err(Self::map_error)?;
+                .map_err(Self::map_matrix_send_error)?;
             let display_name = room
                 .get_member(own_user_id)
                 .await
@@ -7000,7 +7879,23 @@ impl MeshBackend for MatrixBackend {
             progress,
         } = transfer;
         Self::validate_transfer_id(&transfer_id)?;
-        let client = self.client().await?;
+        // Bind both the Matrix client and cache destination to one runtime
+        // snapshot. This prevents decrypted bytes from crossing account
+        // profiles even if a transition is requested during the download.
+        let _account_transfer = self.account_transition_gate.read().await;
+        let (client, profile_id) = {
+            let runtime = self.runtime.read().await;
+            (
+                runtime
+                    .client
+                    .clone()
+                    .ok_or(BackendError::NotAuthenticated)?,
+                runtime
+                    .profile_id
+                    .clone()
+                    .ok_or(BackendError::NotAuthenticated)?,
+            )
+        };
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
         let resolved_attachment =
@@ -7064,7 +7959,6 @@ impl MeshBackend for MatrixBackend {
                 &cancellation,
             )
             .await?;
-            let client = self.client().await?;
             Self::emit_transfer_progress(
                 &progress,
                 &transfer_id,
@@ -7129,13 +8023,6 @@ impl MeshBackend for MatrixBackend {
                 &data,
             );
 
-            let profile_id = self
-                .runtime
-                .read()
-                .await
-                .profile_id
-                .clone()
-                .ok_or(BackendError::NotAuthenticated)?;
             let storage = self.storage_for_profile(&profile_id);
             let cache_root = self.media_cache_root(&storage);
             create_private_dir(&cache_root, true)
@@ -7241,6 +8128,7 @@ impl MeshBackend for MatrixBackend {
         event_id: String,
         attachment_index: u32,
     ) -> BackendResult<Vec<u8>> {
+        let _account_transfer = self.account_transition_gate.read().await;
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
@@ -7310,8 +8198,153 @@ impl MeshBackend for MatrixBackend {
         Ok(())
     }
 
+    async fn dm_requests(&self) -> BackendResult<Vec<DmRequestDto>> {
+        let client = self.client().await?;
+        let mut invited_rooms = client.invited_rooms();
+        invited_rooms.sort_by(|left, right| left.room_id().cmp(right.room_id()));
+        if invited_rooms.len() > MAX_DM_REQUESTS {
+            tracing::warn!(
+                target: "mesh::security",
+                observed = invited_rooms.len(),
+                retained = MAX_DM_REQUESTS,
+                "Bounded the incoming direct-message request projection"
+            );
+            invited_rooms.truncate(MAX_DM_REQUESTS);
+        }
+
+        let mut requests = Vec::new();
+        for room in invited_rooms {
+            match Self::dm_request_from_invited_room(&room).await {
+                Ok(Some(request)) => {
+                    let inviter = matrix_sdk::ruma::UserId::parse(&request.inviter_user_id)
+                        .map_err(Self::map_error)?;
+                    if !self.is_ignored_user(&client, &inviter).await? {
+                        requests.push(request);
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    tracing::warn!(
+                        target: "mesh::security",
+                        room_id = %room.room_id(),
+                        "Suppressed an invalid direct-message request: {error}"
+                    );
+                }
+            }
+        }
+        requests.sort_by(|left, right| {
+            left.inviter_display_name
+                .cmp(&right.inviter_display_name)
+                .then_with(|| left.room_id.cmp(&right.room_id))
+        });
+        Ok(requests)
+    }
+
+    async fn accept_dm_request(&self, room_id: String) -> BackendResult<DmConversationDto> {
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let client = self.client().await?;
+        let (room, inviter_id) = Self::validated_dm_request_room(&client, &room_id).await?;
+        if self.is_ignored_user(&client, &inviter_id).await? {
+            return Err(BackendError::PermissionDenied(
+                "Unblock this account before accepting its message request".into(),
+            ));
+        }
+        let encrypted = room
+            .latest_encryption_state()
+            .await
+            .map_err(Self::map_error)?
+            .is_encrypted();
+        if !encrypted {
+            return Err(BackendError::NotEncrypted(room_id.to_string()));
+        }
+
+        room.join().await.map_err(Self::map_error)?;
+        let validation = async {
+            Self::require_protected_room(&room, "accepting this message request").await?;
+            let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
+            let own_user_is_joined = Self::room_member_is_joined(&room, own_user_id).await?;
+            let inviter_is_joined = Self::room_member_is_joined(&room, &inviter_id).await?;
+            if !Self::is_exact_two_party_direct_candidate(
+                room.joined_members_count(),
+                own_user_is_joined,
+                inviter_is_joined,
+            ) {
+                return Err(BackendError::InvalidConfiguration(
+                    "Mesh only accepts one-to-one message requests".into(),
+                ));
+            }
+            Ok(())
+        }
+        .await;
+        if let Err(error) = validation {
+            if let Err(leave_error) = room.leave().await {
+                tracing::error!(
+                    target: "mesh::security",
+                    room_id = %room.room_id(),
+                    "Failed to leave a rejected direct-message request: {leave_error}"
+                );
+            }
+            return Err(error);
+        }
+
+        self.ensure_dm(inviter_id.to_string()).await
+    }
+
+    async fn decline_dm_request(&self, room_id: String) -> BackendResult<()> {
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let client = self.client().await?;
+        let (room, _) = Self::validated_dm_request_room(&client, &room_id).await?;
+        room.leave().await.map_err(Self::map_error)
+    }
+
+    async fn block_dm_request(&self, room_id: String) -> BackendResult<BlockedAccountDto> {
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let client = self.client().await?;
+        let (room, inviter_id) = Self::validated_dm_request_room(&client, &room_id).await?;
+        self.set_ignored_user(&client, inviter_id.clone(), true)
+            .await?;
+
+        // The durable safety boundary is the standard account-wide ignored
+        // user list. Leaving the invite is cleanup only: if it fails, the
+        // request remains filtered while the account is blocked and can
+        // reappear after an explicit unblock.
+        if let Err(error) = room.leave().await {
+            tracing::warn!(
+                target: "mesh::security",
+                room_id = %room.room_id(),
+                inviter_user_id = %inviter_id,
+                "Blocked a direct-message requester but could not leave the invitation: {error}"
+            );
+        }
+
+        Ok(BlockedAccountDto {
+            user_id: inviter_id.to_string(),
+        })
+    }
+
+    async fn blocked_accounts(
+        &self,
+        after: Option<String>,
+        limit: u32,
+    ) -> BackendResult<BlockedAccountPageDto> {
+        let client = self.client().await?;
+        let content = self.refresh_ignored_user_list(&client).await?;
+        Ok(Self::blocked_account_page_from_user_ids(
+            content
+                .ignored_users
+                .keys()
+                .map(|user_id| user_id.to_string()),
+            after.as_deref(),
+            limit,
+        ))
+    }
+
     async fn dm_conversations(&self) -> BackendResult<EntityList<DmConversationDto>> {
         let client = self.client().await?;
+        // This is a display boundary, not only a send-time policy check. Read
+        // the whole account list once so every direct-room projection uses one
+        // authoritative snapshot and any read/decode failure fails closed.
+        let ignored_users = self.refresh_ignored_user_list(&client).await?;
         let mut conversations = Vec::new();
         let mut blocked_entities = Vec::new();
         for room in client.joined_rooms() {
@@ -7330,6 +8363,14 @@ impl MeshBackend for MatrixBackend {
                         "group direct-message rooms are not supported".into(),
                     )),
                 )?;
+                continue;
+            }
+            if targets.iter().any(|target| {
+                ignored_users
+                    .ignored_users
+                    .keys()
+                    .any(|user_id| user_id.as_str() == target.as_str())
+            }) {
                 continue;
             }
             let projection = async {
@@ -7397,7 +8438,7 @@ impl MeshBackend for MatrixBackend {
                 "cannot create a direct message with the signed-in user".into(),
             ));
         }
-        if Self::is_ignored_user(&client, &recipient).await? {
+        if self.is_ignored_user(&client, &recipient).await? {
             return Err(BackendError::InvalidConfiguration(
                 "direct messages are blocked for this Matrix user".into(),
             ));
@@ -7439,6 +8480,13 @@ impl MeshBackend for MatrixBackend {
         if room.direct_targets().len() != 1 {
             return Err(BackendError::InvalidConfiguration(
                 "conversation is not a one-to-one Matrix direct room".into(),
+            ));
+        }
+        let recipient = Self::direct_room_peer(&room)?
+            .ok_or_else(|| BackendError::InvalidConfiguration("direct room has no peer".into()))?;
+        if self.is_ignored_user(&client, &recipient).await? {
+            return Err(BackendError::InvalidConfiguration(
+                "direct messages are blocked for this Matrix user".into(),
             ));
         }
         let mut messages = self
@@ -7510,7 +8558,7 @@ impl MeshBackend for MatrixBackend {
                 "cannot create a direct message with the signed-in user".into(),
             ));
         }
-        if Self::is_ignored_user(&client, &recipient).await? {
+        if self.is_ignored_user(&client, &recipient).await? {
             return Err(BackendError::InvalidConfiguration(
                 "direct messages are blocked for this Matrix user".into(),
             ));
@@ -7542,6 +8590,11 @@ impl MeshBackend for MatrixBackend {
                 "cannot create a direct message with the signed-in user".into(),
             ));
         }
+        if self.is_ignored_user(&client, &recipient).await? {
+            return Err(BackendError::InvalidConfiguration(
+                "direct messages are blocked for this Matrix user".into(),
+            ));
+        }
         let room = self.direct_room(&client, &recipient).await?;
         let message = <Self as MeshBackend>::send_attachment(
             self,
@@ -7564,6 +8617,13 @@ impl MeshBackend for MatrixBackend {
                 "conversation is not a one-to-one Matrix direct room".into(),
             ));
         }
+        let recipient = Self::direct_room_peer(&room)?
+            .ok_or_else(|| BackendError::InvalidConfiguration("direct room has no peer".into()))?;
+        if self.is_ignored_user(&client, &recipient).await? {
+            return Err(BackendError::InvalidConfiguration(
+                "direct messages are blocked for this Matrix user".into(),
+            ));
+        }
         <Self as MeshBackend>::mark_read(self, conversation_id).await
     }
 
@@ -7580,24 +8640,25 @@ impl MeshBackend for MatrixBackend {
                 "cannot block the signed-in Matrix user".into(),
             ));
         }
-        let mut content = client
-            .account()
-            .fetch_account_data_static::<IgnoredUserListEventContent>()
-            .await
-            .map_err(Self::map_error)?
-            .map(|raw| raw.deserialize().map_err(Self::map_error))
-            .transpose()?
-            .unwrap_or_default();
-        if blocked {
-            content.ignored_users.insert(recipient, IgnoredUser::new());
-        } else {
-            content.ignored_users.remove(&recipient);
+        let _queue_gate = self.send_queue_gate.lock().await;
+        // Pause the account queue before changing the block list. This closes
+        // the race where an offline DM echo could resume between the account
+        // data write and cancellation.
+        client.send_queue().set_enabled(false).await;
+        let last_success_ms =
+            Self::lock_matrix_sync_freshness(&self.matrix_sync_freshness).last_success_ms;
+        let allow_resume =
+            Self::matrix_sync_is_fresh(last_success_ms, Self::matrix_rtc_monotonic_now_ms());
+        let result = self.set_ignored_user(&client, recipient, blocked).await;
+        if let Err(error) = result {
+            // Reconciliation is best-effort here; on failure the queue remains
+            // globally disabled, which is the safe outcome.
+            let _ = Self::reconcile_protected_send_queues(&client, allow_resume).await;
+            return Err(error);
         }
-        client
-            .account()
-            .set_account_data(content)
-            .await
-            .map_err(Self::map_error)?;
+        Self::reconcile_protected_send_queues(&client, allow_resume).await?;
+        Self::resnapshot_send_queue_updates(&client, &self.event_callback, &self.send_queue_known)
+            .await?;
         Ok(blocked)
     }
 
@@ -7605,7 +8666,7 @@ impl MeshBackend for MatrixBackend {
         let client = self.client().await?;
         let recipient =
             matrix_sdk::ruma::UserId::parse(recipient_user_id).map_err(Self::map_error)?;
-        Self::is_ignored_user(&client, &recipient).await
+        self.is_ignored_user(&client, &recipient).await
     }
 
     async fn messages(
@@ -7618,22 +8679,19 @@ impl MeshBackend for MatrixBackend {
         let client = self.client().await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let room = Self::protected_joined_room(&client, &room_id, "reading messages").await?;
+        let ignored_users = self.refresh_ignored_user_list(&client).await?;
 
-        let members: HashMap<String, String> = room
-            .members(RoomMemberships::JOIN)
-            .await
-            .map_err(Self::map_error)?
-            .into_iter()
-            .map(|member| (member.user_id().to_string(), member.name().to_owned()))
-            .collect();
         let requested = limit.clamp(1, 5_000) as usize;
         let values = if before_id.is_some() || before_timestamp.is_some() {
             self.timeline_values_with_predecessors(&client, &room, requested, before_id.as_deref())
                 .await?
         } else {
             Self::timeline_values(&room, requested, None).await?
-        };
-        let mut result = Self::project_timeline(room.room_id().as_str(), &members, values);
+        }
+        .into_iter()
+        .filter(|value| !Self::is_ignored_non_state_event(value, &ignored_users))
+        .collect();
+        let mut result = Self::project_timeline(room.room_id().as_str(), &HashMap::new(), values);
         if let Some(before_timestamp) = before_timestamp.as_deref() {
             result.retain(|message| {
                 message.timestamp.as_str() < before_timestamp
@@ -7646,6 +8704,7 @@ impl MeshBackend for MatrixBackend {
         if result.len() > limit as usize {
             result = result.split_off(result.len() - limit as usize);
         }
+        Self::resolve_projected_member_display_names(&room, &mut result, requested).await?;
         Ok(result)
     }
 
@@ -7657,6 +8716,7 @@ impl MeshBackend for MatrixBackend {
     ) -> BackendResult<()> {
         Self::validate_message_body(&body, "message body")?;
         let client = self.client().await?;
+        Self::require_client_e2ee_ready(&client).await?;
         let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
@@ -7668,7 +8728,9 @@ impl MeshBackend for MatrixBackend {
             // Keep the top-level m.mentions present as well as the m.new_content
             // copy produced by the replacement relation.
             .add_mentions(mentions);
-        room.send(replacement).await.map_err(Self::map_error)?;
+        room.send(replacement)
+            .await
+            .map_err(Self::map_matrix_send_error)?;
         Ok(())
     }
 
@@ -7764,9 +8826,10 @@ impl MeshBackend for MatrixBackend {
             return Ok(false);
         }
 
+        Self::require_client_e2ee_ready(&client).await?;
         room.send(ReactionEventContent::new(Annotation::new(target_id, key)))
             .await
-            .map_err(Self::map_error)?;
+            .map_err(Self::map_matrix_send_error)?;
         Ok(true)
     }
 
@@ -7797,7 +8860,7 @@ impl MeshBackend for MatrixBackend {
             Self::existing_protected_text_channel(&client, &room_id, "changing pinned messages")
                 .await?;
         let can_manage = room
-            .get_member(own_user_id)
+            .get_member_no_sync(own_user_id)
             .await
             .map_err(Self::map_error)?
             .is_some_and(|member| member.can_pin_or_unpin_event());
@@ -7966,10 +9029,12 @@ impl MeshBackend for MatrixBackend {
             .user_id()
             .ok_or(BackendError::NotAuthenticated)?
             .to_string();
-        let cancellation = self
+        let registration = self
             .search_operations
             .begin(&request_id, format!("{account_id}:messages"))
             .await?;
+        let cancellation = registration.cancellation.clone();
+        let _registration = registration;
         let limit = limit.clamp(1, 500) as usize;
         let search = async {
             let channels = tokio::select! {
@@ -8032,7 +9097,6 @@ impl MeshBackend for MatrixBackend {
                 "message search reached its native deadline".into(),
             )),
         };
-        self.search_operations.finish(&request_id).await;
         result
     }
 
@@ -8056,71 +9120,91 @@ impl MeshBackend for MatrixBackend {
         ))
     }
 
-    async fn list_members(&self, community_id: String) -> BackendResult<Vec<CommunityMember>> {
+    async fn list_member_page(
+        &self,
+        community_id: String,
+        cursor: Option<String>,
+        limit: Option<u32>,
+    ) -> BackendResult<CommunityMemberPage> {
+        let cursor = normalize_member_page_cursor(cursor)?;
+        if let Some(cursor) = cursor.as_deref() {
+            UserId::parse(cursor).map_err(|_| {
+                BackendError::InvalidInput(
+                    "The member-page cursor is invalid. Refresh the member list and try again."
+                        .into(),
+                )
+            })?;
+        }
+        let limit = normalized_member_page_limit(limit);
         let client = self.client().await?;
         let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
-        let rooms = self.community_rooms(&community_id).await?;
-        let space = rooms.first().ok_or_else(|| {
-            BackendError::Other("community Space is not present in the local Matrix store".into())
-        })?;
+        let space_id = RoomId::parse(&community_id).map_err(Self::map_error)?;
+        let space =
+            Self::protected_joined_room(&client, &space_id, "reading community members").await?;
+        if !space.is_space() {
+            return Err(BackendError::InvalidConfiguration(
+                "community ID does not identify a Matrix Space".into(),
+            ));
+        }
+
+        // Do not call Room::members here: it forces a server-wide member sync
+        // before returning. matrix-sdk 0.18 still materializes the complete
+        // locally known state Vec, but Mesh retains and projects at most one
+        // bounded page and never repeats that work on a fixed polling timer.
+        let state_complete = space.are_members_synced();
+        let known_members = space
+            .members_no_sync(RoomMemberships::all())
+            .await
+            .map_err(Self::map_error)?;
+        let (page_members, next_cursor) =
+            bounded_member_page(known_members, cursor.as_deref(), limit, |member| {
+                member.user_id().to_string()
+            });
         let creators = space.creators().unwrap_or_default();
         let presence = self.presence.read().await;
-        let mut members = Vec::new();
-        for member in space
-            .members(RoomMemberships::all())
-            .await
-            .map_err(Self::map_error)?
-        {
-            let user_id = member.user_id().to_string();
-            let membership = member.membership().as_str();
-            let banned = membership == "ban";
-            let joined = membership == "join";
-            let role = if creators.iter().any(|creator| creator == member.user_id()) {
-                "owner"
-            } else {
-                match member.suggested_role_for_power_level() {
-                    RoomMemberRole::Creator => "owner",
-                    RoomMemberRole::Administrator | RoomMemberRole::Moderator => "admin",
-                    _ => "member",
+        let members = page_members
+            .into_iter()
+            .map(|member| {
+                let user_id = member.user_id().to_string();
+                let membership = member.membership().as_str();
+                let banned = membership == "ban";
+                let joined = membership == "join";
+                let role = if creators.iter().any(|creator| creator == member.user_id()) {
+                    "owner"
+                } else {
+                    match member.suggested_role_for_power_level() {
+                        RoomMemberRole::Creator => "owner",
+                        RoomMemberRole::Administrator | RoomMemberRole::Moderator => "admin",
+                        _ => "member",
+                    }
+                };
+                let online = joined
+                    && (member.user_id() == own_user_id
+                        || presence
+                            .get(&user_id)
+                            .is_some_and(|status| status == "online"));
+                CommunityMember {
+                    public_key: user_id.clone(),
+                    display_name: bounded_remote_member_display_name(member.name(), &user_id),
+                    avatar_color: Self::avatar_color(&user_id),
+                    role: role.into(),
+                    join_status: match membership {
+                        "invite" => "invited",
+                        "join" => "joined",
+                        _ => "left",
+                    }
+                    .into(),
+                    ban_status: if banned { "banned" } else { "none" }.into(),
+                    last_seen: online.then(|| chrono::Utc::now().to_rfc3339()),
+                    online,
                 }
-            };
-            let online = joined
-                && (member.user_id() == own_user_id
-                    || presence
-                        .get(&user_id)
-                        .is_some_and(|status| status == "online"));
-            members.push(CommunityMember {
-                public_key: user_id.clone(),
-                display_name: member.name().to_owned(),
-                avatar_color: Self::avatar_color(&user_id),
-                role: role.into(),
-                join_status: match membership {
-                    "invite" => "invited",
-                    "join" => "joined",
-                    _ => "left",
-                }
-                .into(),
-                ban_status: if banned { "banned" } else { "none" }.into(),
-                last_seen: online.then(|| chrono::Utc::now().to_rfc3339()),
-                online,
-            });
-        }
-        members.sort_by(|left, right| {
-            let rank = |role: &str| match role {
-                "owner" => 0,
-                "admin" => 1,
-                _ => 2,
-            };
-            rank(&left.role)
-                .cmp(&rank(&right.role))
-                .then_with(|| {
-                    left.display_name
-                        .to_lowercase()
-                        .cmp(&right.display_name.to_lowercase())
-                })
-                .then_with(|| left.public_key.cmp(&right.public_key))
-        });
-        Ok(members)
+            })
+            .collect();
+        Ok(CommunityMemberPage {
+            members,
+            next_cursor,
+            state_complete,
+        })
     }
 
     async fn invite_to_community(
@@ -8447,10 +9531,12 @@ impl MeshBackend for MatrixBackend {
             .user_id()
             .ok_or(BackendError::NotAuthenticated)?
             .to_string();
-        let cancellation = self
+        let registration = self
             .search_operations
             .begin(&request_id, format!("{account_id}:directory"))
             .await?;
+        let cancellation = registration.cancellation.clone();
+        let _registration = registration;
 
         let search = async {
             let response = tokio::select! {
@@ -8486,7 +9572,6 @@ impl MeshBackend for MatrixBackend {
                 "community search reached its native deadline".into(),
             )),
         };
-        self.search_operations.finish(&request_id).await;
         result
     }
 
@@ -8570,22 +9655,21 @@ impl MeshBackend for MatrixBackend {
         let space =
             Self::protected_joined_room(&client, &space_id, "reading community applications")
                 .await?;
-        let mut applications = Vec::new();
-        for member in space
-            .members(RoomMemberships::KNOCK)
+        let response = client
+            .send(Self::community_applications_request(space.room_id()))
             .await
-            .map_err(Self::map_error)?
-        {
-            let requested_at = member.event().timestamp().and_then(|timestamp| {
-                chrono::DateTime::from_timestamp_millis(u64::from(timestamp) as i64)
-                    .map(|value| value.to_rfc3339())
-            });
-            applications.push(CommunityApplication {
-                user_id: member.user_id().to_string(),
-                display_name: member.name().to_owned(),
-                reason: member.event().reason().map(ToOwned::to_owned),
-                requested_at,
-            });
+            .map_err(Self::map_error)?;
+        if response.chunk.len() > MAX_COMMUNITY_APPLICATIONS {
+            return Err(BackendError::InvalidConfiguration(format!(
+                "This community has more than {MAX_COMMUNITY_APPLICATIONS} pending requests, which Mesh cannot display safely yet. Ask an owner to review requests with another compatible client."
+            )));
+        }
+        let mut applications = Vec::with_capacity(response.chunk.len());
+        for raw_event in response.chunk {
+            let event = raw_event.deserialize().map_err(Self::map_error)?;
+            if let Some(application) = Self::community_application_from_member_event(event) {
+                applications.push(application);
+            }
         }
         applications.sort_by(|left, right| {
             left.requested_at
@@ -8611,12 +9695,8 @@ impl MeshBackend for MatrixBackend {
             "responding to a community application",
         )
         .await?;
-        let is_pending = space
-            .members(RoomMemberships::KNOCK)
-            .await
-            .map_err(Self::map_error)?
-            .iter()
-            .any(|member| member.user_id() == user_id);
+        let is_pending =
+            Self::has_pending_community_application(&client, space.room_id(), &user_id).await?;
         if !is_pending {
             return Err(BackendError::InvalidConfiguration(
                 "the user no longer has a pending application for this community".into(),
@@ -8653,7 +9733,7 @@ impl MeshBackend for MatrixBackend {
             .map_err(Self::map_error)?;
         let presence = self.matrix_sync_control.lock().await.presence.clone();
         client
-            .sync_once(SyncSettings::default().set_presence(presence.clone()))
+            .sync_once(Self::lazy_loaded_sync_settings().set_presence(presence.clone()))
             .await
             .map_err(Self::map_error)?;
         if !space.is_space() {
@@ -8678,7 +9758,7 @@ impl MeshBackend for MatrixBackend {
             }
         }
         client
-            .sync_once(SyncSettings::default().set_presence(presence))
+            .sync_once(Self::lazy_loaded_sync_settings().set_presence(presence))
             .await
             .map_err(Self::map_error)?;
 
@@ -8723,21 +9803,19 @@ impl MeshBackend for MatrixBackend {
         name: String,
         description: String,
     ) -> BackendResult<()> {
-        if name.trim().is_empty() {
-            return Err(BackendError::InvalidConfiguration(
-                "community name cannot be empty".into(),
-            ));
-        }
+        let name = normalize_required_metadata(name, "Community name", COMMUNITY_NAME_MAX_UTF16)?;
+        let description = normalize_optional_metadata(
+            description,
+            "Community description",
+            COMMUNITY_DESCRIPTION_MAX_UTF16,
+        )?;
         let rooms = self.community_rooms(&community_id).await?;
         let space = rooms.first().ok_or_else(|| {
             BackendError::Other("community Space is not present in the local Matrix store".into())
         })?;
+        space.set_name(name).await.map_err(Self::map_error)?;
         space
-            .set_name(name.trim().to_owned())
-            .await
-            .map_err(Self::map_error)?;
-        space
-            .set_room_topic(description.trim())
+            .set_room_topic(&description)
             .await
             .map_err(Self::map_error)?;
         Ok(())
@@ -8895,12 +9973,19 @@ impl MeshBackend for MatrixBackend {
         &self,
         mut passphrase: Option<String>,
     ) -> BackendResult<MatrixRecoverySetupResult> {
+        if let Some(value) = passphrase.as_mut() {
+            Self::validate_recovery_credential(value, false)?;
+            if value.trim().is_empty() {
+                value.zeroize();
+                passphrase = None;
+            }
+        }
         let client = self.client().await?;
         let recovery = client.encryption().recovery();
         let enable = recovery.enable().wait_for_backups_to_upload();
         let result = match passphrase.as_deref() {
-            Some(passphrase) if !passphrase.is_empty() => enable
-                .with_passphrase(passphrase)
+            Some(passphrase) => enable
+                .with_passphrase(passphrase.trim())
                 .await
                 .map_err(Self::map_error),
             _ => enable.await.map_err(Self::map_error),
@@ -8966,7 +10051,7 @@ impl MeshBackend for MatrixBackend {
         }
         let result = client
             .sync_once(
-                SyncSettings::default()
+                Self::lazy_loaded_sync_settings()
                     // Explicit one-shot synchronization must not inherit the
                     // background 30-second long poll. A one-second server poll
                     // is long enough to deliver newly published ephemeral
@@ -9007,13 +10092,14 @@ impl MeshBackend for MatrixBackend {
         content: serde_json::Value,
     ) -> BackendResult<String> {
         let client = self.client().await?;
+        Self::require_client_e2ee_ready(&client).await?;
         let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
         let room =
             Self::protected_joined_room(&client, &room_id, "importing legacy provenance").await?;
         let response = room
             .send_raw(crate::backend::LEGACY_MATRIX_EVENT_TYPE, content)
             .await
-            .map_err(Self::map_error)?;
+            .map_err(Self::map_matrix_send_error)?;
         Ok(response.response.event_id.to_string())
     }
 }

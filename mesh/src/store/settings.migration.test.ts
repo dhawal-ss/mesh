@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { INTERFACE_SOUND_IDS } from '../lib/interface-sound-contract'
 import { LOCAL_SETTINGS_SCHEMA_VERSION, migrateSettingsPersistence } from './settings'
 
-describe('settings schema 7 migration', () => {
+describe('settings schema migration', () => {
   it('migrates a disabled legacy sound switch to eight disabled events', () => {
     const migrated = migrateSettingsPersistence({
       notifications: {
@@ -19,7 +19,7 @@ describe('settings schema 7 migration', () => {
       },
     }, 6)
 
-    expect(LOCAL_SETTINGS_SCHEMA_VERSION).toBe(7)
+    expect(LOCAL_SETTINGS_SCHEMA_VERSION).toBe(8)
     expect(migrated.notifications?.soundVolume).toBe(0.25)
     expect(Object.keys(migrated.notifications?.soundEvents ?? {})).toEqual(INTERFACE_SOUND_IDS)
     expect(Object.values(migrated.notifications?.soundEvents ?? {})).toEqual(

@@ -29,8 +29,35 @@ test('validation job is read-only and cannot reference secret or variable contex
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
   const workflow = await readFile(path.join(root, '.github', 'workflows', 'release-beta.yml'), 'utf8')
   const qualityJob = workflow.slice(workflow.indexOf('  quality-gate:'), workflow.indexOf('\n  windows:'))
-  assert.match(workflow, /permissions:\s*\n\s*contents: read/)
+  assert.match(workflow, /permissions:\s*\n\s*actions: read\s*\n\s*contents: read/)
   assert.match(qualityJob, /-ValidationOnly/)
   assert.doesNotMatch(qualityJob, /\$\{\{\s*(?:secrets|vars)\./)
   assert.match(workflow, /if: \$\{\{ needs\.quality-gate\.outputs\.create_candidate == 'true' \}\}/)
+})
+
+test('tag candidates normalize the release version before the Windows job', async () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+  const workflow = await readFile(path.join(root, '.github', 'workflows', 'release-beta.yml'), 'utf8')
+  const qualityJob = workflow.slice(workflow.indexOf('  quality-gate:'), workflow.indexOf('\n  container-supply-chain-r2:'))
+  const windowsJob = workflow.slice(workflow.indexOf('  windows:'))
+
+  assert.match(qualityJob, /release_version="\$\{MESH_RELEASE_VERSION#v\}"/)
+  assert.match(qualityJob, /echo "release_version=\$release_version" >> "\$GITHUB_OUTPUT"/)
+  assert.match(qualityJob, /echo "MESH_RELEASE_VERSION=\$release_version" >> "\$GITHUB_ENV"/)
+  assert.match(windowsJob, /MESH_RELEASE_VERSION: \$\{\{ needs\.quality-gate\.outputs\.release_version \}\}/)
+})
+
+test('candidate container scans use the exact source selected by the quality gate', async () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+  const workflow = await readFile(path.join(root, '.github', 'workflows', 'release-beta.yml'), 'utf8')
+  const containerJob = workflow.slice(
+    workflow.indexOf('  container-supply-chain-r2:'),
+    workflow.indexOf('\n  windows:'),
+  )
+
+  assert.match(containerJob, /needs: quality-gate/)
+  assert.match(containerJob, /if: \$\{\{ needs\.quality-gate\.outputs\.create_candidate == 'true' \}\}/)
+  assert.match(containerJob, /ref: \$\{\{ needs\.quality-gate\.outputs\.source_sha \}\}/)
+  assert.match(containerJob, /candidate-container-\$\{\{ matrix\.name \}\}-\$\{\{ needs\.quality-gate\.outputs\.source_sha \}\}/)
+  assert.doesNotMatch(containerJob, /candidate-container-.*\$\{\{ github\.sha \}\}/)
 })

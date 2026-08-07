@@ -11,7 +11,7 @@ homeserver_dir="$(CDPATH= cd -- "$script_dir/.." && pwd)"
 # shellcheck source=infra/homeserver/docker-cli.sh
 . "$homeserver_dir/docker-cli.sh"
 postgres_image="postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193"
-synapse_image="matrixdotorg/synapse:v1.157.1@sha256:d1fce43d7501428c461f2758dc10342555b946dc9f1d03c1b1b8aec1a4e8d130"
+synapse_image="matrixdotorg/synapse:v1.157.2@sha256:097e3120b8ecf97e4f92537d7af2da41564c706e33fc740f3741c9defacc2af1"
 
 iteration="${MESH_RESTORE_DRILL_ITERATION:-standalone}"
 case "$iteration" in
@@ -30,6 +30,38 @@ network="$resource_suffix"
 volume="$resource_suffix"
 postgres_container="$resource_suffix-postgres"
 synapse_container="$resource_suffix-synapse"
+
+stream_synapse_archive() {
+  destination="$1"
+  shift
+
+  # Synapse deliberately owns /data as UID 991. Read the recovery files as
+  # that identity inside the running container, but let the invoking shell
+  # create the archive so operators can read and move the resulting backup.
+  if ! mesh_docker exec --user 991:991 "$synapse_container" \
+    tar -czf - -C /data "$@" > "$destination"
+  then
+    rm -f -- "$destination"
+    echo "Could not stream Synapse recovery data into $destination." >&2
+    return 1
+  fi
+}
+
+assert_host_owned_readable_file() {
+  recovery_file="$1"
+
+  if [ ! -f "$recovery_file" ] || [ ! -s "$recovery_file" ] || [ ! -r "$recovery_file" ]; then
+    echo "Recovery artifact is not a non-empty host-readable file: $recovery_file" >&2
+    return 1
+  fi
+
+  host_uid="$(id -u)"
+  file_uid="$(stat -c '%u' "$recovery_file" 2>/dev/null || stat -f '%u' "$recovery_file" 2>/dev/null || true)"
+  if [ -n "$file_uid" ] && [ "$file_uid" != "$host_uid" ]; then
+    echo "Recovery artifact is owned by UID $file_uid instead of invoking host UID $host_uid: $recovery_file" >&2
+    return 1
+  fi
+}
 
 cleanup() {
   original_status=$?
@@ -188,15 +220,23 @@ mesh_docker exec "$postgres_container" \
     --format=custom \
     --exclude-table-data e2e_one_time_keys_json \
   > "$test_root/backup/postgres.dump"
-tar -czf "$test_root/backup/synapse-critical.tar.gz" \
-  -C "$test_root/synapse" \
+stream_synapse_archive \
+  "$test_root/backup/synapse-critical.tar.gz" \
   homeserver.yaml \
   "$server_name.signing.key" \
   "$server_name.log.config"
-if [ -d "$test_root/synapse/media_store" ]; then
-  tar -czf "$test_root/backup/media-store.tar.gz" \
-    -C "$test_root/synapse" \
+if mesh_docker exec --user 991:991 "$synapse_container" test -d /data/media_store; then
+  stream_synapse_archive \
+    "$test_root/backup/media-store.tar.gz" \
     media_store
+fi
+
+assert_host_owned_readable_file "$test_root/backup/postgres.dump"
+assert_host_owned_readable_file "$test_root/backup/synapse-critical.tar.gz"
+tar -tzf "$test_root/backup/synapse-critical.tar.gz" >/dev/null
+if [ -f "$test_root/backup/media-store.tar.gz" ]; then
+  assert_host_owned_readable_file "$test_root/backup/media-store.tar.gz"
+  tar -tzf "$test_root/backup/media-store.tar.gz" >/dev/null
 fi
 
 cat > "$test_root/backup/backup-metadata.env" <<EOF

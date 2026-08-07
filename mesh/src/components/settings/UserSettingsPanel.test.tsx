@@ -142,7 +142,7 @@ describe('UserSettingsPanel', () => {
             displayName: 'Alice',
             avatarColor: '#52b5f4',
           }}
-          matrixAccountId="@alice:example.org"
+          matrixAccountId="@alice:accounts.example"
           matrixMode
           onOpenSecurity={openSecurity}
         />,
@@ -150,13 +150,17 @@ describe('UserSettingsPanel', () => {
     })
 
     expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.querySelector('[role="tablist"]')).toBeNull()
+    expect(document.body.querySelector('[role="tabpanel"]')).toBeNull()
     expect(document.body.textContent).toContain('Current account service')
-    expect(document.body.textContent).not.toContain('@alice:example.org')
+    expect(document.body.textContent).toContain('accounts.example')
+    expect(document.body.textContent).toContain('hosted independently from Mesh')
+    expect(document.body.textContent).not.toContain('@alice:accounts.example')
     const reveal = Array.from(document.body.querySelectorAll('button')).find((button) =>
       button.textContent?.includes('Show account address'),
     )
     await act(async () => reveal?.click())
-    expect(document.body.textContent).toContain('@alice:example.org')
+    expect(document.body.textContent).toContain('@alice:accounts.example')
     const useAnotherService = Array.from(document.body.querySelectorAll('button')).find((button) =>
       button.textContent?.includes('Use another service'),
     )
@@ -662,7 +666,7 @@ describe('UserSettingsPanel', () => {
     })
 
     await openSettingsTab('Safety and devices')
-    expect(document.body.textContent).toContain('Your messages are not backed up yet.')
+    expect(document.body.textContent).toContain('Message backup needs attention.')
     expect(
       document.body.querySelector('[aria-label="Message backup needs attention"]'),
     ).not.toBeNull()

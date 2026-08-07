@@ -15,6 +15,16 @@ describe('VoicePeerGrid party composition', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
+      matches: query === '(max-width: 1099px)',
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })))
     useIdentityStore.getState().setIdentity({
       publicKey: '@taylor:mesh.test',
       displayName: 'Taylor',
@@ -85,5 +95,45 @@ describe('VoicePeerGrid party composition', () => {
     expect(event.detail.durationMs).toBeGreaterThanOrEqual(0)
     expect(JSON.stringify(event.detail)).not.toContain('voice-one')
     window.removeEventListener(VOICE_ACTIVATION_EVENT, listener)
+  })
+
+  it('treats the narrow roster as a modal drawer with focus and Escape recovery', async () => {
+    const closeRoster = vi.fn()
+    await act(async () => root.render(
+      <VoicePeerGrid
+        channelName="Studio"
+        rosterOpen
+        onCloseRoster={closeRoster}
+      />,
+    ))
+
+    const drawer = container.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]')
+    const closeButton = drawer?.querySelector<HTMLButtonElement>('button[aria-label="Close party roster"]')
+    expect(drawer?.getAttribute('aria-label')).toBe('People in Studio')
+    expect(document.activeElement).toBe(closeButton)
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(closeRoster).toHaveBeenCalledOnce()
+  })
+
+  it('does not leave a hidden modal focus trap behind on a wide viewport', async () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
+      matches: query === '(max-width: 1099px)' ? false : true,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })))
+
+    await act(async () => root.render(
+      <VoicePeerGrid channelName="Studio" rosterOpen onCloseRoster={vi.fn()} />,
+    ))
+
+    expect(container.querySelector('[role="dialog"][aria-modal="true"]')).toBeNull()
   })
 })

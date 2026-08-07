@@ -128,17 +128,17 @@ export function RolePermissionPreview({
       <div>
         <h3 id={headingId} className="text-sm font-semibold text-primary">{title}</h3>
         <p className="mt-1 text-xs text-muted">
-          Based on current Matrix state from the community and connected rooms.
+          Based on current permissions in this community and its rooms.
         </p>
       </div>
 
       {hasUnknown ? (
         <p className="text-xs text-status-warning" role="alert">
-          Unable to verify permissions in every authoritative room.
+          Mesh couldn&apos;t confirm permissions in every room.
         </p>
       ) : hasPartial ? (
         <p className="text-xs text-status-warning" role="status" aria-live="polite">
-          Some permissions differ between rooms. Review the per-room state before applying.
+          Some permissions differ between rooms. Review what each room allows before applying.
         </p>
       ) : (
         <p className="text-xs text-secondary" role="status" aria-live="polite">
@@ -207,7 +207,7 @@ function TemplatePermissionPreview({
     ? compareCommunityRolePermissions(previousRole, role, policy)
     : null
   const permissions = comparison?.effective ?? getEffectiveCommunityPermissions(role, policy)
-  const subject = memberName ? `${memberName} would receive` : 'This template assigns'
+  const subject = memberName ?? 'This member'
 
   return (
     <section
@@ -216,14 +216,14 @@ function TemplatePermissionPreview({
     >
       <div>
         <h3 id={headingId} className="text-sm font-semibold text-primary">
-          Proposed {template.label} template
+          {template.label} role preview
         </h3>
         <p className="mt-1 text-xs text-muted">
-          {subject} Matrix power level {template.powerLevel}. {template.summary}
+          {subject} would receive the {template.label} role. {template.summary}
         </p>
       </div>
       <p className="text-xs text-status-warning" role="status">
-        This is a proposed template, not current server state.
+        This is a preview and has not been applied.
       </p>
       {comparison && (comparison.gained.length > 0 || comparison.lost.length > 0) ? (
         <p className="text-xs text-secondary" role="status" aria-live="polite">

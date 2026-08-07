@@ -78,8 +78,12 @@ export function VoiceControls({
         await onOutputDeviceChange(deviceId)
         setOutputDeviceId(deviceId)
       }
-    } catch (error) {
-      setControlError(error instanceof Error ? error.message : 'The audio device could not be selected.')
+    } catch {
+      setControlError(
+        kind === 'input'
+          ? 'Mesh could not switch microphones. Check that your microphone is connected and allowed in system settings, then try again.'
+          : 'Mesh could not switch speakers. Check that your speakers or headphones are connected, then try again.',
+      )
     }
   }
 
@@ -193,13 +197,16 @@ export function VoiceControls({
           </motion.button>
         </Tooltip>
 
-        <Tooltip content={isDeafened ? 'Undeafen' : 'Deafen'} side="top">
+        <Tooltip
+          content={isDeafened ? 'Turn incoming audio on' : 'Turn incoming audio off'}
+          side="top"
+        >
           <motion.button
             whileHover={{ scale: 1.04 }}
             whileTap={{ scale: 0.96 }}
             onClick={() => setDeafened(!isDeafened)}
             aria-pressed={isDeafened}
-            aria-label={isDeafened ? 'Undeafen audio' : 'Deafen audio'}
+            aria-label={isDeafened ? 'Turn incoming audio on' : 'Turn incoming audio off'}
             className={`flex h-11 w-11 items-center justify-center rounded-full transition-colors ${
               isDeafened
                 ? 'bg-status-warning text-content-on-status'

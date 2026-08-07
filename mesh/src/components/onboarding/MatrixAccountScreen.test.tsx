@@ -53,8 +53,9 @@ describe('MatrixAccountScreen', () => {
     expect(container.textContent).not.toContain('matrix.mesh.dhawal.org')
     expect(container.textContent).toContain('Matrix.org')
     expect(container.textContent).toContain('independently')
-    expect(container.textContent).toContain('opens this service in your browser')
-    expect(container.textContent).toContain('Return to Mesh afterward')
+    expect(container.textContent).toContain('Ages 18+')
+    expect(container.textContent).toContain('Create your account in a browser')
+    expect(container.textContent).toContain('return to Mesh')
     // Public services now expose registration and sign-in as equal, explicit choices.
     expect(findLink('Create account').getAttribute('href')).toMatch(/^https:\/\//)
     expect(findLink('Terms').getAttribute('href')).toMatch(/^https:\/\//)
@@ -72,7 +73,11 @@ describe('MatrixAccountScreen', () => {
     expect(container.textContent).toContain('Garden Club')
     expect(container.textContent).toContain('Invited by Maya')
     expect(container.textContent).toContain('Community service')
-    expect(container.textContent).toContain('Community route')
+    const serviceDetails = container.querySelector<HTMLDetailsElement>('details')
+    expect(serviceDetails?.open).toBe(false)
+    expect(serviceDetails?.querySelector('summary')?.textContent).toContain('Service details')
+    expect(serviceDetails?.textContent).toContain('Community route')
+    expect(serviceDetails?.textContent).toContain('community.example')
     expect(container.textContent).toContain('Invitation only')
     expect(container.textContent).toContain('Choose where your account lives below')
     expect(container.textContent).not.toContain('!garden:community.example')
@@ -137,6 +142,8 @@ describe('MatrixAccountScreen', () => {
     expect(container.textContent).toContain('manually reviewed')
     expect(container.textContent).toContain('tchncs.de')
     expect(container.textContent).toContain('quassel.io')
+    expect(container.textContent).toContain('Ages 16+')
+    expect(container.textContent).toContain('Ages 18+')
     expect(findLink('Terms').getAttribute('href')).toMatch(/^https:\/\//)
     expect(container.textContent).not.toContain('server directory')
   })
@@ -341,10 +348,49 @@ describe('MatrixAccountScreen', () => {
     }))
   })
 
+  it('offers the invitation service for existing accounts without forcing it', async () => {
+    const login = vi.fn(async () => {})
+    await renderScreen({
+      initialPendingInvitation: pendingInvitationMetadata(),
+      onMatrixLogin: login,
+    })
+
+    const invitationServiceButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Sign in with Garden community service"]',
+    )
+    expect(invitationServiceButton).toBeTruthy()
+    expect(container.textContent).toContain('It remains optional')
+    const serviceDetails = invitationServiceButton
+      ?.closest('article')
+      ?.querySelector<HTMLDetailsElement>('details')
+    expect(serviceDetails?.open).toBe(false)
+    expect(serviceDetails?.querySelector('summary')?.textContent).toContain('Service details')
+    expect(serviceDetails?.textContent).toContain('community.example')
+
+    await act(async () => invitationServiceButton?.click())
+    expect(container.textContent).toContain('Sign in to Garden community service')
+    await act(async () => {
+      setInputValue(findInput('username'), 'alice')
+      setInputValue(findInput('password'), 'correct horse battery staple')
+      submitForm()
+      await Promise.resolve()
+    })
+
+    expect(login).toHaveBeenCalledWith(expect.objectContaining({
+      homeserver: 'community.example',
+      username: 'alice',
+    }))
+  })
+
   it('offers provider-owned password and username recovery help', async () => {
     await renderScreen()
     await act(async () => findButton('Sign in').click())
 
+    const recoveryHelp = container.querySelector<HTMLElement>('[aria-label="Sign-in help"]')
+    const submit = findButton('Sign in')
+    expect(recoveryHelp).not.toBeNull()
+    expect(recoveryHelp!.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(findButton('Forgot password?')).toBeTruthy()
     expect(findButton('Forgot username?')).toBeTruthy()
 
@@ -501,14 +547,26 @@ describe('MatrixAccountScreen', () => {
     })
 
     const browserButton = findButton('Use browser sign-in')
+    const serviceDetails = container.querySelector<HTMLElement>(
+      '[aria-label="Matrix.org service details"]',
+    )
     expect(browserButton.disabled).toBe(true)
     expect(browserButton.getAttribute('aria-describedby')).toBe('browser-sign-in-availability')
+    expect(serviceDetails).not.toBeNull()
+    expect(browserButton.compareDocumentPosition(serviceDetails!) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(container.textContent).toContain('Browser sign-in opens from the installed Mesh app')
   })
 
   it('rejects credential-bearing and insecure custom-service addresses before probing', async () => {
     await renderScreen()
     await act(async () => findButton('Use another service').click())
+
+    await act(async () => {
+      setInputValue(findInput('homeserver'), 'not a service')
+      findButton('Check service').click()
+    })
+    expect(container.textContent).toContain('service address is invalid')
 
     await act(async () => {
       setInputValue(

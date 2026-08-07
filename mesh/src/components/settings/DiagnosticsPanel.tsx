@@ -363,10 +363,10 @@ function MatrixDiagnosticsContent({ data }: { data: BackendStatus }) {
             warn={data.voiceService.availability !== 'ready'}
           />
           <StatusCell
-            label="Media protection"
-            value={data.voiceService.mediaE2eeVerified ? 'Verified' : 'Not verified'}
-            ok={data.voiceService.mediaE2eeVerified}
-            warn={!data.voiceService.mediaE2eeVerified}
+            label="Media protection support"
+            value={data.voiceService.mediaE2eeReady ? 'Available' : 'Unavailable'}
+            ok={data.voiceService.mediaE2eeReady}
+            warn={!data.voiceService.mediaE2eeReady}
           />
           <StatusCell
             label="Network policy"

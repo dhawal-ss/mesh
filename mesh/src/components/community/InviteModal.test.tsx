@@ -88,7 +88,7 @@ describe('InviteModal', () => {
     expect(document.body.querySelector('[role="alert"]')).not.toBeNull()
     expect(document.body.textContent).not.toContain('Failed to generate link')
     expect(document.body.textContent).not.toContain("Mesh couldn't invite this person")
-    expect(copyButton?.disabled).toBe(true)
+    expect(copyButton).toBeUndefined()
   })
 
   it('makes a private link primary while retaining direct account invites in Matrix mode', async () => {
@@ -124,6 +124,8 @@ describe('InviteModal', () => {
       'They review the destination and choose when to join.',
     )
     expect(document.body.textContent).toContain('Already on Mesh')
+    expect(document.body.textContent).toContain('Mesh username or full account ID')
+    expect(document.body.textContent).toContain('Use the full account ID for someone on another service.')
   })
 
   it('does not render a direct-account failure as an invite-link failure', async () => {

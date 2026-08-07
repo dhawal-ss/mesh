@@ -6,6 +6,8 @@ import {
   matrixCreateCommunity,
   matrixGetProfile,
   matrixListChannels,
+  matrixLogin,
+  matrixCancelLogin,
   matrixLogout,
   matrixRevokeDevice,
   matrixRemoveLocalAccount,
@@ -14,6 +16,13 @@ import {
   probeIceServers,
   sendDm,
   matrixUpdateProfileDisplayName,
+  matrixWaitForRoomUpdate,
+  matrixRtcMembers,
+  getDmRequests,
+  acceptDmRequest,
+  blockDmRequest,
+  declineDmRequest,
+  getBlockedAccounts,
 } from './bridge'
 
 const invokeMock = vi.mocked(invoke)
@@ -46,6 +55,120 @@ describe('bridge IPC resilience', () => {
       'request_destructive_action_grant',
       'request_destructive_action_grant',
     ])
+  })
+
+  it('gives MatrixRTC roster reads a native request id and deadline', async () => {
+    invokeMock.mockResolvedValueOnce([] as never)
+
+    await expect(matrixRtcMembers('!voice:example.org')).resolves.toEqual([])
+    expect(invokeMock).toHaveBeenCalledWith(
+      'matrix_rtc_members',
+      expect.objectContaining({
+        roomId: '!voice:example.org',
+        requestId: expect.any(String),
+        deadlineMs: expect.any(Number),
+      }),
+    )
+  })
+
+  it('cancels only the exact in-flight login attempt', async () => {
+    const reservedAttemptId = '11111111-1111-4111-8111-111111111111'
+    let resolveLogin!: (value: unknown) => void
+    const pendingLogin = new Promise((resolve) => {
+      resolveLogin = resolve
+    })
+    invokeMock.mockImplementation((command) => {
+      if (command === 'matrix_reserve_login_attempt') {
+        return Promise.resolve(reservedAttemptId) as never
+      }
+      if (command === 'matrix_login') return pendingLogin as never
+      if (command === 'matrix_cancel_login') return Promise.resolve() as never
+      return Promise.reject(new Error(`unexpected command: ${command}`)) as never
+    })
+
+    const login = matrixLogin({
+      homeserver: 'https://matrix.example.org',
+      username: 'alice',
+      password: 'secret',
+      deviceName: 'Mesh Desktop',
+    })
+    await vi.waitFor(() => {
+      expect(invokeMock.mock.calls.some(([command]) => command === 'matrix_login')).toBe(true)
+    })
+    await matrixCancelLogin()
+
+    const loginAttemptId = invokeMock.mock.calls.find(
+      ([command]) => command === 'matrix_login',
+    )?.[1]
+    const correlatedAttemptId = (
+      loginAttemptId && !Array.isArray(loginAttemptId)
+        ? (loginAttemptId as Record<string, unknown>).attemptId
+        : undefined
+    )
+    expect(correlatedAttemptId).toBe(reservedAttemptId)
+    expect(invokeMock).toHaveBeenNthCalledWith(1, 'matrix_reserve_login_attempt', undefined)
+    expect(invokeMock).toHaveBeenCalledWith('matrix_cancel_login', {
+      attemptId: correlatedAttemptId,
+    })
+
+    resolveLogin({ kind: 'matrix', authenticated: false })
+    await login
+    invokeMock.mockClear()
+    await matrixCancelLogin()
+    expect(invokeMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps message-request and block-list reads separate from request mutations', async () => {
+    const request = {
+      roomId: '!request:example.org',
+      inviterUserId: '@alice:example.org',
+      inviterDisplayName: 'Alice',
+      inviterAvatarColor: '#52b5f4',
+      canAccept: true,
+    }
+    invokeMock
+      .mockResolvedValueOnce([request] as never)
+      .mockResolvedValueOnce({ accounts: [], nextCursor: null } as never)
+      .mockResolvedValueOnce({ id: '!request:example.org' } as never)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ userId: request.inviterUserId } as never)
+
+    await expect(getDmRequests()).resolves.toEqual([request])
+    await expect(getBlockedAccounts(undefined, 25)).resolves.toEqual({
+      accounts: [],
+      nextCursor: null,
+    })
+    await acceptDmRequest(request.roomId)
+    await declineDmRequest(request.roomId)
+    await blockDmRequest(request.roomId)
+
+    expect(invokeMock).toHaveBeenNthCalledWith(
+      1,
+      'matrix_dm_requests',
+      expect.objectContaining({
+        requestId: expect.any(String),
+        deadlineMs: expect.any(Number),
+      }),
+    )
+    expect(invokeMock).toHaveBeenNthCalledWith(
+      2,
+      'matrix_blocked_accounts',
+      expect.objectContaining({
+        after: undefined,
+        limit: 25,
+        requestId: expect.any(String),
+        deadlineMs: expect.any(Number),
+      }),
+    )
+    expect(invokeMock).toHaveBeenNthCalledWith(3, 'matrix_accept_dm_request', {
+      roomId: request.roomId,
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(4, 'matrix_decline_dm_request', {
+      roomId: request.roomId,
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(5, 'matrix_block_dm_request', {
+      roomId: request.roomId,
+    })
   })
 
   it('passes a native one-use grant only to the exact destructive write', async () => {
@@ -90,6 +213,22 @@ describe('bridge IPC resilience', () => {
     )
     resolveRequest('all')
     await expect(Promise.all([first, second])).resolves.toEqual(['all', 'all'])
+  })
+
+  it('registers room-update waits as cancellable account-scoped reads', async () => {
+    invokeMock.mockResolvedValue(false as never)
+
+    await expect(matrixWaitForRoomUpdate('room-3', 25_000)).resolves.toBe(false)
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      'matrix_wait_for_room_update',
+      expect.objectContaining({
+        roomId: 'room-3',
+        timeoutMs: 25_000,
+        requestId: expect.any(String),
+        deadlineMs: 29_000,
+      }),
+    )
   })
 
   it('retries transient read failures with bounded backoff', async () => {
@@ -172,6 +311,16 @@ describe('bridge IPC resilience', () => {
       code: 'network_unavailable',
     })
     expect(invokeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('blocks accidental oversized renderer arguments before invoking native code', async () => {
+    await expect(
+      matrixUpdateProfileDisplayName('x'.repeat(1024 * 1024)),
+    ).rejects.toMatchObject({
+      code: 'invalid_input',
+      retryable: false,
+    })
+    expect(invokeMock).not.toHaveBeenCalled()
   })
 
   it('surfaces a Tauri ICE configuration failure instead of silently using public defaults', async () => {

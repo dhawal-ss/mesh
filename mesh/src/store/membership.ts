@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { create } from 'zustand'
 import { patchChanges } from '../lib/state'
 
@@ -13,13 +14,26 @@ export interface MemberRecord {
   online?: boolean
 }
 
+export function isCurrentCommunityMember(member: MemberRecord): boolean {
+  return member.joinStatus === 'joined' && member.banStatus === 'none'
+}
+
 interface MembershipStore {
   /** Normalized member source of truth, scoped by community ID. */
   memberEntities: Record<string, Record<string, MemberRecord>>
   memberOrder: Record<string, string[]>
   /** Ordered compatibility snapshots for roster consumers. */
   members: Record<string, MemberRecord[]>
+  rosterNextCursor: Record<string, string | null>
+  rosterStateComplete: Record<string, boolean>
   setRoster: (communityId: string, roster: MemberRecord[]) => void
+  setRosterPage: (
+    communityId: string,
+    roster: MemberRecord[],
+    nextCursor: string | null,
+    stateComplete: boolean,
+    append: boolean,
+  ) => void
   clearCommunity: (communityId: string) => void
   upsertMember: (communityId: string, member: MemberRecord) => void
   removeMember: (communityId: string, publicKey: string) => void
@@ -61,6 +75,8 @@ export const useMembershipStore = create<MembershipStore>((set, get) => ({
   memberEntities: {},
   memberOrder: {},
   members: {},
+  rosterNextCursor: {},
+  rosterStateComplete: {},
 
   setRoster: (communityId, roster) =>
     set((state) => {
@@ -74,7 +90,9 @@ export const useMembershipStore = create<MembershipStore>((set, get) => ({
         normalized.order.every(
           (publicKey) =>
             state.memberEntities[communityId]?.[publicKey] === normalized.entities[publicKey],
-        )
+        ) &&
+        state.rosterNextCursor[communityId] === null &&
+        state.rosterStateComplete[communityId] === true
       if (unchanged) return state
 
       return {
@@ -90,6 +108,33 @@ export const useMembershipStore = create<MembershipStore>((set, get) => ({
           ...state.members,
           [communityId]: normalized.members,
         },
+        rosterNextCursor: { ...state.rosterNextCursor, [communityId]: null },
+        rosterStateComplete: { ...state.rosterStateComplete, [communityId]: true },
+      }
+    }),
+
+  setRosterPage: (communityId, roster, nextCursor, stateComplete, append) =>
+    set((state) => {
+      const combined = append ? [...(state.members[communityId] ?? []), ...roster] : roster
+      const normalized = normalizeRoster(
+        combined,
+        state.memberEntities[communityId] ?? {},
+      )
+      return {
+        memberEntities: {
+          ...state.memberEntities,
+          [communityId]: normalized.entities,
+        },
+        memberOrder: {
+          ...state.memberOrder,
+          [communityId]: normalized.order,
+        },
+        members: {
+          ...state.members,
+          [communityId]: normalized.members,
+        },
+        rosterNextCursor: { ...state.rosterNextCursor, [communityId]: nextCursor },
+        rosterStateComplete: { ...state.rosterStateComplete, [communityId]: stateComplete },
       }
     }),
 
@@ -98,17 +143,23 @@ export const useMembershipStore = create<MembershipStore>((set, get) => ({
       if (
         !state.memberEntities[communityId] &&
         !state.memberOrder[communityId] &&
-        !state.members[communityId]
+        !state.members[communityId] &&
+        !(communityId in state.rosterNextCursor) &&
+        !(communityId in state.rosterStateComplete)
       ) {
         return state
       }
       const memberEntities = { ...state.memberEntities }
       const memberOrder = { ...state.memberOrder }
       const members = { ...state.members }
+      const rosterNextCursor = { ...state.rosterNextCursor }
+      const rosterStateComplete = { ...state.rosterStateComplete }
       delete memberEntities[communityId]
       delete memberOrder[communityId]
       delete members[communityId]
-      return { memberEntities, memberOrder, members }
+      delete rosterNextCursor[communityId]
+      delete rosterStateComplete[communityId]
+      return { memberEntities, memberOrder, members, rosterNextCursor, rosterStateComplete }
     }),
 
   upsertMember: (communityId, incoming) =>
@@ -189,17 +240,14 @@ export const useMembershipStore = create<MembershipStore>((set, get) => ({
       )
     }),
 
-  getMembersForCommunity: (communityId) => get().members[communityId] ?? [],
+  getMembersForCommunity: (communityId) =>
+    (get().members[communityId] ?? []).filter(isCurrentCommunityMember),
 
   getActiveMembersForCommunity: (communityId) =>
-    (get().members[communityId] ?? []).filter(
-      (member) => member.joinStatus === 'joined' && member.banStatus === 'none',
-    ),
+    (get().members[communityId] ?? []).filter(isCurrentCommunityMember),
 
   getMemberCount: (communityId) =>
-    (get().members[communityId] ?? []).filter(
-      (member) => member.joinStatus === 'joined' && member.banStatus === 'none',
-    ).length,
+    (get().members[communityId] ?? []).filter(isCurrentCommunityMember).length,
 }))
 
 function patchMemberState(
@@ -238,9 +286,13 @@ export function useMember(
 const EMPTY_MEMBERS: MemberRecord[] = []
 
 export function useCommunityMembers(communityId: string | null | undefined) {
-  return useMembershipStore((state) =>
+  const membershipRecords = useMembershipStore((state) =>
     communityId
       ? state.members[communityId] ?? EMPTY_MEMBERS
       : EMPTY_MEMBERS,
+  )
+  return useMemo(
+    () => membershipRecords.filter(isCurrentCommunityMember),
+    [membershipRecords],
   )
 }

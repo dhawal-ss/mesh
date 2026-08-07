@@ -329,14 +329,17 @@ export function evaluateAuthoritativeCommunityRoleAssignment({
       100,
       permissionThreshold(room.policy, 'roles'),
     )
-    const recoveryPathExists = room.policy.joinedUserIds.some(
-      (userId) => {
-        const resultingLevel = userId === targetUserId
-          ? nextLevel
-          : permissionTargetLevel(room.policy!, { kind: 'current-user', userId })
-        return resultingLevel >= resultingRoleThreshold
-      },
-    )
+    // The projection describes rooms joined by the authenticated actor, and
+    // self-targeting is rejected above. Requiring that actor to retain the
+    // resulting role-management authority proves recovery without requesting
+    // or returning the complete joined-member roster.
+    const resultingActorLevel = actorUserId === targetUserId
+      ? nextLevel
+      : permissionTargetLevel(
+          room.policy,
+          { kind: 'current-user', userId: actorUserId },
+        )
+    const recoveryPathExists = resultingActorLevel >= resultingRoleThreshold
     if (!recoveryPathExists) {
       return {
         allowed: false,

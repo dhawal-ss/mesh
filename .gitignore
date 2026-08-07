@@ -85,6 +85,7 @@ research/
 notes/
 
 # AI workspace artifacts
+/_archive/
 .ai/
 .aider*
 .chatgpt/

@@ -55,7 +55,7 @@ async function installTauriMock(
           tokenEndpoint: null,
           livekitSfuUrl: null,
           cspReady: true,
-          mediaE2eeVerified: false,
+          mediaE2eeReady: false,
           reason: 'Experimental peer-to-peer WebRTC transport',
         },
         authenticated: true,

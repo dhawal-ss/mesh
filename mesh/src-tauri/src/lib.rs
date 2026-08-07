@@ -155,6 +155,7 @@ pub fn run() {
                 return;
             };
             let app = webview.app_handle().clone();
+            let account_generation = app.state::<AppState>().native_requests.account_generation();
             let drop_id = uuid::Uuid::new_v4().to_string();
             let start = commands::attachments::NativeAttachmentDropStart {
                 drop_id: drop_id.clone(),
@@ -162,8 +163,9 @@ pub fn run() {
                     x: position.x,
                     y: position.y,
                 },
+                account_generation,
             };
-            if let Err(error) = app.emit("mesh-native-attachment-drop-start", start) {
+            if let Err(error) = app.emit("mesh-native-attachment-drop-start", start.clone()) {
                 tracing::warn!("Could not deliver native attachment drop start: {error}");
                 return;
             }
@@ -174,17 +176,25 @@ pub fn run() {
             let expose_legacy_path =
                 app.state::<AppState>().backend.kind() == BackendKind::LegacyP2p;
             let paths = paths.clone();
-            let (x, y) = (position.x, position.y);
             tauri::async_runtime::spawn(async move {
-                let payload = commands::attachments::grant_native_drop(
+                let payload = match commands::attachments::grant_native_drop(
                     &store,
-                    drop_id,
+                    app.state::<AppState>().inner(),
+                    start.clone(),
                     paths,
-                    x,
-                    y,
                     expose_legacy_path,
                 )
-                .await;
+                .await
+                {
+                    Ok(payload) => payload,
+                    Err(error) => commands::attachments::NativeAttachmentDrop {
+                        drop_id: start.drop_id,
+                        position: start.position,
+                        files: Vec::new(),
+                        errors: vec![error.to_string()],
+                        account_scope: None,
+                    },
+                };
                 if let Err(error) = app.emit("mesh-native-attachment-drop", payload) {
                     tracing::warn!("Could not deliver native attachment drop: {error}");
                 }
@@ -426,12 +436,14 @@ pub fn run() {
     #[cfg(not(feature = "legacy-p2p"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::attachments::pick_attachment_grants,
+        commands::attachments::pick_custom_emoji_grant,
         commands::attachments::accept_attachment_drop_grants,
         commands::attachments::discard_attachment_grant,
         commands::attachments::discard_staged_attachment,
         commands::attachments::open_downloaded_file,
         commands::external::open_external_url,
         commands::backend::get_backend_status,
+        commands::notifications::get_notification_account_scope,
         commands::notifications::set_notification_context,
         commands::notifications::send_test_notification,
         commands::native_requests::cancel_native_request,
@@ -442,6 +454,7 @@ pub fn run() {
         commands::backend::matrix_room_upgrade,
         commands::backend::matrix_get_room_notification_mode,
         commands::backend::matrix_set_room_notification_mode,
+        commands::backend::matrix_reserve_login_attempt,
         commands::backend::matrix_login,
         commands::backend::register_account,
         commands::backend::check_username_available,
@@ -500,6 +513,11 @@ pub fn run() {
         commands::backend::matrix_load_attachment_image,
         commands::backend::matrix_cancel_attachment_download,
         commands::backend::matrix_dm_conversations,
+        commands::backend::matrix_dm_requests,
+        commands::backend::matrix_blocked_accounts,
+        commands::backend::matrix_accept_dm_request,
+        commands::backend::matrix_decline_dm_request,
+        commands::backend::matrix_block_dm_request,
         commands::backend::matrix_ensure_dm,
         commands::backend::matrix_dm_messages,
         commands::backend::matrix_send_dm,
@@ -515,6 +533,7 @@ pub fn run() {
         commands::backend::matrix_room_pins,
         commands::backend::matrix_toggle_room_pin,
         commands::backend::matrix_mark_read,
+        commands::backend::matrix_mark_rooms_read,
         commands::backend::matrix_set_typing,
         commands::backend::matrix_typing_users,
         commands::backend::matrix_search_messages,
@@ -546,6 +565,7 @@ pub fn run() {
     #[cfg(feature = "legacy-p2p")]
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::attachments::pick_attachment_grants,
+        commands::attachments::pick_custom_emoji_grant,
         commands::attachments::accept_attachment_drop_grants,
         commands::attachments::discard_attachment_grant,
         commands::attachments::discard_staged_attachment,
@@ -553,6 +573,7 @@ pub fn run() {
         commands::external::open_external_url,
         // Backend / Matrix architecture spike
         commands::backend::get_backend_status,
+        commands::notifications::get_notification_account_scope,
         commands::notifications::set_notification_context,
         commands::notifications::send_test_notification,
         commands::native_requests::cancel_native_request,
@@ -563,6 +584,7 @@ pub fn run() {
         commands::backend::matrix_room_upgrade,
         commands::backend::matrix_get_room_notification_mode,
         commands::backend::matrix_set_room_notification_mode,
+        commands::backend::matrix_reserve_login_attempt,
         commands::backend::matrix_login,
         commands::backend::register_account,
         commands::backend::check_username_available,
@@ -621,6 +643,11 @@ pub fn run() {
         commands::backend::matrix_load_attachment_image,
         commands::backend::matrix_cancel_attachment_download,
         commands::backend::matrix_dm_conversations,
+        commands::backend::matrix_dm_requests,
+        commands::backend::matrix_blocked_accounts,
+        commands::backend::matrix_accept_dm_request,
+        commands::backend::matrix_decline_dm_request,
+        commands::backend::matrix_block_dm_request,
         commands::backend::matrix_ensure_dm,
         commands::backend::matrix_dm_messages,
         commands::backend::matrix_send_dm,
@@ -636,6 +663,7 @@ pub fn run() {
         commands::backend::matrix_room_pins,
         commands::backend::matrix_toggle_room_pin,
         commands::backend::matrix_mark_read,
+        commands::backend::matrix_mark_rooms_read,
         commands::backend::matrix_set_typing,
         commands::backend::matrix_typing_users,
         commands::backend::matrix_search_messages,

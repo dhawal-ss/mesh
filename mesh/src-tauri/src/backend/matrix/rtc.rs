@@ -282,15 +282,29 @@ impl MatrixBackend {
         .map_err(|error| BackendError::Serialization(error.to_string()))
     }
 
-    fn validate_matrix_rtc_sfu_url(returned: &str, expected: &str) -> BackendResult<String> {
+    fn validate_matrix_rtc_sfu_url(
+        returned: &str,
+        expected: Option<&str>,
+        tauri_config: &str,
+    ) -> BackendResult<String> {
         let returned = VoiceServiceStatus::secure_url("MSC4195 LiveKit URL", returned, "wss")
             .map_err(BackendError::InvalidConfiguration)?;
-        let expected =
-            VoiceServiceStatus::secure_url("MESH_MATRIXRTC_LIVEKIT_SFU_URL", expected, "wss")
-                .map_err(BackendError::InvalidConfiguration)?;
-        if returned != expected {
+        if let Some(expected) = expected {
+            let expected =
+                VoiceServiceStatus::secure_url("MESH_MATRIXRTC_LIVEKIT_SFU_URL", expected, "wss")
+                    .map_err(BackendError::InvalidConfiguration)?;
+            if returned != expected {
+                return Err(BackendError::InvalidConfiguration(
+                    "The calling service returned a media endpoint that is not approved by this Mesh build."
+                        .into(),
+                ));
+            }
+        }
+        let returned_origin = returned.origin().ascii_serialization();
+        if !VoiceServiceStatus::connect_src_allows(tauri_config, &[&returned_origin]) {
             return Err(BackendError::InvalidConfiguration(
-                "MatrixRTC authorization returned an unexpected LiveKit endpoint".into(),
+                "The calling service returned a media endpoint that is not allowed by this Mesh build."
+                    .into(),
             ));
         }
         Ok(returned.to_string())
@@ -416,13 +430,13 @@ impl MatrixBackend {
         }
     }
 
-    fn matrix_rtc_config() -> BackendResult<VoiceServiceStatus> {
-        let status = VoiceServiceStatus::for_kind(BackendKind::Matrix);
+    fn matrix_rtc_config(discovered_service_url: String) -> BackendResult<VoiceServiceStatus> {
+        let status = VoiceServiceStatus::matrix_rtc_for_discovered_service(discovered_service_url);
         match status.availability {
-            VoiceServiceAvailability::ClientUnavailable
+            VoiceServiceAvailability::Ready
                 if status.csp_ready
-                    && status.livekit_service_url.is_some()
-                    && status.livekit_sfu_url.is_some() =>
+                    && status.media_e2ee_ready
+                    && status.livekit_service_url.is_some() =>
             {
                 Ok(status)
             }
@@ -435,34 +449,61 @@ impl MatrixBackend {
     }
 
     fn require_matrix_rtc_media_e2ee_ready() -> BackendResult<()> {
-        Err(BackendError::Unsupported(
-            "MatrixRTC joining is disabled until membership-bound media E2EE is implemented and verified",
-        ))
+        if VoiceServiceStatus::matrix_rtc_client_included() {
+            Ok(())
+        } else {
+            Err(BackendError::Unsupported(
+                "Calling is not included in this Mesh build",
+            ))
+        }
     }
 
     async fn active_matrix_rtc_memberships(
         room: &Room,
     ) -> BackendResult<Vec<ActiveMatrixRtcMembership>> {
-        let response = room
-            .client()
-            .send(get_state_events::v3::Request::new(
-                room.room_id().to_owned(),
-            ))
+        // The SDK still returns a Vec, but reading only the call-member event
+        // type avoids repeatedly fetching unrelated room state. Voice remains
+        // fail-closed if the typed store projection crosses Mesh's caps.
+        let room_state = room
+            .get_state_events_static::<CallMemberEventContent>()
             .await
             .map_err(Self::map_error)?;
+        if room_state.len() > MATRIX_RTC_MAX_CALL_MEMBER_EVENTS {
+            return Err(BackendError::InvalidConfiguration(format!(
+                "Voice is unavailable because this room has more than {MATRIX_RTC_MAX_CALL_MEMBER_EVENTS} call records"
+            )));
+        }
+        let raw_state_bytes = room_state.iter().try_fold(0_usize, |total, raw| {
+            let raw_json = match raw {
+                RawSyncOrStrippedState::Sync(raw) => raw.json().get(),
+                RawSyncOrStrippedState::Stripped(raw) => raw.json().get(),
+            };
+            total
+                .checked_add(raw_json.len())
+                .filter(|bytes| *bytes <= MATRIX_RTC_MAX_CALL_MEMBER_STATE_BYTES)
+                .ok_or_else(|| {
+                    BackendError::InvalidConfiguration(
+                        "Voice is unavailable because this room's call state is too large".into(),
+                    )
+                })
+        })?;
+        debug_assert!(raw_state_bytes <= MATRIX_RTC_MAX_CALL_MEMBER_STATE_BYTES);
         let mut memberships = Vec::new();
 
-        for raw in response.room_state {
-            let raw_event = raw.json().get().to_owned();
+        for raw in room_state {
+            let raw_event = match &raw {
+                RawSyncOrStrippedState::Sync(raw) => raw.json().get().to_owned(),
+                RawSyncOrStrippedState::Stripped(raw) => raw.json().get().to_owned(),
+            };
             let event = raw.deserialize().map_err(Self::map_error)?;
-            let AnyStateEvent::CallMember(StateEvent::Original(event)) = event else {
+            let SyncOrStrippedState::Sync(SyncStateEvent::Original(event)) = event else {
                 continue;
             };
             if event.state_key.user_id() != event.sender {
                 continue;
             }
             let Some(room_member) = room
-                .get_member(&event.sender)
+                .get_member_no_sync(&event.sender)
                 .await
                 .map_err(Self::map_error)?
             else {
@@ -478,6 +519,11 @@ impl MatrixBackend {
             {
                 if !membership.is_room_call() {
                     continue;
+                }
+                if memberships.len() >= MATRIX_RTC_MAX_PARTICIPANTS {
+                    return Err(BackendError::InvalidConfiguration(format!(
+                        "Voice is unavailable because this room has more than {MATRIX_RTC_MAX_PARTICIPANTS} active call participants"
+                    )));
                 }
                 let member_id = Self::matrix_rtc_membership_id(
                     &raw_event,
@@ -1611,11 +1657,23 @@ impl MatrixBackend {
 
     async fn select_matrix_rtc_service_url(
         room: &Room,
-        configured_service_url: &str,
+        local_service_url: &str,
     ) -> BackendResult<String> {
         let memberships = Self::active_matrix_rtc_memberships(room).await?;
+        Self::select_matrix_rtc_service_from_memberships(
+            &memberships,
+            local_service_url,
+            VoiceServiceStatus::TAURI_CSP,
+        )
+    }
+
+    fn select_matrix_rtc_service_from_memberships(
+        memberships: &[ActiveMatrixRtcMembership],
+        local_service_url: &str,
+        tauri_config: &str,
+    ) -> BackendResult<String> {
         let Some(oldest) = memberships.first() else {
-            return Ok(configured_service_url.to_owned());
+            return Ok(local_service_url.to_owned());
         };
         let selected = oldest.livekit_service_url.as_deref().ok_or_else(|| {
             BackendError::InvalidConfiguration(
@@ -1628,19 +1686,17 @@ impl MatrixBackend {
             "https",
         )
         .map_err(BackendError::InvalidConfiguration)?;
-        let configured = VoiceServiceStatus::secure_url(
-            "MESH_MATRIXRTC_LIVEKIT_SERVICE_URL",
-            configured_service_url,
-            "https",
-        )
-        .map_err(BackendError::InvalidConfiguration)?;
-        if selected != configured {
+        let selected_origin = selected.origin().ascii_serialization();
+        if !VoiceServiceStatus::connect_src_allows(
+            tauri_config,
+            &[&selected_origin],
+        ) {
             return Err(BackendError::InvalidConfiguration(
-                "the oldest active MatrixRTC membership selected a different focus; federated focus authorization is not verified in this client"
+                "This community selected a calling service that is not allowed by this Mesh build."
                     .into(),
             ));
         }
-        Ok(configured.to_string())
+        Ok(selected.to_string())
     }
 
     async fn publish_matrix_rtc_membership(
@@ -1776,7 +1832,7 @@ impl MatrixBackend {
         user_id: &OwnedUserId,
         device_id: &OwnedDeviceId,
         livekit_service_url: &str,
-        expected_sfu_url: &str,
+        expected_sfu_url: Option<&str>,
     ) -> BackendResult<MatrixRtcTokenResponse> {
         let openid = client
             .send(request_openid_token::v3::Request::new(user_id.clone()))
@@ -1843,7 +1899,11 @@ impl MatrixBackend {
                 "MatrixRTC authorization response omitted the LiveKit JWT".into(),
             ));
         }
-        let returned_sfu = Self::validate_matrix_rtc_sfu_url(&response.url, expected_sfu_url)?;
+        let returned_sfu = Self::validate_matrix_rtc_sfu_url(
+            &response.url,
+            expected_sfu_url,
+            VoiceServiceStatus::TAURI_CSP,
+        )?;
         Ok(MatrixRtcTokenResponse {
             url: returned_sfu,
             jwt: response.jwt,

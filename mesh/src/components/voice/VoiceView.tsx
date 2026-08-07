@@ -9,7 +9,7 @@ import {
 } from '../../lib/voice-lifecycle'
 import { voiceConnectionLabel } from '../../lib/voice-runtime'
 import { useVoiceStore } from '../../store/voice'
-import type { VoiceConnectionState } from '../../types/ipc'
+import type { VoiceConnectionState, VoiceServiceStatus } from '../../types/ipc'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 import { AsyncStatus } from '../ui/AsyncStatus'
@@ -67,8 +67,9 @@ export function VoiceView({
     capabilityAvailable,
     leaving,
   )
+  const localParticipantAlreadyIncluded = peers.some((peer) => peer.isSelf || peer.isLocal)
   const connectedOccupancy = ['connected', 'reconnect-grace', 'reconnecting'].includes(lifecycle)
-    ? peers.length + 1
+    ? peers.length + (localParticipantAlreadyIncluded ? 0 : 1)
     : 0
 
   useEffect(() => {
@@ -118,6 +119,7 @@ export function VoiceView({
     return (
       <VoiceUnavailable
         channelName={channelName}
+        detail={voiceUnavailableDetail(voiceService)}
         onBackToChat={onBackToChat}
       />
     )
@@ -134,7 +136,9 @@ export function VoiceView({
             data-mesh-route-heading
             tabIndex={-1}
           >
-            {channelName} voice
+            {channelName}
+            <span aria-hidden="true" className="hidden sm:inline"> voice</span>
+            <span className="sr-only"> voice room</span>
           </h1>
           <span className="block truncate text-caption text-content-muted">
             {connectedOccupancy > 0
@@ -158,9 +162,10 @@ export function VoiceView({
           type="button"
           onClick={onBackToChat}
           className="flex min-h-10 items-center gap-2 border border-border-subtle px-3 text-xs font-semibold text-content-secondary hover:bg-surface-hover hover:text-content"
+          aria-label={`Open messages from ${channelName}`}
         >
           <Icon name="messageCircle" size="sm" />
-          Open messages
+          <span className="hidden min-[380px]:inline">Open messages</span>
         </button>
       </header>
 
@@ -183,7 +188,9 @@ export function VoiceView({
       {connectionWarning ? (
         <div className="flex flex-none items-center gap-2 border-b border-status-warning/40 bg-status-warning/5 px-4 py-2 text-xs text-status-warning" role="status">
           <Icon name="triangleAlert" size="sm" aria-hidden="true" />
-          <span>Party audio needs attention. Messages still work.</span>
+          <span className="min-w-0 flex-1">
+            <strong>Party audio needs attention.</strong> {connectionWarning}
+          </span>
         </div>
       ) : null}
 
@@ -233,9 +240,11 @@ export function VoiceView({
 
 function VoiceUnavailable({
   channelName,
+  detail,
   onBackToChat,
 }: {
   channelName: string
+  detail: string
   onBackToChat: () => void
 }) {
   return (
@@ -248,7 +257,9 @@ function VoiceUnavailable({
           data-mesh-route-heading
           tabIndex={-1}
         >
-          {channelName} voice
+          {channelName}
+          <span aria-hidden="true" className="hidden sm:inline"> voice</span>
+          <span className="sr-only"> voice room</span>
         </h1>
         <span className="ml-auto text-caption text-content-muted">Unavailable</span>
       </header>
@@ -256,7 +267,7 @@ function VoiceUnavailable({
         <div className="w-full max-w-lg border-y border-border-subtle px-6 py-10 text-center">
           <Icon name="phoneOff" size="lg" className="mx-auto text-content-muted" aria-hidden="true" />
           <h2 className="mt-5 text-lg font-semibold text-content">Voice is not available for this room</h2>
-          <p className="mt-2 text-sm leading-6 text-content-secondary">You can keep using messages.</p>
+          <p className="mt-2 text-sm leading-6 text-content-secondary">{detail}</p>
           <Button className="mt-6" onClick={onBackToChat}>
             Back to messages
           </Button>
@@ -264,6 +275,22 @@ function VoiceUnavailable({
       </div>
     </section>
   )
+}
+
+function voiceUnavailableDetail(service: VoiceServiceStatus): string {
+  if (service.provider !== 'matrix-rtc') {
+    return 'Voice is temporarily unavailable. You can keep using messages and try again later.'
+  }
+  if (service.availability === 'client-unavailable') {
+    return 'This version of Mesh cannot start voice. You can keep using messages.'
+  }
+  if (service.availability === 'not-configured') {
+    return 'Voice has not been enabled for this community yet. You can keep using messages.'
+  }
+  if (!service.mediaE2eeReady) {
+    return 'Mesh could not verify private call protection, so it kept your microphone and speakers off.'
+  }
+  return 'Voice is temporarily unavailable for this community. You can keep using messages and try again later.'
 }
 
 function VoiceProgressState({

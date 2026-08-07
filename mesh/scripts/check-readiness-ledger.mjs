@@ -5,6 +5,11 @@ import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
+import {
+  parseProtectedArtifactUrl,
+  verifyProtectedR0Evidence,
+} from './protected-readiness-evidence.mjs'
+import { verifyProtectedExternalAcceptanceEvidence } from './protected-external-acceptance.mjs'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(scriptDirectory, '..')
@@ -23,6 +28,7 @@ export const REQUIRED_RELEASE_GATES = Object.freeze([
   { id: 'r1.community-hosted-operations', milestone: 'R1', required: true, releaseStatus: 'live-pass' },
   { id: 'r1.public-service-review', milestone: 'R1', required: true, releaseStatus: 'live-pass' },
   { id: 'r2.signed-windows-beta', milestone: 'R2', required: true, releaseStatus: 'live-pass' },
+  { id: 'r2.confidential-security-reporting', milestone: 'R2', required: true, releaseStatus: 'live-pass' },
   { id: 'r2.public-release', milestone: 'R2', required: true, releaseStatus: 'live-pass' },
   { id: 'r2.manual-accessibility-windows', milestone: 'R2', required: true, releaseStatus: 'live-pass' },
   { id: 'r2.public-page-legal-approval', milestone: 'R2', required: true, releaseStatus: 'live-pass' },
@@ -80,6 +86,10 @@ export function validateReadinessLedger(ledger, {
   const errors = []
   const fail = (message) => errors.push(message)
 
+  if (requireLive && milestone === null) {
+    fail('--require-live requires an explicit --milestone R0, R1, R2, R3, or R4')
+  }
+
   if (!ledger || typeof ledger !== 'object' || Array.isArray(ledger)) {
     return ['ledger must be an object']
   }
@@ -122,7 +132,7 @@ export function validateReadinessLedger(ledger, {
       fail(`${path}.evidence must be an object`)
       continue
     }
-    rejectUnknownKeys(evidence, ['testedCommit', 'testedTreeHash', 'command', 'artifactPath', 'artifactUri', 'artifactSha256', 'environment', 'collectedAt', 'expiresAt'], `${path}.evidence`, fail)
+    rejectUnknownKeys(evidence, ['testedCommit', 'testedTreeHash', 'command', 'artifactPath', 'artifactUri', 'artifactSha256', 'artifactRunAttempt', 'environment', 'collectedAt', 'expiresAt'], `${path}.evidence`, fail)
     if (evidence.testedCommit !== null && !SHA_PATTERN.test(evidence.testedCommit ?? '')) fail(`${path}.evidence.testedCommit is invalid`)
     if (evidence.testedTreeHash !== null && !SHA_PATTERN.test(evidence.testedTreeHash ?? '')) fail(`${path}.evidence.testedTreeHash is invalid`)
     if (evidence.command !== null && !isNonEmptyString(evidence.command)) fail(`${path}.evidence.command must be a string or null`)
@@ -141,6 +151,10 @@ export function validateReadinessLedger(ledger, {
     }
     if (evidence.artifactSha256 !== undefined && evidence.artifactSha256 !== null && !SHA256_PATTERN.test(evidence.artifactSha256)) {
       fail(`${path}.evidence.artifactSha256 must be a lowercase SHA-256 or null`)
+    }
+    if (evidence.artifactRunAttempt !== undefined && evidence.artifactRunAttempt !== null
+        && (!Number.isSafeInteger(evidence.artifactRunAttempt) || evidence.artifactRunAttempt < 1)) {
+      fail(`${path}.evidence.artifactRunAttempt must be a positive integer or null`)
     }
     if (evidence.environment !== null && !isNonEmptyString(evidence.environment)) fail(`${path}.evidence.environment must be a string or null`)
     if (evidence.collectedAt !== null && !isIsoDate(evidence.collectedAt)) fail(`${path}.evidence.collectedAt must be an ISO UTC timestamp or null`)
@@ -192,8 +206,17 @@ export function validateReadinessLedger(ledger, {
       if (!satisfiesReleaseStatus) fail(`${path} (${gate.id}) is required for ${milestone} but status is ${gate.status}; minimum is ${gate.releaseStatus}`)
       if (gate.milestone === 'R0') {
         if (!isNonEmptyString(evidence.artifactUri)) fail(`${path} (${gate.id}) release-relevant R0 evidence requires an immutable protected artifact URI`)
+        else if (!parseProtectedArtifactUrl(evidence.artifactUri)) fail(`${path} (${gate.id}) release-relevant R0 evidence must use an immutable dhawal-ss/mesh GitHub Actions artifact URL`)
         if (!SHA256_PATTERN.test(evidence.artifactSha256 ?? '')) fail(`${path} (${gate.id}) release-relevant R0 evidence requires an artifact digest`)
         if (!isIsoDate(evidence.expiresAt) || Date.parse(evidence.expiresAt) <= now.getTime()) fail(`${path} (${gate.id}) release-relevant R0 evidence requires an unexpired evidence manifest`)
+      } else if (['R1', 'R2', 'R4'].includes(gate.milestone)) {
+        if (!isNonEmptyString(evidence.artifactUri) || !parseProtectedArtifactUrl(evidence.artifactUri)) {
+          fail(`${path} (${gate.id}) release-relevant external acceptance requires an immutable dhawal-ss/mesh GitHub Actions artifact URL`)
+        }
+        if (!SHA256_PATTERN.test(evidence.artifactSha256 ?? '')) fail(`${path} (${gate.id}) external acceptance requires an artifact digest`)
+        if (!Number.isSafeInteger(evidence.artifactRunAttempt) || evidence.artifactRunAttempt < 1) {
+          fail(`${path} (${gate.id}) external acceptance requires an exact GitHub Actions run attempt`)
+        }
       }
     }
   }
@@ -342,6 +365,14 @@ export async function main(argv = process.argv.slice(2)) {
     ...bindingErrors,
     ...validateReadinessLedger(ledger, { ...options, allowSourceCommitMismatch, enforceGateContract: true }),
   ]
+  if (errors.length === 0 && options.requireLive) {
+    errors.push(...await verifyProtectedR0Evidence(ledger))
+    if (options.milestone === 'R2' || options.milestone === 'R4') {
+      errors.push(...await verifyProtectedExternalAcceptanceEvidence(ledger, {
+        milestone: options.milestone,
+      }))
+    }
+  }
   if (errors.length > 0) {
     console.error('Mesh readiness ledger validation failed:')
     for (const error of errors) console.error(`- ${error}`)
@@ -353,6 +384,10 @@ export async function main(argv = process.argv.slice(2)) {
     sourceTreeHash: ledger.sourceTreeHash,
     gates: ledger.gates.length,
     requiredLiveThrough: options.requireLive ? options.milestone : null,
+    protectedR0Evidence: options.requireLive ? 'downloaded-and-verified' : 'not-requested',
+    protectedExternalAcceptance: options.requireLive && ['R2', 'R4'].includes(options.milestone)
+      ? 'downloaded-and-verified'
+      : 'not-requested',
     status: 'valid',
   }, null, 2))
   return 0

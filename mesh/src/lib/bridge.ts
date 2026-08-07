@@ -29,6 +29,7 @@ import type {
   ModerationAuditEntry,
   MatrixUserPreferences,
   MatrixNotification,
+  MatrixIgnoredUsersChanged,
   MatrixPermissionStateChanged,
   MatrixPersonalDataExport,
   PendingInvitationMetadata,
@@ -55,7 +56,10 @@ import type {
   VoiceSignalPayload,
   ReactionEvent,
   BanEvent,
+  BlockedAccountDto,
+  BlockedAccountPageDto,
   DmConversation,
+  DmRequestDto,
   DirectMessage,
   ServerEmoji,
   VoiceServiceStatus,
@@ -70,6 +74,11 @@ export interface BlockedEntityDiagnostic {
 export interface EntityListResult<T> {
   entities: T[]
   blockedEntities: BlockedEntityDiagnostic[]
+}
+
+export interface NotificationAccountScope {
+  accountGeneration: number
+  userId: string
 }
 
 function reportBlockedEntities(operation: string, blocked: BlockedEntityDiagnostic[]) {
@@ -105,6 +114,10 @@ const READ_REQUEST_TIMEOUT_MS = 15_000
 const READ_MAX_ATTEMPTS = 3
 const READ_RETRY_BASE_DELAY_MS = 150
 const READ_RETRY_MAX_DELAY_MS = 2_000
+// This protects the ordinary renderer from accidentally constructing an
+// oversized command. It is defense-in-depth only: Tauri/Wry must provide the
+// separate pre-allocation limit for a compromised renderer.
+const MAX_RENDERER_IPC_ARGUMENT_BYTES = 1024 * 1024
 const inflightReadRequests = new Map<string, Promise<unknown>>()
 const activeNativeReadRequestIds = new Set<string>()
 const blockedNativeReadCompletions = new Map<string, Promise<void>>()
@@ -115,6 +128,47 @@ const TYPED_TRANSIENT_CODES = new Set([
   'login_timed_out',
 ])
 const READ_IPC_OPTIONS: TauriInvokeOptions = { idempotent: true }
+// Only commands that enter Rust's NativeRequestRegistry may receive its
+// requestId/deadline contract. Other reads still coalesce and retry after a
+// settled transient failure, but they must never claim a timeout was cancelled
+// while unregistered native work is still running.
+const NATIVE_GUARDED_READ_COMMANDS = new Set([
+  'get_backend_status',
+  'check_username_available',
+  'matrix_accounts',
+  'matrix_community_access_settings',
+  'matrix_device_verification_status',
+  'matrix_devices',
+  'matrix_blocked_accounts',
+  'matrix_dm_blocked',
+  'matrix_dm_conversations',
+  'matrix_dm_requests',
+  'matrix_dm_messages',
+  'matrix_get_community_permission_projection',
+  'matrix_get_messages',
+  'matrix_get_profile',
+  'matrix_get_room_notification_mode',
+  'matrix_list_channels',
+  'matrix_list_communities',
+  'matrix_list_community_applications',
+  'matrix_list_custom_emoji',
+  'matrix_list_members',
+  'matrix_list_moderation_audit',
+  'matrix_load_attachment_image',
+  'matrix_load_composer_draft',
+  'matrix_load_custom_emoji_image',
+  'matrix_oidc_status',
+  'matrix_queued_messages',
+  'matrix_recovery_health',
+  'matrix_rtc_members',
+  'matrix_room_is_encrypted',
+  'matrix_room_pins',
+  'matrix_room_upgrade',
+  'matrix_service_capabilities',
+  'matrix_typing_users',
+  'matrix_user_preferences',
+  'matrix_wait_for_room_update',
+])
 const THUMBNAIL_IPC_OPTIONS: TauriInvokeOptions = {
   idempotent: true,
   timeoutMs: 45_000,
@@ -170,6 +224,28 @@ function stableRequestKey(command: string, args?: Record<string, unknown>): stri
   } catch {
     // An unserializable argument simply disables coalescing for this call.
     return `${command}:${Math.random()}`
+  }
+}
+
+function validateRendererIpcArguments(args?: Record<string, unknown>): void {
+  if (!args) return
+
+  let serialized: string
+  try {
+    serialized = JSON.stringify(args)
+  } catch {
+    throw new AppError(
+      'serialization_error',
+      'Mesh could not prepare this request. Check the entered information and try again.',
+      false,
+    )
+  }
+  if (new TextEncoder().encode(serialized).byteLength > MAX_RENDERER_IPC_ARGUMENT_BYTES) {
+    throw new AppError(
+      'invalid_input',
+      'Mesh blocked an unusually large app request. Choose a smaller input or file and try again.',
+      false,
+    )
   }
 }
 
@@ -295,7 +371,9 @@ async function invokeRead<T>(
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
-      return await invokeWithTimeout<T>(command, args, timeoutMs)
+      return NATIVE_GUARDED_READ_COMMANDS.has(command)
+        ? await invokeWithTimeout<T>(command, args, timeoutMs)
+        : await Promise.resolve(invoke<T>(command, args))
     } catch (cause) {
       if (cause instanceof NativeReadTimeout) {
         // Cancellation returns only after Rust has dropped the guarded future
@@ -334,6 +412,7 @@ async function tauriInvoke<T>(
   if (!isTauri()) {
     throw tauriUnavailable()
   }
+  validateRendererIpcArguments(args)
 
   let request: Promise<T>
   if (options.idempotent) {
@@ -489,7 +568,7 @@ const PREVIEW_MATRIX_VOICE_SERVICE: VoiceServiceStatus = {
   tokenEndpoint: null,
   livekitSfuUrl: null,
   cspReady: false,
-  mediaE2eeVerified: false,
+  mediaE2eeReady: false,
   reason: 'MatrixRTC authorization and LiveKit are not configured in preview mode',
 }
 
@@ -638,9 +717,17 @@ export async function clearPendingInvitation(handle: string): Promise<void> {
   return tauriInvoke('clear_pending_invitation', { handle })
 }
 
+let activeLoginAttemptId: string | null = null
+
 export async function matrixLogin(request: MatrixLoginRequest): Promise<BackendStatus> {
-  const status = await tauriInvoke<BackendStatus>('matrix_login', { request })
-  return cacheBackendStatus(status)
+  const attemptId = await tauriInvoke<string>('matrix_reserve_login_attempt')
+  activeLoginAttemptId = attemptId
+  try {
+    const status = await tauriInvoke<BackendStatus>('matrix_login', { request, attemptId })
+    return cacheBackendStatus(status)
+  } finally {
+    if (activeLoginAttemptId === attemptId) activeLoginAttemptId = null
+  }
 }
 
 export async function matrixRegisterAccount(
@@ -681,12 +768,20 @@ export async function matrixOidcStatus(homeserver: string): Promise<MatrixOidcSt
 }
 
 export async function matrixStartOidcLogin(homeserver: string): Promise<BackendStatus> {
-  await tauriInvoke('matrix_start_oidc_login', { homeserver })
-  return getBackendStatus()
+  const attemptId = await tauriInvoke<string>('matrix_reserve_login_attempt')
+  activeLoginAttemptId = attemptId
+  try {
+    await tauriInvoke('matrix_start_oidc_login', { homeserver, attemptId })
+    return getBackendStatus()
+  } finally {
+    if (activeLoginAttemptId === attemptId) activeLoginAttemptId = null
+  }
 }
 
 export async function matrixCancelLogin(): Promise<void> {
-  return tauriInvoke('matrix_cancel_login')
+  const attemptId = activeLoginAttemptId
+  if (!attemptId) return
+  return tauriInvoke('matrix_cancel_login', { attemptId })
 }
 
 export async function matrixRestoreSession(): Promise<BackendStatus> {
@@ -862,10 +957,17 @@ export async function updateMatrixUserPreferences(
   })
 }
 
+export async function getNotificationAccountScope(
+  expectedUserId: string,
+): Promise<NotificationAccountScope> {
+  return tauriInvoke('get_notification_account_scope', { expectedUserId })
+}
+
 export async function setNotificationContext(
+  scope: NotificationAccountScope,
   context: NotificationPresentationContext,
 ): Promise<void> {
-  return tauriInvoke('set_notification_context', { context })
+  return tauriInvoke('set_notification_context', { scope, context })
 }
 
 export async function sendTestNotification(): Promise<void> {
@@ -963,22 +1065,36 @@ export async function listServerEmoji(communityId: string): Promise<ServerEmoji[
   return tauriInvoke('matrix_list_custom_emoji', { communityId }, READ_IPC_OPTIONS)
 }
 
+export async function pickCustomEmojiGrant(
+  communityId: string,
+): Promise<NativeAttachmentGrant | null> {
+  if (!isMatrixBackend()) throw normalizeError('Custom emoji require the production backend.')
+  return tauriInvoke('pick_custom_emoji_grant', { communityId })
+}
+
 export async function uploadServerEmoji(
   communityId: string,
   shortcode: string,
-  file: File,
+  selection: NativeAttachmentGrant,
 ): Promise<ServerEmoji> {
   if (!isMatrixBackend()) throw normalizeError('Custom emoji require the production backend.')
-  if (file.size === 0 || file.size > MAX_CUSTOM_EMOJI_BYTES) {
+  if (
+    !Number.isSafeInteger(selection.size)
+    || selection.size <= 0
+    || selection.size > MAX_CUSTOM_EMOJI_BYTES
+  ) {
     throw normalizeError('Emoji images must be 512 KB or smaller.')
   }
-  const bytes = new Uint8Array(await file.arrayBuffer())
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(selection.contentType)) {
+    throw normalizeError('Choose a PNG, JPEG, or WebP image.')
+  }
+  if (!selection.grant.trim()) {
+    throw normalizeError('Choose the emoji image again.')
+  }
   return tauriInvoke('matrix_upload_custom_emoji', {
     communityId,
     shortcode,
-    filename: file.name,
-    contentType: file.type,
-    bytes: Array.from(bytes),
+    grant: selection.grant,
   })
 }
 
@@ -1165,6 +1281,12 @@ export interface NativeAttachmentGrant {
 export interface NativeAttachmentIntake {
   files: NativeAttachmentGrant[]
   errors: string[]
+  accountScope: NativeAttachmentAccountScope
+}
+
+export interface NativeAttachmentAccountScope {
+  accountGeneration: number
+  userId: string
 }
 
 export async function pickAttachmentGrants(): Promise<NativeAttachmentIntake> {
@@ -1192,7 +1314,7 @@ export async function matrixGetMessages(
   limit: number,
   before?: { timestamp: string; id: string },
 ): Promise<Message[]> {
-  return tauriInvoke(
+  return tauriInvoke<Message[]>(
     'matrix_get_messages',
     {
       roomId,
@@ -1219,7 +1341,11 @@ export async function matrixWaitForRoomUpdate(
   roomId: string,
   timeoutMs = 25_000,
 ): Promise<boolean> {
-  return tauriInvoke('matrix_wait_for_room_update', { roomId, timeoutMs })
+  return tauriInvoke(
+    'matrix_wait_for_room_update',
+    { roomId, timeoutMs },
+    { idempotent: true, timeoutMs: timeoutMs + 5_000, maxAttempts: 1 },
+  )
 }
 
 export interface MatrixTypingUser {
@@ -1297,16 +1423,23 @@ export async function createCommunity(name: string, description: string): Promis
 }
 
 export async function getCommunities(): Promise<Community[]> {
+  return (await getCommunitiesResult()).entities
+}
+
+export async function getCommunitiesResult(): Promise<EntityListResult<Community>> {
   if (!isTauri()) {
-    return []
+    return { entities: [], blockedEntities: [] }
   }
 
   if (isMatrixBackend()) {
     const result = await matrixListCommunities()
     reportBlockedEntities('Community listing', result.blockedEntities)
-    return result.entities
+    return result
   }
-  return legacyTauriInvoke('get_communities', undefined, READ_IPC_OPTIONS)
+  return {
+    entities: await legacyTauriInvoke('get_communities', undefined, READ_IPC_OPTIONS),
+    blockedEntities: [],
+  }
 }
 
 export async function joinCommunity(inviteLink: string): Promise<Community> {
@@ -1576,6 +1709,14 @@ export async function markChannelRead(channelId: string): Promise<void> {
     return tauriInvoke('matrix_mark_read', { roomId: channelId })
   }
   return legacyTauriInvoke('mark_channel_read', { channelId })
+}
+
+export async function markChannelsRead(channelIds: string[]): Promise<string[]> {
+  if (isMatrixBackend()) {
+    return tauriInvoke('matrix_mark_rooms_read', { roomIds: channelIds })
+  }
+  const results = await Promise.allSettled(channelIds.map((channelId) => markChannelRead(channelId)))
+  return channelIds.filter((_, index) => results[index]?.status === 'rejected')
 }
 
 export async function requestMessageHistory(
@@ -1856,7 +1997,7 @@ export interface MatrixRtcJoinResult {
   token: string
   roomName: string
   participantIdentity: string
-  mediaE2eeVerified: boolean
+  mediaE2eeReady: boolean
   mediaKey: MatrixRtcMediaKey
 }
 
@@ -1923,7 +2064,7 @@ export async function matrixRtcLeave(roomId: string, sessionId: string): Promise
 }
 
 export async function matrixRtcMembers(roomId: string): Promise<MatrixRtcMember[]> {
-  return tauriInvoke('matrix_rtc_members', { roomId })
+  return tauriInvoke('matrix_rtc_members', { roomId }, READ_IPC_OPTIONS)
 }
 
 export async function matrixRtcRefreshMembership(
@@ -2161,6 +2302,12 @@ export function onMatrixUnreadUpdate(
   return tauriListen('matrix:unread-update', handler)
 }
 
+export function onMatrixIgnoredUsersChanged(
+  handler: (change: MatrixIgnoredUsersChanged) => void,
+): Promise<UnlistenFn> {
+  return tauriListen('matrix:ignored-users-changed', handler)
+}
+
 export function onMatrixRoomPinsUpdate(
   handler: (update: MatrixRoomPinsUpdate) => void,
 ): Promise<UnlistenFn> {
@@ -2308,6 +2455,44 @@ export async function getDmConversations(): Promise<DmConversation[]> {
     return result.entities
   }
   return legacyTauriInvoke('get_dm_conversations', undefined, READ_IPC_OPTIONS)
+}
+
+export async function getDmRequests(): Promise<DmRequestDto[]> {
+  if (!isTauri() || !isMatrixBackend()) return []
+  return tauriInvoke('matrix_dm_requests', undefined, READ_IPC_OPTIONS)
+}
+
+export async function getBlockedAccounts(
+  after?: string,
+  limit: number = 50,
+): Promise<BlockedAccountPageDto> {
+  if (!isTauri() || !isMatrixBackend()) return { accounts: [], nextCursor: null }
+  return tauriInvoke(
+    'matrix_blocked_accounts',
+    { after, limit },
+    READ_IPC_OPTIONS,
+  )
+}
+
+export async function acceptDmRequest(roomId: string): Promise<DmConversation> {
+  if (!isMatrixBackend()) {
+    throw new Error('Message requests are unavailable in the legacy bridge')
+  }
+  return tauriInvoke('matrix_accept_dm_request', { roomId })
+}
+
+export async function declineDmRequest(roomId: string): Promise<void> {
+  if (!isMatrixBackend()) {
+    throw new Error('Message requests are unavailable in the legacy bridge')
+  }
+  return tauriInvoke('matrix_decline_dm_request', { roomId })
+}
+
+export async function blockDmRequest(roomId: string): Promise<BlockedAccountDto> {
+  if (!isMatrixBackend()) {
+    throw new Error('Message-request blocking is unavailable in the legacy bridge')
+  }
+  return tauriInvoke('matrix_block_dm_request', { roomId })
 }
 
 export async function ensureDm(recipientUserId: string): Promise<DmConversation> {
@@ -2489,25 +2674,57 @@ export async function getCommunityPermissionProjection(
   )
 }
 
-export async function getMembers(communityId: string): Promise<
-  {
-    publicKey: string
-    displayName: string
-    avatarColor: string
-    avatarUrl?: string | null
-    role: string
-    joinStatus: string
-    banStatus: string
-    lastSeen: string | null
-    online?: boolean
-  }[]
-> {
+export interface CommunityMemberDto {
+  publicKey: string
+  displayName: string
+  avatarColor: string
+  avatarUrl?: string | null
+  role: string
+  joinStatus: string
+  banStatus: string
+  lastSeen: string | null
+  online?: boolean
+}
+
+export interface CommunityMemberPage {
+  members: CommunityMemberDto[]
+  nextCursor: string | null
+  stateComplete: boolean
+}
+
+export const MATRIX_MEMBER_PAGE_LIMIT = 100
+
+export async function getMemberPage(
+  communityId: string,
+  cursor: string | null = null,
+  limit = MATRIX_MEMBER_PAGE_LIMIT,
+): Promise<CommunityMemberPage> {
+  if (!isTauri()) {
+    return { members: [], nextCursor: null, stateComplete: true }
+  }
+  if (!isMatrixBackend()) {
+    const members = await legacyTauriInvoke<CommunityMemberDto[]>(
+      'get_members',
+      { communityId },
+      READ_IPC_OPTIONS,
+    )
+    return { members, nextCursor: null, stateComplete: true }
+  }
+  return tauriInvoke<CommunityMemberPage>(
+    'matrix_list_members',
+    { communityId, cursor, limit },
+    READ_IPC_OPTIONS,
+  )
+}
+
+export async function getMembers(communityId: string): Promise<CommunityMemberDto[]> {
   if (!isTauri()) {
     return []
   }
-  return isMatrixBackend()
-    ? tauriInvoke('matrix_list_members', { communityId }, READ_IPC_OPTIONS)
-    : legacyTauriInvoke('get_members', { communityId }, READ_IPC_OPTIONS)
+  if (isMatrixBackend()) {
+    return (await getMemberPage(communityId)).members
+  }
+  return legacyTauriInvoke('get_members', { communityId }, READ_IPC_OPTIONS)
 }
 
 export async function requestControlLogSync(communityId: string): Promise<void> {

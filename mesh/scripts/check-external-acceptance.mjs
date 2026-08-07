@@ -30,6 +30,7 @@ const EVIDENCE_SIZE_LIMITS = new Map([
   ['video/mp4', 100 * 1024 * 1024],
 ])
 const SCREENSHOT_MEDIA_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+const OPAQUE_VISUAL_MEDIA_TYPES = new Set([...SCREENSHOT_MEDIA_TYPES, 'application/pdf', 'video/mp4'])
 
 export const REQUIRED_EXTERNAL_ACCEPTANCE_IDS = Object.freeze([
   'windows.download',
@@ -54,6 +55,7 @@ export const REQUIRED_EXTERNAL_ACCEPTANCE_IDS = Object.freeze([
   'public-release.updater-manifest',
   'public-release.updater-rollback',
   'public-release.legal-approval',
+  'public-release.confidential-security-reporting',
   'public-release.live-download',
   'provider.production-registrations',
   'provider.callback-routing',
@@ -164,8 +166,8 @@ export function inspectEvidenceContent(bytes, mediaType, { privacyReviewer = nul
   const limit = EVIDENCE_SIZE_LIMITS.get(mediaType)
   if (!limit) return ['evidence media type is not supported for bounded inspection']
   if (bytes.byteLength > limit) return ['evidence exceeds the bounded inspection size limit']
-  if (SCREENSHOT_MEDIA_TYPES.has(mediaType) && !nonPlaceholder(privacyReviewer)) {
-    errors.push('screenshot evidence requires a named human privacy reviewer')
+  if (OPAQUE_VISUAL_MEDIA_TYPES.has(mediaType) && !nonPlaceholder(privacyReviewer)) {
+    errors.push('opaque visual evidence requires a named human privacy reviewer')
   }
   for (const category of contentCategories(evidenceText(bytes))) {
     errors.push(`evidence content contains prohibited ${category}`)
@@ -236,7 +238,7 @@ export function validateExternalAcceptance(document, {
     if (!isoDate(artifact.collectedAt)) fail(`artifact ${artifact.id} collectedAt is invalid`)
     if (typeof artifact.sanitized !== 'boolean') fail(`artifact ${artifact.id} sanitized must remain explicit metadata`)
     if (artifact.privacyReviewer !== null && !nonPlaceholder(artifact.privacyReviewer)) fail(`artifact ${artifact.id} privacyReviewer must be named or null`)
-    if (SCREENSHOT_MEDIA_TYPES.has(artifact.mediaType) && !nonPlaceholder(artifact.privacyReviewer)) fail(`artifact ${artifact.id} screenshot requires a named human privacy reviewer`)
+    if (OPAQUE_VISUAL_MEDIA_TYPES.has(artifact.mediaType) && !nonPlaceholder(artifact.privacyReviewer)) fail(`artifact ${artifact.id} opaque visual evidence requires a named human privacy reviewer`)
     if (!Array.isArray(artifact.resultIds) || artifact.resultIds.length < 1 || new Set(artifact.resultIds).size !== artifact.resultIds.length) {
       fail(`artifact ${artifact.id} resultIds must be a non-empty unique array`)
     } else {
@@ -292,6 +294,7 @@ export function validateExternalAcceptance(document, {
     }
     if (artifacts.length < 1) fail('live external acceptance requires evidence artifacts')
     for (const artifact of artifacts) {
+      if (artifact.sanitized !== true) fail(`live artifact ${artifact.id} must be explicitly sanitized`)
       if (isoDate(artifact.collectedAt) && Date.parse(artifact.collectedAt) > now.getTime()) fail(`artifact ${artifact.id} collectedAt cannot be in the future`)
       if (isoDate(document.testedAt) && isoDate(artifact.collectedAt) && Date.parse(artifact.collectedAt) < Date.parse(document.testedAt)) fail(`artifact ${artifact.id} predates the acceptance campaign`)
     }

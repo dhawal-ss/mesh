@@ -3,11 +3,18 @@ import { useCommunityStore } from '../store/communities'
 import { useChannelStore } from '../store/channels'
 import { useMembershipStore } from '../store/membership'
 import { useIdentityStore } from '../store/identity'
-import { getMembers, isMatrixBackend, onControlEvent, requestControlLogSync } from '../lib/bridge'
+import {
+  getMemberPage,
+  getMembers,
+  isMatrixBackend,
+  matrixWaitForRoomUpdate,
+  onControlEvent,
+  requestControlLogSync,
+} from '../lib/bridge'
 import type { Channel } from '../types/ipc'
 import type { ControlEventData } from '../lib/bridge'
 import type { MemberRecord } from '../store/membership'
-import { registerPoll } from '../lib/scheduler'
+import { getBackoffDelay, waitForDelay } from '../lib/scheduler'
 import { useMessageStore } from '../store/messages'
 
 /**
@@ -31,6 +38,7 @@ export function useCommunitySync() {
   const removeChannel = useChannelStore((s) => s.removeChannel)
   const clearChannelMessages = useMessageStore((s) => s.clearChannel)
   const setRoster = useMembershipStore((s) => s.setRoster)
+  const setRosterPage = useMembershipStore((s) => s.setRosterPage)
   const clearCommunity = useMembershipStore((s) => s.clearCommunity)
   const upsertMember = useMembershipStore((s) => s.upsertMember)
   const removeMember = useMembershipStore((s) => s.removeMember)
@@ -45,12 +53,13 @@ export function useCommunitySync() {
     if (matrixMode) {
       if (!activeCommunityId) return
       let cancelled = false
+      const abortController = new AbortController()
       const communityId = activeCommunityId
       const refreshMatrixRoster = async () => {
         try {
-          const members = await getMembers(communityId)
+          const page = await getMemberPage(communityId)
           if (cancelled) return
-          const roster: MemberRecord[] = members.map((member) => ({
+          const roster: MemberRecord[] = page.members.map((member) => ({
             publicKey: member.publicKey,
             displayName: member.displayName,
             avatarColor: member.avatarColor,
@@ -60,27 +69,50 @@ export function useCommunitySync() {
             lastSeen: member.lastSeen,
             online: member.online ?? false,
           }))
-          setRoster(communityId, roster)
-          patchCommunity(communityId, {
-            memberCount: roster.filter(
-              (member) => member.joinStatus === 'joined' && member.banStatus === 'none',
-            ).length,
-          })
+          // A room update does not identify which membership page changed.
+          // Replace the materialized roster with the authoritative first page
+          // so a departed or banned person from a previously loaded later page
+          // cannot remain visible. People can explicitly load later pages again.
+          setRosterPage(
+            communityId,
+            roster,
+            page.nextCursor,
+            page.stateComplete,
+            false,
+          )
         } catch (error) {
           console.error('Failed to refresh Matrix member roster:', error)
           throw error
         }
       }
-      const unregisterPoll = registerPoll({
-        key: `matrix-roster:${communityId}`,
-        intervalMs: 5_000,
-        run: refreshMatrixRoster,
-        pauseWhenHidden: true,
-        backoffOnError: true,
-      })
+
+      const watchMatrixRoster = async () => {
+        let failureCount = 0
+        let needsRefresh = true
+        while (!cancelled) {
+          try {
+            if (needsRefresh) {
+              await refreshMatrixRoster()
+            }
+            failureCount = 0
+            if (cancelled) return
+            needsRefresh = await matrixWaitForRoomUpdate(communityId)
+          } catch (error) {
+            if (cancelled) return
+            needsRefresh = true
+            failureCount += 1
+            console.error('Failed to watch Matrix member roster:', error)
+            await waitForDelay(
+              getBackoffDelay(failureCount, { baseMs: 1_000, maxMs: 30_000 }),
+              abortController.signal,
+            )
+          }
+        }
+      }
+      void watchMatrixRoster()
       return () => {
         cancelled = true
-        unregisterPoll()
+        abortController.abort()
       }
     }
 
@@ -174,6 +206,7 @@ export function useCommunitySync() {
     removeCommunity,
     removeMember,
     setRoster,
+    setRosterPage,
     updateRole,
     upsertMember,
     matrixMode,

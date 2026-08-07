@@ -32,6 +32,11 @@ use tokio::time::Instant as TokioInstant;
 const REGISTRATION_TEST_OUTER_LIMIT: Duration = Duration::from_secs(2 * 60);
 const FEDERATION_TEST_OUTER_LIMIT: Duration = Duration::from_secs(14 * 60);
 
+async fn login_matrix_backend(backend: &MatrixBackend, request: MatrixLogin) {
+    let attempt_id = backend.reserve_login_attempt().await.unwrap();
+    backend.login(request, attempt_id).await.unwrap();
+}
+
 #[derive(Clone, Copy)]
 struct PresenceWaitPolicy {
     total: Duration,
@@ -177,6 +182,7 @@ fn sanitized_backend_error(error: &BackendError) -> &'static str {
         BackendError::DecryptionFailed(_) => "decryption-failed",
         BackendError::Cancelled(_) => "cancelled",
         BackendError::Unsupported(_) => "unsupported",
+        BackendError::InvalidInput(_) => "invalid-input",
         BackendError::InvalidConfiguration(_) => "invalid-configuration",
         BackendError::CommunityHomeserverUnconfigured => "community-service-unconfigured",
         BackendError::UsernameUnavailable => "username-unavailable",
@@ -549,10 +555,10 @@ async fn wait_for_member_presence(
         || observer.sync_once(),
         || async {
             observer
-                .list_members(community_id.to_owned())
+                .list_member_page(community_id.to_owned(), None, Some(100))
                 .await
-                .map(|members| {
-                    members
+                .map(|page| {
+                    page.members
                         .iter()
                         .find(|member| member.public_key == user_id)
                         .map(|member| MemberPresenceSnapshot {
@@ -800,23 +806,34 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
         MatrixBackend::with_profile(bob_stale_store.path().to_owned(), bob_stale_profile);
     let charlie = MatrixBackend::with_profile(charlie_store.path().to_owned(), charlie_profile);
 
-    alice
-        .login(MatrixLogin {
+    login_matrix_backend(
+        &alice,
+        MatrixLogin {
             homeserver: "http://localhost:8008".into(),
             username: "alice".into(),
             password: "mesh-alice".into(),
             device_name: Some("Mesh spike Alice".into()),
-        })
-        .await
-        .unwrap();
-    bob.login(MatrixLogin {
-        homeserver: "http://localhost:8009".into(),
-        username: "bob".into(),
-        password: "mesh-bob".into(),
-        device_name: Some("Mesh spike Bob".into()),
-    })
-    .await
-    .unwrap();
+        },
+    )
+    .await;
+    login_matrix_backend(
+        &bob,
+        MatrixLogin {
+            homeserver: "http://localhost:8009".into(),
+            username: "bob".into(),
+            password: "mesh-bob".into(),
+            device_name: Some("Mesh spike Bob".into()),
+        },
+    )
+    .await;
+    assert!(
+        alice.status().await.session_e2ee_ready,
+        "Alice login returned before identity-based room-key sharing was ready"
+    );
+    assert!(
+        bob.status().await.session_e2ee_ready,
+        "Bob login returned before identity-based room-key sharing was ready"
+    );
     alice
         .update_user_preferences(privacy_preferences_with_receipt_mode(
             ReadReceiptMode::Public,
@@ -850,25 +867,27 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
     assert_eq!(bob_dm.id, alice_dm.id);
     checkpoint!("federated encrypted DM room discovered and joined");
 
-    bob_stale
-        .login(MatrixLogin {
+    login_matrix_backend(
+        &bob_stale,
+        MatrixLogin {
             homeserver: "http://localhost:8009".into(),
             username: "bob".into(),
             password: "mesh-bob".into(),
             device_name: Some("Mesh spike Bob stale device".into()),
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
     bob_stale.pause_sync().await;
-    charlie
-        .login(MatrixLogin {
+    login_matrix_backend(
+        &charlie,
+        MatrixLogin {
             homeserver: "http://localhost:8008".into(),
             username: "charlie".into(),
             password: "mesh-charlie".into(),
             device_name: Some("Mesh spike Charlie".into()),
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
 
     let bob_charlie_dm = bob.ensure_dm(charlie_user.clone()).await.unwrap();
     let stale_created_dm = bob_stale.ensure_dm(charlie_user.clone()).await.unwrap();
@@ -1330,9 +1349,10 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
         .iter()
         .any(|item| item.id == community.channel_id));
     let alice_members = alice
-        .list_members(community.space_id.clone())
+        .list_member_page(community.space_id.clone(), None, Some(100))
         .await
-        .unwrap();
+        .unwrap()
+        .members;
     assert!(alice_members.iter().any(|member| {
         member.public_key == bob_user
             && member.join_status == "joined"
@@ -1413,7 +1433,11 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
         .unwrap();
     tokio::time::sleep(Duration::from_secs(2)).await;
     bob.sync_once().await.unwrap();
-    let bob_members = bob.list_members(community.space_id.clone()).await.unwrap();
+    let bob_members = bob
+        .list_member_page(community.space_id.clone(), None, Some(100))
+        .await
+        .unwrap()
+        .members;
     assert!(bob_members
         .iter()
         .any(|member| member.public_key == bob_user && member.role == "admin"));
@@ -2010,15 +2034,16 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
         bob_second_store.path().to_owned(),
         "matrix-spike-bob-second",
     );
-    bob_second
-        .login(MatrixLogin {
+    login_matrix_backend(
+        &bob_second,
+        MatrixLogin {
             homeserver: "http://localhost:8009".into(),
             username: "bob".into(),
             password: "mesh-bob".into(),
             device_name: Some("Mesh spike Bob second device".into()),
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
     bob_second.recover(recovery_key).await.unwrap();
     bob_second.sync_once().await.unwrap();
     checkpoint!("second device authenticated and recovery imported");
@@ -2413,9 +2438,10 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
     tokio::time::sleep(Duration::from_secs(2)).await;
     alice.sync_once().await.unwrap();
     let final_members = alice
-        .list_members(community.space_id.clone())
+        .list_member_page(community.space_id.clone(), None, Some(100))
         .await
-        .unwrap();
+        .unwrap()
+        .members;
     assert!(final_members.iter().any(|member| {
         member.public_key == bob_user
             && member.join_status == "left"

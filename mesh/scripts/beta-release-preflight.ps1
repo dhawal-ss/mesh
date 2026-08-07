@@ -301,20 +301,27 @@ function Assert-MatrixFrontendBundleBoundary {
     Assert-Condition ($legacyChunks.Count -eq 0) `
         "Matrix frontend bundle must exclude the legacy SimplePeer implementation entirely; found: $legacyChunkNames"
 
-    $matrixVoiceChunks = @(
+    $liveKitVoiceChunks = @(
         Get-ChildItem -LiteralPath $Root -Recurse -File |
-            Where-Object { $_.Name -match '(?i)livekit|e2ee-worker' }
+            Where-Object { $_.Name -match '(?i)^livekit-voice-.+\.js$' }
     )
-    $matrixVoiceChunkNames = @($matrixVoiceChunks | ForEach-Object { $_.Name }) -join ", "
-    Assert-Condition ($matrixVoiceChunks.Count -eq 0) `
-        "The Windows text/community beta must exclude dormant Matrix voice code; found: $matrixVoiceChunkNames"
+    $e2eeWorkerChunks = @(
+        Get-ChildItem -LiteralPath $Root -Recurse -File |
+            Where-Object { $_.Name -match '(?i)^livekit-client\.e2ee\.worker-.+\.mjs$' }
+    )
+    Assert-Condition ($liveKitVoiceChunks.Count -eq 1) `
+        "The signed beta candidate must contain exactly one lazy Matrix voice implementation chunk."
+    Assert-Condition ($e2eeWorkerChunks.Count -eq 1) `
+        "The signed beta candidate must contain exactly one bundled LiveKit media-E2EE worker."
 
-    Write-Host "Frontend boundary: the Matrix text/community bundle excludes SimplePeer and LiveKit implementations."
+    Write-Host "Frontend boundary: the beta bundle includes Matrix voice and media E2EE while excluding SimplePeer."
 }
 
 $packagePath = Join-Path $repoRoot "package.json"
 $cargoPath = Join-Path $tauriRoot "Cargo.toml"
 $tauriConfigPath = Join-Path $tauriRoot "tauri.conf.json"
+$matrixVoiceTauriConfigPath = Join-Path $tauriRoot "tauri.matrix-voice.conf.json"
+$matrixVoiceTauriRunnerPath = Join-Path $repoRoot "scripts/run-matrix-voice-tauri.mjs"
 $capabilitiesPath = Join-Path $tauriRoot "capabilities/default.json"
 $legacyCapabilitiesPath = Join-Path $tauriRoot "capabilities/legacy.json"
 $applicationPermissionPath = Join-Path $tauriRoot "permissions/mesh-main.toml"
@@ -325,6 +332,7 @@ $ciWorkflowPath = Join-Path $gitRoot ".github/workflows/ci.yml"
 $nightlyWorkflowPath = Join-Path $gitRoot ".github/workflows/nightly-soak.yml"
 $releaseWorkflowPath = Join-Path $gitRoot ".github/workflows/release-beta.yml"
 $securityWorkflowPath = Join-Path $gitRoot ".github/workflows/security.yml"
+$r3SecurityWorkflowPath = Join-Path $gitRoot ".github/workflows/security-r3-voice.yml"
 $matrixAcceptanceWorkflowPath = Join-Path $gitRoot ".github/workflows/matrix-federation-acceptance.yml"
 $developerPreviewWorkflowPath = Join-Path $gitRoot ".github/workflows/developer-preview.yml"
 $pagesWorkflowPath = Join-Path $gitRoot ".github/workflows/pages.yml"
@@ -340,6 +348,8 @@ $externalAcceptanceCheckerPath = Join-Path $repoRoot "scripts/check-external-acc
 $externalAcceptanceTestPath = Join-Path $repoRoot "scripts/check-external-acceptance.test.mjs"
 $externalAcceptanceTemplatePath = Join-Path $repoRoot "release/external-acceptance.example.json"
 $externalAcceptanceSchemaPath = Join-Path $repoRoot "release/external-acceptance.schema.json"
+$protectedReadinessEvidencePath = Join-Path $repoRoot "scripts/protected-readiness-evidence.mjs"
+$operatorSmokePath = Join-Path $repoRoot "scripts/operator-smoke.ps1"
 $betaContractPath = Join-Path $repoRoot "release/beta-contract.json"
 $ownerDecisionsPath = Join-Path $repoRoot "release/owner-decisions.json"
 $ownerDecisionsCheckerPath = Join-Path $repoRoot "scripts/check-owner-decisions.mjs"
@@ -353,6 +363,8 @@ $securityDisclosureDrillPath = Join-Path $repoRoot "scripts/security-disclosure-
 
 $packageConfig = Read-JsonFile $packagePath
 $tauriConfig = Read-JsonFile $tauriConfigPath
+$matrixVoiceTauriConfigText = Read-Utf8Text $matrixVoiceTauriConfigPath
+$matrixVoiceTauriRunnerText = Read-Utf8Text $matrixVoiceTauriRunnerPath
 $cargoText = Read-Utf8Text $cargoPath
 $capabilitiesText = Read-Utf8Text $capabilitiesPath
 $legacyCapabilitiesText = Read-Utf8Text $legacyCapabilitiesPath
@@ -363,6 +375,7 @@ $ciWorkflowText = Read-Utf8Text $ciWorkflowPath
 $nightlyWorkflowText = Read-Utf8Text $nightlyWorkflowPath
 $releaseWorkflowText = Read-Utf8Text $releaseWorkflowPath
 $securityWorkflowText = Read-Utf8Text $securityWorkflowPath
+$r3SecurityWorkflowText = Read-Utf8Text $r3SecurityWorkflowPath
 $matrixAcceptanceWorkflowText = Read-Utf8Text $matrixAcceptanceWorkflowPath
 $developerPreviewWorkflowText = Read-Utf8Text $developerPreviewWorkflowPath
 $pagesWorkflowText = Read-Utf8Text $pagesWorkflowPath
@@ -378,6 +391,8 @@ $externalAcceptanceCheckerText = Read-Utf8Text $externalAcceptanceCheckerPath
 $externalAcceptanceTestText = Read-Utf8Text $externalAcceptanceTestPath
 $externalAcceptanceTemplateText = Read-Utf8Text $externalAcceptanceTemplatePath
 $externalAcceptanceSchemaText = Read-Utf8Text $externalAcceptanceSchemaPath
+$protectedReadinessEvidenceText = Read-Utf8Text $protectedReadinessEvidencePath
+$operatorSmokeText = Read-Utf8Text $operatorSmokePath
 $betaContract = Read-JsonFile $betaContractPath
 $ownerDecisions = Read-JsonFile $ownerDecisionsPath
 $ownerDecisionsCheckerText = Read-Utf8Text $ownerDecisionsCheckerPath
@@ -458,9 +473,12 @@ Assert-Condition ($betaContract.releaseState -eq "developer-preview" -and
     $tauriConfig.bundle.windows.nsis.installMode -eq "currentUser") `
     "The checked beta contract must describe the Windows Matrix developer-preview candidate."
 $excludedBetaCapabilities = @($betaContract.candidate.excludedCapabilities | ForEach-Object { [string]$_ })
-foreach ($excludedCapability in @("matrix-voice", "legacy-p2p", "automatic-updates")) {
+Assert-Condition (@($betaContract.candidate.capabilities) -contains "matrix-voice" -and
+    $excludedBetaCapabilities -notcontains "matrix-voice") `
+    "The signed draft beta must include Matrix voice so physical acceptance can exercise the real candidate."
+foreach ($excludedCapability in @("legacy-p2p", "automatic-updates")) {
     Assert-Condition ($excludedBetaCapabilities -contains $excludedCapability) `
-        "The text/community beta contract must exclude $excludedCapability."
+        "The beta contract must exclude $excludedCapability."
 }
 Assert-Condition (-not [bool]$betaContract.claims.consumerBeta -and
     -not [bool]$betaContract.claims.productionReady -and
@@ -474,7 +492,7 @@ $defaultFeatures = [regex]::Match(
     '(?m)^\s*default\s*=\s*\[\s*"matrix-backend"\s*\]\s*$'
 )
 Assert-Condition $defaultFeatures.Success `
-    "Cargo default features must contain only matrix-backend for the production beta."
+    "Cargo defaults must remain the safe non-voice Matrix backend; signed voice builds must opt in explicitly."
 Assert-Condition ($releaseWorkflowText -match '(?m)^\s*gh release create .+$') `
     "The beta workflow must create its release only after local artifact verification."
 Assert-Condition ($releaseWorkflowText -match '(?m)^\s*--draft\s*`?\s*$') `
@@ -485,8 +503,23 @@ Assert-Condition ($releaseWorkflowText -notmatch 'gh release edit' -and
     $releaseWorkflowText -notmatch '--draft[=:]false' -and
     $releaseWorkflowText -match 'Candidate factory only') `
     "The candidate workflow must contain no public promotion path."
-Assert-Condition ($releaseWorkflowText -match 'npm run tauri -- build --features matrix-backend -- --no-default-features --locked --jobs 1') `
-    "The beta workflow must build the locked Matrix-only feature set."
+Assert-Condition ($releaseWorkflowText -match 'npm run tauri:build:matrix-voice') `
+    "The beta workflow must build the locked Matrix voice feature set."
+Assert-Condition ($matrixVoiceTauriConfigText -match "connect-src ipc: http://ipc\.localhost" -and
+    $matrixVoiceTauriConfigText -match 'https://livekit-jwt\.call\.matrix\.org' -and
+    $matrixVoiceTauriConfigText -match 'wss://\*\.call\.matrix\.org' -and
+    $matrixVoiceTauriConfigText -match 'https://rtc\.matrix\.tchncs\.de' -and
+    $matrixVoiceTauriConfigText -match 'wss://rtc\.matrix\.tchncs\.de' -and
+    $matrixVoiceTauriConfigText -match 'https://livekit\.quassel\.io' -and
+    $matrixVoiceTauriConfigText -match 'wss://livekit\.quassel\.io' -and
+    $matrixVoiceTauriConfigText -notmatch 'connect-src[^;]*(?:https:|wss:)\s*(?:;|$)') `
+    "The isolated Matrix voice config must allow only reviewed zero-cost LiveKit HTTPS/WSS origins, never broad https: or wss:."
+Assert-Condition ($matrixVoiceTauriRunnerText -match 'tauri\.matrix-voice\.conf\.json' -and
+    $matrixVoiceTauriRunnerText -match "'matrix-voice'" -and
+    $matrixVoiceTauriRunnerText -match "MESH_MATRIX_VOICE_FRONTEND: 'matrix-voice'" -and
+    $matrixVoiceTauriRunnerText -match "'--locked'" -and
+    $matrixVoiceTauriRunnerText -match "'--jobs', '1'") `
+    "The native Matrix voice build must combine the reviewed CSP, Rust matrix-voice feature, matrix-voice frontend mode, lockfile, and serialized Cargo build."
 Assert-Condition ($releaseWorkflowText -match '(?m)^\s*release_version:\s*$') `
     "The beta workflow must require an explicit release_version input for manual runs."
 Assert-Condition ($releaseWorkflowText -match '(?m)^\s*release_tag:\s*$') `
@@ -508,6 +541,7 @@ Assert-PinnedActions -WorkflowName "ci.yml" -WorkflowText $ciWorkflowText
 Assert-PinnedActions -WorkflowName "nightly-soak.yml" -WorkflowText $nightlyWorkflowText
 Assert-PinnedActions -WorkflowName "release-beta.yml" -WorkflowText $releaseWorkflowText
 Assert-PinnedActions -WorkflowName "security.yml" -WorkflowText $securityWorkflowText
+Assert-PinnedActions -WorkflowName "security-r3-voice.yml" -WorkflowText $r3SecurityWorkflowText
 Assert-PinnedActions `
     -WorkflowName "matrix-federation-acceptance.yml" `
     -WorkflowText $matrixAcceptanceWorkflowText
@@ -554,13 +588,33 @@ Assert-Condition ($releaseWorkflowText -match 'check:readiness-ledger.+--commit-
 Assert-Condition ($releaseWorkflowText -match 'check:readiness-ledger.+--milestone R0.+--require-live' -and
     $releaseWorkflowText -notmatch 'check:readiness-ledger.+--milestone R2') `
     "Signed draft candidate creation must require exact-SHA R0 readiness without circularly requiring post-build R2 acceptance."
-Assert-Condition ($releaseWorkflowText -match 'matrixrtc-preflight\.ps1') `
-    "The beta workflow must validate pinned MatrixRTC configuration and the physical/network acceptance contract."
-Assert-Condition ($releaseWorkflowText -match 'test-evidence-validation\.ps1') `
-    "The beta workflow must run the MatrixRTC evidence validator positive and negative tests."
+Assert-Condition ($releaseWorkflowText -match 'matrixrtc-preflight\.ps1' -and
+    $releaseWorkflowText -match 'test-evidence-validation\.ps1' -and
+    $releaseWorkflowText -match '-Milestone\s+R3' -and
+    $r3SecurityWorkflowText -match 'matrixrtc-preflight\.ps1' -and
+    $r3SecurityWorkflowText -match 'test-evidence-validation\.ps1') `
+    "Voice is a beta gate: candidate validation and the R3 security workflow must retain MatrixRTC preflight and evidence-validator tests."
 Assert-Condition ($releaseWorkflowText -match 'check-external-acceptance\.test\.mjs' -and
     $releaseWorkflowText -match 'check-external-acceptance\.mjs') `
     "The beta workflow must validate the fail-closed external acceptance template and checker tests."
+Assert-Condition ($releaseWorkflowText -match 'check:protected-evidence' -and
+    $ciWorkflowText -match 'check:protected-evidence') `
+    "CI and the beta workflow must test protected evidence provenance before candidate creation."
+Assert-Condition ($releaseWorkflowText -match '(?m)^\s+actions:\s+read\s*$' -and
+    $releaseWorkflowText -match 'GITHUB_TOKEN:\s*\$\{\{ github\.token \}\}') `
+    "Live R0 candidate validation must have read-only Actions access for downloading protected evidence."
+Assert-Condition ($ciWorkflowText -match 'protected-ci-results\.mjs' -and
+    $securityWorkflowText -match 'protected-security-results\.mjs' -and
+    $ciWorkflowText -match '--payload-size' -and
+    $securityWorkflowText -match '--payload-size') `
+    "Protected CI and security evidence must validate keyed job results and bind the downloadable artifact archive digest and size."
+Assert-Condition ($protectedReadinessEvidenceText -match 'actions/runs/\$\{parsed\.runId\}' -and
+    $protectedReadinessEvidenceText -match "run\?\.event !== 'push'" -and
+    $protectedReadinessEvidenceText -match "run\?\.status !== 'completed'" -and
+    $protectedReadinessEvidenceText -match "run\?\.conclusion !== 'success'" -and
+    $protectedReadinessEvidenceText -match 'PROTECTED_WORKFLOW_RUNS' -and
+    $protectedReadinessEvidenceText -match 'expectedRunAttempt') `
+    "Protected evidence must bind artifacts to the exact successful protected workflow file, push event, repository, source, and rerun attempt."
 Assert-Condition ($externalAcceptanceCheckerText -match 'REQUIRED_EXTERNAL_ACCEPTANCE_IDS' -and
     $externalAcceptanceCheckerText -match 'live external acceptance requires a clean tracked and untracked source worktree' -and
     $externalAcceptanceCheckerText -match 'SHA-256 does not match' -and
@@ -569,8 +623,23 @@ Assert-Condition ($externalAcceptanceCheckerText -match 'REQUIRED_EXTERNAL_ACCEP
     $externalAcceptanceTemplateText -match 'native-invite\.linux-cold-start' -and
     $externalAcceptanceSchemaText -match 'external-acceptance') `
     "External acceptance evidence must remain complete, exact-SHA-bound, tamper-evident, cross-platform, and fail-closed."
-Assert-Condition ($releaseWorkflowText -match 'operator-smoke\.ps1') `
-    "The beta workflow must validate the secret-free operator-smoke configuration before building release artifacts."
+Assert-Condition ($releaseWorkflowText -match 'operator-smoke\.ps1.+-Milestone R2.+r2\.env\.example' -and
+    $releaseWorkflowText -match 'operator-smoke\.ps1.+-Milestone R3' -and
+    $r3SecurityWorkflowText -match 'operator-smoke\.ps1.+-Milestone R3') `
+    "Voice is a beta gate: candidate creation and the R3 security workflow must both retain R3 voice smoke."
+Assert-Condition ($operatorSmokeText -match 'ValidateSet\("R2", "R3"\)' -and
+    $operatorSmokeText -match '\$voiceAcceptance = \$Milestone -eq "R3"' -and
+    $operatorSmokeText -match 'PublicProbeAttempts = 3' -and
+    $operatorSmokeText -match 'Invoke-StablePublicJsonRequest' -and
+    $operatorSmokeText -match 'MESH_SMOKE_EXPECTED_SERVER_VERSION' -and
+    $operatorSmokeText -match 'Get-ReviewedSynapseVersion' -and
+    $operatorSmokeText -match 'exact R2 Synapse deployment pin' -and
+    $operatorSmokeText -match 'Assert-PublicDnsResolution' -and
+    $operatorSmokeText -match 'genuinely external network' -and
+    $operatorSmokeText -match 'Read-BoundedResponseBytes' -and
+    $operatorSmokeText -match 'HttpCompletionOption\]::ResponseHeadersRead' -and
+    $operatorSmokeText -notmatch 'ReadAsByteArrayAsync') `
+    "Operator smoke must keep R2 text/community checks independent from later R3 voice infrastructure and stream remote JSON within its declared byte limit."
 Assert-Condition ($matrixRtcPreflightText -match '\[switch\]\$RequireLiveAcceptance') `
     "MatrixRTC preflight must retain an explicit complete-live-acceptance evidence gate."
 Assert-Condition ($matrixRtcPreflightText -match 'acceptance-matrix\.example\.json') `
@@ -679,7 +748,7 @@ Assert-Condition ($securityPolicyText -match '(?is)confidential\s+route\s+status
     (Test-Path -LiteralPath $securityDisclosureDrillPath -PathType Leaf) -and
     $packageConfig.scripts.'check:security-disclosure' -match 'security-disclosure-drill\.mjs' -and
     $licensePolicyText -match 'AGPL-3\.0-only') `
-    "Security policy must state the unavailable confidential route, retain its disclosure drill, and preserve the dependency license policy."
+    "Draft-candidate policy must accurately state the unavailable confidential route and retain its disclosure drill; public promotion is separately blocked by r2.confidential-security-reporting."
 
 Assert-Condition ($matrixAcceptanceWorkflowText -match 'npm run setup:matrix-spike:reset') `
     "Matrix federation acceptance must reset the disposable homeservers before every run."
@@ -845,7 +914,7 @@ if ($RequireSigningEnvironment) {
 
 Write-Host "Source preflight passed for Mesh v$tauriVersion."
 Write-Host "Updater status: disabled (no plugin, capability, endpoint, key, or updater manifest)."
-Write-Host "Release status: Matrix-only signed candidate, draft prerelease only; no promotion path."
+Write-Host "Release status: Matrix voice signed candidate, draft prerelease only; public promotion remains blocked on live acceptance."
 
 if ($VerifyFrontendBundle) {
     $resolvedFrontendRoot = Resolve-RepoChildPath `

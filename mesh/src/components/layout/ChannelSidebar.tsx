@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -26,6 +28,11 @@ import { EmptyState } from '../ui/Primitives'
 import { useVirtualScroll, type VirtualItem } from '../../hooks/useVirtualScroll'
 import { IconButton } from '../ui/IconButton'
 import { useMeshNavigationStore } from '../../store/navigation'
+import { ModalLoadingFallback } from '../ui/ModalLoadingFallback'
+
+const InviteModal = lazy(() =>
+  import('../community/InviteModal').then((module) => ({ default: module.InviteModal })),
+)
 
 type RoomListEntry =
   | {
@@ -60,6 +67,7 @@ export function ChannelSidebar() {
   const matrixRtcMembersByRoom = useVoiceStore((state) => state.matrixRtcMembersByRoom)
   const setProfileOpen = useShellStore((state) => state.setProfileOpen)
   const [voiceCollapsed, setVoiceCollapsed] = useState(false)
+  const [inviteOpen, setInviteOpen] = useState(false)
   const [roomFocus, setRoomFocus] = useState({
     activeChannelId,
     roomId: activeChannelId,
@@ -68,11 +76,6 @@ export function ChannelSidebar() {
   const typeaheadTimerRef = useRef<number | null>(null)
   const matrixMode = bridge.isMatrixBackend()
   const matrixVoiceReady = canStartMatrixVoice(bridge.getBackendStatusSnapshot())
-  const matrixAccountId = matrixMode ? bridge.getMatrixUserId() : null
-  const homeService = serviceName(
-    bridge.getBackendStatusSnapshot()?.homeserver
-      ?? (matrixAccountId?.split(':').slice(1).join(':') || null),
-  )
 
   const activeCommunity = useActiveCommunity()
   const communityChannels = useMemo(
@@ -282,17 +285,6 @@ export function ChannelSidebar() {
     }
   }
 
-  const copyCommunityInvite = async () => {
-    if (!activeCommunityId) return
-    try {
-      const link = await bridge.generateInviteLink(activeCommunityId)
-      await copyText(link)
-      showToast('Community invite copied.', 'success')
-    } catch {
-      showToast('Could not copy a community invite.', 'error')
-    }
-  }
-
   const browseRooms = () => {
     const roomList = document.querySelector<HTMLElement>('#community-room-list')
     roomList?.focus({ preventScroll: true })
@@ -344,10 +336,6 @@ export function ChannelSidebar() {
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-status-success" aria-hidden="true" />
                 {activeCommunity.memberCount ?? 1} members
-              </span>
-              <span aria-hidden="true">·</span>
-              <span className="truncate">
-                {homeService ?? (matrixMode ? 'Connected' : 'Local community')}
               </span>
             </span>
           </span>
@@ -581,7 +569,9 @@ export function ChannelSidebar() {
         <div className="mesh-community-shortcuts grid grid-cols-3 gap-1 border-t border-border-subtle p-2">
           <button
             type="button"
-            onClick={() => void copyCommunityInvite()}
+            aria-haspopup="dialog"
+            aria-expanded={inviteOpen}
+            onClick={() => setInviteOpen(true)}
             className="flex min-h-9 items-center justify-center gap-2 rounded-control text-xs font-medium text-secondary transition-colors hover:bg-surface-hover hover:text-primary"
           >
             <Icon name="userPlus" size="sm" />
@@ -614,6 +604,23 @@ export function ChannelSidebar() {
           <UserPanel />
         </ScopedErrorBoundary>
       </div>
+      {inviteOpen && (
+        <Suspense
+          fallback={(
+            <ModalLoadingFallback
+              title={`Invite to ${activeCommunity.name}`}
+              label="Loading invitation options"
+            />
+          )}
+        >
+          <InviteModal
+            isOpen
+            onClose={() => setInviteOpen(false)}
+            communityId={activeCommunity.id}
+            communityName={activeCommunity.name}
+          />
+        </Suspense>
+      )}
     </>
   )
 }
@@ -641,13 +648,4 @@ function MeasuredRoomRow({
   }, [onHeightChange, rowKey])
 
   return <div ref={rowRef}>{children}</div>
-}
-
-function serviceName(value: string | null | undefined) {
-  if (!value) return null
-  try {
-    return new URL(value).host || null
-  } catch {
-    return value.replace(/^[a-z]+:\/\//i, '').split('/')[0].trim() || null
-  }
 }

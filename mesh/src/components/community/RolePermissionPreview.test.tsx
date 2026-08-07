@@ -32,9 +32,9 @@ describe('RolePermissionPreview', () => {
       />,
     )
 
-    expect(container.textContent).toContain('Proposed Administrator template')
-    expect(container.textContent).toContain('Bob would receive Matrix power level 50')
-    expect(container.textContent).toContain('not current server state')
+    expect(container.textContent).toContain('Administrator role preview')
+    expect(container.textContent).toContain('Bob would receive the Administrator role')
+    expect(container.textContent).toContain('This is a preview and has not been applied')
     expect(container.textContent).toContain('Would gain moderate messages')
     expect(container.textContent).not.toContain('Current effective permissions')
   })
@@ -99,7 +99,7 @@ describe('RolePermissionPreview', () => {
       />,
     )
     expect(container.querySelector('[role="alert"]')?.textContent)
-      .toContain('Unable to verify permissions in every authoritative room')
+      .toContain("Mesh couldn't confirm permissions in every room")
     expect(container.textContent).toContain('Federated support:')
     expect(container.textContent).toContain('Unknown')
   })
@@ -136,7 +136,6 @@ function projection(): CommunityPermissionProjection {
     notifications: { room: 50 },
     creatorUserIds: ['@owner:example.org'],
     privilegedCreatorUserIds: [],
-    joinedUserIds: ['@owner:example.org', '@admin:example.org', '@member:example.org'],
   }
   return {
     communityId: '!space:example.org',

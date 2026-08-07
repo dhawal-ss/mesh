@@ -1,14 +1,15 @@
 //! Typed Tauri IPC for the backend boundary and Matrix architecture spike.
 
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
+use futures::StreamExt;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 use crate::backend::{
     BackendError, BackendKind, BackendStatus, CommunityAccessResult, CommunityAccessSettings,
-    CommunityApplication, CommunityDirectoryEntry, CommunityMember, CommunityModerationResult,
+    CommunityApplication, CommunityDirectoryEntry, CommunityMemberPage, CommunityModerationResult,
     CommunityPermissionProjection, CustomEmoji, MatrixAccount, MatrixAttachmentSendRequest,
     MatrixDevice, MatrixLogin, MatrixOidcStatus, MatrixPersonalDataExport, MatrixProfile,
     MatrixRecoveryHealth, MatrixRecoverySetupResult, MatrixRegistration,
@@ -19,12 +20,17 @@ use crate::backend::{
 };
 use crate::state::{
     destructive_actions::{DestructiveAction, DestructiveActionScope, GrantError},
-    native_requests::NativeRequestError,
+    native_requests::{
+        NativeAccountMutationGuard, NativeAccountTransitionGuard, NativeRequestError,
+        NativeUiInteractionGuard,
+    },
     AppState,
 };
 use crate::types::{
     community::{ChannelDto, CommunityDto},
-    dm::{DirectMessageDto, DmConversationDto},
+    dm::{
+        BlockedAccountDto, BlockedAccountPageDto, DirectMessageDto, DmConversationDto, DmRequestDto,
+    },
     message::MessageDto,
 };
 
@@ -42,6 +48,7 @@ pub(super) fn map_error(error: BackendError) -> CommandError {
         BackendError::NotEncrypted(_) => CommandError::NotEncrypted(error.to_string()),
         BackendError::DecryptionFailed(_) => CommandError::DecryptionFailed(error.to_string()),
         BackendError::Cancelled(_) => CommandError::Cancelled(error.to_string()),
+        BackendError::InvalidInput(_) => CommandError::Validation(error.to_string()),
         BackendError::InvalidConfiguration(_) => CommandError::Validation(error.to_string()),
         BackendError::CommunityHomeserverUnconfigured => {
             CommandError::CommunityHomeserverUnconfigured
@@ -94,9 +101,8 @@ async fn active_account_id(state: &State<'_, AppState>) -> Result<String, Comman
     state
         .backend
         .backend()
-        .status()
+        .active_user_id()
         .await
-        .user_id
         .filter(|user_id| !user_id.trim().is_empty())
         .ok_or(CommandError::NotAuthenticated)
 }
@@ -110,6 +116,81 @@ fn validate_reauthentication_secret(secret: &str) -> Result<(), CommandError> {
     Ok(())
 }
 
+async fn begin_native_account_transition(
+    app: &AppHandle,
+    state: &State<'_, AppState>,
+    notifications: &State<'_, super::notifications::NotificationRuntimeState>,
+) -> Result<NativeAccountTransitionGuard, CommandError> {
+    let transition = super::notifications::close_account_admission_and_invalidate(
+        app,
+        notifications,
+        || state.native_requests.close_account_admission(),
+    )
+        .map_err(|_| {
+            CommandError::Other(
+                "Mesh is still finishing activity for this account. Try changing accounts again in a moment."
+                    .into(),
+            )
+        })?;
+
+    // Native admission is closed before backend-owned cancellation begins, so
+    // no new export can enter the old account generation through a TOCTOU gap.
+    state
+        .backend
+        .backend()
+        .cancel_personal_data_export()
+        .await
+        .map_err(map_error)?;
+    state
+        .native_requests
+        .finish_account_transition(transition)
+        .await
+        .map_err(|_| {
+            CommandError::Other(
+                "Mesh is still finishing activity for this account. Try changing accounts again in a moment."
+                    .into(),
+            )
+        })
+}
+
+fn begin_native_account_mutation(
+    state: &State<'_, AppState>,
+    account_generation: u64,
+) -> Result<NativeAccountMutationGuard, CommandError> {
+    match state
+        .native_requests
+        .begin_account_mutation(account_generation)
+    {
+        Ok(guard) => Ok(guard),
+        Err(NativeRequestError::CapacityExceeded) => Err(CommandError::RateLimited),
+        Err(_) => Err(CommandError::Cancelled(
+            "Your account changed before Mesh could finish that action. Try again.".into(),
+        )),
+    }
+}
+
+fn begin_current_account_mutation(
+    state: &State<'_, AppState>,
+) -> Result<NativeAccountMutationGuard, CommandError> {
+    begin_native_account_mutation(state, state.native_requests.account_generation())
+}
+
+fn begin_native_ui_interaction(
+    state: &State<'_, AppState>,
+    account_generation: u64,
+) -> Result<NativeUiInteractionGuard, CommandError> {
+    match state
+        .native_requests
+        .begin_native_ui_interaction(account_generation)
+    {
+        Ok(guard) => Ok(guard),
+        Err(NativeRequestError::CapacityExceeded) => Err(CommandError::RateLimited),
+        Err(_) => Err(CommandError::Cancelled(
+            "Your account changed before Mesh could open that confirmation. Try again.".into(),
+        )),
+    }
+}
+
 #[tauri::command]
 pub async fn request_destructive_action_grant(
     action: DestructiveAction,
@@ -118,6 +199,8 @@ pub async fn request_destructive_action_grant(
     state: State<'_, AppState>,
 ) -> Result<Option<String>, CommandError> {
     require_matrix(&state)?;
+    let account_generation = state.native_requests.account_generation();
+    let _native_ui = begin_native_ui_interaction(&state, account_generation)?;
     let account_id = active_account_id(&state).await?;
     let target = action.validate_target(target_id).map_err(map_grant_error)?;
     let (title, message, confirm_label) = action.dialog_copy(&target);
@@ -149,20 +232,27 @@ async fn run_native_read<T, F>(
     state: &State<'_, AppState>,
     request_id: String,
     deadline_ms: u64,
-    operation: &'static str,
+    operation: impl Into<String>,
     future: F,
 ) -> Result<T, CommandError>
 where
     F: std::future::Future<Output = Result<T, CommandError>>,
 {
-    let status = state.backend.backend().status().await;
-    let account_scope = status
-        .user_id
-        .or(status.homeserver)
-        .unwrap_or_else(|| status.kind.as_str().to_owned());
+    let account_generation = state.native_requests.account_generation();
+    // Admission must happen before the first await. Generation is a stronger
+    // scope than a remotely supplied account identifier and bounds even tasks
+    // waiting to inspect backend status.
+    let account_scope = format!("account-generation-{account_generation}");
     match state
         .native_requests
-        .run(request_id, deadline_ms, account_scope, operation, future)
+        .run(
+            request_id,
+            deadline_ms,
+            account_generation,
+            account_scope,
+            operation,
+            future,
+        )
         .await
     {
         Ok(result) => result,
@@ -180,6 +270,7 @@ where
         Err(NativeRequestError::DeadlineExceeded) => Err(CommandError::Network(
             "native read deadline exceeded".into(),
         )),
+        Err(NativeRequestError::CapacityExceeded) => Err(CommandError::RateLimited),
         Err(NativeRequestError::SchedulerClosed) => Err(CommandError::Other(
             "native read scheduler is unavailable".into(),
         )),
@@ -200,8 +291,20 @@ pub struct MatrixCreatedCommunity {
 }
 
 #[tauri::command]
-pub async fn get_backend_status(state: State<'_, AppState>) -> Result<BackendStatus, CommandError> {
-    Ok(state.backend.backend().status().await)
+pub async fn get_backend_status(
+    request_id: String,
+    deadline_ms: u64,
+    state: State<'_, AppState>,
+) -> Result<BackendStatus, CommandError> {
+    let backend = state.backend.backend();
+    run_native_read(
+        &state,
+        request_id,
+        deadline_ms,
+        "get_backend_status",
+        async move { Ok(backend.status().await) },
+    )
+    .await
 }
 
 #[tauri::command]
@@ -283,6 +386,7 @@ pub async fn matrix_set_room_notification_mode(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -292,16 +396,34 @@ pub async fn matrix_set_room_notification_mode(
 }
 
 #[tauri::command]
+pub async fn matrix_reserve_login_attempt(
+    state: State<'_, AppState>,
+) -> Result<String, CommandError> {
+    require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
+    state
+        .backend
+        .backend()
+        .reserve_login_attempt()
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
 pub async fn matrix_login(
     request: MatrixLogin,
+    attempt_id: String,
+    app: AppHandle,
     state: State<'_, AppState>,
+    notifications: State<'_, super::notifications::NotificationRuntimeState>,
 ) -> Result<BackendStatus, CommandError> {
     require_matrix(&state)?;
+    let _native_transition = begin_native_account_transition(&app, &state, &notifications).await?;
     clear_destructive_action_grants(&state)?;
     state
         .backend
         .backend()
-        .login(request)
+        .login(request, attempt_id)
         .await
         .map_err(map_error)
 }
@@ -309,9 +431,12 @@ pub async fn matrix_login(
 #[tauri::command]
 pub async fn register_account(
     request: MatrixRegistration,
+    app: AppHandle,
     state: State<'_, AppState>,
+    notifications: State<'_, super::notifications::NotificationRuntimeState>,
 ) -> Result<BackendStatus, CommandError> {
     require_matrix(&state)?;
+    let _native_transition = begin_native_account_transition(&app, &state, &notifications).await?;
     clear_destructive_action_grants(&state)?;
     state
         .backend
@@ -392,34 +517,44 @@ pub async fn matrix_oidc_status(
 #[tauri::command]
 pub async fn matrix_start_oidc_login(
     homeserver: String,
+    attempt_id: String,
+    app: AppHandle,
     state: State<'_, AppState>,
+    notifications: State<'_, super::notifications::NotificationRuntimeState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _native_transition = begin_native_account_transition(&app, &state, &notifications).await?;
     clear_destructive_action_grants(&state)?;
     state
         .backend
         .backend()
-        .start_oidc_login(homeserver)
+        .start_oidc_login(homeserver, attempt_id)
         .await
         .map_err(map_error)
 }
 
 #[tauri::command]
-pub async fn matrix_cancel_login(state: State<'_, AppState>) -> Result<(), CommandError> {
+pub async fn matrix_cancel_login(
+    attempt_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
     require_matrix(&state)?;
     state
         .backend
         .backend()
-        .cancel_login()
+        .cancel_login(attempt_id)
         .await
         .map_err(map_error)
 }
 
 #[tauri::command]
 pub async fn matrix_restore_session(
+    app: AppHandle,
     state: State<'_, AppState>,
+    notifications: State<'_, super::notifications::NotificationRuntimeState>,
 ) -> Result<BackendStatus, CommandError> {
     require_matrix(&state)?;
+    let _native_transition = begin_native_account_transition(&app, &state, &notifications).await?;
     clear_destructive_action_grants(&state)?;
     state
         .backend
@@ -430,8 +565,13 @@ pub async fn matrix_restore_session(
 }
 
 #[tauri::command]
-pub async fn matrix_logout(state: State<'_, AppState>) -> Result<(), CommandError> {
+pub async fn matrix_logout(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    notifications: State<'_, super::notifications::NotificationRuntimeState>,
+) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _native_transition = begin_native_account_transition(&app, &state, &notifications).await?;
     clear_destructive_action_grants(&state)?;
     state.backend.backend().logout().await.map_err(map_error)
 }
@@ -462,6 +602,7 @@ pub async fn matrix_revoke_device(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     validate_reauthentication_secret(&password)?;
     let account_id = active_account_id(&state).await?;
     state
@@ -486,9 +627,12 @@ pub async fn matrix_revoke_device(
 #[tauri::command]
 pub async fn matrix_remove_local_account(
     presence_grant: String,
+    app: AppHandle,
     state: State<'_, AppState>,
+    notifications: State<'_, super::notifications::NotificationRuntimeState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _native_transition = begin_native_account_transition(&app, &state, &notifications).await?;
     let account_id = active_account_id(&state).await?;
     state
         .destructive_action_grants
@@ -521,6 +665,8 @@ pub async fn matrix_export_personal_data(
     state: State<'_, AppState>,
 ) -> Result<Option<MatrixPersonalDataExport>, CommandError> {
     require_matrix(&state)?;
+    let account_generation = state.native_requests.account_generation();
+    let native_ui = begin_native_ui_interaction(&state, account_generation)?;
     let (sender, receiver) = tokio::sync::oneshot::channel();
     app.dialog().file().pick_folder(move |path| {
         let _ = sender.send(path);
@@ -534,6 +680,8 @@ pub async fn matrix_export_personal_data(
     let destination_root = selected
         .into_path()
         .map_err(|_| CommandError::Validation("Choose a local export folder".into()))?;
+    drop(native_ui);
+    let _account_guard = begin_native_account_mutation(&state, account_generation)?;
     state
         .backend
         .backend()
@@ -560,9 +708,12 @@ pub async fn matrix_cancel_personal_data_export(
 pub async fn matrix_deactivate_account(
     password: String,
     presence_grant: String,
+    app: AppHandle,
     state: State<'_, AppState>,
+    notifications: State<'_, super::notifications::NotificationRuntimeState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _native_transition = begin_native_account_transition(&app, &state, &notifications).await?;
     validate_reauthentication_secret(&password)?;
     let account_id = active_account_id(&state).await?;
     state
@@ -630,6 +781,7 @@ pub async fn matrix_update_profile_display_name(
     state: State<'_, AppState>,
 ) -> Result<MatrixProfile, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -641,9 +793,12 @@ pub async fn matrix_update_profile_display_name(
 #[tauri::command]
 pub async fn matrix_switch_account(
     profile_id: String,
+    app: AppHandle,
     state: State<'_, AppState>,
+    notifications: State<'_, super::notifications::NotificationRuntimeState>,
 ) -> Result<BackendStatus, CommandError> {
     require_matrix(&state)?;
+    let _native_transition = begin_native_account_transition(&app, &state, &notifications).await?;
     clear_destructive_action_grants(&state)?;
     state
         .backend
@@ -677,6 +832,7 @@ pub async fn matrix_test_recovery(
     state: State<'_, AppState>,
 ) -> Result<MatrixRecoveryHealth, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -690,6 +846,7 @@ pub async fn matrix_test_stored_recovery(
     state: State<'_, AppState>,
 ) -> Result<MatrixRecoveryHealth, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -704,6 +861,7 @@ pub async fn matrix_start_device_verification(
     state: State<'_, AppState>,
 ) -> Result<MatrixVerificationSession, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -743,6 +901,7 @@ pub async fn matrix_select_device_verification_method(
     state: State<'_, AppState>,
 ) -> Result<MatrixVerificationSession, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -758,6 +917,7 @@ pub async fn matrix_confirm_device_verification(
     state: State<'_, AppState>,
 ) -> Result<MatrixVerificationSession, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -772,6 +932,7 @@ pub async fn matrix_cancel_device_verification(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -804,6 +965,7 @@ pub async fn matrix_update_user_preferences(
     state: State<'_, AppState>,
 ) -> Result<UserPreferences, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -819,6 +981,7 @@ pub async fn matrix_create_community(
     state: State<'_, AppState>,
 ) -> Result<MatrixCreatedCommunity, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     let created = state
         .backend
         .backend()
@@ -889,6 +1052,7 @@ pub async fn matrix_create_channel(
     state: State<'_, AppState>,
 ) -> Result<ChannelDto, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -925,12 +1089,23 @@ pub async fn matrix_list_custom_emoji(
 pub async fn matrix_upload_custom_emoji(
     community_id: String,
     shortcode: String,
-    filename: String,
-    content_type: String,
-    bytes: Vec<u8>,
+    grant: String,
+    attachment_grants: State<'_, AttachmentGrantStore>,
     state: State<'_, AppState>,
 ) -> Result<CustomEmoji, CommandError> {
     require_matrix(&state)?;
+    let account_generation = state.native_requests.account_generation();
+    let _account_guard = begin_native_account_mutation(&state, account_generation)?;
+    let user_id = state
+        .backend
+        .backend()
+        .status()
+        .await
+        .user_id
+        .ok_or(CommandError::NotAuthenticated)?;
+    let (filename, content_type, bytes) = attachment_grants
+        .claim_custom_emoji(&grant, &community_id, account_generation, &user_id)
+        .await?;
     state
         .backend
         .backend()
@@ -946,6 +1121,7 @@ pub async fn matrix_remove_custom_emoji(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -986,6 +1162,7 @@ pub async fn matrix_rtc_join(
     state: State<'_, AppState>,
 ) -> Result<MatrixRtcJoinResult, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1001,6 +1178,7 @@ pub async fn matrix_rtc_refresh_membership(
     state: State<'_, AppState>,
 ) -> Result<Vec<MatrixRtcMember>, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1018,6 +1196,7 @@ pub async fn matrix_rtc_ack_media_key_pause(
     state: State<'_, AppState>,
 ) -> Result<MatrixRtcMediaKey, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1037,6 +1216,7 @@ pub async fn matrix_rtc_ack_media_key(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1060,6 +1240,7 @@ pub async fn matrix_rtc_renew_media_key_lease(
     state: State<'_, AppState>,
 ) -> Result<MatrixRtcMediaKeyLease, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1075,6 +1256,7 @@ pub async fn matrix_rtc_leave(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1086,15 +1268,20 @@ pub async fn matrix_rtc_leave(
 #[tauri::command]
 pub async fn matrix_rtc_members(
     room_id: String,
+    request_id: String,
+    deadline_ms: u64,
     state: State<'_, AppState>,
 ) -> Result<Vec<MatrixRtcMember>, CommandError> {
     require_matrix(&state)?;
-    state
-        .backend
-        .backend()
-        .matrix_rtc_members(room_id)
-        .await
-        .map_err(map_error)
+    let backend = state.backend.backend();
+    run_native_read(
+        &state,
+        request_id,
+        deadline_ms,
+        "matrix_rtc_members",
+        async move { backend.matrix_rtc_members(room_id).await.map_err(map_error) },
+    )
+    .await
 }
 
 #[tauri::command]
@@ -1107,6 +1294,7 @@ pub async fn matrix_send_message(
     state: State<'_, AppState>,
 ) -> Result<MessageDto, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1140,6 +1328,7 @@ pub async fn matrix_retry_queued_message(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1155,6 +1344,7 @@ pub async fn matrix_cancel_queued_message(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1170,6 +1360,7 @@ pub async fn matrix_save_composer_draft(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1208,6 +1399,7 @@ pub async fn matrix_clear_composer_draft(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1230,8 +1422,16 @@ pub async fn matrix_send_attachment(
     grants: State<'_, AttachmentGrantStore>,
 ) -> Result<MessageDto, CommandError> {
     require_matrix(&state)?;
+    let account_generation = state.native_requests.account_generation();
+    let _account_guard = begin_native_account_mutation(&state, account_generation)?;
+    let account_id = active_account_id(&state).await?;
     let claimed = grants
-        .claim_to_staging(&attachment_grant, &super::attachments::staging_root(&app)?)
+        .claim_to_staging(
+            &attachment_grant,
+            &super::attachments::staging_root(&app)?,
+            account_generation,
+            &account_id,
+        )
         .await?;
     let result = state
         .backend
@@ -1289,6 +1489,7 @@ pub async fn matrix_download_attachment(
     state: State<'_, AppState>,
 ) -> Result<String, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1365,11 +1566,100 @@ pub async fn matrix_dm_conversations(
 }
 
 #[tauri::command]
+pub async fn matrix_dm_requests(
+    request_id: String,
+    deadline_ms: u64,
+    state: State<'_, AppState>,
+) -> Result<Vec<DmRequestDto>, CommandError> {
+    require_matrix(&state)?;
+    let backend = state.backend.backend();
+    run_native_read(
+        &state,
+        request_id,
+        deadline_ms,
+        "matrix_dm_requests",
+        async move { backend.dm_requests().await.map_err(map_error) },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn matrix_blocked_accounts(
+    after: Option<String>,
+    limit: u32,
+    request_id: String,
+    deadline_ms: u64,
+    state: State<'_, AppState>,
+) -> Result<BlockedAccountPageDto, CommandError> {
+    require_matrix(&state)?;
+    let backend = state.backend.backend();
+    run_native_read(
+        &state,
+        request_id,
+        deadline_ms,
+        "matrix_blocked_accounts",
+        async move {
+            backend
+                .blocked_accounts(after, limit)
+                .await
+                .map_err(map_error)
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn matrix_accept_dm_request(
+    room_id: String,
+    state: State<'_, AppState>,
+) -> Result<DmConversationDto, CommandError> {
+    require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
+    state
+        .backend
+        .backend()
+        .accept_dm_request(room_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_decline_dm_request(
+    room_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
+    state
+        .backend
+        .backend()
+        .decline_dm_request(room_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_block_dm_request(
+    room_id: String,
+    state: State<'_, AppState>,
+) -> Result<BlockedAccountDto, CommandError> {
+    require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
+    state
+        .backend
+        .backend()
+        .block_dm_request(room_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
 pub async fn matrix_ensure_dm(
     recipient_user_id: String,
     state: State<'_, AppState>,
 ) -> Result<DmConversationDto, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1415,6 +1705,7 @@ pub async fn matrix_send_dm(
     state: State<'_, AppState>,
 ) -> Result<DirectMessageDto, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1443,8 +1734,16 @@ pub async fn matrix_send_dm_attachment(
     grants: State<'_, AttachmentGrantStore>,
 ) -> Result<DirectMessageDto, CommandError> {
     require_matrix(&state)?;
+    let account_generation = state.native_requests.account_generation();
+    let _account_guard = begin_native_account_mutation(&state, account_generation)?;
+    let account_id = active_account_id(&state).await?;
     let claimed = grants
-        .claim_to_staging(&attachment_grant, &super::attachments::staging_root(&app)?)
+        .claim_to_staging(
+            &attachment_grant,
+            &super::attachments::staging_root(&app)?,
+            account_generation,
+            &account_id,
+        )
         .await?;
     let result = state
         .backend
@@ -1484,6 +1783,7 @@ pub async fn matrix_mark_dm_read(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1499,6 +1799,7 @@ pub async fn matrix_set_dm_blocked(
     state: State<'_, AppState>,
 ) -> Result<bool, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1566,6 +1867,7 @@ pub async fn matrix_edit_message(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1581,6 +1883,7 @@ pub async fn matrix_redact_message(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1597,6 +1900,7 @@ pub async fn matrix_report_message(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1613,6 +1917,7 @@ pub async fn matrix_toggle_reaction(
     state: State<'_, AppState>,
 ) -> Result<bool, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1647,6 +1952,7 @@ pub async fn matrix_toggle_room_pin(
     state: State<'_, AppState>,
 ) -> Result<MatrixRoomPins, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1661,6 +1967,7 @@ pub async fn matrix_mark_read(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1670,12 +1977,54 @@ pub async fn matrix_mark_read(
 }
 
 #[tauri::command]
+pub async fn matrix_mark_rooms_read(
+    room_ids: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, CommandError> {
+    const MAX_ROOMS_PER_BATCH: usize = 100;
+
+    require_matrix(&state)?;
+    if room_ids.len() > MAX_ROOMS_PER_BATCH
+        || room_ids
+            .iter()
+            .any(|room_id| room_id.is_empty() || room_id.len() > 255)
+    {
+        return Err(CommandError::Validation(
+            "Choose up to 100 valid rooms to mark as read.".into(),
+        ));
+    }
+    let _account_guard = begin_current_account_mutation(&state)?;
+    let mut seen = HashSet::new();
+    let room_ids = room_ids
+        .into_iter()
+        .filter(|room_id| seen.insert(room_id.clone()))
+        .collect::<Vec<_>>();
+    let backend = state.backend.backend();
+    let failed = futures::stream::iter(room_ids.into_iter().map(|room_id| {
+        let backend = Arc::clone(&backend);
+        async move {
+            backend
+                .mark_read(room_id.clone())
+                .await
+                .err()
+                .map(|_| room_id)
+        }
+    }))
+    .buffer_unordered(4)
+    .filter_map(|failed_room_id| async move { failed_room_id })
+    .collect()
+    .await;
+    Ok(failed)
+}
+
+#[tauri::command]
 pub async fn matrix_set_typing(
     room_id: String,
     typing: bool,
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1713,12 +2062,22 @@ pub async fn matrix_search_messages(
     state: State<'_, AppState>,
 ) -> Result<Vec<MessageDto>, CommandError> {
     require_matrix(&state)?;
-    state
-        .backend
-        .backend()
-        .search_messages(community_id, query, limit, request_id, deadline_ms)
-        .await
-        .map_err(map_error)
+    let operation = format!("matrix_search_messages:{community_id}");
+    let native_request_id = request_id.clone();
+    let backend = state.backend.backend();
+    run_native_read(
+        &state,
+        native_request_id,
+        deadline_ms,
+        operation,
+        async move {
+            backend
+                .search_messages(community_id, query, limit, request_id, deadline_ms)
+                .await
+                .map_err(map_error)
+        },
+    )
+    .await
 }
 
 #[tauri::command]
@@ -1739,24 +2098,31 @@ pub async fn matrix_cancel_search(
 pub async fn matrix_wait_for_room_update(
     room_id: String,
     timeout_ms: u64,
+    request_id: String,
+    deadline_ms: u64,
     state: State<'_, AppState>,
 ) -> Result<bool, CommandError> {
     require_matrix(&state)?;
-    state
-        .backend
-        .backend()
-        .wait_for_room_update(room_id, timeout_ms)
-        .await
-        .map_err(map_error)
+    let operation = format!("matrix_wait_for_room_update:{room_id}");
+    let backend = state.backend.backend();
+    run_native_read(&state, request_id, deadline_ms, operation, async move {
+        backend
+            .wait_for_room_update(room_id, timeout_ms)
+            .await
+            .map_err(map_error)
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn matrix_list_members(
     community_id: String,
+    cursor: Option<String>,
+    limit: Option<u32>,
     request_id: String,
     deadline_ms: u64,
     state: State<'_, AppState>,
-) -> Result<Vec<CommunityMember>, CommandError> {
+) -> Result<CommunityMemberPage, CommandError> {
     require_matrix(&state)?;
     let backend = state.backend.backend();
     run_native_read(
@@ -1764,7 +2130,12 @@ pub async fn matrix_list_members(
         request_id,
         deadline_ms,
         "matrix_list_members",
-        async move { backend.list_members(community_id).await.map_err(map_error) },
+        async move {
+            backend
+                .list_member_page(community_id, cursor, limit)
+                .await
+                .map_err(map_error)
+        },
     )
     .await
 }
@@ -1801,6 +2172,7 @@ pub async fn matrix_invite_to_community(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1815,6 +2187,7 @@ pub async fn matrix_create_community_invite(
     state: State<'_, AppState>,
 ) -> Result<String, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1855,6 +2228,7 @@ pub async fn matrix_update_community_access(
     state: State<'_, AppState>,
 ) -> Result<CommunityAccessSettings, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1873,12 +2247,25 @@ pub async fn matrix_search_community_directory(
     state: State<'_, AppState>,
 ) -> Result<Vec<CommunityDirectoryEntry>, CommandError> {
     require_matrix(&state)?;
-    state
-        .backend
-        .backend()
-        .search_community_directory(query, server, limit, request_id, deadline_ms)
-        .await
-        .map_err(map_error)
+    let operation = format!(
+        "matrix_search_community_directory:{}",
+        server.as_deref().unwrap_or("account-service")
+    );
+    let native_request_id = request_id.clone();
+    let backend = state.backend.backend();
+    run_native_read(
+        &state,
+        native_request_id,
+        deadline_ms,
+        operation,
+        async move {
+            backend
+                .search_community_directory(query, server, limit, request_id, deadline_ms)
+                .await
+                .map_err(map_error)
+        },
+    )
+    .await
 }
 
 #[tauri::command]
@@ -1889,6 +2276,7 @@ pub async fn matrix_knock_community(
     state: State<'_, AppState>,
 ) -> Result<CommunityAccessResult, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1930,6 +2318,7 @@ pub async fn matrix_respond_community_application(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1945,6 +2334,7 @@ pub async fn matrix_join_community(
     state: State<'_, AppState>,
 ) -> Result<CommunityDto, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1959,6 +2349,7 @@ pub async fn matrix_join_room(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1973,6 +2364,7 @@ pub async fn matrix_leave_community(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -1989,6 +2381,7 @@ pub async fn matrix_update_community(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -2019,6 +2412,7 @@ pub async fn matrix_kick_member(
     state: State<'_, AppState>,
 ) -> Result<CommunityModerationResult, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -2035,6 +2429,7 @@ pub async fn matrix_ban_member(
     state: State<'_, AppState>,
 ) -> Result<CommunityModerationResult, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -2071,6 +2466,7 @@ pub async fn matrix_list_moderation_audit(
 #[tauri::command]
 pub async fn matrix_sync_once(state: State<'_, AppState>) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state.backend.backend().sync_once().await.map_err(map_error)
 }
 
@@ -2080,6 +2476,7 @@ pub async fn matrix_enable_recovery(
     state: State<'_, AppState>,
 ) -> Result<MatrixRecoverySetupResult, CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
@@ -2094,10 +2491,54 @@ pub async fn matrix_recover(
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     require_matrix(&state)?;
+    let _account_guard = begin_current_account_mutation(&state)?;
     state
         .backend
         .backend()
         .recover(recovery_key_or_passphrase)
         .await
         .map_err(map_error)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn security_boundary_room_and_dm_attachment_sends_claim_only_current_account_grants() {
+        let source = include_str!("backend.rs");
+        for (start, end) in [
+            (
+                "pub async fn matrix_send_attachment(",
+                "pub async fn matrix_cancel_attachment_upload(",
+            ),
+            (
+                "pub async fn matrix_send_dm_attachment(",
+                "pub async fn matrix_mark_dm_read(",
+            ),
+        ] {
+            let command = source
+                .split(start)
+                .nth(1)
+                .unwrap()
+                .split(end)
+                .next()
+                .unwrap();
+            let generation = command.find("account_generation()").unwrap();
+            let guard = command
+                .find("begin_native_account_mutation(&state, account_generation)")
+                .unwrap();
+            let account = command.find("active_account_id(&state).await").unwrap();
+            let claim = command.find(".claim_to_staging(").unwrap();
+            assert!(generation < guard && guard < account && account < claim);
+            let claim_arguments = command
+                .split(".claim_to_staging(")
+                .nth(1)
+                .unwrap()
+                .split(".await?;")
+                .next()
+                .unwrap();
+            assert!(claim_arguments.contains("account_generation"));
+            assert!(claim_arguments.contains("&account_id"));
+            assert!(command.contains("grants.restore(claimed).await"));
+        }
+    }
 }

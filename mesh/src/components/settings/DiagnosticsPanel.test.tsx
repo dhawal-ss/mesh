@@ -166,7 +166,7 @@ describe('DiagnosticsPanel', () => {
         tokenEndpoint: null,
         livekitSfuUrl: null,
         cspReady: false,
-        mediaE2eeVerified: false,
+        mediaE2eeReady: false,
         reason: 'MatrixRTC services are not configured',
       },
       authenticated: true,
@@ -194,7 +194,8 @@ describe('DiagnosticsPanel', () => {
     expect(document.body.textContent).toContain('http://localhost:8008')
     expect(document.body.textContent).toContain('Private calling')
     expect(document.body.textContent).toContain('Media protection')
-    expect(document.body.textContent).toContain('Not verified')
+    expect(document.body.textContent).toContain('Unavailable')
+    expect(document.body.textContent).not.toContain('Not verified')
     expect(document.body.textContent).toContain('Network policy')
     expect(document.body.textContent).toContain('Blocked')
     expect(document.body.textContent).toContain('Private calling services are not configured for this account.')

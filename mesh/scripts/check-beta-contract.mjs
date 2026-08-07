@@ -44,8 +44,12 @@ assert.deepEqual(contract.distribution, {
 })
 
 const excluded = new Set(contract.candidate.excludedCapabilities)
-for (const capability of ['matrix-voice', 'legacy-p2p', 'automatic-updates']) {
-  assert.equal(excluded.has(capability), true, `${capability} must remain outside the text beta`)
+assert.equal(contract.candidate.capabilities.includes('matrix-voice'), true,
+  'the signed draft beta candidate must include Matrix voice for physical acceptance')
+assert.equal(excluded.has('matrix-voice'), false,
+  'Matrix voice cannot remain excluded from a useful consumer beta candidate')
+for (const capability of ['legacy-p2p', 'automatic-updates']) {
+  assert.equal(excluded.has(capability), true, `${capability} must remain outside the beta`)
 }
 
 assert.equal(contract.claims.consumerBeta, false)
@@ -62,11 +66,11 @@ assert.match(viteConfig, /livekit-voice\.disabled\.ts/)
 
 for (const statement of [
   'Windows is the only candidate platform',
-  'Voice is not included in the text and community beta',
+  'Voice is included in the signed draft candidate',
   'Automatic updates remain disabled',
   'macOS and Linux are not advertised as supported',
 ]) {
   assert.equal(supportPage.includes(statement), true, `support page is missing: ${statement}`)
 }
 
-console.log(`Beta contract passed: ${ownerDecisions.release.tag} Windows Matrix text/community developer preview; NSIS consumer path; voice, LAN, and updater excluded.`)
+console.log(`Beta contract passed: ${ownerDecisions.release.tag} Windows Matrix voice developer preview; NSIS consumer path; voice included for acceptance; LAN and updater excluded.`)

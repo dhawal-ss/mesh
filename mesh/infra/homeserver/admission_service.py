@@ -97,10 +97,15 @@ class Config:
             raise SystemExit("MESH_ADMISSION_SIGNING_KEY must be hexadecimal") from error
         if len(signing_key) < 32:
             raise SystemExit("MESH_ADMISSION_SIGNING_KEY must contain at least 32 bytes")
+        expected_signing_key_id = hashlib.sha256(signing_key).hexdigest()[:16]
         signing_key_id = os.environ.get("MESH_ADMISSION_SIGNING_KEY_ID", "").strip()
         if not signing_key_id:
-            signing_key_id = hashlib.sha256(signing_key).hexdigest()[:16]
+            signing_key_id = expected_signing_key_id
         validate_signing_key_id(signing_key_id)
+        if not hmac.compare_digest(signing_key_id, expected_signing_key_id):
+            raise SystemExit(
+                "MESH_ADMISSION_SIGNING_KEY_ID must match the configured signing key"
+            )
         previous_signing_keys: dict[str, bytes] = {}
         for item in filter(None, os.environ.get("MESH_ADMISSION_PREVIOUS_SIGNING_KEYS", "").split(",")):
             key_id, separator, key_hex = item.partition(":")
@@ -112,7 +117,16 @@ class Config:
             except ValueError as error:
                 raise SystemExit("A previous admission signing key is not hexadecimal") from error
             if len(previous_key) < 32 or key_id == signing_key_id:
-                raise SystemExit("Previous admission signing keys must be distinct 32-byte keys")
+                raise SystemExit(
+                    "Previous admission signing keys must be distinct keys of at least 32 bytes"
+                )
+            expected_previous_key_id = hashlib.sha256(previous_key).hexdigest()[:16]
+            if not hmac.compare_digest(key_id, expected_previous_key_id):
+                raise SystemExit(
+                    "Each previous admission signing key ID must match its signing key"
+                )
+            if key_id in previous_signing_keys:
+                raise SystemExit("Previous admission signing key IDs must be unique")
             previous_signing_keys[key_id] = previous_key
 
         sqlite_path = os.environ.get("MESH_ADMISSION_SQLITE_PATH", "").strip() or None
@@ -1072,20 +1086,25 @@ class AdmissionApplication:
   <style>
     body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; background: #111318; color: #f5f7fb; font: 16px system-ui, sans-serif; }}
     main {{ width: min(32rem, calc(100% - 3rem)); padding: 2rem; border: 1px solid #303642; border-radius: 1rem; background: #1a1e26; text-align: center; }}
-    a {{ display: inline-block; margin-top: 1rem; padding: .8rem 1.2rem; border-radius: .6rem; background: #7c6cff; color: white; font-weight: 700; text-decoration: none; }}
+    .actions {{ display: flex; flex-wrap: wrap; justify-content: center; gap: .75rem; margin-top: 1.25rem; }}
+    a {{ display: inline-block; padding: .8rem 1.2rem; border-radius: .6rem; background: #7c6cff; color: white; font-weight: 700; text-decoration: none; }}
+    a.secondary {{ border: 1px solid #596273; background: transparent; }}
     p {{ color: #bdc5d6; line-height: 1.6; }}
   </style>
 </head>
 <body>
   <main>
     <h1>Join this community in Mesh</h1>
-    <p id="status">Mesh should open automatically. The app will verify this private invitation.</p>
-    <a id="open" hidden>Open Mesh</a>
+    <p id="status">Mesh will verify this private invitation when you choose Open Mesh.</p>
+    <p>If Mesh is not installed yet, get it first and keep this page open. Then come back here to join.</p>
+    <div class="actions">
+      <a id="open" hidden>Open Mesh</a>
+      <a class="secondary" href="https://mesh.dhawal.org/download/" target="_blank" rel="noopener noreferrer">Get Mesh</a>
+    </div>
   </main>
   <script nonce="{nonce}">
     (() => {{
       const capability = window.location.hash.slice(1);
-      window.history.replaceState(null, "", "/invite");
       const status = document.getElementById("status");
       const open = document.getElementById("open");
       if (!/^[A-Za-z0-9_-]{{32,64}}$/.test(capability)) {{
@@ -1099,7 +1118,6 @@ class AdmissionApplication:
       target.searchParams.set("code", capability);
       open.href = target.href;
       open.hidden = false;
-      window.location.replace(target.href);
     }})();
   </script>
 </body>

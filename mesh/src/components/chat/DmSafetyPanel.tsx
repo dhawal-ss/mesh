@@ -61,11 +61,11 @@ export function DmSafetyPanel({
   return (
     <aside
       id="mesh-dm-safety-panel"
-      className="mesh-secondary-pane flex min-h-0 flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-sidebar"
+      className="mesh-secondary-pane flex min-h-0 flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-base"
       aria-label={`Safety with ${peerName}`}
       tabIndex={-1}
     >
-      <div className="flex h-conversation-header flex-shrink-0 items-center gap-3 border-b border-border-subtle px-4">
+      <div className="flex h-conversation-header flex-shrink-0 items-center gap-3 border-b border-border-subtle bg-surface-raised px-4">
         <Icon
           name={needsReview || trust.protection !== 'protected' ? 'triangleAlert' : 'shieldCheck'}
           size="sm"
@@ -85,8 +85,8 @@ export function DmSafetyPanel({
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <section className="border-b border-border-subtle p-4" aria-labelledby="dm-protection-heading">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+        <section className="rounded-panel border border-border-subtle bg-surface-raised p-4" aria-labelledby="dm-protection-heading">
           <div className={`rounded-panel border px-3 py-3 ${
             trust.protection === 'protected' && !needsReview
               ? 'border-status-success/30 bg-status-success/10'
@@ -119,7 +119,7 @@ export function DmSafetyPanel({
           </button>
         </section>
 
-        <section className="border-b border-border-subtle p-4" aria-labelledby="dm-address-heading">
+        <section className="rounded-panel border border-border-subtle bg-surface-raised p-4" aria-labelledby="dm-address-heading">
           <h3 id="dm-address-heading" className="text-xs font-semibold text-primary">Account address</h3>
           <p className="mt-1 text-caption leading-5 text-muted">
             Reveal this only when you need to confirm the exact account with someone.
@@ -158,7 +158,7 @@ export function DmSafetyPanel({
           )}
         </section>
 
-        <section className="p-4" aria-labelledby="dm-moderation-heading">
+        <section className="rounded-panel border border-border-subtle bg-surface-raised p-4" aria-labelledby="dm-moderation-heading">
           <h3 id="dm-moderation-heading" className="text-xs font-semibold text-primary">Controls</h3>
           <p className="mt-1 text-caption leading-5 text-muted">
             Reports are attached to a specific message and go to your account service.

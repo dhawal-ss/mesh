@@ -150,7 +150,7 @@ export function RoomContextPanel({
   return (
     <aside
       id="mesh-room-context-panel"
-      className="mesh-room-context-panel relative flex min-w-0 flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-sidebar"
+      className="mesh-room-context-panel relative flex min-w-0 flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-base"
       data-design-token-exception="user-resizable-persisted-room-context-width"
       style={{
         '--mesh-room-context-width': `${panelWidth}px`,
@@ -168,11 +168,14 @@ export function RoomContextPanel({
         onPointerDown={onResizeStart}
         onResizeBy={onResizeBy}
       />
-      <div className="flex-shrink-0 border-b border-border-subtle">
-        <div className="flex h-conversation-header items-center gap-2 px-3">
-          <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-primary">
-            {signalCheckOpen ? 'Signal Check' : 'Details'}
-          </h2>
+      <div className="flex-shrink-0 border-b border-border-subtle bg-surface-raised">
+        <div className="flex h-conversation-header items-center gap-2 px-4">
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-sm font-semibold text-primary">
+              {signalCheckOpen ? 'Signal Check' : 'Room details'}
+            </h2>
+            <p className="mt-0.5 truncate text-meta text-muted">#{channel.name}</p>
+          </div>
           <button
             type="button"
             className="flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
@@ -184,7 +187,7 @@ export function RoomContextPanel({
         </div>
         {!signalCheckOpen && (
           <div
-            className="flex min-w-0 overflow-x-auto px-2"
+            className="mx-3 mb-3 flex min-w-0 gap-1 overflow-x-auto rounded-panel bg-surface-sunken p-1"
             role="tablist"
             aria-label="Details"
             onKeyDown={handleTabKeyDown}
@@ -198,10 +201,10 @@ export function RoomContextPanel({
                 tabIndex={activeTab === tab.id ? 0 : -1}
                 aria-selected={activeTab === tab.id}
                 aria-controls={`room-context-${tab.id}`}
-                className={`min-h-8 flex-1 border-b-2 border-transparent px-2 text-caption font-medium transition-colors ${
+                className={`min-h-8 flex-1 rounded-control border px-2 text-caption font-medium transition-colors ${
                   activeTab === tab.id
-                    ? 'border-accent text-primary'
-                    : 'text-muted hover:bg-surface-hover hover:text-secondary'
+                    ? 'border-border-subtle bg-surface-selected text-primary'
+                    : 'border-transparent text-muted hover:bg-surface-hover hover:text-secondary'
                 }`}
                 onClick={() => onTabChange(tab.id)}
               >
@@ -219,13 +222,17 @@ export function RoomContextPanel({
           aria-labelledby="room-context-tab-people"
           className="flex min-h-0 flex-1 flex-col"
         >
-          <div className="px-4 pb-1 pt-4">
-            <p className="text-meta font-semibold uppercase tracking-caption text-muted">
-              In this room · {members.length}
-            </p>
-            <p className="mt-1 text-caption text-muted">
-              {members.filter((member) => member.online).length} online now
-            </p>
+          <div className="mx-3 mt-3 flex items-center gap-3 rounded-panel border border-border-subtle bg-surface-raised px-3 py-3">
+            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-panel bg-accent/10 text-accent">
+              <Icon name="users" size="sm" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-semibold text-primary">People in this room</p>
+              <p className="mt-0.5 truncate text-caption text-muted">
+                {members.filter((member) => member.online).length} online now
+              </p>
+            </div>
+            <span className="font-mono text-title font-semibold text-primary">{members.length}</span>
           </div>
           <MemberList
             embedded
@@ -664,7 +671,7 @@ function protectionLabel(state: RoomTrustSnapshot['protection']) {
 
 function permissionRoomStatusLabel(status: MatrixPermissionRoomStatus) {
   if (status === 'loaded') return 'Loaded'
-  if (status === 'matrix-default') return 'Matrix default'
+  if (status === 'matrix-default') return 'Service default'
   if (status === 'inaccessible') return 'Not accessible'
   if (status === 'unsupported') return 'Unsupported'
   return 'Failed'

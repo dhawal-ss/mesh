@@ -12,6 +12,8 @@ import {
   sortCommandsByRecency,
 } from './CommandPalette'
 import { COMMAND_PALETTE_OPEN_EVENT } from '../../lib/command-palette'
+import { useVoiceStore } from '../../store/voice'
+import * as bridge from '../../lib/bridge'
 
 let mountedRoot: ReturnType<typeof createRoot> | null = null
 let mountedContainer: HTMLDivElement | null = null
@@ -23,6 +25,8 @@ afterEach(() => {
   mountedContainer = null
   document.querySelectorAll('[data-radix-portal]').forEach((portal) => portal.remove())
   window.localStorage.clear()
+  useVoiceStore.getState().resetVoiceState()
+  vi.restoreAllMocks()
 })
 
 describe('command palette helpers', () => {
@@ -81,7 +85,7 @@ describe('command palette helpers', () => {
 
   it('uses neutral account-service wording', () => {
     expect(accountServiceContext('@ana:example.org'))
-      .toBe('Account service: example.org (independently operated)')
+      .toBe('Account service: example.org')
     expect(accountServiceContext('legacy-key')).toBeNull()
   })
 
@@ -102,6 +106,78 @@ describe('command palette helpers', () => {
 
     expect(document.querySelector('[role="dialog"]')).not.toBeNull()
     expect(document.querySelector('input[role="combobox"]')).not.toBeNull()
+  })
+
+  it('hides and disables voice actions when the selected backend has no voice capability', () => {
+    mountedContainer = document.createElement('div')
+    document.body.appendChild(mountedContainer)
+    mountedRoot = createRoot(mountedContainer)
+    act(() => mountedRoot?.render(createElement(CommandPalette)))
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'm',
+        ctrlKey: true,
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }))
+      window.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'd',
+        ctrlKey: true,
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }))
+    })
+    expect(useVoiceStore.getState()).toMatchObject({ isMuted: false, isDeafened: false })
+
+    act(() => window.dispatchEvent(new Event(COMMAND_PALETTE_OPEN_EVENT)))
+    expect(document.body.textContent).not.toContain('Mute microphone')
+    expect(document.body.textContent).not.toContain('Deafen audio')
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', {
+        key: '/',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }))
+    })
+    expect(document.body.textContent).not.toContain('Toggle mute')
+    expect(document.body.textContent).not.toContain('Toggle deafen')
+  })
+
+  it('retains voice actions for a backend that explicitly enables voice', () => {
+    vi.spyOn(bridge, 'getBackendCapabilities').mockReturnValue({
+      encryptedText: true,
+      encryptedAttachments: true,
+      directMessages: true,
+      voice: true,
+      durableTimeouts: true,
+      deviceManagement: true,
+      recovery: true,
+      legacyMigration: false,
+    })
+    mountedContainer = document.createElement('div')
+    document.body.appendChild(mountedContainer)
+    mountedRoot = createRoot(mountedContainer)
+    act(() => mountedRoot?.render(createElement(CommandPalette)))
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'm',
+        ctrlKey: true,
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }))
+    })
+    expect(useVoiceStore.getState().isMuted).toBe(true)
+
+    act(() => window.dispatchEvent(new Event(COMMAND_PALETTE_OPEN_EVENT)))
+    expect(document.body.textContent).toContain('Unmute microphone')
+    expect(document.body.textContent).toContain('Deafen audio')
   })
 
   it('opens when recent-command storage is denied', () => {
@@ -140,5 +216,24 @@ describe('command palette helpers', () => {
     expect(document.body.textContent).toContain('Show keyboard shortcuts')
     // Group names are headings, not prefixes that contaminate fuzzy matching.
     expect(document.body.textContent).not.toContain('Action · Show keyboard shortcuts')
+  })
+
+  it('scopes the conversation entry point to people and messages', () => {
+    mountedContainer = document.createElement('div')
+    document.body.appendChild(mountedContainer)
+    mountedRoot = createRoot(mountedContainer)
+    act(() => mountedRoot?.render(createElement(CommandPalette)))
+
+    act(() => window.dispatchEvent(new CustomEvent(COMMAND_PALETTE_OPEN_EVENT, {
+      detail: 'people',
+    })))
+
+    expect(document.body.textContent).toContain('Start a private conversation')
+    expect(document.querySelector<HTMLInputElement>('[role="combobox"]')?.placeholder)
+      .toBe('Find someone to message…')
+    expect(document.body.textContent)
+      .toContain('Account services are independently operated. People from your communities and conversations.')
+    expect(document.body.textContent).not.toContain('Profile and preferences')
+    expect(document.body.textContent).not.toContain('Show keyboard shortcuts')
   })
 })

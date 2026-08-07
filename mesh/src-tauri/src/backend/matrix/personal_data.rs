@@ -5,6 +5,17 @@ const MAX_PERSONAL_EXPORT_MESSAGES: usize = 250_000;
 const MAX_PERSONAL_EXPORT_MEDIA_FILES: usize = 10_000;
 const MAX_PERSONAL_EXPORT_MEDIA_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_PERSONAL_EXPORT_JSON_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_PERSONAL_EXPORT_SCANNED_EVENT_BYTES: u64 = 1024 * 1024 * 1024;
+const MAX_PERSONAL_EXPORT_SCANNED_EVENT_BYTES_PER_ROOM: u64 = 128 * 1024 * 1024;
+const MAX_PERSONAL_EXPORT_RETAINED_EVENT_JSON_BYTES_PER_ROOM: usize = 32 * 1024 * 1024;
+const MAX_PERSONAL_EXPORT_RETAINED_MESSAGE_BYTES_PER_ROOM: usize = 32 * 1024 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PersonalExportScanReservation {
+    Reserved,
+    RoomLimit,
+    GlobalLimit,
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,6 +45,7 @@ struct PersonalDataExportRoom {
 #[derive(Default)]
 struct PersonalDataExportBudget {
     scanned_events: usize,
+    scanned_event_bytes: u64,
     exported_messages: usize,
     serialized_bytes: u64,
     media_files: usize,
@@ -41,6 +53,58 @@ struct PersonalDataExportBudget {
 }
 
 impl MatrixBackend {
+    fn reserve_personal_export_scan_bytes(
+        global_bytes: &mut u64,
+        room_bytes: &mut u64,
+        next_bytes: usize,
+        global_limit: u64,
+        room_limit: u64,
+    ) -> PersonalExportScanReservation {
+        let next_bytes = u64::try_from(next_bytes).unwrap_or(u64::MAX);
+        if next_bytes > global_limit.saturating_sub(*global_bytes) {
+            return PersonalExportScanReservation::GlobalLimit;
+        }
+        if next_bytes > room_limit.saturating_sub(*room_bytes) {
+            return PersonalExportScanReservation::RoomLimit;
+        }
+        *global_bytes = global_bytes.saturating_add(next_bytes);
+        *room_bytes = room_bytes.saturating_add(next_bytes);
+        PersonalExportScanReservation::Reserved
+    }
+
+    fn reserve_personal_export_room_bytes(
+        retained_bytes: &mut usize,
+        next_bytes: usize,
+        limit: usize,
+    ) -> bool {
+        if next_bytes > limit.saturating_sub(*retained_bytes) {
+            return false;
+        }
+        *retained_bytes = retained_bytes.saturating_add(next_bytes);
+        true
+    }
+
+    fn retain_newest_personal_export_messages(
+        messages: Vec<MessageDto>,
+        limit: usize,
+    ) -> (Vec<MessageDto>, bool) {
+        let mut retained_bytes = 0_usize;
+        let mut newest_first = Vec::new();
+        for message in messages.into_iter().rev() {
+            if !Self::reserve_personal_export_room_bytes(
+                &mut retained_bytes,
+                message_search_retained_bytes(&message),
+                limit,
+            ) {
+                newest_first.reverse();
+                return (newest_first, true);
+            }
+            newest_first.push(message);
+        }
+        newest_first.reverse();
+        (newest_first, false)
+    }
+
     fn personal_export_event_is_relevant(value: &serde_json::Value, own_user_id: &str) -> bool {
         let event_type = value
             .get("type")
@@ -88,8 +152,10 @@ impl MatrixBackend {
         let mut scanned = 0_usize;
         let mut malformed = 0_usize;
         let mut truncated = false;
+        let mut scanned_event_bytes = 0_u64;
+        let mut retained_event_json_bytes = 0_usize;
 
-        loop {
+        'history: loop {
             if cancellation.is_cancelled() {
                 return Err(BackendError::Cancelled(
                     "personal-data export cancelled".into(),
@@ -117,8 +183,35 @@ impl MatrixBackend {
                         "Personal-data export exceeded the global {MAX_PERSONAL_EXPORT_SCANNED_EVENTS}-event safety limit"
                     )));
                 }
+                let raw_event_bytes = event.raw().json().get().len();
+                match Self::reserve_personal_export_scan_bytes(
+                    &mut budget.scanned_event_bytes,
+                    &mut scanned_event_bytes,
+                    raw_event_bytes,
+                    MAX_PERSONAL_EXPORT_SCANNED_EVENT_BYTES,
+                    MAX_PERSONAL_EXPORT_SCANNED_EVENT_BYTES_PER_ROOM,
+                ) {
+                    PersonalExportScanReservation::Reserved => {}
+                    PersonalExportScanReservation::RoomLimit => {
+                        truncated = true;
+                        break 'history;
+                    }
+                    PersonalExportScanReservation::GlobalLimit => {
+                        return Err(BackendError::Other(format!(
+                            "Personal-data export exceeded the global {MAX_PERSONAL_EXPORT_SCANNED_EVENT_BYTES}-byte event-processing safety limit"
+                        )));
+                    }
+                }
                 match event.raw().deserialize_as::<serde_json::Value>() {
                     Ok(value) if Self::personal_export_event_is_relevant(&value, own_user_id) => {
+                        if !Self::reserve_personal_export_room_bytes(
+                            &mut retained_event_json_bytes,
+                            raw_event_bytes,
+                            MAX_PERSONAL_EXPORT_RETAINED_EVENT_JSON_BYTES_PER_ROOM,
+                        ) {
+                            truncated = true;
+                            break 'history;
+                        }
                         values.push(value);
                     }
                     Ok(_) => {}
@@ -171,10 +264,15 @@ impl MatrixBackend {
         .map(|member| member.name().to_owned())
         .unwrap_or_else(|| own_user_id.localpart().to_owned());
         let members = HashMap::from([(own_user_id.to_string(), display_name)]);
-        let mut messages = Self::project_timeline(room.room_id().as_str(), &members, values)
+        let messages = Self::project_timeline(room.room_id().as_str(), &members, values)
             .into_iter()
             .filter(|message| message.author_public_key == own_user_id.as_str())
             .collect::<Vec<_>>();
+        let (mut messages, messages_truncated) = Self::retain_newest_personal_export_messages(
+            messages,
+            MAX_PERSONAL_EXPORT_RETAINED_MESSAGE_BYTES_PER_ROOM,
+        );
+        let truncated = truncated || messages_truncated;
 
         budget.exported_messages = budget.exported_messages.saturating_add(messages.len());
         if budget.exported_messages > MAX_PERSONAL_EXPORT_MESSAGES {

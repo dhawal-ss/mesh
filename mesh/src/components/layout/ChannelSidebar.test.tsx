@@ -101,6 +101,7 @@ describe('ChannelSidebar room containment', () => {
 
   afterEach(async () => {
     await act(async () => root.unmount())
+    document.body.querySelectorAll('[data-radix-portal]').forEach((portal) => portal.remove())
     container.remove()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
@@ -135,6 +136,41 @@ describe('ChannelSidebar room containment', () => {
     expect(finalRoom).not.toBeNull()
     finalRoom?.focus()
     expect(document.activeElement).toBe(finalRoom)
+  })
+
+  it('never presents the account service as community metadata', async () => {
+    useCommunityStore.getState().setCommunities([{
+      id: '!canyon:community.example',
+      name: 'Canyon Crew',
+      description: '',
+      memberCount: 42,
+      role: 'owner',
+      joinedAt: '2026-07-29T12:00:00.000Z',
+    }])
+    useChannelStore.getState().setChannels([{
+      ...room(1),
+      id: '!lobby:community.example',
+      communityId: '!canyon:community.example',
+      name: 'Lobby',
+    }])
+    vi.mocked(bridge.isMatrixBackend).mockReturnValue(true)
+    vi.mocked(bridge.getMatrixUserId).mockReturnValue('@me:accounts.example')
+    vi.mocked(bridge.getBackendStatusSnapshot).mockReturnValue({
+      authenticated: true,
+      userId: '@me:accounts.example',
+      homeserver: 'https://accounts.example',
+    } as bridge.BackendStatus)
+
+    await act(async () => {
+      root.render(<ChannelSidebar />)
+      await Promise.resolve()
+    })
+
+    const header = container.querySelector('.mesh-community-header')
+    expect(header?.textContent).toContain('Canyon Crew')
+    expect(header?.textContent).toContain('42 members')
+    expect(header?.textContent).not.toContain('accounts.example')
+    expect(header?.textContent).not.toContain('community.example')
   })
 
   it('uses roving focus, arrow keys, Home/End, and type-ahead', async () => {
@@ -175,5 +211,29 @@ describe('ChannelSidebar room containment', () => {
       }))
     })
     expect(document.activeElement?.textContent).toBe('Alpha')
+  })
+
+  it('opens invitation options before creating or copying a link', async () => {
+    useChannelStore.getState().setChannels([{ ...room(1), name: 'Welcome' }])
+    const generateInviteLink = vi.spyOn(bridge, 'generateInviteLink')
+
+    await act(async () => {
+      root.render(<ChannelSidebar />)
+      await Promise.resolve()
+    })
+
+    const inviteButton = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.trim() === 'Invite')
+    expect(inviteButton).toBeDefined()
+
+    await act(async () => {
+      inviteButton?.click()
+      await vi.dynamicImportSettled()
+    })
+
+    expect(generateInviteLink).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('Invite to Large community')
+    expect(document.body.textContent).toContain('Share a private invitation')
+    expect(document.body.textContent).toContain('Create invite link')
   })
 })

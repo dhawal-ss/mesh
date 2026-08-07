@@ -19,6 +19,10 @@ matrix-backend = [
   "dep:reqwest",
   "dep:ruma",
 ]
+# MatrixRTC is intentionally excluded from the public text/community beta.
+# Physical calling candidates must opt into both this native feature and the
+# separately built `matrix-voice` frontend (see MESH_MATRIX_VOICE_FRONTEND).
+matrix-voice = ["matrix-backend"]
 legacy-p2p = ["dep:libp2p"]
 
 [lib]

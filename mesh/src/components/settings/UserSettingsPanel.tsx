@@ -23,6 +23,7 @@ import type { Identity } from '../../types/ipc'
 import { ThemePackagePanel } from './ThemePackagePanel'
 import { INTERFACE_SOUND_SETTINGS, type InterfaceSoundId } from '../../lib/interface-sound-contract'
 import { playInterfaceSound } from '../../lib/interface-sounds'
+import { PUBLIC_SERVICES } from '../../config/public-services'
 
 const DiagnosticsPanel = lazy(() =>
   import('./DiagnosticsPanel').then((module) => ({ default: module.DiagnosticsPanel })),
@@ -83,6 +84,22 @@ const SETTINGS_TABS = [
   ['advanced', 'Advanced'],
 ] as const satisfies ReadonlyArray<readonly [UserSettingsTab, string]>
 
+function accountServiceFromMatrixId(matrixAccountId: string | null) {
+  const separator = matrixAccountId?.indexOf(':') ?? -1
+  const accountDomain = separator >= 0
+    ? matrixAccountId?.slice(separator + 1).trim().toLowerCase() || null
+    : null
+  if (!accountDomain) return null
+
+  const publicService = PUBLIC_SERVICES.find(
+    (service) => service.accountDomain.toLowerCase() === accountDomain,
+  )
+  return {
+    accountDomain,
+    displayName: publicService?.displayName ?? accountDomain,
+  }
+}
+
 export function UserSettingsPanel({
   open,
   onClose,
@@ -100,6 +117,7 @@ export function UserSettingsPanel({
   activeSection,
   onSectionChange,
 }: UserSettingsPanelProps) {
+  const accountService = matrixMode ? accountServiceFromMatrixId(matrixAccountId) : null
   const notifications = useSettingsStore((state) => state.notifications)
   const appearance = useSettingsStore((state) => state.appearance)
   const privacy = useSettingsStore((state) => state.privacy)
@@ -256,9 +274,12 @@ export function UserSettingsPanel({
       <div className={`mesh-settings-layout grid min-h-0 ${embedded ? 'h-full grid-cols-1' : '-mx-5 -mb-5 sm:grid-cols-[12rem_minmax(0,1fr)]'}`}>
       {!embedded && (
       <div className="mesh-settings-navigation border-b border-border-subtle bg-surface-sunken px-3 py-3 sm:border-b-0 sm:border-r">
-        <label className="block py-2 text-xs font-medium text-secondary sm:hidden">
-          Settings section
+        <div className="block py-2 sm:hidden">
+          <label htmlFor="user-settings-section" className="block text-xs font-medium text-secondary">
+            Settings section
+          </label>
           <select
+            id="user-settings-section"
             value={activeTab}
             onChange={(event) => activateTab(event.target.value as UserSettingsTab)}
             className="mt-1 block min-h-11 w-full rounded-control border border-border bg-surface-sunken px-3 text-sm text-primary"
@@ -267,7 +288,7 @@ export function UserSettingsPanel({
               <option key={id} value={id}>{label}</option>
             ))}
           </select>
-        </label>
+        </div>
         <div className="hidden sm:flex sm:h-full sm:flex-col">
           <div className="mb-4 flex items-center gap-2.5 rounded-control border border-border-subtle bg-surface-raised px-2.5 py-2.5">
             <Avatar
@@ -317,13 +338,13 @@ export function UserSettingsPanel({
       </div>
       )}
 
-      <div className={`min-w-0 px-5 ${embedded ? '' : 'pb-5'}`}>
-      <div ref={settingsScrollRef} className={`${embedded ? 'h-full' : 'mesh-settings-scroll'} overflow-y-auto py-5 pr-1`}>
+      <div className={`mesh-settings-content min-w-0 px-5 ${embedded ? '' : 'pb-5'}`}>
+      <div ref={settingsScrollRef} className={`${embedded ? 'h-full' : 'mesh-settings-scroll'} mx-auto w-full max-w-5xl overflow-y-auto py-5 pr-1`}>
         <div
-          id={`user-settings-panel-${activeTab}`}
-          role="tabpanel"
-          aria-labelledby={`user-settings-tab-${activeTab}`}
-          tabIndex={0}
+          id={embedded ? undefined : `user-settings-panel-${activeTab}`}
+          role={embedded ? undefined : 'tabpanel'}
+          aria-labelledby={embedded ? undefined : `user-settings-tab-${activeTab}`}
+          tabIndex={embedded ? undefined : 0}
         >
         {activeTab === 'profile' && (
         <section className="border-b border-border-subtle pb-5">
@@ -410,8 +431,18 @@ export function UserSettingsPanel({
             <div className="rounded-control border border-border-subtle bg-surface-sunken px-3 py-3">
               <p className="text-caption font-semibold uppercase tracking-eyebrow text-muted">Current account service</p>
               <p className="mt-1 text-sm font-medium text-primary">
-                {matrixMode ? 'Connected compatible service' : 'This device'}
+                {matrixMode
+                  ? accountService?.displayName ?? 'Account service unavailable'
+                  : 'This device'}
               </p>
+              {matrixMode && accountService && accountService.displayName !== accountService.accountDomain && (
+                <p className="mt-0.5 text-xs text-secondary">{accountService.accountDomain}</p>
+              )}
+              {matrixMode && (
+                <p className="mt-2 text-xs leading-5 text-muted">
+                  This account is hosted independently from Mesh and can differ from a community's service.
+                </p>
+              )}
               <button
                 type="button"
                 className="mt-3 min-h-9 rounded-control px-2 text-sm font-semibold text-accent hover:bg-accent/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
@@ -453,8 +484,6 @@ export function UserSettingsPanel({
 
         {activeTab === 'appearance' && (
         <section
-          id="user-settings-panel-appearance"
-          role="tabpanel"
           className="space-y-5"
           aria-labelledby="appearance-settings-heading"
         >
@@ -990,7 +1019,7 @@ export function UserSettingsPanel({
             </div>
             <p className="mt-1 text-xs leading-5 text-muted">
               {backupReminderDue
-                ? 'Your messages are not backed up yet. Save a backup code so a lost device does not mean lost messages.'
+                ? 'Message backup needs attention. Review its status and save or test your backup code.'
                 : 'Review where you are signed in, trust devices you recognize, and manage your message backup.'}
             </p>
             <Button
@@ -1011,7 +1040,7 @@ export function UserSettingsPanel({
             <Suspense
               fallback={(
                 <p role="status" className="rounded-control bg-surface-hover px-3 py-2 text-xs text-muted">
-                  Opening safety and devicesâ€¦
+                  Opening safety and devices…
                 </p>
               )}
             >
@@ -1091,7 +1120,7 @@ export function UserSettingsPanel({
               <Suspense
                 fallback={(
                   <p role="status" className="mt-4 rounded-control bg-surface-hover px-3 py-2 text-xs text-muted">
-                    Opening Signal Checkâ€¦
+                    Opening Signal Check…
                   </p>
                 )}
               >
@@ -1110,7 +1139,7 @@ export function UserSettingsPanel({
           </section>
         )}
         </div>
-        {visibleSettingsTabs
+        {!embedded && visibleSettingsTabs
           .filter(([id]) => id !== activeTab)
           .map(([id]) => (
             <div
@@ -1326,9 +1355,9 @@ function SelectRow({
   return (
     <div
       data-sequence-position={sequence?.['data-sequence-position']}
-      className={`${sequence?.className ?? 'rounded-control bg-surface-hover'} flex items-start justify-between gap-4 px-3 py-3`}
+      className={`${sequence?.className ?? 'rounded-control bg-surface-hover'} flex flex-col items-stretch gap-3 px-3 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4`}
     >
-      <span>
+      <span className="min-w-0">
         <label htmlFor={id} className="block text-sm font-medium text-primary">
           {label}
         </label>
@@ -1339,7 +1368,7 @@ function SelectRow({
       <select
         id={id}
         aria-describedby={`${id}-description`}
-        className="min-h-control-sm max-w-xs rounded-control border border-border bg-surface-sunken px-2 text-xs text-primary outline-none focus:border-accent"
+        className="min-h-control-sm w-full min-w-0 rounded-control border border-border bg-surface-sunken px-2 text-xs text-primary outline-none focus:border-accent sm:w-auto sm:max-w-xs"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >

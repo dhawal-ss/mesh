@@ -28,7 +28,7 @@ export function OfflineQueueSummary({
       <Icon name="activity" size="xs" className="flex-shrink-0 text-status-warning" />
       <span className="min-w-0 flex-1 truncate">
         <span className="font-semibold text-primary">{visibleCopy}.</span>{' '}
-        Mesh will send {count === 1 ? 'it' : 'them'} when the connection is ready.
+        Mesh will retry automatically.
       </span>
       <button
         type="button"

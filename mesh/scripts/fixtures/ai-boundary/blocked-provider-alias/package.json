@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "chat-helper": "npm:@anthropic-ai/sdk@1.0.0",
+    "text-helper": "npm:openai@6.0.0"
+  }
+}

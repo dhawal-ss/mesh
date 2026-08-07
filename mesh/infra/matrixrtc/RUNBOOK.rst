@@ -41,6 +41,9 @@ Public/non-secret settings:
 - MATRIXRTC_CONTROL_BIND
 - MATRIXRTC_METRICS_BIND
 - MATRIXRTC_TURN_TLS_BIND
+- MATRIXRTC_LIVEKIT_HTTP_PORT
+- MATRIXRTC_AUTH_HTTP_PORT
+- MATRIXRTC_METRICS_PORT
 - MATRIXRTC_MATRIX_SERVER_NAME
 - MESH_MATRIXRTC_LIVEKIT_SERVICE_URL
 - MESH_MATRIXRTC_LIVEKIT_SFU_URL
@@ -68,12 +71,22 @@ DNS, TLS, and firewall prerequisites
   TURN-over-TLS certificate must independently cover ``LIVEKIT_TURN_DOMAIN``.
   Require a currently trusted TLS 1.2 or TLS 1.3 chain; never bypass hostname or
   certificate validation.
-- Allow inbound TCP 443 for authorization/signalling, TCP 7881 for LiveKit's
-  ICE/TCP fallback, UDP 3478 for TURN/UDP, TCP 5349 at the trusted TURN/TLS
-  terminator, and UDP 50000-50100 for bounded RTP media. Keep TCP 7880/8080,
-  TCP 6789 metrics, and the plaintext TCP 5349 hop loopback-only. Deny every
-  other container/control port at the host and perimeter firewall.
-- Verify TCP 443 and TCP 5349 from both acceptance networks with
+- Allow inbound TCP 443 for authorization/signalling and, on the distinct TURN
+  hostname, externally terminated TURN/TLS. The trusted layer-4 terminator must
+  forward TURN TCP 443 to the loopback-only plaintext TCP 5349 mapping; a normal
+  HTTP reverse proxy is not a TURN terminator. Also allow TCP 7881 for
+  LiveKit's ICE/TCP fallback, UDP 3478 for TURN/UDP, UDP 50000-50100 for bounded
+  SFU RTP media, and UDP 50101-50200 for bounded TURN relay sockets. Keep TCP
+  7880/8080, TCP 6789 metrics, and TCP 5349 private. Deny every other
+  container/control port at the host and perimeter firewall.
+- If the HTTPS/WSS and TURN hostnames resolve to the same public IP, the edge
+  must use a reviewed SNI-aware layer-4 design that can route both protocols on
+  TCP 443. Two independent processes cannot both bind the same address/port,
+  and HTTP path routing cannot distinguish TURN after clients connect to the
+  TURN hostname. A separate public IP or managed layer-4 load balancer is the
+  simpler production baseline.
+- Verify TCP 443 for both the MatrixRTC and TURN hostnames from both acceptance
+  networks with
   ``Test-NetConnection`` (or an equivalent trusted-TLS probe). A successful TCP
   connection alone is not TURN evidence: the credentialed operator smoke and
   the ``turn_probe_live_tests`` allocation must also prove UDP and TURN/TLS
@@ -85,6 +98,19 @@ DNS, TLS, and firewall prerequisites
 Fresh non-production start
 --------------------------
 
+Before using any operator secret, prove that the exact pinned images can boot
+with process-only ephemeral credentials. The smoke uses alternate loopback
+control ports, verifies ``/healthz``, requires a tokenless SFU request to fail
+with HTTP 401, confirms the bounded TURN relay range in LiveKit startup logs,
+and always removes its containers and network:
+
+   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/matrixrtc-local-smoke.ps1
+
+This is not authenticated media or production evidence. The pinned
+authorization image is scratch-based and contains no shell or healthcheck
+helper, so do not add a fictional in-container healthcheck. External preflight
+and operator smoke must observe ``/healthz`` before discovery is enabled.
+
 1. Copy .env.example to an operator-only path outside the checkout. Replace all
    placeholders, set owner-only permissions, and keep calling discovery off.
 2. Render and validate without starting services:
@@ -95,9 +121,10 @@ Fresh non-production start
 
    docker compose --env-file X:\operator\matrixrtc.env up -d
 
-4. Require matrixrtc-auth to become healthy. Confirm LiveKit signalling rejects
-   a tokenless upgrade, the public authorization health endpoint uses trusted
-   TLS, and discovery returns the exact authorization URL:
+4. Require the public matrixrtc-auth ``/healthz`` endpoint to return 200. Confirm
+   LiveKit signalling rejects a tokenless upgrade, the health endpoint uses
+   trusted TLS, public TURN TCP 443 presents the TURN hostname's trusted TLS
+   1.2+ certificate, and discovery returns the exact authorization URL:
 
    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/matrixrtc-preflight.ps1 -Production -Online -EnvironmentFile X:\operator\matrixrtc.env -WellKnownFile X:\operator\matrix-client.json
 
@@ -106,7 +133,7 @@ Fresh non-production start
    media, authenticated MatrixRTC token exchange, SFU signalling, TURN
    allocation, backup freshness, and monitoring liveness:
 
-   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/operator-smoke.ps1 -Production -Online -EnvironmentFile X:\operator\operator-smoke.env
+   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/operator-smoke.ps1 -Production -Online -Milestone R3 -EnvironmentFile X:\operator\operator-smoke.env
 
 6. Complete acceptance-matrix.example.json on two physical devices and the
    required networks. Copy the template to an operator-owned location and

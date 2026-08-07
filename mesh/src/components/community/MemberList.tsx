@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Avatar } from '../ui/Avatar'
 import { useActiveCommunity, useCommunityStore } from '../../store/communities'
 import { useIdentityStore } from '../../store/identity'
@@ -37,6 +37,8 @@ interface MemberEntry {
   avatarUrl?: string | null
   role: 'owner' | 'admin' | 'member'
   online: boolean
+  joinStatus?: 'invited' | 'joined' | 'left'
+  banStatus?: 'none' | 'banned'
 }
 
 interface MemberListProps {
@@ -79,6 +81,13 @@ export function MemberList({
   const updateRole = useMembershipStore((state) => state.updateRole)
   const removeMember = useMembershipStore((state) => state.removeMember)
   const banMember = useMembershipStore((state) => state.banMember)
+  const setRosterPage = useMembershipStore((state) => state.setRosterPage)
+  const rosterNextCursor = useMembershipStore((state) => (
+    activeCommunityId ? state.rosterNextCursor[activeCommunityId] ?? null : null
+  ))
+  const rosterStateComplete = useMembershipStore((state) => (
+    activeCommunityId ? state.rosterStateComplete[activeCommunityId] ?? true : true
+  ))
   const upsertConversation = useDmStore((state) => state.upsertConversation)
   const setActiveConversation = useDmStore((state) => state.setActiveConversation)
   const setDmMode = useDmStore((state) => state.setDmMode)
@@ -88,8 +97,12 @@ export function MemberList({
   const [moderationError, setModerationError] = useState<unknown | null>(null)
   const [roleBusy, setRoleBusy] = useState(false)
   const [roleError, setRoleError] = useState<unknown | null>(null)
+  const [rosterBusy, setRosterBusy] = useState(false)
+  const [rosterError, setRosterError] = useState<unknown | null>(null)
+  const [query, setQuery] = useState('')
   const canModerate = activeCommunity?.role === 'owner' || activeCommunity?.role === 'admin'
   const canManageRoles = activeCommunity?.role === 'owner'
+    && Boolean(rolePermissionProjection && currentUserId)
   const actions = activeCommunityId
     ? {
         currentUserId,
@@ -200,6 +213,36 @@ export function MemberList({
     }
   }
 
+  const loadMoreMembers = async () => {
+    if (!activeCommunityId || !rosterNextCursor || rosterBusy) return
+    setRosterBusy(true)
+    setRosterError(null)
+    try {
+      const page = await bridge.getMemberPage(activeCommunityId, rosterNextCursor)
+      setRosterPage(
+        activeCommunityId,
+        page.members.map((member) => ({
+          publicKey: member.publicKey,
+          displayName: member.displayName,
+          avatarColor: member.avatarColor,
+          avatarUrl: member.avatarUrl,
+          role: member.role as MemberEntry['role'],
+          joinStatus: (member.joinStatus as 'invited' | 'joined' | 'left') ?? 'joined',
+          banStatus: (member.banStatus as 'none' | 'banned') ?? 'none',
+          lastSeen: member.lastSeen,
+          online: member.online ?? false,
+        })),
+        page.nextCursor,
+        page.stateComplete,
+        true,
+      )
+    } catch (error) {
+      setRosterError(error)
+    } finally {
+      setRosterBusy(false)
+    }
+  }
+
   const rolePermissionEvidence: RolePermissionEvidence = rolePermissionsLoading
     ? { kind: 'loading' }
     : rolePermissionProjection && pendingRoleChange
@@ -218,18 +261,30 @@ export function MemberList({
           }),
         }
 
-  const sorted = useMemo(() => [...members].sort((a, b) => {
+  const currentMembers = useMemo(() => members.filter((member) => (
+    (member.joinStatus ?? 'joined') === 'joined'
+    && (member.banStatus ?? 'none') === 'none'
+  )), [members])
+  const sorted = useMemo(() => [...currentMembers].sort((a, b) => {
     const roleSort = ROLE_ORDER[a.role] - ROLE_ORDER[b.role]
     if (roleSort !== 0) return roleSort
     if (a.online !== b.online) return a.online ? -1 : 1
     return a.displayName.localeCompare(b.displayName)
-  }), [members])
+  }), [currentMembers])
+  const filtered = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase()
+    if (!normalizedQuery) return sorted
+    return sorted.filter((member) => (
+      member.displayName.toLocaleLowerCase().includes(normalizedQuery)
+      || member.publicKey.toLocaleLowerCase().includes(normalizedQuery)
+    ))
+  }, [query, sorted])
 
   // Group: online vs offline, then by role within each
   const { online, offline } = useMemo(() => ({
-    online: sorted.filter((member) => member.online),
-    offline: sorted.filter((member) => !member.online),
-  }), [sorted])
+    online: filtered.filter((member) => member.online),
+    offline: filtered.filter((member) => !member.online),
+  }), [filtered])
   const listEntries = useMemo<MemberListEntry[]>(() => {
     const entries: MemberListEntry[] = []
     if (online.length > 0) {
@@ -249,7 +304,7 @@ export function MemberList({
   const virtualItems = useMemo<VirtualItem[]>(() => listEntries.map((entry) => ({
     key: entry.key,
     type: entry.kind === 'heading' ? 'gap' : 'message',
-    height: entry.kind === 'heading' ? 28 : 40,
+    height: entry.kind === 'heading' ? 28 : 44,
   })), [listEntries])
   const {
     scrollContainerRef,
@@ -257,10 +312,12 @@ export function MemberList({
     bottomSpacerHeight,
     visibleRange,
     handleScroll,
+    scrollToItem,
   } = useVirtualScroll(virtualItems, {
-    estimatedMessageHeight: 40,
+    estimatedMessageHeight: 44,
     estimatedGapHeight: 28,
     overscanPx: 800,
+    autoScrollToBottom: false,
   })
   const visibleEntries = useMemo(
     () => listEntries.length === 0
@@ -268,6 +325,11 @@ export function MemberList({
       : listEntries.slice(visibleRange.start, visibleRange.end + 1),
     [listEntries, visibleRange.end, visibleRange.start],
   )
+
+  useEffect(() => {
+    const firstEntry = listEntries[0]
+    if (firstEntry) scrollToItem(firstEntry.key, 'start')
+  }, [listEntries, scrollToItem])
 
   if (!isOpen) return null
 
@@ -280,19 +342,39 @@ export function MemberList({
             : 'mesh-member-list flex w-member-list flex-shrink-0 flex-col overflow-hidden bg-surface-sidebar'
         }
       >
+        <div className="px-3 pt-3">
+          <div className="flex min-h-9 items-center gap-2 rounded-control border border-border bg-surface-sunken px-3">
+            <Icon name="search" size="xs" className="flex-shrink-0 text-muted" />
+            <input
+              type="search"
+              aria-label="Find a community member"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Find a member"
+              className="mesh-input min-w-0 flex-1 border-0 bg-transparent text-xs text-primary placeholder:text-muted"
+            />
+          </div>
+        </div>
         <div
           ref={scrollContainerRef}
           onScroll={() => void handleScroll()}
-          className="flex-1 overflow-y-auto px-2 py-4"
+          className="flex-1 overflow-y-auto px-3 py-3"
           role="list"
           aria-label="Community members"
         >
-          {members.length === 0 ? (
+          {currentMembers.length === 0 ? (
             <EmptyState
               variant="compact"
               icon={<Icon name="users" size="lg" />}
               title="No members yet"
               description="People who join will appear here."
+            />
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              variant="compact"
+              icon={<Icon name="search" size="lg" />}
+              title="No matching members"
+              description="Try a different name or account address."
             />
           ) : (
             <div
@@ -334,6 +416,34 @@ export function MemberList({
             </div>
           )}
         </div>
+        {bridge.isMatrixBackend() && activeCommunityId && (
+          rosterNextCursor || !rosterStateComplete || rosterError != null
+        ) ? (
+          <div className="space-y-2 border-t border-border-subtle px-3 py-3" aria-live="polite">
+            {rosterError != null ? (
+              <ErrorState
+                error={rosterError}
+                context={{ operation: 'load more members', resource: 'community' }}
+                compact
+              />
+            ) : null}
+            {!rosterStateComplete ? (
+              <p className="text-xs text-muted">
+                Showing members Mesh has seen recently. More will appear as the community syncs.
+              </p>
+            ) : null}
+            {rosterNextCursor ? (
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={rosterBusy}
+                onClick={() => void loadMoreMembers()}
+              >
+                {rosterBusy ? 'Loading…' : 'Load more members'}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <Modal
         open={pendingModeration !== null}
@@ -400,7 +510,7 @@ export function MemberList({
             ? `Make ${pendingRoleChange.member.displayName} an administrator?`
             : `Make ${pendingRoleChange.member.displayName} a member?`
           : 'Confirm role change'}
-        description="Review the server-enforced permissions before applying this change."
+        description="Review the permissions Mesh will apply before changing this role."
         size="sm"
       >
         {pendingRoleChange ? (
@@ -514,9 +624,10 @@ function MemberRow({
       data-sequence-position={embedded ? undefined : sequence['data-sequence-position']}
       className={`${
         embedded
-          ? 'rounded-control border border-transparent hover:bg-surface-hover'
+          ? 'rounded-control border border-transparent hover:border-border-subtle hover:bg-surface-hover'
           : sequence.className
-      } group flex min-h-10 items-center gap-3 px-2 transition-colors`}
+      } group flex min-h-11 items-center gap-3 px-2 transition-colors`}
+      title={member.publicKey}
     >
       <div className="relative flex-shrink-0">
         <Avatar

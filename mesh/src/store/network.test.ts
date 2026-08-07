@@ -8,7 +8,11 @@ vi.mock('../lib/interface-sounds', () => ({
   playInterfaceSound: sound.play,
 }))
 
-import { resetNetworkRecoveryForTest, useNetworkStore } from './network'
+import {
+  resetNetworkRecoveryForTest,
+  resetNetworkStateForAccountTransition,
+  useNetworkStore,
+} from './network'
 
 describe('network recovery presentation', () => {
   beforeEach(() => {
@@ -48,5 +52,32 @@ describe('network recovery presentation', () => {
 
     expect(useNetworkStore.getState().recoveredConnection).toBeNull()
     expect(sound.play).not.toHaveBeenCalled()
+  })
+
+  it('cancels the prior account recovery clock and banner timer', () => {
+    useNetworkStore.getState().setStatus({ state: 'disconnected' })
+    vi.advanceTimersByTime(3_000)
+    useNetworkStore.getState().setStatus({ state: 'connected' })
+    expect(useNetworkStore.getState().recoveredConnection).not.toBeNull()
+
+    resetNetworkStateForAccountTransition()
+    expect(useNetworkStore.getState()).toMatchObject({
+      status: { state: 'connecting', peerCount: 0, averageLatency: 0 },
+      recoveredConnection: null,
+    })
+
+    useNetworkStore.getState().setStatus({ state: 'connected' })
+    expect(useNetworkStore.getState().recoveredConnection).toBeNull()
+
+    useNetworkStore.getState().setStatus({ state: 'disconnected' })
+    vi.advanceTimersByTime(3_000)
+    useNetworkStore.getState().setStatus({ state: 'connected' })
+    const nextAccountRecovery = useNetworkStore.getState().recoveredConnection
+    expect(nextAccountRecovery).not.toBeNull()
+
+    // The previous account's banner timer would fire now and erase the new
+    // account's recovery signal if the transition reset had not cancelled it.
+    vi.advanceTimersByTime(1_000)
+    expect(useNetworkStore.getState().recoveredConnection).toEqual(nextAccountRecovery)
   })
 })

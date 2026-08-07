@@ -16,6 +16,7 @@ export default {
           overlay: withAlpha('--surface-overlay-rgb'),
           hover: withAlpha('--surface-hover-rgb'),
           active: withAlpha('--surface-active-rgb'),
+          selected: withAlpha('--surface-selected-rgb'),
           scrim: 'var(--surface-scrim)',
           qr: withAlpha('--surface-qr-rgb'),
         },

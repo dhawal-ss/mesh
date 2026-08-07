@@ -1,7 +1,8 @@
 import { motion } from 'framer-motion'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, type RefObject } from 'react'
 import { transitions } from '../../lib/motion'
 import { recordVoiceAudible } from '../../lib/voice-activation'
+import { useMediaQuery } from '../../hooks/useMediaQuery'
 import { useIdentityStore } from '../../store/identity'
 import { useVoiceStore } from '../../store/voice'
 import type { Peer } from '../../types/ipc'
@@ -9,6 +10,7 @@ import { Avatar } from '../ui/Avatar'
 import { Icon } from '../ui/Icon'
 
 type PreviewPeer = Peer & { designPreviewImageUrl?: string }
+const VOICE_ROSTER_COMPACT_QUERY = '(max-width: 1099px)'
 
 function previewImageFor(peer: Peer): string | undefined {
   return import.meta.env.DEV ? (peer as PreviewPeer).designPreviewImageUrl : undefined
@@ -31,6 +33,9 @@ export function VoicePeerGrid({
   const sessionSnapshot = useVoiceStore((state) => state.sessionSnapshot)
   const localPublicKey = useVoiceStore((state) => state.localPublicKey)
   const identity = useIdentityStore((state) => state.identity)
+  const rosterDrawerRef = useRef<HTMLElement>(null)
+  const compactRoster = useMediaQuery(VOICE_ROSTER_COMPACT_QUERY)
+  const rosterDrawerOpen = rosterOpen && compactRoster
 
   const visiblePeers = useMemo<Peer[]>(() => {
     const sessionPeers = peers.length > 0
@@ -83,6 +88,45 @@ export function VoicePeerGrid({
   ))
   const activeSpeaker = visiblePeers.find((peer) => peer.speaking) ?? visiblePeers[0]
 
+  useEffect(() => {
+    if (!rosterDrawerOpen) return
+    const drawer = rosterDrawerRef.current
+    if (!drawer) return
+    const focusableSelector = [
+      'button:not([disabled])',
+      'input:not([disabled])',
+      'select:not([disabled])',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(',')
+    const focusable = () => [...drawer.querySelectorAll<HTMLElement>(focusableSelector)]
+    ;(focusable()[0] ?? drawer).focus()
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) {
+        event.preventDefault()
+        onCloseRoster?.()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const controls = focusable()
+      if (controls.length === 0) {
+        event.preventDefault()
+        drawer.focus()
+        return
+      }
+      const first = controls[0]
+      const last = controls[controls.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onCloseRoster, rosterDrawerOpen])
+
   return (
     <div className="relative flex min-h-0 flex-1 overflow-hidden bg-surface-canvas">
       <section
@@ -119,7 +163,7 @@ export function VoicePeerGrid({
         className="hidden w-72 flex-none min-[1100px]:flex"
       />
 
-      {rosterOpen ? (
+      {rosterDrawerOpen ? (
         <>
           <button
             type="button"
@@ -129,11 +173,13 @@ export function VoicePeerGrid({
           />
           <PartyRoster
             id="mesh-voice-roster-drawer"
+            containerRef={rosterDrawerRef}
             channelName={channelName}
             peers={visiblePeers}
             reconnecting={reconnecting}
             onParticipantVolume={onParticipantVolume}
             onClose={onCloseRoster}
+            modal
             className="absolute inset-y-0 right-0 z-modal flex w-72 max-w-full min-[1100px]:hidden"
           />
         </>
@@ -240,6 +286,8 @@ function PartyRoster({
   onClose,
   className,
   id,
+  containerRef,
+  modal = false,
 }: {
   channelName: string
   peers: Peer[]
@@ -248,9 +296,19 @@ function PartyRoster({
   onClose?: () => void
   className: string
   id?: string
+  containerRef?: RefObject<HTMLElement | null>
+  modal?: boolean
 }) {
   return (
-    <aside id={id} className={`${className} min-h-0 flex-col border-l border-border-subtle bg-surface-base`} aria-label={`People in ${channelName}`}>
+    <aside
+      ref={containerRef}
+      id={id}
+      className={`${className} min-h-0 flex-col border-l border-border-subtle bg-surface-base`}
+      aria-label={`People in ${channelName}`}
+      role={modal ? 'dialog' : undefined}
+      aria-modal={modal || undefined}
+      tabIndex={modal ? -1 : undefined}
+    >
       <header className="flex h-14 flex-none items-center justify-between border-b border-border-subtle px-4">
         <span>
           <span className="block text-sm font-semibold text-content">In the party</span>

@@ -218,8 +218,8 @@ only a draft prerelease::
 
 Stop if the workflow's checked-out SHA differs from the approved SHA. Retain the
 signed installer digest, both SBOMs, checksums, provenance, legal payload, and
-protected evidence manifests. Complete all 54 R2 cases for the Windows candidate,
-or all 62 R4 cases for cross-platform support, in a separately retained artifact
+protected evidence manifests. Complete all 55 R2 cases for the Windows candidate,
+or all 63 R4 cases for cross-platform support, in a separately retained artifact
 conforming to ``release/external-acceptance.schema.json``. A failed case keeps its
 capability blocked. Do not edit the tracked example into a live claim.
 

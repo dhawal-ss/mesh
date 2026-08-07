@@ -74,6 +74,10 @@ describe('MessageInput attachment UX', () => {
     vi.spyOn(bridge, 'discardStagedAttachment').mockResolvedValue(undefined)
     vi.spyOn(bridge, 'discardAttachmentGrant').mockResolvedValue(undefined)
     vi.spyOn(bridge, 'acceptAttachmentDropGrants').mockResolvedValue(undefined)
+    vi.spyOn(bridge, 'getBackendStatus').mockResolvedValue({
+      authenticated: true,
+      userId: '@alice:mesh.test',
+    } as bridge.BackendStatus)
     vi.spyOn(bridge, 'loadComposerDraft').mockResolvedValue(null)
     vi.spyOn(bridge, 'saveComposerDraft').mockResolvedValue(undefined)
     vi.spyOn(bridge, 'clearComposerDraft').mockResolvedValue(undefined)
@@ -89,7 +93,10 @@ describe('MessageInput attachment UX', () => {
 
   async function render(
     onSend = vi.fn(),
-    mentionProps: Pick<React.ComponentProps<typeof MessageInput>, 'communityId' | 'members'> = {},
+    extraProps: Pick<
+      React.ComponentProps<typeof MessageInput>,
+      'communityId' | 'members' | 'placeholder'
+    > = {},
   ) {
     await act(async () => {
       root.render(
@@ -97,7 +104,7 @@ describe('MessageInput attachment UX', () => {
           channelId="!room:mesh.test"
           channelName="general"
           onSend={onSend}
-          {...mentionProps}
+          {...extraProps}
         />,
       )
     })
@@ -125,6 +132,22 @@ describe('MessageInput attachment UX', () => {
     })
   }
 
+  async function pressComposingEnter(textarea: HTMLTextAreaElement) {
+    await act(async () => {
+      textarea.dispatchEvent(new Event('compositionstart', { bubbles: true }))
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      textarea.dispatchEvent(new Event('compositionend', { bubbles: true }))
+      await flushAsyncWork()
+    })
+  }
+
+  it('uses direct-conversation copy when the caller supplies it', async () => {
+    const textarea = await render(vi.fn(), { placeholder: 'Message Maya Chen' })
+
+    expect(textarea.placeholder).toBe('Message Maya Chen')
+    expect(textarea.placeholder).not.toContain('#')
+  })
+
   it('clears a text send immediately and stays editable while it is in flight', async () => {
     let finishSend: (() => void) | undefined
     const onSend = vi.fn(() => new Promise<void>((resolve) => {
@@ -150,6 +173,84 @@ describe('MessageInput attachment UX', () => {
       await flushAsyncWork()
     })
     expect(textarea.value).toBe('Next message')
+  })
+
+  it('does not send while an IME composition is active and resumes Enter afterward', async () => {
+    const onSend = vi.fn().mockResolvedValue(undefined)
+    const textarea = await render(onSend)
+    await setComposerValue(textarea, 'conversion candidate')
+
+    await pressComposingEnter(textarea)
+
+    expect(onSend).not.toHaveBeenCalled()
+    expect(textarea.value).toBe('conversion candidate')
+
+    await act(async () => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await flushAsyncWork()
+    })
+
+    expect(onSend).toHaveBeenCalledOnce()
+    expect(onSend).toHaveBeenCalledWith('conversion candidate')
+  })
+
+  it('honors native IME and keyCode 229 safeguards without sending', async () => {
+    const onSend = vi.fn().mockResolvedValue(undefined)
+    const textarea = await render(onSend)
+    await setComposerValue(textarea, 'still composing')
+    const nativeComposingEnter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+    Object.defineProperty(nativeComposingEnter, 'isComposing', { value: true })
+    const processKeyEnter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+    Object.defineProperty(processKeyEnter, 'keyCode', { value: 229 })
+
+    await act(async () => {
+      textarea.dispatchEvent(nativeComposingEnter)
+      textarea.dispatchEvent(processKeyEnter)
+      await flushAsyncWork()
+    })
+
+    expect(onSend).not.toHaveBeenCalled()
+    expect(textarea.value).toBe('still composing')
+  })
+
+  it('does not select mention, emoji, or slash suggestions with composing Enter', async () => {
+    useServerEmojiStore.setState({
+      byCommunity: {
+        '!community:mesh.test': [{
+          shortcode: 'party_parrot',
+          body: 'Party parrot',
+          mxcUri: 'mxc://mesh.test/party',
+          contentType: 'image/png',
+          width: 32,
+          height: 32,
+          sizeBytes: 128,
+          imageUrl: 'blob:party-parrot',
+        }],
+      },
+    })
+    const onSend = vi.fn().mockResolvedValue(undefined)
+    const textarea = await render(onSend, {
+      communityId: '!community:mesh.test',
+      members: [{
+        publicKey: '@alice:mesh.test',
+        displayName: 'Alice',
+        avatarColor: '#111111',
+        role: 'member',
+        joinStatus: 'joined',
+        banStatus: 'none',
+        lastSeen: null,
+      }],
+    })
+
+    for (const draft of ['hello @ali', 'celebrate :party', '/']) {
+      await setComposerValue(textarea, draft)
+      expect(container.querySelector('[role="listbox"]')).not.toBeNull()
+      await pressComposingEnter(textarea)
+      expect(textarea.value).toBe(draft)
+      expect(container.querySelector('[role="listbox"]')).not.toBeNull()
+    }
+
+    expect(onSend).not.toHaveBeenCalled()
   })
 
   it('shows a private pending preview and removes its native staging file accessibly', async () => {
@@ -547,6 +648,19 @@ describe('MessageInput attachment UX', () => {
       .toContain('attachment button')
   })
 
+  it('explains unavailable file paste without exposing backend terminology', async () => {
+    vi.mocked(bridge.isMatrixBackend).mockReturnValue(false)
+    const textarea = await render()
+
+    await paste(textarea, [clipboardFile('party.png', 'image/png', [1, 2, 3])])
+
+    const alert = container.querySelector('[role="alert"]')?.textContent ?? ''
+    expect(alert).toContain('not available in this version of Mesh')
+    expect(alert).toContain('attachment button')
+    expect(alert).not.toContain('Matrix')
+    expect(alert).not.toContain('backend')
+  })
+
   it('revokes a native drop that finishes after switching rooms', async () => {
     tauriRuntime.enabled = true
     await render()
@@ -556,6 +670,7 @@ describe('MessageInput attachment UX', () => {
         payload: {
           dropId: 'drop-room-a',
           position: { x: 0, y: 0 },
+          accountGeneration: 7,
         },
       })
     })
@@ -583,6 +698,10 @@ describe('MessageInput attachment UX', () => {
             contentType: 'image/png',
           }],
           errors: [],
+          accountScope: {
+            accountGeneration: 7,
+            userId: '@alice:mesh.test',
+          },
         },
       })
       await flushAsyncWork()
@@ -591,6 +710,85 @@ describe('MessageInput attachment UX', () => {
     expect(container.textContent).not.toContain('room-a-secret.png')
     expect(bridge.acceptAttachmentDropGrants).not.toHaveBeenCalledWith(['grant-room-a'])
     expect(bridge.discardAttachmentGrant).toHaveBeenCalledWith('grant-room-a')
+  })
+
+  it('revokes a native drop whose account changed before renderer delivery', async () => {
+    tauriRuntime.enabled = true
+    await render()
+    await act(async () => {
+      await flushAsyncWork()
+      tauriEvents.handlers.get('mesh-native-attachment-drop-start')?.({
+        payload: {
+          dropId: 'drop-account-a',
+          position: { x: 0, y: 0 },
+          accountGeneration: 11,
+        },
+      })
+    })
+    vi.mocked(bridge.getBackendStatus).mockResolvedValue({
+      authenticated: true,
+      userId: '@bob:mesh.test',
+    } as bridge.BackendStatus)
+
+    await act(async () => {
+      tauriEvents.handlers.get('mesh-native-attachment-drop')?.({
+        payload: {
+          dropId: 'drop-account-a',
+          position: { x: 0, y: 0 },
+          files: [{
+            grant: 'grant-account-a',
+            name: 'alice-private.png',
+            size: 42,
+            contentType: 'image/png',
+          }],
+          errors: [],
+          accountScope: {
+            accountGeneration: 11,
+            userId: '@alice:mesh.test',
+          },
+        },
+      })
+      await flushAsyncWork()
+    })
+
+    expect(container.textContent).not.toContain('alice-private.png')
+    expect(bridge.acceptAttachmentDropGrants).not.toHaveBeenCalledWith(['grant-account-a'])
+    expect(bridge.discardAttachmentGrant).toHaveBeenCalledWith('grant-account-a')
+  })
+
+  it('revokes a picker result whose account changed before renderer delivery', async () => {
+    tauriRuntime.enabled = true
+    vi.mocked(bridge.getBackendStatus)
+      .mockResolvedValueOnce({
+        authenticated: true,
+        userId: '@alice:mesh.test',
+      } as bridge.BackendStatus)
+      .mockResolvedValueOnce({
+        authenticated: true,
+        userId: '@bob:mesh.test',
+      } as bridge.BackendStatus)
+    vi.spyOn(bridge, 'pickAttachmentGrants').mockResolvedValue({
+      files: [{
+        grant: 'picked-by-alice',
+        name: 'alice-picked.png',
+        size: 42,
+        contentType: 'image/png',
+      }],
+      errors: [],
+      accountScope: {
+        accountGeneration: 14,
+        userId: '@alice:mesh.test',
+      },
+    })
+    await render()
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="Attach file"]')?.click()
+      await flushAsyncWork()
+    })
+
+    expect(container.textContent).not.toContain('alice-picked.png')
+    expect(bridge.discardAttachmentGrant).toHaveBeenCalledWith('picked-by-alice')
   })
 
   it('restores a session draft when returning to a channel and clears it after send', async () => {

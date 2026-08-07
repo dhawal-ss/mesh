@@ -139,6 +139,8 @@ async function installAuthenticatedMatrixMock(
       args: Record<string, unknown>,
     ): unknown | Promise<unknown> => {
       switch (command) {
+        case 'get_notification_account_scope':
+          return { accountGeneration: 0, userId: args.expectedUserId }
         case 'set_notification_context':
         case 'matrix_set_room_notification_mode':
         case 'send_test_notification':
@@ -179,7 +181,7 @@ async function installAuthenticatedMatrixMock(
               tokenEndpoint: null,
               livekitSfuUrl: null,
               cspReady: false,
-              mediaE2eeVerified: false,
+              mediaE2eeReady: false,
               reason: 'MatrixRTC services are not configured',
             },
             authenticated: true,
@@ -241,6 +243,7 @@ async function installAuthenticatedMatrixMock(
             },
           ]
         case 'matrix_recovery_health':
+        case 'matrix_test_stored_recovery':
           return {
             recoveryState: 'enabled',
             backupState: 'enabled',
@@ -249,6 +252,7 @@ async function installAuthenticatedMatrixMock(
             healthy: true,
             checkedAt: '2026-07-24T00:00:00.000Z',
             lastSuccessfulTestAt: '2026-07-24T00:00:00.000Z',
+            secureStorageState: 'saved',
             warnings: [],
           }
         case 'matrix_list_custom_emoji':
@@ -285,7 +289,7 @@ async function installAuthenticatedMatrixMock(
             blockedEntities: [],
           }
         case 'matrix_list_members':
-          return [
+          return { members: [
             {
               publicKey: '@alice:mesh.test',
               displayName: 'alice',
@@ -306,7 +310,7 @@ async function installAuthenticatedMatrixMock(
               lastSeen: '2026-07-24T00:00:00.000Z',
               online: true,
             },
-          ]
+          ], nextCursor: null, stateComplete: true }
         case 'matrix_get_messages':
           return timeline.filter((message) => message.channelId === args.roomId)
         case 'matrix_queued_messages':
@@ -484,6 +488,41 @@ async function expectCriticalConversationGeometry(
   return measurements
 }
 
+async function expectRouteHeadingInset(page: Page, name: string): Promise<void> {
+  const heading = page.getByRole('heading', { name, exact: true })
+  await expect(heading).toBeVisible()
+  const geometry = await heading.evaluate((element) => {
+    const header = element.closest('header')
+    const detail = header?.querySelector('p')
+    if (!(header instanceof HTMLElement) || !(detail instanceof HTMLElement)) return null
+    const headerRect = header.getBoundingClientRect()
+    const headingRect = element.getBoundingClientRect()
+    const detailRect = detail.getBoundingClientRect()
+    return {
+      headerTop: headerRect.top,
+      headerBottom: headerRect.bottom,
+      headingTop: headingRect.top,
+      headingBottom: headingRect.bottom,
+      detailTop: detailRect.top,
+      detailBottom: detailRect.bottom,
+    }
+  })
+
+  expect(geometry, `${name}: route heading geometry should resolve`).not.toBeNull()
+  expect(geometry!.headerTop, `${name}: header starts above the viewport`).toBeGreaterThanOrEqual(-0.5)
+  expect(
+    geometry!.headingTop - geometry!.headerTop,
+    `${name}: heading needs a visible top inset`,
+  ).toBeGreaterThanOrEqual(4)
+  expect(geometry!.detailTop, `${name}: subtitle collides with the heading`).toBeGreaterThanOrEqual(
+    geometry!.headingBottom - 0.5,
+  )
+  expect(
+    geometry!.headerBottom - geometry!.detailBottom,
+    `${name}: subtitle needs a visible bottom inset`,
+  ).toBeGreaterThanOrEqual(4)
+}
+
 function ipcCalls(page: Page): Promise<IpcCall[]> {
   return page.evaluate(() => (
     window as unknown as { __MESH_E2E__: { calls: IpcCall[] } }
@@ -563,6 +602,7 @@ test.describe('authenticated desktop shell', () => {
   })
 
   test('joins a cold-start Mesh invitation through Matrix and opens the community', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 })
     const invite =
       'mesh://join?v=3&kind=matrix&room=!invited:mesh.test&via=mesh.test&service=https%3A%2F%2Fmatrix.mesh.test'
     await openAuthenticatedShell(page, [invite])
@@ -571,6 +611,7 @@ test.describe('authenticated desktop shell', () => {
       name: 'Invitation to Invited Mesh Community',
     })
     await expect(invitationHeading).toBeVisible()
+    await expectRouteHeadingInset(page, 'Invitation to Invited Mesh Community')
     const destination = page.getByRole('region', { name: 'Invitation destination' })
     await expect(destination.getByText('Invited Mesh Community', { exact: true })).toBeVisible()
     await expect(destination.getByText('Bob', { exact: true })).toBeVisible()
@@ -604,6 +645,7 @@ test.describe('authenticated desktop shell', () => {
     ).toHaveAttribute('aria-current', 'true')
     await expect(page.getByRole('button', { name: 'Text room: welcome' })).toBeVisible()
     await expect(invitationHeading).toHaveCount(0)
+    await expectRouteHeadingInset(page, 'Invited Mesh Community')
 
   })
 
@@ -869,7 +911,9 @@ test.describe('authenticated desktop shell', () => {
     await page.getByRole('button', { name: 'Voice room: Lounge' }).click()
 
     await expect(page.getByRole('heading', { name: 'Voice is not available for this room' })).toBeVisible()
-    await expect(page.getByText('You can keep using messages.')).toBeVisible()
+    await expect(page.getByText(
+      'Voice has not been enabled for this community yet. You can keep using messages.',
+    )).toBeVisible()
     await expectNoWcagViolations(page, 'Voice-disabled room')
 
     const calls = await ipcCalls(page)
@@ -1226,7 +1270,9 @@ test.describe('authenticated narrow shell', () => {
     const administration = page.getByRole('region', { name: 'Community administration' })
     await expect(administration).toBeVisible()
     await administration.getByRole('combobox', { name: 'Administration section' }).selectOption('danger')
-    await expect(administration.getByText('Ownership must be resolved first')).toBeVisible()
+    await expect(
+      administration.getByRole('heading', { name: "You can't leave while you're the owner" }),
+    ).toBeVisible()
     await expect(administration.getByRole('button', { name: 'Leave Community' })).toHaveCount(0)
     await expect(page.getByRole('dialog', { name: 'Community settings' })).toHaveCount(0)
 
@@ -1264,5 +1310,81 @@ test.describe('authenticated narrow shell', () => {
       await administration.getByRole('button', { name: 'Back to community' }).click()
       await expect(administration).toHaveCount(0)
     }
+  })
+
+  test('keeps privacy choices inside a compact-height settings dialog', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 500 })
+    await openAuthenticatedShell(page)
+
+    await page.getByRole('button', { name: 'Open room navigation' }).click()
+    await page.getByRole('button', { name: 'User settings' }).click()
+    const dialog = page.getByRole('dialog', { name: 'User Settings' })
+    await dialog.getByLabel('Settings section', { exact: true }).selectOption('privacy')
+
+    const readReceipts = dialog.getByLabel('Read receipts', { exact: true })
+    await readReceipts.scrollIntoViewIfNeeded()
+    await expect(readReceipts).toBeInViewport()
+
+    const layout = await readReceipts.evaluate((select) => {
+      const dialog = select.closest('[role="dialog"]')
+      const row = select.parentElement
+      if (!(dialog instanceof HTMLElement) || !(row instanceof HTMLElement)) return null
+      const dialogBounds = dialog.getBoundingClientRect()
+      const rowBounds = row.getBoundingClientRect()
+      const selectBounds = select.getBoundingClientRect()
+      return {
+        dialog: { left: dialogBounds.left, right: dialogBounds.right },
+        row: { left: rowBounds.left, right: rowBounds.right },
+        select: { left: selectBounds.left, right: selectBounds.right },
+        viewportWidth: document.documentElement.clientWidth,
+        documentWidth: document.documentElement.scrollWidth,
+      }
+    })
+
+    expect(layout).not.toBeNull()
+    expect(layout!.documentWidth).toBeLessThanOrEqual(layout!.viewportWidth)
+    expect(layout!.row.left).toBeGreaterThanOrEqual(layout!.dialog.left)
+    expect(layout!.row.right).toBeLessThanOrEqual(layout!.dialog.right)
+    expect(layout!.select.left).toBeGreaterThanOrEqual(layout!.dialog.left)
+    expect(layout!.select.right).toBeLessThanOrEqual(layout!.dialog.right)
+
+    await dialog.getByLabel('Settings section', { exact: true }).selectOption('devices')
+    await dialog.getByRole('button', { name: 'Open your devices' }).click()
+    const securityDialog = page.getByRole('dialog', { name: 'Your devices' })
+    await expect(securityDialog).toBeVisible()
+
+    const testSavedCopy = securityDialog.getByRole('button', { name: 'Test saved copy' })
+    await testSavedCopy.scrollIntoViewIfNeeded()
+    await expect(testSavedCopy).toBeInViewport()
+    await expect(testSavedCopy).toBeEnabled()
+    await testSavedCopy.click()
+    await expect.poll(async () => (
+      (await ipcCalls(page)).filter((call) => call.command === 'matrix_test_stored_recovery').length
+    )).toBe(1)
+
+    const lostDevice = securityDialog.getByRole('button', { name: 'I lost a device' })
+    await lostDevice.scrollIntoViewIfNeeded()
+    await lostDevice.click()
+    await securityDialog.getByRole('radio', { name: /New phone/ }).check()
+    await securityDialog.getByRole('checkbox', {
+      name: /cannot erase anything already saved on it or guarantee that older messages can be restored/,
+    }).check()
+    const continueSignOut = securityDialog.getByRole('button', {
+      name: 'Continue to sign out selected device',
+    })
+    await continueSignOut.scrollIntoViewIfNeeded()
+    await expect(continueSignOut).toBeInViewport()
+    await expect(continueSignOut).toBeEnabled()
+
+    const securityLayout = await securityDialog.evaluate((dialog) => ({
+      viewportWidth: document.documentElement.clientWidth,
+      documentWidth: document.documentElement.scrollWidth,
+      dialogLeft: dialog.getBoundingClientRect().left,
+      dialogRight: dialog.getBoundingClientRect().right,
+    }))
+    expect(securityLayout.documentWidth).toBeLessThanOrEqual(securityLayout.viewportWidth)
+    expect(securityLayout.dialogLeft).toBeGreaterThanOrEqual(0)
+    expect(securityLayout.dialogRight).toBeLessThanOrEqual(securityLayout.viewportWidth)
+    await expectNoWcagViolations(page, 'Compact privacy, recovery, and device review')
   })
 })

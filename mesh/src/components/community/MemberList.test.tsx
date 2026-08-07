@@ -5,7 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as bridge from '../../lib/bridge'
 import type { CommunityPermissionProjection } from '../../lib/community-permissions'
 import { useCommunityStore } from '../../store/communities'
+import { useMembershipStore } from '../../store/membership'
 import { MemberList } from './MemberList'
+
+function setInputValue(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    'value',
+  )?.set
+  setter?.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+}
 
 describe('MemberList actions', () => {
   let container: HTMLDivElement
@@ -47,6 +57,13 @@ describe('MemberList actions', () => {
       }],
       activeCommunityId: 'community-1',
     })
+    useMembershipStore.setState({
+      memberEntities: {},
+      memberOrder: {},
+      members: {},
+      rosterNextCursor: {},
+      rosterStateComplete: {},
+    })
     vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
     vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@me:mesh.im')
     vi.spyOn(bridge, 'getBackendCapabilities').mockReturnValue({
@@ -76,6 +93,7 @@ describe('MemberList actions', () => {
           isOpen
           embedded
           onClose={() => {}}
+          rolePermissionProjection={permissionProjection()}
           members={[
             {
               publicKey: '@me:mesh.im',
@@ -118,6 +136,191 @@ describe('MemberList actions', () => {
     expect(document.body.textContent).toContain('Make member')
     expect(document.body.textContent).toContain('Remove from community')
     expect(document.body.textContent).toContain('Ban from community')
+  })
+
+  it('hides role mutations until the current permission projection is verified', async () => {
+    await act(async () => {
+      root.render(
+        <MemberList
+          isOpen
+          embedded
+          onClose={() => {}}
+          members={[
+            {
+              publicKey: '@me:mesh.im',
+              displayName: 'Ana',
+              avatarColor: '#6c8f76',
+              role: 'owner',
+              online: true,
+            },
+            {
+              publicKey: '@bob:example.org',
+              displayName: 'Bob',
+              avatarColor: '#8f765f',
+              role: 'admin',
+              online: true,
+            },
+          ]}
+        />,
+      )
+    })
+
+    await act(async () => {
+      const trigger = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="More actions for Bob"]',
+      )
+      trigger?.focus()
+      trigger?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(document.body.textContent).not.toContain('Make member')
+    expect(document.body.textContent).toContain('Remove from community')
+    expect(document.body.textContent).toContain('Ban from community')
+  })
+
+  it('filters loaded members by display name or account address', async () => {
+    await act(async () => {
+      root.render(
+        <MemberList
+          isOpen
+          embedded
+          onClose={() => {}}
+          members={[
+            {
+              publicKey: '@bob:example.org',
+              displayName: 'Bob',
+              avatarColor: '#8f765f',
+              role: 'member',
+              online: true,
+            },
+            {
+              publicKey: '@zoe:remote.example',
+              displayName: 'Zoe',
+              avatarColor: '#607080',
+              role: 'member',
+              online: false,
+            },
+          ]}
+        />,
+      )
+    })
+
+    const search = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Find a community member"]',
+    )
+    expect(search).not.toBeNull()
+
+    await act(async () => {
+      if (search) setInputValue(search, 'remote.example')
+    })
+    expect(container.textContent).toContain('Zoe')
+    expect(container.textContent).not.toContain('Bob')
+
+    await act(async () => {
+      if (search) setInputValue(search, 'nobody')
+    })
+    expect(container.textContent).toContain('No matching members')
+    expect(container.textContent).toContain('Try a different name or account address.')
+  })
+
+  it('does not render invited, departed, or banned people as current members', async () => {
+    const entry = (
+      publicKey: string,
+      displayName: string,
+      joinStatus: 'invited' | 'joined' | 'left',
+      banStatus: 'none' | 'banned' = 'none',
+    ) => ({
+      publicKey,
+      displayName,
+      avatarColor: '#607080',
+      role: 'member' as const,
+      joinStatus,
+      banStatus,
+      online: false,
+    })
+
+    await act(async () => {
+      root.render(
+        <MemberList
+          isOpen
+          embedded
+          onClose={() => {}}
+          members={[
+            entry('@joined:mesh.im', 'Joined', 'joined'),
+            entry('@invited:mesh.im', 'Invited', 'invited'),
+            entry('@left:mesh.im', 'Departed', 'left'),
+            entry('@banned:mesh.im', 'Banned', 'left', 'banned'),
+          ]}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Joined')
+    expect(container.textContent).not.toContain('Invited')
+    expect(container.textContent).not.toContain('Departed')
+    expect(container.textContent).not.toContain('Banned')
+  })
+
+  it('loads the next bounded Matrix member page on explicit request', async () => {
+    const first = {
+      publicKey: '@a:mesh.im',
+      displayName: 'A',
+      avatarColor: '#607080',
+      role: 'member' as const,
+      joinStatus: 'joined' as const,
+      banStatus: 'none' as const,
+      lastSeen: null,
+      online: false,
+    }
+    useMembershipStore.getState().setRosterPage(
+      'community-1',
+      [first],
+      '@a:mesh.im',
+      false,
+      false,
+    )
+    const getMemberPage = vi.spyOn(bridge, 'getMemberPage').mockResolvedValue({
+      members: [{
+        publicKey: '@b:mesh.im',
+        displayName: 'B',
+        avatarColor: '#708090',
+        role: 'member',
+        joinStatus: 'joined',
+        banStatus: 'none',
+        lastSeen: null,
+        online: false,
+      }],
+      nextCursor: null,
+      stateComplete: true,
+    })
+
+    await act(async () => {
+      root.render(
+        <MemberList
+          isOpen
+          embedded
+          onClose={() => {}}
+          members={[first]}
+        />,
+      )
+    })
+    expect(container.textContent).toContain('Showing members Mesh has seen recently')
+    const loadMore = [...container.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Load more members')
+    expect(loadMore).toBeDefined()
+
+    await act(async () => {
+      loadMore?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(getMemberPage).toHaveBeenCalledWith('community-1', '@a:mesh.im')
+    expect(useMembershipStore.getState().memberOrder['community-1']).toEqual([
+      '@a:mesh.im',
+      '@b:mesh.im',
+    ])
+    expect(useMembershipStore.getState().rosterStateComplete['community-1']).toBe(true)
   })
 
   it('uses the compact empty state when the community has no members', async () => {
@@ -250,7 +453,9 @@ describe('MemberList actions', () => {
     expect(refreshPermissions).toHaveBeenCalledOnce()
     expect(document.body.textContent).toContain('Make Bob an administrator?')
     expect(document.body.textContent).toContain('Proposed Administrator permissions')
-    expect(document.body.textContent).toContain('Based on current Matrix state')
+    expect(document.body.textContent).toContain(
+      'Based on current permissions in this community and its rooms',
+    )
     expect(document.body.textContent).toContain('Manage roles and security')
     expect(document.body.textContent).toContain('Not granted')
 
@@ -294,7 +499,7 @@ describe('MemberList actions', () => {
       '[role="list"][aria-label="Community members"]',
     )
     await act(async () => {
-      if (list) list.scrollTop = 200_056
+      if (list) list.scrollTop = 220_056
       list?.dispatchEvent(new Event('scroll', { bubbles: true }))
       await Promise.resolve()
     })
@@ -322,7 +527,6 @@ function permissionProjection(): CommunityPermissionProjection {
     notifications: { room: 50 },
     creatorUserIds: ['@me:mesh.im'],
     privilegedCreatorUserIds: [],
-    joinedUserIds: ['@me:mesh.im', '@bob:example.org'],
   }
   return {
     communityId: '!community:mesh.im',

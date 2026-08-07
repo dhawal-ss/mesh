@@ -28,6 +28,7 @@ describe('OfflineQueueSummary', () => {
     await act(async () => root.render(<OfflineQueueSummary count={2} onReview={onReview} />))
 
     expect(container.textContent).toContain('2 messages saved for later')
+    expect(container.textContent).toContain('Mesh will retry automatically.')
     expect(container.querySelector('[role="status"]')?.textContent).toBe('')
 
     await act(async () => vi.advanceTimersByTime(400))

@@ -1,8 +1,9 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "scannerPolicy": {
     "candidateOutage": "fail-closed",
     "developmentOutage": "blocked-unavailable",
+    "grypeVersion": "0.116.1",
     "severityCutoff": "high",
     "onlyFixable": true
   },
@@ -15,26 +16,38 @@
   ],
   "images": [
     {
-      "image": "caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d",
+      "name": "caddy",
+      "milestone": "R2",
+      "image": "caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648",
       "signaturePolicy": "discover-upstream-support-before-candidate"
     },
     {
+      "name": "lk-jwt-service",
+      "milestone": "R3",
       "image": "ghcr.io/element-hq/lk-jwt-service:0.4.4@sha256:9c715697c6f7c1f538f2ee41b7b59b04a8d06bf790a7cc8c8517ccac8d28813d",
       "signaturePolicy": "discover-upstream-support-before-candidate"
     },
     {
+      "name": "livekit-server",
+      "milestone": "R3",
       "image": "livekit/livekit-server:v1.13.5@sha256:3497163e15c48fef6e7830c78716f9e9d5edc28abf7aa90b61c86e93bbc306b1",
       "signaturePolicy": "discover-upstream-support-before-candidate"
     },
     {
-      "image": "matrixdotorg/synapse:v1.157.1@sha256:d1fce43d7501428c461f2758dc10342555b946dc9f1d03c1b1b8aec1a4e8d130",
+      "name": "synapse",
+      "milestone": "R2",
+      "image": "matrixdotorg/synapse:v1.157.2@sha256:097e3120b8ecf97e4f92537d7af2da41564c706e33fc740f3741c9defacc2af1",
       "signaturePolicy": "discover-upstream-support-before-candidate"
     },
     {
+      "name": "nginx",
+      "milestone": "R2",
       "image": "nginx:1.30.4-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46",
       "signaturePolicy": "discover-upstream-support-before-candidate"
     },
     {
+      "name": "postgres",
+      "milestone": "R2",
       "image": "postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193",
       "signaturePolicy": "discover-upstream-support-before-candidate"
     }

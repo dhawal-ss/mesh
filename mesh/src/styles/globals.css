@@ -38,8 +38,6 @@
    */
   --ref-neutral-1: #101113;
   --ref-neutral-1-rgb: 16 17 19;
-  --ref-neutral-sidebar: #0f141d;
-  --ref-neutral-sidebar-rgb: 15 20 29;
   --ref-neutral-2: #1b1c1f;
   --ref-neutral-2-rgb: 27 28 31;
   --ref-neutral-3: #202125;
@@ -49,43 +47,17 @@
   --ref-neutral-5: #2e3036;
   --ref-neutral-5-rgb: 46 48 54;
   --ref-neutral-6: #383a40;
-  --ref-neutral-6-rgb: 56 58 64;
   --ref-neutral-7: #4a4d54;
   --ref-neutral-7-rgb: 74 77 84;
   --ref-neutral-8: #5a5e65;
-  --ref-neutral-8-rgb: 90 94 101;
   --ref-neutral-9: #71757c;
   --ref-neutral-9-rgb: 113 117 124;
   --ref-neutral-10: #9fa3aa;
-  --ref-neutral-10-rgb: 159 163 170;
   --ref-neutral-11: #c6c8cc;
-  --ref-neutral-11-rgb: 198 200 204;
   --ref-neutral-12: #f0f1f2;
   --ref-neutral-12-rgb: 240 241 242;
 
-  /* Legacy reference colors retained while Party Room consumers migrate. */
-  --ref-mesh-ink: #08090d;
-  --ref-mesh-ink-rgb: 8 9 13;
-  --ref-mesh-rail: #0c0d13;
-  --ref-mesh-rail-rgb: 12 13 19;
-  --ref-mesh-sidebar: #10121a;
-  --ref-mesh-sidebar-rgb: 16 18 26;
-  --ref-mesh-canvas: #151720;
-  --ref-mesh-canvas-rgb: 21 23 32;
-  --ref-mesh-raised: #1a1d28;
-  --ref-mesh-raised-rgb: 26 29 40;
-  --ref-mesh-hover: #222633;
-  --ref-mesh-hover-rgb: 34 38 51;
-  --ref-mesh-active: #2a2f40;
-  --ref-mesh-active-rgb: 42 47 64;
-  --ref-mesh-line: #303547;
-  --ref-mesh-line-rgb: 48 53 71;
-  --ref-mesh-muted: #9299aa;
-  --ref-mesh-muted-rgb: 146 153 170;
-  --ref-mesh-secondary: #c7cbd5;
-  --ref-mesh-secondary-rgb: 199 203 213;
-  --ref-mesh-primary: #f4f6fb;
-  --ref-mesh-primary-rgb: 244 246 251;
+  /* Legacy violet references remain until the active accent aliases migrate. */
   --ref-mesh-violet-8: #5948b8;
   --ref-mesh-violet-8-rgb: 89 72 184;
   --ref-mesh-violet-9: #8c7cff;
@@ -118,6 +90,10 @@
   --ref-party-light-amber-rgb: 163 78 0;
   --ref-party-light-green: #237548;
   --ref-party-light-green-rgb: 35 117 72;
+  --ref-party-light-rail: #E8E1D7;
+  --ref-party-light-rail-rgb: 232 225 215;
+  --ref-party-light-hover: #EDE5D9;
+  --ref-party-light-hover-rgb: 237 229 217;
 
   --party-theme-canvas: var(--ref-party-canvas);
   --party-theme-canvas-rgb: var(--ref-party-canvas-rgb);
@@ -132,8 +108,6 @@
   --party-theme-green: var(--ref-party-green);
   --party-theme-green-rgb: var(--ref-party-green-rgb);
 
-  --ref-accent-5: #3d362b;
-  --ref-accent-5-rgb: 61 54 43;
   --ref-accent-8: #8a754c;
   --ref-accent-8-rgb: 138 117 76;
   --ref-accent-9: #d4c0a1;
@@ -141,14 +115,7 @@
   --ref-accent-10: #e3d4bb;
   --ref-accent-10-rgb: 227 212 187;
   --ref-accent-11: #f1e8db;
-  --ref-accent-11-rgb: 241 232 219;
-  --ref-accent-12: #fbf7f1;
-  --ref-accent-12-rgb: 251 247 241;
-
   --ref-green-11: #3dbe72;
-  --ref-green-11-rgb: 61 190 114;
-  --ref-green-light-11: #1f7a45;
-  --ref-green-light-11-rgb: 31 122 69;
   --ref-red-11: #f06a73;
   --ref-red-11-rgb: 240 106 115;
   --ref-red-light-11: #b4232a;
@@ -161,8 +128,6 @@
   --ref-blue-11-rgb: 111 175 255;
   --ref-blue-light-11: #1f5fae;
   --ref-blue-light-11-rgb: 31 95 174;
-  --ref-accent-light-11: #6b5636;
-  --ref-accent-light-11-rgb: 107 86 54;
   /*
    * Light-theme accent ramps. The dark ramps are pale by design (they sit on
    * near-black), which leaves them at ~1.7:1 on a light canvas: invisible as
@@ -205,23 +170,10 @@
   --ref-accent-rose-light-10-rgb: 127 35 65;
   --ref-accent-rose-light-8: #c87f96;
   --ref-accent-rose-light-8-rgb: 200 127 150;
-  --ref-presence-online: #3dbe72;
-  --ref-presence-online-rgb: 61 190 114;
-  --ref-presence-dnd: #d4444c;
-  --ref-presence-dnd-rgb: 212 68 76;
   --ref-black: #000000;
   --ref-black-rgb: 0 0 0;
   --ref-white: #ffffff;
   --ref-white-rgb: 255 255 255;
-
-  --ref-light-canvas: #f7f7f9;
-  --ref-light-canvas-rgb: 247 247 249;
-  --ref-light-rail: #edeef2;
-  --ref-light-rail-rgb: 237 238 242;
-  --ref-light-hover: #e4e5ea;
-  --ref-light-hover-rgb: 228 229 234;
-  --ref-light-active: #d7d9e0;
-  --ref-light-active-rgb: 215 217 224;
 
   --ref-accent-ocean-9: #4997ff;
   --ref-accent-ocean-9-rgb: 73 151 255;
@@ -255,47 +207,37 @@
   --ref-accent-rose-8-rgb: 151 66 93;
 
   --ref-avatar-sand: #d4c0a1;
-  --ref-avatar-sand-rgb: 212 192 161;
   --ref-avatar-blue: #60a5fa;
-  --ref-avatar-blue-rgb: 96 165 250;
   --ref-avatar-green: #4ade80;
-  --ref-avatar-green-rgb: 74 222 128;
   --ref-avatar-red: #f87171;
-  --ref-avatar-red-rgb: 248 113 113;
   --ref-avatar-violet: #a78bfa;
-  --ref-avatar-violet-rgb: 167 139 250;
   --ref-avatar-orange: #fb923c;
-  --ref-avatar-orange-rgb: 251 146 60;
   --ref-avatar-pink: #f472b6;
-  --ref-avatar-pink-rgb: 244 114 182;
   --ref-avatar-emerald: #34d399;
-  --ref-avatar-emerald-rgb: 52 211 153;
   --ref-avatar-yellow: #facc15;
-  --ref-avatar-yellow-rgb: 250 204 21;
   --ref-avatar-cyan: #38bdf8;
-  --ref-avatar-cyan-rgb: 56 189 248;
 
   /* Tier 2: semantic roles. Feature code should use this tier. */
   --surface-canvas-rgb: var(--party-theme-canvas-rgb);
   --surface-canvas: var(--party-theme-canvas);
-  --surface-rail-rgb: var(--party-theme-canvas-rgb);
-  --surface-rail: var(--party-theme-canvas);
-  --surface-sunken-rgb: var(--surface-rail-rgb);
-  --surface-sunken: var(--surface-rail);
+  --surface-rail-rgb: var(--ref-black-rgb);
+  --surface-rail: var(--ref-black);
+  --surface-sunken-rgb: var(--ref-neutral-1-rgb);
+  --surface-sunken: var(--ref-neutral-1);
   --surface-sidebar-rgb: var(--party-theme-canvas-rgb);
   --surface-sidebar: var(--party-theme-canvas);
-  --surface-base-rgb: var(--surface-canvas-rgb);
-  --surface-base: var(--surface-canvas);
-  --surface-raised-rgb: var(--party-theme-canvas-rgb);
-  --surface-raised: var(--party-theme-canvas);
-  --surface-overlay-rgb: var(--surface-raised-rgb);
-  --surface-overlay: var(--surface-raised);
-  --surface-hover-rgb: var(--party-theme-canvas-rgb);
-  --surface-hover: var(--party-theme-canvas);
-  --surface-active-rgb: var(--party-theme-canvas-rgb);
-  --surface-active: var(--party-theme-canvas);
-  --surface-selected-rgb: var(--party-theme-canvas-rgb);
-  --surface-selected: var(--party-theme-canvas);
+  --surface-base-rgb: var(--party-theme-canvas-rgb);
+  --surface-base: var(--party-theme-canvas);
+  --surface-raised-rgb: var(--ref-neutral-2-rgb);
+  --surface-raised: var(--ref-neutral-2);
+  --surface-overlay-rgb: var(--ref-neutral-3-rgb);
+  --surface-overlay: var(--ref-neutral-3);
+  --surface-hover-rgb: var(--ref-neutral-4-rgb);
+  --surface-hover: var(--ref-neutral-4);
+  --surface-active-rgb: var(--ref-neutral-5-rgb);
+  --surface-active: var(--ref-neutral-5);
+  --surface-selected-rgb: var(--ref-neutral-5-rgb);
+  --surface-selected: var(--ref-neutral-5);
   --surface-scrim: rgb(var(--ref-black-rgb) / 0.7);
   --surface-nav-scrim: rgb(var(--ref-black-rgb) / 0.58);
   --surface-pane-tint: transparent;
@@ -310,8 +252,6 @@
   --content-secondary: var(--party-theme-secondary);
   --content-muted-rgb: var(--party-theme-secondary-rgb);
   --content-muted: var(--party-theme-secondary);
-  --content-disabled-rgb: var(--ref-neutral-9-rgb);
-  --content-disabled: var(--ref-neutral-9);
   --content-link-rgb: var(--ref-blue-11-rgb);
   --content-link: var(--ref-blue-11);
   --content-accent-rgb: var(--accent-rgb);
@@ -328,7 +268,7 @@
   --border-default: var(--party-theme-rule);
   --border-emphasis-rgb: var(--party-theme-rule-rgb);
   --border-emphasis: var(--party-theme-rule);
-  --border-subtle: var(--party-theme-rule);
+  --border-subtle: rgb(var(--party-theme-rule-rgb) / 0.42);
   --border-strong: var(--party-theme-rule);
   /*
    * --border-control is the boundary of an interactive control whose shape is
@@ -392,9 +332,7 @@
   --info-container-active: rgb(var(--status-info-rgb) / 0.28);
   --info-container-line: rgb(var(--status-info-rgb) / 0.55);
   --info-on-container: var(--status-info);
-  --scrollbar-rgb: var(--ref-neutral-4-rgb);
   --scrollbar: var(--ref-neutral-4);
-  --scrollbar-hover-rgb: var(--ref-neutral-6-rgb);
   --scrollbar-hover: var(--ref-neutral-6);
 
   --avatar-sand: var(--ref-avatar-sand);
@@ -409,15 +347,7 @@
   --avatar-cyan: var(--ref-avatar-cyan);
 
   /* Tier 3: component roles. These may reference semantic tokens only. */
-  --composer-bg: var(--surface-raised);
-  --composer-border-focus: var(--border-focus);
-  --message-hover-bg: var(--surface-hover);
   --presence-dot-online: var(--status-success);
-  --presence-dot-idle: var(--status-warning);
-  --presence-dot-dnd: var(--status-danger);
-  --presence-dot-offline: var(--presence-offline);
-  --unread-badge-bg: var(--accent);
-  --mention-badge-bg: var(--status-danger);
 
   /*
    * Compatibility aliases preserve every existing class and CSS call site.
@@ -437,15 +367,11 @@
   --bg-modifier-selected: var(--surface-active);
   --bg-floating-rgb: var(--surface-overlay-rgb);
   --bg-floating: var(--surface-overlay);
-  --bg-overlay: var(--surface-scrim);
-  --channel-divider: var(--border-default);
   --text-normal: var(--content-normal);
   --text-primary: var(--content-primary);
   --text-secondary: var(--content-secondary);
   --text-muted: var(--content-muted);
   --text-link: var(--content-link);
-  --accent-bright: var(--accent-hover);
-  --accent-dim: var(--accent-muted);
   --green: var(--status-success);
   --red: var(--status-danger);
   --yellow: var(--status-warning);
@@ -502,6 +428,9 @@
   --radius-panel: 0;
   --radius-community-rest: 0;
   --radius-community-active: 0;
+  --mesh-radius-tile: 7px;
+  --mesh-radius-card: 10px;
+  --mesh-radius-shell: 14px;
   --border-width-status: 1px;
 
   /* Motion reference values */
@@ -586,7 +515,9 @@
   --z-toast: 70;
   --z-tooltip: 80;
 
-  --elev-overlay: none;
+  --elev-overlay: 0 18px 48px rgb(var(--ref-black-rgb) / 0.42);
+  --elev-card: 0 1px 0 rgb(var(--ref-white-rgb) / 0.025), 0 16px 38px rgb(var(--ref-black-rgb) / 0.16);
+  --elev-inset: inset 0 1px 0 rgb(var(--ref-white-rgb) / 0.035);
 }
 
 @media (min-width: 1366px) {
@@ -683,8 +614,25 @@
    * Tier 1 party references below that parent.
   */
   --surface-canvas: var(--ref-party-light-canvas);
+  --surface-canvas-rgb: var(--ref-party-light-canvas-rgb);
+  --surface-rail: var(--ref-party-light-rail);
+  --surface-rail-rgb: var(--ref-party-light-rail-rgb);
+  --surface-sunken: var(--ref-party-light-rail);
+  --surface-sunken-rgb: var(--ref-party-light-rail-rgb);
+  --surface-sidebar: var(--ref-party-light-canvas);
+  --surface-sidebar-rgb: var(--ref-party-light-canvas-rgb);
   --surface-base: var(--ref-party-light-canvas);
   --surface-base-rgb: var(--ref-party-light-canvas-rgb);
+  --surface-raised: var(--ref-white);
+  --surface-raised-rgb: var(--ref-white-rgb);
+  --surface-overlay: var(--ref-white);
+  --surface-overlay-rgb: var(--ref-white-rgb);
+  --surface-hover: var(--ref-party-light-hover);
+  --surface-hover-rgb: var(--ref-party-light-hover-rgb);
+  --surface-active: var(--ref-party-light-hover);
+  --surface-active-rgb: var(--ref-party-light-hover-rgb);
+  --surface-selected: var(--ref-party-light-hover);
+  --surface-selected-rgb: var(--ref-party-light-hover-rgb);
   --content-normal: var(--ref-party-light-primary);
   --content-normal-rgb: var(--ref-party-light-primary-rgb);
   --content-primary: var(--ref-party-light-primary);
@@ -697,7 +645,7 @@
   --border-default-rgb: var(--ref-party-light-rule-rgb);
   --border-emphasis: var(--ref-party-light-rule);
   --border-emphasis-rgb: var(--ref-party-light-rule-rgb);
-  --border-subtle: var(--ref-party-light-rule);
+  --border-subtle: rgb(var(--ref-party-light-rule-rgb) / 0.42);
   --border-strong: var(--ref-party-light-rule);
   --border-control: var(--ref-party-light-rule);
   --border-control-rgb: var(--ref-party-light-rule-rgb);
@@ -711,8 +659,6 @@
   --accent-muted-rgb: var(--ref-party-light-amber-rgb);
   --status-success: var(--ref-party-light-green);
   --status-success-rgb: var(--ref-party-light-green-rgb);
-  --content-disabled-rgb: var(--ref-party-light-secondary-rgb);
-  --content-disabled: var(--ref-party-light-secondary);
   --content-link-rgb: var(--ref-blue-light-11-rgb);
   --content-link: var(--ref-blue-light-11);
   /*
@@ -729,7 +675,9 @@
   --status-warning: var(--ref-amber-light-11);
   --status-info-rgb: var(--ref-blue-light-11-rgb);
   --status-info: var(--ref-blue-light-11);
-  --elev-overlay: none;
+  --elev-overlay: 0 18px 48px rgb(var(--ref-black-rgb) / 0.18);
+  --elev-card: 0 1px 0 rgb(var(--ref-white-rgb) / 0.7), 0 14px 36px rgb(var(--ref-black-rgb) / 0.08);
+  --elev-inset: inset 0 1px 0 rgb(var(--ref-white-rgb) / 0.8);
 }
 
 :root[data-theme='high-contrast'],
@@ -755,6 +703,8 @@
   --surface-hover: var(--ref-neutral-5);
   --surface-active-rgb: var(--ref-neutral-7-rgb);
   --surface-active: var(--ref-neutral-7);
+  --surface-selected-rgb: var(--ref-neutral-7-rgb);
+  --surface-selected: var(--ref-neutral-7);
   --content-normal-rgb: var(--ref-white-rgb);
   --content-normal: var(--ref-white);
   --content-primary-rgb: var(--ref-white-rgb);
@@ -1131,11 +1081,7 @@ html[data-reduce-motion='true'] * {
  * Transparency is deliberately limited to bounded menus and popovers.
  * Conversation panes and scrolling timelines always remain opaque.
  */
-[data-transparency='readable'] .mesh-overlay-surface:not(.overflow-auto) {
-  background-color: var(--surface-overlay);
-  backdrop-filter: none;
-}
-
+[data-transparency='readable'] .mesh-overlay-surface:not(.overflow-auto),
 [data-transparency='opaque'] .mesh-overlay-surface {
   background-color: var(--surface-overlay);
   backdrop-filter: none;
@@ -1154,16 +1100,12 @@ html[data-reduce-motion='true'] * {
 }
 
 .mesh-button {
-  box-shadow: none;
-}
-
-.mesh-button:not(:disabled):active {
-  transform: translateY(1px);
+  border-radius: var(--mesh-radius-tile);
 }
 
 .mesh-input {
-  border-radius: var(--radius-control);
-  box-shadow: none;
+  border-radius: var(--mesh-radius-tile);
+  box-shadow: var(--elev-inset);
 }
 
 .mesh-input:focus {
@@ -1171,7 +1113,8 @@ html[data-reduce-motion='true'] * {
 }
 
 .mesh-modal-surface {
-  box-shadow: none;
+  border-color: var(--border-strong);
+  border-radius: var(--mesh-radius-shell);
 }
 
 .mesh-onboarding-root {
@@ -1180,12 +1123,14 @@ html[data-reduce-motion='true'] * {
 
 .mesh-onboarding-shell {
   max-height: 920px;
+  border-color: var(--border-strong);
   background-color: var(--surface-base);
-  box-shadow: none;
+  border-radius: var(--mesh-radius-shell);
 }
 
 .mesh-onboarding-aside {
-  background-color: var(--ref-black);
+  border-right: 1px solid var(--border-subtle);
+  background: linear-gradient(145deg, var(--ref-black), var(--surface-sunken));
 }
 
 .mesh-onboarding-content,
@@ -1198,6 +1143,10 @@ html[data-reduce-motion='true'] * {
   scrollbar-gutter: stable;
 }
 
+.mesh-toast-container {
+  bottom: calc(var(--party-composer-height) + 4rem);
+}
+
 .mesh-onboarding-scroll h1[tabindex='-1']:focus,
 .mesh-onboarding-scroll [role='heading'][tabindex='-1']:focus {
   outline: none !important;
@@ -1206,7 +1155,9 @@ html[data-reduce-motion='true'] * {
 .mesh-service-card,
 .mesh-form-card,
 .mesh-inline-card {
-  box-shadow: none;
+  border-radius: var(--mesh-radius-card);
+  background-color: var(--surface-raised);
+  box-shadow: var(--elev-card);
 }
 
 .mesh-service-card {
@@ -1218,12 +1169,11 @@ html[data-reduce-motion='true'] * {
 .mesh-service-card:focus-within,
 .mesh-service-card:hover {
   border-color: var(--border-emphasis);
-  background-color: var(--surface-base);
+  background-color: var(--surface-hover);
 }
 
 .mesh-profile-choice {
   background-color: var(--ref-black) !important;
-  box-shadow: none;
 }
 
 #root {
@@ -1234,10 +1184,6 @@ html[data-reduce-motion='true'] * {
 .mesh-app-shell {
   padding: 0;
   background: var(--surface-rail);
-}
-
-.mesh-workspace-frame {
-  gap: 0;
 }
 
 .mesh-community-rail,
@@ -1279,7 +1225,8 @@ html[data-reduce-motion='true'] * {
 
 .mesh-user-panel {
   margin: 0;
-  border: 1px solid var(--border-subtle);
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
   border-radius: 0;
   background: var(--surface-raised);
 }
@@ -1293,12 +1240,13 @@ html[data-reduce-motion='true'] * {
 .mesh-composer {
   border-color: var(--border-strong);
   background: var(--surface-raised);
-  border-radius: var(--radius-control);
-  box-shadow: none;
+  border-radius: var(--mesh-radius-card);
+  box-shadow: var(--elev-card), var(--elev-inset);
 }
 
 .mesh-composer:focus-within {
   border-color: var(--accent-container-line);
+  box-shadow: 0 0 0 3px var(--accent-container), var(--elev-card);
 }
 
 .mesh-composer button[aria-label='Send message']:not(:disabled) {
@@ -1307,18 +1255,8 @@ html[data-reduce-motion='true'] * {
 }
 
 .mesh-composer-formatting {
-  border-color: rgb(var(--ref-white-rgb) / 0.045);
-  background: var(--surface-canvas);
-}
-
-.mesh-modal-surface {
-  border-color: var(--border-strong);
-  border-radius: 0;
-}
-
-.mesh-onboarding-shell {
-  border-color: var(--border-strong);
-  border-radius: 0;
+  border-color: var(--border-subtle);
+  background: var(--surface-base);
 }
 
 .mesh-community-rail {
@@ -1326,15 +1264,15 @@ html[data-reduce-motion='true'] * {
 }
 
 .mesh-context-sidebar {
-  width: min(var(--mesh-context-sidebar-width, var(--party-channel-width)), var(--party-channel-width));
+  width: var(--mesh-context-sidebar-width, var(--party-channel-width));
 }
 
 .mesh-room-context-panel {
-  width: min(var(--mesh-room-context-width, var(--party-roster-width)), var(--party-roster-width));
+  width: var(--mesh-room-context-width, var(--party-roster-width));
 }
 
 .mesh-secondary-pane {
-  width: min(20rem, var(--party-roster-width));
+  width: min(22rem, 24vw);
 }
 
 .mesh-voice-dock {
@@ -1369,7 +1307,6 @@ html[data-reduce-motion='true'] * {
   border: 1px solid rgb(var(--ref-white-rgb) / 0.12);
   background: var(--ref-black);
   color: var(--mesh-accent-preview);
-  box-shadow: none;
 }
 
 .mesh-accent-choice[data-accent-preview='violet'] {
@@ -1421,16 +1358,15 @@ html[data-reduce-motion='true'] * {
 
 .mesh-pixel-avatar-default {
   background-color: var(--ref-black) !important;
-  box-shadow: none;
 }
 
 .mesh-pixel-brand {
   overflow: hidden;
   border: 1px solid var(--accent-container-line);
-  border-radius: var(--radius-community-active);
+  border-radius: var(--mesh-radius-tile);
   background-color: var(--accent) !important;
   color: var(--content-on-accent) !important;
-  box-shadow: none;
+  box-shadow: var(--elev-card), var(--elev-inset);
 }
 
 .mesh-pixel-brand .mesh-pixel-mark {
@@ -1463,6 +1399,43 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 
   .mesh-onboarding-scroll {
     max-height: none;
+  }
+}
+
+@media (max-width: 1023px) and (max-height: 700px) {
+  .mesh-onboarding-pitch {
+    display: none;
+  }
+
+  .mesh-onboarding-pitch-invitation {
+    display: block;
+    margin-top: 0;
+  }
+
+  .mesh-onboarding-pitch-invitation > p:last-child,
+  .mesh-onboarding-invitation-destination {
+    display: none;
+  }
+
+  .mesh-onboarding-aside {
+    padding-block: 0.75rem;
+  }
+
+  .mesh-onboarding-content {
+    padding-block: 0.75rem;
+  }
+
+  .mesh-account-service-header > p {
+    display: none;
+  }
+
+  .mesh-account-service-choices .mesh-service-card {
+    row-gap: 0.5rem;
+    padding: 0.75rem;
+  }
+
+  .mesh-account-service-choices .mesh-service-card-actions > p {
+    display: none;
   }
 }
 
@@ -1545,20 +1518,8 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   outline: none;
 }
 
-.mesh-panel-resize-handle-left {
-  left: -4px;
-}
-
-.mesh-panel-resize-handle-right {
-  right: -4px;
-}
-
 .mesh-message-content {
   max-width: min(var(--party-message-measure), 100%);
-}
-
-.mesh-message-content .markdown-content {
-  font-size: var(--font-size-base);
 }
 
 .mesh-message-media {
@@ -1567,7 +1528,8 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   height: clamp(260px, 38vh, var(--party-media-max-height));
   max-height: var(--party-media-max-height);
   object-position: center;
-  box-shadow: none;
+  border-radius: var(--mesh-radius-card);
+  box-shadow: var(--elev-card);
 }
 
 .mesh-compact-header,
@@ -1579,12 +1541,43 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 .mesh-conversation-header {
   height: var(--party-header-height);
   min-height: var(--party-header-height);
-  background: var(--surface-canvas);
+  background: var(--surface-base);
+  box-shadow: 0 1px 0 var(--border-subtle);
+}
+
+.mesh-route-header {
+  min-height: var(--party-header-height);
+  background: var(--surface-base);
+  box-shadow: 0 1px 0 var(--border-subtle);
+}
+
+[data-mesh-route-heading]:focus {
+  outline: none !important;
+}
+
+.mesh-route-tab[aria-selected='true'] {
+  background: var(--surface-selected);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .mesh-channel-active {
-  color: var(--accent);
-  box-shadow: inset 1px 0 0 var(--accent);
+  border-color: var(--accent-container-line) !important;
+  background: var(--accent-container) !important;
+  color: var(--content-primary);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.mesh-channel-item {
+  min-height: var(--party-channel-row-height);
+  border-radius: var(--mesh-radius-tile);
+}
+
+.mesh-settings-content [role='tabpanel'] > section:not([hidden]) {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--mesh-radius-card);
+  background: var(--surface-raised);
+  padding: clamp(16px, 3vw, 24px);
+  box-shadow: var(--elev-card), var(--elev-inset);
 }
 
 .mesh-search-popover {
@@ -1608,6 +1601,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 
 .mesh-command-combobox {
   position: static;
+  padding: 12px;
 }
 
 .mesh-command-combobox > label {
@@ -1622,17 +1616,16 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 
 .mesh-command-combobox > input {
   border: 0;
-  border-radius: 0;
-  background: transparent;
-  padding: 14px 16px;
+  border-radius: var(--mesh-radius-tile);
+  background: var(--surface-sunken);
+  padding: 12px 14px;
 }
 
 .mesh-command-combobox > [role='listbox'] {
   position: static;
-  max-height: 20rem;
-  margin-top: 0;
+  max-height: 22rem;
+  margin-top: 8px;
   border: 0;
-  border-top: 1px solid var(--border-subtle);
   border-radius: 0;
   background: transparent;
   box-shadow: none;
@@ -1654,7 +1647,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
     z-index: 44;
     display: flex;
     width: min(var(--party-roster-width), calc(100vw - var(--party-rail-width)));
-    box-shadow: none;
+    box-shadow: var(--elev-overlay);
   }
 
   .mesh-secondary-pane {
@@ -1662,9 +1655,8 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
     inset-block: 0;
     right: 0;
     z-index: 44;
-    display: flex;
-    width: min(var(--party-roster-width), calc(100vw - var(--party-rail-width)));
-    box-shadow: none;
+    width: min(22rem, calc(100vw - var(--party-rail-width)));
+    box-shadow: var(--elev-overlay);
   }
 
   .mesh-room-context-backdrop {
@@ -1736,6 +1728,12 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 }
 
 @media (max-width: 639px) {
+  .mesh-message-media {
+    height: auto;
+    max-height: none;
+    aspect-ratio: 16 / 9;
+  }
+
   .mesh-voice-dock {
     gap: 4px;
     padding-inline: 8px;

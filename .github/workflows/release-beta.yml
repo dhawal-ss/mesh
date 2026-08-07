@@ -1,4 +1,4 @@
-name: Build signed Matrix beta candidate
+name: Build signed Matrix voice beta candidate
 
 # Candidate factory only. This workflow may create a signed draft prerelease
 # for external acceptance, but it must never publish or promote that draft.
@@ -29,6 +29,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -38,6 +39,7 @@ concurrency:
 env:
   MESH_RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.release_version || (startsWith(github.ref, 'refs/tags/') && github.ref_name || '0.2.0') }}
   MESH_RELEASE_TAG: ${{ inputs.release_tag }}
+  MESH_MATRIX_VOICE_FRONTEND: matrix-voice
 
 jobs:
   quality-gate:
@@ -47,6 +49,7 @@ jobs:
     outputs:
       create_candidate: ${{ steps.release-context.outputs.create_candidate }}
       release_tag: ${{ steps.release-context.outputs.release_tag }}
+      release_version: ${{ steps.release-context.outputs.release_version }}
       source_sha: ${{ steps.release-context.outputs.source_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,6 +64,7 @@ jobs:
           set -euo pipefail
           source_sha="$(git rev-parse HEAD)"
           release_tag=""
+          release_version="${MESH_RELEASE_VERSION#v}"
           create_candidate=false
           validation_only=false
 
@@ -103,13 +107,19 @@ jobs:
               echo "Release tag $release_tag is not contained in protected origin/main." >&2
               exit 1
             fi
+            if [[ "$release_tag" != "v$release_version" ]]; then
+              echo "Release tag $release_tag does not match requested version $release_version." >&2
+              exit 1
+            fi
           fi
 
           echo "create_candidate=$create_candidate" >> "$GITHUB_OUTPUT"
           echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
           echo "MESH_CREATE_CANDIDATE=$create_candidate" >> "$GITHUB_ENV"
           echo "MESH_RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
+          echo "MESH_RELEASE_VERSION=$release_version" >> "$GITHUB_ENV"
           echo "MESH_SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
           echo "MESH_VALIDATION_ONLY=$validation_only" >> "$GITHUB_ENV"
 
@@ -138,9 +148,13 @@ jobs:
 
       - name: Run frontend and browser gates
         working-directory: mesh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           npm audit --audit-level=high
+          npm audit --prefix feature-deps/matrix-voice --audit-level=high
           node --test ./scripts/release-factory-validation.test.mjs
+          npm run check:protected-evidence
           if [[ "$MESH_CREATE_CANDIDATE" == "true" ]]; then
             pwsh -NoProfile -File ./scripts/beta-release-preflight.ps1 \
               -Tag "$MESH_RELEASE_TAG" \
@@ -156,7 +170,8 @@ jobs:
           pwsh -NoProfile -File ./scripts/matrixrtc-preflight.ps1
           node --test ./scripts/check-external-acceptance.test.mjs
           node ./scripts/check-external-acceptance.mjs
-          pwsh -NoProfile -File ./scripts/operator-smoke.ps1
+          pwsh -NoProfile -File ./scripts/operator-smoke.ps1 -Milestone R2 -EnvironmentFile ./infra/operator-smoke/r2.env.example
+          pwsh -NoProfile -File ./scripts/operator-smoke.ps1 -Milestone R3
           npm run check:public-services
           npm run check:owner-decisions
           npm run check:beta-contract
@@ -178,7 +193,8 @@ jobs:
           fi
           npm run check:public-site
           npm test -- --maxWorkers=4
-          npm run build
+          npm run test:matrix-voice
+          npm run build:matrix-voice
           npm run check:release-sboms
           npm run check:bundle-size -- --report release/bundle-report.json
           pwsh -NoProfile -File ./scripts/beta-release-preflight.ps1 -VerifyFrontendBundle
@@ -203,11 +219,11 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Run Matrix backend gates
+      - name: Run Matrix voice backend gates
         working-directory: mesh/src-tauri
         run: |
-          cargo test --no-default-features --features matrix-backend --locked --jobs 1
-          cargo clippy --no-default-features --features matrix-backend --all-targets --locked --jobs 1 -- -D warnings
+          cargo test --no-default-features --features matrix-voice --locked --jobs 1
+          cargo clippy --no-default-features --features matrix-voice --all-targets --locked --jobs 1 -- -D warnings
 
       - name: Install pinned Rust advisory scanner
         run: |
@@ -235,27 +251,27 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-  container-supply-chain:
-    name: Candidate container scan (${{ matrix.name }})
+  container-supply-chain-r2:
+    name: R2 candidate container scan (${{ matrix.name }})
+    needs: quality-gate
+    if: ${{ needs.quality-gate.outputs.create_candidate == 'true' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: caddy
-            image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
-          - name: lk-jwt-service
-            image: ghcr.io/element-hq/lk-jwt-service:0.4.4@sha256:9c715697c6f7c1f538f2ee41b7b59b04a8d06bf790a7cc8c8517ccac8d28813d
-          - name: livekit-server
-            image: livekit/livekit-server:v1.13.5@sha256:3497163e15c48fef6e7830c78716f9e9d5edc28abf7aa90b61c86e93bbc306b1
+            image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
           - name: synapse
-            image: matrixdotorg/synapse:v1.157.1@sha256:d1fce43d7501428c461f2758dc10342555b946dc9f1d03c1b1b8aec1a4e8d130
+            image: matrixdotorg/synapse:v1.157.2@sha256:097e3120b8ecf97e4f92537d7af2da41564c706e33fc740f3741c9defacc2af1
           - name: nginx
             image: nginx:1.30.4-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46
           - name: postgres
             image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.quality-gate.outputs.source_sha }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
@@ -277,27 +293,82 @@ jobs:
           fail-build: true
           severity-cutoff: high
           only-fixed: true
+          grype-version: 0.116.1
           output-format: json
           output-file: candidate-${{ matrix.name }}-grype.json
       - name: Upload candidate container evidence
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: candidate-container-${{ matrix.name }}-${{ github.sha }}
+          name: candidate-container-${{ matrix.name }}-${{ needs.quality-gate.outputs.source_sha }}
           path: |
             candidate-${{ matrix.name }}.cdx.json
             candidate-${{ matrix.name }}-grype.json
           if-no-files-found: error
           retention-days: 90
 
+  container-supply-chain-r3:
+    name: Voice-gate container scan (${{ matrix.name }})
+    needs: quality-gate
+    if: ${{ needs.quality-gate.outputs.create_candidate == 'true' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: lk-jwt-service
+            image: ghcr.io/element-hq/lk-jwt-service:0.4.4@sha256:9c715697c6f7c1f538f2ee41b7b59b04a8d06bf790a7cc8c8517ccac8d28813d
+          - name: livekit-server
+            image: livekit/livekit-server:v1.13.5@sha256:3497163e15c48fef6e7830c78716f9e9d5edc28abf7aa90b61c86e93bbc306b1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.quality-gate.outputs.source_sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Validate exact voice container policy
+        working-directory: mesh
+        run: npm run check:container-supply-chain
+      - name: Generate voice container SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ matrix.image }}
+          format: cyclonedx-json
+          output-file: candidate-voice-${{ matrix.name }}.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Scan voice image for fixable high and critical vulnerabilities
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
+        with:
+          image: ${{ matrix.image }}
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
+          grype-version: 0.116.1
+          output-format: json
+          output-file: candidate-voice-${{ matrix.name }}-grype.json
+      - name: Upload candidate voice container evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate-voice-container-${{ matrix.name }}-${{ needs.quality-gate.outputs.source_sha }}
+          path: |
+            candidate-voice-${{ matrix.name }}.cdx.json
+            candidate-voice-${{ matrix.name }}-grype.json
+          if-no-files-found: error
+          retention-days: 90
+
   windows:
     name: Signed Windows Matrix beta candidate
-    needs: [quality-gate, container-supply-chain]
+    needs: [quality-gate, container-supply-chain-r2, container-supply-chain-r3]
     if: ${{ needs.quality-gate.outputs.create_candidate == 'true' }}
     runs-on: windows-latest
     timeout-minutes: 90
     environment: matrix-beta
     env:
       MESH_RELEASE_TAG: ${{ needs.quality-gate.outputs.release_tag }}
+      MESH_RELEASE_VERSION: ${{ needs.quality-gate.outputs.release_version }}
       MESH_SOURCE_SHA: ${{ needs.quality-gate.outputs.source_sha }}
       # Public desktop OAuth registrations are build inputs, not credentials,
       # but remain scoped to the protected candidate job.
@@ -448,16 +519,16 @@ jobs:
           } | ConvertTo-Json -Depth 4 -Compress
           "TAURI_CONFIG=$tauriConfig" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Verify Matrix production dependency compile
+      - name: Verify Matrix voice dependency compile
         shell: pwsh
         run: |
-          cargo check --manifest-path mesh/src-tauri/Cargo.toml --no-default-features --features matrix-backend --locked --jobs 1
+          cargo check --manifest-path mesh/src-tauri/Cargo.toml --no-default-features --features matrix-voice --locked --jobs 1
 
       - name: Generate release SBOMs
         shell: pwsh
         run: |
           Push-Location mesh
-          npm run build:matrix
+          npm run build:matrix-voice
           npm run generate:release-sboms
           npm run prepare:installer-payload -- --tag $env:MESH_RELEASE_TAG
           Pop-Location
@@ -474,6 +545,7 @@ jobs:
             sourceSha = $sourceSha
             releaseVersion = $env:MESH_RELEASE_VERSION.TrimStart("v")
             matrixBackendOnly = $true
+            matrixVoiceIncluded = $true
             legacyP2pIncluded = $false
             workflowRepository = $env:GITHUB_REPOSITORY
             workflowRunId = $env:GITHUB_RUN_ID
@@ -486,9 +558,9 @@ jobs:
           Copy-Item -LiteralPath mesh/build-provenance.json `
             -Destination mesh/release/installer-payload/provenance.json
 
-      - name: Build signed Matrix installers
+      - name: Build signed Matrix voice installers
         working-directory: mesh
-        run: npm run tauri -- build --features matrix-backend -- --no-default-features --locked --jobs 1
+        run: npm run tauri:build:matrix-voice
 
       - name: Verify compiled installer coexistence controls
         shell: pwsh

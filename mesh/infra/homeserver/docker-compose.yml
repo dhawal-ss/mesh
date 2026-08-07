@@ -32,7 +32,7 @@ services:
       - admission-db
 
   synapse:
-    image: matrixdotorg/synapse:v1.157.1@sha256:d1fce43d7501428c461f2758dc10342555b946dc9f1d03c1b1b8aec1a4e8d130
+    image: matrixdotorg/synapse:v1.157.2@sha256:097e3120b8ecf97e4f92537d7af2da41564c706e33fc740f3741c9defacc2af1
     restart: unless-stopped
     stop_grace_period: 60s
     depends_on:
@@ -74,7 +74,7 @@ services:
       - matrix-edge
 
   admission:
-    image: matrixdotorg/synapse:v1.157.1@sha256:d1fce43d7501428c461f2758dc10342555b946dc9f1d03c1b1b8aec1a4e8d130
+    image: matrixdotorg/synapse:v1.157.2@sha256:097e3120b8ecf97e4f92537d7af2da41564c706e33fc740f3741c9defacc2af1
     restart: unless-stopped
     stop_grace_period: 30s
     depends_on:
@@ -134,7 +134,7 @@ services:
       - admission-control
 
   caddy:
-    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
     profiles: ["public"]
     restart: unless-stopped
     stop_grace_period: 30s

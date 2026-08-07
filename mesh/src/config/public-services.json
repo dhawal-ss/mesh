@@ -5,8 +5,13 @@
     "accountDomain": "matrix.org",
     "serviceAddress": "matrix.org",
     "homeserverUrl": "https://matrix-client.matrix.org",
+    "matrixRtc": {
+      "type": "livekit",
+      "authorizationUrl": "https://livekit-jwt.call.matrix.org"
+    },
     "operator": "The Matrix.org Foundation C.I.C.",
     "jurisdiction": "United Kingdom",
+    "minimumAge": 18,
     "registration": {
       "kind": "external",
       "url": "https://app.element.io/#/register",
@@ -47,8 +52,13 @@
     "accountDomain": "tchncs.de",
     "serviceAddress": "tchncs.de",
     "homeserverUrl": "https://matrix.tchncs.de",
+    "matrixRtc": {
+      "type": "livekit",
+      "authorizationUrl": "https://rtc.matrix.tchncs.de/livekit/jwt"
+    },
     "operator": "tchncs.de",
     "jurisdiction": "Germany; service infrastructure in Germany and Finland",
+    "minimumAge": 16,
     "registration": {
       "kind": "external",
       "url": "https://chat.tchncs.de/#/register",
@@ -69,6 +79,7 @@
     },
     "notes": [
       "Public community service operated independently from Mesh.",
+      "Requires users to be at least 16 under the operator's current terms.",
       "The operator reports seven-day IP logging and describes current retention limitations on its privacy page.",
       "Create accounts in the operator's web client because reCAPTCHA is restricted to approved browser origins."
     ],
@@ -88,8 +99,13 @@
     "accountDomain": "quassel.io",
     "serviceAddress": "quassel.io",
     "homeserverUrl": "https://matrix.quassel.io",
+    "matrixRtc": {
+      "type": "livekit",
+      "authorizationUrl": "https://livekit.quassel.io/livekit/jwt"
+    },
     "operator": "Hannes Thöne",
     "jurisdiction": "Germany; dedicated server and daily backups in Germany",
+    "minimumAge": 18,
     "registration": {
       "kind": "external",
       "url": "https://chat.quassel.io/#/register",

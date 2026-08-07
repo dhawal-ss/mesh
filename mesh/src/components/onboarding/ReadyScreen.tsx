@@ -96,6 +96,16 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
     }
   }, [isDone, failure, onComplete])
 
+  const primaryAction = (
+    <Button
+      disabled={!isDone || !!failure}
+      onClick={handleContinue}
+      className="w-full"
+    >
+      {isDone && !failure ? 'Open Mesh' : state.phase === 'ready' ? 'Finishing up...' : 'Connecting...'}
+    </Button>
+  )
+
   return (
     <div className="space-y-8">
       <div className="space-y-2">
@@ -112,13 +122,20 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
         </p>
       </div>
 
+      {isDone && !failure ? primaryAction : null}
+
       <motion.div
         className="space-y-5 rounded-panel border border-border-subtle bg-surface-sunken p-5"
         initial={{ y: 6 }}
         animate={{ y: 0 }}
         transition={transitions.enter}
       >
-        <div className="flex items-center justify-between gap-4">
+        <div
+          className="flex items-center justify-between gap-4"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
           <div className="space-y-1">
             <p className="text-sm font-medium text-primary">{state.label}</p>
             <p className="text-2xs uppercase tracking-section text-muted">
@@ -131,7 +148,15 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
           </div>
         </div>
 
-        <div className="h-1 overflow-hidden rounded-full bg-surface-hover">
+        <div
+          className="h-1 overflow-hidden rounded-full bg-surface-hover"
+          role="progressbar"
+          aria-label="Mesh setup progress"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={state.progress}
+          aria-valuetext={`${state.label}, ${state.progress}%`}
+        >
           <motion.div
             className="h-full w-full origin-left rounded-full bg-accent"
             animate={{ scaleX: Math.max(12, state.progress) / 100 }}
@@ -176,16 +201,11 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
           error={failure}
           context={{ operation: 'finish setting up your account' }}
           onAction={() => setAttempt((value) => value + 1)}
+          actionLabel="Try again"
         />
       ) : null}
 
-      <Button
-        disabled={!isDone || !!failure}
-        onClick={handleContinue}
-        className="w-full"
-      >
-        {isDone && !failure ? 'Open Mesh' : state.phase === 'ready' ? 'Finishing up...' : 'Connecting...'}
-      </Button>
+      {!isDone || failure ? primaryAction : null}
 
       <div className="flex items-center justify-between">
         {onBack && (

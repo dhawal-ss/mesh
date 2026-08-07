@@ -34,16 +34,16 @@ interface PaletteCommand {
 }
 
 const SHORTCUTS = [
-  ['Ctrl/⌘ K', 'Open command palette'],
-  ['Ctrl/⌘ Shift A', 'Jump to next unread room'],
-  ['Alt ↑ / ↓', 'Previous / next room'],
-  ['Ctrl/⌘ Alt ↑ / ↓', 'Previous / next community'],
-  ['Esc', 'Mark the current room read'],
-  ['↑ in empty composer', 'Edit your latest message'],
-  ['Shift Esc', 'Mark the current community read'],
-  ['Ctrl/⌘ Shift M', 'Toggle mute'],
-  ['Ctrl/⌘ Shift D', 'Toggle deafen'],
-  ['Ctrl/⌘ /', 'Show keyboard shortcuts'],
+  ['Ctrl/⌘ K', 'Open command palette', false],
+  ['Ctrl/⌘ Shift A', 'Jump to next unread room', false],
+  ['Alt ↑ / ↓', 'Previous / next room', false],
+  ['Ctrl/⌘ Alt ↑ / ↓', 'Previous / next community', false],
+  ['Esc', 'Mark the current room read', false],
+  ['↑ in empty composer', 'Edit your latest message', false],
+  ['Shift Esc', 'Mark the current community read', false],
+  ['Ctrl/⌘ Shift M', 'Toggle mute', true],
+  ['Ctrl/⌘ Shift D', 'Toggle deafen', true],
+  ['Ctrl/⌘ /', 'Show keyboard shortcuts', false],
 ] as const
 
 function loadRecents(): string[] {
@@ -139,7 +139,7 @@ export function accountServiceContext(userId: string): string | null {
   const separator = userId.lastIndexOf(':')
   const service = separator >= 0 ? userId.slice(separator + 1).trim() : ''
   return service
-    ? `Account service: ${service} (independently operated)`
+    ? `Account service: ${service}`
     : null
 }
 
@@ -208,9 +208,11 @@ export function CommandPalette() {
   const isMuted = useVoiceStore((state) => state.isMuted)
   const isDeafened = useVoiceStore((state) => state.isDeafened)
   const [open, setOpen] = useState(false)
+  const [scope, setScope] = useState<'all' | 'people'>('all')
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [recents, setRecents] = useState(loadRecents)
   const matrixMode = bridge.isMatrixBackend()
+  const voiceAvailable = bridge.getBackendCapabilities().voice
 
   const commands = useMemo<PaletteCommand[]>(() => {
     const entries: PaletteCommand[] = []
@@ -348,7 +350,7 @@ export function CommandPalette() {
       entries.push({
         id: 'action:explore-servers',
         group: 'Actions',
-        title: 'Explore communities',
+        title: 'Find a community',
         icon: 'search',
         keywords: ['explore', 'discover', 'search', 'community'],
         activityRank: 100,
@@ -357,8 +359,9 @@ export function CommandPalette() {
         },
       })
     }
-    entries.push(
-      {
+    if (voiceAvailable) {
+      entries.push(
+        {
         id: 'action:toggle-mute',
         group: 'Actions',
         title: `${isMuted ? 'Unmute' : 'Mute'} microphone`,
@@ -366,8 +369,8 @@ export function CommandPalette() {
         keywords: ['toggle', 'mute', 'microphone', 'voice'],
         activityRank: 100,
         run: () => useVoiceStore.getState().setMuted(!useVoiceStore.getState().isMuted),
-      },
-      {
+        },
+        {
         id: 'action:toggle-deafen',
         group: 'Actions',
         title: `${isDeafened ? 'Undeafen' : 'Deafen'} audio`,
@@ -375,7 +378,10 @@ export function CommandPalette() {
         keywords: ['toggle', 'deafen', 'audio', 'voice'],
         activityRank: 100,
         run: () => useVoiceStore.getState().setDeafened(!useVoiceStore.getState().isDeafened),
-      },
+        },
+      )
+    }
+    entries.push(
       {
         id: 'action:show-shortcuts',
         group: 'Actions',
@@ -399,18 +405,25 @@ export function CommandPalette() {
     matrixMode,
     membersByCommunity,
     ownPublicKey,
+    voiceAvailable,
   ])
 
   const orderedCommands = useMemo(
     () => sortCommandsByRecency(sortCommandsByActivity(commands), recents),
     [commands, recents],
   )
+  const scopedCommands = useMemo(
+    () => scope === 'people'
+      ? orderedCommands.filter((command) => command.group === 'People' || command.group === 'Messages')
+      : orderedCommands,
+    [orderedCommands, scope],
+  )
   const commandById = useMemo(
     () => new Map(commands.map((command) => [command.id, command] as const)),
     [commands],
   )
   const options = useMemo<ComboboxOption[]>(
-    () => orderedCommands.map((command) => ({
+    () => scopedCommands.map((command) => ({
       value: command.id,
       label: command.title,
       group: recents.includes(command.id) ? 'Recent' : command.group,
@@ -419,11 +432,17 @@ export function CommandPalette() {
       icon: <Icon name={command.icon} size="sm" />,
       keywords: command.keywords,
     })),
-    [orderedCommands, recents],
+    [recents, scopedCommands],
   )
 
   useEffect(() => {
-    const openPalette = () => setOpen(true)
+    const openPalette = (event: Event) => {
+      const nextScope = event instanceof CustomEvent && event.detail === 'people'
+        ? 'people'
+        : 'all'
+      setScope(nextScope)
+      setOpen(true)
+    }
     const handleKeyDown = (event: KeyboardEvent) => {
       // Another handler (the navigation drawer, the room-context panel) has
       // already claimed this key. Without this guard, Escape both dismissed the
@@ -433,7 +452,11 @@ export function CommandPalette() {
       const key = event.key.toLocaleLowerCase()
       if (primary && !event.altKey && !event.shiftKey && key === 'k') {
         event.preventDefault()
-        setOpen((current) => !current)
+        setOpen((current) => {
+          const nextOpen = !current
+          if (nextOpen) setScope('all')
+          return nextOpen
+        })
         return
       }
       if (primary && !event.altKey && !event.shiftKey && event.key === '/') {
@@ -448,13 +471,13 @@ export function CommandPalette() {
       // every room in the community while the user was typing.
       if (isEditableTarget(event.target)) return
 
-      if (primary && event.shiftKey && !event.altKey && key === 'm') {
+      if (voiceAvailable && primary && event.shiftKey && !event.altKey && key === 'm') {
         event.preventDefault()
         const voice = useVoiceStore.getState()
         voice.setMuted(!voice.isMuted)
         return
       }
-      if (primary && event.shiftKey && !event.altKey && key === 'd') {
+      if (voiceAvailable && primary && event.shiftKey && !event.altKey && key === 'd') {
         event.preventDefault()
         const voice = useVoiceStore.getState()
         voice.setDeafened(!voice.isDeafened)
@@ -523,6 +546,7 @@ export function CommandPalette() {
     communities,
     open,
     shortcutsOpen,
+    voiceAvailable,
   ])
 
   const execute = async (commandId: string) => {
@@ -542,6 +566,11 @@ export function CommandPalette() {
       <Command
         open={open}
         onOpenChange={setOpen}
+        title={scope === 'people' ? 'Start a private conversation' : 'Command palette'}
+        description={scope === 'people'
+          ? 'Account services are independently operated. People from your communities and conversations.'
+          : 'Rooms, people, settings, and actions'}
+        placeholder={scope === 'people' ? 'Find someone to message…' : 'Search Mesh…'}
         options={options}
         onSelect={execute}
         filterOptions={filterPaletteOptions}
@@ -554,7 +583,8 @@ export function CommandPalette() {
         description="Navigate Mesh without leaving the keyboard."
       >
         <dl className="space-y-2">
-          {SHORTCUTS.map(([keys, description]) => (
+          {SHORTCUTS.filter(([, , voiceOnly]) => !voiceOnly || voiceAvailable)
+            .map(([keys, description]) => (
             <div key={keys} className="flex items-center justify-between gap-4">
               <dt><Kbd>{keys}</Kbd></dt>
               <dd className="text-right text-sm text-content-secondary">{description}</dd>

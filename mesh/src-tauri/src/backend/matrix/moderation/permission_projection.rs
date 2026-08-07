@@ -135,25 +135,6 @@ async fn read_room_projection(room: &Room) -> MatrixRoomPermissionProjection {
             ),
         };
     };
-    let joined_user_ids = match room.members(RoomMemberships::JOIN).await {
-        Ok(members) => members
-            .into_iter()
-            .map(|member| member.user_id().to_string())
-            .collect(),
-        Err(_) => {
-            return MatrixRoomPermissionProjection {
-                room_id,
-                room_name,
-                room_kind,
-                status: MatrixPermissionRoomStatus::Failed,
-                policy: None,
-                failure_reason: Some(
-                    "Current membership could not be read, so owner recovery cannot be verified."
-                        .into(),
-                ),
-            };
-        }
-    };
     let (status, power_levels) = if event.is_some() {
         match room.power_levels().await {
             Ok(power_levels) => (MatrixPermissionRoomStatus::Loaded, power_levels),
@@ -182,11 +163,7 @@ async fn read_room_projection(room: &Room) -> MatrixRoomPermissionProjection {
         room_name,
         room_kind,
         status,
-        policy: Some(project_power_levels(
-            &power_levels,
-            creators,
-            joined_user_ids,
-        )),
+        policy: Some(project_power_levels(&power_levels, creators)),
         failure_reason: None,
     }
 }
@@ -212,7 +189,6 @@ fn inaccessible_room(
 pub(super) fn project_power_levels(
     power_levels: &RoomPowerLevels,
     creators: Vec<OwnedUserId>,
-    joined_user_ids: Vec<String>,
 ) -> MatrixRoomPowerLevelProjection {
     let creator_user_ids = creators.iter().map(ToString::to_string).collect::<Vec<_>>();
     let privileged_creator_user_ids = creators
@@ -244,7 +220,6 @@ pub(super) fn project_power_levels(
         )]),
         creator_user_ids,
         privileged_creator_user_ids,
-        joined_user_ids,
     }
 }
 
@@ -350,10 +325,14 @@ pub(super) fn ensure_authoritative_role_change(
     }
     let resulting_role_threshold =
         permission_threshold(&resulting_policy, CommunityPermissionId::Roles);
-    let recovery_path_exists = resulting_policy.joined_user_ids.iter().any(|user_id| {
-        effective_user_level(&resulting_policy, user_id)
-            >= EffectivePowerLevel::Finite(resulting_role_threshold)
-    });
+    // `MatrixModerationAction::apply` only receives protected joined rooms for
+    // the authenticated actor, and self-targeting is rejected before this
+    // check. Requiring that actor to retain the resulting role-management
+    // authority proves a recovery path without materializing every joined
+    // member in the room. This is intentionally fail-closed for rooms where a
+    // lower-powered actor currently relies on another owner.
+    let recovery_path_exists = effective_user_level(&resulting_policy, actor_user_id.as_str())
+        >= EffectivePowerLevel::Finite(resulting_role_threshold);
     if !recovery_path_exists {
         return Err(BackendError::PermissionDenied(format!(
             "{room_name} would have no effective owner or recovery path."
@@ -488,7 +467,7 @@ mod tests {
     }
 
     #[test]
-    fn protects_privileged_creators_last_owner_and_escalation() {
+    fn protects_privileged_creators_and_blocks_equal_authority_escalation() {
         let actor = matrix_sdk::ruma::user_id!("@owner:example.org");
         let target = matrix_sdk::ruma::user_id!("@backup:example.org");
         let mut policy = loaded_room("!space:example.org", 100).policy.unwrap();
@@ -499,21 +478,27 @@ mod tests {
         policy.users.insert(target.to_string(), 100);
         policy.users.insert(actor.to_string(), 50);
         assert!(ensure_authoritative_role_change(&policy, actor, target, 50, "Community").is_err());
+    }
 
-        policy.users.insert(actor.to_string(), 0);
-        policy.users.insert(target.to_string(), 100);
-        policy
-            .privileged_creator_user_ids
-            .push("@creator:example.org".into());
-        policy.joined_user_ids = vec![target.to_string()];
-        assert!(ensure_authoritative_role_change(
-            &policy,
-            matrix_sdk::ruma::user_id!("@creator:example.org"),
-            target,
-            0,
-            "Community"
-        )
-        .is_err());
+    #[test]
+    fn joined_actor_must_retain_hardened_role_recovery_authority() {
+        let actor = matrix_sdk::ruma::user_id!("@owner:example.org");
+        let target = matrix_sdk::ruma::user_id!("@member:example.org");
+        let mut policy = loaded_room("!space:example.org", 50).policy.unwrap();
+        policy.users.insert(actor.to_string(), 50);
+        policy.users.insert(target.to_string(), 0);
+        assert!(ensure_authoritative_role_change(&policy, actor, target, 0, "Community").is_err());
+
+        policy.users.insert(actor.to_string(), 100);
+        assert!(ensure_authoritative_role_change(&policy, actor, target, 0, "Community").is_ok());
+    }
+
+    #[test]
+    fn permission_projection_never_materializes_room_member_collections() {
+        let source = include_str!("permission_projection.rs");
+        let implementation = source.split("#[cfg(test)]").next().unwrap();
+        assert!(!implementation.contains(".members("));
+        assert!(!implementation.contains("members_no_sync"));
     }
 
     fn status(
@@ -556,11 +541,6 @@ mod tests {
                 notifications: BTreeMap::from([("room".into(), 50)]),
                 creator_user_ids: vec!["@owner:example.org".into()],
                 privileged_creator_user_ids: Vec::new(),
-                joined_user_ids: vec![
-                    "@owner:example.org".into(),
-                    "@admin:example.org".into(),
-                    "@backup:example.org".into(),
-                ],
             }),
         }
     }

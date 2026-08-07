@@ -16,6 +16,10 @@ let simulateWorkspaceVoice = false
 let simulateWorkspaceInvitation = false
 let simulateWorkspaceSignedOut = false
 let simulateWorkspaceQueue = false
+let simulateWorkspaceQueueRestoreFailure = false
+let simulateWorkspaceQueueListenerFailure = false
+let simulateWorkspaceEmojiPickerCancel = false
+let simulateWorkspaceEmojiUploadFailure = false
 if (import.meta.env.DEV && devView === 'workspace') {
   const [previewRuntime, previewState] = await Promise.all([
     import('./dev/installWorkspacePreview'),
@@ -26,11 +30,19 @@ if (import.meta.env.DEV && devView === 'workspace') {
   simulateWorkspaceInvitation = previewParameters.get('simulateInvitation') === 'true'
   simulateWorkspaceSignedOut = previewParameters.get('simulateSignedOut') === 'true'
   simulateWorkspaceQueue = previewParameters.get('simulateQueue') === 'true'
+  simulateWorkspaceQueueRestoreFailure = previewParameters.get('simulateQueueRestoreFailure') === 'true'
+  simulateWorkspaceQueueListenerFailure = previewParameters.get('simulateQueueListenerFailure') === 'true'
+  simulateWorkspaceEmojiPickerCancel = previewParameters.get('simulateEmojiPickerCancel') === 'true'
+  simulateWorkspaceEmojiUploadFailure = previewParameters.get('simulateEmojiUploadFailure') === 'true'
   previewRuntime.installWorkspacePreview({
     simulateVoice: simulateWorkspaceVoice,
     simulateInvitation: simulateWorkspaceInvitation,
     simulateSignedOut: simulateWorkspaceSignedOut,
     simulateQueue: simulateWorkspaceQueue,
+    simulateQueueRestoreFailure: simulateWorkspaceQueueRestoreFailure,
+    simulateQueueListenerFailure: simulateWorkspaceQueueListenerFailure,
+    simulateEmojiPickerCancel: simulateWorkspaceEmojiPickerCancel,
+    simulateEmojiUploadFailure: simulateWorkspaceEmojiUploadFailure,
   })
   WorkspacePreviewState = previewState.WorkspacePreviewState
 }

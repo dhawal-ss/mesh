@@ -27,7 +27,7 @@ export interface MatrixVoiceCredentials {
   sessionId: string
   url: string
   token: string
-  mediaE2eeVerified: boolean
+  mediaE2eeReady: boolean
 }
 
 export interface VoiceDevice {
@@ -267,6 +267,7 @@ export class LiveKitVoiceEngine {
   private room: Room | null = null
   private credentials: MatrixVoiceCredentials | null = null
   private keyProvider: MatrixRtcKeyProvider | null = null
+  private encryptionWorker: Worker | null = null
   private readonly keyedParticipantIdentities = new Set<string>()
   private readonly participantVolumes = new Map<string, number>()
   private readonly roomFactory: RoomFactory
@@ -326,7 +327,7 @@ export class LiveKitVoiceEngine {
     }
     if (
       !credentials.token ||
-      !credentials.mediaE2eeVerified ||
+      !credentials.mediaE2eeReady ||
       !credentials.sessionId
     ) {
       throw new Error('Calling service did not return complete encrypted session credentials')
@@ -336,7 +337,7 @@ export class LiveKitVoiceEngine {
       localMediaKey.roomId !== credentials.roomId ||
       localMediaKey.memberId !== credentials.memberId ||
       localMediaKey.participantIdentity !== credentials.participantIdentity ||
-      localMediaKey.sessionId !== null ||
+      localMediaKey.sessionId !== credentials.sessionId ||
       localMediaKey.activationId !== null
     ) {
       throw new Error('Calling service did not deliver the local participant media key')
@@ -350,7 +351,7 @@ export class LiveKitVoiceEngine {
       sessionId: credentials.sessionId,
       url: credentials.url,
       token: credentials.token,
-      mediaE2eeVerified: credentials.mediaE2eeVerified,
+      mediaE2eeReady: credentials.mediaE2eeReady,
     }
     this.microphoneMuted = !microphoneEnabled
     this.desiredCameraEnabled = false
@@ -365,15 +366,24 @@ export class LiveKitVoiceEngine {
     this.handlers.onConnectionState?.('connecting', null)
 
     const encryption = await this.encryptionFactory()
-    await encryption.keyProvider.setParticipantKey(localMediaKey)
-    this.currentLocalKeyIndex = localMediaKey.keyIndex
-    this.keyedParticipantIdentities.add(localMediaKey.participantIdentity)
-    this.keyProvider = encryption.keyProvider
-    if (
-      !initialLease ||
-      !this.updatePublicationLease(initialLease, this.publicationEpoch)
-    ) {
-      throw new Error('Calling service did not provide a valid publication lease')
+    this.encryptionWorker = encryption.worker
+    try {
+      await encryption.keyProvider.setParticipantKey(localMediaKey)
+      this.currentLocalKeyIndex = localMediaKey.keyIndex
+      this.keyedParticipantIdentities.add(localMediaKey.participantIdentity)
+      this.keyProvider = encryption.keyProvider
+      if (
+        !initialLease ||
+        !this.updatePublicationLease(initialLease, this.publicationEpoch)
+      ) {
+        throw new Error('Calling service did not provide a valid publication lease')
+      }
+    } catch (error) {
+      this.keyProvider = null
+      this.currentLocalKeyIndex = null
+      this.keyedParticipantIdentities.clear()
+      this.terminateEncryptionWorker()
+      throw error
     }
     const room = this.roomFactory({
       adaptiveStream: true,
@@ -443,6 +453,7 @@ export class LiveKitVoiceEngine {
     if (!room) {
       this.credentials = null
       this.keyProvider = null
+      this.terminateEncryptionWorker()
       this.mediaKeysReady = false
       this.keyedParticipantIdentities.clear()
       this.publicationPaused = false
@@ -460,6 +471,7 @@ export class LiveKitVoiceEngine {
     } finally {
       this.credentials = null
       this.keyProvider = null
+      this.terminateEncryptionWorker()
       this.mediaKeysReady = false
       this.keyedParticipantIdentities.clear()
       this.publicationPaused = false
@@ -1072,5 +1084,11 @@ export class LiveKitVoiceEngine {
       clearInterval(this.levelTimer)
       this.levelTimer = null
     }
+  }
+
+  private terminateEncryptionWorker(): void {
+    const worker = this.encryptionWorker
+    this.encryptionWorker = null
+    worker?.terminate()
   }
 }

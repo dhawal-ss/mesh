@@ -129,7 +129,9 @@ export function OnboardingFlow({
             </span>
           </div>
 
-          <div className="mt-6 sm:mt-0 lg:mt-14">
+          <div className={`mesh-onboarding-pitch mt-6 sm:mt-0 lg:mt-14 ${
+            initialPendingInvitation ? 'mesh-onboarding-pitch-invitation hidden sm:block' : ''
+          }`}>
             <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">
               {initialPendingInvitation ? 'Invitation ready' : 'Your account, your crew'}
             </p>
@@ -160,7 +162,7 @@ export function OnboardingFlow({
 
         <div className="mesh-onboarding-content flex min-h-0 min-w-0 flex-col bg-surface-raised px-5 py-4 sm:px-8 sm:py-5 lg:px-12">
           {initialPendingInvitation ? (
-            <div className="mb-4 flex-none">
+            <div className="mesh-onboarding-invitation-destination mb-4 flex-none">
               <InvitationDestinationCard pending={initialPendingInvitation} compact />
             </div>
           ) : null}

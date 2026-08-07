@@ -11,7 +11,9 @@ must have a primary and backup contact outside this repository.
 
 Route incidents to the authority that can act:
 
-* Mesh client vulnerabilities use GitHub private vulnerability reporting.
+* Mesh client vulnerabilities use the confidential route published on the
+  security page once that route is enabled. Until then, consumer beta remains
+  blocked and exploit details must not be placed in a public issue.
 * Account access, provider moderation, or provider availability go to the
   selected account-service operator.
 * Community membership, rules, and room moderation go to community admins.

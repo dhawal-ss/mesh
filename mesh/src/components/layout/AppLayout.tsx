@@ -17,7 +17,7 @@ import { useChannelStore, type CommunityRefreshState } from '../../store/channel
 import { useCommunityStore } from '../../store/communities'
 import { useDmStore, type LoadStatus } from '../../store/dms'
 import { useIdentityStore } from '../../store/identity'
-import { isBackupReminderDue, useSettingsStore } from '../../store/settings'
+import { useSettingsStore } from '../../store/settings'
 import { useShellStore } from '../../store/shell'
 import * as bridge from '../../lib/bridge'
 import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
@@ -25,7 +25,12 @@ import { Icon } from '../ui/Icon'
 import { useNotificationSync } from '../../hooks/useNotificationSync'
 import { useNetworkStore } from '../../store/network'
 import { COMPACT_VIEWPORT_QUERY, useMediaQuery } from '../../hooks/useMediaQuery'
-import { useQueuedMessageSync } from '../../hooks/useQueuedMessageSync'
+import {
+  useQueuedMessageSync,
+  type QueuedMessageSyncStatus,
+} from '../../hooks/useQueuedMessageSync'
+import { useFirstSessionRecoveryReminder } from '../../hooks/useFirstSessionRecoveryReminder'
+import { useIgnoredUserSync } from '../../hooks/useIgnoredUserSync'
 import { CONTEXT_SIDEBAR_WIDTH_KEY } from '../../lib/layout-preferences'
 import { usePersistentPanelWidth } from '../../hooks/usePersistentPanelWidth'
 import { PanelResizeHandle } from './PanelResizeHandle'
@@ -53,10 +58,50 @@ export function hasAuthoritativeSavedRoomSnapshot(
   return kind === 'dm' ? conversationStatus === 'loaded' : roomStatus === 'loaded'
 }
 
-export function AppLayout() {
+export function QueuedMessageSyncNotice({
+  status,
+  onRetry,
+}: {
+  status: QueuedMessageSyncStatus
+  onRetry: () => void
+}) {
+  const failed = status === 'failed' || status === 'retrying-failed'
+  const degraded = status === 'degraded' || status === 'retrying-degraded'
+  const retrying = status === 'retrying-failed' || status === 'retrying-degraded'
+  if (!degraded && !failed) return null
+
+  return (
+    <div
+      role={failed ? 'alert' : 'status'}
+      className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-status-warning/30 bg-status-warning/10 px-4 py-2 text-center text-xs text-content"
+    >
+      <span>
+        {failed
+          ? 'Mesh couldn’t restore saved messages. They are still saved on this device.'
+          : 'Saved messages are visible, but their status may not update yet.'}
+      </span>
+      <button
+        type="button"
+        className="font-semibold text-accent hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        onClick={onRetry}
+        disabled={retrying}
+      >
+        {retrying ? 'Trying again…' : 'Try again'}
+      </button>
+    </div>
+  )
+}
+
+export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }) {
   useCommunitySync()
   const matrixMode = bridge.isMatrixBackend()
-  useQueuedMessageSync(matrixMode)
+  useIgnoredUserSync(matrixMode)
+  const networkStatus = useNetworkStore((state) => state.status)
+  const recoveredConnection = useNetworkStore((state) => state.recoveredConnection)
+  const queuedMessageSync = useQueuedMessageSync(
+    matrixMode,
+    recoveredConnection?.recoveredAt,
+  )
   const directMessagesAvailable = bridge.getBackendCapabilities().directMessages
   const activeChannelId = useChannelStore((state) => state.activeChannelId)
   const activeChannel = useChannelStore((state) => (
@@ -73,15 +118,11 @@ export function AppLayout() {
   const conversationEntities = useDmStore((state) => state.conversationEntities)
   const setActiveConversation = useDmStore((state) => state.setActiveConversation)
   const setDmMode = useDmStore((state) => state.setDmMode)
-  const backup = useSettingsStore((state) => state.backup)
   const dismissBackupReminder = useSettingsStore((state) => state.dismissBackupReminder)
   const pendingInvitation = useShellStore((state) => state.pendingInvitation)
   const foregroundInvitationHandle = useShellStore(
     (state) => state.foregroundInvitationHandle,
   )
-  const backupReminderDue = isBackupReminderDue(backup)
-  const networkStatus = useNetworkStore((state) => state.status)
-  const recoveredConnection = useNetworkStore((state) => state.recoveredConnection)
   const contextSidebarWidth = usePersistentPanelWidth({
     storageKey: CONTEXT_SIDEBAR_WIDTH_KEY,
     defaultWidth: 250,
@@ -92,6 +133,14 @@ export function AppLayout() {
   const myPublicKey = useIdentityStore((state) => state.identity?.publicKey)
   const roomTabAccountId = myPublicKey ?? 'local-device'
   const route = useCurrentMeshRoute()
+  const backupReminderDue = useFirstSessionRecoveryReminder({
+    matrixMode,
+    accountId: myPublicKey ?? null,
+    successfulUse: queuedMessageSync.status === 'ready'
+      || queuedMessageSync.status === 'degraded',
+    invitationForegrounded: route.kind === 'invitation'
+      || foregroundInvitationHandle !== null,
+  })
   const navigationHydrated = useMeshNavigationStore((state) => state.hydrated)
   const initializeNavigation = useMeshNavigationStore((state) => state.initialize)
   const navigate = useMeshNavigationStore((state) => state.navigate)
@@ -145,7 +194,11 @@ export function AppLayout() {
               : activeChannel?.name
                 ? `Conversation in ${activeChannel.name}`
                 : 'Conversation'
-  useNotificationSync({ matrixMode, activeRoomId })
+  useNotificationSync({
+    matrixMode,
+    accountUserId: matrixMode ? (myPublicKey ?? null) : null,
+    activeRoomId,
+  })
 
   useEffect(() => {
     initializeNavigation(roomTabAccountId)
@@ -371,7 +424,7 @@ export function AppLayout() {
   // at all (real failure), the user sees errors elsewhere. Solo is
   // advertised gently via the sidebar indicator instead.
   return (
-    <div className="mesh-app-shell relative flex h-screen flex-col overflow-hidden bg-surface-base text-content">
+    <div className="mesh-app-shell relative flex h-full flex-col overflow-hidden bg-surface-base text-content">
       {/*
         Skip link. The room list is a flat list of buttons, so in a community
         with forty rooms it cost forty-plus Tab presses to reach the
@@ -391,13 +444,13 @@ export function AppLayout() {
           role="status"
           className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-status-warning/30 bg-status-warning/10 px-4 py-2 text-xs text-content"
         >
-          <span>Your messages are not backed up yet. Save a backup code in Your devices.</span>
+          <span>Message backup needs attention. Check it in Your devices.</span>
           <button
             type="button"
             className="font-semibold text-accent hover:underline"
             onClick={() => navigate({ kind: 'you', section: 'safety-devices' })}
           >
-            Open profile
+            Review backup
           </button>
           <button
             type="button"
@@ -422,8 +475,16 @@ export function AppLayout() {
           role="status"
           className="border-b border-status-success/30 bg-status-success/10 px-4 py-2 text-center text-xs text-content"
         >
-          Connection restored. Saved messages can continue sending and new activity can arrive.
+          {queuedMessageSync.status === 'ready'
+            ? 'Connection restored. Saved messages can continue sending and new activity can arrive.'
+            : 'Connection restored. New activity can arrive.'}
         </div>
+      )}
+      {matrixMode && (
+        <QueuedMessageSyncNotice
+          status={queuedMessageSync.status}
+          onRetry={queuedMessageSync.retry}
+        />
       )}
       <div className="mesh-workspace-frame flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <nav
@@ -548,7 +609,7 @@ export function AppLayout() {
               || route.kind === 'you'
               || route.kind === 'invitation'
               || route.kind === 'community-admin' ? (
-              <RouteSurface route={route} />
+              <RouteSurface route={route} onSignInRequired={onSignInRequired} />
             ) : directRouteActive && directMessagesAvailable ? (
               <ScopedErrorBoundary
                 name="Direct messages"

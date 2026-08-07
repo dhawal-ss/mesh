@@ -1,3 +1,15 @@
+const MAX_SEND_QUEUE_ACCOUNT_MESSAGES: usize = 512;
+const MAX_SEND_QUEUE_ROOM_MESSAGES: usize = 128;
+const MAX_SEND_QUEUE_ACCOUNT_UTF8_BYTES: usize = 4 * 1024 * 1024;
+const MAX_SEND_QUEUE_ROOM_UTF8_BYTES: usize = 1024 * 1024;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct SendQueueUsage {
+    messages: usize,
+    utf8_bytes: usize,
+    exceeded: bool,
+}
+
 struct TimelineValuesPage {
     values: Vec<serde_json::Value>,
     anchor_seen: bool,
@@ -8,6 +20,90 @@ struct TimelineValuesPage {
 impl MatrixBackend {
     const UNDECRYPTABLE_REASON_KEY: &'static str = "org.mesh.undecryptable_reason";
     const MAX_ROOM_UPGRADE_HOPS: usize = 16;
+
+    fn bounded_send_queue_usage_bytes(
+        utf8_bytes: impl IntoIterator<Item = usize>,
+        max_messages: usize,
+        max_utf8_bytes: usize,
+    ) -> SendQueueUsage {
+        let mut usage = SendQueueUsage::default();
+        for item_bytes in utf8_bytes {
+            if usage.messages >= max_messages
+                || item_bytes > max_utf8_bytes.saturating_sub(usage.utf8_bytes)
+            {
+                usage.exceeded = true;
+                break;
+            }
+            usage.messages += 1;
+            usage.utf8_bytes += item_bytes;
+        }
+        usage
+    }
+
+    fn queued_echo_utf8_bytes(echo: &LocalEcho) -> usize {
+        match &echo.content {
+            LocalEchoContent::Event {
+                serialized_event, ..
+            } => serialized_event.raw().0.json().get().len(),
+            LocalEchoContent::React {
+                key, applies_to, ..
+            } => key.len().saturating_add(applies_to.as_str().len()),
+            LocalEchoContent::Redaction {
+                redacts, reason, ..
+            } => redacts
+                .as_str()
+                .len()
+                .saturating_add(reason.as_deref().map_or(0, str::len)),
+        }
+    }
+
+    fn bounded_send_queue_usage<'a>(
+        echoes: impl IntoIterator<Item = &'a LocalEcho>,
+        max_messages: usize,
+        max_utf8_bytes: usize,
+    ) -> SendQueueUsage {
+        Self::bounded_send_queue_usage_bytes(
+            echoes.into_iter().map(Self::queued_echo_utf8_bytes),
+            max_messages,
+            max_utf8_bytes,
+        )
+    }
+
+    fn send_queue_quota_error(scope: &str, quota: &str) -> BackendError {
+        BackendError::InvalidConfiguration(format!(
+            "Messages waiting to send for this {scope} have reached the {quota} offline queue limit. Wait for them to send or cancel one before trying again."
+        ))
+    }
+
+    fn ensure_send_queue_capacity(
+        account: SendQueueUsage,
+        room: SendQueueUsage,
+        candidate_utf8_bytes: usize,
+    ) -> BackendResult<()> {
+        if room.exceeded || room.messages >= MAX_SEND_QUEUE_ROOM_MESSAGES {
+            return Err(Self::send_queue_quota_error(
+                "room",
+                &format!("{MAX_SEND_QUEUE_ROOM_MESSAGES}-message"),
+            ));
+        }
+        if account.exceeded || account.messages >= MAX_SEND_QUEUE_ACCOUNT_MESSAGES {
+            return Err(Self::send_queue_quota_error(
+                "account",
+                &format!("{MAX_SEND_QUEUE_ACCOUNT_MESSAGES}-message"),
+            ));
+        }
+        if candidate_utf8_bytes
+            > MAX_SEND_QUEUE_ROOM_UTF8_BYTES.saturating_sub(room.utf8_bytes)
+        {
+            return Err(Self::send_queue_quota_error("room", "1 MiB"));
+        }
+        if candidate_utf8_bytes
+            > MAX_SEND_QUEUE_ACCOUNT_UTF8_BYTES.saturating_sub(account.utf8_bytes)
+        {
+            return Err(Self::send_queue_quota_error("account", "4 MiB"));
+        }
+        Ok(())
+    }
 
     fn receipt_thread_for_message(is_thread_event: bool) -> ReceiptThread {
         if is_thread_event {
@@ -95,6 +191,7 @@ impl MatrixBackend {
     async fn emit_room_unread(
         client: &Client,
         callback: &Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
+        ignored_users: &Arc<RwLock<Option<HashSet<OwnedUserId>>>>,
         room_id: &matrix_sdk::ruma::RoomId,
     ) {
         let room =
@@ -111,6 +208,39 @@ impl MatrixBackend {
                     return;
                 }
             };
+        let direct_targets = room.direct_targets();
+        if !direct_targets.is_empty() {
+            let suppress = if direct_targets.len() == 1 {
+                let peer = direct_targets.iter().next().expect("one direct target");
+                match matrix_sdk::ruma::UserId::parse(peer.as_str()) {
+                    Ok(peer) => Self::notification_sender_is_ignored(
+                        ignored_users.read().await.as_ref(),
+                        &peer,
+                    ),
+                    Err(_) => true,
+                }
+            } else {
+                tracing::warn!(
+                    target: "mesh::security",
+                    room_id = %room.room_id(),
+                    "Cleared unread state for an unsupported group direct-message room"
+                );
+                true
+            };
+            if suppress {
+                // Emit zero rather than dropping the update so a badge cached
+                // before the block cannot remain visible indefinitely.
+                Self::dispatch_backend_event(
+                    callback,
+                    MatrixBackendEvent::UnreadUpdate(MatrixUnreadUpdate {
+                        room_id: room.room_id().to_string(),
+                        unread_messages: 0,
+                        unread_mentions: 0,
+                    }),
+                );
+                return;
+            }
+        }
         Self::dispatch_backend_event(
             callback,
             MatrixBackendEvent::UnreadUpdate(MatrixUnreadUpdate {
@@ -124,9 +254,10 @@ impl MatrixBackend {
     async fn emit_all_room_unreads(
         client: &Client,
         callback: &Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
+        ignored_users: &Arc<RwLock<Option<HashSet<OwnedUserId>>>>,
     ) {
         for room in client.rooms() {
-            Self::emit_room_unread(client, callback, room.room_id()).await;
+            Self::emit_room_unread(client, callback, ignored_users, room.room_id()).await;
         }
     }
 
@@ -180,6 +311,25 @@ impl MatrixBackend {
     fn is_undecryptable_message(value: &serde_json::Value) -> bool {
         value.get("type").and_then(serde_json::Value::as_str) == Some("m.room.encrypted")
             && value.get(Self::UNDECRYPTABLE_REASON_KEY).is_some()
+    }
+
+    fn is_ignored_non_state_event(
+        value: &serde_json::Value,
+        ignored_users: &IgnoredUserListEventContent,
+    ) -> bool {
+        // Matrix explicitly exempts state events from ignore filtering. This
+        // boundary only removes message-like timeline events from renderer
+        // projection; it does not redact or mutate stored room history.
+        if value.get("state_key").is_some() {
+            return false;
+        }
+        let Some(sender) = value.get("sender").and_then(serde_json::Value::as_str) else {
+            return false;
+        };
+        ignored_users
+            .ignored_users
+            .keys()
+            .any(|user_id| user_id.as_str() == sender)
     }
 
     fn product_decryption_reason(
@@ -457,6 +607,33 @@ impl MatrixBackend {
         Some(client_request_id)
     }
 
+    fn queued_local_echo_from_updates(
+        updates: &mut tokio::sync::broadcast::Receiver<SendQueueUpdate>,
+        room_id: &RoomId,
+        client_request_id: &str,
+    ) -> Option<LocalEcho> {
+        loop {
+            match updates.try_recv() {
+                Ok(update) => {
+                    if update.room_id != room_id {
+                        continue;
+                    }
+                    let RoomSendQueueUpdate::NewLocalEvent(echo) = update.update else {
+                        continue;
+                    };
+                    if Self::queued_client_request_id(&echo).as_deref()
+                        == Some(client_request_id)
+                    {
+                        return Some(echo);
+                    }
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+                | Err(tokio::sync::broadcast::error::TryRecvError::Closed)
+                | Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => return None,
+            }
+        }
+    }
+
     fn is_supported_queued_content(content: &serde_json::Value) -> bool {
         content.get("msgtype").and_then(serde_json::Value::as_str) == Some("m.text")
             && Self::visible_message_body(content).is_some_and(|body| !body.trim().is_empty())
@@ -536,26 +713,82 @@ impl MatrixBackend {
     }
 
     async fn queued_messages_for_client(client: &Client) -> BackendResult<Vec<MessageDto>> {
+        let ignored_users = Self::fetch_ignored_user_list(client).await?;
         let echoes_by_room = client
             .send_queue()
             .local_echoes()
             .await
             .map_err(Self::map_error)?;
         let mut messages = Vec::new();
-        for (room_id, echoes) in echoes_by_room {
-            let Ok(room) =
+        let mut account_usage = SendQueueUsage::default();
+        let mut truncated = false;
+        let mut rooms = echoes_by_room.into_iter().peekable();
+        'rooms: while let Some((room_id, echoes)) = rooms.next() {
+            if account_usage.messages >= MAX_SEND_QUEUE_ACCOUNT_MESSAGES
+                || account_usage.utf8_bytes >= MAX_SEND_QUEUE_ACCOUNT_UTF8_BYTES
+            {
+                truncated = true;
+                break;
+            }
+            let room =
                 Self::existing_protected_text_channel(client, &room_id, "reading queued messages")
                     .await
-            else {
+                    .ok();
+            let project_room = room
+                .as_ref()
+                .map(|room| Self::room_has_ignored_direct_peer(room, &ignored_users))
+                .transpose()?
+                != Some(true);
+            if !project_room {
+                // Blocked direct-room echoes are not user-visible pending
+                // messages and must not consume the bounded projection budget
+                // ahead of unrelated saved messages.
                 continue;
-            };
+            }
+            let mut room_usage = SendQueueUsage::default();
             for echo in echoes {
+                let echo_bytes = Self::queued_echo_utf8_bytes(&echo);
+                if account_usage.messages >= MAX_SEND_QUEUE_ACCOUNT_MESSAGES
+                    || echo_bytes
+                        > MAX_SEND_QUEUE_ACCOUNT_UTF8_BYTES
+                            .saturating_sub(account_usage.utf8_bytes)
+                {
+                    truncated = true;
+                    break 'rooms;
+                }
+                account_usage.messages += 1;
+                account_usage.utf8_bytes += echo_bytes;
+                if room_usage.messages >= MAX_SEND_QUEUE_ROOM_MESSAGES
+                    || echo_bytes
+                        > MAX_SEND_QUEUE_ROOM_UTF8_BYTES
+                            .saturating_sub(room_usage.utf8_bytes)
+                {
+                    truncated = true;
+                    break;
+                }
+                room_usage.messages += 1;
+                room_usage.utf8_bytes += echo_bytes;
+                let Some(room) = room.as_ref() else {
+                    continue;
+                };
                 if let Some(message) =
-                    Self::queued_message_from_local_echo(client, &room, &echo).await?
+                    Self::queued_message_from_local_echo(client, room, &echo).await?
                 {
                     messages.push(message);
                 }
             }
+            if account_usage.messages >= MAX_SEND_QUEUE_ACCOUNT_MESSAGES
+                || account_usage.utf8_bytes >= MAX_SEND_QUEUE_ACCOUNT_UTF8_BYTES
+            {
+                truncated |= rooms.peek().is_some();
+                break;
+            }
+        }
+        if truncated {
+            tracing::warn!(
+                target: "mesh::security",
+                "Bounded the pending-message projection because the durable queue exceeded its resource policy"
+            );
         }
         messages.sort_by(|left, right| {
             left.timestamp
@@ -565,36 +798,145 @@ impl MatrixBackend {
         Ok(messages)
     }
 
-    async fn reconcile_protected_send_queues(client: &Client) -> BackendResult<()> {
-        let echoes_by_room = client
-            .send_queue()
+    async fn reconcile_protected_send_queues(
+        client: &Client,
+        allow_resume: bool,
+    ) -> BackendResult<()> {
+        // Reconciliation is a fail-closed transaction. Pause the client-wide
+        // queue first, validate every persisted room under the same snapshot,
+        // and only then resume all queues together. This also prevents an
+        // inaccessible or unencrypted legacy room from sending while another
+        // room is being checked.
+        let send_queue = client.send_queue();
+        send_queue.set_enabled(false).await;
+        let ignored_users = Self::fetch_ignored_user_list(client).await?;
+        let e2ee_ready = Self::client_e2ee_ready(client).await;
+        let echoes_by_room = send_queue
             .local_echoes()
             .await
             .map_err(Self::map_error)?;
+        // Cancel ignored direct-room entries before applying resource limits.
+        // Otherwise an over-limit hostile/legacy queue could permanently pin
+        // blocked content ahead of unrelated queues and prevent recovery.
+        let mut retained_echoes_by_room = HashMap::new();
+        let mut all_ignored_cancelled = true;
         for (room_id, echoes) in echoes_by_room {
-            let Some(room) = client
-                .rooms()
-                .into_iter()
-                .find(|room| room.room_id() == room_id)
-            else {
-                continue;
+            let ignored_direct = match Self::existing_protected_text_channel(
+                client,
+                &room_id,
+                "cancelling blocked direct messages",
+            )
+            .await
+            {
+                Ok(room) => match Self::room_has_ignored_direct_peer(&room, &ignored_users) {
+                    Ok(ignored) => ignored,
+                    Err(error) => {
+                        tracing::warn!(
+                            target: "mesh::security",
+                            room_id = %room_id,
+                            "Kept an unsupported direct-message queue disabled: {error}"
+                        );
+                        false
+                    }
+                },
+                Err(_) => false,
             };
-            let protected = Self::existing_protected_text_channel(
+            if !ignored_direct {
+                retained_echoes_by_room.insert(room_id, echoes);
+                continue;
+            }
+            for echo in echoes {
+                let LocalEchoContent::Event { send_handle, .. } = echo.content else {
+                    all_ignored_cancelled = false;
+                    continue;
+                };
+                match send_handle.abort().await {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        all_ignored_cancelled = false;
+                        tracing::warn!(
+                            target: "mesh::security",
+                            room_id = %room_id,
+                            "A blocked direct-message queue entry was already being delivered when cancellation was requested"
+                        );
+                    }
+                    Err(error) => {
+                        all_ignored_cancelled = false;
+                        tracing::warn!(
+                            target: "mesh::security",
+                            room_id = %room_id,
+                            "Could not cancel a blocked direct-message queue entry: {error}"
+                        );
+                    }
+                }
+            }
+        }
+        let account_usage = Self::bounded_send_queue_usage(
+            retained_echoes_by_room
+                .values()
+                .flat_map(|echoes| echoes.iter()),
+            MAX_SEND_QUEUE_ACCOUNT_MESSAGES,
+            MAX_SEND_QUEUE_ACCOUNT_UTF8_BYTES,
+        );
+        if account_usage.exceeded {
+            tracing::warn!(
+                target: "mesh::security",
+                messages = account_usage.messages,
+                utf8_bytes = account_usage.utf8_bytes,
+                "Kept persisted send queues disabled because the account queue exceeded its resource policy"
+            );
+            return Ok(());
+        }
+        let mut all_queues_supported = all_ignored_cancelled;
+        for (room_id, echoes) in retained_echoes_by_room {
+            let room_usage = Self::bounded_send_queue_usage(
+                &echoes,
+                MAX_SEND_QUEUE_ROOM_MESSAGES,
+                MAX_SEND_QUEUE_ROOM_UTF8_BYTES,
+            );
+            let protected_room = Self::existing_protected_text_channel(
                 client,
                 &room_id,
                 "resuming queued message delivery",
             )
-            .await
-            .is_ok();
-            let supported = !echoes.is_empty() && echoes.iter().all(Self::is_supported_queued_text);
-            room.send_queue().set_enabled(protected && supported);
-            if !protected || !supported {
+            .await;
+            let (ignored_direct, direct_configuration_supported) =
+                match protected_room.as_ref() {
+                    Ok(room) => match Self::room_has_ignored_direct_peer(room, &ignored_users) {
+                        Ok(ignored) => (ignored, true),
+                        Err(error) => {
+                            tracing::warn!(
+                                target: "mesh::security",
+                                room_id = %room_id,
+                                "Kept an unsupported direct-message queue disabled: {error}"
+                            );
+                            (false, false)
+                        }
+                    },
+                    Err(_) => (false, true),
+                };
+            // The first pass removed every ignored direct room under this
+            // account-data snapshot. Seeing one here means room metadata
+            // changed during reconciliation, so keep all queues paused.
+            let direct_configuration_supported = direct_configuration_supported && !ignored_direct;
+            let protected = protected_room.is_ok();
+            let supported = !room_usage.exceeded
+                && !echoes.is_empty()
+                && echoes.iter().all(Self::is_supported_queued_text);
+            let queue_can_resume =
+                e2ee_ready && protected && direct_configuration_supported && supported;
+            if !queue_can_resume {
+                all_queues_supported = false;
                 tracing::warn!(
                     target: "mesh::security",
                     room_id = %room_id,
-                    "Kept a persisted send queue disabled because its room or content could not be verified"
+                    queue_over_limit = room_usage.exceeded,
+                    "Kept a persisted send queue disabled because the device, room, content, or resource policy could not be verified"
                 );
             }
+        }
+        if allow_resume && e2ee_ready && all_queues_supported {
+            send_queue.set_enabled(true).await;
         }
         Ok(())
     }
@@ -812,6 +1154,20 @@ impl MatrixBackend {
     ) -> JoinHandle<()> {
         let mut updates = client.send_queue().subscribe();
         tokio::spawn(async move {
+            {
+                // The SDK may restore durable echoes before the first fresh
+                // sync. Purge ignored direct-room entries while the client
+                // queue is still globally paused; do not resume here.
+                let _gate = gate.lock().await;
+                if let Err(error) =
+                    Self::reconcile_protected_send_queues(&client, false).await
+                {
+                    tracing::warn!(
+                        target: "mesh::security",
+                        "Could not validate saved message queues before startup: {error}"
+                    );
+                }
+            }
             if let Err(error) =
                 Self::resnapshot_send_queue_updates(&client, &callback, &known).await
             {
@@ -824,7 +1180,7 @@ impl MatrixBackend {
                 tokio::select! {
                     _ = reconcile.notified() => {
                         let _gate = gate.lock().await;
-                        if let Err(error) = Self::reconcile_protected_send_queues(&client).await {
+                        if let Err(error) = Self::reconcile_protected_send_queues(&client, true).await {
                             tracing::warn!(
                                 target: "mesh::matrix",
                                 "Could not reconcile protected message queues: {error}"
@@ -850,7 +1206,7 @@ impl MatrixBackend {
                                 );
                                 let _gate = gate.lock().await;
                                 if let Err(error) =
-                                    Self::reconcile_protected_send_queues(&client).await
+                                    Self::reconcile_protected_send_queues(&client, true).await
                                 {
                                     tracing::warn!(
                                         target: "mesh::matrix",
@@ -1297,6 +1653,66 @@ impl MatrixBackend {
         projected
     }
 
+    fn projected_message_sender_ids(
+        messages: &[MessageDto],
+        max_sender_ids: usize,
+    ) -> Vec<OwnedUserId> {
+        let mut seen = HashSet::new();
+        messages
+            .iter()
+            .filter_map(|message| UserId::parse(message.author_public_key.as_str()).ok())
+            .filter(|sender| seen.insert(sender.clone()))
+            .take(max_sender_ids)
+            .collect()
+    }
+
+    fn apply_member_display_names(
+        messages: &mut [MessageDto],
+        display_names: &HashMap<String, String>,
+    ) {
+        for message in messages {
+            if let Some(display_name) = display_names.get(&message.author_public_key) {
+                message.author_display_name.clone_from(display_name);
+            }
+        }
+    }
+
+    async fn resolve_projected_member_display_names(
+        room: &Room,
+        messages: &mut [MessageDto],
+        max_sender_ids: usize,
+    ) -> BackendResult<()> {
+        let sender_ids = Self::projected_message_sender_ids(messages, max_sender_ids);
+        if sender_ids.is_empty() {
+            return Ok(());
+        }
+
+        let member_events = room
+            .get_state_events_for_keys_static::<RoomMemberEventContent, OwnedUserId, _>(&sender_ids)
+            .await
+            .map_err(Self::map_error)?;
+        let mut display_names = HashMap::with_capacity(member_events.len());
+        for raw_event in member_events {
+            match raw_event.deserialize() {
+                Ok(event) => {
+                    display_names.insert(
+                        event.user_id().to_string(),
+                        event.display_name().as_raw_str().to_owned(),
+                    );
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        target: "mesh::matrix",
+                        room_id = %room.room_id(),
+                        "Skipping malformed local member state while projecting messages: {error}"
+                    );
+                }
+            }
+        }
+        Self::apply_member_display_names(messages, &display_names);
+        Ok(())
+    }
+
     fn updated_room_pins(
         mut pinned_event_ids: Vec<matrix_sdk::ruma::OwnedEventId>,
         event_id: matrix_sdk::ruma::OwnedEventId,
@@ -1325,7 +1741,7 @@ impl MatrixBackend {
     ) -> BackendResult<MatrixRoomPins> {
         let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
         let can_manage = room
-            .get_member(own_user_id)
+            .get_member_no_sync(own_user_id)
             .await
             .map_err(Self::map_error)?
             .is_some_and(|member| member.can_pin_or_unpin_event());
@@ -1333,14 +1749,6 @@ impl MatrixBackend {
             .into_iter()
             .take(MAX_PINNED_EVENTS)
             .collect::<Vec<_>>();
-        let members = room
-            .members(RoomMemberships::JOIN)
-            .await
-            .map_err(Self::map_error)?
-            .into_iter()
-            .map(|member| (member.user_id().to_string(), member.name().to_owned()))
-            .collect::<HashMap<_, _>>();
-
         let fetched = futures::stream::iter(pinned_event_ids.clone().into_iter().map(|event_id| {
             let room = room.clone();
             async move {
@@ -1372,7 +1780,15 @@ impl MatrixBackend {
             }
         }
 
-        let mut projected = Self::project_timeline(room.room_id().as_str(), &members, values)
+        let mut projected_messages =
+            Self::project_timeline(room.room_id().as_str(), &HashMap::new(), values);
+        Self::resolve_projected_member_display_names(
+            room,
+            &mut projected_messages,
+            MAX_PINNED_EVENTS,
+        )
+        .await?;
+        let mut projected = projected_messages
             .into_iter()
             .map(|message| (message.id.clone(), message))
             .collect::<HashMap<_, _>>();

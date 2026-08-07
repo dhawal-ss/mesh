@@ -101,20 +101,22 @@ export function CommunitySidebar() {
       patchChannel(channel.id, { unreadCount: 0, unreadMentions: 0 })
     }
 
-    const results = await Promise.allSettled(
-      unreadChannels.map((channel) => bridge.markChannelRead(channel.id)),
-    )
-    let failed = false
-    results.forEach((result, index) => {
-      if (result.status === 'fulfilled') return
-      failed = true
-      const channel = unreadChannels[index]
+    let failedIds: Set<string>
+    try {
+      failedIds = new Set(await bridge.markChannelsRead(unreadChannels.map((channel) => channel.id)))
+    } catch {
+      failedIds = new Set(unreadChannels.map((channel) => channel.id))
+    }
+    for (const channel of unreadChannels) {
+      if (!failedIds.has(channel.id)) continue
+      const current = useChannelStore.getState().channelEntities[channel.id]
+      if ((current?.unreadCount ?? 0) !== 0 || (current?.unreadMentions ?? 0) !== 0) continue
       patchChannel(channel.id, {
         unreadCount: channel.unreadCount ?? 0,
         unreadMentions: channel.unreadMentions,
       })
-    })
-    if (failed) {
+    }
+    if (failedIds.size > 0) {
       showToast('Some rooms could not be marked as read. Try again.', 'error')
     }
   }
@@ -241,8 +243,8 @@ export function CommunitySidebar() {
         />
 
         <RailAction
-          label="Explore"
-          accessibleLabel="Explore communities"
+          label="Find"
+          accessibleLabel="Find a community"
           icon="compass"
           railActionKey="explore"
           tabIndex={focusedRailKey === 'explore' ? 0 : -1}

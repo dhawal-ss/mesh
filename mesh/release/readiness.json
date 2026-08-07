@@ -386,6 +386,27 @@
       "waiver": null
     },
     {
+      "id": "r2.confidential-security-reporting",
+      "milestone": "R2",
+      "required": true,
+      "releaseStatus": "live-pass",
+      "status": "blocked",
+      "evidence": {
+        "testedCommit": null,
+        "testedTreeHash": null,
+        "command": null,
+        "artifactPath": null,
+        "environment": null,
+        "collectedAt": null,
+        "expiresAt": null
+      },
+      "owner": "Mesh security and release operations",
+      "capability": "Receive and safely handle confidential vulnerability reports before public promotion",
+      "blockReason": "The repository has no enabled, reviewed, and publicly documented confidential vulnerability reporting route. Draft candidate validation may continue, but public beta promotion is blocked until the route is enabled and drilled.",
+      "nextAction": "Enable GitHub private vulnerability reporting or a reviewed security mailbox, update SECURITY.md and the public security page together, then complete public-release.confidential-security-reporting with sanitized drill evidence.",
+      "waiver": null
+    },
+    {
       "id": "r2.public-release",
       "milestone": "R2",
       "required": true,

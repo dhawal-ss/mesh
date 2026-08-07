@@ -192,10 +192,10 @@ export function MatrixAccountScreen({
     }
   }, [registrationContinuation, storedPendingInvitation])
 
-  const offeredCommunityService = storedPendingInvitation?.service
-    && storedPendingInvitation.admissionService
-    ? storedPendingInvitation.service
-    : null
+  const offeredCommunityService = storedPendingInvitation?.service ?? null
+  const communityAccountCreationOffered = Boolean(
+    offeredCommunityService && storedPendingInvitation?.admissionService,
+  )
   const selectedServiceAddress = selectedService?.kind === 'public'
     ? selectedService.service.serviceAddress
     : selectedService?.address ?? ''
@@ -494,7 +494,7 @@ export function MatrixAccountScreen({
     setServiceAddress('')
     setCapabilities(null)
     setAvailabilityCheck(null)
-    changeMode('create')
+    changeMode(communityAccountCreationOffered ? 'create' : 'sign-in')
   }
 
   const discardPendingInvitation = async () => {
@@ -831,8 +831,8 @@ export function MatrixAccountScreen({
 
   if (mode === 'select') {
     return (
-      <div className="space-y-4">
-        <header className="space-y-2">
+      <div className="mesh-account-service-choices space-y-4">
+        <header className="mesh-account-service-header space-y-2">
           <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">Account service</p>
           <h1
             ref={modeHeadingRef}
@@ -846,11 +846,6 @@ export function MatrixAccountScreen({
             does not have to match the service that hosts the community you are joining.
           </p>
         </header>
-
-        <p className="flex items-center justify-center gap-2 text-caption font-medium text-muted sm:hidden">
-          <span aria-hidden="true">↓</span>
-          More account service choices are below
-        </p>
 
         {storedPendingInvitation && !hideInvitationSummary ? (
           <CommunityInvitationPassport
@@ -883,7 +878,8 @@ export function MatrixAccountScreen({
             eyebrow={prominentServiceExpired ? 'Review expired' : 'Public service'}
             description={prominentServiceExpired
               ? 'This option is unavailable until its operator and policies are reviewed again.'
-              : 'Operated independently by the Matrix.org Foundation. Free-plan limits currently include 10 MB per attachment and 100 MB of data per day.'}
+              : 'Independent service. Free plan: 10 MB per attachment and 100 MB of data per day.'}
+            notice={serviceAgeNotice(MATRIX_ORG_SERVICE)}
             actionLabel="Sign in"
             disabled={prominentServiceExpired}
             registrationUrl={MATRIX_ORG_SERVICE.registration.url}
@@ -897,9 +893,12 @@ export function MatrixAccountScreen({
         {offeredCommunityService && pendingInvitationHandle ? (
           <ServiceChoiceCard
             title={communityServiceName}
-            eyebrow="Optional account offer"
-            description={`This invitation offers account creation at ${displayServiceAddress(offeredCommunityService)}. Mesh verifies the one-use invitation only when you choose this action. The service has no Mesh uptime guarantee, and you may choose another service instead.`}
-            actionLabel="Create account"
+            eyebrow={communityAccountCreationOffered ? 'Optional account offer' : 'Invitation service'}
+            description={communityAccountCreationOffered
+              ? `This invitation offers account creation with ${communityServiceName}. Mesh verifies the one-use invitation only when you choose this action. The service has no Mesh uptime guarantee, and you may choose another service instead.`
+              : `This invitation suggests ${communityServiceName} for people who already have an account there. It remains optional; you may sign in with any compatible service instead.`}
+            serviceAddress={displayServiceAddress(offeredCommunityService)}
+            actionLabel={communityAccountCreationOffered ? 'Create account' : 'Sign in'}
             onSelect={selectCommunityService}
           />
         ) : null}
@@ -936,6 +935,9 @@ export function MatrixAccountScreen({
             These entries are manually reviewed, not copied from a public directory.
           </p>
         </header>
+        <Button type="button" variant="ghost" className="w-full" onClick={() => changeMode('select')}>
+          Back to service choices
+        </Button>
         {PUBLIC_SERVICES.filter((service) => !service.prominent).map((service) => {
           const expired = publicServiceReviewExpired(service)
           return (
@@ -946,6 +948,7 @@ export function MatrixAccountScreen({
               description={expired
                 ? 'This option is unavailable until its operator and policies are reviewed again.'
                 : `${service.jurisdiction}. ${service.freeUseLimits.summary}`}
+              notice={serviceAgeNotice(service)}
               actionLabel="Sign in"
               disabled={expired}
               registrationUrl={service.registration.url}
@@ -956,9 +959,6 @@ export function MatrixAccountScreen({
             />
           )
         })}
-        <Button type="button" variant="ghost" className="w-full" onClick={() => changeMode('select')}>
-          Back to service choices
-        </Button>
       </div>
     )
   }
@@ -985,27 +985,7 @@ export function MatrixAccountScreen({
         </p>
       </header>
 
-      {selectedPublicService ? (
-        <section
-          aria-label={`${selectedPublicService.displayName} service details`}
-          className="mesh-inline-card space-y-2 rounded-panel border border-border-subtle bg-surface-sunken p-3 text-xs leading-5 text-secondary"
-        >
-          <p>
-            Operated independently by {selectedPublicService.operator}.{' '}
-            {selectedPublicService.freeUseLimits.summary}
-          </p>
-          <div className="flex flex-wrap gap-x-3 gap-y-1">
-            <ExternalLink
-              href={selectedPublicService.registration.url}
-              onBeforeOpen={() => beginExternalRegistration(selectedPublicService)}
-            >
-              {selectedPublicService.registration.label}
-            </ExternalLink>
-            <ExternalLink href={selectedPublicService.termsUrl}>Terms</ExternalLink>
-            <ExternalLink href={selectedPublicService.privacyUrl}>Privacy</ExternalLink>
-          </div>
-        </section>
-      ) : selectedService?.kind === 'community' ? (
+      {selectedService?.kind === 'community' ? (
         <section
           aria-label={`${selectedService.name} service details`}
           className="mesh-inline-card rounded-panel border border-border-subtle bg-surface-sunken p-3 text-xs leading-5 text-secondary"
@@ -1017,12 +997,14 @@ export function MatrixAccountScreen({
         </section>
       ) : null}
 
-      {checkingCapabilities ? (
-        <p role="status" className="text-xs text-muted">Checking this service…</p>
-      ) : capabilities ? (
-        <p role="status" className="text-xs text-muted">
-          {capabilitySummary(capabilities)}
-        </p>
+      {!selectedPublicService ? (
+        checkingCapabilities ? (
+          <p role="status" className="text-xs text-muted">Checking this service…</p>
+        ) : capabilities ? (
+          <p role="status" className="text-xs text-muted">
+            {capabilitySummary(capabilities)}
+          </p>
+        ) : null
       ) : null}
 
       {!isCreate && savedAccounts.length > 0 ? (
@@ -1032,8 +1014,8 @@ export function MatrixAccountScreen({
         >
           <p className="text-2xs uppercase tracking-signal text-muted">Continue without a password</p>
           <p className="text-xs leading-5 text-secondary">
-            Mesh remembers accounts used on this device. Choose one below to restore its saved
-            session instead of typing your account details again.
+            Choose an account to continue with its saved sign-in instead of typing your account
+            details again.
           </p>
           {savedAccounts.map((account) => (
             <button
@@ -1187,6 +1169,75 @@ export function MatrixAccountScreen({
           </label>
         </div>
 
+        {!isCreate ? (
+          <section
+            aria-label="Sign-in help"
+            className="space-y-2 border-t border-border-subtle pt-3"
+          >
+            <p className="text-xs font-medium text-primary">Having trouble signing in?</p>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+              <button
+                type="button"
+                className="min-h-8 rounded-control px-1 text-accent transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                aria-expanded={recoveryHelp === 'password'}
+                onClick={() => setRecoveryHelp((current) => current === 'password' ? null : 'password')}
+              >
+                Forgot password?
+              </button>
+              <button
+                type="button"
+                className="min-h-8 rounded-control px-1 text-accent transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                aria-expanded={recoveryHelp === 'username'}
+                onClick={() => setRecoveryHelp((current) => current === 'username' ? null : 'username')}
+              >
+                Forgot username?
+              </button>
+            </div>
+            {recoveryHelp ? (
+              <div role="status" className="space-y-2 border-t border-border pt-2 text-xs leading-5 text-secondary">
+                {recoveryHelp === 'password' ? (
+                  <>
+                    <p>
+                      Mesh never stores your account password. Password recovery is handled by{' '}
+                      {selectedServiceName}, so there isn&apos;t one Mesh-wide reset page.
+                    </p>
+                    {accountHelpUrl ? (
+                      <ExternalLink href={accountHelpUrl}>Open {accountHelpLabel}</ExternalLink>
+                    ) : (
+                      <p>
+                        Open the website for {displayServiceAddress(selectedServiceAddress)} or ask
+                        whoever runs that service for a password reset.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p>
+                      Usernames are issued by the account service, so Mesh cannot safely search for
+                      one across services. Check the email or password manager you used when you
+                      created the account.
+                    </p>
+                    {savedAccounts.length > 0 ? (
+                      <p>
+                        If you used this device before, choose a saved account above. It opens
+                        without asking for the username or password again.
+                      </p>
+                    ) : null}
+                    {accountHelpUrl ? (
+                      <ExternalLink href={accountHelpUrl}>Open {accountHelpLabel}</ExternalLink>
+                    ) : (
+                      <p>
+                        Ask whoever runs {displayServiceAddress(selectedServiceAddress)} to help
+                        recover your account ID.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
         {isCreate && storedPendingInvitation && !hideInvitationSummary ? (
           <CommunityInvitationPassport
             pending={storedPendingInvitation}
@@ -1211,6 +1262,7 @@ export function MatrixAccountScreen({
               placeholder="example.com"
               autoCapitalize="none"
               spellCheck={false}
+              maxLength={2048}
               hint="Optional when you entered a full Matrix ID above."
             />
             <Button
@@ -1261,40 +1313,6 @@ export function MatrixAccountScreen({
           : isCreate ? 'Create account' : 'Sign in'}
       </Button>
 
-      {isCreate ? (
-        <p className="text-center text-sm text-secondary">
-          Already have an account with this service?{' '}
-          <button
-            type="button"
-            className="inline-flex min-h-8 items-center rounded-control px-1 text-accent transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-            onClick={() => changeMode('sign-in')}
-          >
-            Sign in
-          </button>
-        </p>
-      ) : (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border-subtle pt-2 text-xs">
-          <button
-            type="button"
-            className="inline-flex min-h-8 items-center rounded-control px-2 text-muted transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-            onClick={() => changeMode('select')}
-          >
-            Back to service choices
-          </button>
-          {selectedPublicService ? (
-            <span className="text-muted">
-              Need an account?{' '}
-              <ExternalLink
-                href={selectedPublicService.registration.url}
-                onBeforeOpen={() => beginExternalRegistration(selectedPublicService)}
-              >
-                Register with {selectedPublicService.displayName}
-              </ExternalLink>
-            </span>
-          ) : null}
-        </div>
-      )}
-
       {!isCreate && capabilities?.browserLogin ? (
         <div className="space-y-2">
           <div className="flex flex-wrap gap-2">
@@ -1344,74 +1362,71 @@ export function MatrixAccountScreen({
         </div>
       ) : null}
 
-      {!isCreate ? (
+      {selectedPublicService ? (
+        checkingCapabilities ? (
+          <p role="status" className="text-xs text-muted">Checking this service…</p>
+        ) : capabilities ? (
+          <p role="status" className="text-xs text-muted">
+            {capabilitySummary(capabilities)}
+          </p>
+        ) : null
+      ) : null}
+
+      {selectedPublicService ? (
         <section
-          aria-label="Sign-in help"
-          className="mesh-inline-card space-y-2 rounded-panel border border-border-subtle bg-surface-sunken p-3"
+          aria-label={`${selectedPublicService.displayName} service details`}
+          className="mesh-inline-card space-y-2 rounded-panel border border-border-subtle bg-surface-sunken p-3 text-xs leading-5 text-secondary"
         >
-          <p className="text-xs font-medium text-primary">Having trouble signing in?</p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-            <button
-              type="button"
-              className="min-h-8 rounded-control px-1 text-accent transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-              aria-expanded={recoveryHelp === 'password'}
-              onClick={() => setRecoveryHelp((current) => current === 'password' ? null : 'password')}
+          <p>
+            Operated independently by {selectedPublicService.operator}.{' '}
+            {selectedPublicService.freeUseLimits.summary}
+          </p>
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            <ExternalLink
+              href={selectedPublicService.registration.url}
+              onBeforeOpen={() => beginExternalRegistration(selectedPublicService)}
             >
-              Forgot password?
-            </button>
-            <button
-              type="button"
-              className="min-h-8 rounded-control px-1 text-accent transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-              aria-expanded={recoveryHelp === 'username'}
-              onClick={() => setRecoveryHelp((current) => current === 'username' ? null : 'username')}
-            >
-              Forgot username?
-            </button>
+              {selectedPublicService.registration.label}
+            </ExternalLink>
+            <ExternalLink href={selectedPublicService.termsUrl}>Terms</ExternalLink>
+            <ExternalLink href={selectedPublicService.privacyUrl}>Privacy</ExternalLink>
           </div>
-          {recoveryHelp ? (
-            <div role="status" className="space-y-2 border-t border-border pt-2 text-xs leading-5 text-secondary">
-              {recoveryHelp === 'password' ? (
-                <>
-                  <p>
-                    Mesh never stores your account password, and Matrix does not provide one
-                    universal reset page. Password recovery is handled by {selectedServiceName}.
-                  </p>
-                  {accountHelpUrl ? (
-                    <ExternalLink href={accountHelpUrl}>Open {accountHelpLabel}</ExternalLink>
-                  ) : (
-                    <p>
-                      Open the website for {displayServiceAddress(selectedServiceAddress)} or ask
-                      whoever runs that service for a password reset.
-                    </p>
-                  )}
-                </>
-              ) : (
-                <>
-                  <p>
-                    Usernames are issued by the account service, so Mesh cannot safely search for
-                    one across services. Check the email or password manager you used when you
-                    created the account.
-                  </p>
-                  {savedAccounts.length > 0 ? (
-                    <p>
-                      If you used this device before, choose a saved account above. It opens
-                      without asking for the username or password again.
-                    </p>
-                  ) : null}
-                  {accountHelpUrl ? (
-                    <ExternalLink href={accountHelpUrl}>Open {accountHelpLabel}</ExternalLink>
-                  ) : (
-                    <p>
-                      Ask whoever runs {displayServiceAddress(selectedServiceAddress)} to help
-                      recover your account ID.
-                    </p>
-                  )}
-                </>
-              )}
-            </div>
-          ) : null}
         </section>
       ) : null}
+
+      {isCreate ? (
+        <p className="text-center text-sm text-secondary">
+          Already have an account with this service?{' '}
+          <button
+            type="button"
+            className="inline-flex min-h-8 items-center rounded-control px-1 text-accent transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            onClick={() => changeMode('sign-in')}
+          >
+            Sign in
+          </button>
+        </p>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border-subtle pt-2 text-xs">
+          <button
+            type="button"
+            className="inline-flex min-h-8 items-center rounded-control px-2 text-muted transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            onClick={() => changeMode('select')}
+          >
+            Back to service choices
+          </button>
+          {selectedPublicService ? (
+            <span className="text-muted">
+              Need an account?{' '}
+              <ExternalLink
+                href={selectedPublicService.registration.url}
+                onBeforeOpen={() => beginExternalRegistration(selectedPublicService)}
+              >
+                Register with {selectedPublicService.displayName}
+              </ExternalLink>
+            </span>
+          ) : null}
+        </div>
+      )}
 
     </form>
   )
@@ -1428,9 +1443,9 @@ function CommunityInvitationPassport({
 }) {
   const communityName = invitationLabel(pending?.communityName)
   const inviter = invitationLabel(pending?.inviterDisplayName)
-  const communityService = invitationLabel(
-    pending?.communityServiceDisplayName
-      ?? (pending?.service ? displayServiceAddress(pending.service) : null),
+  const communityService = invitationLabel(pending?.communityServiceDisplayName)
+  const serviceAddress = invitationLabel(
+    pending?.service ? displayServiceAddress(pending.service) : null,
   )
   const route = (pending?.via ?? [])
     .map(invitationLabel)
@@ -1463,18 +1478,12 @@ function CommunityInvitationPassport({
         </div>
       </div>
 
-      {communityService || route || joinRule ? (
-        <dl className="grid gap-x-4 gap-y-2 border-t border-border-subtle pt-3 sm:grid-cols-3">
+      {communityService || joinRule ? (
+        <dl className="grid gap-x-4 gap-y-2 border-t border-border-subtle pt-3 sm:grid-cols-2">
           {communityService ? (
             <div>
               <dt className="text-2xs uppercase tracking-signal text-muted">Community service</dt>
               <dd className="truncate text-primary">{communityService}</dd>
-            </div>
-          ) : null}
-          {route ? (
-            <div>
-              <dt className="text-2xs uppercase tracking-signal text-muted">Community route</dt>
-              <dd className="truncate text-primary">{route}</dd>
             </div>
           ) : null}
           {joinRule ? (
@@ -1484,6 +1493,28 @@ function CommunityInvitationPassport({
             </div>
           ) : null}
         </dl>
+      ) : null}
+
+      {serviceAddress || route ? (
+        <details className="rounded-control border border-border-subtle bg-surface-base px-3">
+          <summary className="flex min-h-10 cursor-pointer items-center font-semibold text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+            Service details
+          </summary>
+          <dl className="space-y-2 border-t border-border-subtle py-3">
+            {serviceAddress ? (
+              <div>
+                <dt className="text-2xs uppercase tracking-signal text-muted">Service address</dt>
+                <dd className="break-all text-primary">{serviceAddress}</dd>
+              </div>
+            ) : null}
+            {route ? (
+              <div>
+                <dt className="text-2xs uppercase tracking-signal text-muted">Community route</dt>
+                <dd className="break-all text-primary">{route}</dd>
+              </div>
+            ) : null}
+          </dl>
+        </details>
       ) : null}
 
       <p>
@@ -1519,7 +1550,7 @@ function SavedAccounts({
     >
       <p className="text-2xs uppercase tracking-signal text-muted">Continue without a password</p>
       <p className="text-xs leading-5 text-secondary">
-        Mesh remembers accounts used on this device. Choose one to restore its saved session.
+        Choose an account to continue with its saved sign-in.
       </p>
       {accounts.map((account) => (
         <button
@@ -1555,6 +1586,8 @@ function ServiceChoiceCard({
   onRegister,
   termsUrl,
   privacyUrl,
+  notice,
+  serviceAddress,
 }: {
   title: string
   eyebrow: string
@@ -1566,6 +1599,8 @@ function ServiceChoiceCard({
   onRegister?: () => boolean
   termsUrl?: string
   privacyUrl?: string
+  notice?: string
+  serviceAddress?: string
 }) {
   return (
     <article className="mesh-service-card space-y-3 rounded-panel border border-border-subtle bg-surface-sunken p-4">
@@ -1573,6 +1608,21 @@ function ServiceChoiceCard({
         <p className="text-2xs uppercase tracking-signal text-muted">{eyebrow}</p>
         <h2 className="text-base font-semibold tracking-tight text-primary">{title}</h2>
         <p className="text-xs leading-5 text-secondary">{description}</p>
+        {serviceAddress ? (
+          <details className="rounded-control border border-border-subtle bg-surface-base px-2.5">
+            <summary className="flex min-h-9 cursor-pointer items-center text-xs font-semibold text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+              Service details
+            </summary>
+            <p className="break-all border-t border-border-subtle py-2 text-xs text-muted">
+              {serviceAddress}
+            </p>
+          </details>
+        ) : null}
+        {notice ? (
+          <p className="rounded-control border border-status-warning/30 bg-status-warning/10 px-2.5 py-2 text-xs font-medium leading-5 text-secondary">
+            {notice}
+          </p>
+        ) : null}
       </div>
       {termsUrl || privacyUrl ? (
         <div className="flex flex-wrap gap-3 text-xs">
@@ -1581,9 +1631,9 @@ function ServiceChoiceCard({
         </div>
       ) : null}
       {registrationUrl ? (
-        <div className="space-y-2">
+        <div className="mesh-service-card-actions space-y-2">
           <p className="text-xs leading-5 text-muted">
-            Account creation opens this service in your browser. Return to Mesh afterward to sign in.
+            Create your account in a browser, then return to Mesh to sign in.
           </p>
           <div className="grid grid-cols-2 gap-2">
             {disabled ? (
@@ -1629,6 +1679,10 @@ function ServiceChoiceCard({
       )}
     </article>
   )
+}
+
+function serviceAgeNotice(service: PublicService): string {
+  return `Ages ${service.minimumAge}+ under the service's current terms.`
 }
 
 function ExternalLink({

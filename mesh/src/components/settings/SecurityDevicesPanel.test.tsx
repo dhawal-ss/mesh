@@ -2,9 +2,12 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SecurityDevicesPanel } from './SecurityDevicesPanel'
+import { useSettingsStore } from '../../store/settings'
 
 vi.mock('../../lib/bridge', () => ({
   isTauriRuntime: vi.fn(() => false),
+  isMatrixBackend: vi.fn(() => true),
+  setKv: vi.fn(() => Promise.resolve()),
   getBackendStatus: vi.fn(),
   matrixDevices: vi.fn(),
   matrixRecoveryHealth: vi.fn(() =>
@@ -46,6 +49,7 @@ import {
   matrixEnableRecovery,
   matrixExportPersonalData,
   matrixCancelPersonalDataExport,
+  matrixRecoveryHealth,
   matrixRemoveLocalAccount,
   matrixRevokeDevice,
   matrixSelectDeviceVerificationMethod,
@@ -73,7 +77,7 @@ const status: BackendStatus = {
     tokenEndpoint: null,
     livekitSfuUrl: null,
     cspReady: false,
-    mediaE2eeVerified: false,
+    mediaE2eeReady: false,
     reason: 'MatrixRTC services are not configured',
   },
   authenticated: true,
@@ -87,6 +91,30 @@ const status: BackendStatus = {
   warnings: [],
 }
 
+const recoveryNotConfigured = {
+  recoveryState: 'disabled',
+  backupState: 'disabled',
+  backupExistsOnServer: false,
+  backupEnabled: false,
+  healthy: false,
+  checkedAt: '2026-08-06T00:00:00Z',
+  lastSuccessfulTestAt: null,
+  secureStorageState: 'missing' as const,
+  warnings: [],
+}
+
+const recoveryConfigured = {
+  recoveryState: 'enabled',
+  backupState: 'enabled',
+  backupExistsOnServer: true,
+  backupEnabled: true,
+  healthy: true,
+  checkedAt: '2026-07-22T20:00:00Z',
+  lastSuccessfulTestAt: '2026-07-21T20:00:00Z',
+  secureStorageState: 'saved' as const,
+  warnings: [],
+}
+
 describe('SecurityDevicesPanel', () => {
   let container: HTMLDivElement
   let root: Root
@@ -97,6 +125,14 @@ describe('SecurityDevicesPanel', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     vi.clearAllMocks()
+    useSettingsStore.setState({
+      backup: { configured: false, reminderPending: false, dismissedAt: null },
+      backupAccountId: null,
+      backupByAccount: {},
+    })
+    useSettingsStore.getState().activateBackupAccount('@alice:example.org')
+    useSettingsStore.getState().setBackupConfigured(false)
+    vi.mocked(matrixRecoveryHealth).mockResolvedValue(recoveryConfigured)
     vi.mocked(getBackendStatus).mockResolvedValue(status)
     vi.mocked(matrixDevices).mockResolvedValue([
       {
@@ -222,6 +258,69 @@ describe('SecurityDevicesPanel', () => {
     expect(emptyTitle?.closest('section')?.className).toContain('py-5')
   })
 
+  it('does not describe an offline device list as an empty account', async () => {
+    vi.mocked(matrixDevices)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce([
+        {
+          deviceId: 'CURRENT',
+          displayName: 'Mesh Desktop',
+          lastSeenIp: null,
+          lastSeenAt: '2026-07-22T20:00:00Z',
+          firstSeenAt: '2026-07-20T20:00:00Z',
+          current: true,
+          verified: true,
+          crossSigned: true,
+          newDevice: false,
+          identityChanged: false,
+        },
+      ])
+
+    await act(async () => {
+      root.render(<SecurityDevicesPanel open onClose={() => {}} />)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(document.body.textContent).toContain('Connection interrupted')
+    expect(document.body.textContent).toContain("Mesh couldn't load your devices")
+    expect(document.body.textContent).not.toContain('No registered devices')
+
+    await act(async () => {
+      findButton(document.body, 'Retry device list').click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(matrixDevices).toHaveBeenCalledTimes(2)
+    expect(document.body.textContent).toContain('Mesh Desktop (this device)')
+  })
+
+  it('keeps an offline backup check scoped to recovery with a retry', async () => {
+    vi.mocked(matrixRecoveryHealth).mockRejectedValueOnce(new Error('offline'))
+
+    await act(async () => {
+      root.render(<SecurityDevicesPanel open onClose={() => {}} />)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(document.body.textContent).toContain("Mesh couldn't check your message backup")
+    expect(document.body.textContent).toContain('Retry backup check')
+    expect(document.body.textContent).toContain('Mesh Desktop (this device)')
+
+    await act(async () => {
+      findButton(document.body, 'Retry backup check').click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(matrixRecoveryHealth).toHaveBeenCalledTimes(2)
+    expect(document.body.textContent).toContain('Message backup is ready')
+  })
+
   it('guides lost-device response with an explicit accessible device choice', async () => {
     await act(async () => {
       root.render(<SecurityDevicesPanel open onClose={() => {}} />)
@@ -262,7 +361,11 @@ describe('SecurityDevicesPanel', () => {
     await act(async () => continueButton.click())
     expect(document.body.textContent).toContain('Sign out Old phone?')
     expect(document.body.textContent).toContain('Mesh does not save it')
-    expect(document.body.textContent).toContain('account website')
+    expect(document.body.textContent).not.toContain('account website')
+    const serviceHelp = [...document.body.querySelectorAll<HTMLAnchorElement>('a')].find(
+      (link) => link.textContent === 'Open example.org service site',
+    )
+    expect(serviceHelp?.href).toBe('https://matrix.example.org/')
     expect(
       document.body.querySelector('input[type="password"][autocomplete="current-password"]'),
     ).not.toBeNull()
@@ -404,6 +507,7 @@ describe('SecurityDevicesPanel', () => {
   })
 
   it('keeps the export label truthful during an unrelated operation', async () => {
+    vi.mocked(matrixRecoveryHealth).mockResolvedValueOnce(recoveryNotConfigured)
     vi.mocked(matrixEnableRecovery).mockImplementation(() => new Promise(() => {}))
     await act(async () => {
       root.render(<SecurityDevicesPanel open onClose={() => {}} />)
@@ -420,6 +524,7 @@ describe('SecurityDevicesPanel', () => {
   })
 
   it('shows whether a newly created backup code was protected and verified', async () => {
+    vi.mocked(matrixRecoveryHealth).mockResolvedValueOnce(recoveryNotConfigured)
     await act(async () => {
       root.render(<SecurityDevicesPanel open onClose={() => {}} />)
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -432,7 +537,135 @@ describe('SecurityDevicesPanel', () => {
 
     expect(document.body.textContent).toContain('MESH-ONE-TWO-THREE-FOUR')
     expect(document.body.textContent).toContain('protected credential store')
-    expect(document.body.textContent).toContain('verified against your encrypted backup')
+    expect(document.body.textContent).toContain('verified the code against your encrypted message backup')
+    expect(document.body.querySelector('output[aria-label="Backup code"]')?.textContent)
+      .toBe('MESH-ONE-TWO-THREE-FOUR')
+    for (const liveRegion of document.body.querySelectorAll('[role="status"], [role="alert"], [aria-live]')) {
+      expect(liveRegion.textContent).not.toContain('MESH-ONE-TWO-THREE-FOUR')
+    }
+    expect(document.body.textContent).not.toContain('Restore messages')
+    expect(document.body.textContent).not.toContain('Test saved copy')
+    expect(document.body.textContent).not.toContain('Check backup code')
+  })
+
+  it('removes the one-time code only after the saved copy passes its challenge', async () => {
+    vi.mocked(matrixRecoveryHealth).mockResolvedValueOnce(recoveryNotConfigured)
+    await act(async () => {
+      root.render(<SecurityDevicesPanel open onClose={() => {}} />)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await act(async () => {
+      findButton(document.body, 'Create backup code').click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    act(() => findButton(document.body, 'I saved it').click())
+    act(() => findButton(document.body, 'Continue').click())
+    expect(document.body.querySelector('output[aria-label="Backup code"]')).not.toBeNull()
+
+    const parts = ['ONE', 'TWO', 'THREE', 'FOUR']
+    for (const label of document.body.querySelectorAll<HTMLLabelElement>('label')) {
+      const match = label.textContent?.match(/^Part (\d+)/)
+      if (!match) continue
+      const input = label.querySelector<HTMLInputElement>('input')
+      if (input) act(() => setInputValue(input, parts[Number(match[1]) - 1] ?? ''))
+    }
+    act(() => findButton(document.body, 'Continue').click())
+
+    expect(document.body.querySelector('output[aria-label="Backup code"]')).toBeNull()
+    expect(useSettingsStore.getState().backup.configured).toBe(true)
+    expect(document.body.textContent).not.toContain('Create backup code')
+  })
+
+  it('keeps attention scheduled when code confirmation lacks strict healthy evidence', async () => {
+    vi.mocked(matrixRecoveryHealth)
+      .mockResolvedValueOnce(recoveryNotConfigured)
+      .mockResolvedValueOnce({
+        ...recoveryNotConfigured,
+        recoveryState: 'enabled',
+        backupState: 'enabled',
+        backupEnabled: true,
+        backupExistsOnServer: true,
+        warnings: ['Recovery credentials have not been tested on this device'],
+      })
+    await act(async () => {
+      root.render(<SecurityDevicesPanel open onClose={() => {}} />)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await act(async () => {
+      findButton(document.body, 'Create backup code').click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    act(() => findButton(document.body, 'I saved it').click())
+    const parts = ['ONE', 'TWO', 'THREE', 'FOUR']
+    for (const label of document.body.querySelectorAll<HTMLLabelElement>('label')) {
+      const match = label.textContent?.match(/^Part (\d+)/)
+      if (!match) continue
+      const input = label.querySelector<HTMLInputElement>('input')
+      if (input) act(() => setInputValue(input, parts[Number(match[1]) - 1] ?? ''))
+    }
+    act(() => findButton(document.body, 'Continue').click())
+
+    expect(document.body.querySelector('output[aria-label="Backup code"]')).toBeNull()
+    expect(useSettingsStore.getState().backup).toMatchObject({
+      configured: false,
+      reminderPending: true,
+    })
+    expect(document.body.textContent).toContain(
+      'Mesh has not confirmed that message backup is ready',
+    )
+    expect(document.body.textContent).toContain('Check again or Test saved copy')
+  })
+
+  it('clears a deferred one-time code and schedules the backup reminder', async () => {
+    vi.mocked(matrixRecoveryHealth).mockResolvedValueOnce(recoveryNotConfigured)
+    await act(async () => {
+      root.render(<SecurityDevicesPanel open onClose={() => {}} />)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await act(async () => {
+      findButton(document.body, 'Create backup code').click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    act(() => findButton(document.body, 'Remind me later').click())
+
+    expect(document.body.querySelector('output[aria-label="Backup code"]')).toBeNull()
+    expect(useSettingsStore.getState().backup).toMatchObject({
+      configured: false,
+      reminderPending: true,
+    })
+  })
+
+  it('clears an unsaved one-time code when the panel closes', async () => {
+    const onClose = vi.fn()
+    vi.mocked(matrixRecoveryHealth).mockResolvedValueOnce(recoveryNotConfigured)
+    await act(async () => {
+      root.render(<SecurityDevicesPanel open onClose={onClose} />)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await act(async () => {
+      findButton(document.body, 'Create backup code').click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    act(() => document.body.querySelector<HTMLButtonElement>('button[aria-label="Close dialog"]')?.click())
+
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(document.body.querySelector('output[aria-label="Backup code"]')).toBeNull()
+    expect(useSettingsStore.getState().backup.reminderPending).toBe(true)
+  })
+
+  it('does not offer ambiguous backup-code regeneration for a configured account', async () => {
+    await act(async () => {
+      root.render(<SecurityDevicesPanel open onClose={() => {}} />)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(document.body.textContent).toContain('Message backup is ready')
+    expect(document.body.textContent).not.toContain('Create backup code')
+    expect(document.body.textContent).not.toContain('Show current code')
   })
 
   it('requires a password, typed phrase, and acknowledgement before remote account deletion', async () => {
@@ -446,7 +679,8 @@ describe('SecurityDevicesPanel', () => {
     const deleteButton = findButton(document.body, 'Permanently delete my account')
     expect(deleteButton.disabled).toBe(true)
     expect(document.body.textContent).toContain('Messages already shared may remain')
-    expect(document.body.textContent).toContain('account website')
+    expect(document.body.textContent).not.toContain('account website')
+    expect(document.body.textContent).toContain('Open example.org service site')
 
     const password = inputForLabel(document.body, 'Account password')
     const phrase = inputForLabel(document.body, 'Type "DELETE MY ACCOUNT" to confirm')

@@ -89,6 +89,38 @@ function Test-EvidenceMatrixServerName {
     return -not $portMatch.Success -or [int]$portMatch.Groups[1].Value -le 65535
 }
 
+function Test-EvidenceServiceEndpoint {
+    param(
+        [AllowNull()][string]$Value,
+        [Parameter(Mandatory)][string]$Scheme
+    )
+
+    if (Test-EvidencePlaceholder $Value) {
+        return $false
+    }
+
+    # TURN server URLs use the RFC 7065 ICE URI shape rather than an HTTP URL.
+    # Require the external_tls port LiveKit actually advertises and an explicit
+    # TCP transport so evidence cannot accidentally describe the private 5349
+    # backend hop or an untested UDP route.
+    if ($Scheme -eq "turns") {
+        return $Value -match (
+            '^turns:(?://)?' +
+            '[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?' +
+            ':443\?transport=tcp$'
+        )
+    }
+
+    $parsed = $null
+    return [Uri]::TryCreate($Value, [UriKind]::Absolute, [ref]$parsed) -and
+        $parsed.Scheme -eq $Scheme -and
+        -not $parsed.UserInfo -and
+        -not $parsed.Query -and
+        -not $parsed.Fragment -and
+        $parsed.Port -eq 443 -and
+        $parsed.Host -match '^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$'
+}
+
 function Test-EvidenceTimestamp {
     param(
         [AllowNull()][string]$Value,
@@ -708,11 +740,10 @@ function Test-MatrixRtcAcceptanceEvidence {
             @{ Name = "turnEndpoint"; Scheme = "turns" }
         )) {
             $value = [string](Get-EvidenceProperty $services $serviceField.Name)
-            $parsed = $null
-            if ((Test-EvidencePlaceholder $value) -or
-                -not [Uri]::TryCreate($value, [UriKind]::Absolute, [ref]$parsed) -or
-                $parsed.Scheme -ne $serviceField.Scheme -or $parsed.UserInfo) {
-                $failures.Add("Live MatrixRTC evidence field services.$($serviceField.Name) must be a sanitized $($serviceField.Scheme) endpoint.")
+            if (-not (Test-EvidenceServiceEndpoint `
+                -Value $value `
+                -Scheme $serviceField.Scheme)) {
+                $failures.Add("Live MatrixRTC evidence field services.$($serviceField.Name) must be a sanitized $($serviceField.Scheme) endpoint on the reviewed public port without credentials, fragments, or unreviewed query parameters.")
             }
         }
 

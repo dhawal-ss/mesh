@@ -14,10 +14,10 @@
       "encrypted-attachments",
       "direct-messages",
       "device-management",
-      "recovery"
+      "recovery",
+      "matrix-voice"
     ],
     "excludedCapabilities": [
-      "matrix-voice",
       "legacy-p2p",
       "automatic-updates"
     ]

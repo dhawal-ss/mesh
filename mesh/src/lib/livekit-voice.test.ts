@@ -25,7 +25,7 @@ function credentials(
     token: 'signed-token',
     roomName: 'voice-room',
     participantIdentity: '@alice:example.org:DEVICE',
-    mediaE2eeVerified: true,
+    mediaE2eeReady: true,
     ...overrides,
   }
 }
@@ -46,6 +46,12 @@ function mediaKey(overrides: Partial<MatrixRtcMediaKey> = {}): MatrixRtcMediaKey
   }
 }
 
+function localMediaKey(
+  overrides: Partial<MatrixRtcMediaKey> = {},
+): MatrixRtcMediaKey {
+  return mediaKey({ sessionId: 'session-1', ...overrides })
+}
+
 function mediaKeyLease(
   overrides: Partial<MatrixRtcMediaKeyLease> = {},
 ): MatrixRtcMediaKeyLease {
@@ -61,15 +67,17 @@ function mediaKeyLease(
 
 function fakeEncryption() {
   const setParticipantKey = vi.fn().mockResolvedValue(undefined)
+  const terminate = vi.fn()
   const keyProvider = {
     setParticipantKey,
   } as unknown as MatrixRtcKeyProvider
   return {
     factory: vi.fn().mockResolvedValue({
       keyProvider,
-      worker: {} as Worker,
+      worker: { terminate } as unknown as Worker,
     }),
     setParticipantKey,
+    terminate,
   }
 }
 
@@ -175,7 +183,7 @@ describe('LiveKitVoiceEngine', () => {
     const engine = new LiveKitVoiceEngine({}, roomFactory, encryptionFactory)
 
     await expect(
-      engine.connect(credentials({ mediaE2eeVerified: false })),
+      engine.connect(credentials({ mediaE2eeReady: false })),
     ).rejects.toThrow('complete encrypted session credentials')
     expect(encryptionFactory).not.toHaveBeenCalled()
     expect(roomFactory).not.toHaveBeenCalled()
@@ -193,6 +201,25 @@ describe('LiveKitVoiceEngine', () => {
     expect(roomFactory).not.toHaveBeenCalled()
   })
 
+  it('requires the initial publisher key to be bound to the joined native session', async () => {
+    const roomFactory = vi.fn()
+    const encryption = fakeEncryption()
+    const engine = new LiveKitVoiceEngine({}, roomFactory, encryption.factory)
+
+    await expect(
+      engine.connect(
+        credentials(),
+        null,
+        true,
+        mediaKey(),
+        [],
+        mediaKeyLease(),
+      ),
+    ).rejects.toThrow('local participant media key')
+    expect(encryption.factory).not.toHaveBeenCalled()
+    expect(roomFactory).not.toHaveBeenCalled()
+  })
+
   it('connects with the backend token and starts an echo-cancelled microphone', async () => {
     const fake = fakeRoom()
     const roomFactory = vi.fn(() => fake.room)
@@ -204,13 +231,13 @@ describe('LiveKitVoiceEngine', () => {
       credentials(),
       'mic-2',
       true,
-      mediaKey(),
+      localMediaKey(),
       [],
       mediaKeyLease(),
     )
 
     expect(encryption.factory).toHaveBeenCalledWith()
-    expect(encryption.setParticipantKey).toHaveBeenCalledWith(mediaKey())
+    expect(encryption.setParticipantKey).toHaveBeenCalledWith(localMediaKey())
     expect(fake.connect).toHaveBeenCalledWith(
       'wss://livekit.example.org',
       'signed-token',
@@ -233,10 +260,11 @@ describe('LiveKitVoiceEngine', () => {
       engine as unknown as { credentials: Record<string, unknown> }
     ).credentials
     expect(retainedCredentials).not.toHaveProperty('mediaKey')
-    expect(JSON.stringify(retainedCredentials)).not.toContain(mediaKey().key)
+    expect(JSON.stringify(retainedCredentials)).not.toContain(localMediaKey().key)
 
     await engine.disconnect()
     expect(fake.disconnect).toHaveBeenCalledOnce()
+    expect(encryption.terminate).toHaveBeenCalledOnce()
   })
 
   it('does not subscribe to a remote publication until that participant is keyed', async () => {
@@ -250,7 +278,7 @@ describe('LiveKitVoiceEngine', () => {
       credentials(),
       null,
       false,
-      mediaKey(),
+      localMediaKey(),
       [],
       mediaKeyLease(),
     )
@@ -275,7 +303,7 @@ describe('LiveKitVoiceEngine', () => {
   it('installs only the local key before Room setup and applies remote keys afterward', async () => {
     const fake = fakeRoom()
     const encryption = fakeEncryption()
-    const localKey = mediaKey()
+    const localKey = localMediaKey()
     const remoteKey = mediaKey({
       userId: '@bob:example.org',
       deviceId: 'DEVICE',
@@ -395,7 +423,7 @@ describe('LiveKitVoiceEngine', () => {
         credentials(),
         null,
         true,
-        mediaKey(),
+        localMediaKey(),
         [],
         mediaKeyLease(),
       ),
@@ -421,7 +449,7 @@ describe('LiveKitVoiceEngine', () => {
       credentials(),
       'mic-2',
       shouldPublishInitialMicrophone(isMuted, inputMode),
-      mediaKey(),
+      localMediaKey(),
       [],
       mediaKeyLease(),
     )
@@ -444,7 +472,7 @@ describe('LiveKitVoiceEngine', () => {
       credentials(),
       null,
       true,
-      mediaKey(),
+      localMediaKey(),
       [],
       mediaKeyLease(),
     )
@@ -476,7 +504,7 @@ describe('LiveKitVoiceEngine', () => {
       credentials(),
       null,
       true,
-      mediaKey(),
+      localMediaKey(),
       [],
       mediaKeyLease(),
     )
@@ -521,7 +549,7 @@ describe('LiveKitVoiceEngine', () => {
       credentials(),
       null,
       true,
-      mediaKey(),
+      localMediaKey(),
       [],
       mediaKeyLease(),
     )
@@ -563,7 +591,7 @@ describe('LiveKitVoiceEngine', () => {
       credentials(),
       null,
       true,
-      mediaKey(),
+      localMediaKey(),
       [],
       mediaKeyLease(),
     )
@@ -590,7 +618,7 @@ describe('LiveKitVoiceEngine', () => {
       credentials(),
       null,
       true,
-      mediaKey(),
+      localMediaKey(),
       [],
       mediaKeyLease(),
     )
@@ -615,7 +643,7 @@ describe('LiveKitVoiceEngine', () => {
       credentials(),
       null,
       true,
-      mediaKey(),
+      localMediaKey(),
       [],
       mediaKeyLease(),
     )
@@ -632,21 +660,22 @@ describe('LiveKitVoiceEngine', () => {
   it('never connects to the SFU without a valid initial publication lease', async () => {
     const fake = fakeRoom()
     const roomFactory = vi.fn(() => fake.room)
+    const encryption = fakeEncryption()
     const engine = new LiveKitVoiceEngine(
       {},
       roomFactory,
-      fakeEncryption().factory,
+      encryption.factory,
     )
 
     await expect(
-      engine.connect(credentials(), null, true, mediaKey()),
+      engine.connect(credentials(), null, true, localMediaKey()),
     ).rejects.toThrow('valid publication lease')
     await expect(
       engine.connect(
         credentials(),
         null,
         true,
-        mediaKey(),
+        localMediaKey(),
         [],
         mediaKeyLease({ expiresAt: Date.now() - 1 }),
       ),
@@ -658,6 +687,7 @@ describe('LiveKitVoiceEngine', () => {
       true,
       expect.anything(),
     )
+    expect(encryption.terminate).toHaveBeenCalledTimes(2)
   })
 
   it('fails closed and unpublishes every local source when the lease expires', async () => {
@@ -673,7 +703,7 @@ describe('LiveKitVoiceEngine', () => {
       credentials(),
       null,
       true,
-      mediaKey(),
+      localMediaKey(),
       [],
       mediaKeyLease(),
     )
@@ -723,7 +753,7 @@ describe('LiveKitVoiceEngine', () => {
       credentials(),
       null,
       true,
-      mediaKey(),
+      localMediaKey(),
       [],
       mediaKeyLease(),
     )

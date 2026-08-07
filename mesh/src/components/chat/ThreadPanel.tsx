@@ -25,11 +25,11 @@ export function ThreadPanel({
   return (
     <aside
       id="mesh-thread-panel"
-      className="mesh-secondary-pane flex min-h-0 flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-sidebar"
+      className="mesh-secondary-pane flex min-h-0 flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-base"
       aria-label={`Thread in ${title}`}
       tabIndex={-1}
     >
-      <div className="flex h-conversation-header flex-shrink-0 items-center gap-3 border-b border-border-subtle px-4">
+      <div className="flex h-conversation-header flex-shrink-0 items-center gap-3 border-b border-border-subtle bg-surface-raised px-4">
         <Icon name="reply" size="sm" className="text-accent" />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold text-primary">Thread</h2>
@@ -47,7 +47,7 @@ export function ThreadPanel({
 
       {root ? (
         <>
-          <div className="border-b border-border-subtle py-3">
+          <div className="m-3 overflow-hidden rounded-panel border border-border-subtle bg-surface-raised py-2">
             <MessageComponent
               message={root}
               isGrouped={false}
@@ -58,7 +58,7 @@ export function ThreadPanel({
               onReply={() => onReply(root)}
             />
           </div>
-          <div className="flex min-h-10 flex-shrink-0 items-center justify-between border-b border-border-subtle px-4 text-caption text-muted">
+          <div className="flex min-h-10 flex-shrink-0 items-center justify-between border-y border-border-subtle bg-surface-sunken px-4 text-caption text-muted">
             <span>{replies.length} {replies.length === 1 ? 'reply' : 'replies'}</span>
             <button
               type="button"
@@ -68,7 +68,7 @@ export function ThreadPanel({
               Reply in thread
             </button>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto py-2" aria-label="Thread replies">
+          <div className="min-h-0 flex-1 overflow-y-auto py-3" aria-label="Thread replies">
             {replies.length > 0 ? replies.map((reply) => (
               <MessageComponent
                 key={reply.id}

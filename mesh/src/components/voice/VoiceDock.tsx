@@ -7,6 +7,7 @@ import { Avatar } from '../ui/Avatar'
 import { Icon } from '../ui/Icon'
 import { Tooltip } from '../ui/Tooltip'
 import { useCurrentMeshRoute, useMeshNavigationStore } from '../../store/navigation'
+import { playInterfaceSound } from '../../lib/interface-sounds'
 
 export function VoiceDock() {
   const route = useCurrentMeshRoute()
@@ -21,6 +22,8 @@ export function VoiceDock() {
   const localAudioLevel = useVoiceStore((state) => state.localAudioLevel)
   const setMuted = useVoiceStore((state) => state.setMuted)
   const setDeafened = useVoiceStore((state) => state.setDeafened)
+  const setCameraEnabled = useVoiceStore((state) => state.setCameraEnabled)
+  const setScreenSharing = useVoiceStore((state) => state.setScreenSharing)
   const setCurrentVoiceSession = useVoiceStore((state) => state.setCurrentVoiceSession)
   const identity = useIdentityStore((state) => state.identity)
   const setActiveCommunity = useCommunityStore((state) => state.setActiveCommunity)
@@ -73,6 +76,13 @@ export function VoiceDock() {
     const channelId = currentChannelId
     setCurrentVoiceSession(null, null)
     requestAnimationFrame(() => setCurrentVoiceSession(communityId, channelId))
+  }
+  const leaveVoice = () => {
+    setMuted(true)
+    setCameraEnabled(false)
+    setScreenSharing(false)
+    setCurrentVoiceSession(null, null)
+    void playInterfaceSound('voice-self-leave')
   }
   const voiceStateLabel = connectionState === 'reconnecting'
     ? `Reconnecting to ${voiceChannel?.name ?? 'voice'}`
@@ -169,7 +179,7 @@ export function VoiceDock() {
           icon={isMuted ? 'micOff' : 'mic'}
         />
         <VoiceDockButton
-          label={isDeafened ? 'Undeafen audio' : 'Deafen audio'}
+          label={isDeafened ? 'Turn incoming audio on' : 'Turn incoming audio off'}
           active={isDeafened}
           onClick={() => setDeafened(!isDeafened)}
           icon={isDeafened ? 'headphoneOff' : 'headphones'}
@@ -185,7 +195,7 @@ export function VoiceDock() {
         </button>
         <button
           type="button"
-          onClick={() => setCurrentVoiceSession(null, null)}
+          onClick={leaveVoice}
           className="flex min-h-11 items-center gap-2 rounded-control border border-status-danger/60 px-4 text-xs font-semibold text-status-danger transition-colors hover:bg-status-danger/10"
           aria-label={`Leave ${voiceChannel?.name ?? 'voice'}`}
         >
@@ -223,7 +233,13 @@ function VoiceDockButton({
       >
         <Icon name={icon} size="sm" />
         <span className="hidden text-xs font-semibold lg:inline">
-          {label.startsWith('Unmute') ? 'Unmute' : label.startsWith('Mute') ? 'Mute' : label.startsWith('Undeafen') ? 'Undeafen' : 'Deafen'}
+          {label.startsWith('Unmute')
+            ? 'Unmute'
+            : label.startsWith('Mute')
+              ? 'Mute'
+              : label.endsWith(' on')
+                ? 'Sound on'
+                : 'Sound off'}
         </span>
       </button>
     </Tooltip>

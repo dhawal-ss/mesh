@@ -4,7 +4,9 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const FORBIDDEN_TEXT_PACKAGES = new Set(['simple-peer', 'livekit-client'])
+const REQUIRED_SOURCE_PACKAGES = new Set(['simple-peer', 'livekit-client'])
+const FORBIDDEN_ARTIFACT_PACKAGES = new Set(['simple-peer'])
+const REQUIRED_ARTIFACT_PACKAGES = new Set(['livekit-client'])
 
 function encodePurlComponent(value) {
   return encodeURIComponent(value)
@@ -101,9 +103,14 @@ export function validateSbomBoundary(sourceBom, artifactBom) {
   const sourceNames = new Set(sourceBom.components.map((component) => component.name))
   const artifactNames = new Set(artifactBom.components.map((component) => component.name))
   const errors = []
-  for (const forbidden of FORBIDDEN_TEXT_PACKAGES) {
-    if (!sourceNames.has(forbidden)) errors.push(`complete source inventory is missing ${forbidden}`)
-    if (artifactNames.has(forbidden)) errors.push(`Matrix text artifact inventory contains forbidden ${forbidden}`)
+  for (const required of REQUIRED_SOURCE_PACKAGES) {
+    if (!sourceNames.has(required)) errors.push(`complete source inventory is missing ${required}`)
+  }
+  for (const forbidden of FORBIDDEN_ARTIFACT_PACKAGES) {
+    if (artifactNames.has(forbidden)) errors.push(`Matrix voice artifact inventory contains forbidden ${forbidden}`)
+  }
+  for (const required of REQUIRED_ARTIFACT_PACKAGES) {
+    if (!artifactNames.has(required)) errors.push(`Matrix voice artifact inventory is missing ${required}`)
   }
   return errors
 }
@@ -120,7 +127,7 @@ export async function generateReleaseSboms({ projectRoot, reachabilityPath, sour
   const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: projectRoot, encoding: 'utf8', windowsHide: true }).trim()
   const sourceTreeHash = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: projectRoot, encoding: 'utf8', windowsHide: true }).trim()
   const cleanSource = execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: projectRoot, encoding: 'utf8', windowsHide: true }).trim() === ''
-  const matrixCargo = cargoMetadata(projectRoot, 'matrix-backend')
+  const matrixCargo = cargoMetadata(projectRoot, 'matrix-voice')
   const legacyCargo = cargoMetadata(projectRoot, 'legacy-p2p')
   const allNpm = locks.flatMap(([graph, lock]) => npmComponents(lock, graph))
   const npmByName = new Map(allNpm.map((component) => [component.name, component]))
@@ -129,12 +136,12 @@ export async function generateReleaseSboms({ projectRoot, reachabilityPath, sour
   const metadata = { version: packageJson.version, sourceCommit, sourceTreeHash, cleanSource }
   const sourceBom = bom('complete-source-lockfile', [
     ...allNpm,
-    ...cargoComponents(matrixCargo, 'matrix-backend'),
+    ...cargoComponents(matrixCargo, 'matrix-voice'),
     ...cargoComponents(legacyCargo, 'legacy-p2p'),
   ], metadata)
-  const artifactBom = bom('matrix-windows-artifact-reachability', [
+  const artifactBom = bom('matrix-voice-windows-artifact-reachability', [
     ...reachability.packages.map((name) => npmByName.get(name)),
-    ...cargoComponents(matrixCargo, 'matrix-backend'),
+    ...cargoComponents(matrixCargo, 'matrix-voice'),
   ], metadata)
   const errors = validateSbomBoundary(sourceBom, artifactBom)
   if (errors.length) throw new Error(errors.join('; '))

@@ -21,6 +21,11 @@ import { meshNavigationStorageKey } from './mesh-navigation'
 describe('account transition', () => {
   beforeEach(() => {
     clearRendererAccountState()
+    useSettingsStore.setState({
+      backup: { configured: false, reminderPending: false, dismissedAt: null },
+      backupAccountId: null,
+      backupByAccount: {},
+    })
   })
 
   it('deletes saved navigation only for an explicitly removed account', () => {
@@ -74,12 +79,17 @@ describe('account transition', () => {
     })
     useDmStore.setState({
       conversations: [{ id: 'dm' } as never],
+      blockedAccounts: [{ userId: '@blocked:old.example.org' }],
+      blockedAccountsNextCursor: '@next:old.example.org',
+      blockedAccountLoad: { status: 'loaded', error: null, generation: 4 },
       messages: { dm: [{ id: 'secret-dm' } as never] },
       activeConversationId: 'dm',
       isDmMode: true,
     })
     useMembershipStore.setState({
       members: { old: [{ publicKey: '@old:example.org' } as never] },
+      rosterNextCursor: { old: '@old:example.org' },
+      rosterStateComplete: { old: true },
     })
     useMessageStore.setState({
       messages: { room: [{ id: 'secret-room-message' } as never] },
@@ -115,6 +125,7 @@ describe('account transition', () => {
     })
     useNetworkStore.setState({
       status: { state: 'connected', peerCount: 4, averageLatency: 12 },
+      recoveredConnection: { durationMs: 8_000, recoveredAt: 1_786_000_000_000 },
     })
     useVoiceStore.setState({
       currentCommunityId: 'old',
@@ -135,7 +146,14 @@ describe('account transition', () => {
     expect(useCommunityStore.getState().communities).toEqual([])
     expect(useChannelStore.getState().channels).toEqual([])
     expect(useDmStore.getState().messages).toEqual({})
+    expect(useDmStore.getState()).toMatchObject({
+      blockedAccounts: [],
+      blockedAccountsNextCursor: null,
+      blockedAccountLoad: { status: 'idle', error: null, generation: 0 },
+    })
     expect(useMembershipStore.getState().members).toEqual({})
+    expect(useMembershipStore.getState().rosterNextCursor).toEqual({})
+    expect(useMembershipStore.getState().rosterStateComplete).toEqual({})
     expect(useMessageStore.getState().messages).toEqual({})
     expect(useMessageStore.getState().matrixQueueStates).toEqual({})
     expect(useTypingStore.getState().typingByChannel).toEqual({})
@@ -144,6 +162,7 @@ describe('account transition', () => {
     expect(useMessageNavigationStore.getState().pending).toBeNull()
     expect(useRoomPinStore.getState().roomId).toBeNull()
     expect(useNetworkStore.getState().status.state).toBe('connecting')
+    expect(useNetworkStore.getState().recoveredConnection).toBeNull()
     expect(useVoiceStore.getState().currentChannelId).toBeNull()
     expect(useVoiceStore.getState().localPublicKey).toBeNull()
     expect(useVoiceStore.getState().matrixRtcMembersByRoom).toEqual({})
@@ -205,6 +224,19 @@ describe('account transition', () => {
         reminderPending: false,
         dismissedAt: '2026-07-30T00:00:00.000Z',
       },
+      backupAccountId: '@current:example.org',
+      backupByAccount: {
+        '@current:example.org': {
+          configured: true,
+          reminderPending: false,
+          dismissedAt: null,
+        },
+        '@other:example.org': {
+          configured: false,
+          reminderPending: true,
+          dismissedAt: '2026-07-30T00:00:00.000Z',
+        },
+      },
     })
 
     clearRendererAccountState()
@@ -232,6 +264,19 @@ describe('account transition', () => {
         configured: false,
         reminderPending: false,
         dismissedAt: null,
+      },
+      backupAccountId: null,
+      backupByAccount: {
+        '@current:example.org': {
+          configured: true,
+          reminderPending: false,
+          dismissedAt: null,
+        },
+        '@other:example.org': {
+          configured: false,
+          reminderPending: true,
+          dismissedAt: '2026-07-30T00:00:00.000Z',
+        },
       },
       matrixPreferenceSync: {
         status: 'idle',

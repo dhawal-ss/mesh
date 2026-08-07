@@ -132,7 +132,7 @@ if (Test-Path -LiteralPath $composePath) {
     $liveKitImage = "image: livekit/livekit-server:v1.13.5@sha256:3497163e15c48fef6e7830c78716f9e9d5edc28abf7aa90b61c86e93bbc306b1"
     $authImage = "image: ghcr.io/element-hq/lk-jwt-service:0.4.4@sha256:9c715697c6f7c1f538f2ee41b7b59b04a8d06bf790a7cc8c8517ccac8d28813d"
     if ($compose -notmatch [regex]::Escape($liveKitImage)) {
-        Add-Failure "LiveKit image must remain pinned to the reviewed v1.13.1 OCI manifest digest."
+        Add-Failure "LiveKit image must remain pinned to the reviewed v1.13.5 OCI manifest digest."
     }
     if ($compose -notmatch [regex]::Escape($authImage)) {
         Add-Failure "MatrixRTC Authorization Service must remain pinned to the reviewed 0.4.4 OCI manifest digest."
@@ -146,21 +146,21 @@ if (Test-Path -LiteralPath $composePath) {
     if ($compose -notmatch "(?ms)webhook:\s*\r?\n\s+api_key:\s+\$\{LIVEKIT_API_KEY:\?.*?\}\s*\r?\n\s+urls:\s*\r?\n\s+- http://matrixrtc-auth:8080/sfu_webhook") {
         Add-Failure "LiveKit must send signed participant lifecycle webhooks to the internal MatrixRTC Authorization Service."
     }
-    if ($compose -notmatch "(?ms)livekit:\s*.*?depends_on:\s*\r?\n\s+matrixrtc-auth:\s*\r?\n\s+condition:\s*service_healthy" -or
+    if ($compose -notmatch "(?ms)livekit:\s*.*?depends_on:\s*.*?matrixrtc-auth:\s*.*?condition:\s*service_started" -or
         $compose -match "(?ms)matrixrtc-auth:\s*.*?depends_on:\s*\r?\n\s+- livekit") {
-        Add-Failure "LiveKit must wait for the authorization webhook receiver to become healthy without a dependency cycle."
+        Add-Failure "LiveKit must start after the authorization process without a dependency cycle."
     }
-    if ($compose -notmatch '(?ms)matrixrtc-auth:\s*.*?healthcheck:\s*\r?\n\s+test:\s*\["CMD",\s*"/lk-jwt-service-healthcheck"\]') {
-        Add-Failure "The MatrixRTC Authorization Service must use its pinned image healthcheck binary."
+    if ($compose -match '/lk-jwt-service-healthcheck') {
+        Add-Failure "The pinned scratch authorization image has no /lk-jwt-service-healthcheck binary; readiness must use its external /healthz endpoint."
     }
     if ($compose -notmatch 'LIVEKIT_SANITY_CHECK_INTERVAL_SECONDS:\s*"30"') {
         Add-Failure "The authorization service must retain the 30-second delegated-leave sanity check fallback."
     }
-    if ($compose -notmatch [regex]::Escape('${MATRIXRTC_CONTROL_BIND:-127.0.0.1}:7880:7880/tcp') -or
-        $compose -notmatch [regex]::Escape('${MATRIXRTC_CONTROL_BIND:-127.0.0.1}:8080:8080/tcp')) {
+    if ($compose -notmatch [regex]::Escape('${MATRIXRTC_CONTROL_BIND:-127.0.0.1}:${MATRIXRTC_LIVEKIT_HTTP_PORT:-7880}:7880/tcp') -or
+        $compose -notmatch [regex]::Escape('${MATRIXRTC_CONTROL_BIND:-127.0.0.1}:${MATRIXRTC_AUTH_HTTP_PORT:-8080}:8080/tcp')) {
         Add-Failure "LiveKit and authorization control ports must default to loopback."
     }
-    if ($compose -notmatch [regex]::Escape('${MATRIXRTC_METRICS_BIND:-127.0.0.1}:6789:6789/tcp')) {
+    if ($compose -notmatch [regex]::Escape('${MATRIXRTC_METRICS_BIND:-127.0.0.1}:${MATRIXRTC_METRICS_PORT:-6789}:6789/tcp')) {
         Add-Failure "LiveKit Prometheus metrics must default to a loopback-only bind."
     }
     if ($compose -notmatch [regex]::Escape('${MATRIXRTC_TURN_TLS_BIND:-127.0.0.1}:5349:5349/tcp')) {
@@ -169,7 +169,8 @@ if (Test-Path -LiteralPath $composePath) {
     foreach ($requiredMediaPort in @(
         '"7881:7881/tcp"',
         '"3478:3478/udp"',
-        '"50000-50100:50000-50100/udp"'
+        '"50000-50100:50000-50100/udp"',
+        '"50101-50200:50101-50200/udp"'
     )) {
         if ($compose -notmatch [regex]::Escape($requiredMediaPort)) {
             Add-Failure "MatrixRTC Compose is missing required bounded media port $requiredMediaPort."
@@ -179,6 +180,13 @@ if (Test-Path -LiteralPath $composePath) {
         $compose -notmatch "external_tls:\s*true" -or
         $compose -notmatch 'domain:\s+\$\{LIVEKIT_TURN_DOMAIN:\?') {
         Add-Failure "LiveKit must retain explicit UDP TURN and externally terminated TURN/TLS configuration."
+    }
+    if ($compose -notmatch "relay_range_start:\s*50101" -or
+        $compose -notmatch "relay_range_end:\s*50200") {
+        Add-Failure "LiveKit TURN relay sockets must use the separately published bounded UDP 50101-50200 range."
+    }
+    if ($compose -notmatch '(?ms)livekit:\s*.*?healthcheck:\s*\r?\n\s+test:\s*\["CMD",\s*"wget",.*?http://127\.0\.0\.1:7880/') {
+        Add-Failure "LiveKit must expose a local container healthcheck before the stack is treated as started."
     }
     if ([regex]::Matches($compose, "(?ms)cap_drop:\s*\r?\n\s+- ALL").Count -lt 2 -or
         [regex]::Matches($compose, "no-new-privileges:true").Count -lt 2) {
@@ -221,12 +229,13 @@ if ((Test-Path -LiteralPath $packagePath) -and
         $disabledVoice -notmatch 'Calling is not included in this Mesh build') {
         Add-Failure "The renderer must fail closed when the Matrix media implementation is absent."
     }
-    if (@($betaContract.candidate.excludedCapabilities) -notcontains 'matrix-voice' -or
+    if (@($betaContract.candidate.capabilities) -notcontains 'matrix-voice' -or
+        @($betaContract.candidate.excludedCapabilities) -contains 'matrix-voice' -or
         [bool]$betaContract.claims.voiceReady) {
-        Add-Failure "The beta contract must keep Matrix voice excluded until live acceptance passes."
+        Add-Failure "The signed draft candidate must include Matrix voice for physical acceptance while keeping the public voice-ready claim false until live acceptance passes."
     }
     if ($failures.Count -eq $buildFailureCount) {
-        Add-Pass "Text beta and physical MatrixRTC acceptance builds are mechanically separated."
+        Add-Pass "The signed draft beta includes Matrix voice for acceptance while non-voice builds still fail closed."
     }
 }
 
@@ -268,12 +277,14 @@ if (Test-Path -LiteralPath $runbookPath) {
         "--force-recreate",
         "matrixrtc-preflight.ps1",
         "operator-smoke.ps1",
+        "matrixrtc-local-smoke.ps1",
         "MESH_RTC_ENABLED=0",
         "no uptime",
         "SLA",
         "3478",
         "5349",
         "50000-50100",
+        "50101-50200",
         "Resolve-DnsName",
         "Test-NetConnection",
         "caseId",
@@ -318,6 +329,29 @@ $required = @(
 foreach ($name in $required) {
     if (-not $environment.ContainsKey($name) -or -not $environment[$name]) {
         Add-Failure "Missing required environment value: $name"
+    }
+}
+
+if ($RequireLiveAcceptance -and
+    (Test-Path -LiteralPath $AcceptanceEvidenceFile -PathType Leaf)) {
+    try {
+        $liveEvidence = Get-Content -LiteralPath $AcceptanceEvidenceFile -Raw |
+            ConvertFrom-Json
+        $liveServices = $liveEvidence.services
+        if ([string]$liveServices.authorizationEndpoint -ne
+            [string]$environment["MESH_MATRIXRTC_LIVEKIT_SERVICE_URL"]) {
+            Add-Failure "Live MatrixRTC evidence authorizationEndpoint must equal the operator environment."
+        }
+        if ([string]$liveServices.sfuEndpoint -ne
+            [string]$environment["MESH_MATRIXRTC_LIVEKIT_SFU_URL"]) {
+            Add-Failure "Live MatrixRTC evidence sfuEndpoint must equal the operator environment."
+        }
+        $expectedTurnEndpoint = "turns:$($environment['LIVEKIT_TURN_DOMAIN']):443?transport=tcp"
+        if ([string]$liveServices.turnEndpoint -ne $expectedTurnEndpoint) {
+            Add-Failure "Live MatrixRTC evidence turnEndpoint must equal $expectedTurnEndpoint."
+        }
+    } catch {
+        Add-Failure "Live MatrixRTC evidence deployment endpoints could not be read: $($_.Exception.Message)"
     }
 }
 
@@ -427,6 +461,16 @@ if ($Production) {
     if ($environment["MATRIXRTC_TURN_TLS_BIND"] -and
         $environment["MATRIXRTC_TURN_TLS_BIND"] -notin @("127.0.0.1", "::1")) {
         Add-Failure "The default production TURN/TLS plaintext hop must bind only to loopback."
+    }
+    foreach ($portPolicy in @(
+        @{ Name = "MATRIXRTC_LIVEKIT_HTTP_PORT"; Expected = "7880" },
+        @{ Name = "MATRIXRTC_AUTH_HTTP_PORT"; Expected = "8080" },
+        @{ Name = "MATRIXRTC_METRICS_PORT"; Expected = "6789" }
+    )) {
+        if ($environment[$portPolicy.Name] -and
+            $environment[$portPolicy.Name] -ne $portPolicy.Expected) {
+            Add-Failure "Production $($portPolicy.Name) must remain $($portPolicy.Expected) so the reviewed loopback proxy and monitoring targets cannot drift."
+        }
     }
     if ($environment["LIVEKIT_API_KEY"].Length -lt 12) {
         Add-Failure "LIVEKIT_API_KEY must be at least 12 characters in production."
@@ -542,20 +586,28 @@ if ($Online -and $failures.Count -eq 0) {
         Add-Pass "TURN/TLS hostname resolves through trusted DNS."
 
         $turnTcp = [System.Net.Sockets.TcpClient]::new()
-        $connectTask = $turnTcp.ConnectAsync($turnDomain, 5349)
+        # LiveKit advertises external TURN/TLS on TCP 443 when external_tls is
+        # enabled. Port 5349 is only the loopback plaintext backend hop.
+        $connectTask = $turnTcp.ConnectAsync($turnDomain, 443)
         if (-not $connectTask.Wait([TimeSpan]::FromSeconds(10))) {
-            throw "TCP 5349 connection timed out"
+            throw "TCP 443 connection timed out"
         }
         $turnTls = [System.Net.Security.SslStream]::new(
             $turnTcp.GetStream(),
             $false
         )
         $turnTls.AuthenticateAsClient($turnDomain)
-        Add-Pass "TURN/TLS listener presented a trusted certificate for the configured hostname."
+        if ($turnTls.SslProtocol -notin @(
+            [System.Security.Authentication.SslProtocols]::Tls12,
+            [System.Security.Authentication.SslProtocols]::Tls13
+        )) {
+            throw "negotiated obsolete TLS protocol $($turnTls.SslProtocol)"
+        }
+        Add-Pass "TURN/TLS public TCP 443 presented a trusted TLS 1.2+ certificate for the configured hostname."
         $turnTls.Dispose()
         $turnTcp.Dispose()
     } catch {
-        Add-Failure "TURN/TLS DNS, TCP 5349, or trusted-certificate probe failed: $($_.Exception.Message)"
+        Add-Failure "TURN/TLS DNS, public TCP 443, or trusted-certificate probe failed: $($_.Exception.Message)"
     }
 
     $warnings.Add(

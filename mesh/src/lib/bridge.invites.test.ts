@@ -3,6 +3,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core'
 import {
   generateInviteLink,
   getBackendStatus,
+  getMemberPage,
   joinOrRequestCommunity,
 } from './bridge'
 
@@ -38,7 +39,7 @@ const MATRIX_STATUS = {
     tokenEndpoint: null,
     livekitSfuUrl: null,
     cspReady: false,
-    mediaE2eeVerified: false,
+    mediaE2eeReady: false,
     reason: 'not configured',
   },
   authenticated: true,
@@ -70,6 +71,43 @@ describe('Matrix community invitation bridge', () => {
     expect(invokeMock).toHaveBeenCalledWith('matrix_create_community_invite', {
       communityId: '!community:mesh.test',
     })
+  })
+
+  it('attaches a bounded cancellable native lifecycle to status discovery', async () => {
+    invokeMock.mockResolvedValueOnce(MATRIX_STATUS)
+
+    await expect(getBackendStatus()).resolves.toEqual(MATRIX_STATUS)
+    expect(invokeMock).toHaveBeenCalledWith(
+      'get_backend_status',
+      expect.objectContaining({
+        requestId: expect.any(String),
+        deadlineMs: expect.any(Number),
+      }),
+    )
+  })
+
+  it('requests one bounded member page with an opaque native cursor', async () => {
+    invokeMock.mockResolvedValueOnce({
+      members: [],
+      nextCursor: null,
+      stateComplete: false,
+    })
+
+    await expect(getMemberPage('!community:mesh.test', '@after:mesh.test', 40)).resolves.toEqual({
+      members: [],
+      nextCursor: null,
+      stateComplete: false,
+    })
+    expect(invokeMock).toHaveBeenCalledWith(
+      'matrix_list_members',
+      expect.objectContaining({
+        communityId: '!community:mesh.test',
+        cursor: '@after:mesh.test',
+        limit: 40,
+        requestId: expect.any(String),
+        deadlineMs: expect.any(Number),
+      }),
+    )
   })
 
   it('refuses to pass a private admission secret through renderer IPC', async () => {

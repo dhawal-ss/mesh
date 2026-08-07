@@ -11,12 +11,14 @@ interface NetworkStore {
 let disconnectedAt: number | null = null
 let recoveredStatusTimer: ReturnType<typeof setTimeout> | null = null
 
+const CONNECTING_STATUS: NetworkState = {
+  state: 'connecting' as ConnectionState,
+  peerCount: 0,
+  averageLatency: 0,
+}
+
 export const useNetworkStore = create<NetworkStore>((set, get) => ({
-  status: {
-    state: 'connecting' as ConnectionState,
-    peerCount: 0,
-    averageLatency: 0,
-  },
+  status: CONNECTING_STATUS,
   recoveredConnection: null,
   setStatus: (update) => {
     const previous = get().status
@@ -44,9 +46,21 @@ export const useNetworkStore = create<NetworkStore>((set, get) => ({
   },
 }))
 
-export function resetNetworkRecoveryForTest(): void {
+/**
+ * Reset both observable and module-scoped recovery state at an account boundary.
+ * A direct Zustand reset is insufficient because a prior account may still own
+ * the disconnect timestamp or the timer that clears the recovered banner.
+ */
+export function resetNetworkStateForAccountTransition(): void {
   disconnectedAt = null
   if (recoveredStatusTimer) clearTimeout(recoveredStatusTimer)
   recoveredStatusTimer = null
-  useNetworkStore.setState({ recoveredConnection: null })
+  useNetworkStore.setState({
+    status: CONNECTING_STATUS,
+    recoveredConnection: null,
+  })
+}
+
+export function resetNetworkRecoveryForTest(): void {
+  resetNetworkStateForAccountTransition()
 }

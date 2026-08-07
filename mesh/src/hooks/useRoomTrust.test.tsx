@@ -41,7 +41,7 @@ describe('useRoomTrust refresh subscriptions', () => {
         tokenEndpoint: null,
         livekitSfuUrl: null,
         cspReady: false,
-        mediaE2eeVerified: false,
+        mediaE2eeReady: false,
         reason: 'Not configured',
       },
       authenticated: true,

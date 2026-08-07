@@ -103,23 +103,38 @@ impl CommandError {
 }
 
 fn sanitize_detail(detail: &str) -> String {
+    const SECRET_MARKERS: [&str; 7] = [
+        "access_token",
+        "refresh_token",
+        "authorization",
+        "bearer",
+        "password",
+        "recovery_key",
+        "secret",
+    ];
+
     let mut sanitized = detail
         .split_whitespace()
-        .map(|token| {
+        .scan(false, |redact_next, token| {
             let lower = token.to_ascii_lowercase();
-            let contains_secret = [
-                "access_token",
-                "refresh_token",
-                "authorization",
-                "bearer",
-                "password",
-                "recovery_key",
-                "secret",
-            ]
-            .iter()
-            .any(|marker| lower.contains(marker));
-            if contains_secret {
-                return "[redacted]".to_owned();
+            let contains_secret = SECRET_MARKERS.iter().any(|marker| lower.contains(marker));
+            let redact_current = *redact_next || contains_secret;
+            let inline_value = ['=', ':'].iter().any(|separator| {
+                lower.split_once(*separator).is_some_and(|(_, value)| {
+                    !value
+                        .trim_matches(|character| matches!(character, '\'' | '"'))
+                        .is_empty()
+                })
+            });
+            let marker_needs_following_value = contains_secret
+                && (!inline_value
+                    || lower
+                        .trim_matches(|character: char| !character.is_ascii_alphanumeric())
+                        .ends_with("bearer"));
+            *redact_next = marker_needs_following_value;
+
+            if redact_current {
+                return Some("[redacted]".to_owned());
             }
 
             let bytes = token.as_bytes();
@@ -130,9 +145,9 @@ fn sanitize_detail(detail: &str) -> String {
             let unc_path = token.starts_with("\\\\");
             let unix_path = token.starts_with('/') && !token.starts_with("//");
             if windows_path || unc_path || unix_path {
-                "[redacted path]".to_owned()
+                Some("[redacted path]".to_owned())
             } else {
-                token.to_owned()
+                Some(token.to_owned())
             }
         })
         .collect::<Vec<_>>()
@@ -246,15 +261,37 @@ mod tests {
 
     #[test]
     fn command_error_details_redact_secrets_and_local_paths() {
-        let error = CommandError::Other(
-            "failed C:\\Users\\person\\session.json access_token=private".to_owned(),
-        );
-        let serialized = serde_json::to_value(error).unwrap();
-        let detail = serialized["detail"].as_str().unwrap();
+        for (source, forbidden) in [
+            (
+                "failed C:\\Users\\person\\session.json access_token=private",
+                ["person", "private"].as_slice(),
+            ),
+            (
+                "request failed Authorization: Bearer sentinel-header-token",
+                ["sentinel-header-token"].as_slice(),
+            ),
+            (
+                "login failed password sentinel-password-value",
+                ["sentinel-password-value"].as_slice(),
+            ),
+            (
+                "request failed Authorization:Bearer sentinel-compact-token",
+                ["sentinel-compact-token"].as_slice(),
+            ),
+        ] {
+            let serialized = serde_json::to_value(CommandError::Other(source.to_owned())).unwrap();
+            let detail = serialized["detail"].as_str().unwrap();
 
-        assert!(!detail.contains("person"));
-        assert!(!detail.contains("private"));
-        assert!(detail.contains("[redacted path]"));
-        assert!(detail.contains("[redacted]"));
+            for secret in forbidden {
+                assert!(!detail.contains(secret));
+            }
+            assert!(detail.contains("[redacted]"));
+        }
+
+        let path = serde_json::to_value(CommandError::Other(
+            "failed C:\\Users\\person\\session.json".to_owned(),
+        ))
+        .unwrap();
+        assert!(path["detail"].as_str().unwrap().contains("[redacted path]"));
     }
 }

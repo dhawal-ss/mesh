@@ -9,6 +9,14 @@ import { useMeshNavigationStore } from '../../store/navigation'
 import { currentMeshRoute, emptyMeshNavigation } from '../../lib/mesh-navigation'
 import { VoiceDock } from './VoiceDock'
 
+const interfaceSounds = vi.hoisted(() => ({
+  play: vi.fn(async () => true),
+}))
+
+vi.mock('../../lib/interface-sounds', () => ({
+  playInterfaceSound: interfaceSounds.play,
+}))
+
 describe('VoiceDock', () => {
   let container: HTMLDivElement
   let root: Root
@@ -62,9 +70,12 @@ describe('VoiceDock', () => {
       connectionState: 'connected',
       isMuted: false,
       isDeafened: false,
+      isCameraEnabled: true,
+      isScreenSharing: true,
       localAudioLevel: 0.2,
       peers: [],
     })
+    interfaceSounds.play.mockClear()
   })
 
   afterEach(() => {
@@ -109,7 +120,11 @@ describe('VoiceDock', () => {
     expect(useVoiceStore.getState()).toMatchObject({
       currentCommunityId: null,
       currentChannelId: null,
+      isMuted: true,
+      isCameraEnabled: false,
+      isScreenSharing: false,
     })
+    expect(interfaceSounds.play).toHaveBeenCalledWith('voice-self-leave')
   })
 
   it('keeps a failed owned session actionable without hiding messages', async () => {

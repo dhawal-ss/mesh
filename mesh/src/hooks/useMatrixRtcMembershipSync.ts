@@ -4,6 +4,7 @@ import {
   onMatrixRtcMembership,
 } from '../lib/bridge'
 import { useVoiceStore } from '../store/voice'
+import { mapSettledWithConcurrency } from '../lib/concurrency'
 
 export function useMatrixRtcMembershipSync(roomIds: string[]): void {
   const setMatrixRtcMembers = useVoiceStore((state) => state.setMatrixRtcMembers)
@@ -16,11 +17,15 @@ export function useMatrixRtcMembershipSync(roomIds: string[]): void {
     let active = true
     const boundedRoomIds = roomIdsKey ? roomIdsKey.split('\u0000') : []
 
-    void Promise.allSettled(
-      boundedRoomIds.map(async (roomId) => {
+    void mapSettledWithConcurrency(
+      boundedRoomIds,
+      4,
+      async (roomId) => {
+        if (!active) return
         const members = await matrixRtcMembers(roomId)
         if (active) setMatrixRtcMembers(roomId, members)
-      }),
+      },
+      () => active,
     )
 
     const unlistenTask = onMatrixRtcMembership((event) => {

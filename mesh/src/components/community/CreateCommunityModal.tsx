@@ -15,6 +15,12 @@ import { Avatar } from '../ui/Avatar'
 import { pixelColorForSeed } from '../ui/PixelMark'
 import { Icon } from '../ui/Icon'
 import { parseCommunityInvite, type CommunityInvite } from '../../lib/community-invites'
+import {
+  COMMUNITY_DESCRIPTION_MAX_LENGTH,
+  COMMUNITY_NAME_MAX_LENGTH,
+  metadataCharactersRemaining,
+  metadataLengthError,
+} from '../../lib/community-metadata-limits'
 
 export type CreateCommunityTab = 'create' | 'join' | 'discover'
 type CommunityAccessChoice = 'invite' | 'approval'
@@ -78,6 +84,20 @@ export function CreateCommunityModal({
   const [applicationReason, setApplicationReason] = useState('')
   const [directoryStatus, setDirectoryStatus] = useState<Record<string, string>>({})
 
+  const communityNameError = metadataLengthError(
+    'Community name',
+    communityName,
+    COMMUNITY_NAME_MAX_LENGTH,
+  )
+  const communityDescriptionError = metadataLengthError(
+    'Description',
+    communityDescription,
+    COMMUNITY_DESCRIPTION_MAX_LENGTH,
+  )
+  const hasInvalidCommunityMetadata = Boolean(
+    communityNameError || communityDescriptionError,
+  )
+
   const addCommunity = useCommunityStore((s) => s.addCommunity)
   const setActiveCommunity = useCommunityStore((s) => s.setActiveCommunity)
   const replaceCommunityChannels = useChannelStore((s) => s.replaceCommunityChannels)
@@ -110,7 +130,7 @@ export function CreateCommunityModal({
   }
 
   const handleCreate = async () => {
-    if (!communityName.trim() || creationInFlightRef.current) return
+    if (!communityName.trim() || hasInvalidCommunityMetadata || creationInFlightRef.current) return
     creationInFlightRef.current = true
     setIsLoading(true)
     setCreateError(null)
@@ -280,7 +300,7 @@ export function CreateCommunityModal({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       if (tab === 'create') {
-        if (createStep === 1 && communityName.trim()) setCreateStep(2)
+        if (createStep === 1 && communityName.trim() && !hasInvalidCommunityMetadata) setCreateStep(2)
         else if (createStep === 2) void handleCreate()
       }
       else if (tab === 'join') {
@@ -295,14 +315,14 @@ export function CreateCommunityModal({
     ? 'Create a community'
     : tab === 'join'
       ? 'Join a community'
-      : 'Browse communities'
+      : 'Find a community'
   const modalDescription = tab === 'create'
     ? 'Start a focused space for the people you talk with.'
     : tab === 'join'
       ? matrixMode
         ? 'Paste the invite you received.'
         : 'Paste the invite link you received.'
-      : 'Search the public community directory. New members may need approval.'
+      : 'Join from an invitation, use a compatible directory, or start your own.'
 
   return (
     <CommunityToolsFrame
@@ -314,7 +334,7 @@ export function CreateCommunityModal({
       size="xl"
       className="mesh-community-tools-dialog"
     >
-      <div className={embedded ? 'px-party-gutter py-5' : undefined}>
+      <div className={embedded ? 'mesh-form-card border border-border-subtle p-5 sm:p-6' : undefined}>
         {/* Tab switcher */}
         {!embedded && (
         <div className="mb-5 grid grid-cols-3 gap-2">
@@ -341,7 +361,7 @@ export function CreateCommunityModal({
                 className="relative z-sticky"
               />
               <span className="relative z-sticky capitalize">
-                {t === 'create' ? 'Create' : t === 'join' ? 'Join' : 'Browse'}
+                {t === 'create' ? 'Create' : t === 'join' ? 'Join' : 'Find'}
               </span>
             </button>
           ))}
@@ -357,9 +377,14 @@ export function CreateCommunityModal({
               exit={{ opacity: 0, x: 8 }}
               transition={transitions.enter}
             >
-              <p className="mb-4 text-xs text-muted">
-                Step {createStep} of 2 · {createStep === 1 ? 'Name and identity' : 'Access and starter rooms'}
-              </p>
+              <div className="mb-5 flex items-center justify-between gap-3 border-b border-border-subtle pb-3">
+                <p className="text-sm font-semibold text-secondary">
+                  {createStep === 1 ? 'Name and identity' : 'Access and starter rooms'}
+                </p>
+                <span className="rounded-full bg-surface-selected px-2.5 py-1 font-mono text-meta text-muted">
+                  Step {createStep} of 2
+                </span>
+              </div>
 
               {createStep === 1 ? (
                 <div className="space-y-3">
@@ -372,9 +397,15 @@ export function CreateCommunityModal({
                     }}
                     onKeyDown={handleKeyDown}
                     placeholder="e.g. Canyon Raiders"
+                    maxLength={COMMUNITY_NAME_MAX_LENGTH}
+                    hint={metadataCharactersRemaining(
+                      communityName,
+                      COMMUNITY_NAME_MAX_LENGTH,
+                    )}
+                    error={communityNameError}
                     autoFocus
                   />
-                  <div className="flex items-center gap-3 rounded-control border border-border-subtle bg-surface-sunken p-3">
+                  <div className="flex items-center gap-3 rounded-panel border border-border-subtle bg-surface-base p-3">
                     <Avatar
                       color={pixelColorForSeed(communityName || 'new-community')}
                       size={44}
@@ -398,12 +429,35 @@ export function CreateCommunityModal({
                     <textarea
                       id="create-community-description"
                       value={communityDescription}
-                      onChange={(e) => setCommunityDescription(e.target.value)}
+                      onChange={(e) => {
+                        setCommunityDescription(e.target.value)
+                        setCreateError(null)
+                      }}
                       onKeyDown={handleKeyDown}
                       placeholder="What's this community about?"
+                      maxLength={COMMUNITY_DESCRIPTION_MAX_LENGTH}
+                      aria-describedby="create-community-description-supporting"
+                      aria-invalid={communityDescriptionError ? true : undefined}
                       rows={2}
-                      className="w-full resize-none rounded-control border border-border bg-surface-sunken px-3 py-2 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                      className={`w-full resize-none rounded-control border bg-surface-base px-3 py-2 text-sm text-primary placeholder:text-muted focus:outline-none ${
+                        communityDescriptionError
+                          ? 'border-status-danger focus:border-status-danger'
+                          : 'border-border focus:border-accent'
+                      }`}
                     />
+                    <p
+                      id="create-community-description-supporting"
+                      role={communityDescriptionError ? 'alert' : undefined}
+                      className={`mt-1.5 text-xs ${
+                        communityDescriptionError ? 'text-status-danger' : 'text-muted'
+                      }`}
+                    >
+                      {communityDescriptionError
+                        ?? metadataCharactersRemaining(
+                          communityDescription,
+                          COMMUNITY_DESCRIPTION_MAX_LENGTH,
+                        )}
+                    </p>
                   </div>
                 </div>
               ) : (
@@ -443,12 +497,12 @@ export function CreateCommunityModal({
                       {GAMING_STARTER_ROOMS.map((room) => <li key={room}>#{room}</li>)}
                     </ul>
                     <p className="mt-2 text-xs leading-5 text-muted">
-                      A voice room is added only when this account service reports that private calling and voice-room creation are ready.
+                      Mesh adds a voice room automatically when private calling is available.
                     </p>
                   </section>
                   <p className="text-xs leading-5 text-muted">
-                    This community will use your current account service. Members may use other compatible services.
-                    Mesh does not provision paid hosting, DNS, or server setup.
+                    Your community is created with your current account service. Friends can join
+                    with accounts from other compatible services.
                   </p>
                 </div>
               )}
@@ -492,10 +546,10 @@ export function CreateCommunityModal({
                 <Button
                   variant="primary"
                   onClick={() => {
-                    if (createStep === 1) setCreateStep(2)
+                    if (createStep === 1 && !hasInvalidCommunityMetadata) setCreateStep(2)
                     else void handleCreate()
                   }}
-                  disabled={!communityName.trim() || isLoading}
+                  disabled={!communityName.trim() || hasInvalidCommunityMetadata || isLoading}
                   className="flex-1"
                 >
                   {createStep === 1
@@ -593,15 +647,27 @@ export function CreateCommunityModal({
               exit={{ opacity: 0, x: -8 }}
               transition={transitions.enter}
             >
-              <section className="rounded-control border border-border-subtle bg-surface-sunken px-3 py-4" aria-labelledby="browse-unavailable-heading">
-                <h3 id="browse-unavailable-heading" className="text-sm font-semibold text-primary">Browsing is not available yet</h3>
-                <p className="mt-2 text-xs leading-5 text-muted">
-                  Mesh has no reviewed public directory source configured. You can still join with an invitation or create a community.
+              <section className="rounded-panel border border-border-subtle bg-surface-sunken px-4 py-5" aria-labelledby="find-community-heading">
+                <h3 id="find-community-heading" className="text-base font-semibold text-primary">Find your next crew</h3>
+                <p className="mt-2 text-sm leading-6 text-secondary">
+                  The simplest way to join is with a Mesh invitation. You can review where it leads
+                  before anything changes.
+                </p>
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  <Button variant="primary" onClick={() => setTab('join')}>
+                    Use an invitation
+                  </Button>
+                  <Button variant="secondary" onClick={() => setTab('create')}>
+                    Create a community
+                  </Button>
+                </div>
+                <p className="mt-3 text-xs leading-5 text-muted">
+                  Mesh does not currently publish a community catalog.
                 </p>
               </section>
               <details className="mt-4 rounded-control border border-border-subtle bg-surface-raised px-3">
                 <summary className="flex min-h-11 cursor-pointer items-center text-sm font-semibold text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
-                  Use another directory
+                  Advanced: use another directory
                 </summary>
                 <div className="space-y-3 border-t border-border-subtle py-3">
                 <Input
@@ -699,7 +765,7 @@ function CommunityToolsFrame({
   children,
   ...modalProps
 }: React.ComponentProps<typeof Modal> & { embedded: boolean; children: ReactNode }) {
-  if (embedded) return <div className="min-h-0 overflow-y-auto">{children}</div>
+  if (embedded) return <div className="min-h-0">{children}</div>
   return <Modal {...modalProps}>{children}</Modal>
 }
 

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-reserve-login-attempt"
+description = "Enables the matrix_reserve_login_attempt command without any pre-configured scope."
+commands.allow = ["matrix_reserve_login_attempt"]
+
+[[permission]]
+identifier = "deny-matrix-reserve-login-attempt"
+description = "Denies the matrix_reserve_login_attempt command without any pre-configured scope."
+commands.deny = ["matrix_reserve_login_attempt"]

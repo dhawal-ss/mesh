@@ -101,7 +101,7 @@ try {
     $document.services = [pscustomobject]@{
         authorizationEndpoint = "https://rtc.mesh.invalid/livekit/jwt"
         sfuEndpoint = "wss://sfu.mesh.invalid/livekit/sfu"
-        turnEndpoint = "turns://turn.mesh.invalid:5349"
+        turnEndpoint = "turns:turn.mesh.invalid:443?transport=tcp"
     }
     $document.devices = @(
         [pscustomobject]@{
@@ -251,6 +251,18 @@ try {
     $mutated.sourceSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     $mutated.clientBuild.sourceSha = $mutated.sourceSha
     Assert-ValidationFailure "wrong source SHA is rejected" $mutated "sourceSha must equal"
+
+    $mutated = Copy-TestDocument $document
+    $mutated.services.authorizationEndpoint = "https://rtc.mesh.invalid/livekit/jwt?access_token=secret"
+    Assert-ValidationFailure "credential-bearing auth endpoint is rejected" $mutated "reviewed public port"
+
+    $mutated = Copy-TestDocument $document
+    $mutated.services.sfuEndpoint = "wss://sfu.mesh.invalid/livekit/sfu#unreviewed"
+    Assert-ValidationFailure "fragmented SFU endpoint is rejected" $mutated "reviewed public port"
+
+    $mutated = Copy-TestDocument $document
+    $mutated.services.turnEndpoint = "turns:turn.mesh.invalid:5349?transport=tcp"
+    Assert-ValidationFailure "private TURN backend port is rejected" $mutated "reviewed public port"
 
     $mutated = Copy-TestDocument $document
     $mutated.artifacts[1].path = "missing.log"

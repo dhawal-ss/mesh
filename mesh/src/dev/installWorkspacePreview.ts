@@ -1,5 +1,9 @@
 import lanternGuildEnvironment from '../assets/lantern-guild-environment.png'
+import communityLattice from '../assets/pixel/community-lattice.png'
+import meshHeart from '../assets/pixel/mesh-heart.png'
+import profileSignal from '../assets/pixel/profile-signal.png'
 import { safeLocalStorageSet } from '../lib/safe-storage'
+import type { Channel, CommunityApplication, CustomEmoji, Message } from '../types/ipc'
 
 type PreviewIpcArgs = Record<string, unknown>
 
@@ -13,6 +17,79 @@ let simulateVoice = false
 let simulateInvitation = false
 let simulateSignedOut = false
 let simulateQueue = false
+let previewQueueRestoreFailuresRemaining = 0
+let previewQueueListenerFailuresRemaining = 0
+let simulateEmojiPickerCancel = false
+let simulateEmojiUploadFailure = false
+
+const initialPreviewApplications: CommunityApplication[] = [
+  {
+    userId: '@avery:open-matrix.example',
+    displayName: 'Avery Stone',
+    reason: 'I joined the last open playtest and would love to help with the next one.',
+    requestedAt: '2026-08-04T21:18:00.000Z',
+  },
+  {
+    userId: '@noor:matrix.org',
+    displayName: 'Noor',
+    reason: 'Maya shared the community after we met in a co-op accessibility group.',
+    requestedAt: '2026-08-05T01:42:00.000Z',
+  },
+]
+
+let previewApplications: CommunityApplication[] = []
+let previewCommunityAccess = {
+  alias: 'lantern-guild',
+  discoverable: false,
+  joinRule: 'invite',
+}
+
+const initialPreviewEmoji: CustomEmoji[] = [
+  {
+    shortcode: 'mesh_heart',
+    body: 'Mesh heart',
+    mxcUri: 'mxc://mesh.test/mesh-heart',
+    contentType: 'image/png',
+    width: 96,
+    height: 96,
+    sizeBytes: 6291,
+  },
+  {
+    shortcode: 'signal',
+    body: 'Signal',
+    mxcUri: 'mxc://mesh.test/profile-signal',
+    contentType: 'image/png',
+    width: 96,
+    height: 96,
+    sizeBytes: 3963,
+  },
+  {
+    shortcode: 'community',
+    body: 'Community',
+    mxcUri: 'mxc://mesh.test/community-lattice',
+    contentType: 'image/png',
+    width: 96,
+    height: 96,
+    sizeBytes: 2329,
+  },
+]
+
+const initialPreviewEmojiAssets: Record<string, string> = {
+  mesh_heart: meshHeart,
+  signal: profileSignal,
+  community: communityLattice,
+}
+
+let previewEmoji: CustomEmoji[] = []
+let previewEmojiBytes: Record<string, number[]> = {}
+let previewEmojiGrantCounter = 0
+let previewEmojiGrants: Record<string, {
+  communityId: string
+  name: string
+  size: number
+  contentType: string
+  bytes: number[]
+}> = {}
 
 const community = {
   id: COMMUNITY_ID,
@@ -34,7 +111,7 @@ const secondCommunity = {
   joinedAt: '2026-07-26T00:00:00.000Z',
 }
 
-const channels = [
+const channels: Channel[] = [
   { id: ACTIVE_ROOM_ID, communityId: COMMUNITY_ID, name: 'concept-art', channelType: 'text', unreadCount: 0 },
   { id: '!welcome:mesh.test', communityId: COMMUNITY_ID, name: 'welcome', channelType: 'text', unreadCount: 2 },
   { id: '!announcements:mesh.test', communityId: COMMUNITY_ID, name: 'announcements', channelType: 'text', unreadCount: 1 },
@@ -49,6 +126,7 @@ const channels = [
   { id: '!studio:mesh.test', communityId: COMMUNITY_ID, name: 'Studio', channelType: 'voice', unreadCount: 0 },
   { id: '!quiet-cowork:mesh.test', communityId: COMMUNITY_ID, name: 'Quiet Co-work', channelType: 'voice', unreadCount: 0 },
 ]
+let createdPreviewChannels: Channel[] = []
 
 const people = [
   ['@maya:mesh.test', 'Maya Chen', '#9b7cff', 'owner', true],
@@ -71,7 +149,7 @@ const people = [
   online,
 }))
 
-const timeline = [
+const timeline: Message[] = [
   {
     id: '$maya-color-pass',
     channelId: ACTIVE_ROOM_ID,
@@ -254,7 +332,7 @@ function backendStatus() {
       tokenEndpoint: null,
       livekitSfuUrl: null,
       cspReady: false,
-      mediaE2eeVerified: simulateVoice,
+      mediaE2eeReady: simulateVoice,
       reason: simulateVoice ? null : 'Voice is unavailable in this design preview.',
     },
     authenticated: !simulateSignedOut,
@@ -265,6 +343,20 @@ function backendStatus() {
     durableHistory: true,
     supportsE2ee: true,
     sessionE2eeReady: true,
+    warnings: [],
+  }
+}
+
+function recoveryHealth() {
+  return {
+    recoveryState: 'enabled',
+    backupState: 'enabled',
+    backupExistsOnServer: true,
+    backupEnabled: true,
+    healthy: true,
+    checkedAt: '2026-08-01T15:00:00.000Z',
+    lastSuccessfulTestAt: '2026-08-01T15:00:00.000Z',
+    secureStorageState: 'saved',
     warnings: [],
   }
 }
@@ -326,7 +418,7 @@ function responseFor(command: string, args: PreviewIpcArgs): unknown | Promise<u
     case 'matrix_list_channels':
       return {
         entities: args.communityId === COMMUNITY_ID
-          ? channels
+          ? [...channels, ...createdPreviewChannels]
           : args.communityId === INVITED_COMMUNITY_ID
             ? [{
                 id: INVITED_ROOM_ID,
@@ -339,20 +431,53 @@ function responseFor(command: string, args: PreviewIpcArgs): unknown | Promise<u
         blockedEntities: [],
       }
     case 'matrix_list_members':
-      return people
+      return { members: people, nextCursor: null, stateComplete: true }
     case 'matrix_get_messages':
       return timeline.filter((message) => message.channelId === args.roomId)
     case 'matrix_dm_conversations':
       return { entities: directConversations, blockedEntities: [] }
+    case 'matrix_dm_requests':
+      return []
+    case 'matrix_blocked_accounts':
+      return { accounts: [], nextCursor: null }
     case 'matrix_dm_messages':
       return directMessages.filter((message) => message.conversationId === args.conversationId)
     case 'matrix_queued_messages':
+      if (previewQueueRestoreFailuresRemaining > 0) {
+        previewQueueRestoreFailuresRemaining -= 1
+        throw new Error('Preview saved-message restore failed')
+      }
       return simulateQueue ? queuedPreviewMessages : []
     case 'matrix_typing_users':
-    case 'matrix_list_custom_emoji':
-    case 'matrix_list_community_applications':
     case 'matrix_list_moderation_audit':
       return []
+    case 'matrix_list_custom_emoji':
+      return previewEmoji.map((emoji) => ({ ...emoji }))
+    case 'pick_custom_emoji_grant': {
+      if (simulateEmojiPickerCancel) return null
+      const grant = `preview-custom-emoji-${++previewEmojiGrantCounter}`
+      const selected = {
+        communityId: String(args.communityId ?? ''),
+        name: 'playtest-ready.png',
+        size: 8,
+        contentType: 'image/png',
+        bytes: [137, 80, 78, 71, 13, 10, 26, 10],
+      }
+      previewEmojiGrants[grant] = selected
+      return { grant, name: selected.name, size: selected.size, contentType: selected.contentType }
+    }
+    case 'matrix_load_custom_emoji_image': {
+      const shortcode = String(args.shortcode ?? '')
+      const stored = previewEmojiBytes[shortcode]
+      if (stored) return new Uint8Array(stored)
+      const asset = initialPreviewEmojiAssets[shortcode]
+      if (!asset) throw new Error('Preview emoji image not found')
+      return fetch(asset)
+        .then((response) => response.arrayBuffer())
+        .then((bytes) => new Uint8Array(bytes))
+    }
+    case 'matrix_list_community_applications':
+      return previewApplications.map((application) => ({ ...application }))
     case 'matrix_room_is_encrypted':
       return true
     case 'matrix_dm_blocked':
@@ -380,16 +505,17 @@ function responseFor(command: string, args: PreviewIpcArgs): unknown | Promise<u
           ]
         : []
     case 'matrix_recovery_health':
+    case 'matrix_test_recovery':
+    case 'matrix_test_stored_recovery':
+      return recoveryHealth()
+    case 'matrix_enable_recovery':
       return {
-        recoveryState: 'enabled',
-        backupState: 'enabled',
-        backupExistsOnServer: true,
-        backupEnabled: true,
-        healthy: true,
-        checkedAt: '2026-08-01T15:00:00.000Z',
-        lastSuccessfulTestAt: '2026-08-01T15:00:00.000Z',
-        warnings: [],
+        recoveryKey: 'MESH-PREVIEW-ONLY-BACKUP-CODE',
+        secureStorageState: 'saved',
+        verificationState: 'verified',
       }
+    case 'matrix_recover':
+      return null
     case 'matrix_devices':
       return [{
         deviceId: 'TAYLOR-PREVIEW',
@@ -404,11 +530,92 @@ function responseFor(command: string, args: PreviewIpcArgs): unknown | Promise<u
         identityChanged: false,
       }]
     case 'matrix_community_access_settings':
-      return { alias: 'lantern-guild', discoverable: false, joinRule: 'invite' }
+      return { ...previewCommunityAccess }
+    case 'matrix_update_community_access': {
+      const alias = typeof args.alias === 'string' && args.alias.trim()
+        ? args.alias.trim()
+        : null
+      const discoverable = args.discoverable === true
+      previewCommunityAccess = {
+        alias: alias ?? '',
+        discoverable,
+        joinRule: discoverable ? 'knock' : 'invite',
+      }
+      return { ...previewCommunityAccess, alias }
+    }
+    case 'matrix_respond_community_application':
+      previewApplications = previewApplications.filter(
+        (application) => application.userId !== args.userId,
+      )
+      return null
+    case 'matrix_upload_custom_emoji': {
+      const shortcode = String(args.shortcode ?? '').trim().toLowerCase()
+      const grant = String(args.grant ?? '')
+      const selected = previewEmojiGrants[grant]
+      if (!selected) throw new Error('Preview image selection expired; choose it again')
+      if (selected.communityId !== String(args.communityId ?? '')) {
+        throw new Error('Preview image selection belongs to a different community')
+      }
+      const nextGrants = { ...previewEmojiGrants }
+      delete nextGrants[grant]
+      previewEmojiGrants = nextGrants
+      if (simulateEmojiUploadFailure) {
+        throw new Error('Preview custom emoji upload failed')
+      }
+      const emoji: CustomEmoji = {
+        shortcode,
+        body: shortcode.replace(/_/g, ' '),
+        mxcUri: `mxc://mesh.test/preview-${shortcode}`,
+        contentType: selected.contentType,
+        width: 96,
+        height: 96,
+        sizeBytes: selected.size,
+      }
+      previewEmoji = [
+        ...previewEmoji.filter((entry) => entry.shortcode !== shortcode),
+        emoji,
+      ]
+      previewEmojiBytes = { ...previewEmojiBytes, [shortcode]: selected.bytes }
+      return emoji
+    }
+    case 'matrix_remove_custom_emoji': {
+      const shortcode = String(args.shortcode ?? '')
+      previewEmoji = previewEmoji.filter((emoji) => emoji.shortcode !== shortcode)
+      const nextBytes = { ...previewEmojiBytes }
+      delete nextBytes[shortcode]
+      previewEmojiBytes = nextBytes
+      return null
+    }
+    case 'matrix_create_community_invite':
+      return 'https://mesh.test/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789'
+    case 'matrix_invite_to_community':
+      return null
+    case 'matrix_update_community':
+      return null
+    case 'matrix_create_channel': {
+      const name = String(args.name ?? '').trim()
+      const communityId = String(args.communityId ?? COMMUNITY_ID)
+      const channelType: Channel['channelType'] = args.channelType === 'voice' ? 'voice' : 'text'
+      const channel: Channel = {
+        id: `!preview-${createdPreviewChannels.length + 1}:mesh.test`,
+        communityId,
+        name,
+        channelType,
+        unreadCount: 0,
+      }
+      createdPreviewChannels = [
+        ...createdPreviewChannels.filter((entry) => entry.id !== channel.id),
+        channel,
+      ]
+      return channel
+    }
     case 'matrix_update_user_preferences':
       return { ...(args.preferences as PreviewIpcArgs), updatedAt: '2026-08-01T15:00:00.000Z' }
-    case 'matrix_send_message':
-      return {
+    case 'matrix_send_message': {
+      const transactionId = String(
+        args.transactionId ?? `preview-request-${timeline.length + 1}`,
+      )
+      const message: Message = {
         id: `$preview-${timeline.length + 1}`,
         channelId: String(args.roomId),
         authorPublicKey: '@taylor:mesh.test',
@@ -419,24 +626,57 @@ function responseFor(command: string, args: PreviewIpcArgs): unknown | Promise<u
         reactions: {},
         timestamp: new Date().toISOString(),
         signature: '',
-        replyToId: args.replyToId ?? null,
+        replyToId: typeof args.replyToId === 'string' ? args.replyToId : null,
+        transactionId,
+        clientRequestId: transactionId,
         deliveryStatus: 'sent',
       }
+      timeline.push(message)
+      return message
+    }
     case 'matrix_mark_read':
     case 'matrix_mark_dm_read':
     case 'matrix_set_typing':
     case 'matrix_load_composer_draft':
     case 'matrix_save_composer_draft':
     case 'matrix_clear_composer_draft':
+    case 'matrix_sync_once':
+    case 'discard_attachment_grant': {
+      if (typeof args.grant === 'string') {
+        const nextGrants = { ...previewEmojiGrants }
+        delete nextGrants[args.grant]
+        previewEmojiGrants = nextGrants
+      }
+      return null
+    }
+    case 'get_notification_account_scope':
+      return {
+        accountGeneration: 0,
+        userId: args.expectedUserId,
+      }
     case 'set_notification_context':
     case 'send_test_notification':
     case 'plugin:event|unlisten':
       return null
     case 'plugin:deep-link|get_current':
       return null
-    case 'matrix_wait_for_room_update':
-      return new Promise(() => {})
+    case 'matrix_wait_for_room_update': {
+      const requestedTimeout = Number(args.timeoutMs)
+      const waitMs = Number.isFinite(requestedTimeout)
+        ? Math.min(Math.max(requestedTimeout, 1), 30_000)
+        : 25_000
+      return new Promise((resolve) => {
+        window.setTimeout(() => resolve(false), waitMs)
+      })
+    }
     case 'plugin:event|listen':
+      if (
+        args.event === 'matrix:queued-message'
+        && previewQueueListenerFailuresRemaining > 0
+      ) {
+        previewQueueListenerFailuresRemaining -= 1
+        throw new Error('Preview saved-message listener failed')
+      }
       return 1
     default:
       throw new Error(`Unhandled Mesh design preview IPC command: ${command}`)
@@ -449,6 +689,10 @@ export function installWorkspacePreview(
     simulateInvitation?: boolean
     simulateSignedOut?: boolean
     simulateQueue?: boolean
+    simulateQueueRestoreFailure?: boolean
+    simulateQueueListenerFailure?: boolean
+    simulateEmojiPickerCancel?: boolean
+    simulateEmojiUploadFailure?: boolean
   } = {},
 ): void {
   const previewWindow = window as typeof window & {
@@ -460,6 +704,24 @@ export function installWorkspacePreview(
   simulateInvitation = options.simulateInvitation === true
   simulateSignedOut = options.simulateSignedOut === true
   simulateQueue = options.simulateQueue === true
+  previewQueueRestoreFailuresRemaining = options.simulateQueueRestoreFailure === true ? 1 : 0
+  // React StrictMode mounts preview effects twice. Reject both development
+  // registrations so the user-visible second mount still exercises recovery;
+  // the next explicit retry succeeds.
+  previewQueueListenerFailuresRemaining = options.simulateQueueListenerFailure === true ? 2 : 0
+  simulateEmojiPickerCancel = options.simulateEmojiPickerCancel === true
+  simulateEmojiUploadFailure = options.simulateEmojiUploadFailure === true
+  createdPreviewChannels = []
+  previewApplications = initialPreviewApplications.map((application) => ({ ...application }))
+  previewCommunityAccess = {
+    alias: 'lantern-guild',
+    discoverable: false,
+    joinRule: 'invite',
+  }
+  previewEmoji = initialPreviewEmoji.map((emoji) => ({ ...emoji }))
+  previewEmojiBytes = {}
+  previewEmojiGrantCounter = 0
+  previewEmojiGrants = {}
   document.documentElement.dataset.meshSimulateVoice = simulateVoice ? 'true' : 'false'
 
   safeLocalStorageSet('mesh-layout-room-context-open', 'true')

@@ -10,9 +10,11 @@ import {
 } from '../store/settings'
 import { showToast } from '../components/ui/Toast'
 import { playInterfaceSound } from '../lib/interface-sounds'
+import { mapSettledWithConcurrency } from '../lib/concurrency'
 
 interface UseNotificationSyncOptions {
   matrixMode: boolean
+  accountUserId: string | null
   activeRoomId: string | null
 }
 
@@ -25,6 +27,7 @@ function normalizedLevel(
 
 export function useNotificationSync({
   matrixMode,
+  accountUserId,
   activeRoomId,
 }: UseNotificationSyncOptions) {
   const channels = useChannelStore((state) => state.channels)
@@ -66,9 +69,12 @@ export function useNotificationSync({
   )
 
   useEffect(() => {
-    if (!matrixMode) return
-    void bridge
-      .setNotificationContext({
+    if (!matrixMode || !accountUserId) return
+    let cancelled = false
+    const synchronizePolicy = async () => {
+      const scope = await bridge.getNotificationAccountScope(accountUserId)
+      if (cancelled) return
+      await bridge.setNotificationContext(scope, {
         activeRoomId,
         notificationsEnabled: notifications.enabled,
         doNotDisturb: notifications.doNotDisturb,
@@ -79,10 +85,17 @@ export function useNotificationSync({
         ),
         mutedRoomIds,
       })
-      .catch((error) => {
+    }
+    void synchronizePolicy().catch((error) => {
+      if (!cancelled) {
         console.error('Failed to update native notification policy:', error)
-      })
+      }
+    })
+    return () => {
+      cancelled = true
+    }
   }, [
+    accountUserId,
     activeRoomId,
     matrixMode,
     mutedRoomIds,
@@ -135,65 +148,71 @@ export function useNotificationSync({
   useEffect(() => {
     if (!matrixMode || !roomIdsKey) return
     let cancelled = false
-    let unsubscribe: (() => void) | undefined
+    let applyingRemoteSnapshot = false
+    const locallyChangedRooms = new Set<string>()
+    let previous = {
+      ...useSettingsStore.getState().notifications.channelNotificationLevels,
+    }
+    const unsubscribe = useSettingsStore.subscribe((state) => {
+      const next = state.notifications.channelNotificationLevels
+      const changedRoomIds = new Set([...Object.keys(previous), ...Object.keys(next)])
+      for (const roomId of changedRoomIds) {
+        const previousMode = normalizedLevel(previous, roomId)
+        const nextMode = normalizedLevel(next, roomId)
+        if (previousMode === nextMode) continue
+        if (applyingRemoteSnapshot) continue
+
+        locallyChangedRooms.add(roomId)
+        void bridge
+          .setMatrixRoomNotificationMode(roomId, nextMode)
+          .catch(() => {
+            const current = useSettingsStore.getState()
+            if (current.getChannelNotificationLevel(roomId) === nextMode) {
+              applyingRemoteSnapshot = true
+              current.setChannelNotificationLevel(roomId, previousMode)
+              applyingRemoteSnapshot = false
+            }
+            showToast(
+              'Could not save notification settings for this room. Try again.',
+              'error',
+            )
+          })
+      }
+      previous = { ...next }
+    })
 
     const reconcilePushRules = async () => {
       const remoteModes = new Map<string, NotificationLevel>()
       const roomIds = [...new Set(roomIdsKey.split('\u0000'))]
-      await Promise.all(
-        roomIds.map(async (roomId) => {
-          try {
-            remoteModes.set(
-              roomId,
-              await bridge.getMatrixRoomNotificationMode(roomId),
-            )
-          } catch {
-            // A newly joined room can briefly lack notification settings.
-            // Keep the local optimistic mode until the next channel refresh.
-          }
-        }),
-      )
+      await mapSettledWithConcurrency(roomIds, 4, async (roomId) => {
+        if (cancelled) return
+        try {
+          remoteModes.set(
+            roomId,
+            await bridge.getMatrixRoomNotificationMode(roomId),
+          )
+        } catch {
+          // A newly joined room can briefly lack notification settings.
+          // Keep the local optimistic mode until the next channel refresh.
+        }
+      }, () => !cancelled)
       if (cancelled) return
 
       const settings = useSettingsStore.getState()
       for (const [roomId, mode] of remoteModes) {
+        if (locallyChangedRooms.has(roomId)) continue
         if (settings.getChannelNotificationLevel(roomId) !== mode) {
+          applyingRemoteSnapshot = true
           settings.setChannelNotificationLevel(roomId, mode)
+          applyingRemoteSnapshot = false
         }
       }
-
-      let previous = {
-        ...useSettingsStore.getState().notifications.channelNotificationLevels,
-      }
-      unsubscribe = useSettingsStore.subscribe((state) => {
-        const next = state.notifications.channelNotificationLevels
-        const roomIds = new Set([...Object.keys(previous), ...Object.keys(next)])
-        for (const roomId of roomIds) {
-          const previousMode = normalizedLevel(previous, roomId)
-          const nextMode = normalizedLevel(next, roomId)
-          if (previousMode === nextMode) continue
-
-          void bridge
-            .setMatrixRoomNotificationMode(roomId, nextMode)
-            .catch(() => {
-              const current = useSettingsStore.getState()
-              if (current.getChannelNotificationLevel(roomId) === nextMode) {
-                current.setChannelNotificationLevel(roomId, previousMode)
-              }
-              showToast(
-                'Could not save notification settings for this room. Try again.',
-                'error',
-              )
-            })
-        }
-        previous = { ...next }
-      })
     }
 
     void reconcilePushRules()
     return () => {
       cancelled = true
-      unsubscribe?.()
+      unsubscribe()
     }
   }, [focusRevision, matrixMode, roomIdsKey])
 }

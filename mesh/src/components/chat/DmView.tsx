@@ -43,6 +43,12 @@ import { OfflineQueueSummary } from './OfflineQueueSummary'
 const EMPTY_DIRECT_MESSAGES: DirectMessage[] = []
 const EMPTY_MESSAGES: MessageType[] = []
 
+type DmBlockState = {
+  peerPublicKey: string
+  status: 'loading' | 'ready' | 'failed'
+  blocked: boolean
+}
+
 function directMessageToTimelineMessage(message: DirectMessage): MessageType {
   return {
     id: message.id,
@@ -198,10 +204,8 @@ export function DmView() {
   const messageLoad = useDmStore((state) => (
     activeConversationId ? state.messageLoads[activeConversationId] : undefined
   ))
-  const [blockState, setBlockState] = useState<{
-    peerPublicKey: string
-    blocked: boolean
-  } | null>(null)
+  const [blockState, setBlockState] = useState<DmBlockState | null>(null)
+  const [blockRefreshToken, setBlockRefreshToken] = useState(0)
   const [isBlockBusy, setIsBlockBusy] = useState(false)
   const [blockError, setBlockError] = useState<unknown | null>(null)
   const [markReadError, setMarkReadError] = useState<{
@@ -299,10 +303,13 @@ export function DmView() {
   const isLoading = (!messageLoad || messageLoad.status === 'idle' || messageLoad.status === 'loading')
     && visibleChannelMessages.length === 0
   const loadFailed = messageLoad?.status === 'failed'
-  const isBlocked =
-    Boolean(peerPublicKey)
-    && blockState?.peerPublicKey === peerPublicKey
-    && Boolean(blockState?.blocked)
+  const blockStatus = !matrixMode
+    ? 'ready'
+    : peerPublicKey && blockState?.peerPublicKey === peerPublicKey
+      ? blockState.status
+      : 'loading'
+  const isBlocked = blockStatus === 'ready' && Boolean(blockState?.blocked)
+  const blockSafetyUnavailable = matrixMode && blockStatus !== 'ready'
   const sendingProtectionUnavailable = matrixMode && trust.protection !== 'protected'
   const safetyOpen = route.kind === 'direct'
     && route.conversationId === activeConversationId
@@ -392,15 +399,16 @@ export function DmView() {
     let active = true
     void bridge.matrixDmBlocked(peerPublicKey)
       .then((blocked) => {
-        if (active) setBlockState({ peerPublicKey, blocked })
+        if (active) setBlockState({ peerPublicKey, status: 'ready', blocked })
       })
       .catch((error) => {
+        if (active) setBlockState({ peerPublicKey, status: 'failed', blocked: false })
         if (active) console.error('Failed to load Matrix DM block state:', error)
       })
     return () => {
       active = false
     }
-  }, [matrixMode, peerPublicKey])
+  }, [blockRefreshToken, matrixMode, peerPublicKey])
 
   useEffect(() => {
     if (!activeConversationId) return
@@ -476,7 +484,10 @@ export function DmView() {
       contentConsumed: boolean,
     ) => void | Promise<void>,
   ) => {
-    if (!conversation) return
+    if (
+      !conversation
+      || (matrixMode && (blockStatus !== 'ready' || isBlocked || sendingProtectionUnavailable))
+    ) return
     const replyToId = replyingTo?.id
     const threadRootId = threadReplyRoot?.id
 
@@ -561,10 +572,19 @@ export function DmView() {
         .getState()
         .setDeliveryStatus(conversation.id, clientRequestId, 'failed')
     }
-  }, [addDirectMessage, conversation, matrixMode, replyingTo, threadReplyRoot])
+  }, [
+    addDirectMessage,
+    blockStatus,
+    conversation,
+    isBlocked,
+    matrixMode,
+    replyingTo,
+    sendingProtectionUnavailable,
+    threadReplyRoot,
+  ])
 
   const handleRetry = useCallback(async (message: MessageType) => {
-    if (!conversation) return
+    if (!conversation || (matrixMode && (blockStatus !== 'ready' || isBlocked))) return
     const deliveryStore = useMessageStore.getState()
     deliveryStore.setDeliveryStatus(conversation.id, message.id, 'pending')
     try {
@@ -599,7 +619,7 @@ export function DmView() {
       console.error('Failed to retry DM:', error)
       deliveryStore.setDeliveryStatus(conversation.id, message.id, 'failed')
     }
-  }, [addDirectMessage, conversation, matrixMode])
+  }, [addDirectMessage, blockStatus, conversation, isBlocked, matrixMode])
 
   const handleCancelQueued = useCallback(async (message: MessageType) => {
     if (!conversation) return
@@ -669,7 +689,15 @@ export function DmView() {
         conversation.peerPublicKey,
         !isBlocked,
       )
-      setBlockState({ peerPublicKey: conversation.peerPublicKey, blocked })
+      setBlockState({ peerPublicKey: conversation.peerPublicKey, status: 'ready', blocked })
+      if (blocked) {
+        // Do not wait for the next Matrix poll to hide an already-rendered
+        // conversation. The native projection independently enforces the same
+        // account-data boundary for subsequent reads.
+        useDmStore.getState().upsertBlockedAccount({ userId: conversation.peerPublicKey })
+      } else {
+        useDmStore.getState().removeBlockedAccount(conversation.peerPublicKey)
+      }
     } catch (error) {
       console.error('Failed to update Matrix DM block state:', error)
       setBlockError(error)
@@ -701,18 +729,21 @@ export function DmView() {
       >
         <Avatar
           color={conversation.peerAvatarColor}
-          size={24}
+          size={32}
           name={peerName}
-          className="mr-2"
+          className="mr-3"
         />
         <span className="min-w-0">
           <h1
-            className="block truncate text-sm font-medium text-primary outline-none"
+            className="block truncate text-sm font-semibold text-primary outline-none"
             data-mesh-route-heading
             tabIndex={-1}
           >
             {peerName}
           </h1>
+          <span className="mt-0.5 block truncate text-meta text-muted">
+            Private conversation
+          </span>
         </span>
         <div className="ml-auto flex items-center gap-1.5">
           {matrixMode && (
@@ -799,7 +830,7 @@ export function DmView() {
       <div
         ref={scrollContainerRef}
         onScroll={() => void handleScroll()}
-        className="flex-1 overflow-y-auto py-4"
+        className="flex-1 overflow-y-auto bg-surface-canvas py-5"
         role="log"
         aria-live="off"
         aria-label={`Messages with ${peerName}`}
@@ -921,6 +952,31 @@ export function DmView() {
           Messages from this user are blocked. Unblock {peerName} to send a message.
         </div>
       )}
+      {blockSafetyUnavailable && (
+        <div
+          role={blockStatus === 'failed' ? 'alert' : 'status'}
+          className="mx-4 mb-2 rounded-panel border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs text-secondary"
+        >
+          {blockStatus === 'failed' ? (
+            <>
+              <span>Mesh couldn&apos;t check whether this account is blocked. Sending stays off until that check succeeds.</span>{' '}
+              <button
+                type="button"
+                className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+                onClick={() => {
+                  if (!peerPublicKey) return
+                  setBlockState({ peerPublicKey, status: 'loading', blocked: false })
+                  setBlockRefreshToken((token) => token + 1)
+                }}
+              >
+                Retry safety check
+              </button>
+            </>
+          ) : (
+            'Checking your blocked-account setting before messages can be sent.'
+          )}
+        </div>
+      )}
       {replyingTo && (
         <div className="flex items-center justify-between gap-2 border-t border-border-subtle bg-surface-sunken px-4 py-2 text-xs text-secondary">
           <span>
@@ -972,9 +1028,10 @@ export function DmView() {
       <MessageInput
         channelId={activeConversationId}
         channelName={peerName}
+        placeholder={`Message ${peerName}`}
         onSend={handleSend}
         disableAttachments={false}
-        disabled={(matrixMode && isBlocked) || sendingProtectionUnavailable}
+        disabled={(matrixMode && (isBlocked || blockStatus !== 'ready')) || sendingProtectionUnavailable}
         onEditLastMessage={() => {
           const ownMessage = [...channelMessages]
             .reverse()
