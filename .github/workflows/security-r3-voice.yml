@@ -63,7 +63,7 @@ jobs:
           fail-build: true
           severity-cutoff: high
           only-fixed: true
-          grype-version: 0.116.1
+          grype-version: v0.116.1
           output-format: json
           output-file: r3-container-${{ matrix.name }}-grype.json
       - name: Upload R3 voice scan findings

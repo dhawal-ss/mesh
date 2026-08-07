@@ -6,7 +6,7 @@ const r2Image = `example/text-service:1.2.3@sha256:${'a'.repeat(64)}`
 const r3Image = `example/voice-service:4.5.6@sha256:${'b'.repeat(64)}`
 const policy = {
   schemaVersion: 2,
-  scannerPolicy: { candidateOutage: 'fail-closed', developmentOutage: 'blocked-unavailable', grypeVersion: '0.116.1', severityCutoff: 'high', onlyFixable: true },
+  scannerPolicy: { candidateOutage: 'fail-closed', developmentOutage: 'blocked-unavailable', grypeVersion: 'v0.116.1', severityCutoff: 'high', onlyFixable: true },
   requiredUpdateRegressions: ['disposable-federation', 'backup', 'restore', 'health', 'cleanup'],
   images: [
     { name: 'text-service', milestone: 'R2', image: r2Image },
@@ -28,7 +28,7 @@ ${matrix}
         with:
           severity-cutoff: high
           only-fixed: true
-          grype-version: 0.116.1
+          grype-version: v0.116.1
           output-file: ${prefix}-\${{ matrix.name }}-grype.json
       - name: Upload scan evidence
         if: always()
@@ -41,7 +41,12 @@ ${matrix}
 
 const r2Entry = policy.images[0]
 const r3Entry = policy.images[1]
-const protectedWorkflow = `${scanJob('container-supply-chain-r2', [r2Entry], 'r2-container')}
+const protectedWorkflow = `  sbom:
+    steps:
+      - run: |
+          npm run build:matrix-voice
+          npm run check:release-sboms
+${scanJob('container-supply-chain-r2', [r2Entry], 'r2-container')}
   protected-evidence:
     needs: [codeql, container-supply-chain-r2]
     steps:
@@ -136,11 +141,23 @@ test('rejects workflows that discard JSON after a failed scan', () => {
   assert.match(errors.join('; '), /R3 voice container job must retain scanner JSON/)
 })
 
+test('rejects a protected SBOM job that builds the ordinary Matrix artifact', () => {
+  const ordinaryArtifact = protectedWorkflow.replace('npm run build:matrix-voice', 'npm run build:matrix')
+  assert.match(
+    validateContainerPolicy({ ...validInput, workflowText: ordinaryArtifact }).join('; '),
+    /must build the Matrix voice artifact immediately before generating release SBOMs/,
+  )
+})
+
 test('rejects floating or workflow-drifted Grype versions', () => {
   const floatingPolicy = structuredClone(policy)
   delete floatingPolicy.scannerPolicy.grypeVersion
   assert.match(validateContainerPolicy({ occurrences: validInput.occurrences, policy: floatingPolicy }).join('; '), /must pin an exact Grype version/)
 
-  const driftedWorkflow = protectedWorkflow.replace('grype-version: 0.116.1', 'grype-version: 0.115.0')
-  assert.match(validateContainerPolicy({ ...validInput, workflowText: driftedWorkflow }).join('; '), /must use policy Grype 0.116.1/)
+  const untaggedPolicy = structuredClone(policy)
+  untaggedPolicy.scannerPolicy.grypeVersion = '0.116.1'
+  assert.match(validateContainerPolicy({ occurrences: validInput.occurrences, policy: untaggedPolicy }).join('; '), /must pin an exact Grype version/)
+
+  const driftedWorkflow = protectedWorkflow.replace('grype-version: v0.116.1', 'grype-version: v0.115.0')
+  assert.match(validateContainerPolicy({ ...validInput, workflowText: driftedWorkflow }).join('; '), /must use policy Grype v0.116.1/)
 })

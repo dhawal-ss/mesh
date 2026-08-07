@@ -134,11 +134,11 @@ jobs:
       - name: Install JavaScript dependencies
         working-directory: mesh
         run: npm ci
-      - name: Generate complete-source and Matrix-artifact CycloneDX SBOMs
+      - name: Generate complete-source and Matrix-voice-artifact CycloneDX SBOMs
         working-directory: mesh
         run: |
-          npm run build:matrix
-          npm run generate:release-sboms
+          npm run build:matrix-voice
+          npm run check:release-sboms
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mesh-sboms-${{ github.sha }}
@@ -186,7 +186,7 @@ jobs:
           fail-build: true
           severity-cutoff: high
           only-fixed: true
-          grype-version: 0.116.1
+          grype-version: v0.116.1
           output-format: json
           output-file: r2-container-${{ matrix.name }}-grype.json
       - name: Upload container scan findings

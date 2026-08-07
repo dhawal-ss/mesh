@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 const PINNED_IMAGE = /^[A-Za-z0-9./_-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$/
 const SHA256 = /^[0-9a-f]{64}$/
-const TOOL_VERSION = /^[0-9]+\.[0-9]+\.[0-9]+$/
+const TOOL_VERSION = /^v[0-9]+\.[0-9]+\.[0-9]+$/
 const RELEASE_MILESTONES = new Set(['R2', 'R3'])
 
 async function composeFiles(root) {
@@ -123,6 +123,10 @@ export function validateContainerPolicy({
   const r2Images = policyEntries.filter((entry) => entry.milestone === 'R2')
   const r3Images = policyEntries.filter((entry) => entry.milestone === 'R3')
   if (workflowText) {
+    const sbomJob = workflowJob(workflowText, 'sbom')
+    if (!/npm run build:matrix-voice\s*\r?\n\s*npm run (?:check|generate):release-sboms/.test(sbomJob)) {
+      errors.push('protected SBOM job must build the Matrix voice artifact immediately before generating release SBOMs')
+    }
     const r2Job = workflowJob(workflowText, 'container-supply-chain-r2')
     errors.push(...validateExactMatrix(collectWorkflowMatrixEntries(r2Job), r2Images, 'protected R2 container job'))
     errors.push(...validateScanJob(r2Job, { label: 'protected R2 container job', outputFile: 'r2-container-${{ matrix.name }}-grype.json', grypeVersion: policy.scannerPolicy?.grypeVersion }))

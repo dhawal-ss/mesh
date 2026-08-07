@@ -3,7 +3,7 @@
   "scannerPolicy": {
     "candidateOutage": "fail-closed",
     "developmentOutage": "blocked-unavailable",
-    "grypeVersion": "0.116.1",
+    "grypeVersion": "v0.116.1",
     "severityCutoff": "high",
     "onlyFixable": true
   },
