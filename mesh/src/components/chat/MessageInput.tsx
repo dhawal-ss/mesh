@@ -34,6 +34,7 @@ import {
 interface MessageInputProps {
   channelId: string
   channelName: string
+  placeholder?: string
   onSend: (
     content: string,
     files?: StagedFile[],
@@ -44,6 +45,7 @@ interface MessageInputProps {
   communityId?: string
   members?: readonly MemberRecord[]
   onEditLastMessage?: () => void
+  onComposerFocus?: () => void
 }
 
 const TYPING_THROTTLE_MS = 5000
@@ -105,12 +107,14 @@ export function MessageInput(props: MessageInputProps) {
 function MessageInputContent({
   channelId,
   channelName,
+  placeholder,
   onSend,
   disableAttachments,
   disabled,
   communityId,
   members = [],
   onEditLastMessage,
+  onComposerFocus,
 }: MessageInputProps) {
   const [value, setValue] = useState(() => useDraftStore.getState().drafts[channelId] ?? '')
   const setDraft = useDraftStore((state) => state.setDraft)
@@ -150,10 +154,14 @@ function MessageInputContent({
   const [matrixTransfers, setMatrixTransfers] = useState<Record<string, MatrixTransferProgress>>({})
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const compositionActiveRef = useRef(false)
   const stagedFilesRef = useRef(stagedFiles)
   const stagingCountRef = useRef(0)
   const intakeGenerationRef = useRef(0)
-  const pendingNativeDropsRef = useRef(new Map<string, number>())
+  const pendingNativeDropsRef = useRef(new Map<string, {
+    inputGeneration: number
+    accountGeneration: number
+  }>())
   const sendingFilesRef = useRef(new Set<StagedFile>())
   const mountedRef = useRef(true)
   const lastTypingBroadcast = useRef<number>(0)
@@ -276,6 +284,12 @@ function MessageInputContent({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (
+      compositionActiveRef.current
+      || e.nativeEvent.isComposing
+      || e.nativeEvent.keyCode === 229
+    ) return
+
     if (mentionSuggestions.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
@@ -573,7 +587,17 @@ function MessageInputContent({
   const handleFilePick = useCallback(async () => {
     if (disabled || !isTauri()) return
     try {
+      const startingAccount = await bridge.getBackendStatus()
       const intake = await bridge.pickAttachmentGrants()
+      const currentAccount = await bridge.getBackendStatus()
+      if (
+        !attachmentScopeMatchesStatus(intake.accountScope, startingAccount)
+        || !attachmentScopeMatchesStatus(intake.accountScope, currentAccount)
+      ) {
+        for (const file of intake.files) void bridge.discardAttachmentGrant(file.grant)
+        setAttachmentError(new Error('Your account changed while choosing the files. Choose them again.'))
+        return
+      }
       appendFiles(intake.files.map(stagedFileFromGrant), intake.errors)
     } catch (err) {
       console.error('File picker error:', err)
@@ -606,7 +630,7 @@ function MessageInputContent({
     }
     if (!bridge.isMatrixBackend()) {
       appendFiles([], [
-        'Clipboard and browser-drop attachment copies require the encrypted Matrix backend. Use the attachment button to choose a stable local file.',
+        'Pasting or dropping files is not available in this version of Mesh. Use the attachment button to choose a file instead.',
       ])
       return
     }
@@ -687,6 +711,7 @@ function MessageInputContent({
     void listen<{
       dropId: string
       position: { x: number; y: number }
+      accountGeneration: number
     }>('mesh-native-attachment-drop-start', (event) => {
       const start = event.payload
       if (
@@ -697,7 +722,10 @@ function MessageInputContent({
       ) {
         pendingNativeDrops.set(
           start.dropId,
-          intakeGenerationRef.current,
+          {
+            inputGeneration: intakeGenerationRef.current,
+            accountGeneration: start.accountGeneration,
+          },
         )
       }
     }).then((dispose) => {
@@ -712,27 +740,45 @@ function MessageInputContent({
       position: { x: number; y: number }
       files: bridge.NativeAttachmentGrant[]
       errors: string[]
+      accountScope: bridge.NativeAttachmentAccountScope | null
     }>('mesh-native-attachment-drop', (event) => {
       const intake = event.payload
       const grants = intake.files.map((file) => file.grant)
-      const dropGeneration = pendingNativeDrops.get(intake.dropId)
+      const dropScope = pendingNativeDrops.get(intake.dropId)
       pendingNativeDrops.delete(intake.dropId)
       const boundToCurrentInput = active
-        && dropGeneration !== undefined
-        && dropGeneration === intakeGenerationRef.current
+        && dropScope !== undefined
+        && dropScope.inputGeneration === intakeGenerationRef.current
+        && intake.accountScope?.accountGeneration === dropScope.accountGeneration
         && !disabled
         && !disableAttachments
       setIsDragOver(false)
-      if (!boundToCurrentInput) {
+      if (!boundToCurrentInput || !dropScope) {
         for (const grant of grants) void bridge.discardAttachmentGrant(grant)
+        if (
+          !intake.accountScope
+          && dropScope?.inputGeneration === intakeGenerationRef.current
+          && intake.errors.length > 0
+        ) appendFiles([], intake.errors)
         return
       }
-      void bridge.acceptAttachmentDropGrants(grants).then(() => {
-        if (!active || dropGeneration !== intakeGenerationRef.current) {
-          for (const grant of grants) void bridge.discardAttachmentGrant(grant)
-          return
-        }
+      void (async () => {
+        const accountScope = intake.accountScope
+        if (!accountScope) return
+        const beforeAccept = await bridge.getBackendStatus()
+        if (!attachmentScopeMatchesStatus(accountScope, beforeAccept)) return
+        await bridge.acceptAttachmentDropGrants(grants)
+        const afterAccept = await bridge.getBackendStatus()
+        if (
+          !active
+          || dropScope.inputGeneration !== intakeGenerationRef.current
+          || !attachmentScopeMatchesStatus(accountScope, afterAccept)
+        ) return
         appendFiles(intake.files.map(stagedFileFromGrant), intake.errors)
+        return true
+      })().then((accepted) => {
+        if (accepted) return
+        for (const grant of grants) void bridge.discardAttachmentGrant(grant)
       }).catch((error) => {
         for (const grant of grants) void bridge.discardAttachmentGrant(grant)
         console.error('Failed to accept secure native attachment drop:', error)
@@ -811,13 +857,13 @@ function MessageInputContent({
   return (
     <div
       ref={rootRef}
-      className="-mt-1 mx-3 mb-4 min-w-0 max-w-full sm:mx-5"
+      className="mesh-composer-shell -mt-1 mx-3 mb-4 min-w-0 max-w-full sm:mx-5"
       onDragOver={disabled || disableAttachments ? undefined : handleDragOver}
       onDragLeave={disabled || disableAttachments ? undefined : handleDragLeave}
       onDrop={disabled || disableAttachments ? undefined : handleDrop}
     >
       <div
-        className={`min-w-0 overflow-hidden rounded-panel border border-border-subtle transition-colors ${
+        className={`mesh-composer min-w-0 overflow-hidden rounded-panel border border-border-subtle transition-colors ${
           isDragOver
             ? 'bg-accent/10 ring-2 ring-accent/40'
             : 'bg-surface-raised'
@@ -854,7 +900,7 @@ function MessageInputContent({
           />
         )}
 
-        <div className="flex items-center gap-1 border-b border-border-subtle px-2 py-1" aria-label="Message formatting">
+        <div className="mesh-composer-formatting flex items-center gap-1 border-b border-border-subtle px-2 py-1" aria-label="Message formatting">
           {([
             ['bold', 'Bold', 'B'],
             ['italic', 'Italic', 'I'],
@@ -994,6 +1040,13 @@ function MessageInputContent({
           <textarea
             ref={inputRef}
             value={value}
+            onFocus={onComposerFocus}
+            onCompositionStart={() => {
+              compositionActiveRef.current = true
+            }}
+            onCompositionEnd={() => {
+              compositionActiveRef.current = false
+            }}
             onChange={(e) => {
               const nextValue = truncateDraft(e.target.value)
               updateDraftValue(nextValue)
@@ -1019,7 +1072,7 @@ function MessageInputContent({
               setSlashDismissed(false)
             }}
             onPaste={handlePaste}
-            placeholder={`Message #${channelName}`}
+            placeholder={placeholder ?? `Message #${channelName}`}
             aria-label={`Message ${channelName}`}
             aria-describedby={stagedFiles.length > 0 ? `pending-attachments-${channelId}` : undefined}
             aria-autocomplete={
@@ -1116,4 +1169,11 @@ function MessageInputContent({
       </div>
     </div>
   )
+}
+
+function attachmentScopeMatchesStatus(
+  scope: bridge.NativeAttachmentAccountScope,
+  status: bridge.BackendStatus,
+): boolean {
+  return status.authenticated && status.userId === scope.userId
 }

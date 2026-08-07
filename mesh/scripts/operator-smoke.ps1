@@ -2,9 +2,13 @@
 param(
     [switch]$Production,
     [switch]$Online,
+    [ValidateSet("R2", "R3")]
+    [string]$Milestone = "R2",
     [string]$EnvironmentFile = "",
     [ValidateRange(3, 60)]
-    [int]$TimeoutSeconds = 15
+    [int]$TimeoutSeconds = 15,
+    [ValidateRange(2, 5)]
+    [int]$PublicProbeAttempts = 3
 )
 
 $ErrorActionPreference = "Stop"
@@ -240,6 +244,57 @@ function Get-ProcessSecret([string]$Name) {
     return $value
 }
 
+function Test-PublicIpAddress([Net.IPAddress]$Address) {
+    if ([Net.IPAddress]::IsLoopback($Address) -or $Address.Equals([Net.IPAddress]::Any) -or
+        $Address.Equals([Net.IPAddress]::IPv6Any)) {
+        return $false
+    }
+    if ($Address.IsIPv4MappedToIPv6) {
+        return Test-PublicIpAddress $Address.MapToIPv4()
+    }
+
+    $bytes = $Address.GetAddressBytes()
+    if ($Address.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetwork) {
+        if ($bytes[0] -eq 0 -or $bytes[0] -eq 10 -or $bytes[0] -eq 127 -or
+            ($bytes[0] -eq 100 -and $bytes[1] -ge 64 -and $bytes[1] -le 127) -or
+            ($bytes[0] -eq 169 -and $bytes[1] -eq 254) -or
+            ($bytes[0] -eq 172 -and $bytes[1] -ge 16 -and $bytes[1] -le 31) -or
+            ($bytes[0] -eq 192 -and $bytes[1] -eq 168) -or
+            ($bytes[0] -eq 192 -and $bytes[1] -eq 0 -and $bytes[2] -eq 2) -or
+            ($bytes[0] -eq 198 -and $bytes[1] -eq 51 -and $bytes[2] -eq 100) -or
+            ($bytes[0] -eq 203 -and $bytes[1] -eq 0 -and $bytes[2] -eq 113) -or
+            $bytes[0] -ge 224) {
+            return $false
+        }
+        return $true
+    }
+
+    # Reject unique-local, link-local, multicast, and documentation IPv6.
+    if (($bytes[0] -band 0xFE) -eq 0xFC -or
+        ($bytes[0] -eq 0xFE -and ($bytes[1] -band 0xC0) -eq 0x80) -or
+        $bytes[0] -eq 0xFF -or
+        ($bytes[0] -eq 0x20 -and $bytes[1] -eq 0x01 -and
+            $bytes[2] -eq 0x0D -and $bytes[3] -eq 0xB8)) {
+        return $false
+    }
+    return $true
+}
+
+function Assert-PublicDnsResolution([string]$ServiceHost) {
+    try {
+        $addresses = @([Net.Dns]::GetHostAddresses($ServiceHost))
+    } catch {
+        throw "Public DNS resolution failed for $ServiceHost."
+    }
+    Assert-Check ($addresses.Count -gt 0 -and $addresses.Count -le 16) `
+        "Public DNS for $ServiceHost returned no addresses or too many addresses."
+    foreach ($address in $addresses) {
+        Assert-Check (Test-PublicIpAddress $address) `
+            "Public evidence cannot use the private or non-routable DNS answer returned for $ServiceHost. Run this check from a genuinely external network."
+    }
+    Add-Pass "External-vantage DNS for $ServiceHost resolved only public addresses."
+}
+
 Add-Type -AssemblyName System.Net.Http
 
 function New-SmokeHttpClient {
@@ -250,6 +305,40 @@ function New-SmokeHttpClient {
     $client.Timeout = [TimeSpan]::FromSeconds($TimeoutSeconds)
     $client.DefaultRequestHeaders.UserAgent.ParseAdd("Mesh-Operator-Smoke/1.0")
     return $client
+}
+
+function Read-BoundedResponseBytes {
+    param(
+        [Net.Http.HttpContent]$Content,
+        [ValidateRange(1, 10485760)]
+        [int]$MaximumBytes
+    )
+
+    $contentLength = $Content.Headers.ContentLength
+    if ($null -ne $contentLength) {
+        Assert-Check ([long]$contentLength -le $MaximumBytes) `
+            "Response exceeded the $MaximumBytes-byte limit."
+    }
+
+    $stream = $null
+    $buffer = [byte[]]::new(8192)
+    $output = [IO.MemoryStream]::new([Math]::Min($MaximumBytes, 65536))
+    try {
+        $stream = $Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+        $received = 0
+        while (($read = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            $received += $read
+            Assert-Check ($received -le $MaximumBytes) `
+                "Response exceeded the $MaximumBytes-byte limit while downloading."
+            $output.Write($buffer, 0, $read)
+        }
+        return $output.ToArray()
+    } finally {
+        if ($null -ne $stream) {
+            $stream.Dispose()
+        }
+        $output.Dispose()
+    }
 }
 
 function Invoke-JsonRequest {
@@ -288,15 +377,18 @@ function Invoke-JsonRequest {
 
     $response = $null
     try {
-        $response = $Client.SendAsync($request).GetAwaiter().GetResult()
+        $response = $Client.SendAsync(
+            $request,
+            [Net.Http.HttpCompletionOption]::ResponseHeadersRead
+        ).GetAwaiter().GetResult()
         $statusCode = [int]$response.StatusCode
         Assert-Check ($response.IsSuccessStatusCode) "HTTP $statusCode."
         Assert-Check ($response.RequestMessage.RequestUri.Scheme -eq "https") `
             "Redirected response left HTTPS."
 
-        $bytes = $response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
-        Assert-Check ($bytes.Length -le $MaximumBytes) `
-            "Response exceeded the $MaximumBytes-byte limit."
+        $bytes = Read-BoundedResponseBytes `
+            -Content $response.Content `
+            -MaximumBytes $MaximumBytes
         $contentType = [string]$response.Content.Headers.ContentType.MediaType
         Assert-Check ($contentType -match '(?i)^(application|text)/(.+\+)?json$') `
             "Expected JSON content type; received '$contentType'."
@@ -314,6 +406,25 @@ function Invoke-JsonRequest {
         }
         $request.Dispose()
     }
+}
+
+function Invoke-StablePublicJsonRequest {
+    param(
+        [Net.Http.HttpClient]$Client,
+        [string]$Uri,
+        [ValidateRange(2, 5)]
+        [int]$Attempts
+    )
+
+    $result = $null
+    for ($attempt = 1; $attempt -le $Attempts; $attempt += 1) {
+        try {
+            $result = Invoke-JsonRequest -Client $Client -Uri $Uri
+        } catch {
+            throw "Public endpoint failed stability sample $attempt of ${Attempts}: $(Get-SafeErrorMessage $_.Exception)"
+        }
+    }
+    return $result
 }
 
 function Invoke-AuthenticatedMediaProbe {
@@ -347,8 +458,9 @@ function Invoke-AuthenticatedMediaProbe {
         ).GetAwaiter().GetResult()
         Assert-Check $response.IsSuccessStatusCode `
             "Authenticated media download returned HTTP $([int]$response.StatusCode)."
-        if ($response.Content.Headers.ContentLength.HasValue) {
-            Assert-Check ($response.Content.Headers.ContentLength.Value -le $MaximumBytes) `
+        $contentLength = $response.Content.Headers.ContentLength
+        if ($null -ne $contentLength) {
+            Assert-Check ([long]$contentLength -le $MaximumBytes) `
                 "Configured smoke media exceeds the $MaximumBytes-byte limit."
         }
 
@@ -406,24 +518,68 @@ function Test-StatusEndpoint {
     }
 }
 
+function Assert-ReviewedServerIdentity {
+    param(
+        [string]$ActualSoftware,
+        [string]$ActualVersion,
+        [string]$ExpectedSoftware,
+        [string]$ExpectedVersion
+    )
+
+    Assert-Check ($ActualSoftware -ceq $ExpectedSoftware) `
+        "Federation endpoint is running unexpected server software."
+    Assert-Check ($ActualVersion -ceq $ExpectedVersion) `
+        "Federation endpoint version does not match the reviewed deployment."
+}
+
+function Get-ReviewedSynapseVersion {
+    $policyPath = Join-Path $repoRoot "infra/container-security-policy.json"
+    Assert-Check (Test-Path -LiteralPath $policyPath -PathType Leaf) `
+        "Container security policy is missing."
+    try {
+        $policy = Get-Content -LiteralPath $policyPath -Raw | ConvertFrom-Json
+    } catch {
+        throw "Container security policy could not be parsed."
+    }
+    $synapse = @($policy.images | Where-Object {
+        $_.name -ceq "synapse" -and $_.milestone -ceq "R2"
+    })
+    Assert-Check ($synapse.Count -eq 1) `
+        "Container security policy must contain exactly one R2 Synapse image."
+    $match = [regex]::Match(
+        [string]$synapse[0].image,
+        '^matrixdotorg/synapse:v(?<version>[0-9A-Za-z.+_-]+)@sha256:[0-9a-f]{64}$'
+    )
+    Assert-Check $match.Success `
+        "Container security policy contains an invalid Synapse image pin."
+    return $match.Groups["version"].Value
+}
+
 $config = Read-PublicEnvironmentFile $EnvironmentFile
 $requiredNames = @(
     "MESH_SMOKE_MATRIX_SERVER_NAME",
     "MESH_SMOKE_HOMESERVER_URL",
+    "MESH_SMOKE_EXPECTED_SERVER_SOFTWARE",
+    "MESH_SMOKE_EXPECTED_SERVER_VERSION",
     "MESH_SMOKE_EXPECTED_USER_ID",
     "MESH_SMOKE_MAS_ISSUER",
     "MESH_SMOKE_MAS_METADATA_URL",
     "MESH_SMOKE_ENCRYPTED_ROOM_ID",
     "MESH_SMOKE_MEDIA_MXC",
     "MESH_SMOKE_MEDIA_MAX_BYTES",
-    "MESH_SMOKE_MATRIXRTC_SERVICE_URL",
-    "MESH_SMOKE_SFU_URL",
-    "MESH_SMOKE_TURN_URL",
-    "MESH_SMOKE_TURN_TLS_URL",
     "MESH_SMOKE_BACKUP_STATUS_URL",
     "MESH_SMOKE_BACKUP_MAX_AGE_MINUTES",
     "MESH_SMOKE_MONITORING_HEALTH_URL"
 )
+$voiceAcceptance = $Milestone -eq "R3"
+if ($voiceAcceptance) {
+    $requiredNames += @(
+        "MESH_SMOKE_MATRIXRTC_SERVICE_URL",
+        "MESH_SMOKE_SFU_URL",
+        "MESH_SMOKE_TURN_URL",
+        "MESH_SMOKE_TURN_TLS_URL"
+    )
+}
 $values = @{}
 foreach ($name in $requiredNames) {
     $values[$name] = Get-RequiredConfig $config $name
@@ -434,6 +590,21 @@ if ($serverName -and
     $serverName -notmatch '^[A-Za-z0-9.-]+(?::[0-9]{1,5})?$') {
     Add-Failure "MESH_SMOKE_MATRIX_SERVER_NAME must be a Matrix server name, not a URL."
 }
+$expectedServerSoftware = [string]$values["MESH_SMOKE_EXPECTED_SERVER_SOFTWARE"]
+if ($expectedServerSoftware -and
+    $expectedServerSoftware -notmatch '^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$') {
+    Add-Failure "MESH_SMOKE_EXPECTED_SERVER_SOFTWARE must be a bounded software name."
+}
+$expectedServerVersion = [string]$values["MESH_SMOKE_EXPECTED_SERVER_VERSION"]
+if ($expectedServerVersion -and
+    $expectedServerVersion -notmatch '^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$') {
+    Add-Failure "MESH_SMOKE_EXPECTED_SERVER_VERSION must be a bounded version identifier."
+}
+$reviewedSynapseVersion = Get-ReviewedSynapseVersion
+if ($expectedServerSoftware -cne "Synapse" -or
+    $expectedServerVersion -cne $reviewedSynapseVersion) {
+    Add-Failure "Operator smoke server identity must match the exact R2 Synapse deployment pin."
+}
 
 Test-ServiceUri "MESH_SMOKE_HOMESERVER_URL" `
     $values["MESH_SMOKE_HOMESERVER_URL"] @("https")
@@ -441,25 +612,29 @@ Test-ServiceUri "MESH_SMOKE_MAS_ISSUER" `
     $values["MESH_SMOKE_MAS_ISSUER"] @("https") -AllowPath
 Test-ServiceUri "MESH_SMOKE_MAS_METADATA_URL" `
     $values["MESH_SMOKE_MAS_METADATA_URL"] @("https") -AllowPath
-Test-ServiceUri "MESH_SMOKE_MATRIXRTC_SERVICE_URL" `
-    $values["MESH_SMOKE_MATRIXRTC_SERVICE_URL"] @("https") -AllowPath
-Test-ServiceUri "MESH_SMOKE_SFU_URL" `
-    $values["MESH_SMOKE_SFU_URL"] @("wss") -AllowPath
+if ($voiceAcceptance) {
+    Test-ServiceUri "MESH_SMOKE_MATRIXRTC_SERVICE_URL" `
+        $values["MESH_SMOKE_MATRIXRTC_SERVICE_URL"] @("https") -AllowPath
+    Test-ServiceUri "MESH_SMOKE_SFU_URL" `
+        $values["MESH_SMOKE_SFU_URL"] @("wss") -AllowPath
+}
 Test-ServiceUri "MESH_SMOKE_BACKUP_STATUS_URL" `
     $values["MESH_SMOKE_BACKUP_STATUS_URL"] @("https") -AllowPath
 Test-ServiceUri "MESH_SMOKE_MONITORING_HEALTH_URL" `
     $values["MESH_SMOKE_MONITORING_HEALTH_URL"] @("https") -AllowPath
-$turnUdpEndpoint = Get-IceEndpoint `
-    "MESH_SMOKE_TURN_URL" $values["MESH_SMOKE_TURN_URL"] "turn"
-$turnTlsEndpoint = Get-IceEndpoint `
-    "MESH_SMOKE_TURN_TLS_URL" $values["MESH_SMOKE_TURN_TLS_URL"] "turns"
-if ($null -ne $turnUdpEndpoint -and
-    $turnUdpEndpoint.Transport -and $turnUdpEndpoint.Transport -ne "udp") {
-    Add-Failure "MESH_SMOKE_TURN_URL must use UDP for the authenticated Allocate proof."
-}
-if ($null -ne $turnTlsEndpoint -and
-    $turnTlsEndpoint.Transport -and $turnTlsEndpoint.Transport -ne "tcp") {
-    Add-Failure "MESH_SMOKE_TURN_TLS_URL must use TCP."
+if ($voiceAcceptance) {
+    $turnUdpEndpoint = Get-IceEndpoint `
+        "MESH_SMOKE_TURN_URL" $values["MESH_SMOKE_TURN_URL"] "turn"
+    $turnTlsEndpoint = Get-IceEndpoint `
+        "MESH_SMOKE_TURN_TLS_URL" $values["MESH_SMOKE_TURN_TLS_URL"] "turns"
+    if ($null -ne $turnUdpEndpoint -and
+        $turnUdpEndpoint.Transport -and $turnUdpEndpoint.Transport -ne "udp") {
+        Add-Failure "MESH_SMOKE_TURN_URL must use UDP for the authenticated Allocate proof."
+    }
+    if ($null -ne $turnTlsEndpoint -and
+        $turnTlsEndpoint.Transport -and $turnTlsEndpoint.Transport -ne "tcp") {
+        Add-Failure "MESH_SMOKE_TURN_TLS_URL must use TCP."
+    }
 }
 
 $mediaMaxBytes = 0
@@ -505,40 +680,74 @@ if ($Online -and -not $Production) {
 Add-Pass "Public configuration parsed with secret-like keys excluded."
 
 if (-not $Online) {
-    Add-Warning "Offline mode only: no DNS, TLS, account, encrypted sync, media, MatrixRTC, SFU, TURN, backup, or monitoring evidence was collected."
+    $offlineScope = if ($voiceAcceptance) {
+        "DNS, TLS, account, encrypted sync, media, MatrixRTC, SFU, TURN, backup, or monitoring"
+    } else {
+        "DNS, TLS, account, encrypted sync, media, backup, or monitoring"
+    }
+    Add-Warning "Offline mode only: no $offlineScope evidence was collected."
 } elseif ($failures.Count -eq 0) {
+    $publicServiceHosts = [Collections.Generic.HashSet[string]]::new(
+        [StringComparer]::OrdinalIgnoreCase
+    )
+    [void]$publicServiceHosts.Add(($serverName -split ':', 2)[0])
+    foreach ($uriSetting in @(
+        "MESH_SMOKE_HOMESERVER_URL",
+        "MESH_SMOKE_MAS_ISSUER",
+        "MESH_SMOKE_MAS_METADATA_URL"
+    )) {
+        [void]$publicServiceHosts.Add(([Uri]$values[$uriSetting]).DnsSafeHost)
+    }
+    if ($voiceAcceptance) {
+        foreach ($uriSetting in @(
+            "MESH_SMOKE_MATRIXRTC_SERVICE_URL",
+            "MESH_SMOKE_SFU_URL"
+        )) {
+            [void]$publicServiceHosts.Add(([Uri]$values[$uriSetting]).DnsSafeHost)
+        }
+        [void]$publicServiceHosts.Add($turnUdpEndpoint.Host)
+        [void]$publicServiceHosts.Add($turnTlsEndpoint.Host)
+    }
+    foreach ($publicServiceHost in $publicServiceHosts) {
+        Assert-PublicDnsResolution $publicServiceHost
+    }
+
     $client = New-SmokeHttpClient
     try {
         $homeserver = [string]$values["MESH_SMOKE_HOMESERVER_URL"]
         $expectedIssuer = [string]$values["MESH_SMOKE_MAS_ISSUER"]
-        $rtcService = [string]$values["MESH_SMOKE_MATRIXRTC_SERVICE_URL"]
-        $expectedSfu = [Uri]$values["MESH_SMOKE_SFU_URL"]
+        $rtcService = if ($voiceAcceptance) { [string]$values["MESH_SMOKE_MATRIXRTC_SERVICE_URL"] } else { "" }
+        $expectedSfu = if ($voiceAcceptance) { [Uri]$values["MESH_SMOKE_SFU_URL"] } else { $null }
         $roomId = [string]$values["MESH_SMOKE_ENCRYPTED_ROOM_ID"]
         $expectedUserId = [string]$values["MESH_SMOKE_EXPECTED_USER_ID"]
 
         Invoke-LiveCheck "Homeserver client discovery and versions" {
-            $wellKnown = Invoke-JsonRequest `
+            $wellKnown = Invoke-StablePublicJsonRequest `
                 -Client $client `
-                -Uri "https://$serverName/.well-known/matrix/client"
+                -Uri "https://$serverName/.well-known/matrix/client" `
+                -Attempts $PublicProbeAttempts
             $homeserverObject = Get-PropertyValue $wellKnown.Json "m.homeserver"
             $discoveredBase = [string](Get-PropertyValue $homeserverObject "base_url")
             Assert-Check ($discoveredBase.TrimEnd("/") -eq $homeserver.TrimEnd("/")) `
                 "Discovered homeserver does not match MESH_SMOKE_HOMESERVER_URL."
-            $versions = Invoke-JsonRequest `
+            $versions = Invoke-StablePublicJsonRequest `
                 -Client $client `
-                -Uri "$($homeserver.TrimEnd('/'))/_matrix/client/versions"
+                -Uri "$($homeserver.TrimEnd('/'))/_matrix/client/versions" `
+                -Attempts $PublicProbeAttempts
             Assert-Check (@(Get-PropertyValue $versions.Json "versions").Count -gt 0) `
                 "Homeserver returned no Matrix client API versions."
 
-            $focusProperty = Get-PropertyValue `
-                $wellKnown.Json `
-                "org.matrix.msc4143.rtc_foci"
-            $liveKitFocus = @($focusProperty | Where-Object {
-                $_.type -eq "livekit" -and
-                $_.livekit_service_url.TrimEnd("/") -eq $rtcService.TrimEnd("/")
-            })
-            Assert-Check ($liveKitFocus.Count -gt 0) `
-                "Client discovery does not advertise the expected MatrixRTC service."
+            if ($voiceAcceptance) {
+                $focusProperty = Get-PropertyValue `
+                    $wellKnown.Json `
+                    "org.matrix.msc4143.rtc_foci"
+                $liveKitFocus = @($focusProperty | Where-Object {
+                    $_.type -eq "livekit" -and
+                    $_.livekit_service_url.TrimEnd("/") -eq $rtcService.TrimEnd("/")
+                })
+                Assert-Check ($liveKitFocus.Count -gt 0) `
+                    "Client discovery does not advertise the expected MatrixRTC service."
+            }
 
             $authentication = Get-PropertyValue `
                 $wellKnown.Json `
@@ -549,24 +758,34 @@ if (-not $Online) {
         }
 
         Invoke-LiveCheck "Federation discovery and version endpoint" {
-            $federationWellKnown = Invoke-JsonRequest `
+            $federationWellKnown = Invoke-StablePublicJsonRequest `
                 -Client $client `
-                -Uri "https://$serverName/.well-known/matrix/server"
+                -Uri "https://$serverName/.well-known/matrix/server" `
+                -Attempts $PublicProbeAttempts
             $authority = [string](Get-PropertyValue $federationWellKnown.Json "m.server")
             Assert-Check ($authority -match '^[A-Za-z0-9.-]+(?::[0-9]{1,5})?$') `
                 "Federation discovery returned an invalid m.server authority."
-            $federationVersion = Invoke-JsonRequest `
+            $federationVersion = Invoke-StablePublicJsonRequest `
                 -Client $client `
-                -Uri "https://$authority/_matrix/federation/v1/version"
+                -Uri "https://$authority/_matrix/federation/v1/version" `
+                -Attempts $PublicProbeAttempts
             $server = Get-PropertyValue $federationVersion.Json "server"
             Assert-Check ($null -ne $server) `
                 "Federation version response is missing server metadata."
+            $actualServerSoftware = [string](Get-PropertyValue $server "name")
+            $actualServerVersion = [string](Get-PropertyValue $server "version")
+            Assert-ReviewedServerIdentity `
+                -ActualSoftware $actualServerSoftware `
+                -ActualVersion $actualServerVersion `
+                -ExpectedSoftware $expectedServerSoftware `
+                -ExpectedVersion $expectedServerVersion
         }
 
         Invoke-LiveCheck "MAS/OIDC discovery, grants, and S256 PKCE" {
-            $metadata = Invoke-JsonRequest `
+            $metadata = Invoke-StablePublicJsonRequest `
                 -Client $client `
-                -Uri $values["MESH_SMOKE_MAS_METADATA_URL"]
+                -Uri $values["MESH_SMOKE_MAS_METADATA_URL"] `
+                -Attempts $PublicProbeAttempts
             $issuer = [string](Get-PropertyValue $metadata.Json "issuer")
             Assert-Check ($issuer.TrimEnd("/") -eq $expectedIssuer.TrimEnd("/")) `
                 "OIDC metadata issuer does not match MESH_SMOKE_MAS_ISSUER."
@@ -593,26 +812,30 @@ if (-not $Online) {
                 "OIDC metadata does not advertise S256 PKCE."
         }
 
-        Invoke-LiveCheck "MatrixRTC authorization-service health" {
-            $health = Invoke-JsonRequest `
-                -Client $client `
-                -Uri "$($rtcService.TrimEnd('/'))/healthz"
-            $healthStatus = Get-PropertyValue $health.Json "status"
-            if ($null -ne $healthStatus) {
-                Assert-Check ([string]$healthStatus -in @("ok", "healthy", "up")) `
-                    "Authorization service health JSON is not healthy."
+        if ($voiceAcceptance) {
+            Invoke-LiveCheck "MatrixRTC authorization-service health" {
+                $health = Invoke-StablePublicJsonRequest `
+                    -Client $client `
+                    -Uri "$($rtcService.TrimEnd('/'))/healthz" `
+                    -Attempts $PublicProbeAttempts
+                $healthStatus = Get-PropertyValue $health.Json "status"
+                if ($null -ne $healthStatus) {
+                    Assert-Check ([string]$healthStatus -in @("ok", "healthy", "up")) `
+                        "Authorization service health JSON is not healthy."
+                }
             }
         }
 
         $matrixAccessToken = Get-ProcessSecret "MESH_SMOKE_MATRIX_ACCESS_TOKEN"
-        $turnUsername = Get-ProcessSecret "MESH_SMOKE_TURN_USERNAME"
-        $turnPassword = Get-ProcessSecret "MESH_SMOKE_TURN_PASSWORD"
+        $turnUsername = if ($voiceAcceptance) { Get-ProcessSecret "MESH_SMOKE_TURN_USERNAME" } else { "" }
+        $turnPassword = if ($voiceAcceptance) { Get-ProcessSecret "MESH_SMOKE_TURN_PASSWORD" } else { "" }
         $backupBearer = Get-ProcessSecret "MESH_SMOKE_BACKUP_BEARER_TOKEN"
         $monitoringBearer = Get-ProcessSecret "MESH_SMOKE_MONITORING_BEARER_TOKEN"
 
         $whoAmI = $null
         if ([string]::IsNullOrWhiteSpace($matrixAccessToken)) {
-            Add-Failure "Account authentication, encrypted sync, Matrix media, and MatrixRTC authorization are blocked: inject MESH_SMOKE_MATRIX_ACCESS_TOKEN through the process environment."
+            $accountScope = if ($voiceAcceptance) { "Account authentication, encrypted sync, Matrix media, and MatrixRTC authorization" } else { "Account authentication, encrypted sync, and Matrix media" }
+            Add-Failure "$accountScope are blocked: inject MESH_SMOKE_MATRIX_ACCESS_TOKEN through the process environment."
         } else {
             Invoke-LiveCheck "Account authentication through Matrix whoami" {
                 $script:whoAmI = (Invoke-JsonRequest `
@@ -684,9 +907,9 @@ if (-not $Online) {
                     -MaximumBytes $mediaMaxBytes
             }
 
-            if ($null -eq $whoAmI) {
+            if ($voiceAcceptance -and $null -eq $whoAmI) {
                 Add-Failure "MatrixRTC authenticated token exchange is blocked because whoami did not pass."
-            } else {
+            } elseif ($voiceAcceptance) {
                 Invoke-LiveCheck "Matrix OpenID to MatrixRTC JWT exchange and SFU WebSocket" {
                     $actualUserId = [string](Get-PropertyValue $whoAmI "user_id")
                     $deviceId = [string](Get-PropertyValue $whoAmI "device_id")
@@ -765,11 +988,12 @@ if (-not $Online) {
             }
         }
 
-        if ([string]::IsNullOrWhiteSpace($turnUsername) -or
-            [string]::IsNullOrWhiteSpace($turnPassword)) {
-            Add-Failure "TURN allocation is blocked: inject MESH_SMOKE_TURN_USERNAME and MESH_SMOKE_TURN_PASSWORD through the process environment."
-        } else {
-            Invoke-LiveCheck "Authenticated TURN allocation" {
+        if ($voiceAcceptance) {
+            if ([string]::IsNullOrWhiteSpace($turnUsername) -or
+                [string]::IsNullOrWhiteSpace($turnPassword)) {
+                Add-Failure "TURN allocation is blocked: inject MESH_SMOKE_TURN_USERNAME and MESH_SMOKE_TURN_PASSWORD through the process environment."
+            } else {
+                Invoke-LiveCheck "Authenticated TURN allocation" {
                 $probePath = Join-Path $scriptRoot "probe-turn.ps1"
                 Assert-Check (Test-Path -LiteralPath $probePath -PathType Leaf) `
                     "TURN probe script is missing."
@@ -795,15 +1019,16 @@ if (-not $Online) {
                     $env:MESH_TURN_PASSWORD = $oldPassword
                     $env:MESH_TURN_EXPECT = $oldExpect
                 }
+                }
             }
-        }
 
-        Invoke-LiveCheck "TURN/TLS trusted transport reachability (not allocation)" {
-            Test-TurnTlsTransport `
-                -Url $values["MESH_SMOKE_TURN_TLS_URL"] `
-                -TimeoutMilliseconds ($TimeoutSeconds * 1000)
+            Invoke-LiveCheck "TURN/TLS trusted transport reachability (not allocation)" {
+                Test-TurnTlsTransport `
+                    -Url $values["MESH_SMOKE_TURN_TLS_URL"] `
+                    -TimeoutMilliseconds ($TimeoutSeconds * 1000)
+            }
+            Add-Warning "TURN/TLS handshake success does not prove Allocate or relayed media. A real Mesh call forced to a relay candidate over TURN/TLS remains a release gate."
         }
-        Add-Warning "TURN/TLS handshake success does not prove Allocate or relayed media. A real Mesh call forced to a relay candidate over TURN/TLS remains a release gate."
 
         Invoke-LiveCheck "Backup freshness" {
             Test-StatusEndpoint `
@@ -827,7 +1052,7 @@ if (-not $Online) {
 
 Write-Host ""
 Write-Host "Mesh production operator smoke"
-Write-Host "Mode: $(if ($Online) { 'production live' } else { 'static/offline' })"
+Write-Host "Mode: $(if ($Online) { 'production live' } else { 'static/offline' }); milestone: $Milestone"
 foreach ($message in $passes) {
     Write-Host "[PASS] $message" -ForegroundColor Green
 }

@@ -9,6 +9,7 @@ import { SearchBar } from './SearchBar'
 import { Tooltip } from '../ui/Tooltip'
 import { Spinner } from '../ui/Spinner'
 import { MessageSkeleton } from '../ui/Skeleton'
+import { AsyncStatus } from '../ui/AsyncStatus'
 import * as bridge from '../../lib/bridge'
 import { useFileDownloadStore } from '../../store/file-downloads'
 import { useIdentityStore } from '../../store/identity'
@@ -32,6 +33,12 @@ import type { RoomContextTab } from '../community/RoomContextPanel'
 import { RoomTrustSummary } from './RoomTrustSummary'
 import { EmptyState } from '../ui/Primitives'
 import { useRoomPinStore } from '../../store/room-pins'
+import { useVoiceStore } from '../../store/voice'
+import { useCurrentMeshRoute, useMeshNavigationStore } from '../../store/navigation'
+import { canStartMatrixVoice, shouldActivateVoiceSession } from '../../lib/voice-runtime'
+import { useFailedMessageAnnouncement } from '../../hooks/useFailedMessageAnnouncement'
+import { OfflineQueueSummary } from './OfflineQueueSummary'
+import { markNewcomerDraftOpened } from '../../lib/onboarding-checklist'
 
 interface ChatViewProps {
   channel: Channel
@@ -68,7 +75,19 @@ export function ChatView({
   const pinnedMessages = useRoomPinStore((state) => (
     state.roomId === channel.id ? state.messages : EMPTY_MESSAGES
   ))
+
+  useEffect(() => {
+    const handleOpenRoomContext = (event: Event) => {
+      const tab = event instanceof CustomEvent ? event.detail : null
+      if (tab === 'people' || tab === 'ledger' || tab === 'files' || tab === 'pins') {
+        onOpenContext?.(tab)
+      }
+    }
+    window.addEventListener('mesh:open-room-context', handleOpenRoomContext)
+    return () => window.removeEventListener('mesh:open-room-context', handleOpenRoomContext)
+  }, [onOpenContext])
   const pinnedMessage = pinnedMessages[0] ?? null
+  const failedSendAnnouncement = useFailedMessageAnnouncement(channel.id, channelMessages)
   const replaceMessages = useMessageStore((state) => state.replaceMessages)
   const prependMessages = useMessageStore((state) => state.prependMessages)
   const addMessage = useMessageStore((state) => state.addMessage)
@@ -84,6 +103,7 @@ export function ChatView({
   const hasMoreOlder = useMessageStore((state) => state.hasMoreOlder[channel.id] !== false)
   const isBrowsingOlder = useMessageStore((state) => state.browsingOlder[channel.id] ?? false)
   const hiddenNewerCount = useMessageStore((state) => state.newerGapCount[channel.id] ?? 0)
+  const queueStates = useMessageStore((state) => state.matrixQueueStates[channel.id])
   const matrixMode = bridge.isMatrixBackend()
   const communityName = useCommunityStore(
     (state) => state.communityEntities[channel.communityId]?.name,
@@ -99,6 +119,22 @@ export function ChatView({
         candidate.communityId === channel.communityId && candidate.channelType === 'voice',
     ),
   )
+  const currentVoiceChannelId = useVoiceStore((state) => state.currentChannelId)
+  const currentVoicePeers = useVoiceStore((state) => state.peers)
+  const matrixRtcMembersByRoom = useVoiceStore((state) => state.matrixRtcMembersByRoom)
+  const setCurrentVoiceSession = useVoiceStore((state) => state.setCurrentVoiceSession)
+  const route = useCurrentMeshRoute()
+  const navigate = useMeshNavigationStore((state) => state.navigate)
+  const closePane = useMeshNavigationStore((state) => state.closePane)
+  const matrixVoiceReady = canStartMatrixVoice(bridge.getBackendStatusSnapshot())
+  const currentStudioParty = currentVoiceChannelId === studioVoiceRoom?.id
+  const canOpenStudioVoice = currentStudioParty
+    || shouldActivateVoiceSession(matrixMode, matrixVoiceReady)
+  const studioPartyOccupancy = studioVoiceRoom
+    ? currentStudioParty
+      ? Math.max(1, currentVoicePeers.length)
+      : matrixRtcMembersByRoom[studioVoiceRoom.id]?.length ?? 0
+    : 0
   const setCommunities = useCommunityStore((state) => state.setCommunities)
   const setActiveCommunity = useCommunityStore((state) => state.setActiveCommunity)
   const communityMembers = useCommunityMembers(channel.communityId)
@@ -127,7 +163,6 @@ export function ChatView({
   const [showNewMessages, setShowNewMessages] = useState(false)
   const [replyingTo, setReplyingTo] = useState<MessageType | null>(null)
   const [threadReplyRoot, setThreadReplyRoot] = useState<MessageType | null>(null)
-  const [openThreadId, setOpenThreadId] = useState<string | null>(null)
   const [preparedNavigationId, setPreparedNavigationId] = useState<number | null>(null)
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
   const [jumpAnnouncement, setJumpAnnouncement] = useState('')
@@ -177,9 +212,21 @@ export function ChatView({
       : null
   const awaitingFirstLoad = loadedChannelId !== channel.id && activeLoadError == null
   const sendingProtectionUnavailable = matrixMode && trust?.protection !== 'protected'
+  const savedMessages = useMemo(
+    () => channelMessages.filter((message) => {
+      const transactionId = message.transactionId ?? message.id
+      return message.deliveryStatus === 'pending'
+        && queueStates?.[transactionId]?.state === 'pending'
+    }),
+    [channelMessages, queueStates],
+  )
+  const openThreadId = route.kind === 'room'
+    && route.roomId === channel.id
+    && route.pane?.kind === 'thread'
+      ? route.pane.rootEventId
+      : null
 
   const beginThreadReply = useCallback((root: MessageType, target: MessageType = root) => {
-    setOpenThreadId(root.id)
     setThreadReplyRoot(root)
     setReplyingTo(target)
   }, [])
@@ -190,16 +237,38 @@ export function ChatView({
   }, [])
 
   const toggleThread = useCallback((messageId: string) => {
-    setOpenThreadId((current) => current === messageId ? null : messageId)
-  }, [])
+    if (route.kind !== 'room' || route.roomId !== channel.id) return
+    if (openThreadId === messageId) {
+      closePane()
+      return
+    }
+    navigate({
+      ...route,
+      pane: { kind: 'thread', rootEventId: messageId },
+    }, { focus: false })
+  }, [channel.id, closePane, navigate, openThreadId, route])
 
   useEffect(() => {
     if (previousChannelIdRef.current === channel.id) return
     previousChannelIdRef.current = channel.id
-    setOpenThreadId(null)
     setThreadReplyRoot(null)
     setReplyingTo(null)
   }, [channel.id])
+
+  useEffect(() => {
+    const handleThreadReply = (event: Event) => {
+      const detail = (event as CustomEvent<{ rootId?: string; targetId?: string }>).detail
+      if (!detail?.rootId) return
+      const root = channelMessages.find((message) => message.id === detail.rootId)
+      if (!root) return
+      const target = detail.targetId
+        ? channelMessages.find((message) => message.id === detail.targetId) ?? root
+        : root
+      beginThreadReply(root, target)
+    }
+    window.addEventListener('mesh:reply-in-thread', handleThreadReply)
+    return () => window.removeEventListener('mesh:reply-in-thread', handleThreadReply)
+  }, [beginThreadReply, channelMessages])
 
   // O(1) message lookup for the render map and the scroll handler, which both
   // previously did a linear scan per row / per scroll event.
@@ -275,7 +344,6 @@ export function ChatView({
             ) * 20,
           )
           + (Array.isArray(message.attachments) && message.attachments.length > 0 ? 96 : 0)
-          + (repliesByRoot.get(message.id)?.length ?? 0) * 88
           + (repliesByRoot.has(message.id) ? 36 : 0),
       })
     }
@@ -530,6 +598,7 @@ export function ChatView({
   useLayoutEffect(() => {
     if (
       !navigationRequest
+      || navigationRequest.message.threadRootId
       || preparedNavigationId !== navigationRequest.requestId
       || !virtualItems.some((item) => item.key === navigationRequest.message.id)
     ) {
@@ -869,8 +938,21 @@ export function ChatView({
 
   const handleNavigateToMessage = useCallback((message: MessageType) => {
     useMessageNavigationStore.getState().requestNavigation(message)
+    const targetChannel = useChannelStore.getState().channels
+      .find((candidate) => candidate.id === message.channelId)
+    if (targetChannel) {
+      setActiveCommunity(targetChannel.communityId)
+      navigate({
+        kind: 'room',
+        communityId: targetChannel.communityId,
+        roomId: targetChannel.id,
+        pane: message.threadRootId
+          ? { kind: 'thread', rootEventId: message.threadRootId }
+          : undefined,
+      }, { focus: false })
+    }
     setActiveChannel(message.channelId)
-  }, [setActiveChannel])
+  }, [navigate, setActiveChannel, setActiveCommunity])
 
   const handleScroll = useCallback(async (scrollElement: HTMLDivElement) => {
     const position = updateVirtualScroll()
@@ -1197,31 +1279,40 @@ export function ChatView({
   ])
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div className="mesh-chat-view flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <div
-        className="mesh-conversation-header flex min-h-16 min-w-0 flex-shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-3 py-2.5 sm:gap-4 sm:px-4"
+        className="mesh-conversation-header flex min-w-0 flex-shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-3 sm:gap-4 sm:px-4"
         data-tauri-drag-region
       >
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="flex min-w-0 items-center gap-1.5">
-              <Icon name="hash" size="sm" className="flex-shrink-0 text-muted" />
-              <span className="truncate text-lg font-semibold tracking-tight text-primary">{channel.name}</span>
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Icon name="hash" size="sm" className="flex-shrink-0 text-muted" />
+            <h1
+              className="truncate text-md font-semibold tracking-tight text-primary outline-none"
+              data-mesh-route-heading
+              tabIndex={-1}
+            >
+              {channel.name}
+            </h1>
+          </span>
+          <span className="hidden min-w-0 truncate text-caption text-muted lg:block">
+            {channel.name.toLocaleLowerCase() === 'general'
+              ? `Anything goes in ${communityName ?? 'Mesh'}.`
+              : `Share clips, swap strats, and keep the crew close in ${communityName ?? 'this community'}.`}
+          </span>
+          {studioPartyOccupancy > 0 && studioVoiceRoom && (
+            <span className="hidden flex-shrink-0 items-center gap-1.5 text-caption font-medium text-status-success 2xl:flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-status-success" aria-hidden="true" />
+              {studioPartyOccupancy} in {studioVoiceRoom.name}
             </span>
-          </div>
-          <div className="mt-0.5 hidden truncate text-caption text-muted sm:block">
-              {channel.name.toLocaleLowerCase() === 'general'
-                ? `Anything and everything ${communityName ?? 'Mesh'}`
-                : `Share work, swap feedback, and stay close in ${communityName ?? 'this community'}.`}
-          </div>
-          {matrixMode && trust && onOpenContext && (
-            <div className="mt-1">
-              <RoomTrustSummary trust={trust} onOpenContext={onOpenContext} />
-            </div>
           )}
         </div>
 
         <div className="flex min-w-0 flex-shrink-0 items-center gap-1">
+          {matrixMode && trust && onOpenContext && (
+            <RoomTrustSummary trust={trust} onOpenContext={onOpenContext} />
+          )}
+
           <SearchBar label="Find" onNavigateToMessage={handleNavigateToMessage} />
 
           {matrixMode && onOpenContext && (
@@ -1238,13 +1329,13 @@ export function ChatView({
                 }`}
               >
                 <Icon name="pin" size="sm" />
-                <span className="hidden xl:inline">Pins</span>
+                <span className="hidden sm:inline">Pins</span>
               </button>
             </Tooltip>
           )}
 
           {showContextToggle && (
-            <Tooltip content={isContextOpen ? 'Hide room context' : 'Show room context'} side="bottom">
+            <Tooltip content={isContextOpen ? 'Hide Details' : 'Show Details'} side="bottom">
               <button
                 id="mesh-room-context-toggle"
                 onClick={() => {
@@ -1253,8 +1344,8 @@ export function ChatView({
                 }}
                 aria-label={
                   isContextOpen && activeContextTab === 'people'
-                    ? 'Hide room context'
-                    : 'Show room context'
+                    ? 'Hide Details'
+                    : 'Show Details'
                 }
                 aria-controls="mesh-room-context-panel"
                 aria-expanded={isContextOpen}
@@ -1264,21 +1355,31 @@ export function ChatView({
                     : 'text-muted hover:bg-surface-hover hover:text-secondary'
                 }`}
               >
-                <Icon name="users" size="sm" />
-                <span className="hidden xl:inline">People</span>
+                <Icon name="panelRight" size="sm" />
+                <span className="hidden sm:inline">Details</span>
               </button>
             </Tooltip>
           )}
 
-          {studioVoiceRoom && (
+          {studioVoiceRoom && canOpenStudioVoice && (
             <button
               type="button"
-              onClick={() => setActiveChannel(studioVoiceRoom.id)}
+              onClick={() => {
+                setActiveChannel(studioVoiceRoom.id)
+                if (!currentStudioParty) {
+                  setCurrentVoiceSession(channel.communityId, studioVoiceRoom.id)
+                }
+                navigate({
+                  kind: 'voice',
+                  communityId: channel.communityId,
+                  roomId: studioVoiceRoom.id,
+                })
+              }}
               className="ml-1 hidden min-h-9 items-center gap-2 rounded-control bg-accent px-3 text-xs font-semibold text-content-on-accent transition-colors hover:bg-accent-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent md:flex"
-              aria-label={`Open voice room ${studioVoiceRoom.name}`}
+              aria-label={`${currentStudioParty ? 'Open' : 'Join'} voice room ${studioVoiceRoom.name}`}
             >
               <Icon name="volume" size="sm" />
-              Open {studioVoiceRoom.name}
+              {currentStudioParty ? 'Open' : 'Join'} {studioVoiceRoom.name}
             </button>
           )}
         </div>
@@ -1288,19 +1389,19 @@ export function ChatView({
         <button
           type="button"
           onClick={() => onOpenContext('pins')}
-          className="mx-3 mt-3 flex min-h-12 min-w-0 max-w-full flex-shrink-0 items-center gap-3 overflow-hidden rounded-control border border-border-subtle bg-surface-sunken px-3 py-2 text-left transition-colors hover:border-border-emphasis hover:bg-surface-hover sm:mx-4"
+          className="mesh-pinned-message-bar flex h-10 min-w-0 max-w-full flex-shrink-0 items-center gap-3 overflow-hidden border-b border-border-subtle bg-surface-sunken px-4 text-left transition-colors hover:bg-surface-hover"
           aria-label={`Open pinned message from ${pinnedMessage.authorDisplayName}`}
         >
           <Icon name="pin" size="sm" className="flex-shrink-0 text-accent" />
-          <span className="min-w-0 flex-1">
-            <span className="block text-caption font-medium text-muted">
-              Pinned by {pinnedMessage.authorDisplayName}
+          <span className="mesh-pinned-message-copy flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden">
+            <span className="flex-shrink-0 text-caption font-medium text-muted">
+              {pinnedMessage.authorDisplayName}
             </span>
-            <span className="block truncate text-sm text-secondary">
+            <span className="min-w-0 truncate text-xs text-secondary">
               {pinnedMessage.content || 'Pinned attachment'}
             </span>
           </span>
-          <span className="hidden text-caption font-semibold text-accent sm:block">View pins</span>
+          <span className="mesh-pinned-message-action flex-shrink-0 text-caption font-semibold text-accent">View pins</span>
         </button>
       )}
 
@@ -1365,10 +1466,21 @@ export function ChatView({
         <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
           {activeUnreadBoundary ? 'New messages start here.' : ''}
         </p>
+        {failedSendAnnouncement.text ? (
+          <p
+            key={failedSendAnnouncement.generation}
+            className="sr-only"
+            role="alert"
+            aria-live="assertive"
+            aria-atomic="true"
+          >
+            {failedSendAnnouncement.text}
+          </p>
+        ) : null}
         <div
           ref={scrollContainerRef}
           onScroll={(event) => void handleScroll(event.currentTarget)}
-          className="absolute inset-0 min-w-0 overflow-y-auto overflow-x-hidden"
+        className="mesh-message-log absolute inset-0 min-w-0 overflow-y-auto overflow-x-hidden"
           role="log"
           /*
             `role="log"` implies aria-live="polite", which is wrong here: this
@@ -1407,6 +1519,11 @@ export function ChatView({
             </div>
           ) : !roomUpgradeReady || awaitingFirstLoad || (isLoading && visibleMessages.length === 0) ? (
             <div className="space-y-1 pt-4">
+              <AsyncStatus
+                compact
+                title="Bringing in this room"
+                detail="Saved messages stay available while Mesh checks for new activity."
+              />
               {Array.from({ length: 8 }).map((_, i) => (
                 <MessageSkeleton key={i} />
               ))}
@@ -1415,8 +1532,8 @@ export function ChatView({
             <div className="flex h-full items-center justify-center">
               <EmptyState
                 icon={<Icon name="hash" size="lg" />}
-                title={`Welcome to #${channel.name}`}
-                description={`This is the start of the #${channel.name} channel.`}
+                title="No messages yet"
+                description="Start with a build, clip, question, or thought."
               />
             </div>
           ) : (
@@ -1495,7 +1612,6 @@ export function ChatView({
                       threadReplies={threadReplies}
                       threadOpen={openThreadId === message.id}
                       onToggleThread={toggleThread}
-                      onThreadReply={beginThreadReply}
                       onRetry={handleRetry}
                       onCancel={handleCancelQueued}
                       replyPreview={replyPreview}
@@ -1564,6 +1680,14 @@ export function ChatView({
 
       {!roomUpgradeReady || roomUpgrade ? null : (
         <>
+          <OfflineQueueSummary
+            count={savedMessages.length}
+            onReview={() => {
+              if (savedMessages[0]) {
+                useMessageNavigationStore.getState().requestNavigation(savedMessages[0])
+              }
+            }}
+          />
           {sendingProtectionUnavailable && (
             <div
               role="status"
@@ -1583,6 +1707,13 @@ export function ChatView({
             onSend={handleSend}
             communityId={channel.communityId}
             members={communityMembers}
+            onComposerFocus={() => {
+              if (!ownAuthorId) return
+              markNewcomerDraftOpened({
+                accountId: ownAuthorId,
+                communityId: channel.communityId,
+              })
+            }}
             disableAttachments={matrixMode && !bridge.getBackendCapabilities().encryptedAttachments}
             disabled={sendingProtectionUnavailable}
             onEditLastMessage={() => {
@@ -1662,7 +1793,6 @@ interface VirtualMessageRowProps {
   threadReplies: MessageType[]
   threadOpen: boolean
   onToggleThread: (messageId: string) => void
-  onThreadReply: (root: MessageType, target?: MessageType) => void
   onRetry?: (message: MessageType) => void
   onCancel?: (message: MessageType) => void
   replyPreview?: MessageType | null
@@ -1685,7 +1815,6 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
   threadReplies,
   threadOpen,
   onToggleThread,
-  onThreadReply,
   onRetry,
   onCancel,
   replyPreview,
@@ -1713,7 +1842,7 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
 
     observer.observe(el)
     return () => observer.disconnect()
-  }, [hasGap, isGrouped, message, onHeightChange, rowKey, threadOpen, threadReplies])
+  }, [hasGap, isGrouped, message, onHeightChange, rowKey, threadOpen, threadReplies.length])
 
   useLayoutEffect(() => {
     if (isHighlighted) {
@@ -1771,28 +1900,6 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
           trust={trust}
           editRequestToken={editRequestToken}
         />
-        {threadOpen && threadReplies.length > 0 && (
-          <div className="ml-10 mr-4 border-l border-border-subtle pl-3" aria-label="Thread replies">
-            {threadReplies.map((reply) => (
-              <MessageComponent
-                key={reply.id}
-                message={reply}
-                isGrouped={false}
-                disableMotion
-                onReply={() => onThreadReply(message, reply)}
-                limitedActions={limitedActions}
-                trust={trust}
-              />
-            ))}
-            <button
-              type="button"
-              onClick={() => onThreadReply(message)}
-              className="mb-2 mt-1 min-h-8 rounded-control px-2 text-xs font-medium text-text-link transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-            >
-              Reply in thread
-            </button>
-          </div>
-        )}
       </ErrorBoundary>
     </div>
   )

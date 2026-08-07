@@ -13,6 +13,9 @@ export interface CommunityIconProps {
   onMarkRead: () => void
   onOpenNotificationSettings: () => void
   onCopyLink: () => void
+  tabIndex?: number
+  onFocus?: () => void
+  railActionKey?: string
 }
 
 export function CommunityIcon({
@@ -23,6 +26,9 @@ export function CommunityIcon({
   onMarkRead,
   onOpenNotificationSettings,
   onCopyLink,
+  tabIndex,
+  onFocus,
+  railActionKey,
 }: CommunityIconProps) {
   const muteCommunityFor = useSettingsStore((state) => state.muteCommunityFor)
   const unmuteCommunity = useSettingsStore((state) => state.unmuteCommunity)
@@ -61,6 +67,14 @@ export function CommunityIcon({
 
   return (
     <div className="group relative flex items-center justify-center">
+      {(active || hasUnread) && (
+        <span
+          aria-hidden="true"
+          className={`absolute -left-2 w-1 rounded-r-full bg-primary transition-all duration-normal ${
+            active ? 'h-8' : 'h-2'
+          }`}
+        />
+      )}
       <ContextMenu
         label={`Actions for ${community.name}`}
         items={menuItems}
@@ -68,12 +82,15 @@ export function CommunityIcon({
         <button
           type="button"
           onClick={onClick}
+          onFocus={onFocus}
+          tabIndex={tabIndex}
+          data-mesh-rail-action={railActionKey}
           aria-label={`${community.name}${hasUnread ? `, ${unreadCount} unread` : ''}${isMuted ? ', muted' : ''}`}
           aria-current={active ? 'true' : undefined}
           className={`group relative flex h-12 w-12 items-center justify-center overflow-hidden border transition-all duration-normal ${
             active
-              ? 'rounded-community-active border-accent bg-accent'
-              : 'rounded-community border-border-subtle bg-surface-sunken hover:rounded-community-active hover:border-accent hover:bg-accent'
+              ? 'rounded-community-active border-accent/70 bg-accent'
+              : 'rounded-community border-border-subtle bg-surface-sunken hover:rounded-community-active hover:border-border-emphasis hover:bg-surface-hover'
           }`}
         >
           <Avatar
@@ -84,10 +101,6 @@ export function CommunityIcon({
             variant="community"
             className="!rounded-none"
           />
-          {/* Hover indicator for non-active */}
-          {!active && (
-            <div className="absolute -left-community-marker top-1/2 h-0 w-community-marker -translate-y-1/2 rounded-r-full bg-primary transition-all duration-normal group-hover:h-5" />
-          )}
         </button>
       </ContextMenu>
       {hasUnread && !active && (
@@ -102,6 +115,7 @@ export function CommunityIcon({
         trigger={(
           <button
             type="button"
+            tabIndex={-1}
             className="absolute -right-1 -top-1 z-sticky flex h-6 w-6 items-center justify-center rounded-full border border-border bg-surface-overlay text-content-muted opacity-0 transition-opacity hover:text-content group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             aria-label={`More actions for ${community.name}`}
           >

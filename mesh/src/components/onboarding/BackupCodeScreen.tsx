@@ -15,10 +15,11 @@ export interface BackupCodeScreenProps {
   secureStorageState?: MatrixRecoverySecureStorageState
   verificationState?: MatrixRecoveryVerificationState
   onCopy: (backupCode: string) => void | Promise<void>
-  onPrint: (backupCode: string) => void | Promise<void>
+  onPrint?: (backupCode: string) => void | Promise<void>
   onContinue: () => void
   onSkip: (signal: BackupCodeReminderSignal) => void
   challengeIndices?: readonly [number, number, number]
+  embedded?: boolean
 }
 
 type ActionName = 'copy' | 'print'
@@ -32,6 +33,7 @@ export function BackupCodeScreen({
   onContinue,
   onSkip,
   challengeIndices,
+  embedded = false,
 }: BackupCodeScreenProps) {
   const generatedId = useId()
   const titleId = `${generatedId}-title`
@@ -80,15 +82,23 @@ export function BackupCodeScreen({
        invalid and broke landmark navigation on the most safety-critical screen. */
     <section aria-labelledby={titleId} className="space-y-6">
       <header className="space-y-2">
-        <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">
-          Protect your messages
-        </p>
-        <h1 id={titleId} className="text-lg font-semibold tracking-tight text-content">
-          Save your backup code
-        </h1>
+        {!embedded && (
+          <p className="text-caption font-semibold uppercase tracking-eyebrow text-accent">
+            Protect your messages
+          </p>
+        )}
+        {embedded ? (
+          <h3 id={titleId} className="text-base font-semibold tracking-tight text-content">
+            Save your backup code
+          </h3>
+        ) : (
+          <h1 id={titleId} className="text-lg font-semibold tracking-tight text-content">
+            Save your backup code
+          </h1>
+        )}
         <p className="max-w-lg text-sm leading-6 text-content-secondary">
-          Your messages are locked so only you can read them. Not even we can see them. That also
-          means if you lose this device, this code is the only way back in.
+          This code can restore your protected messages on another device. Mesh will show it only
+          until you finish this step.
         </p>
       </header>
 
@@ -133,13 +143,15 @@ export function BackupCodeScreen({
           >
             Copy
           </Button>
-          <Button
-            variant="secondary"
-            disabled={busyAction !== null}
-            onClick={() => void runAction('print', onPrint, 'Backup code ready to print.')}
-          >
-            Print
-          </Button>
+          {onPrint && (
+            <Button
+              variant="secondary"
+              disabled={busyAction !== null}
+              onClick={() => void runAction('print', onPrint, 'Backup code ready to print.')}
+            >
+              Print
+            </Button>
+          )}
         </div>
         <p className="text-xs leading-5 text-content-muted">
           For safety, Mesh does not download an unencrypted backup file. Use the protected copy on
@@ -153,7 +165,7 @@ export function BackupCodeScreen({
       {!confirming ? (
         <div className="space-y-3">
           <Button className="w-full" onClick={() => setConfirming(true)}>
-            I saved it: continue
+            I saved it
           </Button>
           <Button
             type="button"

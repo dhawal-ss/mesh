@@ -5,6 +5,11 @@ import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
+import {
+  parseProtectedArtifactUrl,
+  verifyProtectedR0Evidence,
+} from './protected-readiness-evidence.mjs'
+import { verifyProtectedExternalAcceptanceEvidence } from './protected-external-acceptance.mjs'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(scriptDirectory, '..')
@@ -23,6 +28,7 @@ export const REQUIRED_RELEASE_GATES = Object.freeze([
   { id: 'r1.community-hosted-operations', milestone: 'R1', required: true, releaseStatus: 'live-pass' },
   { id: 'r1.public-service-review', milestone: 'R1', required: true, releaseStatus: 'live-pass' },
   { id: 'r2.signed-windows-beta', milestone: 'R2', required: true, releaseStatus: 'live-pass' },
+  { id: 'r2.confidential-security-reporting', milestone: 'R2', required: true, releaseStatus: 'live-pass' },
   { id: 'r2.public-release', milestone: 'R2', required: true, releaseStatus: 'live-pass' },
   { id: 'r2.manual-accessibility-windows', milestone: 'R2', required: true, releaseStatus: 'live-pass' },
   { id: 'r2.public-page-legal-approval', milestone: 'R2', required: true, releaseStatus: 'live-pass' },
@@ -30,6 +36,12 @@ export const REQUIRED_RELEASE_GATES = Object.freeze([
   { id: 'r4.native-invitation-delivery', milestone: 'R4', required: true, releaseStatus: 'live-pass' },
   { id: 'r4.manual-accessibility-cross-platform', milestone: 'R4', required: true, releaseStatus: 'live-pass' },
   { id: 'r0.dependency-advisory-policy', milestone: 'R0', required: true, releaseStatus: 'local-pass' },
+])
+
+export const DEFERRED_RELEASE_GATES = Object.freeze([
+  { id: 'r1.admission-openid-verifier', required: false },
+  { id: 'r1.admission-service-authority', required: false },
+  { id: 'r1.moderation-audit-authority', required: false },
 ])
 
 export function ledgerPathFromGitRoot(gitRoot) {
@@ -74,6 +86,10 @@ export function validateReadinessLedger(ledger, {
   const errors = []
   const fail = (message) => errors.push(message)
 
+  if (requireLive && milestone === null) {
+    fail('--require-live requires an explicit --milestone R0, R1, R2, R3, or R4')
+  }
+
   if (!ledger || typeof ledger !== 'object' || Array.isArray(ledger)) {
     return ['ledger must be an object']
   }
@@ -116,7 +132,7 @@ export function validateReadinessLedger(ledger, {
       fail(`${path}.evidence must be an object`)
       continue
     }
-    rejectUnknownKeys(evidence, ['testedCommit', 'testedTreeHash', 'command', 'artifactPath', 'artifactUri', 'artifactSha256', 'environment', 'collectedAt', 'expiresAt'], `${path}.evidence`, fail)
+    rejectUnknownKeys(evidence, ['testedCommit', 'testedTreeHash', 'command', 'artifactPath', 'artifactUri', 'artifactSha256', 'artifactRunAttempt', 'environment', 'collectedAt', 'expiresAt'], `${path}.evidence`, fail)
     if (evidence.testedCommit !== null && !SHA_PATTERN.test(evidence.testedCommit ?? '')) fail(`${path}.evidence.testedCommit is invalid`)
     if (evidence.testedTreeHash !== null && !SHA_PATTERN.test(evidence.testedTreeHash ?? '')) fail(`${path}.evidence.testedTreeHash is invalid`)
     if (evidence.command !== null && !isNonEmptyString(evidence.command)) fail(`${path}.evidence.command must be a string or null`)
@@ -126,12 +142,19 @@ export function validateReadinessLedger(ledger, {
         const artifactUrl = new URL(evidence.artifactUri)
         if (artifactUrl.protocol !== 'https:') fail(`${path}.evidence.artifactUri must use HTTPS`)
         if (artifactUrl.username || artifactUrl.password || artifactUrl.search || artifactUrl.hash) fail(`${path}.evidence.artifactUri must not contain credentials, query parameters, or fragments`)
+        if (/(?:^|\/)(?:latest|mutable)(?:\/|$)/i.test(artifactUrl.pathname)) fail(`${path}.evidence.artifactUri must not use a mutable or latest URL`)
+        const embeddedShas = artifactUrl.pathname.match(/[0-9a-f]{40}/g) ?? []
+        if (embeddedShas.some((sha) => sha !== ledger.sourceCommit)) fail(`${path}.evidence.artifactUri refers to another source SHA`)
       } catch {
         fail(`${path}.evidence.artifactUri must be a valid HTTPS URI or null`)
       }
     }
     if (evidence.artifactSha256 !== undefined && evidence.artifactSha256 !== null && !SHA256_PATTERN.test(evidence.artifactSha256)) {
       fail(`${path}.evidence.artifactSha256 must be a lowercase SHA-256 or null`)
+    }
+    if (evidence.artifactRunAttempt !== undefined && evidence.artifactRunAttempt !== null
+        && (!Number.isSafeInteger(evidence.artifactRunAttempt) || evidence.artifactRunAttempt < 1)) {
+      fail(`${path}.evidence.artifactRunAttempt must be a positive integer or null`)
     }
     if (evidence.environment !== null && !isNonEmptyString(evidence.environment)) fail(`${path}.evidence.environment must be a string or null`)
     if (evidence.collectedAt !== null && !isIsoDate(evidence.collectedAt)) fail(`${path}.evidence.collectedAt must be an ISO UTC timestamp or null`)
@@ -181,6 +204,20 @@ export function validateReadinessLedger(ledger, {
         ? gate.status === 'local-pass' || gate.status === 'live-pass'
         : gate.status === 'live-pass'
       if (!satisfiesReleaseStatus) fail(`${path} (${gate.id}) is required for ${milestone} but status is ${gate.status}; minimum is ${gate.releaseStatus}`)
+      if (gate.milestone === 'R0') {
+        if (!isNonEmptyString(evidence.artifactUri)) fail(`${path} (${gate.id}) release-relevant R0 evidence requires an immutable protected artifact URI`)
+        else if (!parseProtectedArtifactUrl(evidence.artifactUri)) fail(`${path} (${gate.id}) release-relevant R0 evidence must use an immutable dhawal-ss/mesh GitHub Actions artifact URL`)
+        if (!SHA256_PATTERN.test(evidence.artifactSha256 ?? '')) fail(`${path} (${gate.id}) release-relevant R0 evidence requires an artifact digest`)
+        if (!isIsoDate(evidence.expiresAt) || Date.parse(evidence.expiresAt) <= now.getTime()) fail(`${path} (${gate.id}) release-relevant R0 evidence requires an unexpired evidence manifest`)
+      } else if (['R1', 'R2', 'R4'].includes(gate.milestone)) {
+        if (!isNonEmptyString(evidence.artifactUri) || !parseProtectedArtifactUrl(evidence.artifactUri)) {
+          fail(`${path} (${gate.id}) release-relevant external acceptance requires an immutable dhawal-ss/mesh GitHub Actions artifact URL`)
+        }
+        if (!SHA256_PATTERN.test(evidence.artifactSha256 ?? '')) fail(`${path} (${gate.id}) external acceptance requires an artifact digest`)
+        if (!Number.isSafeInteger(evidence.artifactRunAttempt) || evidence.artifactRunAttempt < 1) {
+          fail(`${path} (${gate.id}) external acceptance requires an exact GitHub Actions run attempt`)
+        }
+      }
     }
   }
 
@@ -194,6 +231,16 @@ export function validateReadinessLedger(ledger, {
       }
       for (const property of ['milestone', 'required', 'releaseStatus']) {
         if (actual[property] !== expected[property]) fail(`${expected.id}.${property} must be ${expected[property]}`)
+      }
+    }
+    for (const expected of DEFERRED_RELEASE_GATES) {
+      const actual = gatesById.get(expected.id)
+      if (!actual) {
+        fail(`deferred release gate is missing: ${expected.id}`)
+        continue
+      }
+      if (actual.required !== expected.required) {
+        fail(`${expected.id}.required must be false because the capability is disabled or outside the beta claim`)
       }
     }
   }
@@ -318,6 +365,14 @@ export async function main(argv = process.argv.slice(2)) {
     ...bindingErrors,
     ...validateReadinessLedger(ledger, { ...options, allowSourceCommitMismatch, enforceGateContract: true }),
   ]
+  if (errors.length === 0 && options.requireLive) {
+    errors.push(...await verifyProtectedR0Evidence(ledger))
+    if (options.milestone === 'R2' || options.milestone === 'R4') {
+      errors.push(...await verifyProtectedExternalAcceptanceEvidence(ledger, {
+        milestone: options.milestone,
+      }))
+    }
+  }
   if (errors.length > 0) {
     console.error('Mesh readiness ledger validation failed:')
     for (const error of errors) console.error(`- ${error}`)
@@ -329,6 +384,10 @@ export async function main(argv = process.argv.slice(2)) {
     sourceTreeHash: ledger.sourceTreeHash,
     gates: ledger.gates.length,
     requiredLiveThrough: options.requireLive ? options.milestone : null,
+    protectedR0Evidence: options.requireLive ? 'downloaded-and-verified' : 'not-requested',
+    protectedExternalAcceptance: options.requireLive && ['R2', 'R4'].includes(options.milestone)
+      ? 'downloaded-and-verified'
+      : 'not-requested',
     status: 'valid',
   }, null, 2))
   return 0

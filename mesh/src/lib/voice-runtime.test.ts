@@ -8,7 +8,9 @@ import {
   shouldActivateVoiceSession,
   shouldPublishInitialMicrophone,
   shouldReleasePushToTalk,
+  PRIVATE_VOICE_FAILURE_MESSAGE,
   voiceConnectionLabel,
+  voiceConnectionUserMessage,
   voiceMediaErrorMessage,
 } from './voice-runtime'
 
@@ -33,7 +35,7 @@ function status(overrides: Partial<BackendStatus> = {}): BackendStatus {
       tokenEndpoint: null,
       livekitSfuUrl: null,
       cspReady: true,
-      mediaE2eeVerified: false,
+      mediaE2eeReady: false,
       reason: 'Experimental legacy transport',
     },
     authenticated: false,
@@ -92,7 +94,7 @@ describe('MatrixRTC runtime boundary', () => {
         ...status().voiceService,
         provider: 'matrix-rtc',
         availability: 'ready',
-        mediaE2eeVerified: true,
+        mediaE2eeReady: true,
       },
     })
 
@@ -100,7 +102,7 @@ describe('MatrixRTC runtime boundary', () => {
     expect(
       canStartMatrixVoice({
         ...ready,
-        voiceService: { ...ready.voiceService, mediaE2eeVerified: false },
+        voiceService: { ...ready.voiceService, mediaE2eeReady: false },
       }),
     ).toBe(false)
     expect(
@@ -132,6 +134,33 @@ describe('voice media permission recovery', () => {
     expect(voiceMediaErrorMessage(denied, 'screen')).toBe(
       'Mesh can’t access screen sharing. Allow screen sharing access for Mesh in your system settings, then try again.',
     )
+  })
+
+  it('never exposes arbitrary camera or screen-sharing runtime errors', () => {
+    expect(voiceMediaErrorMessage(new Error('getDisplayMedia IPC transport exploded'), 'screen')).toBe(
+      'Mesh could not change screen sharing. Check that the window or screen is still available, then try again.',
+    )
+    expect(voiceMediaErrorMessage(new Error('NotReadableError: raw camera device ID'), 'camera')).toBe(
+      'Mesh could not change your camera. Check that it is connected and not being used by another app, then try again.',
+    )
+  })
+})
+
+describe('private voice failure copy', () => {
+  it.each([
+    'Private media encryption failed',
+    'Private media key distribution failed',
+    'A private media key update had invalid activation metadata',
+    'MatrixRTC publication lease renewal timed out',
+  ])('maps %s to one stable recovery message', (reason) => {
+    expect(voiceConnectionUserMessage(reason)).toBe(PRIVATE_VOICE_FAILURE_MESSAGE)
+  })
+
+  it('preserves already actionable non-security guidance', () => {
+    expect(voiceConnectionUserMessage('Check your internet connection and try again.')).toBe(
+      'Check your internet connection and try again.',
+    )
+    expect(voiceConnectionUserMessage(null)).toBeNull()
   })
 })
 

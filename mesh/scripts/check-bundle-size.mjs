@@ -7,10 +7,12 @@ const budgets = Object.freeze({
   entryBytes: 350 * 1024,
   eagerJavaScriptBytes: 525 * 1024,
   individualJavaScriptBytes: 550 * 1024,
-  totalJavaScriptBytes: 1_400 * 1024,
+  // Matrix voice adds a lazy LiveKit client chunk plus its media-E2EE worker.
+  // Keep the entry/eager/individual limits tight so voice never taxes startup.
+  totalJavaScriptBytes: 2_150 * 1024,
   totalCssBytes: 100 * 1024,
   totalFontBytes: 400 * 1024,
-  totalAssetBytes: 1_800 * 1024,
+  totalAssetBytes: 2_500 * 1024,
 })
 const assetsDirectory = new URL('../dist/assets/', import.meta.url)
 const indexPath = new URL('../dist/index.html', import.meta.url)

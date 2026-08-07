@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-const STARTUP_READY_BUDGET_MS = 8_000
+const STARTUP_READY_BUDGET_MS = 2_000
 const STARTUP_PAINT_BUDGET_MS = STARTUP_READY_BUDGET_MS
 const STARTUP_LONG_TASK_BUDGET_MS = 2_000
 const STARTUP_TRANSFER_BUDGET_BYTES = 4 * 1024 * 1024
@@ -24,12 +24,22 @@ type RuntimeSample = {
 }
 
 function summarize(values: number[]) {
+  const sorted = [...values].sort((left, right) => left - right)
   const mean = values.reduce((total, value) => total + value, 0) / values.length
   const variance =
     values.reduce((total, value) => total + (value - mean) ** 2, 0) / values.length
+  const middle = Math.floor(sorted.length / 2)
+  const median = sorted.length % 2 === 0
+    ? ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
+    : (sorted[middle] ?? 0)
+  const p95Index = Math.max(0, Math.ceil(sorted.length * 0.95) - 1)
+  const worstObserved = sorted.at(-1) ?? 0
   return {
-    minimum: Math.min(...values),
-    maximum: Math.max(...values),
+    minimum: sorted[0] ?? 0,
+    median,
+    p95: sorted[p95Index] ?? worstObserved,
+    maximum: worstObserved,
+    worstObserved,
     mean,
     standardDeviation: Math.sqrt(variance),
     sampleCount: values.length,
@@ -61,7 +71,7 @@ test('keeps the default onboarding path within wider-beta runtime budgets', asyn
     await page.goto('about:blank')
     const startedAt = Date.now()
     await page.goto('/')
-    const signIn = page.getByRole('button', { name: 'Sign in with Matrix.org' })
+    const signIn = page.getByRole('button', { name: 'Sign in with Public account service' })
     await expect(signIn).toBeVisible({ timeout: STARTUP_READY_BUDGET_MS })
     const paintedMs = Date.now() - startedAt
     await expect(signIn).toBeEnabled({ timeout: STARTUP_READY_BUDGET_MS })
@@ -99,11 +109,14 @@ test('keeps the default onboarding path within wider-beta runtime budgets', asyn
     cwd: process.cwd(),
     encoding: 'utf8',
   }).trim()
+  const outputDir = path.resolve(process.cwd(), 'test-results')
+  const outputPath = path.join(outputDir, 'resource-budget-browser.json')
   const evidence = {
     schemaVersion: 1,
     sourceSha,
     testedAt: new Date().toISOString(),
     buildType: process.env.CI ? 'vite-development-ci' : 'vite-development-local',
+    rawEvidencePath: path.relative(process.cwd(), outputPath).replaceAll('\\', '/'),
     sampleRuns: SAMPLE_RUNS,
     settlingIntervalMs: SETTLING_INTERVAL_MS,
     platform: {
@@ -124,10 +137,9 @@ test('keeps the default onboarding path within wider-beta runtime budgets', asyn
     },
     samples,
   }
-  const outputDir = path.resolve(process.cwd(), 'test-results')
   mkdirSync(outputDir, { recursive: true })
   writeFileSync(
-    path.join(outputDir, 'resource-budget-browser.json'),
+    outputPath,
     `${JSON.stringify(evidence, null, 2)}\n`,
     'utf8',
   )

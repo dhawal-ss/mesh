@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "2026-08-03.3",
+  "approvedAt": "2026-08-03",
+  "releaseScope": "first-public-beta",
+  "authority": "Product-owner decision authority was explicitly delegated to the Mesh technical lead on 2026-08-03.",
+  "release": {
+    "version": "0.2.0",
+    "tag": "v0.2.0",
+    "channel": "beta",
+    "githubPrerelease": true,
+    "updaterEnabled": false,
+    "license": "AGPL-3.0-only",
+    "contributionPolicy": "DCO-1.1-inbound-equals-outbound-no-CLA"
+  },
+  "windowsDistribution": {
+    "canonicalInstaller": "nsis",
+    "canonicalInstallMode": "currentUser",
+    "secondaryInstaller": "msi",
+    "secondaryAudience": "managed-deployment",
+    "crossFormatBehavior": "block-with-guidance",
+    "userDataOnUninstall": "retain-by-default",
+    "automaticMigration": false
+  },
+  "acceptance": {
+    "windowsMilestone": "R2",
+    "windowsRequiredCases": 55,
+    "allPlatformMilestone": "R4",
+    "allPlatformRequiredCases": 63
+  },
+  "implementation": {
+    "candidateSourceReady": false,
+    "candidateBlockers": [
+      {
+        "id": "D7",
+        "reason": "No clean exact-SHA source candidate with current protected R0 evidence exists. The locally verified implementation remains uncommitted and cannot be bound to the signed draft-candidate lifecycle without owner-authorized commit and protected CI."
+      }
+    ]
+  },
+  "decisions": {
+    "D1": {
+      "status": "approved",
+      "selection": "session-only-decrypted-media",
+      "summary": "The beta must not persist decrypted attachment bytes in Mesh-managed cache storage. Explicit user exports remain user files.",
+      "implementationStatus": "implemented",
+      "implementationGate": "required-before-candidate",
+      "rollbackOwner": "security-privacy"
+    },
+    "D2": {
+      "status": "approved",
+      "selection": "single-canonical-owner-no-beta-transfer",
+      "summary": "Mesh presents one accountable community owner derived from standard Matrix authority. Ownership transfer is unavailable in beta because immutable creator authority cannot be honestly transferred on all supported room versions.",
+      "implementationStatus": "implemented",
+      "implementationGate": "existing-fail-closed-behavior-must-remain",
+      "rollbackOwner": "protocol-architecture"
+    },
+    "D3": {
+      "status": "approved",
+      "selection": "operational-receipts-not-authoritative-audit",
+      "summary": "The beta exposes immediate per-room moderation outcomes but makes no durable or authoritative audit-log claim.",
+      "implementationStatus": "implemented",
+      "implementationGate": "existing-fail-closed-behavior-must-remain",
+      "rollbackOwner": "trust-safety"
+    },
+    "D4": {
+      "status": "approved",
+      "selection": "standard-matrix-invite-and-knock",
+      "summary": "The beta uses standard Matrix invitations and knock flows. The optional managed admission service remains disabled until POST token verification and least-privilege registration issuance are reviewed.",
+      "implementationStatus": "implemented",
+      "implementationGate": "optional-service-must-remain-fail-closed",
+      "rollbackOwner": "identity-infrastructure"
+    },
+    "D5": {
+      "status": "approved",
+      "selection": "risk-tiered-native-presence-plus-provider-reauth",
+      "summary": "Local account erasure requires a one-use native presence grant. Device revocation and account deactivation additionally require Matrix password reauthentication. Browser-auth account paths and Matrix administrator-role changes fail closed until provider-backed reauthentication is available; routine reversible moderation remains governed by D3 and D9.",
+      "implementationStatus": "implemented",
+      "implementationGate": "required-before-candidate",
+      "rollbackOwner": "security-identity"
+    },
+    "D6": {
+      "status": "approved",
+      "selection": "nsis-consumer-msi-managed",
+      "summary": "NSIS current-user installation is the canonical consumer path and writes a per-user format marker. MSI remains a secondary managed-deployment artifact and writes a per-machine marker. Both UI and silent installers block the opposite format before copying app files, explain uninstall-first recovery, and retain account data by default.",
+      "implementationStatus": "implemented",
+      "implementationGate": "required-before-candidate",
+      "rollbackOwner": "windows-release"
+    },
+    "D7": {
+      "status": "approved",
+      "selection": "signed-draft-prerelease-no-updater",
+      "summary": "The first beta candidate is v0.2.0, published only as a signed draft prerelease until exact-version acceptance completes. Automatic updates remain off.",
+      "implementationStatus": "source-configured-external-evidence-required",
+      "implementationGate": "external-signing-legal-and-acceptance-required",
+      "rollbackOwner": "release-management"
+    },
+    "D8": {
+      "status": "approved",
+      "selection": "best-effort-community-hosting-no-sla",
+      "summary": "Optional Mesh community hosting has no SLA. Publish only measured best-effort targets: 24-hour backup cadence, 24-hour RPO, 12-hour restore target, and 24-hour incident acknowledgement when an operator is available.",
+      "implementationStatus": "source-configured-external-evidence-required",
+      "implementationGate": "two-independent-restore-drills-required-before-publication",
+      "rollbackOwner": "community-operations"
+    },
+    "D9": {
+      "status": "approved",
+      "selection": "standard-moderation-and-rate-limits-only",
+      "summary": "The beta ships standard Matrix moderation and transparent rate limits, without global reputation scores or opaque automated anti-raid decisions.",
+      "implementationStatus": "implemented",
+      "implementationGate": "existing-bounded-controls-must-remain",
+      "rollbackOwner": "trust-safety"
+    },
+    "D10": {
+      "status": "approved",
+      "selection": "mobile-unsupported-in-first-beta",
+      "summary": "iOS and Android are explicitly unsupported in the first beta and require a separate native product and security contract.",
+      "implementationStatus": "implemented",
+      "implementationGate": "claims-and-downloads-must-remain-absent",
+      "rollbackOwner": "product-platform"
+    },
+    "D11": {
+      "status": "approved",
+      "selection": "no-third-party-apps-in-first-beta",
+      "summary": "The beta exposes no third-party app or bot platform. A future platform must be deny-by-default, capability-scoped, consented, observable, and revocable.",
+      "implementationStatus": "implemented",
+      "implementationGate": "extension-surfaces-must-remain-disabled",
+      "rollbackOwner": "platform-security"
+    }
+  }
+}

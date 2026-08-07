@@ -2,7 +2,6 @@
 use std::collections::{HashMap, HashSet};
 #[cfg(feature = "legacy-p2p")]
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-#[cfg(feature = "legacy-p2p")]
 use std::sync::Arc;
 #[cfg(feature = "legacy-p2p")]
 use tokio::sync::RwLock;
@@ -12,10 +11,12 @@ use crate::backend::BackendManager;
 use crate::crypto::identity::Identity;
 #[cfg(feature = "legacy-p2p")]
 use crate::network::events::NetworkHandle;
+use crate::state::destructive_actions::DestructiveActionGrantStore;
 #[cfg(feature = "legacy-p2p")]
 use crate::state::download_scheduler::DownloadScheduler;
 #[cfg(feature = "legacy-p2p")]
 use crate::state::membership::MembershipState;
+use crate::state::native_requests::NativeRequestRegistry;
 #[cfg(feature = "legacy-p2p")]
 use crate::state::rate_limits::RateLimitState;
 #[cfg(feature = "legacy-p2p")]
@@ -84,6 +85,10 @@ pub struct AppState {
     /// Selected communication backend. Matrix is the production default;
     /// legacy libp2p must be explicitly selected with `MESH_BACKEND=legacy-p2p`.
     pub backend: BackendManager,
+    /// Account-scoped native read scheduling and cancellation acknowledgement.
+    pub native_requests: Arc<NativeRequestRegistry>,
+    /// One-use, short-lived grants created only after a native confirmation.
+    pub destructive_action_grants: Arc<DestructiveActionGrantStore>,
     #[cfg(feature = "legacy-p2p")]
     pub identity: Arc<RwLock<Option<Identity>>>,
     #[cfg(feature = "legacy-p2p")]
@@ -118,6 +123,8 @@ impl AppState {
     pub fn with_data_dir(app_data_dir: impl Into<std::path::PathBuf>) -> Self {
         Self {
             backend: BackendManager::from_environment(app_data_dir.into()),
+            native_requests: Arc::new(NativeRequestRegistry::default()),
+            destructive_action_grants: Arc::new(DestructiveActionGrantStore::default()),
             #[cfg(feature = "legacy-p2p")]
             identity: Arc::new(RwLock::new(None)),
             #[cfg(feature = "legacy-p2p")]

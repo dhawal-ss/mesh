@@ -11,12 +11,26 @@ const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(scriptDirectory, '..')
 const templatePath = resolve(repoRoot, 'release', 'external-acceptance.example.json')
 const schemaPath = resolve(repoRoot, 'release', 'external-acceptance.schema.json')
+const ownerDecisionPath = resolve(repoRoot, 'release', 'owner-decisions.json')
+const ownerDecisionContract = JSON.parse(await readFile(ownerDecisionPath, 'utf8'))
+export const APPROVED_RELEASE_TAG = ownerDecisionContract.release.tag
 const SHA_PATTERN = /^[0-9a-f]{40}$/u
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/u
 const TAG_PATTERN = /^v\d+\.\d+\.\d+(?:[.-][0-9A-Za-z.-]+)?$/u
 const ID_PATTERN = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/u
 const STATUSES = new Set(['not-run', 'passed', 'failed', 'blocked'])
 const PLACEHOLDER_PATTERN = /(?:placeholder|\btodo\b|\btbd\b|example|unknown|replace[-_ ]?me)/iu
+const EVIDENCE_SIZE_LIMITS = new Map([
+  ['text/plain', 2 * 1024 * 1024],
+  ['application/json', 4 * 1024 * 1024],
+  ['application/pdf', 20 * 1024 * 1024],
+  ['image/png', 20 * 1024 * 1024],
+  ['image/jpeg', 20 * 1024 * 1024],
+  ['image/webp', 20 * 1024 * 1024],
+  ['video/mp4', 100 * 1024 * 1024],
+])
+const SCREENSHOT_MEDIA_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+const OPAQUE_VISUAL_MEDIA_TYPES = new Set([...SCREENSHOT_MEDIA_TYPES, 'application/pdf', 'video/mp4'])
 
 export const REQUIRED_EXTERNAL_ACCEPTANCE_IDS = Object.freeze([
   'windows.download',
@@ -29,6 +43,8 @@ export const REQUIRED_EXTERNAL_ACCEPTANCE_IDS = Object.freeze([
   'windows.community-join',
   'windows.restart-resume',
   'windows.update',
+  'windows.cross-format-msi-to-nsis',
+  'windows.cross-format-nsis-to-msi',
   'windows.uninstall',
   'windows.residue',
   'public-release.signed-installer',
@@ -39,6 +55,7 @@ export const REQUIRED_EXTERNAL_ACCEPTANCE_IDS = Object.freeze([
   'public-release.updater-manifest',
   'public-release.updater-rollback',
   'public-release.legal-approval',
+  'public-release.confidential-security-reporting',
   'public-release.live-download',
   'provider.production-registrations',
   'provider.callback-routing',
@@ -115,6 +132,49 @@ function exactKeys(value, keys) {
   return Object.keys(value).sort().join('\n') === [...keys].sort().join('\n')
 }
 
+function evidenceText(bytes) {
+  const utf8 = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+  const ascii = Buffer.from(bytes).toString('latin1').replace(/[^\x20-\x7E]/g, ' ')
+  return `${utf8}\n${ascii}`
+}
+
+function contentCategories(text) {
+  const categories = new Set()
+  const decoded = [text]
+  try { decoded.push(decodeURIComponent(text)) } catch { /* malformed percent encoding stays inspected as-is */ }
+  for (const candidate of text.matchAll(/(?:^|[^A-Za-z0-9+/])([A-Za-z0-9+/]{20,}={0,2})(?=$|[^A-Za-z0-9+/])/g)) {
+    try {
+      const value = Buffer.from(candidate[1], 'base64').toString('utf8')
+      if (/^[\x09\x0A\x0D\x20-\x7E]+$/.test(value)) decoded.push(value)
+    } catch { /* invalid base64 is not evidence of a secret */ }
+  }
+  for (const value of decoded) {
+    const compact = value.toLowerCase().replace(/[^a-z0-9]/g, '')
+    if (/(?:access|refresh|registration|invite|update|signing)(?:token|secret|key)[a-z0-9]{12,}/.test(compact)
+      || /-----begin(?:rsa|ec|openssh)?privatekey-----/i.test(value)) categories.add('credential material')
+    if (/(?:password|passphrase|recoverykey)[a-z0-9]{12,}/.test(compact)
+      || /\b(?:[A-Z0-9]{4}[- ]+){6,}[A-Z0-9]{4}\b/.test(value)) categories.add('account recovery material')
+    if (/(?:^|[\s"'(<])(?:@|!|\$)[A-Za-z0-9._=+\/-]+:[A-Za-z0-9.-]+(?=$|[\s"')>,])/m.test(value)) categories.add('direct Matrix identifier')
+    if (/\b(?:message(?:body|content)|room(?:member|state)|memberlist|rawdiagnostics?)\s*[:=]/i.test(value)) categories.add('private conversation or diagnostic data')
+    if (/(?:^|[\s"'])(?:[A-Za-z]:\\Users\\[^\s"']+|\/(?:Users|home)\/[^\s"']+)/m.test(value)) categories.add('private absolute path')
+  }
+  return [...categories]
+}
+
+export function inspectEvidenceContent(bytes, mediaType, { privacyReviewer = null } = {}) {
+  const errors = []
+  const limit = EVIDENCE_SIZE_LIMITS.get(mediaType)
+  if (!limit) return ['evidence media type is not supported for bounded inspection']
+  if (bytes.byteLength > limit) return ['evidence exceeds the bounded inspection size limit']
+  if (OPAQUE_VISUAL_MEDIA_TYPES.has(mediaType) && !nonPlaceholder(privacyReviewer)) {
+    errors.push('opaque visual evidence requires a named human privacy reviewer')
+  }
+  for (const category of contentCategories(evidenceText(bytes))) {
+    errors.push(`evidence content contains prohibited ${category}`)
+  }
+  return errors
+}
+
 export function validateExternalAcceptance(document, {
   requireLive = false,
   templateMode = false,
@@ -164,7 +224,7 @@ export function validateExternalAcceptance(document, {
   const artifacts = Array.isArray(document.artifacts) ? document.artifacts : []
   const artifactById = new Map()
   for (const [index, artifact] of artifacts.entries()) {
-    if (!exactKeys(artifact, ['id', 'path', 'sha256', 'bytes', 'mediaType', 'collectedAt', 'sanitized', 'resultIds'])) {
+    if (!exactKeys(artifact, ['id', 'path', 'sha256', 'bytes', 'mediaType', 'collectedAt', 'sanitized', 'privacyReviewer', 'resultIds'])) {
       fail(`artifacts[${index}] must contain only the artifact schema fields`)
       continue
     }
@@ -176,7 +236,9 @@ export function validateExternalAcceptance(document, {
     if (!Number.isSafeInteger(artifact.bytes) || artifact.bytes < 1) fail(`artifact ${artifact.id} bytes must be a positive integer`)
     if (!nonEmpty(artifact.mediaType)) fail(`artifact ${artifact.id} mediaType is required`)
     if (!isoDate(artifact.collectedAt)) fail(`artifact ${artifact.id} collectedAt is invalid`)
-    if (artifact.sanitized !== true) fail(`artifact ${artifact.id} must attest sanitized=true`)
+    if (typeof artifact.sanitized !== 'boolean') fail(`artifact ${artifact.id} sanitized must remain explicit metadata`)
+    if (artifact.privacyReviewer !== null && !nonPlaceholder(artifact.privacyReviewer)) fail(`artifact ${artifact.id} privacyReviewer must be named or null`)
+    if (OPAQUE_VISUAL_MEDIA_TYPES.has(artifact.mediaType) && !nonPlaceholder(artifact.privacyReviewer)) fail(`artifact ${artifact.id} opaque visual evidence requires a named human privacy reviewer`)
     if (!Array.isArray(artifact.resultIds) || artifact.resultIds.length < 1 || new Set(artifact.resultIds).size !== artifact.resultIds.length) {
       fail(`artifact ${artifact.id} resultIds must be a non-empty unique array`)
     } else {
@@ -214,7 +276,7 @@ export function validateExternalAcceptance(document, {
     if (document.status !== 'passed') fail('live external acceptance requires document status passed')
     if (!['R2', 'R4'].includes(document.acceptanceMilestone)) fail('live external acceptance requires acceptanceMilestone R2 or R4')
     if (!SHA_PATTERN.test(document.sourceSha ?? '')) fail('live external acceptance requires sourceSha')
-    if (!TAG_PATTERN.test(document.releaseTag ?? '') || !/^v[1-9]\d*\./u.test(document.releaseTag ?? '')) fail('live external acceptance requires a non-placeholder, non-zero-major releaseTag')
+    if (document.releaseTag !== APPROVED_RELEASE_TAG) fail(`live external acceptance requires the approved releaseTag ${APPROVED_RELEASE_TAG}`)
     if (!isoDate(document.testedAt) || !isoDate(document.expiresAt)) fail('live external acceptance requires testedAt and expiresAt')
     if (isoDate(document.testedAt) && Date.parse(document.testedAt) > now.getTime()) fail('live external acceptance testedAt cannot be in the future')
     if (isoDate(document.testedAt) && isoDate(document.expiresAt) && Date.parse(document.expiresAt) <= Date.parse(document.testedAt)) fail('live external acceptance expiresAt must be later than testedAt')
@@ -232,6 +294,7 @@ export function validateExternalAcceptance(document, {
     }
     if (artifacts.length < 1) fail('live external acceptance requires evidence artifacts')
     for (const artifact of artifacts) {
+      if (artifact.sanitized !== true) fail(`live artifact ${artifact.id} must be explicitly sanitized`)
       if (isoDate(artifact.collectedAt) && Date.parse(artifact.collectedAt) > now.getTime()) fail(`artifact ${artifact.id} collectedAt cannot be in the future`)
       if (isoDate(document.testedAt) && isoDate(artifact.collectedAt) && Date.parse(artifact.collectedAt) < Date.parse(document.testedAt)) fail(`artifact ${artifact.id} predates the acceptance campaign`)
     }
@@ -260,8 +323,17 @@ async function verifyLiveArtifacts(document, evidenceRoot) {
       const info = await stat(canonical)
       if (!info.isFile()) errors.push(`artifact ${artifact.id} is not a file`)
       else if (info.size !== artifact.bytes) errors.push(`artifact ${artifact.id} byte size does not match`)
+      const sizeLimit = EVIDENCE_SIZE_LIMITS.get(artifact.mediaType)
+      if (!sizeLimit || info.size > sizeLimit) {
+        errors.push(`artifact ${artifact.id} cannot be boundedly inspected for its declared media type and size`)
+        continue
+      }
       const digest = await sha256File(canonical)
       if (digest !== artifact.sha256) errors.push(`artifact ${artifact.id} SHA-256 does not match`)
+      const bytes = await readFile(canonical)
+      for (const contentError of inspectEvidenceContent(bytes, artifact.mediaType, { privacyReviewer: artifact.privacyReviewer })) {
+        errors.push(`artifact ${artifact.id}: ${contentError}`)
+      }
     } catch {
       errors.push(`artifact ${artifact.id} could not be verified`)
     }

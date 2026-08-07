@@ -3,13 +3,15 @@ import { useChannelStore } from '../../store/channels'
 import { useCommunityStore } from '../../store/communities'
 import { useIdentityStore } from '../../store/identity'
 import { useVoiceStore } from '../../store/voice'
-import { voiceConnectionLabel } from '../../lib/voice-runtime'
 import { Avatar } from '../ui/Avatar'
 import { Icon } from '../ui/Icon'
 import { Tooltip } from '../ui/Tooltip'
+import { useCurrentMeshRoute, useMeshNavigationStore } from '../../store/navigation'
+import { playInterfaceSound } from '../../lib/interface-sounds'
 
 export function VoiceDock() {
-  const activeChannelId = useChannelStore((state) => state.activeChannelId)
+  const route = useCurrentMeshRoute()
+  const navigate = useMeshNavigationStore((state) => state.navigate)
   const currentChannelId = useVoiceStore((state) => state.currentChannelId)
   const currentCommunityId = useVoiceStore((state) => state.currentCommunityId)
   const localPublicKey = useVoiceStore((state) => state.localPublicKey)
@@ -20,6 +22,8 @@ export function VoiceDock() {
   const localAudioLevel = useVoiceStore((state) => state.localAudioLevel)
   const setMuted = useVoiceStore((state) => state.setMuted)
   const setDeafened = useVoiceStore((state) => state.setDeafened)
+  const setCameraEnabled = useVoiceStore((state) => state.setCameraEnabled)
+  const setScreenSharing = useVoiceStore((state) => state.setScreenSharing)
   const setCurrentVoiceSession = useVoiceStore((state) => state.setCurrentVoiceSession)
   const identity = useIdentityStore((state) => state.identity)
   const setActiveCommunity = useCommunityStore((state) => state.setActiveCommunity)
@@ -52,12 +56,41 @@ export function VoiceDock() {
     ]
   }, [identity, isMuted, localAudioLevel, localPublicKey, peers])
 
-  if (!currentChannelId || !currentCommunityId || activeChannelId === currentChannelId) return null
+  if (
+    !currentChannelId
+    || !currentCommunityId
+    || (route.kind === 'voice' && route.roomId === currentChannelId)
+  ) return null
 
   const openVoiceRoom = () => {
+    navigate({
+      kind: 'voice',
+      communityId: currentCommunityId,
+      roomId: currentChannelId,
+    })
     setActiveCommunity(currentCommunityId)
     setActiveChannel(currentChannelId)
   }
+  const retryVoice = () => {
+    const communityId = currentCommunityId
+    const channelId = currentChannelId
+    setCurrentVoiceSession(null, null)
+    requestAnimationFrame(() => setCurrentVoiceSession(communityId, channelId))
+  }
+  const leaveVoice = () => {
+    setMuted(true)
+    setCameraEnabled(false)
+    setScreenSharing(false)
+    setCurrentVoiceSession(null, null)
+    void playInterfaceSound('voice-self-leave')
+  }
+  const voiceStateLabel = connectionState === 'reconnecting'
+    ? `Reconnecting to ${voiceChannel?.name ?? 'voice'}`
+    : connectionState === 'disconnected'
+      ? 'Voice could not reconnect'
+      : connectionState === 'connecting'
+        ? `Joining ${voiceChannel?.name ?? 'voice'}`
+        : `${participants.length} in party`
 
   return (
     <section
@@ -69,37 +102,37 @@ export function VoiceDock() {
       <button
         type="button"
         onClick={openVoiceRoom}
-        className="flex min-w-64 items-center gap-3 rounded-control px-2 py-1.5 text-left transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+        className="mesh-voice-dock-room flex min-w-64 items-center gap-3 rounded-control px-2 py-1.5 text-left transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
         aria-label={`Open voice room ${voiceChannel?.name ?? 'Voice'}`}
       >
-        <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-control border border-accent/40 bg-accent/10 text-accent">
+        <span className="mesh-voice-dock-room-icon flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-control border border-accent/40 bg-accent/10 text-accent">
           <Icon name="volume" size="sm" />
         </span>
         <span className="min-w-0">
           <span className="block truncate text-base font-semibold text-primary">
             {voiceChannel?.name ?? 'Voice'}
           </span>
-          <span className="mt-0.5 flex items-center gap-1.5 text-caption text-muted">
+          <span className="mesh-voice-dock-status mt-0.5 flex items-center gap-1.5 text-caption text-muted">
             <span
               className={`h-1.5 w-1.5 rounded-full ${
                 connectionState === 'connected' ? 'bg-status-success' : 'bg-status-warning'
               }`}
               aria-hidden="true"
             />
-            {voiceConnectionLabel(connectionState)}
+            {voiceStateLabel}
           </span>
-          <span className="mt-0.5 hidden text-caption text-muted lg:block">Drop in to create together.</span>
+          <span className="mt-0.5 hidden text-caption text-muted lg:block">Party stays close while you read messages.</span>
         </span>
       </button>
 
-      <div className="hidden min-w-0 flex-1 items-center justify-center gap-3 sm:flex" aria-label="Voice participants">
+      <div className="mesh-voice-dock-participants hidden min-w-0 flex-1 items-center justify-center gap-3 sm:flex" aria-label="Voice participants">
         {participants.slice(0, 6).map((participant) => (
           <Tooltip
             key={participant.publicKey}
             content={`${participant.displayName}${participant.isLocal ? ' (you)' : ''}`}
             side="top"
           >
-            <span className="flex min-w-12 flex-col items-center gap-1">
+            <span className="mesh-voice-dock-participant flex min-w-12 flex-col items-center gap-1">
               <span
                 className={`rounded-full p-0.5 ${
                   participant.speaking ? 'bg-status-success' : 'bg-border-emphasis'
@@ -112,11 +145,13 @@ export function VoiceDock() {
                   className="!rounded-full border-2 border-surface-sunken"
                 />
               </span>
-              <span className="hidden max-w-16 truncate text-caption font-medium text-secondary xl:block">
-                {participant.displayName.split(' ')[0]}
-              </span>
-              <span className={`hidden text-2xs xl:block ${participant.speaking ? 'text-status-success' : 'text-muted'}`}>
-                {participant.speaking ? 'Talking' : participant.isLocal ? 'You' : 'Listening'}
+              <span className="mesh-voice-dock-participant-copy hidden min-w-0">
+                <span className="block max-w-20 truncate text-caption font-medium text-secondary">
+                  {participant.displayName.split(' ')[0]}
+                </span>
+                <span className={`block text-2xs ${participant.speaking ? 'text-status-success' : 'text-muted'}`}>
+                  {participant.speaking ? 'Talking' : participant.isLocal ? 'You' : 'Listening'}
+                </span>
               </span>
             </span>
           </Tooltip>
@@ -126,7 +161,17 @@ export function VoiceDock() {
         )}
       </div>
 
-      <div className="ml-auto flex flex-shrink-0 items-center gap-2 border-l border-border-subtle pl-4">
+      <div className="mesh-voice-dock-controls ml-auto flex flex-shrink-0 items-center gap-2 border-l border-border-subtle pl-4">
+        {connectionState === 'disconnected' ? (
+          <button
+            type="button"
+            onClick={retryVoice}
+            className="flex min-h-11 items-center gap-2 rounded-control px-3 text-xs font-semibold text-accent transition-colors hover:bg-surface-hover"
+          >
+            <Icon name="refresh" size="sm" />
+            <span className="hidden sm:inline">Try again</span>
+          </button>
+        ) : null}
         <VoiceDockButton
           label={isMuted ? 'Unmute microphone' : 'Mute microphone'}
           active={isMuted}
@@ -134,7 +179,7 @@ export function VoiceDock() {
           icon={isMuted ? 'micOff' : 'mic'}
         />
         <VoiceDockButton
-          label={isDeafened ? 'Undeafen audio' : 'Deafen audio'}
+          label={isDeafened ? 'Turn incoming audio on' : 'Turn incoming audio off'}
           active={isDeafened}
           onClick={() => setDeafened(!isDeafened)}
           icon={isDeafened ? 'headphoneOff' : 'headphones'}
@@ -142,16 +187,17 @@ export function VoiceDock() {
         <button
           type="button"
           onClick={openVoiceRoom}
-          className="hidden min-h-11 items-center gap-2 rounded-control px-3 text-xs font-semibold text-secondary transition-colors hover:bg-surface-hover hover:text-primary md:flex"
+          className="mesh-voice-dock-open hidden min-h-11 items-center gap-2 rounded-control px-3 text-xs font-semibold text-secondary transition-colors hover:bg-surface-hover hover:text-primary md:flex"
+          aria-label={`Open voice room ${voiceChannel?.name ?? 'Voice'}`}
         >
           <Icon name="panelRight" size="sm" />
-          Open
+          <span className="mesh-voice-dock-control-label">Open</span>
         </button>
         <button
           type="button"
-          onClick={() => setCurrentVoiceSession(null, null)}
+          onClick={leaveVoice}
           className="flex min-h-11 items-center gap-2 rounded-control border border-status-danger/60 px-4 text-xs font-semibold text-status-danger transition-colors hover:bg-status-danger/10"
-          aria-label="Leave voice room"
+          aria-label={`Leave ${voiceChannel?.name ?? 'voice'}`}
         >
           <Icon name="phoneOff" size="sm" />
           <span className="hidden sm:inline">Leave</span>
@@ -187,7 +233,13 @@ function VoiceDockButton({
       >
         <Icon name={icon} size="sm" />
         <span className="hidden text-xs font-semibold lg:inline">
-          {label.startsWith('Unmute') ? 'Unmute' : label.startsWith('Mute') ? 'Mute' : label.startsWith('Undeafen') ? 'Undeafen' : 'Deafen'}
+          {label.startsWith('Unmute')
+            ? 'Unmute'
+            : label.startsWith('Mute')
+              ? 'Mute'
+              : label.endsWith(' on')
+                ? 'Sound on'
+                : 'Sound off'}
         </span>
       </button>
     </Tooltip>

@@ -573,7 +573,7 @@ fn pending_invitation_join_is_serialized_against_account_transitions() {
         .split("async fn clear_pending_invitation")
         .next()
         .unwrap();
-    assert!(join.contains("account_transition_gate.lock().await"));
+    assert!(join.contains("account_transition_gate.write().await"));
     assert!(join.contains("bound_profile_id"));
     assert!(join.contains("joining_started_at"));
     assert!(join.contains("if result.is_ok()"));
@@ -592,10 +592,47 @@ fn pending_invitation_join_is_serialized_against_account_transitions() {
             implementation
                 .lines()
                 .take(8)
-                .any(|line| line.contains("account_transition_gate.lock().await")),
+                .any(|line| line.contains("account_transition_gate.write().await")),
             "{transition} does not participate in the account-transition gate"
         );
     }
+}
+
+#[tokio::test]
+async fn pending_invitation_join_deadline_is_bounded_and_actionable() {
+    let result = MatrixBackend::bounded_pending_invitation_join(
+        Duration::from_millis(5),
+        std::future::pending::<BackendResult<()>>(),
+    )
+    .await;
+
+    let Err(BackendError::Network(message)) = result else {
+        panic!("a stalled invitation join must fail through the bounded network boundary");
+    };
+    assert!(message.contains("timed out"));
+    assert!(message.contains("invitation is still saved"));
+
+    assert!(
+        MatrixBackend::bounded_pending_invitation_join(Duration::from_secs(1), async {
+            Ok::<_, BackendError>("joined")
+        },)
+        .await
+        .is_ok()
+    );
+}
+
+#[test]
+fn oidc_status_reasons_do_not_expose_registration_error_values() {
+    let sentinel_issuer = "https://operator:sentinel-password@example.org/";
+    let error = OidcRegistrationError::MissingIssuerRegistration {
+        issuer: sentinel_issuer.into(),
+    };
+    let reason = MatrixBackend::oidc_registration_failure_reason(&error);
+
+    assert!(!reason.contains(sentinel_issuer));
+    assert!(!reason.contains("operator"));
+    assert!(!reason.contains("sentinel-password"));
+    assert!(reason.contains("another sign-in method or service"));
 }
 
 #[test]
@@ -828,6 +865,114 @@ fn personal_data_export_cache_prefix_matches_the_private_media_cache_contract() 
     );
 }
 
+#[test]
+fn personal_data_export_room_byte_reservations_never_exceed_their_limit() {
+    let mut retained = 0_usize;
+    assert!(MatrixBackend::reserve_personal_export_room_bytes(
+        &mut retained,
+        4,
+        10
+    ));
+    assert!(!MatrixBackend::reserve_personal_export_room_bytes(
+        &mut retained,
+        7,
+        10
+    ));
+    assert_eq!(retained, 4);
+    assert!(MatrixBackend::reserve_personal_export_room_bytes(
+        &mut retained,
+        6,
+        10
+    ));
+    assert_eq!(retained, 10);
+    assert!(!MatrixBackend::reserve_personal_export_room_bytes(
+        &mut retained,
+        1,
+        10
+    ));
+}
+
+#[test]
+fn personal_data_export_scan_byte_reservations_are_atomic_and_bounded() {
+    let mut global = 0_u64;
+    let mut room = 0_u64;
+    assert_eq!(
+        MatrixBackend::reserve_personal_export_scan_bytes(&mut global, &mut room, 4, 10, 6),
+        PersonalExportScanReservation::Reserved
+    );
+    assert_eq!((global, room), (4, 4));
+    assert_eq!(
+        MatrixBackend::reserve_personal_export_scan_bytes(&mut global, &mut room, 3, 10, 6),
+        PersonalExportScanReservation::RoomLimit
+    );
+    assert_eq!((global, room), (4, 4));
+    assert_eq!(
+        MatrixBackend::reserve_personal_export_scan_bytes(&mut global, &mut room, 7, 10, 20),
+        PersonalExportScanReservation::GlobalLimit
+    );
+    assert_eq!((global, room), (4, 4));
+    assert_eq!(
+        MatrixBackend::reserve_personal_export_scan_bytes(&mut global, &mut room, 6, 10, 10),
+        PersonalExportScanReservation::Reserved
+    );
+    assert_eq!((global, room), (10, 10));
+}
+
+#[test]
+fn security_boundary_decrypted_media_cache_is_process_scoped_and_cleanup_is_bounded() {
+    let root = tempfile::tempdir().unwrap();
+    let matrix_root = root.path().join("matrix");
+    let backend = MatrixBackend::new(matrix_root.clone());
+    let next_backend = MatrixBackend::new(matrix_root.clone());
+    let storage = backend.storage_for_profile("default");
+    let current_cache = backend.media_cache_root(&storage);
+    let next_cache = next_backend.media_cache_root(&storage);
+
+    assert_ne!(current_cache, next_cache);
+    assert_eq!(
+        current_cache.parent().unwrap(),
+        matrix_root.join(SESSION_MEDIA_CACHE_DIRECTORY)
+    );
+
+    std::fs::create_dir_all(&current_cache).unwrap();
+    std::fs::write(current_cache.join("decrypted-current"), b"plaintext").unwrap();
+    let legacy_cache = matrix_root.join(LEGACY_MEDIA_CACHE_DIRECTORY);
+    std::fs::create_dir_all(&legacy_cache).unwrap();
+    std::fs::write(legacy_cache.join("decrypted-legacy"), b"plaintext").unwrap();
+    std::fs::write(matrix_root.join("matrix-sdk-crypto.sqlite3"), b"encrypted").unwrap();
+    let outside = root.path().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("preserve"), b"not a cache").unwrap();
+
+    backend.cleanup_session_media_for_storage(&storage).unwrap();
+
+    assert!(!matrix_root.join(SESSION_MEDIA_CACHE_DIRECTORY).exists());
+    assert!(!legacy_cache.exists());
+    assert_eq!(
+        std::fs::read(matrix_root.join("matrix-sdk-crypto.sqlite3")).unwrap(),
+        b"encrypted"
+    );
+    assert_eq!(
+        std::fs::read(outside.join("preserve")).unwrap(),
+        b"not a cache"
+    );
+}
+
+#[test]
+fn security_boundary_decrypted_media_cleanup_rejects_an_out_of_store_profile() {
+    let root = tempfile::tempdir().unwrap();
+    let backend = MatrixBackend::new(root.path().join("matrix"));
+    let unsafe_storage = AccountStorage {
+        profile_id: "unsafe".into(),
+        store_root: root.path().join("outside"),
+        key_namespace: "unsafe".into(),
+    };
+
+    assert!(backend
+        .cleanup_session_media_for_storage(&unsafe_storage)
+        .is_err());
+}
+
 #[tokio::test]
 async fn personal_data_export_copies_only_matching_private_media() {
     let root = tempfile::tempdir().unwrap();
@@ -920,6 +1065,31 @@ async fn personal_data_export_stream_rejects_global_json_cap_and_native_cancella
 }
 
 #[test]
+fn personal_data_export_cancellation_cannot_lose_its_completion_signal() {
+    let matrix_source = MATRIX_PRODUCTION_SOURCES
+        .iter()
+        .find(|(candidate, _)| *candidate == "matrix.rs")
+        .map(|(_, source)| *source)
+        .unwrap();
+    let cancellation = matrix_source
+        .split("async fn cancel_personal_data_export(")
+        .nth(1)
+        .unwrap()
+        .split("async fn deactivate_account(")
+        .next()
+        .unwrap();
+    let operation_locked = cancellation
+        .find("let active = self.personal_export_operation.lock().await")
+        .unwrap();
+    let completion_registered = cancellation.find("completion.as_mut().enable()").unwrap();
+    let locked_snapshot_returned = cancellation.find("(cancellation, completion)").unwrap();
+    let cancellation_started = cancellation.find("cancellation.cancel()").unwrap();
+    assert!(operation_locked < completion_registered);
+    assert!(completion_registered < locked_snapshot_returned);
+    assert!(completion_registered < cancellation_started);
+}
+
+#[test]
 fn native_room_pins_are_unique_bounded_and_removable_at_capacity() {
     let first = matrix_sdk::ruma::EventId::parse("$first:example.org").unwrap();
     let second = matrix_sdk::ruma::EventId::parse("$second:example.org").unwrap();
@@ -963,6 +1133,35 @@ fn custom_emoji_shortcodes_and_sanitized_media_are_bounded() {
     assert_eq!((sanitized.width, sanitized.height), (128, 32));
     assert!(sanitized.bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
     assert!(sanitized.bytes.len() <= MAX_CUSTOM_EMOJI_UPLOAD_BYTES);
+}
+
+#[test]
+fn custom_emoji_permission_preflight_uses_the_current_state_event_threshold() {
+    let alice = UserId::parse("@alice:example.org").unwrap();
+    let mut power_levels: RoomPowerLevelsEventContent = serde_json::from_value(json!({
+        "events": { (CUSTOM_EMOJI_EVENT_TYPE): 50 },
+        "state_default": 75,
+        "users": { "@alice:example.org": 49 },
+        "users_default": 0
+    }))
+    .unwrap();
+
+    assert!(!MatrixBackend::user_can_update_custom_emoji(
+        &power_levels,
+        &alice,
+    ));
+    power_levels.users.insert(alice.clone(), int!(50));
+    assert!(MatrixBackend::user_can_update_custom_emoji(
+        &power_levels,
+        &alice,
+    ));
+    power_levels
+        .events
+        .insert(TimelineEventType::from(CUSTOM_EMOJI_EVENT_TYPE), int!(51));
+    assert!(!MatrixBackend::user_can_update_custom_emoji(
+        &power_levels,
+        &alice,
+    ));
 }
 
 #[test]
@@ -1913,30 +2112,78 @@ fn matrix_rtc_endpoint_fallback_only_covers_404_or_unrecognized() {
 }
 
 #[test]
-fn matrix_rtc_token_response_requires_the_exact_configured_sfu_endpoint() {
+fn matrix_rtc_token_response_accepts_discovered_sfu_only_when_csp_allows_it() {
+    let csp = "connect-src https://rtc.example.org wss://livekit.example.org";
     assert_eq!(
         MatrixBackend::validate_matrix_rtc_sfu_url(
             "wss://livekit.example.org/livekit/sfu",
+            None,
+            csp,
+        )
+        .unwrap(),
+        "wss://livekit.example.org/livekit/sfu"
+    );
+    assert_eq!(
+        MatrixBackend::validate_matrix_rtc_sfu_url(
             "wss://livekit.example.org/livekit/sfu",
+            Some("wss://livekit.example.org/livekit/sfu"),
+            csp,
         )
         .unwrap(),
         "wss://livekit.example.org/livekit/sfu"
     );
     assert!(MatrixBackend::validate_matrix_rtc_sfu_url(
         "wss://livekit.example.org/attacker-controlled",
-        "wss://livekit.example.org/livekit/sfu",
+        Some("wss://livekit.example.org/livekit/sfu"),
+        csp,
     )
     .is_err());
     assert!(MatrixBackend::validate_matrix_rtc_sfu_url(
         "wss://other.example.org/livekit/sfu",
-        "wss://livekit.example.org/livekit/sfu",
+        None,
+        csp,
     )
     .is_err());
     assert!(MatrixBackend::validate_matrix_rtc_sfu_url(
         "wss://livekit.example.org/livekit/sfu?token=leak",
-        "wss://livekit.example.org/livekit/sfu",
+        None,
+        csp,
     )
     .is_err());
+}
+
+#[test]
+fn matrix_rtc_uses_the_oldest_membership_focus_when_it_is_operator_allowed() {
+    let mut oldest = matrix_rtc_test_membership("@bob:remote.example", "BOBDEVICE", "member-bob");
+    oldest.livekit_service_url = Some("https://federated-focus.example.org/jwt".into());
+    let mut local = matrix_rtc_test_membership("@alice:example.org", "MESHDEVICE", "member-alice");
+    local.livekit_service_url = Some("https://local-focus.example.org/jwt".into());
+
+    let selected = MatrixBackend::select_matrix_rtc_service_from_memberships(
+        &[oldest, local],
+        "https://local-focus.example.org/jwt",
+        "connect-src https://federated-focus.example.org https://local-focus.example.org",
+    )
+    .unwrap();
+
+    assert_eq!(selected, "https://federated-focus.example.org/jwt");
+}
+
+#[test]
+fn matrix_rtc_rejects_an_oldest_membership_focus_outside_csp() {
+    let mut oldest =
+        matrix_rtc_test_membership("@mallory:remote.example", "MALLORYDEVICE", "member-mallory");
+    oldest.livekit_service_url = Some("https://unapproved-focus.example.org/jwt".into());
+
+    let error = MatrixBackend::select_matrix_rtc_service_from_memberships(
+        &[oldest],
+        "https://local-focus.example.org/jwt",
+        "connect-src https://local-focus.example.org",
+    )
+    .unwrap_err();
+
+    assert!(matches!(error, BackendError::InvalidConfiguration(_)));
+    assert!(!error.to_string().contains("unapproved-focus.example.org"));
 }
 
 #[tokio::test]
@@ -1952,13 +2199,17 @@ async fn matrix_rtc_leave_is_idempotent_for_renderer_cleanup() {
 }
 
 #[tokio::test]
-async fn matrix_rtc_join_fails_before_authentication_without_verified_media_e2ee() {
+async fn matrix_rtc_join_fails_closed_before_authentication_or_media_enablement() {
     let backend = MatrixBackend::new(tempfile::tempdir().unwrap().path().to_owned());
     let error = backend
         .matrix_rtc_join("!room:example.org".into())
         .await
         .unwrap_err();
-    assert!(matches!(error, BackendError::Unsupported(_)));
+    if VoiceServiceStatus::matrix_rtc_client_included() {
+        assert!(matches!(error, BackendError::NotAuthenticated));
+    } else {
+        assert!(matches!(error, BackendError::Unsupported(_)));
+    }
     assert!(backend.rtc_sessions.lock().await.is_empty());
 }
 
@@ -2212,6 +2463,357 @@ fn security_boundary_all_matrix_clients_require_owner_signed_room_key_recipients
 }
 
 #[test]
+fn new_matrix_sessions_finish_cross_signing_before_reporting_encryption_readiness() {
+    let matrix_source = MATRIX_PRODUCTION_SOURCES
+        .iter()
+        .find(|(file_name, _)| *file_name == "matrix.rs")
+        .map(|(_, source)| *source)
+        .expect("matrix backend source must be part of the production corpus");
+
+    let initialization_helper = matrix_source
+        .split("async fn finish_new_session_e2ee_initialization")
+        .nth(1)
+        .unwrap()
+        .split("async fn client_e2ee_ready")
+        .next()
+        .unwrap();
+    assert!(initialization_helper.contains("wait_for_e2ee_initialization_tasks"));
+
+    let readiness_helper = matrix_source
+        .split("async fn client_e2ee_ready")
+        .nth(1)
+        .unwrap()
+        .split("async fn finish_restored_session_e2ee_initialization_if_needed")
+        .next()
+        .unwrap();
+    assert!(readiness_helper.contains("get_user_identity"));
+    assert!(readiness_helper.contains("identity.is_verified()"));
+
+    for (start, end) in [
+        ("async fn login(", "async fn register_account("),
+        (
+            "async fn register_account(",
+            "async fn check_username_available",
+        ),
+        ("async fn start_oidc_login(", "async fn cancel_login("),
+    ] {
+        let session_activation = matrix_source
+            .split(start)
+            .nth(1)
+            .unwrap()
+            .split(end)
+            .next()
+            .unwrap();
+        assert!(
+            session_activation.contains("finish_new_session_e2ee_initialization"),
+            "{start} must await SDK cross-signing initialization"
+        );
+    }
+
+    for (start, end) in [
+        ("async fn restore_session(", "async fn logout("),
+        ("async fn switch_account(", "async fn get_profile("),
+    ] {
+        let restored_activation = matrix_source
+            .split(start)
+            .nth(1)
+            .unwrap()
+            .split(end)
+            .next()
+            .unwrap();
+        assert!(
+            restored_activation.contains("finish_restored_session_e2ee_initialization_if_needed"),
+            "{start} must repair an incomplete persisted cross-signing state"
+        );
+    }
+
+    let status = matrix_source
+        .split("async fn status(")
+        .nth(1)
+        .unwrap()
+        .split("async fn matrix_room_is_encrypted")
+        .next()
+        .unwrap();
+    assert!(status.contains("client_e2ee_ready(client).await"));
+    assert!(!status.contains("authenticated && device_id.is_some()"));
+}
+
+#[test]
+fn encrypted_publication_paths_require_a_verified_current_device() {
+    let source = |file_name: &str| {
+        MATRIX_PRODUCTION_SOURCES
+            .iter()
+            .find(|(candidate, _)| *candidate == file_name)
+            .map(|(_, source)| *source)
+            .unwrap()
+    };
+    let matrix_source = source("matrix.rs");
+
+    for (start, end) in [
+        ("async fn send_text(", "async fn send_message("),
+        ("async fn send_message(", "async fn queued_messages("),
+        (
+            "async fn retry_queued_message(",
+            "async fn cancel_queued_message(",
+        ),
+        ("async fn send_attachment(", "async fn cancel_attachment("),
+        ("async fn edit_message(", "async fn redact_message("),
+        ("async fn toggle_reaction(", "async fn room_pins("),
+        ("async fn import_legacy_event(", "#[cfg(test)]"),
+    ] {
+        let publication = matrix_source
+            .split(start)
+            .nth(1)
+            .unwrap()
+            .split(end)
+            .next()
+            .unwrap();
+        assert!(
+            publication.contains("require_client_e2ee_ready"),
+            "{start} must block publication from an unverified current device"
+        );
+    }
+
+    let dm_send = source("dm.rs")
+        .split("async fn send_immediate_protected_message(")
+        .nth(1)
+        .unwrap();
+    assert!(dm_send.contains("require_client_e2ee_ready"));
+
+    let queue_reconciliation = source("messages.rs")
+        .split("async fn reconcile_protected_send_queues(")
+        .nth(1)
+        .unwrap()
+        .split("async fn resnapshot_send_queue_updates(")
+        .next()
+        .unwrap();
+    assert!(queue_reconciliation.contains("client_e2ee_ready(client).await"));
+    assert!(queue_reconciliation
+        .contains("e2ee_ready && protected && direct_configuration_supported && supported"));
+}
+
+#[test]
+fn attachment_transfers_stay_bound_to_their_starting_account() {
+    let matrix_source = MATRIX_PRODUCTION_SOURCES
+        .iter()
+        .find(|(candidate, _)| *candidate == "matrix.rs")
+        .map(|(_, source)| *source)
+        .unwrap();
+
+    let upload = matrix_source
+        .split("async fn send_attachment(")
+        .nth(1)
+        .unwrap()
+        .split("async fn cancel_attachment_upload(")
+        .next()
+        .unwrap();
+    assert!(upload.contains("account_transition_gate.read().await"));
+
+    let download = matrix_source
+        .split("async fn download_attachment(")
+        .nth(1)
+        .unwrap()
+        .split("async fn load_attachment_thumbnail(")
+        .next()
+        .unwrap();
+    assert!(download.contains("account_transition_gate.read().await"));
+    assert!(download.contains("let (client, profile_id)"));
+    assert!(download.contains("storage_for_profile(&profile_id)"));
+    assert!(!download.contains("let client = self.client().await?"));
+
+    let protected_image = matrix_source
+        .split("async fn load_attachment_image(")
+        .nth(1)
+        .unwrap()
+        .split("async fn cancel_attachment_download(")
+        .next()
+        .unwrap();
+    assert!(protected_image.contains("account_transition_gate.read().await"));
+}
+
+#[test]
+fn account_transitions_cancel_native_searches_before_taking_the_runtime_writer() {
+    let matrix_source = MATRIX_PRODUCTION_SOURCES
+        .iter()
+        .find(|(candidate, _)| *candidate == "matrix.rs")
+        .map(|(_, source)| *source)
+        .unwrap();
+
+    for (start, end) in [
+        ("async fn logout(", "async fn list_devices("),
+        (
+            "async fn remove_local_account(",
+            "async fn export_personal_data(",
+        ),
+        ("async fn switch_account(", "async fn get_profile("),
+    ] {
+        let transition = matrix_source
+            .split(start)
+            .nth(1)
+            .unwrap()
+            .split(end)
+            .next()
+            .unwrap();
+        let cancel_searches = transition
+            .find("search_operations.cancel_all().await?")
+            .unwrap();
+        let runtime_writer = transition
+            .find("account_transition_gate.write().await")
+            .unwrap();
+        assert!(
+            cancel_searches < runtime_writer,
+            "{start} must cancel searches before waiting for the runtime writer"
+        );
+    }
+}
+
+#[test]
+fn durable_send_queue_quotas_allow_the_boundary_and_reject_growth_beyond_it() {
+    let candidate_utf8_bytes = "é".repeat(16).len();
+    assert_eq!(candidate_utf8_bytes, 32);
+    assert!(MatrixBackend::ensure_send_queue_capacity(
+        SendQueueUsage {
+            messages: MAX_SEND_QUEUE_ACCOUNT_MESSAGES - 1,
+            utf8_bytes: MAX_SEND_QUEUE_ACCOUNT_UTF8_BYTES - candidate_utf8_bytes,
+            exceeded: false,
+        },
+        SendQueueUsage {
+            messages: MAX_SEND_QUEUE_ROOM_MESSAGES - 1,
+            utf8_bytes: MAX_SEND_QUEUE_ROOM_UTF8_BYTES - candidate_utf8_bytes,
+            exceeded: false,
+        },
+        candidate_utf8_bytes,
+    )
+    .is_ok());
+
+    for (account, room, expected_scope) in [
+        (
+            SendQueueUsage::default(),
+            SendQueueUsage {
+                messages: MAX_SEND_QUEUE_ROOM_MESSAGES,
+                ..SendQueueUsage::default()
+            },
+            "room",
+        ),
+        (
+            SendQueueUsage {
+                messages: MAX_SEND_QUEUE_ACCOUNT_MESSAGES,
+                ..SendQueueUsage::default()
+            },
+            SendQueueUsage::default(),
+            "account",
+        ),
+        (
+            SendQueueUsage::default(),
+            SendQueueUsage {
+                utf8_bytes: MAX_SEND_QUEUE_ROOM_UTF8_BYTES - candidate_utf8_bytes + 1,
+                ..SendQueueUsage::default()
+            },
+            "room",
+        ),
+        (
+            SendQueueUsage {
+                utf8_bytes: MAX_SEND_QUEUE_ACCOUNT_UTF8_BYTES - candidate_utf8_bytes + 1,
+                ..SendQueueUsage::default()
+            },
+            SendQueueUsage::default(),
+            "account",
+        ),
+    ] {
+        let error = MatrixBackend::ensure_send_queue_capacity(account, room, candidate_utf8_bytes)
+            .expect_err("queue growth beyond every fixed boundary must fail closed");
+        let BackendError::InvalidConfiguration(detail) = error else {
+            panic!("queue capacity failures must remain typed validation errors");
+        };
+        assert!(detail.contains(expected_scope));
+        assert!(detail.contains("Wait for them to send or cancel one"));
+    }
+}
+
+#[test]
+fn durable_send_queue_usage_scan_stops_at_the_first_exceeded_boundary() {
+    use std::cell::Cell;
+
+    let visited = Cell::new(0);
+    let count_limited = MatrixBackend::bounded_send_queue_usage_bytes(
+        (0..1_000).map(|_| {
+            visited.set(visited.get() + 1);
+            1
+        }),
+        4,
+        1_024,
+    );
+    assert_eq!(visited.get(), 5);
+    assert_eq!(count_limited.messages, 4);
+    assert!(count_limited.exceeded);
+
+    let visited = Cell::new(0);
+    let byte_limited = MatrixBackend::bounded_send_queue_usage_bytes(
+        [4, 7, 1_000].into_iter().inspect(|_| {
+            visited.set(visited.get() + 1);
+        }),
+        100,
+        10,
+    );
+    assert_eq!(visited.get(), 2);
+    assert_eq!(byte_limited.messages, 1);
+    assert_eq!(byte_limited.utf8_bytes, 4);
+    assert!(byte_limited.exceeded);
+}
+
+#[test]
+fn durable_send_queue_checks_capacity_before_insert_and_uses_indexed_recovery() {
+    assert_eq!(MAX_SEND_QUEUE_ACCOUNT_MESSAGES, 512);
+    assert_eq!(MAX_SEND_QUEUE_ROOM_MESSAGES, 128);
+    assert_eq!(MAX_SEND_QUEUE_ACCOUNT_UTF8_BYTES, 4 * 1024 * 1024);
+    assert_eq!(MAX_SEND_QUEUE_ROOM_UTF8_BYTES, 1024 * 1024);
+
+    let matrix_source = MATRIX_PRODUCTION_SOURCES
+        .iter()
+        .find(|(file, _)| *file == "matrix.rs")
+        .map(|(_, source)| *source)
+        .unwrap();
+    let send_message = matrix_source
+        .split("async fn send_message(")
+        .nth(1)
+        .unwrap()
+        .split("async fn queued_messages(")
+        .next()
+        .unwrap();
+    let capacity_check = send_message.find("ensure_send_queue_capacity").unwrap();
+    let durable_insert = send_message.find(".send_raw(").unwrap();
+    assert!(capacity_check < durable_insert);
+    assert!(send_message.contains("send_queue.local_echoes()"));
+    assert!(send_message.contains("queued_local_echo_from_updates"));
+    assert_eq!(send_message.matches("queue.subscribe().await").count(), 1);
+
+    let messages_source = MATRIX_PRODUCTION_SOURCES
+        .iter()
+        .find(|(file, _)| *file == "messages.rs")
+        .map(|(_, source)| *source)
+        .unwrap();
+    assert!(messages_source.contains("bounded_send_queue_usage"));
+    assert!(messages_source.contains("account_usage.exceeded"));
+    assert!(messages_source.contains("room_usage.exceeded"));
+}
+
+#[test]
+fn matrix_room_key_sender_trust_errors_are_typed_and_sanitized() {
+    for trust_error in [
+        SessionRecipientCollectionError::SendingFromUnverifiedDevice,
+        SessionRecipientCollectionError::CrossSigningNotSetup,
+    ] {
+        let error = matrix_sdk::Error::OlmError(Box::new(
+            OlmError::SessionRecipientCollectionError(trust_error),
+        ));
+        let mapped = MatrixBackend::map_matrix_send_error(error);
+        assert!(matches!(mapped, BackendError::Crypto(_)));
+        assert!(mapped.to_string().contains("Settings > Security"));
+        assert!(!mapped.to_string().contains("Encryption failed"));
+    }
+}
+
+#[test]
 fn server_push_rules_are_projected_to_room_notification_modes() {
     use matrix_sdk::ruma::push::{
         EventMatchConditionData, NewConditionalPushRule, NewPushRule, NewSimplePushRule,
@@ -2274,13 +2876,26 @@ fn server_push_rules_are_projected_to_room_notification_modes() {
 #[test]
 fn message_receipts_select_the_matrix_thread_scope_from_event_relations() {
     assert!(matches!(
-        MatrixBackend::receipt_thread_for_message(false),
-        ReceiptThread::Unthreaded
+        MatrixBackend::receipt_thread_for_message(None),
+        Some(ReceiptThread::Main)
     ));
     assert!(matches!(
-        MatrixBackend::receipt_thread_for_message(true),
-        ReceiptThread::Main
+        MatrixBackend::receipt_thread_for_message(Some("$root")),
+        Some(ReceiptThread::Thread(root_id)) if root_id.as_str() == "$root"
     ));
+    assert!(MatrixBackend::receipt_thread_for_message(Some("not-an-event-id")).is_none());
+}
+
+#[test]
+fn authenticated_clients_enable_stable_threading_without_unstable_subscriptions() {
+    let source = include_str!("../../matrix.rs");
+    assert_eq!(
+        source
+            .matches(".with_threading_support(ThreadingSupport::Enabled {")
+            .count(),
+        2
+    );
+    assert_eq!(source.matches("with_subscriptions: false").count(), 2);
 }
 
 #[test]
@@ -2366,6 +2981,7 @@ fn direct_room_lookups_are_limited_to_guard_or_prejoin_paths() {
         "protected_joined_room_if_available",
         "room_for_cleanup_redaction",
         "matrix_room_is_encrypted",
+        "validated_dm_request_room",
         "knock_community",
         "join_community",
         "direct_room_lookups_are_limited_to_guard_or_prejoin_paths",
@@ -2540,6 +3156,150 @@ fn homeserver_input_rejects_insecure_remote_urls_and_embedded_credentials() {
     assert!(MatrixBackend::normalize_homeserver_input("http://matrix.example.org").is_err());
     let credentialed_url = ["https://alice:", "secret", "@matrix.example.org"].concat();
     assert!(MatrixBackend::normalize_homeserver_input(&credentialed_url).is_err());
+    assert!(MatrixBackend::normalize_homeserver_input(
+        "https://matrix.example.org/?access_token=secret"
+    )
+    .is_err());
+    assert!(
+        MatrixBackend::normalize_homeserver_input("https://matrix.example.org/#account").is_err()
+    );
+    assert!(MatrixBackend::normalize_homeserver_input(
+        &"a".repeat(MAX_ACCOUNT_SERVICE_INPUT_BYTES + 1)
+    )
+    .is_err());
+}
+
+#[test]
+fn native_account_credentials_and_device_names_are_bounded() {
+    let login_attempt_id = uuid::Uuid::new_v4().to_string();
+    assert!(MatrixBackend::validate_login_attempt_id(&login_attempt_id).is_ok());
+    assert!(MatrixBackend::validate_login_attempt_id("").is_err());
+    assert!(MatrixBackend::validate_login_attempt_id("not-a-login-attempt").is_err());
+
+    assert_eq!(
+        MatrixBackend::normalize_login_identifier(" @alice:example.org ").unwrap(),
+        "@alice:example.org"
+    );
+    assert!(MatrixBackend::normalize_login_identifier("").is_err());
+    assert!(
+        MatrixBackend::normalize_login_identifier(&"a".repeat(MAX_LOGIN_IDENTIFIER_BYTES + 1))
+            .is_err()
+    );
+    assert!(MatrixBackend::normalize_login_identifier("alice\nadmin").is_err());
+
+    assert!(MatrixBackend::validate_account_password("correct horse battery staple").is_ok());
+    assert!(MatrixBackend::validate_account_password("").is_err());
+    assert!(
+        MatrixBackend::validate_account_password(&"p".repeat(MAX_ACCOUNT_PASSWORD_BYTES + 1))
+            .is_err()
+    );
+
+    assert!(MatrixBackend::validate_device_display_name(Some("Mesh Desktop")).is_ok());
+    assert!(MatrixBackend::validate_device_display_name(Some("Mesh\nDesktop")).is_err());
+    assert!(MatrixBackend::validate_device_display_name(Some(
+        &"d".repeat(MAX_DEVICE_DISPLAY_NAME_BYTES + 1)
+    ))
+    .is_err());
+
+    let mut recovery_at_limit = "r".repeat(MAX_RECOVERY_CREDENTIAL_BYTES);
+    assert!(MatrixBackend::validate_recovery_credential(&mut recovery_at_limit, true).is_ok());
+    let mut oversized_recovery = "r".repeat(MAX_RECOVERY_CREDENTIAL_BYTES + 1);
+    assert!(MatrixBackend::validate_recovery_credential(&mut oversized_recovery, true).is_err());
+    assert!(oversized_recovery.is_empty());
+    let mut empty_recovery = "   ".to_owned();
+    assert!(MatrixBackend::validate_recovery_credential(&mut empty_recovery, true).is_err());
+    assert!(empty_recovery.is_empty());
+}
+
+#[test]
+fn login_cancellation_is_scoped_to_the_originating_attempt() {
+    let expected = uuid::Uuid::new_v4().to_string();
+    let attempt = LoginAttempt {
+        id: 1,
+        cancellation_id: expected.clone(),
+        cancellation: CancellationToken::new(),
+        completed: Arc::new(Notify::new()),
+    };
+
+    assert!(attempt.matches_cancellation(&expected));
+    assert!(!attempt.matches_cancellation(&uuid::Uuid::new_v4().to_string()));
+}
+
+#[tokio::test]
+async fn login_cancel_before_registration_is_sticky_and_bounded() {
+    let backend = MatrixBackend::new(tempfile::tempdir().unwrap().path().to_owned());
+    let cancellation_id = backend.reserve_login_attempt().await.unwrap();
+
+    backend
+        .cancel_login_attempt(cancellation_id.clone())
+        .await
+        .unwrap();
+    assert!(matches!(
+        backend.begin_login_attempt(cancellation_id.clone()).await,
+        Err(BackendError::LoginCancelled)
+    ));
+
+    let state = backend.login_attempt.lock().await;
+    assert!(!state.pre_cancelled.contains(&cancellation_id));
+    assert!(state.completed.contains(&cancellation_id));
+    assert!(state.completion_order.len() <= MAX_REMEMBERED_LOGIN_ATTEMPTS);
+    assert!(state.pre_cancellation_order.len() <= MAX_REMEMBERED_LOGIN_ATTEMPTS);
+}
+
+#[tokio::test]
+async fn login_attempt_reservations_are_native_issued_unique_and_bounded() {
+    let backend = MatrixBackend::new(tempfile::tempdir().unwrap().path().to_owned());
+    let mut reservations = HashSet::new();
+    for _ in 0..MAX_RESERVED_LOGIN_ATTEMPTS {
+        reservations.insert(backend.reserve_login_attempt().await.unwrap());
+    }
+
+    assert_eq!(reservations.len(), MAX_RESERVED_LOGIN_ATTEMPTS);
+    assert!(backend.reserve_login_attempt().await.is_err());
+    assert!(backend
+        .cancel_login_attempt(uuid::Uuid::new_v4().to_string())
+        .await
+        .is_err());
+}
+
+#[tokio::test]
+async fn login_cancel_acknowledges_only_after_the_attempt_finishes() {
+    let backend = Arc::new(MatrixBackend::new(
+        tempfile::tempdir().unwrap().path().to_owned(),
+    ));
+    let cancellation_id = backend.reserve_login_attempt().await.unwrap();
+    let (attempt_id, cancellation) = backend
+        .begin_login_attempt(cancellation_id.clone())
+        .await
+        .unwrap();
+    let cancel_backend = Arc::clone(&backend);
+    let cancel_task =
+        tokio::spawn(async move { cancel_backend.cancel_login_attempt(cancellation_id).await });
+
+    cancellation.cancelled().await;
+    assert!(!cancel_task.is_finished());
+    backend.finish_login_attempt(attempt_id).await;
+    cancel_task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn stale_login_cancel_cannot_cancel_a_different_active_attempt() {
+    let backend = MatrixBackend::new(tempfile::tempdir().unwrap().path().to_owned());
+    let active_id = backend.reserve_login_attempt().await.unwrap();
+    let stale_id = backend.reserve_login_attempt().await.unwrap();
+    let (attempt_id, cancellation) = backend.begin_login_attempt(active_id).await.unwrap();
+
+    backend
+        .cancel_login_attempt(stale_id.clone())
+        .await
+        .unwrap();
+    assert!(!cancellation.is_cancelled());
+
+    backend.finish_login_attempt(attempt_id).await;
+    assert!(matches!(
+        backend.begin_login_attempt(stale_id).await,
+        Err(BackendError::LoginCancelled)
+    ));
 }
 
 #[test]
@@ -2819,6 +3579,20 @@ fn projects_standard_edits_reactions_redactions_and_replies() {
             }
         }),
         json!({
+            "type": "m.room.message",
+            "event_id": "$malformed-thread-reply",
+            "sender": "@bob:example.org",
+            "origin_server_ts": 6,
+            "content": {
+                "msgtype": "m.text",
+                "body": "visible despite malformed thread metadata",
+                "m.relates_to": {
+                    "rel_type": "m.thread",
+                    "event_id": "not-an-event-id"
+                }
+            }
+        }),
+        json!({
             "type": "m.room.redaction",
             "event_id": "$redact-reaction",
             "sender": "@bob:example.org",
@@ -2836,7 +3610,7 @@ fn projects_standard_edits_reactions_redactions_and_replies() {
     ];
 
     let projected = MatrixBackend::project_timeline("!room:example.org", &members, events);
-    assert_eq!(projected.len(), 3);
+    assert_eq!(projected.len(), 4);
     assert_eq!(projected[0].id, "$one");
     assert_eq!(projected[0].content, "");
     assert!(projected[0].edited_at.is_some());
@@ -2848,6 +3622,217 @@ fn projects_standard_edits_reactions_redactions_and_replies() {
     assert_eq!(projected[2].content, "thread body");
     assert_eq!(projected[2].reply_to_id.as_deref(), Some("$one"));
     assert_eq!(projected[2].thread_root_id.as_deref(), Some("$one"));
+    assert_eq!(projected[3].id, "$malformed-thread-reply");
+    assert_eq!(
+        projected[3].content,
+        "visible despite malformed thread metadata"
+    );
+    assert_eq!(projected[3].thread_root_id, None);
+}
+
+#[test]
+fn thread_unread_mentions_follow_valid_edits_redactions_and_receipts() {
+    let values = vec![
+        json!({
+            "type": "m.room.message", "event_id": "$root",
+            "sender": "@alice:example.org", "origin_server_ts": 1,
+            "content": { "msgtype": "m.text", "body": "root" }
+        }),
+        json!({
+            "type": "m.room.message", "event_id": "$reply-one",
+            "sender": "@alice:example.org", "origin_server_ts": 2,
+            "content": {
+                "msgtype": "m.text", "body": "first",
+                "m.mentions": { "user_ids": ["@me:example.org"] },
+                "m.relates_to": { "rel_type": "m.thread", "event_id": "$root" }
+            }
+        }),
+        json!({
+            "type": "m.room.message", "event_id": "$reply-two",
+            "sender": "@alice:example.org", "origin_server_ts": 3,
+            "content": {
+                "msgtype": "m.text", "body": "second",
+                "m.relates_to": { "rel_type": "m.thread", "event_id": "$root" }
+            }
+        }),
+        json!({
+            "type": "m.room.message", "event_id": "$reply-own",
+            "sender": "@me:example.org", "origin_server_ts": 4,
+            "content": {
+                "msgtype": "m.text", "body": "own reply",
+                "m.relates_to": { "rel_type": "m.thread", "event_id": "$root" }
+            }
+        }),
+        json!({
+            "type": "m.room.message", "event_id": "$reply-redacted",
+            "sender": "@alice:example.org", "origin_server_ts": 5,
+            "content": {
+                "msgtype": "m.text", "body": "removed",
+                "m.mentions": { "user_ids": ["@me:example.org"] },
+                "m.relates_to": { "rel_type": "m.thread", "event_id": "$root" }
+            }
+        }),
+        json!({
+            "type": "m.room.message", "event_id": "$edit-one",
+            "sender": "@alice:example.org", "origin_server_ts": 6,
+            "content": {
+                "msgtype": "m.text", "body": "* first edited",
+                "m.relates_to": { "rel_type": "m.replace", "event_id": "$reply-one" },
+                "m.new_content": { "msgtype": "m.text", "body": "first edited" }
+            }
+        }),
+        json!({
+            "type": "m.room.message", "event_id": "$edit-two",
+            "sender": "@alice:example.org", "origin_server_ts": 7,
+            "content": {
+                "msgtype": "m.text", "body": "* second edited",
+                "m.relates_to": { "rel_type": "m.replace", "event_id": "$reply-two" },
+                "m.new_content": {
+                    "msgtype": "m.text", "body": "second edited",
+                    "m.mentions": { "user_ids": ["@me:example.org"] }
+                }
+            }
+        }),
+        json!({
+            "type": "m.room.redaction", "event_id": "$redaction",
+            "sender": "@alice:example.org", "origin_server_ts": 8,
+            "redacts": "$reply-redacted", "content": {}
+        }),
+    ];
+    let own_user_id = UserId::parse("@me:example.org").unwrap();
+    let mentions = MatrixBackend::effectively_mentioned_event_ids(&values, &own_user_id);
+    assert_eq!(mentions, HashSet::from(["$reply-two".to_owned()]));
+
+    let replies = MatrixBackend::project_timeline("!room:example.org", &HashMap::new(), values)
+        .into_iter()
+        .filter(|message| message.thread_root_id.as_deref() == Some("$root"))
+        .collect::<Vec<_>>();
+    let counts = MatrixBackend::thread_unread_counts(
+        &replies,
+        &own_user_id,
+        &mentions,
+        &HashSet::from(["$reply-one".to_owned()]),
+    );
+    assert_eq!(counts, (1, 1));
+}
+
+#[test]
+fn projected_member_sender_lookup_is_valid_unique_and_strictly_bounded() {
+    let mut messages = (0..5_100)
+        .map(|index| {
+            let mut message = search_fixture(&format!("$message-{index}"), "2026-08-06T00:00:00Z");
+            message.author_public_key = format!("@user-{index}:example.org");
+            message
+        })
+        .collect::<Vec<_>>();
+    messages.insert(1, messages[0].clone());
+    let mut malformed = search_fixture("$malformed", "2026-08-06T00:00:00Z");
+    malformed.author_public_key = "not-a-matrix-user-id".into();
+    messages.insert(2, malformed);
+
+    let sender_ids = MatrixBackend::projected_message_sender_ids(&messages, 5_000);
+
+    assert_eq!(sender_ids.len(), 5_000);
+    assert_eq!(sender_ids[0].as_str(), "@user-0:example.org");
+    assert_eq!(sender_ids[1].as_str(), "@user-1:example.org");
+    assert_eq!(sender_ids[4_999].as_str(), "@user-4999:example.org");
+}
+
+#[test]
+fn targeted_member_names_preserve_safe_fallbacks_for_missing_state() {
+    let mut alice = search_fixture("$alice", "2026-08-06T00:00:00Z");
+    alice.author_display_name = "alice".into();
+    let mut bob = search_fixture("$bob", "2026-08-06T00:00:01Z");
+    bob.author_public_key = "@bob:example.org".into();
+    bob.author_display_name = "bob".into();
+    let mut messages = vec![alice, bob];
+
+    MatrixBackend::apply_member_display_names(
+        &mut messages,
+        &HashMap::from([("@alice:example.org".into(), "Alice Display".into())]),
+    );
+
+    assert_eq!(messages[0].author_display_name, "Alice Display");
+    assert_eq!(messages[1].author_display_name, "bob");
+}
+
+#[test]
+fn timeline_and_pins_use_targeted_local_member_state_without_member_sync() {
+    let matrix_source = MATRIX_PRODUCTION_SOURCES
+        .iter()
+        .find(|(candidate, _)| *candidate == "matrix.rs")
+        .map(|(_, source)| *source)
+        .unwrap();
+    let messages_path = matrix_source
+        .split("async fn messages(")
+        .nth(1)
+        .unwrap()
+        .split("async fn edit_message(")
+        .next()
+        .unwrap();
+    assert!(messages_path.contains("resolve_projected_member_display_names"));
+    assert!(!messages_path.contains(".members("));
+
+    let toggle_pin_path = matrix_source
+        .split("async fn toggle_room_pin(")
+        .nth(1)
+        .unwrap()
+        .split("async fn mark_read(")
+        .next()
+        .unwrap();
+    assert!(toggle_pin_path.contains("get_member_no_sync"));
+    assert!(!toggle_pin_path.contains(".get_member(own_user_id)"));
+
+    let messages_source = MATRIX_PRODUCTION_SOURCES
+        .iter()
+        .find(|(candidate, _)| *candidate == "messages.rs")
+        .map(|(_, source)| *source)
+        .unwrap();
+    let lookup_helper = messages_source
+        .split("async fn resolve_projected_member_display_names(")
+        .nth(1)
+        .unwrap()
+        .split("fn updated_room_pins(")
+        .next()
+        .unwrap();
+    assert!(lookup_helper.contains("get_state_events_for_keys_static"));
+    assert!(!lookup_helper.contains(".members("));
+    assert!(!lookup_helper.contains(".get_member("));
+
+    let pins_snapshot = messages_source
+        .split("async fn room_pins_snapshot(")
+        .nth(1)
+        .unwrap();
+    assert!(pins_snapshot.contains("get_member_no_sync"));
+    assert!(pins_snapshot.contains("resolve_projected_member_display_names"));
+    assert!(!pins_snapshot.contains(".members("));
+    assert!(!pins_snapshot.contains(".get_member(own_user_id)"));
+}
+
+#[test]
+fn production_syncs_lazy_load_room_members() {
+    let matrix_source = MATRIX_PRODUCTION_SOURCES
+        .iter()
+        .find(|(candidate, _)| *candidate == "matrix.rs")
+        .map(|(_, source)| *source)
+        .unwrap();
+    let settings_helper = matrix_source
+        .split("fn lazy_loaded_sync_settings()")
+        .nth(1)
+        .unwrap()
+        .split("fn blocked_entity_reason(")
+        .next()
+        .unwrap();
+
+    assert!(settings_helper.contains("FilterDefinition::with_lazy_loading()"));
+    assert!(settings_helper.contains("SyncFilter::FilterDefinition"));
+    assert_eq!(matrix_source.matches("SyncSettings::default()").count(), 1);
+    assert_eq!(
+        matrix_source
+            .matches("Self::lazy_loaded_sync_settings()")
+            .count(),
+        8
+    );
 }
 
 #[test]
@@ -3216,6 +4201,20 @@ fn matrix_media_filename_policy_rejects_executable_names() {
     );
     assert!(MatrixBackend::safe_media_filename("payload.EXE").is_err());
     assert!(MatrixBackend::safe_media_filename("scripts/run.ps1").is_err());
+    for unsafe_name in [
+        "payload:stream.png",
+        "CON.txt",
+        "LPT1.log",
+        "trailing.",
+        "trailing ",
+        "control\nname.txt",
+    ] {
+        assert!(
+            MatrixBackend::safe_media_filename(unsafe_name).is_err(),
+            "{unsafe_name} must not become a cache filename"
+        );
+    }
+    assert!(MatrixBackend::safe_media_filename(&"x".repeat(256)).is_err());
     assert_eq!(
         MatrixBackend::safe_media_filename(" ").unwrap(),
         "attachment"
@@ -3599,6 +4598,506 @@ fn matrix_dm_duplicate_resolution_is_deterministic_and_non_destructive() {
 }
 
 #[test]
+fn matrix_dm_inference_requires_an_exact_joined_pair_without_materializing_the_roster() {
+    assert!(MatrixBackend::is_exact_two_party_direct_candidate(
+        2, true, true
+    ));
+    assert!(!MatrixBackend::is_exact_two_party_direct_candidate(
+        1, true, true
+    ));
+    assert!(!MatrixBackend::is_exact_two_party_direct_candidate(
+        3, true, true
+    ));
+    assert!(!MatrixBackend::is_exact_two_party_direct_candidate(
+        2, false, true
+    ));
+    assert!(!MatrixBackend::is_exact_two_party_direct_candidate(
+        2, true, false
+    ));
+
+    let source = include_str!("../dm.rs");
+    let inference = source
+        .split("async fn inferred_direct_rooms(")
+        .nth(1)
+        .unwrap()
+        .split("fn canonical_direct_room_id")
+        .next()
+        .unwrap();
+    assert!(inference.contains("joined_members_count()"));
+    assert!(inference.contains("room_member_is_joined"));
+    assert!(!inference.contains(".members("));
+}
+
+#[test]
+fn incoming_dm_requests_are_quarantined_and_revalidated_before_join() {
+    let helper_source = include_str!("../dm.rs");
+    let projection = helper_source
+        .split("async fn dm_request_from_invited_room(")
+        .nth(1)
+        .unwrap()
+        .split("async fn validated_dm_request_room")
+        .next()
+        .unwrap();
+    assert!(projection.contains("RoomState::Invited"));
+    assert!(projection.contains("room.is_direct()"));
+    assert!(projection.contains("latest_encryption_state"));
+    assert!(!projection.contains("messages("));
+    assert!(!projection.contains("room.join("));
+
+    let backend_source = include_str!("../../matrix.rs");
+    let listing = backend_source
+        .split("async fn dm_requests(")
+        .nth(1)
+        .unwrap()
+        .split("async fn accept_dm_request")
+        .next()
+        .unwrap();
+    assert!(listing.contains("client.invited_rooms()"));
+    assert!(listing.contains("MAX_DM_REQUESTS"));
+
+    let acceptance = backend_source
+        .split("async fn accept_dm_request(")
+        .nth(1)
+        .unwrap()
+        .split("async fn decline_dm_request")
+        .next()
+        .unwrap();
+    let encrypted = acceptance.find("latest_encryption_state").unwrap();
+    let joined = acceptance.find("room.join()").unwrap();
+    assert!(encrypted < joined);
+    assert!(acceptance.contains("validated_dm_request_room"));
+    assert!(acceptance.contains("require_protected_room"));
+    assert!(acceptance.contains("is_exact_two_party_direct_candidate"));
+    assert!(acceptance.contains("room.leave().await"));
+
+    let decline = backend_source
+        .split("async fn decline_dm_request(")
+        .nth(1)
+        .unwrap()
+        .split("async fn dm_conversations")
+        .next()
+        .unwrap();
+    assert!(decline.contains("validated_dm_request_room"));
+    assert!(decline.contains("room.leave().await"));
+}
+
+#[test]
+fn blocked_account_pages_are_sorted_deduplicated_and_cursor_bounded() {
+    let first = MatrixBackend::blocked_account_page_from_user_ids(
+        [
+            "@carol:example.org".to_owned(),
+            "@alice:example.org".to_owned(),
+            "@bob:example.org".to_owned(),
+            "@alice:example.org".to_owned(),
+        ],
+        None,
+        2,
+    );
+    assert_eq!(
+        first
+            .accounts
+            .iter()
+            .map(|account| account.user_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["@alice:example.org", "@bob:example.org"]
+    );
+    assert_eq!(first.next_cursor.as_deref(), Some("@bob:example.org"));
+
+    let second = MatrixBackend::blocked_account_page_from_user_ids(
+        [
+            "@carol:example.org".to_owned(),
+            "@alice:example.org".to_owned(),
+            "@bob:example.org".to_owned(),
+        ],
+        first.next_cursor.as_deref(),
+        2,
+    );
+    assert_eq!(second.accounts.len(), 1);
+    assert_eq!(second.accounts[0].user_id, "@carol:example.org");
+    assert_eq!(second.next_cursor, None);
+}
+
+#[test]
+fn blocking_a_dm_request_derives_the_sender_and_blocks_before_invite_cleanup() {
+    let backend_source = include_str!("../../matrix.rs");
+    let blocking = backend_source
+        .split("async fn block_dm_request(")
+        .nth(1)
+        .unwrap()
+        .split("async fn blocked_accounts")
+        .next()
+        .unwrap();
+    assert!(blocking.contains("validated_dm_request_room"));
+    assert!(!blocking.contains("recipient_user_id"));
+    assert!(
+        blocking.find("set_ignored_user").unwrap() < blocking.find("room.leave().await").unwrap()
+    );
+
+    let helper_source = include_str!("../dm.rs");
+    let writer = helper_source
+        .split("async fn set_ignored_user(")
+        .nth(1)
+        .unwrap()
+        .split("async fn direct_room")
+        .next()
+        .unwrap();
+    assert!(writer.contains("ignored_user_writes.lock().await"));
+    assert!(writer.contains("set_account_data(content.clone())"));
+}
+
+#[test]
+fn ignored_user_state_matching_is_target_specific() {
+    let content: IgnoredUserListEventContent = serde_json::from_value(json!({
+        "ignored_users": {
+            "@alice:example.org": {}
+        }
+    }))
+    .unwrap();
+    let alice = UserId::parse("@alice:example.org").unwrap();
+    let bob = UserId::parse("@bob:example.org").unwrap();
+
+    assert!(MatrixBackend::ignored_user_list_matches(
+        &content, &alice, true
+    ));
+    assert!(MatrixBackend::ignored_user_list_matches(
+        &content, &bob, false
+    ));
+    assert!(!MatrixBackend::ignored_user_list_matches(
+        &content, &alice, false
+    ));
+
+    let users = content
+        .ignored_users
+        .keys()
+        .cloned()
+        .collect::<HashSet<_>>();
+    assert!(MatrixBackend::notification_sender_is_ignored(None, &alice));
+    assert!(MatrixBackend::notification_sender_is_ignored(
+        Some(&users),
+        &alice
+    ));
+    assert!(!MatrixBackend::notification_sender_is_ignored(
+        Some(&users),
+        &bob
+    ));
+}
+
+#[test]
+fn ignored_user_sync_changes_are_targeted_bounded_and_fail_closed() {
+    let alice = UserId::parse("@alice:example.org").unwrap();
+    let bob = UserId::parse("@bob:example.org").unwrap();
+    let previous = HashSet::from([alice.clone()]);
+    let next = HashSet::from([alice, bob]);
+
+    assert_eq!(
+        MatrixBackend::ignored_user_change(Some(&previous), &next),
+        Some(MatrixIgnoredUsersChanged {
+            blocked_user_ids: vec!["@bob:example.org".into()],
+            reset_all: false,
+        })
+    );
+    assert_eq!(MatrixBackend::ignored_user_change(Some(&next), &next), None);
+    assert_eq!(
+        MatrixBackend::ignored_user_change(None, &next),
+        Some(MatrixIgnoredUsersChanged {
+            blocked_user_ids: Vec::new(),
+            reset_all: true,
+        })
+    );
+
+    let oversized = (0..=MAX_IGNORED_USER_CHANGE_IDS)
+        .map(|index| UserId::parse(format!("@blocked{index}:example.org")).unwrap())
+        .collect::<HashSet<_>>();
+    assert_eq!(
+        MatrixBackend::ignored_user_change(Some(&HashSet::new()), &oversized),
+        Some(MatrixIgnoredUsersChanged {
+            blocked_user_ids: Vec::new(),
+            reset_all: true,
+        })
+    );
+}
+
+#[test]
+fn ignored_user_writes_skip_noops_and_verify_the_requested_target() {
+    assert_eq!(IGNORED_USER_WRITE_ATTEMPTS, 3);
+    let helper_source = include_str!("../dm.rs");
+    let writer = helper_source
+        .split("async fn set_ignored_user(")
+        .nth(1)
+        .unwrap()
+        .split("async fn direct_room")
+        .next()
+        .unwrap();
+    let no_op = writer.find("if already_matches").unwrap();
+    let write = writer.find("set_account_data(content.clone())").unwrap();
+    assert!(no_op < write);
+    assert!(writer.contains("for attempt in 0..IGNORED_USER_WRITE_ATTEMPTS"));
+    assert!(writer.matches("ignored_user_list(client)").count() >= 2);
+    assert!(writer.contains("ignored_user_list_matches(&verification"));
+    assert!(writer.contains("retrying from the latest server state"));
+}
+
+#[test]
+fn matrix_notifications_fail_closed_before_resolving_ignored_sender_content() {
+    let helper_source = include_str!("../dm.rs");
+    let helper = helper_source
+        .split("fn notification_sender_is_ignored(")
+        .nth(1)
+        .unwrap()
+        .split("fn ignored_user_list_matches")
+        .next()
+        .unwrap();
+    assert!(helper.contains("ignored_users.is_none_or"));
+    assert!(!helper.contains("fetch_account_data"));
+
+    let backend_source = include_str!("../../matrix.rs");
+    let notification_handler = backend_source
+        .split("move |event: OriginalSyncRoomMessageEvent")
+        .nth(1)
+        .unwrap()
+        .split("client.add_event_handler")
+        .next()
+        .unwrap();
+    let block_check = notification_handler
+        .find("notification_sender_is_ignored")
+        .unwrap();
+    let member_lookup = notification_handler.find("room.get_member").unwrap();
+    let dispatch = notification_handler.find("dispatch_backend_event").unwrap();
+    assert!(block_check < member_lookup);
+    assert!(block_check < dispatch);
+
+    let install = backend_source
+        .split("async fn install_client(")
+        .nth(1)
+        .unwrap()
+        .split("async fn stop_runtime")
+        .next()
+        .unwrap();
+    assert_eq!(
+        install.matches("fetch_ignored_user_list(&client)").count(),
+        1
+    );
+    assert!(install.contains("GlobalAccountDataEvent<IgnoredUserListEventContent>"));
+    assert!(install.contains("runtime.ignored_users = ignored_users"));
+    let account_data_handler = install
+        .split("move |event: GlobalAccountDataEvent<IgnoredUserListEventContent>")
+        .nth(1)
+        .unwrap()
+        .split("client.add_event_handler")
+        .next()
+        .unwrap();
+    assert!(account_data_handler.contains("reconcile_protected_send_queues(&queue_client, false)"));
+    assert!(account_data_handler.contains("resnapshot_send_queue_updates"));
+}
+
+#[test]
+fn every_matrix_dm_send_entry_point_rejects_ignored_recipients() {
+    let backend_source = include_str!("../../matrix.rs");
+    let entry_points = [
+        ("async fn ensure_dm(", "async fn dm_messages("),
+        ("async fn send_dm(", "async fn send_dm_attachment("),
+        ("async fn send_dm_attachment(", "async fn mark_dm_read("),
+    ];
+    for (start, end) in entry_points {
+        let implementation = backend_source
+            .split(start)
+            .nth(1)
+            .unwrap()
+            .split(end)
+            .next()
+            .unwrap();
+        assert!(
+            implementation.contains("is_ignored_user(&client, &recipient)"),
+            "{start} must reject an ignored recipient before sending"
+        );
+        assert!(
+            implementation.find("is_ignored_user").unwrap()
+                < implementation.find("direct_room").unwrap(),
+            "{start} must check the block before resolving or creating a direct room"
+        );
+    }
+}
+
+#[test]
+fn existing_matrix_dm_surfaces_fail_closed_for_ignored_peers() {
+    let backend_source = include_str!("../../matrix.rs");
+    let listing = backend_source
+        .split("async fn dm_conversations(")
+        .nth(1)
+        .unwrap()
+        .split("async fn ensure_dm(")
+        .next()
+        .unwrap();
+    assert!(listing.contains("refresh_ignored_user_list(&client).await?"));
+    assert!(listing.contains("user_id.as_str() == target.as_str()"));
+
+    let history = backend_source
+        .split("async fn dm_messages(")
+        .nth(1)
+        .unwrap()
+        .split("async fn send_dm(")
+        .next()
+        .unwrap();
+    assert!(history.contains("is_ignored_user(&client, &recipient).await?"));
+    assert!(
+        history.find("is_ignored_user").unwrap()
+            < history.find("self\n            .messages").unwrap(),
+        "history must reject the ignored peer before projecting timeline content"
+    );
+
+    let read_receipt = backend_source
+        .split("async fn mark_dm_read(")
+        .nth(1)
+        .unwrap()
+        .split("async fn set_dm_blocked(")
+        .next()
+        .unwrap();
+    assert!(read_receipt.contains("is_ignored_user(&client, &recipient).await?"));
+
+    let message_helpers = include_str!("../messages.rs");
+    let unread = message_helpers
+        .split("async fn emit_room_unread(")
+        .nth(1)
+        .unwrap()
+        .split("async fn emit_all_room_unreads(")
+        .next()
+        .unwrap();
+    assert!(unread.contains("notification_sender_is_ignored"));
+    assert!(unread.contains("ignored_users.read().await.as_ref()"));
+    assert!(unread.contains("unread_messages: 0"));
+    assert!(unread.contains("unread_mentions: 0"));
+}
+
+#[test]
+fn ignored_users_are_removed_from_cached_message_projection_but_not_state() {
+    let ignored: IgnoredUserListEventContent = serde_json::from_value(json!({
+        "ignored_users": { "@blocked:example.org": {} }
+    }))
+    .unwrap();
+    let message = json!({
+        "type": "m.room.message",
+        "sender": "@blocked:example.org",
+        "content": { "msgtype": "m.text", "body": "hidden" }
+    });
+    let state = json!({
+        "type": "m.room.name",
+        "state_key": "",
+        "sender": "@blocked:example.org",
+        "content": { "name": "still authoritative" }
+    });
+    let allowed = json!({
+        "type": "m.room.message",
+        "sender": "@allowed:example.org",
+        "content": { "msgtype": "m.text", "body": "visible" }
+    });
+
+    assert!(MatrixBackend::is_ignored_non_state_event(
+        &message, &ignored
+    ));
+    assert!(!MatrixBackend::is_ignored_non_state_event(&state, &ignored));
+    assert!(!MatrixBackend::is_ignored_non_state_event(
+        &allowed, &ignored
+    ));
+
+    let backend_source = include_str!("../../matrix.rs");
+    let projection = backend_source
+        .split("async fn messages(")
+        .nth(1)
+        .unwrap()
+        .split("async fn edit_message(")
+        .next()
+        .unwrap();
+    assert!(projection.contains("refresh_ignored_user_list(&client).await?"));
+    assert!(projection.contains("is_ignored_non_state_event"));
+    assert!(
+        projection.find("is_ignored_non_state_event").unwrap()
+            < projection.find("project_timeline").unwrap()
+    );
+}
+
+#[test]
+fn ignored_direct_rooms_cannot_publish_or_restore_durable_queue_entries() {
+    let backend_source = include_str!("../../matrix.rs");
+    let send = backend_source
+        .split("async fn send_message(")
+        .nth(1)
+        .unwrap()
+        .split("async fn queued_messages(")
+        .next()
+        .unwrap();
+    let gate = send.find("send_queue_gate.lock().await").unwrap();
+    let block_check = send.find("reject_ignored_direct_room").unwrap();
+    let durable_insert = send.find(".send_raw(").unwrap();
+    assert!(gate < block_check && block_check < durable_insert);
+
+    let retry = backend_source
+        .split("async fn retry_queued_message(")
+        .nth(1)
+        .unwrap()
+        .split("async fn cancel_queued_message(")
+        .next()
+        .unwrap();
+    assert!(retry.contains("send_queue_gate.lock().await"));
+    assert!(retry.contains("reject_ignored_direct_room"));
+
+    let block = backend_source
+        .split("async fn set_dm_blocked(")
+        .nth(1)
+        .unwrap()
+        .split("async fn dm_blocked(")
+        .next()
+        .unwrap();
+    let pause = block.find("set_enabled(false).await").unwrap();
+    let write = block.find("set_ignored_user").unwrap();
+    let reconcile = block.find("reconcile_protected_send_queues").unwrap();
+    assert!(block.contains("send_queue_gate.lock().await"));
+    assert!(pause < write && write < reconcile);
+    assert!(block.contains("resnapshot_send_queue_updates"));
+
+    let queue_source = include_str!("../messages.rs");
+    let persisted = queue_source
+        .split("async fn reconcile_protected_send_queues(")
+        .nth(1)
+        .unwrap()
+        .split("async fn resnapshot_send_queue_updates(")
+        .next()
+        .unwrap();
+    assert!(persisted.contains("room_has_ignored_direct_peer"));
+    assert!(persisted.contains("send_handle.abort().await"));
+    assert!(persisted.contains("allow_resume && e2ee_ready && all_queues_supported"));
+    assert!(
+        persisted.find("send_handle.abort().await").unwrap()
+            < persisted.find("let account_usage").unwrap(),
+        "blocked direct-room echoes must be cancelled before retained queues are quota checked"
+    );
+
+    let projection = queue_source
+        .split("async fn queued_messages_for_client(")
+        .nth(1)
+        .unwrap()
+        .split("async fn reconcile_protected_send_queues(")
+        .next()
+        .unwrap();
+    assert!(
+        projection.find("if !project_room").unwrap()
+            < projection.find("account_usage.messages += 1").unwrap(),
+        "hidden blocked-DM echoes must not consume the pending-message projection budget"
+    );
+
+    let startup = queue_source
+        .split("fn spawn_send_queue_task(")
+        .nth(1)
+        .unwrap();
+    let startup_purge = startup
+        .find("reconcile_protected_send_queues(&client, false)")
+        .unwrap();
+    let initial_snapshot = startup
+        .find("resnapshot_send_queue_updates(&client")
+        .unwrap();
+    assert!(startup_purge < initial_snapshot);
+}
+
+#[test]
 fn matrix_dm_account_data_merge_preserves_every_observed_mapping() {
     let mut local: DirectEventContent = serde_json::from_value(json!({
         "@alice:example.org": [
@@ -3862,6 +5361,10 @@ fn mixed_protected_entities_are_partitioned_without_hiding_valid_items() {
             "!missing:example.org",
             Err(BackendError::NotFound("fixture".into())),
         ),
+        (
+            "!malformed:example.org",
+            Err(BackendError::Serialization("fixture".into())),
+        ),
         ("!valid-b:example.org", Ok("valid-b")),
     ];
     for (entity_id, result) in fixtures {
@@ -3875,10 +5378,206 @@ fn mixed_protected_entities_are_partitioned_without_hiding_valid_items() {
         .unwrap();
     }
     assert_eq!(entities, ["valid-a", "valid-b"]);
-    assert_eq!(blocked.len(), 3);
+    assert_eq!(blocked.len(), 4);
     assert_eq!(blocked[0].reason, BlockedEntityReason::Unencrypted);
     assert_eq!(blocked[1].reason, BlockedEntityReason::Unsupported);
     assert_eq!(blocked[2].reason, BlockedEntityReason::Inaccessible);
+    assert_eq!(blocked[3].reason, BlockedEntityReason::Unsupported);
+}
+
+#[test]
+fn community_hierarchy_requests_are_shallow_paginated_and_include_every_child() {
+    assert_eq!(MAX_SPACE_HIERARCHY_PAGES, 7);
+    let space_id = RoomId::parse("!space:example.org").unwrap();
+    let first = MatrixBackend::space_hierarchy_request(&space_id, None);
+    assert_eq!(first.room_id, space_id);
+    assert_eq!(
+        first.limit,
+        Some(UInt::new(SPACE_HIERARCHY_PAGE_SIZE as u64).unwrap())
+    );
+    assert_eq!(first.max_depth, Some(UInt::new(1).unwrap()));
+    assert!(!first.suggested_only);
+    assert!(first.from.is_none());
+
+    let next = MatrixBackend::space_hierarchy_request(&space_id, Some("next-page".into()));
+    assert_eq!(next.from.as_deref(), Some("next-page"));
+}
+
+#[test]
+fn community_hierarchy_room_ids_exclude_root_deduplicate_and_fail_over_capacity() {
+    let space_id = RoomId::parse("!space:example.org").unwrap();
+    let first = RoomId::parse("!first:example.org").unwrap();
+    let second = RoomId::parse("!second:example.org").unwrap();
+    let mut child_ids = Vec::new();
+    let mut seen = HashSet::new();
+
+    MatrixBackend::append_bounded_space_hierarchy_room_ids(
+        &space_id,
+        vec![
+            space_id.clone(),
+            first.clone(),
+            first.clone(),
+            second.clone(),
+        ],
+        &mut child_ids,
+        &mut seen,
+    )
+    .unwrap();
+    assert_eq!(child_ids, [first, second]);
+
+    let remaining = (child_ids.len()..MAX_COMMUNITY_CHANNELS)
+        .map(|index| RoomId::parse(format!("!channel-{index}:example.org")).unwrap())
+        .collect::<Vec<_>>();
+    MatrixBackend::append_bounded_space_hierarchy_room_ids(
+        &space_id,
+        remaining,
+        &mut child_ids,
+        &mut seen,
+    )
+    .unwrap();
+    assert_eq!(child_ids.len(), MAX_COMMUNITY_CHANNELS);
+
+    let overflow = RoomId::parse("!overflow:example.org").unwrap();
+    let error = MatrixBackend::append_bounded_space_hierarchy_room_ids(
+        &space_id,
+        [overflow],
+        &mut child_ids,
+        &mut seen,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, BackendError::InvalidConfiguration(message) if message.contains("more than 500 channels"))
+    );
+}
+
+#[test]
+fn community_hierarchy_pagination_rejects_empty_oversized_and_replayed_tokens() {
+    let mut seen = HashSet::new();
+    assert!(
+        MatrixBackend::checked_space_hierarchy_next_batch(None, &mut seen)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        MatrixBackend::checked_space_hierarchy_next_batch(Some(String::new()), &mut seen).is_err()
+    );
+    assert!(MatrixBackend::checked_space_hierarchy_next_batch(
+        Some("x".repeat(MAX_SPACE_HIERARCHY_TOKEN_BYTES + 1)),
+        &mut seen,
+    )
+    .is_err());
+    assert_eq!(
+        MatrixBackend::checked_space_hierarchy_next_batch(Some("valid-page".into()), &mut seen,)
+            .unwrap()
+            .as_deref(),
+        Some("valid-page")
+    );
+    assert!(MatrixBackend::checked_space_hierarchy_next_batch(
+        Some("valid-page".into()),
+        &mut seen,
+    )
+    .is_err());
+}
+
+#[test]
+fn community_channel_listing_never_falls_back_to_full_room_state() {
+    let matrix_source = MATRIX_PRODUCTION_SOURCES
+        .iter()
+        .find(|(candidate, _)| *candidate == "matrix.rs")
+        .map(|(_, source)| *source)
+        .unwrap();
+    let listing = matrix_source
+        .split("async fn space_child_ids_for_listing(")
+        .nth(1)
+        .unwrap()
+        .split("fn media_reservation_bytes(")
+        .next()
+        .unwrap();
+
+    assert!(listing.contains("space_hierarchy_request"));
+    assert!(listing.contains("MAX_SPACE_HIERARCHY_PAGES"));
+    assert!(listing.contains("SPACE_HIERARCHY_TIMEOUT_SECONDS"));
+    assert!(listing.contains("validate_space_hierarchy_children"));
+    assert!(!listing.contains("get_state_events::"));
+    assert!(!listing.contains("get_state_events_static"));
+    assert!(!listing.contains("room_state"));
+}
+
+#[test]
+fn matrix_rtc_roster_reads_only_bounded_call_state_without_roster_sync() {
+    let source = include_str!("../rtc.rs");
+    let memberships = source
+        .split("async fn active_matrix_rtc_memberships(")
+        .nth(1)
+        .unwrap()
+        .split("async fn matrix_rtc_members_for_room")
+        .next()
+        .unwrap();
+
+    assert!(memberships.contains("get_state_events_static::<CallMemberEventContent>"));
+    assert!(memberships.contains("MATRIX_RTC_MAX_CALL_MEMBER_EVENTS"));
+    assert!(memberships.contains("MATRIX_RTC_MAX_CALL_MEMBER_STATE_BYTES"));
+    assert!(memberships.contains("MATRIX_RTC_MAX_PARTICIPANTS"));
+    assert!(memberships.contains("get_member_no_sync"));
+    assert!(!memberships.contains("get_state_events::"));
+    assert!(!memberships.contains(".get_member("));
+}
+
+#[test]
+fn community_application_response_uses_one_authoritative_member_state_event() {
+    let space_id = RoomId::parse("!space:example.org").unwrap();
+    let user_id = UserId::parse("@applicant:example.org").unwrap();
+    let request = MatrixBackend::community_application_state_request(&space_id, &user_id);
+    assert_eq!(request.room_id, space_id);
+    assert_eq!(request.event_type, StateEventType::RoomMember);
+    assert_eq!(request.state_key, user_id.as_str());
+
+    assert!(MatrixBackend::community_application_is_pending(
+        &RoomMemberEventContent::new(MembershipState::Knock)
+    ));
+    assert!(!MatrixBackend::community_application_is_pending(
+        &RoomMemberEventContent::new(MembershipState::Join)
+    ));
+
+    let matrix_source = MATRIX_PRODUCTION_SOURCES
+        .iter()
+        .find(|(candidate, _)| *candidate == "matrix.rs")
+        .map(|(_, source)| *source)
+        .unwrap();
+    let response_path = matrix_source
+        .split("async fn respond_community_application(")
+        .nth(1)
+        .unwrap()
+        .split("async fn join_community(")
+        .next()
+        .unwrap();
+    assert!(response_path.contains("has_pending_community_application"));
+    assert!(!response_path.contains(".members("));
+}
+
+#[test]
+fn community_application_listing_requests_only_pending_membership() {
+    let space_id = RoomId::parse("!space:example.org").unwrap();
+    let request = MatrixBackend::community_applications_request(&space_id);
+    assert_eq!(request.room_id, space_id);
+    assert_eq!(request.membership, Some(MembershipState::Knock));
+    assert!(request.not_membership.is_none());
+    assert!(request.at.is_none());
+
+    let matrix_source = MATRIX_PRODUCTION_SOURCES
+        .iter()
+        .find(|(candidate, _)| *candidate == "matrix.rs")
+        .map(|(_, source)| *source)
+        .unwrap();
+    let listing = matrix_source
+        .split("async fn list_community_applications(")
+        .nth(1)
+        .unwrap()
+        .split("async fn respond_community_application(")
+        .next()
+        .unwrap();
+    assert!(listing.contains("community_applications_request"));
+    assert!(!listing.contains(".members("));
 }
 
 #[test]
@@ -3940,6 +5639,29 @@ fn search_fixture(id: &str, timestamp: &str) -> MessageDto {
 }
 
 #[test]
+fn personal_data_export_retains_the_newest_contiguous_messages_within_memory_budget() {
+    let oldest = search_fixture("$oldest", "2026-08-02T00:01:00Z");
+    let middle = search_fixture("$middle", "2026-08-02T00:02:00Z");
+    let newest = search_fixture("$newest", "2026-08-02T00:03:00Z");
+    let two_message_budget = message_search_retained_bytes(&middle)
+        .saturating_add(message_search_retained_bytes(&newest));
+
+    let (retained, truncated) = MatrixBackend::retain_newest_personal_export_messages(
+        vec![oldest, middle, newest],
+        two_message_budget,
+    );
+
+    assert!(truncated);
+    assert_eq!(
+        retained
+            .into_iter()
+            .map(|message| message.id)
+            .collect::<Vec<_>>(),
+        ["$middle", "$newest"]
+    );
+}
+
+#[test]
 fn message_search_retains_only_bounded_top_k_results() {
     let mut results = Vec::new();
     for index in 0..1_000 {
@@ -3959,6 +5681,58 @@ fn message_search_retains_only_bounded_top_k_results() {
     }));
 }
 
+#[test]
+fn message_search_budget_stops_before_any_dimension_is_exceeded() {
+    let mut budget = MessageSearchBudget {
+        rooms_remaining: 1,
+        events_remaining: 2,
+        scanned_bytes_remaining: 10,
+    };
+
+    assert!(budget.reserve_room());
+    assert!(!budget.reserve_room());
+    assert!(budget.reserve_event(4));
+    assert!(!budget.reserve_event(7));
+    assert_eq!(budget.events_remaining, 1);
+    assert_eq!(budget.scanned_bytes_remaining, 6);
+    assert!(budget.reserve_event(6));
+    assert!(!budget.reserve_event(0));
+}
+
+#[test]
+fn message_search_retained_memory_budget_keeps_newest_fitting_results() {
+    let newest = search_fixture("$newest", "2026-08-02T00:03:00Z");
+    let middle = search_fixture("$middle", "2026-08-02T00:02:00Z");
+    let oldest = search_fixture("$oldest", "2026-08-02T00:01:00Z");
+    let two_result_budget = message_search_retained_bytes(&newest)
+        .saturating_add(message_search_retained_bytes(&middle));
+    let mut results = BoundedMessageSearchResults::new(10, two_result_budget);
+
+    results.insert(oldest);
+    results.insert(newest);
+    results.insert(middle);
+
+    assert!(results.retained_bytes <= two_result_budget);
+    assert_eq!(
+        results
+            .into_entries()
+            .into_iter()
+            .map(|message| message.id)
+            .collect::<Vec<_>>(),
+        ["$newest", "$middle"]
+    );
+}
+
+#[test]
+fn oversized_message_search_result_is_never_retained() {
+    let mut oversized = search_fixture("$oversized", "2026-08-02T00:03:00Z");
+    oversized.content = "x".repeat(1_024);
+    let mut results = BoundedMessageSearchResults::new(10, 512);
+    results.insert(oversized);
+
+    assert!(results.into_entries().is_empty());
+}
+
 #[tokio::test]
 async fn twenty_superseded_native_searches_never_run_concurrently() {
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
@@ -3975,10 +5749,11 @@ async fn twenty_superseded_native_searches_never_run_concurrently() {
         let cancelled = cancelled.clone();
         tasks.push(tokio::spawn(async move {
             let request_id = format!("request-{index:02}");
-            let token = registry
+            let registration = registry
                 .begin(&request_id, "@alice:example.org:messages".into())
                 .await
                 .unwrap();
+            let token = registration.cancellation.clone();
             let now = active.fetch_add(1, AtomicOrdering::SeqCst) + 1;
             peak.fetch_max(now, AtomicOrdering::SeqCst);
             let was_cancelled = tokio::select! {
@@ -3989,7 +5764,7 @@ async fn twenty_superseded_native_searches_never_run_concurrently() {
                 cancelled.fetch_add(1, AtomicOrdering::SeqCst);
             }
             active.fetch_sub(1, AtomicOrdering::SeqCst);
-            registry.finish(&request_id).await;
+            drop(registration);
         }));
     }
     for task in tasks {
@@ -4007,16 +5782,106 @@ async fn native_search_cancellation_acknowledges_zero_remaining_work() {
     let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
     let worker = tokio::spawn(async move {
         let request_id = "request-timeout";
-        let token = worker_registry
+        let registration = worker_registry
             .begin(request_id, "@alice:example.org:messages".into())
             .await
             .unwrap();
+        let token = registration.cancellation.clone();
         ready_tx.send(()).unwrap();
         token.cancelled().await;
-        worker_registry.finish(request_id).await;
+        drop(registration);
     });
     ready_rx.await.unwrap();
     registry.cancel("request-timeout").await.unwrap();
     worker.await.unwrap();
+    assert_eq!(registry.active_count().await, 0);
+}
+
+#[tokio::test]
+async fn superseding_native_search_has_a_bounded_cancellation_acknowledgement_wait() {
+    let registry = NativeSearchRegistry::default();
+    let stalled = registry
+        .begin("request-stalled", "@alice:example.org:messages".into())
+        .await
+        .unwrap();
+
+    let error = registry
+        .begin_with_ack_timeout(
+            "request-replacement",
+            "@alice:example.org:messages".into(),
+            Duration::from_millis(10),
+        )
+        .await
+        .expect_err("a stalled predecessor must not block replacement forever");
+
+    assert!(matches!(error, BackendError::Other(message) if message.contains("safety deadline")));
+    assert_eq!(registry.active_count().await, 1);
+    drop(stalled);
+}
+
+#[tokio::test]
+async fn native_search_cancellation_before_registration_is_sticky() {
+    let registry = NativeSearchRegistry::default();
+    registry
+        .cancel("request-before-registration")
+        .await
+        .unwrap();
+
+    let error = registry
+        .begin(
+            "request-before-registration",
+            "@alice:example.org:messages".into(),
+        )
+        .await
+        .expect_err("a pre-cancelled search must never start");
+
+    assert!(matches!(error, BackendError::Cancelled(_)));
+    assert_eq!(registry.active_count().await, 0);
+}
+
+#[tokio::test]
+async fn native_search_pre_cancellation_tombstones_are_bounded() {
+    let registry = NativeSearchRegistry::default();
+    for index in 0..(MAX_REMEMBERED_PRE_CANCELLED_SEARCHES + 50) {
+        registry
+            .cancel(&format!("request-pre-cancel-{index:04}"))
+            .await
+            .unwrap();
+    }
+
+    let state = registry.lock_state();
+    assert_eq!(
+        state.pre_cancelled.len(),
+        MAX_REMEMBERED_PRE_CANCELLED_SEARCHES
+    );
+    assert_eq!(
+        state.pre_cancellation_order.len(),
+        MAX_REMEMBERED_PRE_CANCELLED_SEARCHES
+    );
+}
+
+#[tokio::test]
+async fn dropping_native_search_registration_reclaims_the_scope() {
+    let registry = NativeSearchRegistry::default();
+    let registration = registry
+        .begin(
+            "request-owner-dropped",
+            "@alice:example.org:messages".into(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(registry.active_count().await, 1);
+
+    drop(registration);
+
+    assert_eq!(registry.active_count().await, 0);
+    let replacement = registry
+        .begin(
+            "request-after-owner-drop",
+            "@alice:example.org:messages".into(),
+        )
+        .await
+        .expect("a dropped search owner must release its scope immediately");
+    drop(replacement);
     assert_eq!(registry.active_count().await, 0);
 }

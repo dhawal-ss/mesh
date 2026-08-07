@@ -7,7 +7,12 @@ export type VoiceProvider = "matrix-rtc" | "legacy-simple-peer";
 
 export type VoiceServiceAvailability = "ready" | "not-configured" | "invalid-configuration" | "client-unavailable";
 
-export type VoiceServiceStatus = { provider: VoiceProvider, availability: VoiceServiceAvailability, discoveryKey: string | null, livekitServiceUrl: string | null, tokenEndpoint: string | null, livekitSfuUrl: string | null, cspReady: boolean, mediaE2eeVerified: boolean, reason: string | null, };
+export type VoiceServiceStatus = { provider: VoiceProvider, availability: VoiceServiceAvailability, discoveryKey: string | null, livekitServiceUrl: string | null, tokenEndpoint: string | null, livekitSfuUrl: string | null, cspReady: boolean,
+/**
+ * The selected build contains the media-encryption client and its
+ * required network policy. Live media verification is a release gate.
+ */
+mediaE2eeReady: boolean, reason: string | null, };
 
 export type BackendCapabilities = { encryptedText: boolean, encryptedAttachments: boolean, directMessages: boolean, voice: boolean, durableTimeouts: boolean, deviceManagement: boolean, recovery: boolean, legacyMigration: boolean, };
 
@@ -33,13 +38,25 @@ export type MatrixNotification = { roomId: string, eventId: string, sender: stri
 
 export type MatrixUnreadUpdate = { roomId: string, unreadMessages: number, unreadMentions: number, };
 
+export type MatrixIgnoredUsersChanged = {
+/**
+ * Newly ignored accounts that can be removed from bounded renderer caches
+ * without discarding unrelated conversations.
+ */
+blockedUserIds: Array<string>,
+/**
+ * The change was too large or the previous account state was unknown, so
+ * renderer message projections must be cleared and loaded again.
+ */
+resetAll: boolean, };
+
 export type MatrixPermissionRoomStatus = "loaded" | "matrix-default" | "inaccessible" | "unsupported" | "failed";
 
 export type CommunityPermissionAggregateStatus = "granted-everywhere" | "granted-some-rooms" | "not-granted" | "unknown";
 
 export type CommunityPermissionId = "participate" | "invite" | "redact" | "remove" | "ban" | "roomState" | "roles";
 
-export type MatrixRoomPowerLevelProjection = { users: { [key in string]?: number }, usersDefault: number, events: { [key in string]?: number }, eventsDefault: number, stateDefault: number, ban: number, kick: number, invite: number, redact: number, notifications: { [key in string]?: number }, creatorUserIds: Array<string>, privilegedCreatorUserIds: Array<string>, joinedUserIds: Array<string>, };
+export type MatrixRoomPowerLevelProjection = { users: { [key in string]?: number }, usersDefault: number, events: { [key in string]?: number }, eventsDefault: number, stateDefault: number, ban: number, kick: number, invite: number, redact: number, notifications: { [key in string]?: number }, creatorUserIds: Array<string>, privilegedCreatorUserIds: Array<string>, };
 
 export type MatrixRoomPermissionProjection = { roomId: string, roomName: string, roomKind: "space" | "room", status: MatrixPermissionRoomStatus, policy: MatrixRoomPowerLevelProjection | null, failureReason: string | null, };
 
@@ -73,7 +90,12 @@ export type MatrixRtcMediaKeyPause = { roomId: string, sessionId: string, member
 
 export type MatrixRtcMediaKeyLease = { roomId: string, sessionId: string, memberId: string, keyIndex: number, expiresAt: number, };
 
-export type MatrixRtcJoinResult = { roomId: string, sessionId: string, memberId: string, url: string, token: string, roomName: string, participantIdentity: string, mediaE2eeVerified: boolean, mediaKey: MatrixRtcMediaKey, };
+export type MatrixRtcJoinResult = { roomId: string, sessionId: string, memberId: string, url: string, token: string, roomName: string, participantIdentity: string,
+/**
+ * The client has the media-encryption worker and key material needed to
+ * attempt a protected call. This is not proof of a successful live call.
+ */
+mediaE2eeReady: boolean, mediaKey: MatrixRtcMediaKey, };
 
 export type NotificationPresentationContext = { activeRoomId: string | null, notificationsEnabled: boolean, doNotDisturb: boolean, quietHoursActive: boolean,
 /**
@@ -94,7 +116,7 @@ export type ReadReceiptMode = "public" | "private" | "off";
 
 export type ConversationPrivacyOverride = { readReceiptMode?: ReadReceiptMode | null, sendTypingIndicators?: boolean | null, };
 
-export type UserPreferences = { schemaVersion: number, notificationsEnabled: boolean, notificationSound: boolean, notificationSoundId?: string | null, doNotDisturb: boolean,
+export type UserPreferences = { schemaVersion: number, notificationsEnabled: boolean, notificationSound: boolean, notificationSoundId?: string | null, interfaceSoundVolume: number, interfaceSoundEvents: { [key in string]?: boolean }, doNotDisturb: boolean,
 /**
  * Whether bounded message text may appear in native notifications.
  * Fresh and migrated accounts remain private unless the user opts in.
@@ -168,7 +190,15 @@ deliveryStatus?: "sent" | "pending" | "failed" | null,
  */
 undecryptable?: UndecryptableMessageDto | null, };
 
+export type MatrixThreadContextDto = { root: MessageDto, replies: Array<MessageDto>, unreadCount: number, unreadMentions: number, unreadStateAvailable: boolean, hasMore: boolean, };
+
 export type DmConversationDto = { id: string, peerPublicKey: string, peerDisplayName: string, peerAvatarColor: string, lastMessageAt: string | null, unreadCount: number, createdAt: string, };
+
+export type DmRequestDto = { roomId: string, inviterUserId: string, inviterDisplayName: string, inviterAvatarColor: string, canAccept: boolean, };
+
+export type BlockedAccountDto = { userId: string, };
+
+export type BlockedAccountPageDto = { accounts: Array<BlockedAccountDto>, nextCursor: string | null, };
 
 export type ReadReceiptDto = { userId: string, displayName: string, };
 

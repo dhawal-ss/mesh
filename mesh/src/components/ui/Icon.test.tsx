@@ -6,7 +6,7 @@ describe('Icon', () => {
   it.each([
     ['xs', 14, 1.5],
     ['sm', 16, 1.5],
-    ['md', 20, 1.5],
+    ['md', 18, 1.5],
     ['lg', 24, 1.75],
   ] as const)('locks the %s size to %spx with a %spx optical stroke', (size, pixels, opticalStroke) => {
     const markup = renderToStaticMarkup(<Icon name="settings" size={size} />)

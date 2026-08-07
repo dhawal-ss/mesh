@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, type ComponentProps, type ReactNode } from 'react'
 import {
   getDiagnostics,
   getBackendStatus,
@@ -21,20 +21,26 @@ import {
   saveSupportBundle,
   serializeSupportBundle,
 } from '../../lib/support-bundle'
+import { useSettingsStore } from '../../store/settings'
 
 interface DiagnosticsPanelProps {
   open: boolean
   onClose: () => void
   backendKind?: BackendKind
+  embedded?: boolean
 }
-
-/// Auto-refresh interval when the panel is open (milliseconds).
-const REFRESH_INTERVAL_MS = 3000
 
 /// Diagnostics panel: consumes the `get_diagnostics` command and renders a
 /// compact operational health view. Designed for operators and support to
 /// answer "is the app working?" without parsing logs.
-export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: DiagnosticsPanelProps) {
+export function DiagnosticsPanel({
+  open,
+  onClose,
+  backendKind = 'legacy-p2p',
+  embedded = false,
+}: DiagnosticsPanelProps) {
+  const signalCheckEnabled = useSettingsStore((state) => state.signalCheckEnabled)
+  const setSignalCheckEnabled = useSettingsStore((state) => state.setSignalCheckEnabled)
   const [diagnostics, setDiagnostics] = useState<SystemDiagnostics | null>(null)
   const [matrixStatus, setMatrixStatus] = useState<BackendStatus | null>(null)
   const [error, setError] = useState<unknown | null>(null)
@@ -81,30 +87,62 @@ export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: 
   }, [backendKind])
 
   useEffect(() => {
-    if (!open) return
+    if (!open || !signalCheckEnabled) return
     const initialRefresh = window.setTimeout(() => {
       void refresh()
     }, 0)
-    const interval = setInterval(refresh, REFRESH_INTERVAL_MS)
     return () => {
       window.clearTimeout(initialRefresh)
-      clearInterval(interval)
     }
-  }, [open, refresh])
+  }, [open, refresh, signalCheckEnabled])
+
+  useEffect(() => {
+    if (!embedded || !open) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      event.preventDefault()
+      onClose()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [embedded, onClose, open])
 
   return (
-    <Modal
+    <DiagnosticsFrame
+      embedded={embedded}
       open={open}
       onClose={onClose}
-      title="System diagnostics"
+      title="Signal Check"
       description={
-        lastUpdated
+        !signalCheckEnabled
+          ? 'Off on this device. No diagnostic request has started.'
+          : lastUpdated
           ? `Updated ${lastUpdated.toLocaleTimeString()}${loading ? ' · refreshing' : ''}`
-          : 'Checking Mesh services…'
+          : 'Checking this Mesh connection…'
       }
       size="lg"
-      closeLabel="Close diagnostics"
+      closeLabel="Close Signal Check"
     >
+      {!signalCheckEnabled && (
+        <section
+          className="rounded-panel border border-border-subtle bg-surface-sunken p-4"
+          aria-labelledby="signal-check-off-heading"
+        >
+          <h3 id="signal-check-off-heading" className="text-sm font-semibold text-primary">
+            Signal Check is off
+          </h3>
+          <p className="mt-2 text-xs leading-5 text-muted">
+            Turn it on to run one redacted check at a time. Mesh never shows raw logs,
+            credentials, access tokens, account or room identifiers, file paths, environment
+            variables, or message content.
+          </p>
+          <Button className="mt-3" size="sm" onClick={() => setSignalCheckEnabled(true)}>
+            Turn on Signal Check
+          </Button>
+        </section>
+      )}
+      {signalCheckEnabled && (
+      <>
       <div className="mb-4 flex min-h-8 flex-wrap items-center justify-end gap-2 border-b border-border-subtle pb-3">
         {(matrixStatus || diagnostics) && (
           <Button
@@ -195,6 +233,57 @@ export function DiagnosticsPanel({ open, onClose, backendKind = 'legacy-p2p' }: 
           />
         )}
       </div>
+      </>
+      )}
+    </DiagnosticsFrame>
+  )
+}
+
+function DiagnosticsFrame({
+  embedded,
+  open,
+  onClose,
+  title,
+  description,
+  children,
+  ...modalProps
+}: ComponentProps<typeof Modal> & { embedded: boolean; children: ReactNode }) {
+  if (embedded) {
+    if (!open) return null
+    return (
+      <section
+        aria-labelledby="embedded-signal-check-heading"
+        className="mt-4 rounded-panel border border-border-subtle bg-surface-base p-4"
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape') return
+          event.preventDefault()
+          event.stopPropagation()
+          onClose()
+        }}
+      >
+        <header className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-border-subtle pb-3">
+          <div>
+            <h3 id="embedded-signal-check-heading" className="text-sm font-semibold text-primary">
+              {title}
+            </h3>
+            {description && <p className="mt-1 text-xs text-muted">{description}</p>}
+          </div>
+          <Button variant="ghost" size="sm" onClick={onClose}>Close Signal Check</Button>
+        </header>
+        {children}
+      </section>
+    )
+  }
+
+  return (
+    <Modal
+      {...modalProps}
+      open={open}
+      onClose={onClose}
+      title={title}
+      description={description}
+    >
+      {children}
     </Modal>
   )
 }
@@ -207,10 +296,10 @@ function MatrixDiagnosticsContent({ data }: { data: BackendStatus }) {
       {data.warnings.length > 0 && (
         <Section title="Warnings" tone="warning">
           <ul className="space-y-1.5">
-            {data.warnings.map((warning, index) => (
+            {data.warnings.map((_warning, index) => (
               <li key={index} className="flex items-start gap-2 text-xs text-status-warning">
                 <Icon name="triangleAlert" size="xs" className="mt-0.5 flex-none" />
-                <span>{warning}</span>
+                <span>A service check needs attention. Open the matching section below for a safe next step.</span>
               </li>
             ))}
           </ul>
@@ -253,9 +342,8 @@ function MatrixDiagnosticsContent({ data }: { data: BackendStatus }) {
         )}
       </Section>
 
-      <Section title="Session">
+      <Section title="Connection details">
         <div className="space-y-2">
-          <DetailRow label="Identity" value={data.userId ?? 'Not signed in'} />
           <DetailRow label="Connected service" value={data.homeserver ?? 'Not configured'} />
           <DetailRow label="Device code" value={data.deviceId ?? 'Unavailable'} />
         </div>
@@ -275,10 +363,10 @@ function MatrixDiagnosticsContent({ data }: { data: BackendStatus }) {
             warn={data.voiceService.availability !== 'ready'}
           />
           <StatusCell
-            label="Media protection"
-            value={data.voiceService.mediaE2eeVerified ? 'Verified' : 'Not verified'}
-            ok={data.voiceService.mediaE2eeVerified}
-            warn={!data.voiceService.mediaE2eeVerified}
+            label="Media protection support"
+            value={data.voiceService.mediaE2eeReady ? 'Available' : 'Unavailable'}
+            ok={data.voiceService.mediaE2eeReady}
+            warn={!data.voiceService.mediaE2eeReady}
           />
           <StatusCell
             label="Network policy"
@@ -367,10 +455,10 @@ function DiagnosticsContent({
       {data.warnings.length > 0 && (
         <Section title="Warnings" tone="warning">
           <ul className="space-y-1.5">
-            {data.warnings.map((warning, i) => (
+            {data.warnings.map((_warning, i) => (
               <li key={i} className="flex items-start gap-2 text-xs text-status-warning">
                 <Icon name="triangleAlert" size="xs" className="mt-0.5 flex-none" />
-                <span>{warning}</span>
+                <span>A service check needs attention. Open the matching section below for a safe next step.</span>
               </li>
             ))}
           </ul>

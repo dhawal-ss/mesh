@@ -100,11 +100,15 @@ export class VoiceEngine {
       )
       if (!hasTurn) {
         console.warn('[VoiceEngine] No TURN server configured. Voice may fail behind strict NATs.')
-        this.handlers.onConnectionWarning?.('No relay service is configured. Voice calls may not connect behind firewalls.')
+        this.handlers.onConnectionWarning?.(
+          'Voice may not connect on this network. Try another network or ask the community owner for help.',
+        )
       }
     } catch (e) {
       console.warn('Failed to load ICE servers, using defaults:', e)
-      this.handlers.onConnectionWarning?.('Failed to load voice service configuration.')
+      this.handlers.onConnectionWarning?.(
+        'Voice setup could not be checked. Messages still work; try voice again later.',
+      )
     }
   }
 

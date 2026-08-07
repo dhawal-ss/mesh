@@ -45,11 +45,44 @@ set_role_passwords() {
     --set role_name="$postgres_user" \
     --set postgres_password="$postgres_password" \
     --set admission_password="$admission_password" <<'SQL' >/dev/null
+BEGIN;
 SELECT format('ALTER ROLE %I PASSWORD %L', :'role_name', :'postgres_password')
 \gexec
 SELECT format('ALTER ROLE mesh_admission PASSWORD %L', :'admission_password')
 \gexec
+COMMIT;
 SQL
+}
+
+revoke_admission_service_token() {
+  env_file="$1"
+  service_token="$(env_value "$env_file" MESH_ADMISSION_SERVICE_ACCESS_TOKEN)"
+  case "$service_token" in
+    ""|REPLACE_*)
+      echo "Rotation source does not contain a valid admission service token." >&2
+      return 1
+      ;;
+  esac
+  printf '%s' "$service_token" |
+    docker compose exec -T synapse python -c '
+import sys
+import urllib.request
+
+token = sys.stdin.read()
+request = urllib.request.Request(
+    "http://127.0.0.1:8008/_matrix/client/v3/logout",
+    data=b"{}",
+    headers={
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json",
+    },
+    method="POST",
+)
+with urllib.request.urlopen(request, timeout=10) as response:
+    if response.status != 200:
+        raise SystemExit(1)
+' >/dev/null
+  unset service_token
 }
 
 write_evidence() {
@@ -123,6 +156,7 @@ stage_rotation() {
       /^MESH_ADMISSION_SIGNING_KEY=/ { print "MESH_ADMISSION_SIGNING_KEY=" signing; next }
       /^MESH_ADMISSION_SIGNING_KEY_ID=/ { print "MESH_ADMISSION_SIGNING_KEY_ID=" signing_id; next }
       /^MESH_ADMISSION_PREVIOUS_SIGNING_KEYS=/ { print "MESH_ADMISSION_PREVIOUS_SIGNING_KEYS=" previous; next }
+      /^MESH_ADMISSION_SERVICE_ACCESS_TOKEN=/ { print "MESH_ADMISSION_SERVICE_ACCESS_TOKEN=REPLACE_DURING_ROTATION"; next }
       { print }
     ' .env > "$pending_file"
   chmod 0600 "$pending_file"
@@ -146,20 +180,47 @@ activate_rotation() {
   old_key_id="$(env_value "$rollback_file" MESH_ADMISSION_SIGNING_KEY_ID)"
   new_key_id="$(env_value .env.rotation.pending MESH_ADMISSION_SIGNING_KEY_ID)"
   rollback_on_error() {
+    activation_status=$?
+    trap - EXIT HUP INT TERM
     set +e
-    set_role_passwords "$rollback_file"
-    cp "$rollback_file" .env
-    chmod 0600 .env
-    ./setup.sh >/dev/null 2>&1
-    ./start.sh >/dev/null 2>&1
-    set -e
+    rollback_failed=0
+    set_role_passwords "$rollback_file" || rollback_failed=1
+    cp "$rollback_file" .env || rollback_failed=1
+    chmod 0600 .env || rollback_failed=1
+    ./setup.sh >/dev/null 2>&1 || rollback_failed=1
+    ./start.sh >/dev/null 2>&1 || rollback_failed=1
+    ./operational-health.sh >/dev/null 2>&1 || rollback_failed=1
+    if [ "$rollback_failed" -ne 0 ]; then
+      echo "Secret rotation failed and automatic rollback also needs operator recovery. Protected rotation files were retained." >&2
+    else
+      echo "Secret rotation failed; prior database roles, environment, and services were restored." >&2
+    fi
+    exit "$activation_status"
   }
-  trap rollback_on_error INT TERM HUP EXIT
+  trap rollback_on_error EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   set_role_passwords .env.rotation.pending
   mv .env.rotation.pending .env
   chmod 0600 .env
   ./setup.sh >/dev/null
   ./start.sh >/dev/null
+  ./operational-health.sh >/dev/null
+  old_service_token="$(env_value "$rollback_file" MESH_ADMISSION_SERVICE_ACCESS_TOKEN)"
+  new_service_token="$(env_value .env MESH_ADMISSION_SERVICE_ACCESS_TOKEN)"
+  case "$new_service_token" in
+    ""|REPLACE_*)
+      echo "Admission service did not receive a replacement access token." >&2
+      exit 1
+      ;;
+  esac
+  if [ "$new_service_token" = "$old_service_token" ]; then
+    echo "Admission service access token was not rotated." >&2
+    exit 1
+  fi
+  unset old_service_token new_service_token
+  revoke_admission_service_token "$rollback_file"
   ./operational-health.sh >/dev/null
   old_invites="$(active_previous_invites "$old_key_id")"
   write_evidence "$rotation_id" activated "$old_key_id" "$new_key_id" "$old_invites"
@@ -177,16 +238,54 @@ rollback_rotation() {
   failed_file="$script_dir/.env.rotation.$rotation_id.failed"
   cp .env "$failed_file"
   chmod 0600 "$failed_file"
-  set_role_passwords "$rollback_file"
-  cp "$rollback_file" .env
+  failed_key="$(env_value "$failed_file" MESH_ADMISSION_SIGNING_KEY)"
+  failed_key_id="$(env_value "$failed_file" MESH_ADMISSION_SIGNING_KEY_ID)"
+  rollback_target="$(mktemp "$script_dir/.env.rollback-target.XXXXXX")"
+  awk -v previous="$failed_key_id:$failed_key" '
+    /^MESH_ADMISSION_PREVIOUS_SIGNING_KEYS=/ {
+      print "MESH_ADMISSION_PREVIOUS_SIGNING_KEYS=" previous
+      next
+    }
+    { print }
+  ' "$rollback_file" > "$rollback_target"
+  chmod 0600 "$rollback_target"
+  restore_failed_rotation() {
+    rollback_status=$?
+    trap - EXIT HUP INT TERM
+    set +e
+    restore_failed=0
+    set_role_passwords "$failed_file" || restore_failed=1
+    cp "$failed_file" .env || restore_failed=1
+    chmod 0600 .env || restore_failed=1
+    ./setup.sh >/dev/null 2>&1 || restore_failed=1
+    ./start.sh >/dev/null 2>&1 || restore_failed=1
+    ./operational-health.sh >/dev/null 2>&1 || restore_failed=1
+    if [ "$restore_failed" -ne 0 ]; then
+      echo "Rollback failed and the activated environment also needs operator recovery. Protected rotation files were retained." >&2
+    else
+      echo "Rollback failed; the activated environment was restored." >&2
+    fi
+    rm -f "$rollback_target"
+    exit "$rollback_status"
+  }
+  trap restore_failed_rotation EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  set_role_passwords "$rollback_target"
+  cp "$rollback_target" .env
   chmod 0600 .env
   ./setup.sh >/dev/null
   ./start.sh >/dev/null
   ./operational-health.sh >/dev/null
+  old_invites="$(active_previous_invites "$failed_key_id")"
   write_evidence "$rotation_id" rolled-back \
-    "$(env_value "$failed_file" MESH_ADMISSION_SIGNING_KEY_ID)" \
-    "$(env_value .env MESH_ADMISSION_SIGNING_KEY_ID)" 0
-  echo "Rolled back rotation $rotation_id. New secret material remains in the protected .failed file for incident review."
+    "$failed_key_id" \
+    "$(env_value .env MESH_ADMISSION_SIGNING_KEY_ID)" "$old_invites"
+  trap - EXIT HUP INT TERM
+  rm -f "$rollback_target"
+  unset failed_key failed_key_id
+  echo "Rolled back rotation $rotation_id with reverse signing-key overlap. New secret material remains in the protected .failed file for incident review."
 }
 
 revoke_previous() {
@@ -199,14 +298,40 @@ revoke_previous() {
   outstanding="$(active_previous_invites "$previous_key_id")"
   [ "$outstanding" = 0 ] || { echo "$outstanding active invitation(s) still require the previous signing key." >&2; exit 1; }
   next_env="$(mktemp "$script_dir/.env.revoke.XXXXXX")"
+  revoke_rollback="$(mktemp "$script_dir/.env.revoke-rollback.XXXXXX")"
+  cp .env "$revoke_rollback"
+  chmod 0600 "$revoke_rollback"
   awk '/^MESH_ADMISSION_PREVIOUS_SIGNING_KEYS=/ { print "MESH_ADMISSION_PREVIOUS_SIGNING_KEYS="; next } { print }' .env > "$next_env"
   chmod 0600 "$next_env"
+  restore_revoked_overlap() {
+    revoke_status=$?
+    trap - EXIT HUP INT TERM
+    set +e
+    restore_failed=0
+    cp "$revoke_rollback" .env || restore_failed=1
+    chmod 0600 .env || restore_failed=1
+    docker compose up -d --force-recreate admission >/dev/null 2>&1 || restore_failed=1
+    ./operational-health.sh >/dev/null 2>&1 || restore_failed=1
+    if [ "$restore_failed" -ne 0 ]; then
+      echo "Previous-key revocation failed and overlap restoration also needs operator recovery." >&2
+    else
+      echo "Previous-key revocation failed; the overlap environment was restored." >&2
+    fi
+    rm -f "$next_env" "$revoke_rollback"
+    exit "$revoke_status"
+  }
+  trap restore_revoked_overlap EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   mv "$next_env" .env
   docker compose up -d --force-recreate admission >/dev/null
   ./operational-health.sh >/dev/null
   write_evidence "$rotation_id" revoked "$previous_key_id" \
     "$(env_value .env MESH_ADMISSION_SIGNING_KEY_ID)" 0
   rm -f "$script_dir/.env.rotation.$rotation_id.rollback"
+  trap - EXIT HUP INT TERM
+  rm -f "$revoke_rollback"
   echo "Explicitly revoked previous signing-key overlap for rotation $rotation_id."
 }
 

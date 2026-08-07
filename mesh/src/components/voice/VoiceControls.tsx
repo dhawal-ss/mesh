@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import type { VoiceDevice } from '../../lib/livekit-voice'
+import type { VoiceDevice } from '../../lib/voice-runtime-types'
 import { useVoiceStore } from '../../store/voice'
 import { Tooltip } from '../ui/Tooltip'
 import { transitions } from '../../lib/motion'
@@ -14,6 +14,10 @@ import { IconButton } from '../ui/IconButton'
 
 interface VoiceControlsProps {
   devices: VoiceDevice[]
+  roomName: string
+  leaving?: boolean
+  onOpenMessages: () => void
+  onLeave: () => void
   onInputDeviceChange: (deviceId: string) => Promise<void>
   onOutputDeviceChange: (deviceId: string) => Promise<void>
   onCameraChange: (enabled: boolean) => Promise<void>
@@ -22,6 +26,10 @@ interface VoiceControlsProps {
 
 export function VoiceControls({
   devices,
+  roomName,
+  leaving = false,
+  onOpenMessages,
+  onLeave,
   onInputDeviceChange,
   onOutputDeviceChange,
   onCameraChange,
@@ -42,10 +50,10 @@ export function VoiceControls({
   const setPushToTalking = useVoiceStore((state) => state.setPushToTalking)
   const setInputDeviceId = useVoiceStore((state) => state.setInputDeviceId)
   const setOutputDeviceId = useVoiceStore((state) => state.setOutputDeviceId)
-  const setCurrentVoiceSession = useVoiceStore((state) => state.setCurrentVoiceSession)
   const connectionState = useVoiceStore((state) => state.connectionState)
   const lastReconnectReason = useVoiceStore((state) => state.lastReconnectReason)
   const [controlError, setControlError] = useState<string | null>(null)
+  const [pendingMedia, setPendingMedia] = useState<'camera' | 'screen' | null>(null)
   const inputs = devices.filter((device) => device.kind === 'audioinput')
   const outputs = devices.filter((device) => device.kind === 'audiooutput')
   const connected = connectionState === 'connected'
@@ -70,13 +78,18 @@ export function VoiceControls({
         await onOutputDeviceChange(deviceId)
         setOutputDeviceId(deviceId)
       }
-    } catch (error) {
-      setControlError(error instanceof Error ? error.message : 'The audio device could not be selected.')
+    } catch {
+      setControlError(
+        kind === 'input'
+          ? 'Mesh could not switch microphones. Check that your microphone is connected and allowed in system settings, then try again.'
+          : 'Mesh could not switch speakers. Check that your speakers or headphones are connected, then try again.',
+      )
     }
   }
 
   const changeMedia = async (kind: 'camera' | 'screen', enabled: boolean) => {
     setControlError(null)
+    setPendingMedia(kind)
     try {
       if (kind === 'camera') {
         await onCameraChange(enabled)
@@ -85,6 +98,8 @@ export function VoiceControls({
       }
     } catch (error) {
       setControlError(voiceMediaErrorMessage(error, kind))
+    } finally {
+      setPendingMedia(null)
     }
   }
 
@@ -93,7 +108,7 @@ export function VoiceControls({
       initial={{ y: 20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={transitions.move}
-      className="mesh-voice-controls flex max-w-full flex-col items-center gap-2"
+      className="mesh-voice-controls flex w-full flex-col items-center gap-2"
       aria-label="Voice controls"
     >
       <span className="sr-only" role="status">
@@ -101,7 +116,7 @@ export function VoiceControls({
         {lastReconnectReason ? `. ${lastReconnectReason}` : ''}
       </span>
 
-      <div className="flex max-w-full items-center gap-1.5 rounded-full border border-border-subtle bg-surface-sidebar p-1.5">
+      <div className="flex w-full max-w-4xl items-center justify-center gap-1.5 bg-surface-base">
         <Tooltip
           content={
             inputMode === 'push-to-talk'
@@ -182,13 +197,16 @@ export function VoiceControls({
           </motion.button>
         </Tooltip>
 
-        <Tooltip content={isDeafened ? 'Undeafen' : 'Deafen'} side="top">
+        <Tooltip
+          content={isDeafened ? 'Turn incoming audio on' : 'Turn incoming audio off'}
+          side="top"
+        >
           <motion.button
             whileHover={{ scale: 1.04 }}
             whileTap={{ scale: 0.96 }}
             onClick={() => setDeafened(!isDeafened)}
             aria-pressed={isDeafened}
-            aria-label={isDeafened ? 'Undeafen audio' : 'Deafen audio'}
+            aria-label={isDeafened ? 'Turn incoming audio on' : 'Turn incoming audio off'}
             className={`flex h-11 w-11 items-center justify-center rounded-full transition-colors ${
               isDeafened
                 ? 'bg-status-warning text-content-on-status'
@@ -214,12 +232,14 @@ export function VoiceControls({
         >
           <button
             type="button"
-            disabled={!connected}
+            disabled={!connected || pendingMedia !== null}
             onClick={() => void changeMedia('camera', !isCameraEnabled)}
             aria-label={
               !connected
                 ? 'Turn camera on: available once you are connected'
-                : isCameraEnabled ? 'Turn camera off' : 'Turn camera on'
+                : pendingMedia === 'camera'
+                  ? isCameraEnabled ? 'Stopping camera' : 'Starting camera'
+                  : isCameraEnabled ? 'Turn camera off' : 'Turn camera on'
             }
             className={`flex h-11 w-11 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
               isCameraEnabled
@@ -241,12 +261,14 @@ export function VoiceControls({
         >
           <button
             type="button"
-            disabled={!connected}
+            disabled={!connected || pendingMedia !== null}
             onClick={() => void changeMedia('screen', !isScreenSharing)}
             aria-label={
               !connected
                 ? 'Share screen: available once you are connected'
-                : isScreenSharing ? 'Stop sharing screen' : 'Share screen'
+                : pendingMedia === 'screen'
+                  ? isScreenSharing ? 'Stopping screen share' : 'Starting screen share'
+                  : isScreenSharing ? 'Stop sharing screen' : 'Share screen'
             }
             className={`flex h-11 w-11 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
               isScreenSharing
@@ -332,15 +354,27 @@ export function VoiceControls({
 
         <div className="mx-0.5 h-6 w-px bg-border-subtle" aria-hidden="true" />
 
-        <Tooltip content="Disconnect" side="top">
+        <button
+          type="button"
+          onClick={onOpenMessages}
+          className="flex min-h-11 items-center gap-2 px-3 text-xs font-semibold text-content-secondary transition-colors hover:bg-surface-hover hover:text-content"
+          aria-label={`Open messages from ${roomName}`}
+        >
+          <Icon name="messageCircle" size="sm" />
+          <span className="hidden sm:inline">Messages</span>
+        </button>
+
+        <Tooltip content={`Leave ${roomName}`} side="top">
           <motion.button
             whileHover={{ scale: 1.04 }}
             whileTap={{ scale: 0.96 }}
-            onClick={() => setCurrentVoiceSession(null, null)}
-            aria-label="Disconnect from voice room"
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-status-danger text-content-on-status transition-opacity hover:opacity-90"
+            disabled={leaving}
+            onClick={onLeave}
+            aria-label={`Leave ${roomName}`}
+            className="flex min-h-11 items-center justify-center gap-2 border border-status-danger/60 px-3 text-xs font-semibold text-status-danger transition-colors hover:bg-status-danger/10 disabled:opacity-60"
           >
             <Icon name="phoneOff" />
+            <span className="hidden sm:inline">{leaving ? 'Leaving' : 'Leave'}</span>
           </motion.button>
         </Tooltip>
       </div>

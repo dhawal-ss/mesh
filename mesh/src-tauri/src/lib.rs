@@ -17,6 +17,7 @@ pub mod migration;
 #[cfg(feature = "legacy-p2p")]
 pub mod network;
 mod security;
+mod startup_recovery;
 mod state;
 #[cfg(feature = "legacy-p2p")]
 mod storage;
@@ -154,6 +155,7 @@ pub fn run() {
                 return;
             };
             let app = webview.app_handle().clone();
+            let account_generation = app.state::<AppState>().native_requests.account_generation();
             let drop_id = uuid::Uuid::new_v4().to_string();
             let start = commands::attachments::NativeAttachmentDropStart {
                 drop_id: drop_id.clone(),
@@ -161,8 +163,9 @@ pub fn run() {
                     x: position.x,
                     y: position.y,
                 },
+                account_generation,
             };
-            if let Err(error) = app.emit("mesh-native-attachment-drop-start", start) {
+            if let Err(error) = app.emit("mesh-native-attachment-drop-start", start.clone()) {
                 tracing::warn!("Could not deliver native attachment drop start: {error}");
                 return;
             }
@@ -173,17 +176,25 @@ pub fn run() {
             let expose_legacy_path =
                 app.state::<AppState>().backend.kind() == BackendKind::LegacyP2p;
             let paths = paths.clone();
-            let (x, y) = (position.x, position.y);
             tauri::async_runtime::spawn(async move {
-                let payload = commands::attachments::grant_native_drop(
+                let payload = match commands::attachments::grant_native_drop(
                     &store,
-                    drop_id,
+                    app.state::<AppState>().inner(),
+                    start.clone(),
                     paths,
-                    x,
-                    y,
                     expose_legacy_path,
                 )
-                .await;
+                .await
+                {
+                    Ok(payload) => payload,
+                    Err(error) => commands::attachments::NativeAttachmentDrop {
+                        drop_id: start.drop_id,
+                        position: start.position,
+                        files: Vec::new(),
+                        errors: vec![error.to_string()],
+                        account_scope: None,
+                    },
+                };
                 if let Err(error) = app.emit("mesh-native-attachment-drop", payload) {
                     tracing::warn!("Could not deliver native attachment drop: {error}");
                 }
@@ -192,16 +203,42 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_notification::init());
     let builder = builder.setup(|app| {
         // Initialize SQLite database
-        let app_data_dir = app
-            .path()
-            .app_data_dir()
-            .expect("failed to resolve app data dir");
+        let app_data_dir = match app.path().app_data_dir() {
+            Ok(path) => path,
+            Err(_) => {
+                startup_recovery::report_and_exit(
+                    app,
+                    &startup_recovery::fallback_marker_directory(),
+                    startup_recovery::StartupFailure::new(
+                        startup_recovery::StartupFailureKind::AppData,
+                    ),
+                );
+                return Ok(());
+            }
+        };
+        if let Err(error) = std::fs::create_dir_all(&app_data_dir) {
+            startup_recovery::report_and_exit(
+                app,
+                &startup_recovery::fallback_marker_directory(),
+                startup_recovery::StartupFailure::from_app_data_io(&error),
+            );
+            return Ok(());
+        }
         crash_report::install(&app_data_dir, &app.package_info().version.to_string());
         app.manage(commands::attachments::AttachmentGrantStore::default());
         commands::attachments::schedule_startup_cleanup(app.handle().clone());
         #[cfg(feature = "legacy-p2p")]
-        let db = storage::Database::new(app_data_dir.clone())
-            .expect("failed to initialize legacy database");
+        let db = match storage::Database::new(app_data_dir.clone()) {
+            Ok(database) => database,
+            Err(error) => {
+                startup_recovery::report_and_exit(
+                    app,
+                    &app_data_dir,
+                    startup_recovery::StartupFailure::from_database(&error),
+                );
+                return Ok(());
+            }
+        };
 
         // Purge any stale entries from the pending_messages queue.
         // Previous versions queued messages on gossipsub InsufficientPeers,
@@ -236,6 +273,7 @@ pub fn run() {
         app.manage(commands::notifications::NotificationRuntimeState::default());
         commands::notifications::configure_tray(app);
 
+        let startup_marker_directory = app_data_dir.clone();
         let app_state = AppState::with_data_dir(app_data_dir);
         #[cfg(feature = "legacy-p2p")]
         let backend_kind = app_state.backend.kind();
@@ -320,11 +358,14 @@ pub fn run() {
         tauri::async_runtime::spawn(async move {
             let state = app_handle.state::<AppState>();
             if let Err(error) = state.backend.backend().start().await {
-                tracing::error!(
-                    target: "mesh::startup",
-                    backend = state.backend.kind().as_str(),
-                    "Failed to start backend: {error}"
+                let failure = startup_recovery::StartupFailure::from_backend(&error);
+                tracing::error!(target: "mesh::startup", "The selected communication service could not start");
+                startup_recovery::report_handle_and_exit(
+                    &app_handle,
+                    &startup_marker_directory,
+                    failure,
                 );
+                return;
             }
 
             if state.backend.kind() != BackendKind::LegacyP2p {
@@ -358,9 +399,14 @@ pub fn run() {
                                     tracing::info!("Network started successfully");
                                 }
                             }
-                            Err(error) => {
-                                tracing::error!(
-                                    "Could not load the local identity from the OS credential store: {error}"
+                            Err(_) => {
+                                tracing::error!("Could not load the local identity from secure account storage");
+                                startup_recovery::report_handle_and_exit(
+                                    &app_handle,
+                                    &startup_marker_directory,
+                                    startup_recovery::StartupFailure::new(
+                                        startup_recovery::StartupFailureKind::Keychain,
+                                    ),
                                 );
                             }
                         }
@@ -368,9 +414,14 @@ pub fn run() {
                     Ok(false) => {
                         tracing::info!("No identity found, waiting for onboarding...");
                     }
-                    Err(error) => {
-                        tracing::error!(
-                            "Could not inspect the OS credential store for the local identity: {error}"
+                    Err(_) => {
+                        tracing::error!("Could not inspect secure account storage for the local identity");
+                        startup_recovery::report_handle_and_exit(
+                            &app_handle,
+                            &startup_marker_directory,
+                            startup_recovery::StartupFailure::new(
+                                startup_recovery::StartupFailureKind::Keychain,
+                            ),
                         );
                     }
                 }
@@ -385,14 +436,17 @@ pub fn run() {
     #[cfg(not(feature = "legacy-p2p"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::attachments::pick_attachment_grants,
+        commands::attachments::pick_custom_emoji_grant,
         commands::attachments::accept_attachment_drop_grants,
         commands::attachments::discard_attachment_grant,
         commands::attachments::discard_staged_attachment,
         commands::attachments::open_downloaded_file,
         commands::external::open_external_url,
         commands::backend::get_backend_status,
+        commands::notifications::get_notification_account_scope,
         commands::notifications::set_notification_context,
         commands::notifications::send_test_notification,
+        commands::native_requests::cancel_native_request,
         commands::pending_invitation::peek_pending_invitation,
         commands::pending_invitation::join_pending_invitation,
         commands::pending_invitation::clear_pending_invitation,
@@ -400,6 +454,7 @@ pub fn run() {
         commands::backend::matrix_room_upgrade,
         commands::backend::matrix_get_room_notification_mode,
         commands::backend::matrix_set_room_notification_mode,
+        commands::backend::matrix_reserve_login_attempt,
         commands::backend::matrix_login,
         commands::backend::register_account,
         commands::backend::check_username_available,
@@ -410,6 +465,7 @@ pub fn run() {
         commands::backend::matrix_restore_session,
         commands::backend::matrix_logout,
         commands::backend::matrix_devices,
+        commands::backend::request_destructive_action_grant,
         commands::backend::matrix_revoke_device,
         commands::backend::matrix_remove_local_account,
         commands::backend::matrix_export_personal_data,
@@ -457,6 +513,11 @@ pub fn run() {
         commands::backend::matrix_load_attachment_image,
         commands::backend::matrix_cancel_attachment_download,
         commands::backend::matrix_dm_conversations,
+        commands::backend::matrix_dm_requests,
+        commands::backend::matrix_blocked_accounts,
+        commands::backend::matrix_accept_dm_request,
+        commands::backend::matrix_decline_dm_request,
+        commands::backend::matrix_block_dm_request,
         commands::backend::matrix_ensure_dm,
         commands::backend::matrix_dm_messages,
         commands::backend::matrix_send_dm,
@@ -465,6 +526,7 @@ pub fn run() {
         commands::backend::matrix_set_dm_blocked,
         commands::backend::matrix_dm_blocked,
         commands::backend::matrix_get_messages,
+        commands::backend::matrix_thread_context,
         commands::backend::matrix_edit_message,
         commands::backend::matrix_redact_message,
         commands::backend::matrix_report_message,
@@ -472,6 +534,8 @@ pub fn run() {
         commands::backend::matrix_room_pins,
         commands::backend::matrix_toggle_room_pin,
         commands::backend::matrix_mark_read,
+        commands::backend::matrix_mark_thread_read,
+        commands::backend::matrix_mark_rooms_read,
         commands::backend::matrix_set_typing,
         commands::backend::matrix_typing_users,
         commands::backend::matrix_search_messages,
@@ -503,6 +567,7 @@ pub fn run() {
     #[cfg(feature = "legacy-p2p")]
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::attachments::pick_attachment_grants,
+        commands::attachments::pick_custom_emoji_grant,
         commands::attachments::accept_attachment_drop_grants,
         commands::attachments::discard_attachment_grant,
         commands::attachments::discard_staged_attachment,
@@ -510,8 +575,10 @@ pub fn run() {
         commands::external::open_external_url,
         // Backend / Matrix architecture spike
         commands::backend::get_backend_status,
+        commands::notifications::get_notification_account_scope,
         commands::notifications::set_notification_context,
         commands::notifications::send_test_notification,
+        commands::native_requests::cancel_native_request,
         commands::pending_invitation::peek_pending_invitation,
         commands::pending_invitation::join_pending_invitation,
         commands::pending_invitation::clear_pending_invitation,
@@ -519,6 +586,7 @@ pub fn run() {
         commands::backend::matrix_room_upgrade,
         commands::backend::matrix_get_room_notification_mode,
         commands::backend::matrix_set_room_notification_mode,
+        commands::backend::matrix_reserve_login_attempt,
         commands::backend::matrix_login,
         commands::backend::register_account,
         commands::backend::check_username_available,
@@ -529,6 +597,7 @@ pub fn run() {
         commands::backend::matrix_restore_session,
         commands::backend::matrix_logout,
         commands::backend::matrix_devices,
+        commands::backend::request_destructive_action_grant,
         commands::backend::matrix_revoke_device,
         commands::backend::matrix_remove_local_account,
         commands::backend::matrix_export_personal_data,
@@ -576,6 +645,11 @@ pub fn run() {
         commands::backend::matrix_load_attachment_image,
         commands::backend::matrix_cancel_attachment_download,
         commands::backend::matrix_dm_conversations,
+        commands::backend::matrix_dm_requests,
+        commands::backend::matrix_blocked_accounts,
+        commands::backend::matrix_accept_dm_request,
+        commands::backend::matrix_decline_dm_request,
+        commands::backend::matrix_block_dm_request,
         commands::backend::matrix_ensure_dm,
         commands::backend::matrix_dm_messages,
         commands::backend::matrix_send_dm,
@@ -584,6 +658,7 @@ pub fn run() {
         commands::backend::matrix_set_dm_blocked,
         commands::backend::matrix_dm_blocked,
         commands::backend::matrix_get_messages,
+        commands::backend::matrix_thread_context,
         commands::backend::matrix_edit_message,
         commands::backend::matrix_redact_message,
         commands::backend::matrix_report_message,
@@ -591,6 +666,8 @@ pub fn run() {
         commands::backend::matrix_room_pins,
         commands::backend::matrix_toggle_room_pin,
         commands::backend::matrix_mark_read,
+        commands::backend::matrix_mark_thread_read,
+        commands::backend::matrix_mark_rooms_read,
         commands::backend::matrix_set_typing,
         commands::backend::matrix_typing_users,
         commands::backend::matrix_search_messages,
@@ -681,9 +758,31 @@ pub fn run() {
         commands::dm::mark_dm_read,
     ]);
 
-    builder
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    let app = match builder.build(tauri::generate_context!()) {
+        Ok(app) => app,
+        Err(_) => {
+            tracing::error!(target: "mesh::startup", "The native application runtime could not be built");
+            startup_recovery::show_runtime_build_failure();
+            return;
+        }
+    };
+    app.run(|app_handle, event| {
+        if !matches!(event, tauri::RunEvent::Exit) {
+            return;
+        }
+        let Some(state) = app_handle.try_state::<AppState>() else {
+            return;
+        };
+        if let Err(error) = tauri::async_runtime::block_on(state.backend.backend().shutdown()) {
+            // A subsequent startup repeats fail-closed scavenging before
+            // restoring an account. Never treat an exit cleanup failure as a
+            // successful deletion claim.
+            tracing::error!(
+                target: "mesh::privacy",
+                "Mesh could not remove all decrypted session media during exit: {error}"
+            );
+        }
+    });
 }
 
 #[cfg(test)]

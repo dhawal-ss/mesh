@@ -365,6 +365,23 @@ describe('VoiceEngine integration (with FakeVoicePeer)', () => {
     ))
   })
 
+  it('keeps missing relay details out of the ordinary voice warning', async () => {
+    const warnings: string[] = []
+    const localEngine = new VoiceEngine(
+      COMMUNITY_ID,
+      CHANNEL_ID,
+      { onConnectionWarning: (message) => warnings.push(message) },
+      factory,
+    )
+
+    await localEngine.loadIceServers()
+
+    expect(warnings).toEqual([
+      'Voice may not connect on this network. Try another network or ask the community owner for help.',
+    ])
+    expect(warnings.join(' ')).not.toMatch(/relay|firewall|TURN|NAT/i)
+  })
+
   // ─── Media-path simulation ────────────────────────
   //
   // These tests simulate the full signal → connect → stream lifecycle

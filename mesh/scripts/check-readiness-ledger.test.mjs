@@ -2,7 +2,10 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import './protected-readiness-evidence.test.mjs'
+import './protected-external-acceptance.test.mjs'
 import {
+  DEFERRED_RELEASE_GATES,
   REQUIRED_RELEASE_GATES,
   ledgerPathFromGitRoot,
   validateReadinessLedger,
@@ -69,10 +72,41 @@ describe('readiness ledger validator', () => {
 
   it('requires the explicit external release gate contract', () => {
     const errors = validateReadinessLedger(ledger(), { enforceGateContract: true })
-    assert.equal(REQUIRED_RELEASE_GATES.length, 11)
+    assert.equal(REQUIRED_RELEASE_GATES.length, 12)
+    assert.equal(DEFERRED_RELEASE_GATES.length, 3)
     assert.ok(errors.some((error) => error.includes('r1.provider-identity-lifecycle')))
+    assert.ok(errors.some((error) => error.includes('r1.admission-openid-verifier')))
     assert.ok(errors.some((error) => error.includes('r4.native-invitation-delivery')))
     assert.ok(errors.some((error) => error.includes('r4.manual-accessibility-cross-platform')))
+  })
+
+  it('rejects making owner-deferred capabilities beta requirements', () => {
+    const deferredGates = DEFERRED_RELEASE_GATES.map(({ id }) => gate({
+      id,
+      milestone: 'R1',
+      required: true,
+      status: 'blocked',
+      evidence: {
+        testedCommit: null,
+        testedTreeHash: null,
+        command: null,
+        artifactPath: null,
+        artifactUri: null,
+        artifactSha256: null,
+        environment: null,
+        collectedAt: null,
+        expiresAt: null,
+      },
+      blockReason: 'disabled for beta',
+      nextAction: 'review after beta',
+    }))
+    const errors = validateReadinessLedger(
+      ledger({ gates: [...deferredGates, ...REQUIRED_RELEASE_GATES.map((expected) => gate(expected))] }),
+      { enforceGateContract: true },
+    )
+    for (const expected of DEFERRED_RELEASE_GATES) {
+      assert.ok(errors.some((error) => error.includes(`${expected.id}.required must be false`)))
+    }
   })
 
   it('accepts immutable external evidence metadata for a live pass', () => {
@@ -102,12 +136,84 @@ describe('readiness ledger validator', () => {
     assert.ok(errors.some((error) => error.includes('must not contain credentials')))
   })
 
+  it('rejects mutable and cross-SHA evidence URLs', () => {
+    for (const artifactUri of [
+      'https://github.com/example/mesh/releases/latest',
+      `https://github.com/example/mesh/actions/runs/123/artifacts/${'b'.repeat(40)}`,
+    ]) {
+      const document = ledger({ gates: [gate({ evidence: { ...baseEvidence, artifactPath: null, artifactUri } })] })
+      const errors = validateReadinessLedger(document, { now: new Date('2026-08-01T00:00:00Z') })
+      assert.ok(errors.some((error) => error.includes('mutable or latest') || error.includes('another source SHA')))
+    }
+  })
+
+  it('requires an immutable protected manifest for release-relevant R0 evidence', () => {
+    const document = ledger({
+      gates: [gate({
+        releaseStatus: 'local-pass',
+        status: 'local-pass',
+        evidence: { ...baseEvidence, artifactPath: null, artifactUri: null, artifactSha256: null },
+        nextAction: 'retain protected evidence',
+      })],
+    })
+    const errors = validateReadinessLedger(document, { milestone: 'R0', requireLive: true, now: new Date('2026-08-01T00:00:00Z') })
+    assert.ok(errors.some((error) => error.includes('protected artifact URI')))
+    assert.ok(errors.some((error) => error.includes('artifact digest')))
+  })
+
+  it('requires an explicit milestone for live CLI validation', () => {
+    const errors = validateReadinessLedger(ledger(), { requireLive: true })
+    assert.ok(errors.some((error) => error.includes('--require-live requires an explicit --milestone')))
+  })
+
+  it('rejects a foreign protected artifact URL in release mode', () => {
+    const document = ledger({
+      gates: [gate({
+        releaseStatus: 'local-pass',
+        status: 'local-pass',
+        evidence: {
+          ...baseEvidence,
+          artifactPath: null,
+          artifactUri: 'https://github.com/example/mesh/actions/runs/123/artifacts/456',
+        },
+        nextAction: 'retain protected evidence',
+      })],
+    })
+    const errors = validateReadinessLedger(document, {
+      milestone: 'R0',
+      requireLive: true,
+      now: new Date('2026-08-01T00:00:00Z'),
+    })
+    assert.ok(errors.some((error) => error.includes('dhawal-ss/mesh GitHub Actions artifact URL')))
+  })
+
   it('rejects a required non-live gate in release mode', () => {
     const errors = validateReadinessLedger(
       ledger({ gates: [gate({ status: 'blocked', blockReason: 'not ready', nextAction: 'run it' })] }),
       { milestone: 'R2', requireLive: true },
     )
     assert.ok(errors.some((error) => error.includes('minimum is live-pass')))
+  })
+
+  it('requires a protected artifact and exact run attempt for external release evidence', () => {
+    const document = ledger({
+      gates: [gate({
+        id: 'r2.signed-windows-beta',
+        milestone: 'R2',
+        evidence: {
+          ...baseEvidence,
+          artifactPath: null,
+          artifactUri: 'https://github.com/example/mesh/actions/runs/123/artifacts/456',
+        },
+      })],
+    })
+    const errors = validateReadinessLedger(document, {
+      milestone: 'R2',
+      requireLive: true,
+      now: new Date('2026-08-01T00:00:00Z'),
+    })
+    assert.ok(errors.some((error) => error.includes('dhawal-ss/mesh GitHub Actions artifact URL')))
+    assert.ok(errors.some((error) => error.includes('exact GitHub Actions run attempt')))
   })
 
   it('rejects evidence from another snapshot', () => {

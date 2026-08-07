@@ -47,7 +47,7 @@ $script:AllowedArtifactKinds = @(
     "screenshot",
     "operator-record"
 )
-$script:ExpectedLiveKitImage = "livekit/livekit-server:v1.13.1@sha256:2c6869d2d5ff6c9c0166f47be1c92dad6928bfecfa5e4060a6ece48db8accfa3"
+$script:ExpectedLiveKitImage = "livekit/livekit-server:v1.13.5@sha256:3497163e15c48fef6e7830c78716f9e9d5edc28abf7aa90b61c86e93bbc306b1"
 $script:ExpectedAuthorizationImage = "ghcr.io/element-hq/lk-jwt-service:0.4.4@sha256:9c715697c6f7c1f538f2ee41b7b59b04a8d06bf790a7cc8c8517ccac8d28813d"
 
 function Get-EvidenceProperty {
@@ -87,6 +87,38 @@ function Test-EvidenceMatrixServerName {
     }
     $portMatch = [regex]::Match($Value, ":([0-9]+)$")
     return -not $portMatch.Success -or [int]$portMatch.Groups[1].Value -le 65535
+}
+
+function Test-EvidenceServiceEndpoint {
+    param(
+        [AllowNull()][string]$Value,
+        [Parameter(Mandatory)][string]$Scheme
+    )
+
+    if (Test-EvidencePlaceholder $Value) {
+        return $false
+    }
+
+    # TURN server URLs use the RFC 7065 ICE URI shape rather than an HTTP URL.
+    # Require the external_tls port LiveKit actually advertises and an explicit
+    # TCP transport so evidence cannot accidentally describe the private 5349
+    # backend hop or an untested UDP route.
+    if ($Scheme -eq "turns") {
+        return $Value -match (
+            '^turns:(?://)?' +
+            '[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?' +
+            ':443\?transport=tcp$'
+        )
+    }
+
+    $parsed = $null
+    return [Uri]::TryCreate($Value, [UriKind]::Absolute, [ref]$parsed) -and
+        $parsed.Scheme -eq $Scheme -and
+        -not $parsed.UserInfo -and
+        -not $parsed.Query -and
+        -not $parsed.Fragment -and
+        $parsed.Port -eq 443 -and
+        $parsed.Host -match '^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$'
 }
 
 function Test-EvidenceTimestamp {
@@ -708,11 +740,10 @@ function Test-MatrixRtcAcceptanceEvidence {
             @{ Name = "turnEndpoint"; Scheme = "turns" }
         )) {
             $value = [string](Get-EvidenceProperty $services $serviceField.Name)
-            $parsed = $null
-            if ((Test-EvidencePlaceholder $value) -or
-                -not [Uri]::TryCreate($value, [UriKind]::Absolute, [ref]$parsed) -or
-                $parsed.Scheme -ne $serviceField.Scheme -or $parsed.UserInfo) {
-                $failures.Add("Live MatrixRTC evidence field services.$($serviceField.Name) must be a sanitized $($serviceField.Scheme) endpoint.")
+            if (-not (Test-EvidenceServiceEndpoint `
+                -Value $value `
+                -Scheme $serviceField.Scheme)) {
+                $failures.Add("Live MatrixRTC evidence field services.$($serviceField.Name) must be a sanitized $($serviceField.Scheme) endpoint on the reviewed public port without credentials, fragments, or unreviewed query parameters.")
             }
         }
 

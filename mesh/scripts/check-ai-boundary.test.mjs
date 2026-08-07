@@ -31,6 +31,25 @@ test('rejects hyphenated and renamed network AI crates in Cargo manifests', () =
   assert.ok(dependencyNames.some((message) => message.includes('cohere-rust')))
 })
 
+test('rejects npm AI providers hidden behind generic dependency aliases', () => {
+  const violations = analyzeAiBoundary(path.join(fixtureRoot, 'blocked-provider-alias'))
+  const dependencyMessages = violations
+    .filter((violation) => violation.rule === 'network-ai-dependency')
+    .map((violation) => violation.message)
+
+  assert.ok(dependencyMessages.some((message) => message.includes('openai')))
+  assert.ok(dependencyMessages.some((message) => message.includes('@anthropic-ai/sdk')))
+})
+
+test('rejects unknown network hosts from an otherwise local-only AI module', () => {
+  const violations = analyzeAiBoundary(path.join(fixtureRoot, 'blocked-unknown-host'))
+
+  assert.ok(violations.some(
+    (violation) => violation.rule === 'network-ai-endpoint'
+      && violation.message.includes('models.unreviewed.example'),
+  ))
+})
+
 test('rejects send and moderation authority from an otherwise local AI module', () => {
   const violations = analyzeAiBoundary(path.join(fixtureRoot, 'blocked-authority'))
 

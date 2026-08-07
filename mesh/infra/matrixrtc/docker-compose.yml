@@ -4,7 +4,7 @@ name: mesh-matrixrtc
 # the host reverse proxy and keep the HTTP control ports loopback-only.
 services:
   livekit:
-    image: livekit/livekit-server:v1.13.1@sha256:2c6869d2d5ff6c9c0166f47be1c92dad6928bfecfa5e4060a6ece48db8accfa3
+    image: livekit/livekit-server:v1.13.5@sha256:3497163e15c48fef6e7830c78716f9e9d5edc28abf7aa90b61c86e93bbc306b1
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
@@ -13,7 +13,10 @@ services:
     # its first API request; reversing this order can lose early leave events.
     depends_on:
       matrixrtc-auth:
-        condition: service_healthy
+        # The pinned authorization image is scratch-based and has no shell or
+        # healthcheck helper. Readiness is probed through /healthz by preflight
+        # and operator smoke before discovery is enabled.
+        condition: service_started
     environment:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY in the operator environment}: ${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET in the operator environment}"
       LIVEKIT_CONFIG: |
@@ -28,7 +31,8 @@ services:
           auto_create: false
           empty_timeout: 300
           departure_timeout: 20
-        prometheus_port: 6789
+        prometheus:
+          port: 6789
         webhook:
           api_key: ${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY in the operator environment}
           urls:
@@ -38,16 +42,31 @@ services:
           domain: ${LIVEKIT_TURN_DOMAIN:?Set LIVEKIT_TURN_DOMAIN to the certificate hostname}
           tls_port: 5349
           udp_port: 3478
+          # TURN relay sockets are separate from the SFU RTC sockets. They
+          # must be bounded and published explicitly when Compose bridge
+          # networking is used or allocations succeed but media cannot flow.
+          relay_range_start: 50101
+          relay_range_end: 50200
           external_tls: true
+          # LiveKit advertises external TURN/TLS on public TCP 443. A trusted
+          # L4 terminator must forward it to the loopback-only plaintext 5349
+          # mapping below.
     ports:
-      - "${MATRIXRTC_CONTROL_BIND:-127.0.0.1}:7880:7880/tcp"
-      - "${MATRIXRTC_METRICS_BIND:-127.0.0.1}:6789:6789/tcp"
+      - "${MATRIXRTC_CONTROL_BIND:-127.0.0.1}:${MATRIXRTC_LIVEKIT_HTTP_PORT:-7880}:7880/tcp"
+      - "${MATRIXRTC_METRICS_BIND:-127.0.0.1}:${MATRIXRTC_METRICS_PORT:-6789}:6789/tcp"
       - "7881:7881/tcp"
       - "3478:3478/udp"
       # external_tls means this is plaintext behind the trusted L4 TLS
       # terminator. Keep it loopback/private and never expose it directly.
       - "${MATRIXRTC_TURN_TLS_BIND:-127.0.0.1}:5349:5349/tcp"
       - "50000-50100:50000-50100/udp"
+      - "50101-50200:50101-50200/udp"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:7880/"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -81,14 +100,8 @@ services:
       LIVEKIT_JWT_BIND: ":8080"
       # Pull-based fallback for a missed signed SFU webhook.
       LIVEKIT_SANITY_CHECK_INTERVAL_SECONDS: "30"
-    healthcheck:
-      test: ["CMD", "/lk-jwt-service-healthcheck"]
-      interval: 10s
-      timeout: 3s
-      retries: 6
-      start_period: 10s
     ports:
-      - "${MATRIXRTC_CONTROL_BIND:-127.0.0.1}:8080:8080/tcp"
+      - "${MATRIXRTC_CONTROL_BIND:-127.0.0.1}:${MATRIXRTC_AUTH_HTTP_PORT:-8080}:8080/tcp"
     read_only: true
     tmpfs:
       - /tmp:size=32m,mode=1777

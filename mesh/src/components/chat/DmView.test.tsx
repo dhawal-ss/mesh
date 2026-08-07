@@ -6,6 +6,15 @@ const composerHarness = vi.hoisted(() => ({
   onSend: null as null | ((content: string) => Promise<void>),
   onEditLastMessage: null as null | (() => void),
   disabled: false,
+  placeholder: null as string | null,
+}))
+
+const interfaceSoundHarness = vi.hoisted(() => ({
+  play: vi.fn(async () => true),
+}))
+
+vi.mock('../../lib/interface-sounds', () => ({
+  playInterfaceSound: interfaceSoundHarness.play,
 }))
 
 vi.mock('./MessageInput', () => ({
@@ -13,14 +22,17 @@ vi.mock('./MessageInput', () => ({
     onSend,
     onEditLastMessage,
     disabled,
+    placeholder,
   }: {
     onSend: (content: string) => Promise<void>
     onEditLastMessage?: () => void
     disabled?: boolean
+    placeholder?: string
   }) => {
     composerHarness.onSend = onSend
     composerHarness.onEditLastMessage = onEditLastMessage ?? null
     composerHarness.disabled = Boolean(disabled)
+    composerHarness.placeholder = placeholder ?? null
     return <div>Message composer remains available</div>
   },
 }))
@@ -33,6 +45,7 @@ import * as bridge from '../../lib/bridge'
 import { useDmStore } from '../../store/dms'
 import { useIdentityStore } from '../../store/identity'
 import { useMessageStore } from '../../store/messages'
+import { useMeshNavigationStore } from '../../store/navigation'
 import type { DirectMessage } from '../../types/ipc'
 import { DmView } from './DmView'
 
@@ -119,9 +132,18 @@ describe('DmView message containment', () => {
       channelRecency: [],
       matrixQueueStates: {},
     })
+    localStorage.clear()
+    useMeshNavigationStore.getState().clearAccount()
+    useMeshNavigationStore.getState().initialize('@me:example.org')
+    useMeshNavigationStore.getState().navigate({
+      kind: 'direct',
+      conversationId: 'conversation-1',
+    })
     composerHarness.onSend = null
     composerHarness.onEditLastMessage = null
     composerHarness.disabled = false
+    composerHarness.placeholder = null
+    interfaceSoundHarness.play.mockClear()
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(false)
     vi.spyOn(bridge, 'onDmReceived').mockResolvedValue(() => {})
@@ -173,6 +195,7 @@ describe('DmView message containment', () => {
     expect(emptyState?.getAttribute('aria-labelledby')).toBe(title?.id)
     expect(emptyState?.getAttribute('aria-describedby')).toBe(description?.id)
     expect(emptyState?.querySelector('.border-dashed')).toBeNull()
+    expect(composerHarness.placeholder).toBe('Message Peer')
   })
 
   it('does not show or mark an empty conversation after a failed hydration and retries', async () => {
@@ -223,6 +246,45 @@ describe('DmView message containment', () => {
     expect(container.textContent).toContain(
       'Sending is unavailable because this conversation is not protected end to end.',
     )
+  })
+
+  it('fails closed and retries when the blocked-account setting cannot be checked', async () => {
+    vi.mocked(bridge.isMatrixBackend).mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@me:example.org')
+    vi.spyOn(bridge, 'getDmMessages').mockResolvedValue([])
+    const blockedLookup = vi.spyOn(bridge, 'matrixDmBlocked')
+      .mockRejectedValueOnce(new Error('account data unavailable'))
+      .mockResolvedValueOnce(false)
+    vi.spyOn(bridge, 'matrixRoomIsEncrypted').mockResolvedValue(true)
+    vi.spyOn(bridge, 'matrixWaitForRoomUpdate').mockReturnValue(new Promise(() => {}))
+    const sendMessage = vi.spyOn(bridge, 'sendMessage')
+
+    await act(async () => {
+      root.render(<DmView />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(composerHarness.disabled).toBe(true)
+    expect(container.textContent).toContain(
+      "Mesh couldn't check whether this account is blocked. Sending stays off until that check succeeds.",
+    )
+    await act(async () => {
+      await composerHarness.onSend?.('Do not send while safety state is unknown')
+    })
+    expect(sendMessage).not.toHaveBeenCalled()
+
+    const retry = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Retry safety check')
+    await act(async () => {
+      retry?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(blockedLookup).toHaveBeenCalledTimes(2)
+    expect(composerHarness.disabled).toBe(false)
+    expect(container.textContent).not.toContain('Retry safety check')
   })
 
   it('surfaces and retries a DM mark-read failure after hydration', async () => {
@@ -292,6 +354,60 @@ describe('DmView message containment', () => {
     )
   })
 
+  it('keeps the account address and moderation controls inside the typed Safety pane', async () => {
+    vi.mocked(bridge.isMatrixBackend).mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@me:example.org')
+    vi.spyOn(bridge, 'getDmMessages').mockResolvedValue([
+      {
+        ...directMessage('$peer-safety-event:example.org', 'Latest reportable message'),
+        authorPublicKey: '@peer:example.org',
+      },
+    ])
+    vi.spyOn(bridge, 'matrixDmBlocked').mockResolvedValue(false)
+    vi.spyOn(bridge, 'matrixSetDmBlocked').mockResolvedValue(true)
+    vi.spyOn(bridge, 'matrixRoomIsEncrypted').mockResolvedValue(true)
+    vi.spyOn(bridge, 'matrixWaitForRoomUpdate').mockReturnValue(new Promise(() => {}))
+
+    await act(async () => {
+      root.render(<DmView />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).not.toContain('@peer:example.org')
+    expect(container.textContent).not.toContain('Block Peer')
+
+    const safetyButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open Safety with Peer"]',
+    )
+    await act(async () => safetyButton?.click())
+
+    const safetyPanel = container.querySelector<HTMLElement>('#mesh-dm-safety-panel')
+    expect(safetyPanel?.getAttribute('aria-label')).toBe('Safety with Peer')
+    expect(safetyPanel?.textContent).toContain('Report latest message')
+    expect(safetyPanel?.textContent).toContain('Block Peer')
+    expect(safetyPanel?.textContent).not.toContain('@peer:example.org')
+
+    const revealAddress = [...safetyPanel!.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Show account address')
+    await act(async () => revealAddress?.click())
+    expect(safetyPanel?.textContent).toContain('@peer:example.org')
+    expect(safetyPanel?.querySelector('button[aria-label="Copy account address for Peer"]')).not.toBeNull()
+
+    const block = [...safetyPanel!.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Block Peer')
+    await act(async () => {
+      block?.click()
+      await Promise.resolve()
+    })
+    expect(bridge.matrixSetDmBlocked).toHaveBeenCalledWith('@peer:example.org', true)
+    expect(container.querySelector('#mesh-dm-safety-panel')).toBeNull()
+    expect(useDmStore.getState().conversationEntities['conversation-1']).toBeUndefined()
+    expect(useDmStore.getState().activeConversationId).toBeNull()
+    expect(container.textContent).toContain('Select a conversation')
+    expect(container.textContent).not.toContain('@peer:example.org')
+  })
+
   it('uses the same no-read-receipt presentation as channel rows', async () => {
     vi.mocked(bridge.isMatrixBackend).mockReturnValue(true)
     vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@me:example.org')
@@ -350,9 +466,9 @@ describe('DmView message containment', () => {
       await composerHarness.onSend?.('Saved for delivery')
     })
 
-    expect(container.textContent).toContain('Delivery needs attention.')
+    expect(container.textContent).toContain('Could not send.')
     const retry = [...container.querySelectorAll<HTMLButtonElement>('button')]
-      .find((button) => button.textContent === 'Retry')
+      .find((button) => button.textContent === 'Try again')
     expect(retry).toBeDefined()
 
     await act(async () => {
@@ -360,11 +476,12 @@ describe('DmView message containment', () => {
       await Promise.resolve()
     })
     expect(sendMessage).toHaveBeenCalledTimes(2)
-    expect(container.textContent).toContain('Waiting to send')
+    expect(container.textContent).toContain('Saved for later')
+    expect(interfaceSoundHarness.play).toHaveBeenCalledWith('message-failed')
   })
 
-  it('keeps a five-thousand-message conversation DOM bounded', async () => {
-    const messages = Array.from({ length: 5_000 }, (_, index) => ({
+  it('keeps a ten-thousand-message conversation DOM bounded', async () => {
+    const messages = Array.from({ length: 10_000 }, (_, index) => ({
       ...directMessage(`event-${index}`, `Message ${index}`),
       authorPublicKey: index % 2 === 0 ? '@peer:example.org' : '@me:example.org',
     }))
@@ -380,6 +497,116 @@ describe('DmView message containment', () => {
     expect(renderedMessages.length).toBeGreaterThan(0)
     expect(renderedMessages.length).toBeLessThan(100)
     expect(container.textContent).toContain('Message 0')
-    expect(container.textContent).not.toContain('Message 4999')
+    expect(container.textContent).not.toContain('Message 9999')
+  })
+
+  it('opens thread replies in the typed secondary pane instead of expanding the timeline', async () => {
+    vi.spyOn(bridge, 'getDmMessages').mockResolvedValue([
+      directMessage('$thread-root', 'Main timeline question'),
+      {
+        ...directMessage('$thread-reply', 'Focused thread answer'),
+        threadRootId: '$thread-root',
+        replyToId: '$thread-root',
+      },
+    ])
+
+    await act(async () => {
+      root.render(<DmView />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const threadButton = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === '1 reply')
+    await act(async () => {
+      threadButton?.click()
+      await import('./ThreadPanel')
+      await Promise.resolve()
+    })
+
+    const navigation = useMeshNavigationStore.getState()
+    expect(navigation.entries[navigation.index]).toEqual({
+      kind: 'direct',
+      conversationId: 'conversation-1',
+      pane: { kind: 'thread', rootEventId: '$thread-root' },
+    })
+    expect(container.querySelector('[role="log"] [aria-label="Thread replies"]')).toBeNull()
+    expect(container.querySelector('#mesh-thread-panel')?.textContent).toContain('Focused thread answer')
+
+    const replyInThread = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Reply in thread')
+    await act(async () => replyInThread?.click())
+    expect(container.textContent).toContain('In thread ·')
+    expect(container.textContent).toContain('Replying to $thread-root')
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(container.querySelector('#mesh-thread-panel')).toBeNull()
+    expect(document.activeElement?.getAttribute('aria-label')).toBe(
+      'Open thread for message from $thread-root, 1 reply',
+    )
+  })
+
+  it('hydrates an older Matrix thread that is outside the bounded DM timeline', async () => {
+    vi.mocked(bridge.isMatrixBackend).mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@me:example.org')
+    vi.spyOn(bridge, 'getDmMessages').mockResolvedValue([])
+    vi.spyOn(bridge, 'matrixDmBlocked').mockResolvedValue(false)
+    vi.spyOn(bridge, 'matrixRoomIsEncrypted').mockResolvedValue(true)
+    vi.spyOn(bridge, 'matrixWaitForRoomUpdate').mockReturnValue(new Promise(() => {}))
+    vi.spyOn(bridge, 'markThreadRead').mockResolvedValue()
+    vi.spyOn(bridge, 'matrixThreadContext').mockResolvedValue({
+      root: {
+        id: '$old-root',
+        channelId: 'conversation-1',
+        authorPublicKey: '@peer:example.org',
+        authorDisplayName: 'Peer',
+        authorAvatarColor: '#52b5f4',
+        content: 'Older hydrated root',
+        attachments: [],
+        reactions: {},
+        timestamp: '2026-07-01T12:00:00.000Z',
+        signature: '',
+      },
+      replies: [{
+        id: '$old-reply',
+        channelId: 'conversation-1',
+        authorPublicKey: '@peer:example.org',
+        authorDisplayName: 'Peer',
+        authorAvatarColor: '#52b5f4',
+        content: 'Older hydrated reply',
+        attachments: [],
+        reactions: {},
+        timestamp: '2026-07-01T12:01:00.000Z',
+        signature: '',
+        threadRootId: '$old-root',
+      }],
+      unreadCount: 1,
+      unreadMentions: 0,
+      unreadStateAvailable: true,
+      hasMore: false,
+    })
+    useMeshNavigationStore.getState().navigate({
+      kind: 'direct',
+      conversationId: 'conversation-1',
+      pane: { kind: 'thread', rootEventId: '$old-root' },
+    })
+
+    await act(async () => {
+      root.render(<DmView />)
+      await import('./ThreadPanel')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(bridge.matrixThreadContext).toHaveBeenCalledWith('conversation-1', '$old-root')
+    expect(container.querySelector('#mesh-thread-panel')?.textContent).toContain('Older hydrated root')
+    expect(container.querySelector('#mesh-thread-panel')?.textContent).toContain('Older hydrated reply')
+    expect(bridge.markThreadRead).toHaveBeenCalledWith(
+      'conversation-1',
+      '$old-root',
+      '$old-reply',
+    )
   })
 })

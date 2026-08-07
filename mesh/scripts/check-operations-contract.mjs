@@ -100,7 +100,7 @@ for (const statement of [
   assert.equal(supportPage.includes(statement), true, `public support routing is missing: ${statement}`)
 }
 
-const synapsePin = 'matrixdotorg/synapse:v1.157.1@sha256:d1fce43d7501428c461f2758dc10342555b946dc9f1d03c1b1b8aec1a4e8d130'
+const synapsePin = 'matrixdotorg/synapse:v1.157.2@sha256:097e3120b8ecf97e4f92537d7af2da41564c706e33fc740f3741c9defacc2af1'
 for (const [name, compose] of [
   ['homeserver', homeserverCompose],
   ['matrix spike', spikeCompose],
@@ -120,6 +120,13 @@ for (const [name, source] of [
 
 assert.match(ciWorkflow, /npm run check:operations-contract/)
 assert.match(releaseWorkflow, /npm run check:operations-contract/)
+assert.match(homeserverRestoreTest, /mesh_docker exec --user 991:991 "\$synapse_container"[\s\\]*\n\s*tar -czf - -C \/data/)
+assert.match(homeserverRestoreTest, /assert_host_owned_readable_file "\$test_root\/backup\/synapse-critical\.tar\.gz"/)
+assert.equal(
+  homeserverCaddy.match(/header Cache-Control "public, max-age=300"/g)?.length,
+  2,
+  'both Matrix well-known responses must use the bounded public cache policy',
+)
 
 const admissionBlock = homeserverCompose.match(/\n  admission:\n[\s\S]*?\n  caddy:\n/)?.[0] ?? ''
 assert.doesNotMatch(admissionBlock, /env_file:/)
@@ -138,7 +145,10 @@ assert.doesNotMatch(homeserverCaddy, /reverse_proxy admission/)
 assert.match(spikeSetup, /Remove-MatrixSpikeRuntimeDirectory/)
 assert.match(spikeSetup, /--entrypoint sh \$synapseImage -c/)
 assert.match(spikeSetup, /find \/mesh-cleanup -mindepth 1 -maxdepth 1 -exec rm -rf/)
-assert.match(spikeSetup, /StartsWith\(\$runtimePrefix/)
+assert.match(spikeSetup, /FileAttributes]::ReparsePoint/)
+assert.match(spikeSetup, /Refusing to clean a linked Matrix spike runtime directory/)
+assert.match(spikeSetup, /GetDirectoryName\(\$target\)/)
+assert.match(spikeSetup, /Equals\(\$targetParent, \$runtimeFullPath, \$pathComparison\)/)
 
 assert.match(matrixAcceptanceWorkflow, /for cycle in 1 2; do/)
 assert.match(matrixAcceptanceWorkflow, /setup:matrix-spike:reset/)
@@ -164,6 +174,13 @@ assert.match(secretRotation, /rollback_on_error/)
 assert.match(secretRotation, /active_previous_invites/)
 assert.match(secretRotation, /rotation-evidence/)
 assert.match(secretRotation, /MESH_ADMISSION_PREVIOUS_SIGNING_KEYS/)
+assert.match(secretRotation, /BEGIN;[\s\S]*ALTER ROLE[\s\S]*ALTER ROLE mesh_admission[\s\S]*COMMIT;/)
+assert.match(secretRotation, /MESH_ADMISSION_SERVICE_ACCESS_TOKEN=REPLACE_DURING_ROTATION/)
+assert.match(secretRotation, /revoke_admission_service_token "\$rollback_file"/)
+assert.match(secretRotation, /_matrix\/client\/v3\/logout/)
+assert.match(secretRotation, /previous="\$failed_key_id:\$failed_key"/)
+assert.match(secretRotation, /restore_failed_rotation/)
+assert.match(secretRotation, /restore_revoked_overlap/)
 assert.match(homeserverEnvExample, /^MESH_ADMISSION_SIGNING_KEY_ID=.+$/m)
 assert.match(homeserverEnvExample, /^MESH_ADMISSION_PREVIOUS_SIGNING_KEYS=/m)
 assert.match(homeserverSetup, /REPLACE_\*\)[\s\S]*MESH_ADMISSION_SIGNING_KEY_ID=/)
@@ -171,4 +188,4 @@ assert.match(admissionService, /invitation_signing_key/)
 assert.match(admissionService, /invitation_key_retired/)
 assert.match(homeserverReadme, /previous admission signing key during the overlap window/)
 
-console.log('Operations contract passed: disclosure, two-cycle evidence, safe cleanup, staged rotation, pinned Synapse, and isolated admission runtime.')
+console.log('Operations contract passed: disclosure, two-cycle evidence, link-safe cleanup, transactional full-secret rotation, pinned Synapse, and isolated admission runtime.')

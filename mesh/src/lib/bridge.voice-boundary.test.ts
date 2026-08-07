@@ -27,7 +27,7 @@ const matrixStatus: BackendStatus = {
     tokenEndpoint: null,
     livekitSfuUrl: null,
     cspReady: false,
-    mediaE2eeVerified: false,
+    mediaE2eeReady: false,
     reason: 'Voice is not configured',
   },
   authenticated: true,

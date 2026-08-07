@@ -11,8 +11,10 @@ type OnboardingIpcCall = {
 async function installUnauthenticatedMatrixMock(
   page: Page,
   currentDeepLinks: string[] | null = null,
+  capabilityFailure: string | null = null,
+  includeSavedAccount = true,
 ): Promise<void> {
-  await page.addInitScript((deepLinks) => {
+  await page.addInitScript(({ deepLinks, capabilityFailure, includeSavedAccount }) => {
     const calls: OnboardingIpcCall[] = []
     const callbacks = new Map<number, (...args: unknown[]) => void>()
     let nextCallbackId = 1
@@ -75,15 +77,22 @@ async function installUnauthenticatedMatrixMock(
         case 'get_backend_status':
           return backendStatus()
         case 'matrix_accounts':
-          return [{
+          return includeSavedAccount ? [{
             profileId: 'profile-1',
             userId: '@alice:friends.example',
             homeserver: 'https://friends.example',
             deviceId: 'ALICE-DESKTOP',
             lastUsedAt: '2026-07-29T00:00:00.000Z',
             current: false,
-          }]
+          }] : []
         case 'matrix_service_capabilities':
+          if (capabilityFailure && String(args.homeserver).includes(capabilityFailure)) {
+            throw {
+              code: 'network_unavailable',
+              detail: 'connect ECONNREFUSED at 10.0.0.8:8448',
+              retryable: true,
+            }
+          }
           return {
             homeserver: String(args.homeserver),
             serverVersions: ['v1.11'],
@@ -112,6 +121,8 @@ async function installUnauthenticatedMatrixMock(
             nativeCallbackReady: true,
             reason: '',
           }
+        case 'matrix_reserve_login_attempt':
+          return 'playwright-login-attempt'
         case 'matrix_start_oidc_login':
           authenticated = true
           return null
@@ -188,7 +199,7 @@ async function installUnauthenticatedMatrixMock(
     }).__TAURI_EVENT_PLUGIN_INTERNALS__ = {
       unregisterListener: () => {},
     }
-  }, currentDeepLinks)
+  }, { deepLinks: currentDeepLinks, capabilityFailure, includeSavedAccount })
 }
 
 function onboardingIpcCalls(page: Page): Promise<OnboardingIpcCall[]> {
@@ -215,7 +226,7 @@ test.beforeEach(async ({ page }) => {
   })
 
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Choose your account service' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Pick an account service' })).toBeVisible()
   await waitForAccountScreenMotion(page)
 })
 
@@ -231,8 +242,8 @@ test('@a11y has no automated WCAG A/AA violations on account-service selection',
 })
 
 test('@a11y has no automated WCAG A/AA violations on sign in', async ({ page }) => {
-  await page.getByRole('button', { name: 'Sign in with Matrix.org' }).click()
-  const signInHeading = page.getByRole('heading', { name: 'Sign in to Matrix.org' })
+  await page.getByRole('button', { name: 'Sign in with Public account service' }).click()
+  const signInHeading = page.getByRole('heading', { name: 'Sign in to Public account service' })
   await expect(signInHeading).toBeVisible()
   await waitForAccountScreenMotion(page)
   await expect(signInHeading).toBeFocused()
@@ -241,11 +252,11 @@ test('@a11y has no automated WCAG A/AA violations on sign in', async ({ page }) 
 })
 
 test('makes password and username recovery visible from sign in', async ({ page }) => {
-  await page.getByRole('button', { name: 'Sign in with Matrix.org' }).click()
+  await page.getByRole('button', { name: 'Sign in with Public account service' }).click()
 
   await page.getByRole('button', { name: 'Forgot password?' }).click()
   await expect(page.getByText('Mesh never stores your account password')).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Open Matrix.org account help' })).toHaveAttribute(
+  await expect(page.getByRole('link', { name: 'Open account service help' })).toHaveAttribute(
     'href',
     'https://app.element.io/#/login',
   )
@@ -273,10 +284,14 @@ for (const viewport of [
       await expect(control).toBeInViewport()
     }
 
-    await assertReachable('Sign in with Matrix.org')
+    await assertReachable('Sign in with Public account service')
     await assertReachable('More public services')
     await assertReachable('Use another service')
-    await page.getByRole('button', { name: 'Sign in with Matrix.org' }).click()
+    await page.getByRole('button', { name: 'Sign in with Public account service' }).click()
+    if (viewport.height >= 600) {
+      await expect(page.locator('input[name="password"]')).toBeInViewport()
+      await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeInViewport()
+    }
     await page.getByRole('textbox', { name: 'Username' }).fill('compact-user')
     await page.locator('input[name="password"]').fill('a long compact passphrase')
     await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled()
@@ -318,10 +333,33 @@ test('keeps validation errors and custom-service sign-in reachable at 200% zoom'
   await expectNoWcagViolations(page, 'Account setup at 200% zoom')
 })
 
+test('keeps a custom-service outage actionable without leading with technical details', async ({ page }) => {
+  await installUnauthenticatedMatrixMock(page, null, 'offline.example')
+  await page.setViewportSize({ width: 320, height: 500 })
+  await page.reload()
+  await waitForAccountScreenMotion(page)
+
+  await page.getByRole('button', { name: 'Use another service' }).click()
+  await page.getByLabel('Service address').fill('offline.example')
+  await page.getByRole('button', { name: 'Check service' }).click()
+
+  const alert = page.getByRole('alert')
+  await alert.scrollIntoViewIfNeeded()
+  await expect(alert).toBeInViewport()
+  await expect(alert.locator('p').first()).toHaveText(
+    "Mesh couldn't reach that account service. Check your connection or choose another service, then try again.",
+  )
+  await expect(alert.locator('details')).not.toHaveAttribute('open', '')
+  await expect(alert.locator('summary')).toHaveText('Technical details')
+  await expect(page.getByRole('button', { name: 'Check service' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Back to service choices' })).toBeVisible()
+  await expectNoWcagViolations(page, 'Compact custom-service outage')
+})
+
 test('@a11y offers saved-account switching without exposing the qualified account ID', async ({ page }) => {
   await installUnauthenticatedMatrixMock(page)
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'Choose your account service' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Pick an account service' })).toBeVisible()
 
   const savedAccount = page.getByRole('button', { name: /alice Saved on this device Continue/ })
   await expect(savedAccount).toBeVisible()
@@ -336,6 +374,41 @@ test('@a11y offers saved-account switching without exposing the qualified accoun
   }])
   await expect(page.getByRole('heading', { name: 'Getting things ready' })).toBeVisible()
   await expectNoWcagViolations(page, 'Saved-account handoff')
+})
+
+test('@a11y keeps the completed setup action above the fold at 1280x720', async ({ page }) => {
+  const invitation =
+    'mesh://join?v=5&kind=community&room=!invited%3Afriends.example&via=friends.example'
+    + '&community_service=https%3A%2F%2Fcommunity.example'
+  await installUnauthenticatedMatrixMock(page, [invitation])
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.reload()
+
+  await page.getByRole('button', { name: /alice Saved on this device Continue/ }).click()
+
+  const primaryAction = page.getByRole('button', { name: 'Open Mesh' })
+  await expect(primaryAction).toBeEnabled()
+  await expect(primaryAction).toBeInViewport()
+
+  const geometry = await primaryAction.evaluate((element) => {
+    const scroller = element.closest('.mesh-onboarding-scroll')
+    if (!(scroller instanceof HTMLElement)) return null
+    const buttonRect = element.getBoundingClientRect()
+    const scrollerRect = scroller.getBoundingClientRect()
+    return {
+      buttonTop: buttonRect.top,
+      buttonBottom: buttonRect.bottom,
+      scrollerTop: scrollerRect.top,
+      scrollerBottom: scrollerRect.bottom,
+      scrollTop: scroller.scrollTop,
+    }
+  })
+
+  expect(geometry).not.toBeNull()
+  expect(geometry!.scrollTop).toBe(0)
+  expect(geometry!.buttonTop).toBeGreaterThanOrEqual(geometry!.scrollerTop - 0.5)
+  expect(geometry!.buttonBottom).toBeLessThanOrEqual(geometry!.scrollerBottom + 0.5)
+  await expectNoWcagViolations(page, 'Completed setup action at 1280x720')
 })
 
 test('@a11y checks and starts browser sign-in through the native account boundary', async ({ page }) => {
@@ -360,15 +433,15 @@ test('@a11y checks and starts browser sign-in through the native account boundar
   )).toEqual([
     {
       command: 'matrix_service_capabilities',
-      args: { homeserver: 'friends.example' },
+      args: expect.objectContaining({ homeserver: 'friends.example' }),
     },
     {
       command: 'matrix_oidc_status',
-      args: { homeserver: 'friends.example' },
+      args: expect.objectContaining({ homeserver: 'friends.example' }),
     },
     {
       command: 'matrix_start_oidc_login',
-      args: { homeserver: 'friends.example' },
+      args: expect.objectContaining({ homeserver: 'friends.example' }),
     },
   ])
   await expect(page.getByRole('heading', { name: 'Getting things ready' })).toBeVisible()
@@ -398,12 +471,15 @@ test('@a11y prefills an opaque cold-start invitation before account creation', a
     'resolve_pending_invitation',
   ]))
   expect(JSON.stringify(invitationCalls)).not.toContain(invitation)
-  await expect(page.getByRole('button', { name: 'Sign in with Matrix.org' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Sign in with Public account service' })).toBeVisible()
   await page.getByRole('button', { name: 'Create account with Community account service' }).click()
-  await expect(page.getByText('Invitation saved securely on this device')).toBeVisible()
-  await expect(page.getByText('Friends Community')).toBeVisible()
-  await expect(page.getByText('Invited by Bob.')).toBeVisible()
-  await expect(page.getByText('Invitation only')).toBeVisible()
+  const destination = page.getByRole('region', { name: 'Invitation destination' })
+  await expect(destination.getByText('Friends Community', { exact: true })).toBeVisible()
+  await expect(destination.getByText('Bob', { exact: true })).toBeVisible()
+  await expect(destination.getByText('Invite only', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', {
+    name: 'Create your account with Community account service',
+  })).toBeVisible()
   await expect(page.getByText('!invited:friends.example', { exact: false })).toHaveCount(0)
   await expect(page.getByRole('textbox', { name: 'Invitation code' })).toHaveCount(0)
   await expect(page.getByText('different Mesh service')).toHaveCount(0)
@@ -415,15 +491,47 @@ test('keeps trust context and account setup usable in a narrow window', async ({
 
   const shell = page.getByRole('region', { name: 'Set up Mesh' })
   await expect(shell).toBeVisible()
-  await expect(page.getByText('Conversations that stay yours.')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Find your people. Keep the party close.' })).toBeVisible()
   await expect(page.getByRole('list', { name: 'Setup progress' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Sign in with Matrix.org' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Sign in with Public account service' })).toBeVisible()
 
   const bounds = await shell.boundingBox()
   expect(bounds?.x).toBeGreaterThanOrEqual(0)
   expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(390)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
   await expectNoWcagViolations(page, 'Narrow account setup')
+})
+
+test('keeps the first invitation account action above the fold in a narrow window', async ({ page }) => {
+  const invitation =
+    'mesh://join?v=5&kind=community&room=!invited%3Afriends.example&via=friends.example'
+    + '&community_service=https%3A%2F%2Fcommunity.example'
+  await installUnauthenticatedMatrixMock(page, [invitation], null, false)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.reload()
+  await waitForAccountScreenMotion(page)
+
+  await expect(page.getByRole('region', { name: 'Invitation destination' })).toBeInViewport()
+  await expect(page.getByRole('button', { name: 'Sign in with Public account service' })).toBeInViewport()
+  await expect(page.getByRole('heading', { name: 'Canyon Crew is waiting.' })).toBeHidden()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+  await expectNoWcagViolations(page, 'Narrow invitation account setup')
+})
+
+test('keeps invitation context and the first account action visible at the minimum window', async ({ page }) => {
+  const invitation =
+    'mesh://join?v=5&kind=community&room=!invited%3Afriends.example&via=friends.example'
+    + '&community_service=https%3A%2F%2Fcommunity.example'
+  await installUnauthenticatedMatrixMock(page, [invitation], null, false)
+  await page.setViewportSize({ width: 800, height: 500 })
+  await page.reload()
+  await waitForAccountScreenMotion(page)
+
+  await expect(page.getByRole('heading', { name: 'Friends Community is waiting.' })).toBeInViewport()
+  await expect(page.getByRole('button', { name: 'Sign in with Public account service' })).toBeInViewport()
+  await expect(page.getByRole('region', { name: 'Invitation destination' })).toBeHidden()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(800)
+  await expectNoWcagViolations(page, 'Minimum-window invitation account setup')
 })
 
 test('keeps the onboarding masthead compact at tablet widths', async ({ page }) => {

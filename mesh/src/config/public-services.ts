@@ -22,6 +22,7 @@ export interface PublicService {
   homeserverUrl: string
   operator: string
   jurisdiction: string
+  minimumAge: number
   registration: PublicServiceRegistration
   /** Provider-owned account recovery page, when the service publishes one. */
   accountHelpUrl?: string
@@ -121,6 +122,13 @@ export function validatePublicServiceCatalog(value: unknown): PublicServiceCatal
 
     for (const key of ['displayName', 'serviceAddress', 'operator', 'jurisdiction'] as const) {
       if (!nonEmptyString(candidate[key])) errors.push(`${path}.${key} is required`)
+    }
+    if (
+      !Number.isSafeInteger(candidate.minimumAge)
+      || Number(candidate.minimumAge) < 13
+      || Number(candidate.minimumAge) > 120
+    ) {
+      errors.push(`${path}.minimumAge must be an explicit age from 13 to 120`)
     }
     if (!safeHttpsUrl(candidate.homeserverUrl, { originOnly: true })) {
       errors.push(`${path}.homeserverUrl must be a credential-free HTTPS origin`)

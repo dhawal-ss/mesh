@@ -27,7 +27,7 @@ function backendStatus(kind: 'matrix' | 'legacy-p2p'): BackendStatus {
       tokenEndpoint: null,
       livekitSfuUrl: null,
       cspReady: false,
-      mediaE2eeVerified: false,
+      mediaE2eeReady: false,
       reason: matrix ? 'Voice is not configured' : null,
     },
     authenticated: matrix,
@@ -118,17 +118,18 @@ describe('bridge message mutation boundary', () => {
     await bridge.matrixRetryQueuedMessage('!room:example.org', 'txn-1')
     await bridge.matrixCancelQueuedMessage('!room:example.org', 'txn-1')
 
-    expect(invokeMock.mock.calls).toEqual([
-      ['matrix_queued_messages', undefined],
-      [
-        'matrix_retry_queued_message',
-        { roomId: '!room:example.org', transactionId: 'txn-1' },
-      ],
-      [
-        'matrix_cancel_queued_message',
-        { roomId: '!room:example.org', transactionId: 'txn-1' },
-      ],
-    ])
+    expect(invokeMock).toHaveBeenNthCalledWith(1, 'matrix_queued_messages', {
+      requestId: expect.any(String),
+      deadlineMs: expect.any(Number),
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(2, 'matrix_retry_queued_message', {
+      roomId: '!room:example.org',
+      transactionId: 'txn-1',
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(3, 'matrix_cancel_queued_message', {
+      roomId: '!room:example.org',
+      transactionId: 'txn-1',
+    })
   })
 
   it('does not expose Matrix queue commands to the legacy artifact', async () => {
@@ -154,14 +155,18 @@ describe('bridge message mutation boundary', () => {
     await bridge.saveComposerDraft('!room:example.org', 'updated draft')
     await bridge.clearComposerDraft('!room:example.org')
 
-    expect(invokeMock.mock.calls).toEqual([
-      ['matrix_load_composer_draft', { roomId: '!room:example.org' }],
-      [
-        'matrix_save_composer_draft',
-        { roomId: '!room:example.org', body: 'updated draft' },
-      ],
-      ['matrix_clear_composer_draft', { roomId: '!room:example.org' }],
-    ])
+    expect(invokeMock).toHaveBeenNthCalledWith(1, 'matrix_load_composer_draft', {
+      roomId: '!room:example.org',
+      requestId: expect.any(String),
+      deadlineMs: expect.any(Number),
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(2, 'matrix_save_composer_draft', {
+      roomId: '!room:example.org',
+      body: 'updated draft',
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(3, 'matrix_clear_composer_draft', {
+      roomId: '!room:example.org',
+    })
   })
 
   it('keeps received encrypted thumbnails outside renderer IPC', async () => {
@@ -193,6 +198,8 @@ describe('bridge message mutation boundary', () => {
         roomId: '!room:example.org',
         eventId: '$event:example.org',
         attachmentIndex: 0,
+        requestId: expect.any(String),
+        deadlineMs: expect.any(Number),
       },
     )
     await expect(
@@ -270,6 +277,55 @@ describe('bridge message mutation boundary', () => {
         },
       ],
     ])
+  })
+
+  it('uploads custom emoji through a native one-use grant without renderer bytes or paths', async () => {
+    const bridge = await loadBridge('matrix')
+    const selection = {
+      grant: '9dd2c034-0c90-4789-b6d7-b87d2bf66f2a',
+      name: 'party-parrot.png',
+      size: 4096,
+      contentType: 'image/png',
+    }
+    invokeMock
+      .mockResolvedValueOnce(selection as never)
+      .mockResolvedValueOnce({ shortcode: 'party_parrot' } as never)
+
+    await expect(
+      bridge.pickCustomEmojiGrant('!community:example.org'),
+    ).resolves.toEqual(selection)
+    await bridge.uploadServerEmoji('!community:example.org', 'party_parrot', selection)
+
+    expect(invokeMock).toHaveBeenNthCalledWith(1, 'pick_custom_emoji_grant', {
+      communityId: '!community:example.org',
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(2, 'matrix_upload_custom_emoji', {
+      communityId: '!community:example.org',
+      shortcode: 'party_parrot',
+      grant: selection.grant,
+    })
+    expect(invokeMock.mock.calls[1]?.[1]).not.toHaveProperty('bytes')
+    expect(invokeMock.mock.calls[1]?.[1]).not.toHaveProperty('path')
+    expect(invokeMock.mock.calls[1]?.[1]).not.toHaveProperty('filename')
+  })
+
+  it('rejects invalid custom emoji grant metadata before native upload IPC', async () => {
+    const bridge = await loadBridge('matrix')
+
+    await expect(bridge.uploadServerEmoji('!community:example.org', 'emoji', {
+      grant: '9dd2c034-0c90-4789-b6d7-b87d2bf66f2a',
+      name: 'oversized.png',
+      size: 512 * 1024 + 1,
+      contentType: 'image/png',
+    })).rejects.toThrow('512 KB or smaller')
+    await expect(bridge.uploadServerEmoji('!community:example.org', 'emoji', {
+      grant: '9dd2c034-0c90-4789-b6d7-b87d2bf66f2a',
+      name: 'vector.svg',
+      size: 1024,
+      contentType: 'image/svg+xml',
+    })).rejects.toThrow('PNG, JPEG, or WebP')
+
+    expect(invokeMock).not.toHaveBeenCalled()
   })
 
   it('keeps legacy mutations entirely on legacy commands', async () => {

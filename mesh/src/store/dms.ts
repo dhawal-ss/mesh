@@ -1,7 +1,13 @@
 import { create } from 'zustand'
-import type { DmConversation, DirectMessage } from '../types/ipc'
+import type {
+  BlockedAccountDto,
+  DmConversation,
+  DmRequestDto,
+  DirectMessage,
+} from '../types/ipc'
 import * as bridge from '../lib/bridge'
 import { patchChanges } from '../lib/state'
+import { useMessageStore } from './messages'
 
 export type LoadStatus = 'idle' | 'loading' | 'loaded' | 'refreshing' | 'failed'
 
@@ -17,6 +23,9 @@ interface DmStore {
   conversationOrder: string[]
   /** Ordered compatibility snapshot for conversation list consumers. */
   conversations: DmConversation[]
+  requests: DmRequestDto[]
+  blockedAccounts: BlockedAccountDto[]
+  blockedAccountsNextCursor: string | null
   /** Normalized message source of truth, scoped by conversation. */
   messageEntities: Record<string, Record<string, DirectMessage>>
   messageOrder: Record<string, string[]>
@@ -25,12 +34,21 @@ interface DmStore {
   activeConversationId: string | null
   isDmMode: boolean
   conversationLoad: LoadState
+  requestLoad: LoadState
+  blockedAccountLoad: LoadState
   messageLoads: Record<string, LoadState>
 
   setDmMode: (active: boolean) => void
   setActiveConversation: (id: string | null) => void
   setConversations: (conversations: DmConversation[]) => void
   loadConversations: () => Promise<void>
+  loadRequests: () => Promise<void>
+  removeRequest: (roomId: string) => void
+  loadBlockedAccounts: (reset?: boolean) => Promise<void>
+  upsertBlockedAccount: (account: BlockedAccountDto) => void
+  removeBlockedAccount: (userId: string) => void
+  suppressPeer: (userId: string) => void
+  resetIgnoredUserProjection: () => void
   loadMessages: (conversationId: string) => Promise<void>
   addMessage: (msg: DirectMessage) => void
   patchMessage: (conversationId: string, messageId: string, patch: Partial<DirectMessage>) => void
@@ -92,12 +110,17 @@ export const useDmStore = create<DmStore>((set, get) => ({
   conversationEntities: {},
   conversationOrder: [],
   conversations: [],
+  requests: [],
+  blockedAccounts: [],
+  blockedAccountsNextCursor: null,
   messageEntities: {},
   messageOrder: {},
   messages: {},
   activeConversationId: null,
   isDmMode: false,
   conversationLoad: { status: 'idle', error: null, generation: 0 },
+  requestLoad: { status: 'idle', error: null, generation: 0 },
+  blockedAccountLoad: { status: 'idle', error: null, generation: 0 },
   messageLoads: {},
 
   setDmMode: (active) => set({ isDmMode: active }),
@@ -145,6 +168,198 @@ export const useDmStore = create<DmStore>((set, get) => ({
         set({ conversationLoad: { status: 'failed', error: err, generation } })
       }
       throw err
+    }
+  },
+
+  loadRequests: async () => {
+    const generation = get().requestLoad.generation + 1
+    const hasLastGood = get().requestLoad.status === 'loaded' || get().requests.length > 0
+    set({
+      requestLoad: {
+        status: hasLastGood ? 'refreshing' : 'loading',
+        error: null,
+        generation,
+      },
+    })
+    try {
+      const requests = await bridge.getDmRequests()
+      set((state) => (
+        state.requestLoad.generation === generation
+          ? {
+              requests,
+              requestLoad: { status: 'loaded', error: null, generation },
+            }
+          : state
+      ))
+    } catch (error) {
+      set((state) => (
+        state.requestLoad.generation === generation
+          ? { requestLoad: { status: 'failed', error, generation } }
+          : state
+      ))
+      throw error
+    }
+  },
+
+  removeRequest: (roomId) => set((state) => ({
+    requests: state.requests.filter((request) => request.roomId !== roomId),
+  })),
+
+  loadBlockedAccounts: async (reset = true) => {
+    const current = get()
+    const after = reset ? undefined : current.blockedAccountsNextCursor ?? undefined
+    if (!reset && !after) return
+    const generation = current.blockedAccountLoad.generation + 1
+    const hasLastGood = current.blockedAccountLoad.status === 'loaded'
+      || current.blockedAccounts.length > 0
+    set({
+      blockedAccountLoad: {
+        status: hasLastGood ? 'refreshing' : 'loading',
+        error: null,
+        generation,
+      },
+    })
+    try {
+      const page = await bridge.getBlockedAccounts(after)
+      set((state) => {
+        if (state.blockedAccountLoad.generation !== generation) return state
+        const incoming = reset
+          ? page.accounts
+          : [...state.blockedAccounts, ...page.accounts]
+        const seen = new Set<string>()
+        const blockedAccounts = incoming.filter((account) => {
+          if (seen.has(account.userId)) return false
+          seen.add(account.userId)
+          return true
+        })
+        blockedAccounts.sort((left, right) => left.userId.localeCompare(right.userId))
+        return {
+          blockedAccounts,
+          blockedAccountsNextCursor: page.nextCursor,
+          blockedAccountLoad: { status: 'loaded', error: null, generation },
+        }
+      })
+      if (
+        get().blockedAccountLoad.generation === generation
+        && get().blockedAccountLoad.status === 'loaded'
+      ) {
+        for (const account of page.accounts) get().suppressPeer(account.userId)
+      }
+    } catch (error) {
+      set((state) => (
+        state.blockedAccountLoad.generation === generation
+          ? { blockedAccountLoad: { status: 'failed', error, generation } }
+          : state
+      ))
+      throw error
+    }
+  },
+
+  upsertBlockedAccount: (account) => {
+    set((state) => {
+      if (state.blockedAccounts.some((candidate) => candidate.userId === account.userId)) {
+        return state
+      }
+      return {
+        blockedAccounts: [...state.blockedAccounts, account]
+          .sort((left, right) => left.userId.localeCompare(right.userId)),
+      }
+    })
+    get().suppressPeer(account.userId)
+  },
+
+  removeBlockedAccount: (userId) => set((state) => ({
+    blockedAccounts: state.blockedAccounts.filter((account) => account.userId !== userId),
+  })),
+
+  suppressPeer: (userId) => {
+    const suppressedIds = get().conversationOrder.filter(
+      (id) => get().conversationEntities[id]?.peerPublicKey === userId,
+    )
+    set((state) => {
+      const suppressed = new Set(suppressedIds)
+      const conversationEntities = { ...state.conversationEntities }
+      const messageEntities = { ...state.messageEntities }
+      const messageOrder = { ...state.messageOrder }
+      const messages = { ...state.messages }
+      const messageLoads = { ...state.messageLoads }
+      for (const conversationId of suppressedIds) {
+        delete conversationEntities[conversationId]
+        delete messageEntities[conversationId]
+        delete messageOrder[conversationId]
+        delete messages[conversationId]
+        delete messageLoads[conversationId]
+      }
+      const conversationOrder = suppressedIds.length === 0
+        ? state.conversationOrder
+        : state.conversationOrder.filter((id) => !suppressed.has(id))
+      return {
+        conversationEntities,
+        conversationOrder,
+        conversations: conversationOrder.map((id) => conversationEntities[id]),
+        messageEntities,
+        messageOrder,
+        messages,
+        messageLoads,
+        activeConversationId: state.activeConversationId
+          && suppressed.has(state.activeConversationId)
+          ? null
+          : state.activeConversationId,
+        requests: state.requests.filter((request) => request.inviterUserId !== userId),
+        // Invalidate any list request that began before the authoritative block
+        // write completed; its stale response must not resurrect this peer.
+        conversationLoad: {
+          status: 'loaded',
+          error: null,
+          generation: state.conversationLoad.generation + 1,
+        },
+        requestLoad: {
+          status: 'loaded',
+          error: null,
+          generation: state.requestLoad.generation + 1,
+        },
+      }
+    })
+
+    const messageStore = useMessageStore.getState()
+    // Ignoring is account-wide in Matrix: hide already-rendered content from
+    // shared rooms as well as the private room. The native store is untouched.
+    messageStore.removeMessagesByAuthorAllChannels(userId)
+    for (const conversationId of suppressedIds) messageStore.clearChannel(conversationId)
+  },
+
+  resetIgnoredUserProjection: () => {
+    set((state) => ({
+      conversationEntities: {},
+      conversationOrder: [],
+      conversations: [],
+      requests: [],
+      blockedAccounts: [],
+      blockedAccountsNextCursor: null,
+      messageEntities: {},
+      messageOrder: {},
+      messages: {},
+      activeConversationId: null,
+      conversationLoad: {
+        status: 'idle',
+        error: null,
+        generation: state.conversationLoad.generation + 1,
+      },
+      requestLoad: {
+        status: 'idle',
+        error: null,
+        generation: state.requestLoad.generation + 1,
+      },
+      blockedAccountLoad: {
+        status: 'idle',
+        error: null,
+        generation: state.blockedAccountLoad.generation + 1,
+      },
+      messageLoads: {},
+    }))
+    const messageStore = useMessageStore.getState()
+    for (const channelId of [...messageStore.channelRecency]) {
+      messageStore.clearChannel(channelId)
     }
   },
 

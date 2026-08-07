@@ -103,18 +103,8 @@ impl MatrixModerationAction {
                 } else {
                     room.power_levels_or_default().await
                 };
-                let joined_user_ids = room
-                    .members(RoomMemberships::JOIN)
-                    .await
-                    .map_err(MatrixBackend::map_error)?
-                    .into_iter()
-                    .map(|member| member.user_id().to_string())
-                    .collect();
-                let projected = permission_projection::project_power_levels(
-                    &power_levels,
-                    creators,
-                    joined_user_ids,
-                );
+                let projected =
+                    permission_projection::project_power_levels(&power_levels, creators);
                 permission_projection::ensure_authoritative_role_change(
                     &projected,
                     actor_user_id,
@@ -546,6 +536,8 @@ mod tests {
         assert!(apply.contains("int!(100)"));
         assert!(apply.contains("send_state_event"));
         assert!(!apply.contains("update_power_levels"));
+        assert!(!apply.contains(".members("));
+        assert!(!apply.contains("members_no_sync"));
     }
 
     #[test]

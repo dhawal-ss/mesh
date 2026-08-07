@@ -83,7 +83,7 @@ record((socialCard?.size ?? 0) <= 2 * 1024 * 1024, 'site/og.png must stay below 
 const supportPage = await readFile(join(siteRoot, 'support', 'index.html'), 'utf8')
 for (const statement of [
   'Windows is the only candidate platform',
-  'Voice is not included in the text and community beta',
+  'Voice is included in the signed draft candidate',
   'Automatic updates remain disabled',
   'macOS and Linux are not advertised as supported',
   'Mesh cannot promise a universal appeal',

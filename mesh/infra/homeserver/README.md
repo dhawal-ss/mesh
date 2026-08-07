@@ -10,7 +10,7 @@ The stack contains Synapse, PostgreSQL, a bounded one-use invitation service,
 and Caddy. Public registration is never open: account creation is either
 disabled or requires an operator-issued registration token.
 
-Synapse is pinned to the reviewed multi-architecture ``v1.157.1`` image index
+Synapse is pinned to the reviewed multi-architecture ``v1.157.2`` image index
 digest in Compose, setup, and restore tooling. Treat every version change as an
 operator upgrade: review the upstream release notes, back up first, run the
 daemon-free configuration and admission tests, then complete two independent

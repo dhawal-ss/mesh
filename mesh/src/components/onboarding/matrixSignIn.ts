@@ -51,27 +51,38 @@ export function displayServiceAddress(value: string): string {
 }
 
 export function serviceAddressConfigError(value: string): string | null {
+  const rawAddress = value.trim()
+  if (/[\u0000-\u0020\u007f]/.test(rawAddress)) {
+    return 'That service address is invalid. Enter one like matrix.org or https://matrix.example.org.'
+  }
+
   const normalized = normalizeServiceAddress(value)
   if (!normalized) return 'No account service is configured for this build.'
 
   try {
     const url = new URL(normalized.includes('://') ? normalized : `https://${normalized}`)
     const host = url.hostname.replace(/^\[|\]$/g, '')
+    if (!host || url.hostname.includes('%')) {
+      return 'That service address is invalid. Enter one like matrix.org or https://matrix.example.org.'
+    }
     const isLoopback = host.toLocaleLowerCase() === 'localhost'
       || host === '127.0.0.1'
       || host === '::1'
     if (url.username || url.password) {
       return 'The configured service address must not contain credentials.'
     }
+    if (url.search || url.hash) {
+      return 'The configured service address must not contain a query or link fragment.'
+    }
     if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLoopback)) {
       return 'The configured service must use HTTPS.'
     }
     if (!value.includes('://') && (url.pathname !== '/' || url.search || url.hash)) {
-      return 'The configured service address is invalid.'
+      return 'That service address is invalid. Enter one like matrix.org or https://matrix.example.org.'
     }
     return null
   } catch {
-    return 'The configured service address is invalid.'
+    return 'That service address is invalid. Enter one like matrix.org or https://matrix.example.org.'
   }
 }
 
@@ -130,9 +141,9 @@ export function friendlyServiceError(cause: unknown, operation: string): string 
     case 'dns':
       return `${prefix} The account service could not be found. Check the address and your connection, then try again.`
     case 'tls':
-      return `${prefix} The account service did not establish a secure HTTPS connection. Check its certificate or choose another service.`
+      return `${prefix} The account service did not prove that the connection was private. Check the address or choose another service.`
     case 'http_status':
-      return `${prefix} The account service returned an HTTP error. Check its status or choose another service.`
+      return `${prefix} The account service could not complete the request. Try again later, check its status, or choose another service.`
     case 'malformed_well_known':
       // `.well-known` belongs in the Technical details block, not in the lead
       // sentence of a default-path error.

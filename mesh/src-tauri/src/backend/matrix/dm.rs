@@ -1,4 +1,94 @@
 impl MatrixBackend {
+    async fn dm_request_from_invited_room(room: &Room) -> BackendResult<Option<DmRequestDto>> {
+        if room.state() != RoomState::Invited
+            || room.is_space()
+            || room.room_type().is_some()
+            || !room.is_direct().await.map_err(Self::map_error)?
+        {
+            return Ok(None);
+        }
+        let invite = room.invite_details().await.map_err(Self::map_error)?;
+        if invite.inviter_id == room.own_user_id() {
+            return Ok(None);
+        }
+        let inviter_display_name = invite
+            .inviter
+            .as_ref()
+            .map(|member| {
+                bounded_remote_member_display_name(member.name(), invite.inviter_id.as_str())
+            })
+            .unwrap_or_else(|| {
+                bounded_remote_member_display_name(
+                    invite.inviter_id.localpart(),
+                    invite.inviter_id.as_str(),
+                )
+            });
+        let can_accept = room
+            .latest_encryption_state()
+            .await
+            .map(|state| state.is_encrypted())
+            .unwrap_or(false);
+
+        Ok(Some(DmRequestDto {
+            room_id: room.room_id().to_string(),
+            inviter_user_id: invite.inviter_id.to_string(),
+            inviter_display_name,
+            inviter_avatar_color: Self::avatar_color(invite.inviter_id.as_str()),
+            can_accept,
+        }))
+    }
+
+    async fn validated_dm_request_room(
+        client: &Client,
+        room_id: &matrix_sdk::ruma::RoomId,
+    ) -> BackendResult<(Room, OwnedUserId)> {
+        let room = client.get_room(room_id).ok_or_else(|| {
+            BackendError::NotFound("message request is no longer available".into())
+        })?;
+        if room.state() != RoomState::Invited
+            || room.is_space()
+            || room.room_type().is_some()
+            || !room.is_direct().await.map_err(Self::map_error)?
+        {
+            return Err(BackendError::InvalidConfiguration(
+                "This is not an incoming direct-message request".into(),
+            ));
+        }
+        let invite = room.invite_details().await.map_err(Self::map_error)?;
+        if invite.inviter_id == room.own_user_id() {
+            return Err(BackendError::InvalidConfiguration(
+                "The message request has an invalid sender".into(),
+            ));
+        }
+        Ok((room, invite.inviter_id))
+    }
+
+    fn is_exact_two_party_direct_candidate(
+        joined_members_count: u64,
+        own_user_is_joined: bool,
+        target_user_is_joined: bool,
+    ) -> bool {
+        joined_members_count == 2 && own_user_is_joined && target_user_is_joined
+    }
+
+    async fn room_member_is_joined(
+        room: &Room,
+        user_id: &matrix_sdk::ruma::UserId,
+    ) -> BackendResult<bool> {
+        let Some(member_event) = room
+            .get_state_event_static_for_key::<RoomMemberEventContent, _>(user_id)
+            .await
+            .map_err(Self::map_error)?
+        else {
+            return Ok(false);
+        };
+        let member_event = member_event.deserialize().map_err(Self::map_error)?;
+        Ok(matches!(
+            member_event.membership(),
+            MembershipState::Join
+        ))
+    }
+
     fn direct_rooms(client: &Client, user_id: &matrix_sdk::ruma::UserId) -> Vec<Room> {
         let mut rooms: Vec<Room> = client
             .joined_rooms()
@@ -27,14 +117,16 @@ impl MatrixBackend {
             if room.is_space() {
                 continue;
             }
-            let members = room
-                .members(RoomMemberships::JOIN)
-                .await
-                .map_err(Self::map_error)?;
-            if members.len() != 2
-                || !members.iter().any(|member| member.user_id() == own_user_id)
-                || !members.iter().any(|member| member.user_id() == user_id)
-            {
+            if room.joined_members_count() != 2 {
+                continue;
+            }
+            let own_user_is_joined = Self::room_member_is_joined(&room, own_user_id).await?;
+            let target_user_is_joined = Self::room_member_is_joined(&room, user_id).await?;
+            if !Self::is_exact_two_party_direct_candidate(
+                room.joined_members_count(),
+                own_user_is_joined,
+                target_user_is_joined,
+            ) {
                 continue;
             }
             Self::require_protected_room(&room, "opening this direct message").await?;
@@ -186,19 +278,260 @@ impl MatrixBackend {
     }
 
     async fn is_ignored_user(
+        &self,
         client: &Client,
         user_id: &matrix_sdk::ruma::UserId,
     ) -> BackendResult<bool> {
-        let Some(raw_content) = client
+        let content = self.refresh_ignored_user_list(client).await?;
+        Ok(content.ignored_users.contains_key(user_id))
+    }
+
+    fn notification_sender_is_ignored(
+        ignored_users: Option<&HashSet<OwnedUserId>>,
+        user_id: &matrix_sdk::ruma::UserId,
+    ) -> bool {
+        // A notification is a privacy projection, not required state. Unknown
+        // cache state fails closed until the initial server read or a standard
+        // m.ignored_user_list sync event establishes the current account list.
+        ignored_users.is_none_or(|users| users.contains(user_id))
+    }
+
+    fn ignored_user_change(
+        previous: Option<&HashSet<OwnedUserId>>,
+        next: &HashSet<OwnedUserId>,
+    ) -> Option<MatrixIgnoredUsersChanged> {
+        if previous == Some(next) {
+            return None;
+        }
+        let mut blocked_user_ids = previous
+            .map(|previous| {
+                next.difference(previous)
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        blocked_user_ids.sort();
+        let reset_all = previous.is_none()
+            || blocked_user_ids.len() > MAX_IGNORED_USER_CHANGE_IDS;
+        if reset_all {
+            blocked_user_ids.clear();
+        }
+        Some(MatrixIgnoredUsersChanged {
+            blocked_user_ids,
+            reset_all,
+        })
+    }
+
+    fn ignored_user_list_matches(
+        content: &IgnoredUserListEventContent,
+        user_id: &matrix_sdk::ruma::UserId,
+        blocked: bool,
+    ) -> bool {
+        content.ignored_users.contains_key(user_id) == blocked
+    }
+
+    fn direct_room_peer(room: &Room) -> BackendResult<Option<OwnedUserId>> {
+        let targets = room.direct_targets();
+        if targets.is_empty() {
+            return Ok(None);
+        }
+        if targets.len() != 1 {
+            return Err(BackendError::InvalidConfiguration(
+                "group direct-message rooms are not supported".into(),
+            ));
+        }
+        let target = targets
+            .into_iter()
+            .next()
+            .ok_or_else(|| BackendError::InvalidConfiguration("direct room has no peer".into()))?;
+        matrix_sdk::ruma::UserId::parse(target.as_str())
+            .map(Some)
+            .map_err(|error| {
+                BackendError::InvalidConfiguration(format!(
+                    "direct-message peer ID is malformed: {error}"
+                ))
+            })
+    }
+
+    fn room_has_ignored_direct_peer(
+        room: &Room,
+        ignored_users: &IgnoredUserListEventContent,
+    ) -> BackendResult<bool> {
+        Ok(Self::direct_room_peer(room)?
+            .as_ref()
+            .is_some_and(|peer| ignored_users.ignored_users.contains_key(peer)))
+    }
+
+    async fn reject_ignored_direct_room(&self, client: &Client, room: &Room) -> BackendResult<()> {
+        let Some(peer) = Self::direct_room_peer(room)? else {
+            return Ok(());
+        };
+        let ignored_users = self.ignored_user_list_with_offline_cache(client).await?;
+        if ignored_users.ignored_users.contains_key(&peer) {
+            return Err(BackendError::InvalidConfiguration(
+                "direct messages are blocked for this Matrix user".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn blocked_account_page_from_user_ids(
+        user_ids: impl IntoIterator<Item = String>,
+        after: Option<&str>,
+        limit: u32,
+    ) -> BlockedAccountPageDto {
+        let mut user_ids = user_ids.into_iter().collect::<Vec<_>>();
+        user_ids.sort();
+        user_ids.dedup();
+
+        let start = after
+            .map(|cursor| user_ids.partition_point(|user_id| user_id.as_str() <= cursor))
+            .unwrap_or(0);
+        let page_size = limit.clamp(1, MAX_BLOCKED_ACCOUNT_PAGE_SIZE as u32) as usize;
+        let end = start.saturating_add(page_size).min(user_ids.len());
+        let accounts = user_ids[start..end]
+            .iter()
+            .cloned()
+            .map(|user_id| BlockedAccountDto { user_id })
+            .collect::<Vec<_>>();
+        let next_cursor = (end < user_ids.len())
+            .then(|| accounts.last().map(|account| account.user_id.clone()))
+            .flatten();
+
+        BlockedAccountPageDto {
+            accounts,
+            next_cursor,
+        }
+    }
+
+    async fn fetch_ignored_user_list(client: &Client) -> BackendResult<IgnoredUserListEventContent> {
+        client
             .account()
             .fetch_account_data_static::<IgnoredUserListEventContent>()
             .await
             .map_err(Self::map_error)?
-        else {
-            return Ok(false);
-        };
-        let content = raw_content.deserialize().map_err(Self::map_error)?;
-        Ok(content.ignored_users.contains_key(user_id))
+            .map(|raw| raw.deserialize().map_err(Self::map_error))
+            .transpose()
+            .map(|content| content.unwrap_or_default())
+    }
+
+    async fn publish_ignored_user_cache(&self, content: &IgnoredUserListEventContent) {
+        let cache = Arc::clone(&self.runtime.read().await.ignored_users);
+        *cache.write().await = Some(content.ignored_users.keys().cloned().collect());
+    }
+
+    async fn stored_ignored_user_list(
+        client: &Client,
+    ) -> BackendResult<Option<IgnoredUserListEventContent>> {
+        client
+            .account()
+            .account_data::<IgnoredUserListEventContent>()
+            .await
+            .map_err(Self::map_error)?
+            .map(|raw| raw.deserialize().map_err(Self::map_error))
+            .transpose()
+    }
+
+    async fn cached_ignored_user_list(&self) -> Option<IgnoredUserListEventContent> {
+        let cache = Arc::clone(&self.runtime.read().await.ignored_users);
+        let users = cache.read().await.clone()?;
+        let mut content = IgnoredUserListEventContent::default();
+        content.ignored_users = users
+            .into_iter()
+            .map(|user_id| (user_id, IgnoredUser::new()))
+            .collect();
+        Some(content)
+    }
+
+    async fn ignored_user_list_with_offline_cache(
+        &self,
+        client: &Client,
+    ) -> BackendResult<IgnoredUserListEventContent> {
+        match self.refresh_ignored_user_list(client).await {
+            Ok(content) => Ok(content),
+            Err(error @ BackendError::Network(_)) => {
+                let cached = self.cached_ignored_user_list().await;
+                let Some(cached) = cached else {
+                    return Err(error);
+                };
+                tracing::warn!(
+                    target: "mesh::security",
+                    "The account service is offline; enforcing the last synced account block list"
+                );
+                Ok(cached)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn refresh_ignored_user_list(
+        &self,
+        client: &Client,
+    ) -> BackendResult<IgnoredUserListEventContent> {
+        let content = Self::fetch_ignored_user_list(client).await?;
+        self.publish_ignored_user_cache(&content).await;
+        Ok(content)
+    }
+
+    async fn set_ignored_user(
+        &self,
+        client: &Client,
+        recipient: OwnedUserId,
+        blocked: bool,
+    ) -> BackendResult<bool> {
+        // m.ignored_user_list is a whole-account-data write. Serialize local
+        // edits so two renderer actions cannot accidentally overwrite each
+        // other's changes after reading the same snapshot.
+        let _write_guard = self.ignored_user_writes.lock().await;
+        for attempt in 0..IGNORED_USER_WRITE_ATTEMPTS {
+            let mut content = self.refresh_ignored_user_list(client).await?;
+            let already_matches = Self::ignored_user_list_matches(&content, &recipient, blocked);
+            if already_matches {
+                return Ok(blocked);
+            }
+            if blocked {
+                content
+                    .ignored_users
+                    .insert(recipient.clone(), IgnoredUser::new());
+            } else {
+                content.ignored_users.remove(&recipient);
+            }
+            client
+                .account()
+                .set_account_data(content.clone())
+                .await
+                .map_err(Self::map_error)?;
+            self.publish_ignored_user_cache(&content).await;
+
+            let verification = match self.refresh_ignored_user_list(client).await {
+                Ok(content) => content,
+                Err(error) => {
+                    // The server acknowledged the write. Do not report a
+                    // misleading failure solely because the follow-up GET was
+                    // interrupted; the next authoritative read will reconcile.
+                    tracing::warn!(
+                        target: "mesh::security",
+                        recipient = %recipient,
+                        "The account service accepted a block-list update, but Mesh could not verify it: {error}"
+                    );
+                    return Ok(blocked);
+                }
+            };
+            if Self::ignored_user_list_matches(&verification, &recipient, blocked) {
+                return Ok(blocked);
+            }
+            tracing::warn!(
+                target: "mesh::security",
+                recipient = %recipient,
+                attempt = attempt + 1,
+                "A concurrent account block-list update changed the requested account; retrying from the latest server state"
+            );
+        }
+
+        Err(BackendError::Other(
+            "The account block list changed repeatedly on another device; retry after that device finishes updating"
+                .into(),
+        ))
     }
 
     async fn direct_room(
@@ -291,6 +624,7 @@ impl MatrixBackend {
         transaction_id: String,
     ) -> BackendResult<MessageDto> {
         Self::require_protected_room(room, "sending a direct message").await?;
+        Self::require_client_e2ee_ready(client).await?;
         let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
         let base_content = RoomMessageEventContentWithoutRelation::text_plain(body.clone())
             .add_mentions(Self::mentions_for_body(body.as_str(), Some(own_user_id)));
@@ -323,7 +657,7 @@ impl MatrixBackend {
             .send(content)
             .with_transaction_id(transaction_id.clone())
             .await
-            .map_err(Self::map_error)?;
+            .map_err(Self::map_matrix_send_error)?;
         let display_name = room
             .get_member(own_user_id)
             .await

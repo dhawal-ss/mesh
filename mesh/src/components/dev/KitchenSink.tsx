@@ -74,11 +74,11 @@ export function KitchenSink() {
     <ScrollArea className="h-screen bg-surface-sunken p-6 text-content">
       <motion.div
         aria-hidden="true"
-        data-ambient-motion-probe
+        data-party-response-probe
         data-reduced-motion={reduceMotion ? 'true' : 'false'}
         className="pointer-events-none fixed left-0 top-0 h-px w-px"
-        animate={{ x: reduceMotion ? 0 : [0, 24] }}
-        transition={reduceMotion ? transitions.reduced : transitions.ambientLoop}
+        animate={{ x: reduceMotion ? 0 : 8 }}
+        transition={reduceMotion ? transitions.reduced : transitions.deliberate}
       />
       <header className="mx-auto mb-8 max-w-6xl">
         <Badge tone="accent">Development only</Badge>

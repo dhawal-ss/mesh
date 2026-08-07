@@ -49,7 +49,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "path", "sha256", "bytes", "mediaType", "collectedAt", "sanitized", "resultIds"],
+        "required": ["id", "path", "sha256", "bytes", "mediaType", "collectedAt", "sanitized", "privacyReviewer", "resultIds"],
         "properties": {
           "id": { "type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$" },
           "path": { "type": "string", "minLength": 1 },
@@ -57,7 +57,8 @@
           "bytes": { "type": "integer", "minimum": 1 },
           "mediaType": { "type": "string", "minLength": 1 },
           "collectedAt": { "type": "string", "format": "date-time" },
-          "sanitized": { "const": true },
+          "sanitized": { "type": "boolean", "description": "Operator metadata only; the validator independently inspects content." },
+          "privacyReviewer": { "type": ["string", "null"], "description": "Required for screenshots and other human-only privacy review." },
           "resultIds": {
             "type": "array",
             "minItems": 1,

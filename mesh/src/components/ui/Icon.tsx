@@ -88,7 +88,7 @@ const ICONS = {
 const ICON_SIZES = {
   xs: 14,
   sm: 16,
-  md: 20,
+  md: 18,
   lg: 24,
 } as const
 

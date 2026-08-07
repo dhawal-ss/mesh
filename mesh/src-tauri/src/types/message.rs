@@ -76,6 +76,21 @@ pub struct MessageDto {
     pub undecryptable: Option<UndecryptableMessageDto>,
 }
 
+/// A bounded, server-backed view of one standard Matrix thread.
+///
+/// `unread_state_available` is false when the user's receipt privacy mode is
+/// off. In that mode Mesh must not invent cross-device unread state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixThreadContextDto {
+    pub root: MessageDto,
+    pub replies: Vec<MessageDto>,
+    pub unread_count: u32,
+    pub unread_mentions: u32,
+    pub unread_state_available: bool,
+    pub has_more: bool,
+}
+
 /// File attachment metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]

@@ -211,7 +211,7 @@ describe('authoritative per-room community permissions', () => {
       loadedRoom('!space:example.org', 'Community', undefined, {
         '@owner:example.org': 100,
         '@backup:example.org': 100,
-      }, ['@owner:example.org', '@backup:example.org']),
+      }),
     ])
     expect(evaluateAuthoritativeCommunityRoleAssignment({
       projection: ownerChangingAnotherOwner,
@@ -229,7 +229,6 @@ describe('authoritative per-room community permissions', () => {
           '@owner:example.org': 50,
           '@member:example.org': 0,
         },
-        ['@owner:example.org', '@member:example.org'],
       ),
     ])
     expect(evaluateAuthoritativeCommunityRoleAssignment({
@@ -264,11 +263,6 @@ function loadedRoom(
     '@admin:example.org': 50,
     '@member:example.org': 0,
   },
-  joinedUserIds = [
-    '@owner:example.org',
-    '@admin:example.org',
-    '@member:example.org',
-  ],
 ): MatrixRoomPermissionProjection {
   return {
     roomId,
@@ -289,7 +283,6 @@ function loadedRoom(
       notifications: { room: 50 },
       creatorUserIds: ['@owner:example.org'],
       privilegedCreatorUserIds: [],
-      joinedUserIds,
     },
   }
 }

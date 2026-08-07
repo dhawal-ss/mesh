@@ -29,6 +29,7 @@ import type {
   ModerationAuditEntry,
   MatrixUserPreferences,
   MatrixNotification,
+  MatrixIgnoredUsersChanged,
   MatrixPermissionStateChanged,
   MatrixPersonalDataExport,
   PendingInvitationMetadata,
@@ -38,6 +39,7 @@ import type {
   MatrixRoomUpgrade,
   MatrixRoomPins,
   MatrixRoomPinsUpdate,
+  MatrixThreadContextDto,
   MatrixRecoveryHealth,
   MatrixRecoverySetupResult,
   NotificationPresentationContext,
@@ -55,7 +57,10 @@ import type {
   VoiceSignalPayload,
   ReactionEvent,
   BanEvent,
+  BlockedAccountDto,
+  BlockedAccountPageDto,
   DmConversation,
+  DmRequestDto,
   DirectMessage,
   ServerEmoji,
   VoiceServiceStatus,
@@ -70,6 +75,11 @@ export interface BlockedEntityDiagnostic {
 export interface EntityListResult<T> {
   entities: T[]
   blockedEntities: BlockedEntityDiagnostic[]
+}
+
+export interface NotificationAccountScope {
+  accountGeneration: number
+  userId: string
 }
 
 function reportBlockedEntities(operation: string, blocked: BlockedEntityDiagnostic[]) {
@@ -105,8 +115,62 @@ const READ_REQUEST_TIMEOUT_MS = 15_000
 const READ_MAX_ATTEMPTS = 3
 const READ_RETRY_BASE_DELAY_MS = 150
 const READ_RETRY_MAX_DELAY_MS = 2_000
+// This protects the ordinary renderer from accidentally constructing an
+// oversized command. It is defense-in-depth only: Tauri/Wry must provide the
+// separate pre-allocation limit for a compromised renderer.
+const MAX_RENDERER_IPC_ARGUMENT_BYTES = 1024 * 1024
 const inflightReadRequests = new Map<string, Promise<unknown>>()
+const activeNativeReadRequestIds = new Set<string>()
+const blockedNativeReadCompletions = new Map<string, Promise<void>>()
+const TYPED_TRANSIENT_CODES = new Set([
+  'network_unavailable',
+  'rate_limited',
+  'registration_timed_out',
+  'login_timed_out',
+])
 const READ_IPC_OPTIONS: TauriInvokeOptions = { idempotent: true }
+// Only commands that enter Rust's NativeRequestRegistry may receive its
+// requestId/deadline contract. Other reads still coalesce and retry after a
+// settled transient failure, but they must never claim a timeout was cancelled
+// while unregistered native work is still running.
+const NATIVE_GUARDED_READ_COMMANDS = new Set([
+  'get_backend_status',
+  'check_username_available',
+  'matrix_accounts',
+  'matrix_community_access_settings',
+  'matrix_device_verification_status',
+  'matrix_devices',
+  'matrix_blocked_accounts',
+  'matrix_dm_blocked',
+  'matrix_dm_conversations',
+  'matrix_dm_requests',
+  'matrix_dm_messages',
+  'matrix_get_community_permission_projection',
+  'matrix_get_messages',
+  'matrix_thread_context',
+  'matrix_get_profile',
+  'matrix_get_room_notification_mode',
+  'matrix_list_channels',
+  'matrix_list_communities',
+  'matrix_list_community_applications',
+  'matrix_list_custom_emoji',
+  'matrix_list_members',
+  'matrix_list_moderation_audit',
+  'matrix_load_attachment_image',
+  'matrix_load_composer_draft',
+  'matrix_load_custom_emoji_image',
+  'matrix_oidc_status',
+  'matrix_queued_messages',
+  'matrix_recovery_health',
+  'matrix_rtc_members',
+  'matrix_room_is_encrypted',
+  'matrix_room_pins',
+  'matrix_room_upgrade',
+  'matrix_service_capabilities',
+  'matrix_typing_users',
+  'matrix_user_preferences',
+  'matrix_wait_for_room_update',
+])
 const THUMBNAIL_IPC_OPTIONS: TauriInvokeOptions = {
   idempotent: true,
   timeoutMs: 45_000,
@@ -165,8 +229,67 @@ function stableRequestKey(command: string, args?: Record<string, unknown>): stri
   }
 }
 
+function validateRendererIpcArguments(args?: Record<string, unknown>): void {
+  if (!args) return
+
+  let serialized: string
+  try {
+    serialized = JSON.stringify(args)
+  } catch {
+    throw new AppError(
+      'serialization_error',
+      'Mesh could not prepare this request. Check the entered information and try again.',
+      false,
+    )
+  }
+  if (new TextEncoder().encode(serialized).byteLength > MAX_RENDERER_IPC_ARGUMENT_BYTES) {
+    throw new AppError(
+      'invalid_input',
+      'Mesh blocked an unusually large app request. Choose a smaller input or file and try again.',
+      false,
+    )
+  }
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+class NativeReadTimeout extends AppError {
+  readonly requestId: string
+  readonly completion: Promise<void>
+
+  constructor(command: string, requestId: string, completion: Promise<void>) {
+    super('network_unavailable', `IPC request "${command}" timed out`, false)
+    this.name = 'NativeReadTimeout'
+    this.requestId = requestId
+    this.completion = completion
+  }
+}
+
+function isTypedTransientFailure(cause: unknown): boolean {
+  if (!cause || typeof cause !== 'object' || cause instanceof Error) return false
+  const payload = cause as { code?: unknown; retryable?: unknown }
+  return (
+    payload.retryable === true
+    && typeof payload.code === 'string'
+    && TYPED_TRANSIENT_CODES.has(payload.code)
+  )
+}
+
+async function cancelNativeReadAndAwaitCompletion(requestId: string): Promise<boolean> {
+  try {
+    const status = await invoke<string>('cancel_native_request', { requestId })
+    return status === 'completed'
+  } catch {
+    return false
+  }
+}
+
+async function cancelAllActiveNativeReads(): Promise<void> {
+  await Promise.allSettled(
+    [...activeNativeReadRequestIds].map(cancelNativeReadAndAwaitCompletion),
+  )
 }
 
 async function invokeWithTimeout<T>(
@@ -174,19 +297,40 @@ async function invokeWithTimeout<T>(
   args: Record<string, unknown> | undefined,
   timeoutMs: number,
 ): Promise<T> {
+  const requestId = createMatrixTransactionId()
+  // Rust owns the primary deadline. The renderer timer is a short fail-safe
+  // used only if native execution or IPC delivery becomes unresponsive.
+  const deadlineHeadroomMs = Math.min(1_000, Math.max(1, Math.floor(timeoutMs / 10)))
+  const deadlineMs = Math.max(1, timeoutMs - deadlineHeadroomMs)
   let invocation: Promise<T>
   try {
-    invocation = Promise.resolve(invoke<T>(command, args))
+    activeNativeReadRequestIds.add(requestId)
+    invocation = Promise.resolve(invoke<T>(command, {
+      ...(args ?? {}),
+      requestId,
+      deadlineMs,
+    }))
   } catch (cause) {
+    activeNativeReadRequestIds.delete(requestId)
     throw cause
   }
+
+  void invocation
+    .finally(() => activeNativeReadRequestIds.delete(requestId))
+    .catch(() => {
+      // The returned invocation carries the rejection to the caller.
+    })
+  const completion = invocation.then(
+    () => undefined,
+    () => undefined,
+  )
 
   return new Promise<T>((resolve, reject) => {
     let settled = false
     const timer = window.setTimeout(() => {
       if (settled) return
       settled = true
-      reject(normalizeError(`IPC request \"${command}\" timed out`))
+      reject(new NativeReadTimeout(command, requestId, completion))
     }, timeoutMs)
 
     invocation.then(
@@ -210,6 +354,7 @@ async function invokeRead<T>(
   command: string,
   args: Record<string, unknown> | undefined,
   options: TauriInvokeOptions,
+  requestKey: string,
 ): Promise<T> {
   const timeoutMs = Math.max(1, options.timeoutMs ?? READ_REQUEST_TIMEOUT_MS)
   const maxAttempts = Math.max(1, Math.min(5, options.maxAttempts ?? READ_MAX_ATTEMPTS))
@@ -219,12 +364,36 @@ async function invokeRead<T>(
     options.retryMaxDelayMs ?? READ_RETRY_MAX_DELAY_MS,
   )
 
+  // If a previous renderer timeout could not be acknowledged by Rust, keep
+  // this exact read key blocked until the original native invocation settles.
+  // This preserves coalescing across timeout cleanup instead of multiplying
+  // unknown work on a later user refresh.
+  const blockedCompletion = blockedNativeReadCompletions.get(requestKey)
+  if (blockedCompletion) await blockedCompletion
+
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
-      return await invokeWithTimeout<T>(command, args, timeoutMs)
+      return NATIVE_GUARDED_READ_COMMANDS.has(command)
+        ? await invokeWithTimeout<T>(command, args, timeoutMs)
+        : await Promise.resolve(invoke<T>(command, args))
     } catch (cause) {
+      if (cause instanceof NativeReadTimeout) {
+        // Cancellation returns only after Rust has dropped the guarded future
+        // and released its account/operation permits. A missing acknowledgement
+        // is treated as unknown active work and is never retried.
+        const confirmed = await cancelNativeReadAndAwaitCompletion(cause.requestId)
+        if (!confirmed) {
+          const blocker = cause.completion.finally(() => {
+            if (blockedNativeReadCompletions.get(requestKey) === blocker) {
+              blockedNativeReadCompletions.delete(requestKey)
+            }
+          })
+          blockedNativeReadCompletions.set(requestKey, blocker)
+        }
+        throw cause
+      }
       const error = normalizeError(cause)
-      const shouldRetry = attempt + 1 < maxAttempts && error.retryable
+      const shouldRetry = attempt + 1 < maxAttempts && isTypedTransientFailure(cause)
       if (!shouldRetry) throw error
 
       const exponentialDelay = Math.min(retryMaxDelayMs, retryBaseDelayMs * 2 ** attempt)
@@ -245,6 +414,7 @@ async function tauriInvoke<T>(
   if (!isTauri()) {
     throw tauriUnavailable()
   }
+  validateRendererIpcArguments(args)
 
   let request: Promise<T>
   if (options.idempotent) {
@@ -252,7 +422,7 @@ async function tauriInvoke<T>(
     const existing = inflightReadRequests.get(key)
     if (existing) return existing as Promise<T>
 
-    request = invokeRead<T>(command, args, options)
+    request = invokeRead<T>(command, args, options, key)
     inflightReadRequests.set(key, request)
     void request
       .finally(() => {
@@ -278,6 +448,23 @@ async function tauriInvoke<T>(
     }
     throw error
   }
+}
+
+/**
+ * The LAN-only command boundary. The compile-time constant keeps these calls
+ * unreachable from a Matrix renderer even if a caller accidentally selects a
+ * legacy provider at runtime; the Tauri capability is the independent native
+ * enforcement layer.
+ */
+async function legacyTauriInvoke<T>(
+  command: string,
+  args?: Record<string, unknown>,
+  options: TauriInvokeOptions = {},
+): Promise<T> {
+  if (!__MESH_LEGACY_FRONTEND__) {
+    throw normalizeError('This operation is available only in the explicit Mesh LAN build.')
+  }
+  return tauriInvoke<T>(command, args, options)
 }
 
 interface ActiveNativeSearch {
@@ -383,7 +570,7 @@ const PREVIEW_MATRIX_VOICE_SERVICE: VoiceServiceStatus = {
   tokenEndpoint: null,
   livekitSfuUrl: null,
   cspReady: false,
-  mediaE2eeVerified: false,
+  mediaE2eeReady: false,
   reason: 'MatrixRTC authorization and LiveKit are not configured in preview mode',
 }
 
@@ -532,9 +719,17 @@ export async function clearPendingInvitation(handle: string): Promise<void> {
   return tauriInvoke('clear_pending_invitation', { handle })
 }
 
+let activeLoginAttemptId: string | null = null
+
 export async function matrixLogin(request: MatrixLoginRequest): Promise<BackendStatus> {
-  const status = await tauriInvoke<BackendStatus>('matrix_login', { request })
-  return cacheBackendStatus(status)
+  const attemptId = await tauriInvoke<string>('matrix_reserve_login_attempt')
+  activeLoginAttemptId = attemptId
+  try {
+    const status = await tauriInvoke<BackendStatus>('matrix_login', { request, attemptId })
+    return cacheBackendStatus(status)
+  } finally {
+    if (activeLoginAttemptId === attemptId) activeLoginAttemptId = null
+  }
 }
 
 export async function matrixRegisterAccount(
@@ -575,12 +770,20 @@ export async function matrixOidcStatus(homeserver: string): Promise<MatrixOidcSt
 }
 
 export async function matrixStartOidcLogin(homeserver: string): Promise<BackendStatus> {
-  await tauriInvoke('matrix_start_oidc_login', { homeserver })
-  return getBackendStatus()
+  const attemptId = await tauriInvoke<string>('matrix_reserve_login_attempt')
+  activeLoginAttemptId = attemptId
+  try {
+    await tauriInvoke('matrix_start_oidc_login', { homeserver, attemptId })
+    return getBackendStatus()
+  } finally {
+    if (activeLoginAttemptId === attemptId) activeLoginAttemptId = null
+  }
 }
 
 export async function matrixCancelLogin(): Promise<void> {
-  return tauriInvoke('matrix_cancel_login')
+  const attemptId = activeLoginAttemptId
+  if (!attemptId) return
+  return tauriInvoke('matrix_cancel_login', { attemptId })
 }
 
 export async function matrixRestoreSession(): Promise<BackendStatus> {
@@ -589,7 +792,7 @@ export async function matrixRestoreSession(): Promise<BackendStatus> {
 }
 
 export async function matrixLogout(): Promise<void> {
-  await cancelAllActiveNativeSearches()
+  await Promise.all([cancelAllActiveNativeReads(), cancelAllActiveNativeSearches()])
   await tauriInvoke('matrix_logout')
   cachedBackendKind = 'matrix'
   cachedBackendStatus = null
@@ -613,16 +816,34 @@ export function onMatrixTrustChanged(listener: () => void): () => void {
   return () => window.removeEventListener(MATRIX_TRUST_CHANGED_EVENT, listener)
 }
 
-export async function matrixRevokeDevice(deviceId: string, password: string): Promise<void> {
-  await tauriInvoke('matrix_revoke_device', { deviceId, password })
-  emitMatrixTrustChanged()
+type DestructiveAction = 'removeLocalAccount' | 'revokeDevice' | 'deactivateAccount'
+
+async function requestDestructiveActionGrant(
+  action: DestructiveAction,
+  targetId?: string,
+): Promise<string | null> {
+  return tauriInvoke('request_destructive_action_grant', {
+    action,
+    targetId: targetId ?? null,
+  })
 }
 
-export async function matrixRemoveLocalAccount(): Promise<void> {
-  await cancelAllActiveNativeSearches()
-  await tauriInvoke('matrix_remove_local_account')
+export async function matrixRevokeDevice(deviceId: string, password: string): Promise<boolean> {
+  const presenceGrant = await requestDestructiveActionGrant('revokeDevice', deviceId)
+  if (!presenceGrant) return false
+  await tauriInvoke('matrix_revoke_device', { deviceId, password, presenceGrant })
+  emitMatrixTrustChanged()
+  return true
+}
+
+export async function matrixRemoveLocalAccount(): Promise<boolean> {
+  const presenceGrant = await requestDestructiveActionGrant('removeLocalAccount')
+  if (!presenceGrant) return false
+  await Promise.all([cancelAllActiveNativeReads(), cancelAllActiveNativeSearches()])
+  await tauriInvoke('matrix_remove_local_account', { presenceGrant })
   cachedBackendKind = 'matrix'
   cachedBackendStatus = null
+  return true
 }
 
 export async function matrixExportPersonalData(): Promise<MatrixPersonalDataExport | null> {
@@ -633,10 +854,13 @@ export async function matrixCancelPersonalDataExport(): Promise<void> {
   return tauriInvoke('matrix_cancel_personal_data_export')
 }
 
-export async function matrixDeactivateAccount(password: string): Promise<void> {
-  await tauriInvoke('matrix_deactivate_account', { password })
+export async function matrixDeactivateAccount(password: string): Promise<boolean> {
+  const presenceGrant = await requestDestructiveActionGrant('deactivateAccount')
+  if (!presenceGrant) return false
+  await tauriInvoke('matrix_deactivate_account', { password, presenceGrant })
   cachedBackendKind = 'matrix'
   cachedBackendStatus = null
+  return true
 }
 
 export async function matrixAccounts(): Promise<MatrixAccount[]> {
@@ -652,7 +876,7 @@ export async function matrixUpdateProfileDisplayName(displayName: string): Promi
 }
 
 export async function matrixSwitchAccount(profileId: string): Promise<BackendStatus> {
-  await cancelAllActiveNativeSearches()
+  await Promise.all([cancelAllActiveNativeReads(), cancelAllActiveNativeSearches()])
   const status = await tauriInvoke<BackendStatus>('matrix_switch_account', {
     profileId,
   })
@@ -735,10 +959,17 @@ export async function updateMatrixUserPreferences(
   })
 }
 
+export async function getNotificationAccountScope(
+  expectedUserId: string,
+): Promise<NotificationAccountScope> {
+  return tauriInvoke('get_notification_account_scope', { expectedUserId })
+}
+
 export async function setNotificationContext(
+  scope: NotificationAccountScope,
   context: NotificationPresentationContext,
 ): Promise<void> {
-  return tauriInvoke('set_notification_context', { context })
+  return tauriInvoke('set_notification_context', { scope, context })
 }
 
 export async function sendTestNotification(): Promise<void> {
@@ -836,22 +1067,36 @@ export async function listServerEmoji(communityId: string): Promise<ServerEmoji[
   return tauriInvoke('matrix_list_custom_emoji', { communityId }, READ_IPC_OPTIONS)
 }
 
+export async function pickCustomEmojiGrant(
+  communityId: string,
+): Promise<NativeAttachmentGrant | null> {
+  if (!isMatrixBackend()) throw normalizeError('Custom emoji require the production backend.')
+  return tauriInvoke('pick_custom_emoji_grant', { communityId })
+}
+
 export async function uploadServerEmoji(
   communityId: string,
   shortcode: string,
-  file: File,
+  selection: NativeAttachmentGrant,
 ): Promise<ServerEmoji> {
   if (!isMatrixBackend()) throw normalizeError('Custom emoji require the production backend.')
-  if (file.size === 0 || file.size > MAX_CUSTOM_EMOJI_BYTES) {
+  if (
+    !Number.isSafeInteger(selection.size)
+    || selection.size <= 0
+    || selection.size > MAX_CUSTOM_EMOJI_BYTES
+  ) {
     throw normalizeError('Emoji images must be 512 KB or smaller.')
   }
-  const bytes = new Uint8Array(await file.arrayBuffer())
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(selection.contentType)) {
+    throw normalizeError('Choose a PNG, JPEG, or WebP image.')
+  }
+  if (!selection.grant.trim()) {
+    throw normalizeError('Choose the emoji image again.')
+  }
   return tauriInvoke('matrix_upload_custom_emoji', {
     communityId,
     shortcode,
-    filename: file.name,
-    contentType: file.type,
-    bytes: Array.from(bytes),
+    grant: selection.grant,
   })
 }
 
@@ -1038,6 +1283,12 @@ export interface NativeAttachmentGrant {
 export interface NativeAttachmentIntake {
   files: NativeAttachmentGrant[]
   errors: string[]
+  accountScope: NativeAttachmentAccountScope
+}
+
+export interface NativeAttachmentAccountScope {
+  accountGeneration: number
+  userId: string
 }
 
 export async function pickAttachmentGrants(): Promise<NativeAttachmentIntake> {
@@ -1065,7 +1316,7 @@ export async function matrixGetMessages(
   limit: number,
   before?: { timestamp: string; id: string },
 ): Promise<Message[]> {
-  return tauriInvoke(
+  return tauriInvoke<Message[]>(
     'matrix_get_messages',
     {
       roomId,
@@ -1073,6 +1324,17 @@ export async function matrixGetMessages(
       beforeTimestamp: before?.timestamp,
       beforeId: before?.id,
     },
+    READ_IPC_OPTIONS,
+  )
+}
+
+export async function matrixThreadContext(
+  roomId: string,
+  threadRootId: string,
+): Promise<MatrixThreadContextDto> {
+  return tauriInvoke<MatrixThreadContextDto>(
+    'matrix_thread_context',
+    { roomId, threadRootId },
     READ_IPC_OPTIONS,
   )
 }
@@ -1092,7 +1354,11 @@ export async function matrixWaitForRoomUpdate(
   roomId: string,
   timeoutMs = 25_000,
 ): Promise<boolean> {
-  return tauriInvoke('matrix_wait_for_room_update', { roomId, timeoutMs })
+  return tauriInvoke(
+    'matrix_wait_for_room_update',
+    { roomId, timeoutMs },
+    { idempotent: true, timeoutMs: timeoutMs + 5_000, maxAttempts: 1 },
+  )
 }
 
 export interface MatrixTypingUser {
@@ -1129,11 +1395,11 @@ export async function generateIdentity(
   displayName: string,
   avatarColor: string,
 ): Promise<Identity> {
-  return tauriInvoke('generate_identity', { displayName, avatarColor })
+  return legacyTauriInvoke('generate_identity', { displayName, avatarColor })
 }
 
 export async function createIdentity(): Promise<Identity> {
-  return tauriInvoke('create_identity')
+  return legacyTauriInvoke('create_identity')
 }
 
 export async function getIdentity(): Promise<Identity | null> {
@@ -1141,23 +1407,23 @@ export async function getIdentity(): Promise<Identity | null> {
     return null
   }
 
-  return tauriInvoke('get_identity', undefined, READ_IPC_OPTIONS)
+  return legacyTauriInvoke('get_identity', undefined, READ_IPC_OPTIONS)
 }
 
 export async function updateProfile(displayName: string, avatarColor: string): Promise<Identity> {
-  return tauriInvoke('update_profile', { displayName, avatarColor })
+  return legacyTauriInvoke('update_profile', { displayName, avatarColor })
 }
 
 export async function updateDisplayName(name: string): Promise<void> {
-  return tauriInvoke('update_display_name', { name })
+  return legacyTauriInvoke('update_display_name', { name })
 }
 
 export async function exportIdentity(passphrase: string): Promise<string> {
-  return tauriInvoke('export_identity', { passphrase })
+  return legacyTauriInvoke('export_identity', { passphrase })
 }
 
 export async function importIdentity(bundleB64: string, passphrase: string): Promise<Identity> {
-  return tauriInvoke('import_identity', { bundleB64, passphrase })
+  return legacyTauriInvoke('import_identity', { bundleB64, passphrase })
 }
 
 // ─── Community Commands ─────────────────────────────
@@ -1166,20 +1432,27 @@ export async function createCommunity(name: string, description: string): Promis
   if (isMatrixBackend()) {
     return matrixCreateCommunity(name, description)
   }
-  return tauriInvoke('create_community', { name, description })
+  return legacyTauriInvoke('create_community', { name, description })
 }
 
 export async function getCommunities(): Promise<Community[]> {
+  return (await getCommunitiesResult()).entities
+}
+
+export async function getCommunitiesResult(): Promise<EntityListResult<Community>> {
   if (!isTauri()) {
-    return []
+    return { entities: [], blockedEntities: [] }
   }
 
   if (isMatrixBackend()) {
     const result = await matrixListCommunities()
     reportBlockedEntities('Community listing', result.blockedEntities)
-    return result.entities
+    return result
   }
-  return tauriInvoke('get_communities', undefined, READ_IPC_OPTIONS)
+  return {
+    entities: await legacyTauriInvoke('get_communities', undefined, READ_IPC_OPTIONS),
+    blockedEntities: [],
+  }
 }
 
 export async function joinCommunity(inviteLink: string): Promise<Community> {
@@ -1204,7 +1477,7 @@ export async function joinCommunity(inviteLink: string): Promise<Community> {
       via: parsed?.via ?? [],
     })
   }
-  return tauriInvoke('join_community', { inviteLink })
+  return legacyTauriInvoke('join_community', { inviteLink })
 }
 
 export async function matrixJoinRoom(roomId: string): Promise<void> {
@@ -1240,14 +1513,14 @@ export async function leaveCommunity(communityId: string): Promise<void> {
   if (isMatrixBackend()) {
     return tauriInvoke('matrix_leave_community', { communityId })
   }
-  return tauriInvoke('leave_community', { communityId })
+  return legacyTauriInvoke('leave_community', { communityId })
 }
 
 export async function deleteCommunity(communityId: string): Promise<void> {
   if (isMatrixBackend()) {
     return leaveCommunity(communityId)
   }
-  return tauriInvoke('delete_community', { communityId })
+  return legacyTauriInvoke('delete_community', { communityId })
 }
 
 export async function inviteMatrixUser(communityId: string, username: string): Promise<void> {
@@ -1322,7 +1595,7 @@ export async function respondToCommunityApplication(
 
 export async function generateInviteLink(communityId: string): Promise<string> {
   if (!isMatrixBackend()) {
-    return tauriInvoke('generate_invite_link', { communityId })
+    return legacyTauriInvoke('generate_invite_link', { communityId })
   }
   const invite = await tauriInvoke<string>('matrix_create_community_invite', {
     communityId,
@@ -1349,7 +1622,7 @@ export async function getChannels(communityId: string): Promise<Channel[]> {
     reportBlockedEntities('Channel listing', result.blockedEntities)
     return result.entities
   }
-  return tauriInvoke('get_channels', { communityId }, READ_IPC_OPTIONS)
+  return legacyTauriInvoke('get_channels', { communityId }, READ_IPC_OPTIONS)
 }
 
 export async function createChannel(
@@ -1360,7 +1633,7 @@ export async function createChannel(
   if (isMatrixBackend()) {
     return matrixCreateChannel(communityId, name, type)
   }
-  return tauriInvoke('create_channel', {
+  return legacyTauriInvoke('create_channel', {
     communityId,
     name,
     channelType: type,
@@ -1379,7 +1652,7 @@ export async function updateCommunityMetadata(
       description,
     })
   }
-  return tauriInvoke('update_community_metadata', {
+  return legacyTauriInvoke('update_community_metadata', {
     communityId,
     name,
     description,
@@ -1392,7 +1665,7 @@ export async function syncLocalChannel(
   name: string,
   type: 'text' | 'voice',
 ): Promise<void> {
-  return tauriInvoke('sync_local_channel', {
+  return legacyTauriInvoke('sync_local_channel', {
     communityId,
     channelId,
     name,
@@ -1416,7 +1689,7 @@ export async function sendMessage(
     }
     return matrixSendMessage(channelId, content, replyToId, transactionId, threadRootId)
   }
-  return tauriInvoke('send_message', {
+  return legacyTauriInvoke('send_message', {
     channelId,
     content,
     attachments,
@@ -1432,7 +1705,7 @@ export async function getMessages(
   if (isMatrixBackend()) {
     return matrixGetMessages(channelId, limit, before)
   }
-  return tauriInvoke(
+  return legacyTauriInvoke(
     'get_messages',
     {
       channelId,
@@ -1448,7 +1721,24 @@ export async function markChannelRead(channelId: string): Promise<void> {
   if (isMatrixBackend()) {
     return tauriInvoke('matrix_mark_read', { roomId: channelId })
   }
-  return tauriInvoke('mark_channel_read', { channelId })
+  return legacyTauriInvoke('mark_channel_read', { channelId })
+}
+
+export async function markThreadRead(
+  roomId: string,
+  threadRootId: string,
+  eventId: string,
+): Promise<void> {
+  if (!isMatrixBackend()) return
+  return tauriInvoke('matrix_mark_thread_read', { roomId, threadRootId, eventId })
+}
+
+export async function markChannelsRead(channelIds: string[]): Promise<string[]> {
+  if (isMatrixBackend()) {
+    return tauriInvoke('matrix_mark_rooms_read', { roomIds: channelIds })
+  }
+  const results = await Promise.allSettled(channelIds.map((channelId) => markChannelRead(channelId)))
+  return channelIds.filter((_, index) => results[index]?.status === 'rejected')
 }
 
 export async function requestMessageHistory(
@@ -1459,7 +1749,7 @@ export async function requestMessageHistory(
     await matrixSyncOnce()
     return
   }
-  return tauriInvoke('request_message_history', {
+  return legacyTauriInvoke('request_message_history', {
     channelId,
     peerId: options.peerId,
     limit: options.limit,
@@ -1479,7 +1769,7 @@ export async function editMessage(
       body: content,
     })
   }
-  return tauriInvoke('edit_message', { messageId, content })
+  return legacyTauriInvoke('edit_message', { messageId, content })
 }
 
 export async function deleteMessage(messageId: string, channelId?: string): Promise<void> {
@@ -1490,7 +1780,7 @@ export async function deleteMessage(messageId: string, channelId?: string): Prom
       eventId: messageId,
     })
   }
-  return tauriInvoke('delete_message', { messageId })
+  return legacyTauriInvoke('delete_message', { messageId })
 }
 
 export async function reportMessage(
@@ -1521,7 +1811,7 @@ export async function addReaction(
       key: emoji,
     })
   }
-  return tauriInvoke('add_reaction', { messageId, emoji })
+  return legacyTauriInvoke('add_reaction', { messageId, emoji })
 }
 
 export async function searchMessages(
@@ -1536,7 +1826,7 @@ export async function searchMessages(
       { query, communityId, limit },
     )
   }
-  return tauriInvoke('search_messages', { query, communityId, limit }, READ_IPC_OPTIONS)
+  return legacyTauriInvoke('search_messages', { query, communityId, limit }, READ_IPC_OPTIONS)
 }
 
 export async function cancelMessageSearch(communityId: string): Promise<void> {
@@ -1566,13 +1856,13 @@ export async function getChannelEventLog(
   events: ChannelEvent[]
   latestSequence: number
 }> {
-  return tauriInvoke('get_channel_event_log', { channelId, sinceSequence, limit }, READ_IPC_OPTIONS)
+  return legacyTauriInvoke('get_channel_event_log', { channelId, sinceSequence, limit }, READ_IPC_OPTIONS)
 }
 
 // ─── KV Store Commands ─────────────────────────────
 
 export async function setKv(key: string, value: string): Promise<void> {
-  return tauriInvoke('set_kv', { key, value })
+  return legacyTauriInvoke('set_kv', { key, value })
 }
 
 // ─── Typing Commands ───────────────────────────────
@@ -1581,7 +1871,7 @@ export async function broadcastTyping(channelId: string): Promise<void> {
   if (isMatrixBackend()) {
     return setTyping(channelId, true)
   }
-  return tauriInvoke('broadcast_typing', { channelId })
+  return legacyTauriInvoke('broadcast_typing', { channelId })
 }
 
 export async function setTyping(channelId: string, typing: boolean): Promise<void> {
@@ -1616,7 +1906,7 @@ export async function getIceServers(): Promise<IceServerConfig[]> {
   // Browser preview has no native backend. Keep its deterministic STUN-only
   // fixture, but never hide a configured Tauri backend failure from callers.
   if (!isTauri()) return BROWSER_PREVIEW_ICE_SERVERS
-  return tauriInvoke<IceServerConfig[]>('get_ice_servers', undefined, READ_IPC_OPTIONS)
+  return legacyTauriInvoke<IceServerConfig[]>('get_ice_servers', undefined, READ_IPC_OPTIONS)
 }
 
 export interface IceServerStatus {
@@ -1629,7 +1919,7 @@ export interface IceServerStatus {
 
 export async function getIceServerStatus(): Promise<IceServerStatus> {
   try {
-    return await tauriInvoke<IceServerStatus>('get_ice_server_status', undefined, READ_IPC_OPTIONS)
+    return await legacyTauriInvoke<IceServerStatus>('get_ice_server_status', undefined, READ_IPC_OPTIONS)
   } catch {
     return {
       stunConfigured: false,
@@ -1644,13 +1934,13 @@ export async function getIceServerStatus(): Promise<IceServerStatus> {
 /// Validate ICE server config without persisting it. Returns the status with
 /// any warnings. Fatal errors (malformed URLs, invalid ports) appear as warnings.
 export async function validateIceServers(servers: IceServerConfig[]): Promise<IceServerStatus> {
-  return tauriInvoke<IceServerStatus>('validate_ice_servers', { servers })
+  return legacyTauriInvoke<IceServerStatus>('validate_ice_servers', { servers })
 }
 
 /// Persist a custom ICE server configuration. Rejects configs with fatal
 /// errors (malformed URLs, missing credentials on TURN, invalid ports).
 export async function setIceServers(servers: IceServerConfig[]): Promise<IceServerStatus> {
-  return tauriInvoke<IceServerStatus>('set_ice_servers', { servers })
+  return legacyTauriInvoke<IceServerStatus>('set_ice_servers', { servers })
 }
 
 export interface IceServerProbeResult {
@@ -1668,7 +1958,7 @@ export interface IceServerProbeResult {
 /// Probe all configured ICE servers for reachability. Returns per-URL results
 /// that distinguish malformed, unreachable, no_credentials, ok.
 export async function probeIceServers(): Promise<IceServerProbeResult[]> {
-  return tauriInvoke<IceServerProbeResult[]>(
+  return legacyTauriInvoke<IceServerProbeResult[]>(
     'probe_ice_servers',
     undefined,
     READ_IPC_OPTIONS,
@@ -1716,7 +2006,7 @@ export interface SystemDiagnostics {
 }
 
 export async function getDiagnostics(): Promise<SystemDiagnostics> {
-  return tauriInvoke<SystemDiagnostics>('get_diagnostics', undefined, READ_IPC_OPTIONS)
+  return legacyTauriInvoke<SystemDiagnostics>('get_diagnostics', undefined, READ_IPC_OPTIONS)
 }
 
 // ─── Voice Commands ─────────────────────────────────
@@ -1729,7 +2019,7 @@ export interface MatrixRtcJoinResult {
   token: string
   roomName: string
   participantIdentity: string
-  mediaE2eeVerified: boolean
+  mediaE2eeReady: boolean
   mediaKey: MatrixRtcMediaKey
 }
 
@@ -1796,7 +2086,7 @@ export async function matrixRtcLeave(roomId: string, sessionId: string): Promise
 }
 
 export async function matrixRtcMembers(roomId: string): Promise<MatrixRtcMember[]> {
-  return tauriInvoke('matrix_rtc_members', { roomId })
+  return tauriInvoke('matrix_rtc_members', { roomId }, READ_IPC_OPTIONS)
 }
 
 export async function matrixRtcRefreshMembership(
@@ -1855,22 +2145,22 @@ export async function joinVoice(
   channelId: string,
 ): Promise<VoiceSessionSnapshot> {
   requireLegacyVoice('join a voice room')
-  return tauriInvoke('join_voice', { communityId, channelId })
+  return legacyTauriInvoke('join_voice', { communityId, channelId })
 }
 
 export async function leaveVoice(communityId: string, channelId: string): Promise<void> {
   requireLegacyVoice('leave a voice room')
-  return tauriInvoke('leave_voice', { communityId, channelId })
+  return legacyTauriInvoke('leave_voice', { communityId, channelId })
 }
 
 export async function setMuted(muted: boolean): Promise<void> {
   requireLegacyVoice('change voice mute state')
-  return tauriInvoke('set_muted', { muted })
+  return legacyTauriInvoke('set_muted', { muted })
 }
 
 export async function setDeafened(deafened: boolean): Promise<void> {
   requireLegacyVoice('change voice deafen state')
-  return tauriInvoke('set_deafened', { deafened })
+  return legacyTauriInvoke('set_deafened', { deafened })
 }
 
 export async function sendVoiceSignal(
@@ -1899,7 +2189,7 @@ export async function sendVoiceSignal(
     communityId,
     channelId,
   }
-  return tauriInvoke('send_voice_signal', {
+  return legacyTauriInvoke('send_voice_signal', {
     peerId: payload.peerId,
     signal: payload.signal,
     communityId: payload.communityId,
@@ -2034,6 +2324,12 @@ export function onMatrixUnreadUpdate(
   return tauriListen('matrix:unread-update', handler)
 }
 
+export function onMatrixIgnoredUsersChanged(
+  handler: (change: MatrixIgnoredUsersChanged) => void,
+): Promise<UnlistenFn> {
+  return tauriListen('matrix:ignored-users-changed', handler)
+}
+
 export function onMatrixRoomPinsUpdate(
   handler: (update: MatrixRoomPinsUpdate) => void,
 ): Promise<UnlistenFn> {
@@ -2166,7 +2462,7 @@ export async function sendDm(
       transactionId,
     })
   }
-  return tauriInvoke('send_dm', { recipientPublicKey, content })
+  return legacyTauriInvoke('send_dm', { recipientPublicKey, content })
 }
 
 export async function getDmConversations(): Promise<DmConversation[]> {
@@ -2180,7 +2476,45 @@ export async function getDmConversations(): Promise<DmConversation[]> {
     reportBlockedEntities('Direct-message listing', result.blockedEntities)
     return result.entities
   }
-  return tauriInvoke('get_dm_conversations', undefined, READ_IPC_OPTIONS)
+  return legacyTauriInvoke('get_dm_conversations', undefined, READ_IPC_OPTIONS)
+}
+
+export async function getDmRequests(): Promise<DmRequestDto[]> {
+  if (!isTauri() || !isMatrixBackend()) return []
+  return tauriInvoke('matrix_dm_requests', undefined, READ_IPC_OPTIONS)
+}
+
+export async function getBlockedAccounts(
+  after?: string,
+  limit: number = 50,
+): Promise<BlockedAccountPageDto> {
+  if (!isTauri() || !isMatrixBackend()) return { accounts: [], nextCursor: null }
+  return tauriInvoke(
+    'matrix_blocked_accounts',
+    { after, limit },
+    READ_IPC_OPTIONS,
+  )
+}
+
+export async function acceptDmRequest(roomId: string): Promise<DmConversation> {
+  if (!isMatrixBackend()) {
+    throw new Error('Message requests are unavailable in the legacy bridge')
+  }
+  return tauriInvoke('matrix_accept_dm_request', { roomId })
+}
+
+export async function declineDmRequest(roomId: string): Promise<void> {
+  if (!isMatrixBackend()) {
+    throw new Error('Message requests are unavailable in the legacy bridge')
+  }
+  return tauriInvoke('matrix_decline_dm_request', { roomId })
+}
+
+export async function blockDmRequest(roomId: string): Promise<BlockedAccountDto> {
+  if (!isMatrixBackend()) {
+    throw new Error('Message-request blocking is unavailable in the legacy bridge')
+  }
+  return tauriInvoke('matrix_block_dm_request', { roomId })
 }
 
 export async function ensureDm(recipientUserId: string): Promise<DmConversation> {
@@ -2207,7 +2541,7 @@ export async function getDmMessages(
       READ_IPC_OPTIONS,
     )
   }
-  return tauriInvoke(
+  return legacyTauriInvoke(
     'get_dm_messages',
     {
       conversationId,
@@ -2221,7 +2555,7 @@ export async function getDmMessages(
 
 export async function markDmRead(conversationId: string): Promise<void> {
   if (isMatrixBackend()) return tauriInvoke('matrix_mark_dm_read', { conversationId })
-  return tauriInvoke('mark_dm_read', { conversationId })
+  return legacyTauriInvoke('mark_dm_read', { conversationId })
 }
 
 export async function matrixSetDmBlocked(
@@ -2260,15 +2594,15 @@ export function onDmReceived(handler: (data: DirectMessage) => void): Promise<Un
 // ─── File Commands ──────────────────────────────────
 
 export async function uploadFile(channelId: string, filePath: string): Promise<string> {
-  return tauriInvoke('upload_file', { channelId, filePath })
+  return legacyTauriInvoke('upload_file', { channelId, filePath })
 }
 
 export async function uploadDmFile(conversationId: string, filePath: string): Promise<string> {
-  return tauriInvoke('upload_dm_file', { conversationId, filePath })
+  return legacyTauriInvoke('upload_dm_file', { conversationId, filePath })
 }
 
 export async function requestFile(request: FileDownloadRequest): Promise<void> {
-  return tauriInvoke('request_file', { ...request })
+  return legacyTauriInvoke('request_file', { ...request })
 }
 
 // ─── Moderation Commands ────────────────────────────
@@ -2285,7 +2619,7 @@ export async function banUser(
       reason,
     })
   }
-  await tauriInvoke('ban_user', { communityId, bannedPublicKey })
+  await legacyTauriInvoke('ban_user', { communityId, bannedPublicKey })
   return null
 }
 
@@ -2301,7 +2635,7 @@ export async function kickUser(
       reason,
     })
   }
-  await tauriInvoke('kick_user', { communityId, targetPublicKey, reason })
+  await legacyTauriInvoke('kick_user', { communityId, targetPublicKey, reason })
   return null
 }
 
@@ -2316,7 +2650,7 @@ export async function timeoutUser(
       'Temporary Matrix moderation requires a durable policy/role restoration service',
     )
   }
-  return tauriInvoke('timeout_user', {
+  return legacyTauriInvoke('timeout_user', {
     communityId,
     targetPublicKey,
     durationMinutes,
@@ -2336,7 +2670,7 @@ export async function updateMemberRole(
       role,
     })
   }
-  await tauriInvoke('update_member_role', { communityId, publicKey, role })
+  await legacyTauriInvoke('update_member_role', { communityId, publicKey, role })
   return null
 }
 
@@ -2362,29 +2696,61 @@ export async function getCommunityPermissionProjection(
   )
 }
 
-export async function getMembers(communityId: string): Promise<
-  {
-    publicKey: string
-    displayName: string
-    avatarColor: string
-    avatarUrl?: string | null
-    role: string
-    joinStatus: string
-    banStatus: string
-    lastSeen: string | null
-    online?: boolean
-  }[]
-> {
+export interface CommunityMemberDto {
+  publicKey: string
+  displayName: string
+  avatarColor: string
+  avatarUrl?: string | null
+  role: string
+  joinStatus: string
+  banStatus: string
+  lastSeen: string | null
+  online?: boolean
+}
+
+export interface CommunityMemberPage {
+  members: CommunityMemberDto[]
+  nextCursor: string | null
+  stateComplete: boolean
+}
+
+export const MATRIX_MEMBER_PAGE_LIMIT = 100
+
+export async function getMemberPage(
+  communityId: string,
+  cursor: string | null = null,
+  limit = MATRIX_MEMBER_PAGE_LIMIT,
+): Promise<CommunityMemberPage> {
+  if (!isTauri()) {
+    return { members: [], nextCursor: null, stateComplete: true }
+  }
+  if (!isMatrixBackend()) {
+    const members = await legacyTauriInvoke<CommunityMemberDto[]>(
+      'get_members',
+      { communityId },
+      READ_IPC_OPTIONS,
+    )
+    return { members, nextCursor: null, stateComplete: true }
+  }
+  return tauriInvoke<CommunityMemberPage>(
+    'matrix_list_members',
+    { communityId, cursor, limit },
+    READ_IPC_OPTIONS,
+  )
+}
+
+export async function getMembers(communityId: string): Promise<CommunityMemberDto[]> {
   if (!isTauri()) {
     return []
   }
-  return isMatrixBackend()
-    ? tauriInvoke('matrix_list_members', { communityId }, READ_IPC_OPTIONS)
-    : tauriInvoke('get_members', { communityId }, READ_IPC_OPTIONS)
+  if (isMatrixBackend()) {
+    return (await getMemberPage(communityId)).members
+  }
+  return legacyTauriInvoke('get_members', { communityId }, READ_IPC_OPTIONS)
 }
 
 export async function requestControlLogSync(communityId: string): Promise<void> {
-  return tauriInvoke('request_control_log_sync', { communityId })
+  return legacyTauriInvoke('request_control_log_sync', { communityId })
 }
 
 // ─── Control Events ───────────────────────────────────────

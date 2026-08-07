@@ -24,8 +24,7 @@ export function usePresence() {
   const identity = useIdentityStore((s) => s.identity)
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
   const activeCommunity = useActiveCommunity()
-  // Select raw members map: never call .filter() inside a Zustand selector
-  // because it creates a new array reference on every call, causing infinite re-renders.
+  // The shared consumer selector is already limited to current members.
   const communityMembers = useCommunityMembers(activeCommunityId)
   const touchMember = useMembershipStore((s) => s.touchMember)
   const [onlinePeerState, setOnlinePeerState] = useState<{
@@ -36,13 +35,7 @@ export function usePresence() {
     ? onlinePeerState.peers
     : EMPTY_ONLINE_PEERS
 
-  // Derive active roster from raw state in useMemo (stable reference)
-  const roster = useMemo(() => {
-    if (!activeCommunityId) return []
-    return communityMembers.filter(
-      (m) => m.joinStatus === 'joined' && m.banStatus === 'none',
-    )
-  }, [communityMembers, activeCommunityId])
+  const roster = communityMembers
 
   // Subscribe to presence events
   useEffect(() => {

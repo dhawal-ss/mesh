@@ -13,21 +13,72 @@ use uuid::Uuid;
 
 use super::error::CommandError;
 use crate::backend::{BackendError, BackendKind};
-use crate::security::{
-    classify_attachment, is_file_in_named_directory_under, AttachmentDisposition,
+use crate::security::{classify_attachment, is_file_directly_under, AttachmentDisposition};
+use crate::state::{
+    native_requests::{NativeRequestError, NativeUiInteractionGuard},
+    AppState,
 };
-use crate::state::AppState;
 
 /// Retained only for the validation regression test proving the removed
 /// renderer byte-staging boundary stayed bounded.
 #[cfg(test)]
 const MAX_STAGED_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES: u64 = 100 * 1024 * 1024;
+const MAX_CUSTOM_EMOJI_BYTES: u64 = 512 * 1024;
 const STAGED_ATTACHMENT_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const ATTACHMENT_GRANT_TTL: Duration = Duration::from_secs(60 * 60);
+const CUSTOM_EMOJI_GRANT_TTL: Duration = Duration::from_secs(15 * 60);
 const UNCLAIMED_DROP_GRANT_TTL: Duration = Duration::from_secs(30);
 const HEADER_INSPECTION_BYTES: usize = 4 * 1024;
 const MAX_PENDING_ATTACHMENTS: usize = 10;
+
+fn is_picker_invisible(character: char) -> bool {
+    matches!(
+        character,
+        '\u{061c}'
+            | '\u{180e}'
+            | '\u{200b}'..='\u{200f}'
+            | '\u{202a}'..='\u{202e}'
+            | '\u{2060}'..='\u{206f}'
+            | '\u{feff}'
+            | '\u{fff9}'..='\u{fffb}'
+    )
+}
+
+fn sanitize_picker_label(value: &str, max_chars: usize) -> String {
+    let label = value
+        .chars()
+        .filter(|character| !character.is_control() && !is_picker_invisible(*character))
+        .take(max_chars)
+        .collect::<String>();
+    if label.trim().is_empty() {
+        "unknown".into()
+    } else {
+        label
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum AttachmentGrantPurpose {
+    MessageAttachment {
+        account_generation: u64,
+        user_id: String,
+    },
+    CustomEmoji {
+        community_id: String,
+        account_generation: u64,
+        user_id: String,
+    },
+}
+
+impl AttachmentGrantPurpose {
+    fn message_attachment(account_generation: u64, user_id: impl Into<String>) -> Self {
+        Self::MessageAttachment {
+            account_generation,
+            user_id: user_id.into(),
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 struct AttachmentGrant {
@@ -37,6 +88,7 @@ struct AttachmentGrant {
     size: u64,
     content_type: String,
     sha256: [u8; 32],
+    purpose: AttachmentGrantPurpose,
     staged_root: Option<PathBuf>,
     expires_at: Instant,
 }
@@ -75,12 +127,22 @@ pub struct NativeAttachmentDrop {
     pub position: NativeDropPosition,
     pub files: Vec<AttachmentGrantDto>,
     pub errors: Vec<String>,
+    pub account_scope: Option<NativeAttachmentAccountScope>,
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NativeAttachmentIntake {
     pub files: Vec<AttachmentGrantDto>,
     pub errors: Vec<String>,
+    pub account_scope: NativeAttachmentAccountScope,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeAttachmentAccountScope {
+    pub account_generation: u64,
+    pub user_id: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -94,6 +156,7 @@ pub struct NativeDropPosition {
 pub struct NativeAttachmentDropStart {
     pub drop_id: String,
     pub position: NativeDropPosition,
+    pub account_generation: u64,
 }
 
 pub(crate) fn staging_root(app: &AppHandle) -> Result<PathBuf, CommandError> {
@@ -163,9 +226,13 @@ fn validate_attachment_payload(
         return Err(CommandError::Validation("Attachment is empty".into()));
     }
     if size > max_bytes {
-        let limit = max_bytes / 1024 / 1024;
+        let limit = if max_bytes < 1024 * 1024 {
+            format!("{} KB", max_bytes / 1024)
+        } else {
+            format!("{} MB", max_bytes / 1024 / 1024)
+        };
         return Err(CommandError::Validation(format!(
-            "Attachment exceeds the {limit} MB limit"
+            "Attachment exceeds the {limit} limit"
         )));
     }
     let content_type = content_type_for_filename(filename);
@@ -205,7 +272,10 @@ fn content_type_for_filename(filename: &str) -> String {
     content_type.to_owned()
 }
 
-async fn inspect_native_path(path: PathBuf) -> Result<InspectedAttachment, CommandError> {
+async fn inspect_native_path_with_limit(
+    path: PathBuf,
+    max_bytes: u64,
+) -> Result<InspectedAttachment, CommandError> {
     let canonical = tokio::fs::canonicalize(path)
         .await
         .map_err(|error| CommandError::Validation(format!("Could not open that file: {error}")))?;
@@ -230,12 +300,7 @@ async fn inspect_native_path(path: PathBuf) -> Result<InspectedAttachment, Comma
         .read(&mut header)
         .await
         .map_err(|error| CommandError::Validation(format!("Could not read that file: {error}")))?;
-    validate_attachment_payload(
-        &filename,
-        metadata.len(),
-        &header[..header_len],
-        MAX_ATTACHMENT_BYTES,
-    )?;
+    validate_attachment_payload(&filename, metadata.len(), &header[..header_len], max_bytes)?;
     let mut digest = Sha256::new();
     digest.update(&header[..header_len]);
     let mut observed_size = header_len as u64;
@@ -248,7 +313,7 @@ async fn inspect_native_path(path: PathBuf) -> Result<InspectedAttachment, Comma
             break;
         }
         observed_size = observed_size.saturating_add(read as u64);
-        if observed_size > MAX_ATTACHMENT_BYTES {
+        if observed_size > max_bytes {
             return Err(CommandError::Validation(
                 "Attachment changed while Mesh was inspecting it".into(),
             ));
@@ -268,6 +333,22 @@ async fn inspect_native_path(path: PathBuf) -> Result<InspectedAttachment, Comma
         content_type,
         sha256: digest.finalize().into(),
     })
+}
+
+async fn inspect_native_path(path: PathBuf) -> Result<InspectedAttachment, CommandError> {
+    inspect_native_path_with_limit(path, MAX_ATTACHMENT_BYTES).await
+}
+
+fn validate_custom_emoji(inspected: &InspectedAttachment) -> Result<(), CommandError> {
+    if !matches!(
+        inspected.content_type.as_str(),
+        "image/png" | "image/jpeg" | "image/webp"
+    ) {
+        return Err(CommandError::Validation(
+            "Choose a PNG, JPEG, or WebP image".into(),
+        ));
+    }
+    Ok(())
 }
 
 impl AttachmentGrantStore {
@@ -296,6 +377,7 @@ impl AttachmentGrantStore {
         inspected: InspectedAttachment,
         expose_legacy_path: bool,
         ttl: Duration,
+        purpose: AttachmentGrantPurpose,
     ) -> AttachmentGrantDto {
         let InspectedAttachment {
             path,
@@ -312,6 +394,7 @@ impl AttachmentGrantStore {
             size,
             content_type: content_type.clone(),
             sha256,
+            purpose,
             staged_root: None,
             expires_at: Instant::now() + ttl,
         };
@@ -332,19 +415,44 @@ impl AttachmentGrantStore {
         &self,
         token: &str,
         staging_base: &Path,
+        account_generation: u64,
+        user_id: &str,
     ) -> Result<ClaimedAttachment, CommandError> {
         Uuid::parse_str(token)
             .map_err(|_| CommandError::Validation("Invalid attachment grant".into()))?;
-        let grant = self.grants.lock().await.remove(token).ok_or_else(|| {
-            CommandError::Validation(
-                "Attachment access expired or was already used; choose the file again".into(),
-            )
-        })?;
-        if grant.expires_at <= Instant::now() {
-            return Err(CommandError::Validation(
-                "Attachment access expired; choose the file again".into(),
-            ));
-        }
+        let grant = {
+            let mut grants = self.grants.lock().await;
+            let Some(grant) = grants.get(token) else {
+                return Err(CommandError::Validation(
+                    "Attachment access expired or was already used; choose the file again".into(),
+                ));
+            };
+            if grant.expires_at <= Instant::now() {
+                grants.remove(token);
+                return Err(CommandError::Validation(
+                    "Attachment access expired; choose the file again".into(),
+                ));
+            }
+            match &grant.purpose {
+                AttachmentGrantPurpose::MessageAttachment {
+                    account_generation: grant_generation,
+                    user_id: grant_user_id,
+                } if *grant_generation == account_generation && grant_user_id == user_id => {}
+                AttachmentGrantPurpose::MessageAttachment { .. } => {
+                    return Err(CommandError::Cancelled(
+                        "That file was selected for a different account. Choose it again.".into(),
+                    ));
+                }
+                AttachmentGrantPurpose::CustomEmoji { .. } => {
+                    return Err(CommandError::Validation(
+                        "That file selection cannot be used as a message attachment".into(),
+                    ));
+                }
+            }
+            grants
+                .remove(token)
+                .expect("validated attachment grant must remain present")
+        };
         let inspected = inspect_native_path(grant.path.clone()).await?;
         if inspected.path != grant.path
             || inspected.filename != grant.filename
@@ -433,6 +541,93 @@ impl AttachmentGrantStore {
         Ok(ClaimedAttachment { grant })
     }
 
+    pub async fn claim_custom_emoji(
+        &self,
+        token: &str,
+        community_id: &str,
+        account_generation: u64,
+        user_id: &str,
+    ) -> Result<(String, String, Vec<u8>), CommandError> {
+        Uuid::parse_str(token)
+            .map_err(|_| CommandError::Validation("Invalid custom emoji selection".into()))?;
+        let grant = {
+            let mut grants = self.grants.lock().await;
+            let Some(grant) = grants.get(token) else {
+                return Err(CommandError::Validation(
+                    "Image access expired or was already used; choose the image again".into(),
+                ));
+            };
+            if grant.expires_at <= Instant::now() {
+                grants.remove(token);
+                return Err(CommandError::Validation(
+                    "Image access expired; choose the image again".into(),
+                ));
+            }
+            let scope_matches = matches!(
+                &grant.purpose,
+                AttachmentGrantPurpose::CustomEmoji {
+                    community_id: expected_community,
+                    account_generation: expected_generation,
+                    user_id: expected_user,
+                } if expected_community == community_id
+                    && *expected_generation == account_generation
+                    && expected_user == user_id
+            );
+            if !scope_matches {
+                return Err(CommandError::Validation(
+                    "That image selection belongs to a different account or community; choose it again"
+                        .into(),
+                ));
+            }
+            grants
+                .remove(token)
+                .expect("validated custom emoji grant must remain present")
+        };
+        if grant.size == 0 || grant.size > MAX_CUSTOM_EMOJI_BYTES {
+            return Err(CommandError::Validation(
+                "Custom emoji images must be 512 KB or smaller".into(),
+            ));
+        }
+
+        let inspected =
+            inspect_native_path_with_limit(grant.path.clone(), MAX_CUSTOM_EMOJI_BYTES).await?;
+        validate_custom_emoji(&inspected)?;
+        if inspected.path != grant.path
+            || inspected.filename != grant.filename
+            || inspected.size != grant.size
+            || inspected.content_type != grant.content_type
+            || inspected.sha256 != grant.sha256
+        {
+            return Err(CommandError::Validation(
+                "The selected image changed; choose it again".into(),
+            ));
+        }
+        let file = tokio::fs::File::open(&inspected.path)
+            .await
+            .map_err(|error| {
+                CommandError::Validation(format!("Could not read that image: {error}"))
+            })?;
+        let mut bounded_file = file.take(MAX_CUSTOM_EMOJI_BYTES + 1);
+        let mut bytes = Vec::with_capacity(grant.size as usize);
+        bounded_file
+            .read_to_end(&mut bytes)
+            .await
+            .map_err(|error| {
+                CommandError::Validation(format!("Could not read that image: {error}"))
+            })?;
+        let bytes_sha256: [u8; 32] = Sha256::digest(&bytes).into();
+        if bytes.len() as u64 != grant.size
+            || bytes.len() as u64 > MAX_CUSTOM_EMOJI_BYTES
+            || bytes_sha256 != grant.sha256
+        {
+            return Err(CommandError::Validation(
+                "The selected image changed; choose it again".into(),
+            ));
+        }
+
+        Ok((grant.filename, grant.content_type, bytes))
+    }
+
     pub async fn restore(&self, mut claimed: ClaimedAttachment) {
         let token = claimed.grant.token.clone();
         claimed.grant.expires_at = Instant::now() + ATTACHMENT_GRANT_TTL;
@@ -458,7 +653,12 @@ impl AttachmentGrantStore {
         Ok(())
     }
 
-    pub async fn accept_drop_grants(&self, tokens: &[String]) -> Result<(), CommandError> {
+    pub async fn accept_drop_grants(
+        &self,
+        tokens: &[String],
+        account_generation: u64,
+        user_id: &str,
+    ) -> Result<(), CommandError> {
         if tokens.len() > MAX_PENDING_ATTACHMENTS {
             return Err(CommandError::Validation(
                 "Too many attachment grants".into(),
@@ -476,6 +676,23 @@ impl AttachmentGrantStore {
                 return Err(CommandError::Validation(
                     "Native attachment drop expired".into(),
                 ));
+            }
+            match &grant.purpose {
+                AttachmentGrantPurpose::MessageAttachment {
+                    account_generation: grant_generation,
+                    user_id: grant_user_id,
+                } if *grant_generation == account_generation && grant_user_id == user_id => {}
+                AttachmentGrantPurpose::MessageAttachment { .. } => {
+                    return Err(CommandError::Cancelled(
+                        "That file drop belongs to a different account. Drop the files again."
+                            .into(),
+                    ));
+                }
+                AttachmentGrantPurpose::CustomEmoji { .. } => {
+                    return Err(CommandError::Validation(
+                        "That file selection cannot be used as a message attachment".into(),
+                    ));
+                }
             }
         }
         for token in tokens {
@@ -515,20 +732,45 @@ impl ClaimedAttachment {
     }
 }
 
-async fn grant_native_paths(
-    store: &AttachmentGrantStore,
-    paths: Vec<PathBuf>,
-    expose_legacy_path: bool,
-    ttl: Duration,
-) -> (Vec<AttachmentGrantDto>, Vec<String>) {
-    let mut files = Vec::new();
+async fn attachment_account_id(state: &AppState) -> Result<String, CommandError> {
+    if let Some(user_id) = state
+        .backend
+        .backend()
+        .active_user_id()
+        .await
+        .filter(|user_id| !user_id.trim().is_empty())
+    {
+        return Ok(user_id);
+    }
+    if state.backend.kind() == BackendKind::LegacyP2p {
+        return Ok(BackendKind::LegacyP2p.as_str().into());
+    }
+    Err(CommandError::NotAuthenticated)
+}
+
+fn begin_native_picker(
+    state: &AppState,
+    account_generation: u64,
+) -> Result<NativeUiInteractionGuard, CommandError> {
+    match state
+        .native_requests
+        .begin_native_ui_interaction(account_generation)
+    {
+        Ok(guard) => Ok(guard),
+        Err(NativeRequestError::CapacityExceeded) => Err(CommandError::RateLimited),
+        Err(_) => Err(CommandError::Cancelled(
+            "Your account changed before Mesh could open the picker. Try again.".into(),
+        )),
+    }
+}
+
+async fn inspect_native_paths(paths: Vec<PathBuf>) -> (Vec<InspectedAttachment>, Vec<String>) {
+    let mut inspected_files = Vec::new();
     let mut errors = Vec::new();
     let selected_count = paths.len();
     for path in paths.into_iter().take(MAX_PENDING_ATTACHMENTS) {
         match inspect_native_path(path).await {
-            Ok(inspected) => {
-                files.push(store.issue(inspected, expose_legacy_path, ttl).await);
-            }
+            Ok(inspected) => inspected_files.push(inspected),
             Err(error) => errors.push(error.to_string()),
         }
     }
@@ -537,25 +779,90 @@ async fn grant_native_paths(
             "Mesh allows up to {MAX_PENDING_ATTACHMENTS} pending attachments at once."
         ));
     }
-    (files, errors)
+    (inspected_files, errors)
+}
+
+async fn issue_message_attachment_grants(
+    store: &AttachmentGrantStore,
+    inspected_files: Vec<InspectedAttachment>,
+    expose_legacy_path: bool,
+    ttl: Duration,
+    account_generation: u64,
+    user_id: &str,
+) -> Vec<AttachmentGrantDto> {
+    let mut files = Vec::with_capacity(inspected_files.len());
+    for inspected in inspected_files {
+        files.push(
+            store
+                .issue(
+                    inspected,
+                    expose_legacy_path,
+                    ttl,
+                    AttachmentGrantPurpose::message_attachment(account_generation, user_id),
+                )
+                .await,
+        );
+    }
+    files
 }
 
 pub async fn grant_native_drop(
     store: &AttachmentGrantStore,
-    drop_id: String,
+    state: &AppState,
+    drop: NativeAttachmentDropStart,
     paths: Vec<PathBuf>,
-    x: f64,
-    y: f64,
     expose_legacy_path: bool,
-) -> NativeAttachmentDrop {
-    let (files, errors) =
-        grant_native_paths(store, paths, expose_legacy_path, UNCLAIMED_DROP_GRANT_TTL).await;
-    NativeAttachmentDrop {
+) -> Result<NativeAttachmentDrop, CommandError> {
+    let account_generation = drop.account_generation;
+    let initial_user_id = {
+        let _account_guard = state
+            .native_requests
+            .begin_account_mutation(account_generation)
+            .map_err(|_| {
+                CommandError::Cancelled(
+                    "Your account changed before Mesh could read that file drop. Drop it again."
+                        .into(),
+                )
+            })?;
+        attachment_account_id(state).await?
+    };
+    let (inspected_files, errors) = inspect_native_paths(paths).await;
+    let _account_guard = state
+        .native_requests
+        .begin_account_mutation(account_generation)
+        .map_err(|_| {
+            CommandError::Cancelled(
+                "Your account changed while Mesh was reading that file drop. Drop it again.".into(),
+            )
+        })?;
+    let current_user_id = attachment_account_id(state).await?;
+    if current_user_id != initial_user_id {
+        return Err(CommandError::Cancelled(
+            "Your account changed while Mesh was reading that file drop. Drop it again.".into(),
+        ));
+    }
+    let files = issue_message_attachment_grants(
+        store,
+        inspected_files,
+        expose_legacy_path,
+        UNCLAIMED_DROP_GRANT_TTL,
+        account_generation,
+        &initial_user_id,
+    )
+    .await;
+    let NativeAttachmentDropStart {
+        drop_id, position, ..
+    } = drop;
+    Ok(NativeAttachmentDrop {
         drop_id,
-        position: NativeDropPosition { x, y },
+        position,
         files,
         errors,
-    }
+        account_scope: Some(NativeAttachmentAccountScope {
+            account_generation,
+            user_id: initial_user_id,
+        }),
+    })
 }
 
 /// Open a trusted native picker and mint opaque, time-limited capabilities for
@@ -566,6 +873,9 @@ pub async fn pick_attachment_grants(
     store: State<'_, AttachmentGrantStore>,
     state: State<'_, AppState>,
 ) -> Result<NativeAttachmentIntake, CommandError> {
+    let account_generation = state.native_requests.account_generation();
+    let native_ui = begin_native_picker(&state, account_generation)?;
+    let initial_user_id = attachment_account_id(&state).await?;
     let (sender, receiver) = tokio::sync::oneshot::channel();
     app.dialog().file().pick_files(move |paths| {
         let _ = sender.send(paths);
@@ -581,18 +891,174 @@ pub async fn pick_attachment_grants(
                 .map_err(|_| CommandError::Validation("Only local files can be attached".into()))
         })
         .collect::<Result<Vec<_>, _>>()?;
+    drop(native_ui);
+    if paths.is_empty() {
+        return Ok(NativeAttachmentIntake {
+            files: Vec::new(),
+            errors: Vec::new(),
+            account_scope: NativeAttachmentAccountScope {
+                account_generation,
+                user_id: initial_user_id,
+            },
+        });
+    }
     let expose_legacy_path = state.backend.kind() == BackendKind::LegacyP2p;
-    let (files, errors) =
-        grant_native_paths(&store, paths, expose_legacy_path, ATTACHMENT_GRANT_TTL).await;
-    Ok(NativeAttachmentIntake { files, errors })
+    let (inspected_files, errors) = inspect_native_paths(paths).await;
+    let _account_guard = state
+        .native_requests
+        .begin_account_mutation(account_generation)
+        .map_err(|_| {
+            CommandError::Cancelled(
+                "Your account changed while Mesh was reading the selected files. Choose them again."
+                    .into(),
+            )
+        })?;
+    let current_user_id = attachment_account_id(&state).await?;
+    if current_user_id != initial_user_id {
+        return Err(CommandError::Cancelled(
+            "Your account changed while Mesh was reading the selected files. Choose them again."
+                .into(),
+        ));
+    }
+    let files = issue_message_attachment_grants(
+        &store,
+        inspected_files,
+        expose_legacy_path,
+        ATTACHMENT_GRANT_TTL,
+        account_generation,
+        &initial_user_id,
+    )
+    .await;
+    Ok(NativeAttachmentIntake {
+        files,
+        errors,
+        account_scope: NativeAttachmentAccountScope {
+            account_generation,
+            user_id: initial_user_id,
+        },
+    })
+}
+
+/// Open a trusted native picker for one custom emoji. The WebView receives an
+/// opaque, short-lived capability, never the file path or image bytes.
+#[tauri::command]
+pub async fn pick_custom_emoji_grant(
+    community_id: String,
+    app: AppHandle,
+    store: State<'_, AttachmentGrantStore>,
+    state: State<'_, AppState>,
+) -> Result<Option<AttachmentGrantDto>, CommandError> {
+    if state.backend.kind() != BackendKind::Matrix {
+        return Err(CommandError::Unsupported(
+            "Custom emoji require the production backend".into(),
+        ));
+    }
+    if community_id.trim() != community_id || community_id.is_empty() || community_id.len() > 255 {
+        return Err(CommandError::Validation(
+            "That community is not available; reopen its settings and try again".into(),
+        ));
+    }
+    let account_generation = state.native_requests.account_generation();
+    let native_ui = begin_native_picker(&state, account_generation)?;
+    let initial_user_id;
+    let community_name;
+    {
+        initial_user_id = attachment_account_id(&state).await?;
+        let communities = state
+            .backend
+            .backend()
+            .list_communities()
+            .await
+            .map_err(super::backend::map_error)?;
+        community_name = communities
+            .entities
+            .into_iter()
+            .find(|community| community.id == community_id)
+            .map(|community| sanitize_picker_label(&community.name, 80))
+            .ok_or_else(|| {
+                CommandError::NotFound(
+                    "That community is no longer available; reopen its settings and try again"
+                        .into(),
+                )
+            })?;
+    }
+    let picker_community_id = sanitize_picker_label(&community_id, 255);
+    let picker_account_service = initial_user_id
+        .rsplit_once(':')
+        .map(|(_, service)| sanitize_picker_label(service, 255))
+        .unwrap_or_else(|| "unknown".into());
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title(format!(
+            "Choose an emoji for {community_name} · community {picker_community_id} · account service {picker_account_service}"
+        ))
+        .add_filter("Custom emoji images", &["png", "jpg", "jpeg", "webp"])
+        .pick_file(move |path| {
+            let _ = sender.send(path);
+        });
+    let Some(selected) = receiver
+        .await
+        .map_err(|_| CommandError::Other("Native file picker closed unexpectedly".into()))?
+    else {
+        return Ok(None);
+    };
+    let path = selected
+        .into_path()
+        .map_err(|_| CommandError::Validation("Only local image files can be selected".into()))?;
+    drop(native_ui);
+    let inspected = inspect_native_path_with_limit(path, MAX_CUSTOM_EMOJI_BYTES).await?;
+    validate_custom_emoji(&inspected)?;
+    let _account_guard = state
+        .native_requests
+        .begin_account_mutation(account_generation)
+        .map_err(|_| {
+            CommandError::Cancelled(
+                "Your account changed while choosing the image; choose it again".into(),
+            )
+        })?;
+    let current_user_id = attachment_account_id(&state).await?;
+    if current_user_id != initial_user_id {
+        return Err(CommandError::Cancelled(
+            "Your account changed while choosing the image; choose it again".into(),
+        ));
+    }
+    Ok(Some(
+        store
+            .issue(
+                inspected,
+                false,
+                CUSTOM_EMOJI_GRANT_TTL,
+                AttachmentGrantPurpose::CustomEmoji {
+                    community_id,
+                    account_generation,
+                    user_id: initial_user_id,
+                },
+            )
+            .await,
+    ))
 }
 
 #[tauri::command]
 pub async fn accept_attachment_drop_grants(
     grants: Vec<String>,
     store: State<'_, AttachmentGrantStore>,
+    state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
-    store.accept_drop_grants(&grants).await
+    let account_generation = state.native_requests.account_generation();
+    let _account_guard = state
+        .native_requests
+        .begin_account_mutation(account_generation)
+        .map_err(|_| {
+            CommandError::Cancelled(
+                "Your account changed before Mesh could accept that file drop. Drop it again."
+                    .into(),
+            )
+        })?;
+    let user_id = attachment_account_id(&state).await?;
+    store
+        .accept_drop_grants(&grants, account_generation, &user_id)
+        .await
 }
 
 #[tauri::command]
@@ -601,24 +1067,39 @@ pub async fn open_downloaded_file(
     _app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
+    let _account_guard = if state.backend.kind() == BackendKind::Matrix {
+        let account_generation = state.native_requests.account_generation();
+        Some(
+            state
+                .native_requests
+                .begin_account_mutation(account_generation)
+                .map_err(|_| {
+                    CommandError::Cancelled(
+                        "Your account changed before Mesh could open that file. Try again.".into(),
+                    )
+                })?,
+        )
+    } else {
+        None
+    };
     let path = tokio::fs::canonicalize(local_path).await.map_err(|_| {
         CommandError::NotFound("Downloaded attachment is no longer available".into())
     })?;
     let allowed = match state.backend.kind() {
         BackendKind::Matrix => {
-            let active_account_root = state
+            let active_cache_root = state
                 .backend
                 .backend()
-                .active_account_storage_root()
+                .active_account_media_cache_root()
                 .await
                 .map_err(|error| match error {
                     BackendError::NotAuthenticated => CommandError::NotAuthenticated,
                     _ => CommandError::NotFound("Local account cache is unavailable".into()),
                 })?;
-            let active_account_root = tokio::fs::canonicalize(active_account_root)
+            let active_cache_root = tokio::fs::canonicalize(active_cache_root)
                 .await
                 .map_err(|_| CommandError::NotFound("Local account cache is unavailable".into()))?;
-            is_file_in_named_directory_under(&path, &active_account_root, "media-cache")
+            is_file_directly_under(&path, &active_cache_root)
         }
         BackendKind::LegacyP2p => {
             #[cfg(feature = "legacy-p2p")]
@@ -669,6 +1150,9 @@ pub async fn open_downloaded_file(
             AttachmentDisposition::Safe => unreachable!("safe attachments pass the opening guard"),
         }));
     }
+    // Windows can refuse account-cache cleanup while this inspection handle
+    // remains open. Release it before handing the validated path to the OS.
+    drop(file);
 
     tauri_plugin_opener::open_path(&path, None::<&str>)
         .map_err(|error| CommandError::Other(error.to_string()))
@@ -754,6 +1238,22 @@ pub fn schedule_startup_cleanup(app: AppHandle) {
 mod tests {
     use super::*;
 
+    const TEST_EMOJI_COMMUNITY: &str = "!community:example.org";
+    const TEST_EMOJI_USER: &str = "@alice:example.org";
+    const TEST_ACCOUNT_GENERATION: u64 = 7;
+
+    fn test_message_purpose() -> AttachmentGrantPurpose {
+        AttachmentGrantPurpose::message_attachment(TEST_ACCOUNT_GENERATION, TEST_EMOJI_USER)
+    }
+
+    fn test_custom_emoji_purpose() -> AttachmentGrantPurpose {
+        AttachmentGrantPurpose::CustomEmoji {
+            community_id: TEST_EMOJI_COMMUNITY.into(),
+            account_generation: TEST_ACCOUNT_GENERATION,
+            user_id: TEST_EMOJI_USER.into(),
+        }
+    }
+
     #[test]
     fn security_boundary_attachment_validation_accepts_regular_images() {
         assert!(validate_attachment_payload(
@@ -811,14 +1311,120 @@ mod tests {
         tokio::fs::write(&path, b"safe report").await.unwrap();
         let store = AttachmentGrantStore::default();
         let inspected = inspect_native_path(path).await.unwrap();
-        let dto = store.issue(inspected, false, ATTACHMENT_GRANT_TTL).await;
+        let dto = store
+            .issue(
+                inspected,
+                false,
+                ATTACHMENT_GRANT_TTL,
+                test_message_purpose(),
+            )
+            .await;
 
         let staging = directory.path().join("staging");
-        let claimed = store.claim_to_staging(&dto.grant, &staging).await.unwrap();
-        assert!(store.claim_to_staging(&dto.grant, &staging).await.is_err());
+        let claimed = store
+            .claim_to_staging(
+                &dto.grant,
+                &staging,
+                TEST_ACCOUNT_GENERATION,
+                TEST_EMOJI_USER,
+            )
+            .await
+            .unwrap();
+        assert!(store
+            .claim_to_staging(
+                &dto.grant,
+                &staging,
+                TEST_ACCOUNT_GENERATION,
+                TEST_EMOJI_USER,
+            )
+            .await
+            .is_err());
         store.restore(claimed).await;
-        let claimed = store.claim_to_staging(&dto.grant, &staging).await.unwrap();
-        assert!(store.claim_to_staging(&dto.grant, &staging).await.is_err());
+        assert!(store
+            .claim_to_staging(
+                &dto.grant,
+                &staging,
+                TEST_ACCOUNT_GENERATION + 1,
+                TEST_EMOJI_USER,
+            )
+            .await
+            .is_err());
+        let claimed = store
+            .claim_to_staging(
+                &dto.grant,
+                &staging,
+                TEST_ACCOUNT_GENERATION,
+                TEST_EMOJI_USER,
+            )
+            .await
+            .unwrap();
+        assert!(store
+            .claim_to_staging(
+                &dto.grant,
+                &staging,
+                TEST_ACCOUNT_GENERATION,
+                TEST_EMOJI_USER,
+            )
+            .await
+            .is_err());
+        claimed.cleanup().await;
+    }
+
+    #[tokio::test]
+    async fn security_boundary_message_attachment_grants_reject_other_accounts_without_consuming_the_grant(
+    ) {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("account-private.txt");
+        tokio::fs::write(&path, b"only Alice selected this")
+            .await
+            .unwrap();
+        let store = AttachmentGrantStore::default();
+        let dto = store
+            .issue(
+                inspect_native_path(path).await.unwrap(),
+                false,
+                ATTACHMENT_GRANT_TTL,
+                test_message_purpose(),
+            )
+            .await;
+        let staging = directory.path().join("staging");
+
+        assert!(store
+            .claim_to_staging(
+                &dto.grant,
+                &staging,
+                TEST_ACCOUNT_GENERATION + 1,
+                TEST_EMOJI_USER,
+            )
+            .await
+            .is_err());
+        assert!(store
+            .claim_to_staging(
+                &dto.grant,
+                &staging,
+                TEST_ACCOUNT_GENERATION,
+                "@bob:example.org",
+            )
+            .await
+            .is_err());
+        assert!(store
+            .accept_drop_grants(
+                std::slice::from_ref(&dto.grant),
+                TEST_ACCOUNT_GENERATION,
+                "@bob:example.org",
+            )
+            .await
+            .is_err());
+
+        let claimed = store
+            .claim_to_staging(
+                &dto.grant,
+                &staging,
+                TEST_ACCOUNT_GENERATION,
+                TEST_EMOJI_USER,
+            )
+            .await
+            .expect("scope mismatches must not consume Alice's grant");
         claimed.cleanup().await;
     }
 
@@ -830,7 +1436,14 @@ mod tests {
         let store = AttachmentGrantStore::default();
         let inspected = inspect_native_path(path.clone()).await.unwrap();
         let size = inspected.size;
-        let dto = store.issue(inspected, false, ATTACHMENT_GRANT_TTL).await;
+        let dto = store
+            .issue(
+                inspected,
+                false,
+                ATTACHMENT_GRANT_TTL,
+                test_message_purpose(),
+            )
+            .await;
         tokio::fs::write(directory.path().join("report.txt"), b"evil report")
             .await
             .unwrap();
@@ -840,9 +1453,248 @@ mod tests {
             "fixture replacement must preserve the selected size"
         );
         assert!(store
-            .claim_to_staging(&dto.grant, &directory.path().join("staging"))
+            .claim_to_staging(
+                &dto.grant,
+                &directory.path().join("staging"),
+                TEST_ACCOUNT_GENERATION,
+                TEST_EMOJI_USER,
+            )
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    async fn security_boundary_custom_emoji_grants_are_purpose_scoped_and_one_use() {
+        let directory = tempfile::tempdir().unwrap();
+        let message_path = directory.path().join("message.png");
+        let emoji_path = directory.path().join("emoji.png");
+        tokio::fs::write(&message_path, b"\x89PNG\r\n\x1a\nmessage")
+            .await
+            .unwrap();
+        tokio::fs::write(&emoji_path, b"\x89PNG\r\n\x1a\nemoji")
+            .await
+            .unwrap();
+        let store = AttachmentGrantStore::default();
+
+        let message = store
+            .issue(
+                inspect_native_path(message_path).await.unwrap(),
+                false,
+                ATTACHMENT_GRANT_TTL,
+                test_message_purpose(),
+            )
+            .await;
+        assert!(store
+            .claim_custom_emoji(
+                &message.grant,
+                TEST_EMOJI_COMMUNITY,
+                TEST_ACCOUNT_GENERATION,
+                TEST_EMOJI_USER,
+            )
+            .await
+            .is_err());
+        let message_claim = store
+            .claim_to_staging(
+                &message.grant,
+                &directory.path().join("message-staging"),
+                TEST_ACCOUNT_GENERATION,
+                TEST_EMOJI_USER,
+            )
+            .await
+            .expect("a wrong-purpose attempt must not consume the message grant");
+        message_claim.cleanup().await;
+
+        let emoji = store
+            .issue(
+                inspect_native_path_with_limit(emoji_path, MAX_CUSTOM_EMOJI_BYTES)
+                    .await
+                    .unwrap(),
+                false,
+                CUSTOM_EMOJI_GRANT_TTL,
+                test_custom_emoji_purpose(),
+            )
+            .await;
+        assert!(store
+            .claim_custom_emoji(
+                &emoji.grant,
+                "!other:example.org",
+                TEST_ACCOUNT_GENERATION,
+                TEST_EMOJI_USER,
+            )
+            .await
+            .is_err());
+        let (_, content_type, bytes) = store
+            .claim_custom_emoji(
+                &emoji.grant,
+                TEST_EMOJI_COMMUNITY,
+                TEST_ACCOUNT_GENERATION,
+                TEST_EMOJI_USER,
+            )
+            .await
+            .unwrap();
+        assert_eq!(content_type, "image/png");
+        assert_eq!(bytes, b"\x89PNG\r\n\x1a\nemoji");
+        assert!(store
+            .claim_custom_emoji(
+                &emoji.grant,
+                TEST_EMOJI_COMMUNITY,
+                TEST_ACCOUNT_GENERATION,
+                TEST_EMOJI_USER,
+            )
+            .await
+            .is_err());
+
+        let emoji = store
+            .issue(
+                inspect_native_path_with_limit(
+                    directory.path().join("message.png"),
+                    MAX_CUSTOM_EMOJI_BYTES,
+                )
+                .await
+                .unwrap(),
+                false,
+                CUSTOM_EMOJI_GRANT_TTL,
+                test_custom_emoji_purpose(),
+            )
+            .await;
+        assert!(store
+            .claim_to_staging(
+                &emoji.grant,
+                &directory.path().join("staging"),
+                TEST_ACCOUNT_GENERATION,
+                TEST_EMOJI_USER,
+            )
+            .await
+            .is_err());
+        let (_, _, bytes) = store
+            .claim_custom_emoji(
+                &emoji.grant,
+                TEST_EMOJI_COMMUNITY,
+                TEST_ACCOUNT_GENERATION,
+                TEST_EMOJI_USER,
+            )
+            .await
+            .expect("a wrong-purpose attempt must not consume the emoji grant");
+        assert_eq!(bytes, b"\x89PNG\r\n\x1a\nmessage");
+    }
+
+    #[tokio::test]
+    async fn security_boundary_custom_emoji_grant_rechecks_changes_and_the_size_limit() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("emoji.png");
+        tokio::fs::write(&path, b"\x89PNG\r\n\x1a\noriginal")
+            .await
+            .unwrap();
+        let store = AttachmentGrantStore::default();
+        let emoji = store
+            .issue(
+                inspect_native_path_with_limit(path.clone(), MAX_CUSTOM_EMOJI_BYTES)
+                    .await
+                    .unwrap(),
+                false,
+                CUSTOM_EMOJI_GRANT_TTL,
+                test_custom_emoji_purpose(),
+            )
+            .await;
+        tokio::fs::write(&path, b"\x89PNG\r\n\x1a\nmodified")
+            .await
+            .unwrap();
+        assert!(store
+            .claim_custom_emoji(
+                &emoji.grant,
+                TEST_EMOJI_COMMUNITY,
+                TEST_ACCOUNT_GENERATION,
+                TEST_EMOJI_USER,
+            )
+            .await
+            .is_err());
+
+        let oversized_path = directory.path().join("oversized.png");
+        let mut oversized = vec![0_u8; MAX_CUSTOM_EMOJI_BYTES as usize + 1];
+        oversized[..8].copy_from_slice(b"\x89PNG\r\n\x1a\n");
+        tokio::fs::write(&oversized_path, oversized).await.unwrap();
+        let error = inspect_native_path_with_limit(oversized_path, MAX_CUSTOM_EMOJI_BYTES)
+            .await
+            .expect_err("an oversized emoji must fail before a grant is issued");
+        assert!(error.to_string().contains("512 KB"));
+    }
+
+    #[test]
+    fn security_boundary_custom_emoji_final_read_is_bounded_before_allocation() {
+        let source = include_str!("attachments.rs");
+        let claim = source
+            .split("pub async fn claim_custom_emoji")
+            .nth(1)
+            .unwrap()
+            .split("pub async fn restore")
+            .next()
+            .unwrap();
+        let bounded_reader = claim.find(".take(MAX_CUSTOM_EMOJI_BYTES + 1)").unwrap();
+        let allocation = claim
+            .find("Vec::with_capacity(grant.size as usize)")
+            .unwrap();
+        let final_read = claim.find("read_to_end(&mut bytes)").unwrap();
+        assert!(bounded_reader < allocation);
+        assert!(allocation < final_read);
+        assert!(!claim.contains("tokio::fs::read"));
+    }
+
+    #[test]
+    fn security_boundary_custom_emoji_picker_binds_trusted_destination_and_account() {
+        let source = include_str!("attachments.rs");
+        let picker = source
+            .split("pub async fn pick_custom_emoji_grant")
+            .nth(1)
+            .unwrap()
+            .split("pub async fn accept_attachment_drop_grants")
+            .next()
+            .unwrap();
+        let initial_generation = picker.find("account_generation()").unwrap();
+        let community_lookup = picker.find(".list_communities()").unwrap();
+        let trusted_title = picker.find(".set_title(format!(").unwrap();
+        let native_picker = picker.find(".pick_file(").unwrap();
+        let post_picker_guard = picker
+            .rfind(".begin_account_mutation(account_generation)")
+            .unwrap();
+        let account_comparison = picker.find("current_user_id != initial_user_id").unwrap();
+        let grant_issue = picker.find("AttachmentGrantPurpose::CustomEmoji").unwrap();
+        assert!(initial_generation < community_lookup);
+        assert!(community_lookup < trusted_title);
+        assert!(trusted_title < native_picker);
+        assert!(native_picker < post_picker_guard);
+        assert!(post_picker_guard < account_comparison);
+        assert!(account_comparison < grant_issue);
+        assert!(picker.contains("sanitize_picker_label(&community_id, 255)"));
+        assert!(picker.contains("picker_account_service"));
+        assert!(picker.contains("community {picker_community_id}"));
+    }
+
+    #[test]
+    fn security_boundary_picker_identity_strips_bidi_and_invisible_formatting() {
+        assert_eq!(
+            sanitize_picker_label("Studio\u{202e}evil\u{200b} room", 80),
+            "Studioevil room"
+        );
+        assert_eq!(sanitize_picker_label("\u{2066}\u{2069}", 80), "unknown");
+    }
+
+    #[test]
+    fn security_boundary_attachment_intake_serializes_its_account_scope_for_renderer_checks() {
+        let value = serde_json::to_value(NativeAttachmentIntake {
+            files: Vec::new(),
+            errors: Vec::new(),
+            account_scope: NativeAttachmentAccountScope {
+                account_generation: TEST_ACCOUNT_GENERATION,
+                user_id: TEST_EMOJI_USER.into(),
+            },
+        })
+        .unwrap();
+        assert_eq!(
+            value["accountScope"]["accountGeneration"],
+            TEST_ACCOUNT_GENERATION
+        );
+        assert_eq!(value["accountScope"]["userId"], TEST_EMOJI_USER);
+        assert!(value.get("account_scope").is_none());
     }
 
     #[test]
@@ -859,9 +1711,12 @@ mod tests {
         let denial = opener
             .find("classification.disposition != AttachmentDisposition::Safe")
             .unwrap();
+        let inspection_close = opener.find("drop(file)").unwrap();
         let operating_system_open = opener.find("tauri_plugin_opener::open_path").unwrap();
         assert!(classification < denial);
-        assert!(denial < operating_system_open);
+        assert!(denial < inspection_close);
+        assert!(inspection_close < operating_system_open);
         assert!(opener.contains("HEADER_INSPECTION_BYTES"));
+        assert!(opener.contains("begin_account_mutation(account_generation)"));
     }
 }

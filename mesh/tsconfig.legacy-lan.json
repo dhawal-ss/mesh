@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@mesh/matrix-voice-runtime": ["src/lib/matrix-voice-runtime.contract.ts"],
+      "@mesh/legacy-voice-runtime": ["src/lib/legacy-voice-runtime.contract.ts"],
+      "simple-peer": ["feature-deps/legacy-lan/node_modules/@types/simple-peer/index.d.ts"]
+    }
+  },
+  "exclude": [
+    "src/lib/livekit-voice.ts",
+    "src/lib/livekit-voice.test.ts"
+  ]
+}

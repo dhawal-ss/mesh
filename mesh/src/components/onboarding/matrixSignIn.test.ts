@@ -47,8 +47,12 @@ describe('consumer Matrix sign-in helpers', () => {
     const credentialedService = ['https://alice:', 'secret', '@remote.example'].join('')
 
     expect(serviceAddressConfigError('')).toContain('configured')
+    expect(serviceAddressConfigError('not a service')).toContain('invalid')
+    expect(serviceAddressConfigError('matrix.example\nattacker.example')).toContain('invalid')
     expect(serviceAddressConfigError('http://remote.example')).toContain('HTTPS')
     expect(serviceAddressConfigError(credentialedService)).toContain('credentials')
+    expect(serviceAddressConfigError('https://mesh.example/?access_token=secret')).toContain('query')
+    expect(serviceAddressConfigError('https://mesh.example/#account')).toContain('fragment')
     expect(serviceAddressConfigError('mesh.example')).toBeNull()
     expect(serviceAddressConfigError('https://matrix.mesh.example')).toBeNull()
     expect(serviceAddressConfigError('localhost:8008')).toBeNull()
@@ -74,10 +78,17 @@ describe('consumer Matrix sign-in helpers', () => {
   })
 
   it('turns classified service failures into next-step guidance', () => {
-    expect(friendlyServiceError(new Error('TLS certificate verification failed'), 'reach that account service'))
-      .toContain('secure HTTPS connection')
-    expect(friendlyServiceError(new Error('HTTP status 503'), 'reach that account service'))
-      .toContain('choose another service')
+    const privateConnection = friendlyServiceError(
+      new Error('TLS certificate verification failed'),
+      'reach that account service',
+    )
+    const serviceResponse = friendlyServiceError(
+      new Error('HTTP status 503'),
+      'reach that account service',
+    )
+    expect(privateConnection).toContain('connection was private')
+    expect(serviceResponse).toContain('choose another service')
+    expect(`${privateConnection} ${serviceResponse}`).not.toMatch(/\b(?:TLS|HTTPS?|certificate)\b/)
     // The default path deliberately describes provider discovery as service setup;
     // protocol terminology remains available only in technical details.
     expect(friendlyServiceError(new Error('invalid .well-known discovery JSON'), 'reach that account service'))

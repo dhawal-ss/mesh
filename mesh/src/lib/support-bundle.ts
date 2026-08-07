@@ -32,7 +32,7 @@ export function createMatrixSupportBundle(data: BackendStatus, now = new Date())
       durableHistory: data.durableHistory,
       warningCount: data.warnings.length,
       voiceAvailability: data.voiceService.availability,
-      voiceMediaProtectionVerified: data.voiceService.mediaE2eeVerified,
+      voiceMediaProtectionReady: data.voiceService.mediaE2eeReady,
     },
     privacy: privacyContract(),
   }

@@ -14,6 +14,12 @@ vi.mock('./ReactionPicker', () => ({
   ReactionPicker: () => null,
 }))
 
+const copyTextMock = vi.hoisted(() => vi.fn(async () => {}))
+
+vi.mock('../../lib/notifications', () => ({
+  copyText: copyTextMock,
+}))
+
 vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   motion: {
@@ -31,6 +37,7 @@ import type { RoomTrustSnapshot } from '../../hooks/useRoomTrust'
 import * as bridge from '../../lib/bridge'
 import { useRoomPinStore } from '../../store/room-pins'
 import { useShellStore } from '../../store/shell'
+import { useMessageStore } from '../../store/messages'
 import { FileAttachmentCard, MessageComponent } from './Message'
 
 function deferred<T>() {
@@ -134,6 +141,7 @@ describe('MessageComponent federated timestamps', () => {
       loading: false,
       loadFailed: false,
     })
+    useMessageStore.setState({ matrixQueueStates: {} })
   })
 
   afterEach(async () => {
@@ -156,6 +164,26 @@ describe('MessageComponent federated timestamps', () => {
       expect(container.textContent).not.toContain('Invalid Date')
     },
   )
+
+  it('offers a standard thread action before the first reply exists', async () => {
+    const onToggleThread = vi.fn()
+    await act(async () => {
+      root.render(
+        <MessageComponent
+          message={malformedMessage()}
+          isGrouped={false}
+          onToggleThread={onToggleThread}
+        />,
+      )
+    })
+
+    const startThread = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Start a thread from message by Alice"]',
+    )
+    expect(startThread).not.toBeNull()
+    await act(async () => startThread?.click())
+    expect(onToggleThread).toHaveBeenCalledOnce()
+  })
 
   it('keeps DM edit typing local to the edited shared row', async () => {
     vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
@@ -466,6 +494,13 @@ describe('MessageComponent federated timestamps', () => {
     'shows protected saved state for %s-group queued messages',
     async (isGrouped) => {
       await act(async () => {
+        useMessageStore.setState({
+          matrixQueueStates: {
+            'channel-1': {
+              'txn-1': { state: 'pending' },
+            },
+          },
+        })
         root.render(
           <MessageComponent
             message={{
@@ -480,7 +515,7 @@ describe('MessageComponent federated timestamps', () => {
       })
 
       expect(container.querySelector('[role="status"]')?.textContent).toContain(
-        'Saved on this device',
+        'Saved for later',
       )
       expect(container.getAttribute('aria-label')).toBeNull()
       expect(container.querySelector('[aria-label="Edit message"]')).toBeNull()
@@ -488,7 +523,7 @@ describe('MessageComponent federated timestamps', () => {
     },
   )
 
-  it('offers accessible retry and cancel without exposing event-only actions', async () => {
+  it('offers accessible retry, copy, and remove without exposing event-only actions', async () => {
     const onRetry = vi.fn()
     const onCancel = vi.fn()
     await act(async () => {
@@ -511,16 +546,24 @@ describe('MessageComponent federated timestamps', () => {
     // timeline an assertive region re-announces every time the row scrolls back
     // into view, interrupting the user repeatedly for an already-known failure.
     const alert = [...container.querySelectorAll('[role="status"]')].find((node) =>
-      node.textContent?.includes('Delivery needs attention'),
+      node.textContent?.includes('Could not send'),
     )
-    expect(alert?.textContent).toContain('Delivery needs attention')
-    const [retry, cancel] = [...alert!.querySelectorAll('button')]
+    expect(alert?.textContent).toContain('Could not send')
+    const retry = [...alert!.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Try again')
+    const copy = [...alert!.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Copy text')
+    const remove = [...alert!.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Remove')
     await act(async () => {
-      retry.click()
-      cancel.click()
+      retry?.click()
+      copy?.click()
+      remove?.click()
+      await Promise.resolve()
     })
     expect(onRetry).toHaveBeenCalledOnce()
     expect(onCancel).toHaveBeenCalledOnce()
+    expect(copyTextMock).toHaveBeenCalledWith('Federated message')
     expect(container.querySelector('[aria-label="Edit message"]')).toBeNull()
   })
 

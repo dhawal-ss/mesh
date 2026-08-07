@@ -77,6 +77,8 @@ async function installKeyboardActionsMock(page: Page): Promise<void> {
       args: Record<string, unknown>,
     ): unknown | Promise<unknown> => {
       switch (command) {
+        case 'get_notification_account_scope':
+          return { accountGeneration: 0, userId: args.expectedUserId }
         case 'set_notification_context':
         case 'matrix_set_room_notification_mode':
         case 'send_test_notification':
@@ -106,7 +108,7 @@ async function installKeyboardActionsMock(page: Page): Promise<void> {
               tokenEndpoint: null,
               livekitSfuUrl: null,
               cspReady: false,
-              mediaE2eeVerified: false,
+              mediaE2eeReady: false,
               reason: 'MatrixRTC services are not configured',
             },
             authenticated: true,
@@ -128,7 +130,7 @@ async function installKeyboardActionsMock(page: Page): Promise<void> {
         case 'matrix_list_channels':
           return { entities: channels, blockedEntities: [] }
         case 'matrix_list_members':
-          return [
+          return { members: [
             {
               publicKey: '@alice:mesh.test',
               displayName: 'alice',
@@ -149,7 +151,7 @@ async function installKeyboardActionsMock(page: Page): Promise<void> {
               lastSeen: '2026-07-24T00:00:00.000Z',
               online: true,
             },
-          ]
+          ], nextCursor: null, stateComplete: true }
         case 'matrix_get_messages':
           return timeline.filter((message) => message.channelId === args.roomId)
         case 'matrix_queued_messages':
@@ -266,6 +268,18 @@ function ipcCalls(page: Page): Promise<IpcCall[]> {
   ).__MESH_E2E__.calls)
 }
 
+async function openGeneralRoom(page: Page): Promise<void> {
+  await installKeyboardActionsMock(page)
+  await page.goto('/')
+  const community = page.getByRole('button', { name: 'Mesh Test Community', exact: true })
+  await expect(community).toBeVisible()
+  await community.click()
+  const room = page.getByRole('button', { name: 'Text room: general' })
+  await expect(room).toBeVisible()
+  await room.click()
+  await expect(page.getByRole('log', { name: 'Messages in #general' })).toBeVisible()
+}
+
 // Real Tab-key traversal (not locator.focus(), which bypasses tab order and
 // would prove nothing about keyboard reachability). Bounded so a broken tab
 // order fails the test instead of hanging.
@@ -283,9 +297,7 @@ test.describe('message action bar keyboard access (V-25)', () => {
   test.use({ viewport: { width: 1440, height: 900 } })
 
   test('reacts, replies, and opens the context-menu equivalent on another user\'s message via Tab alone', async ({ page }) => {
-    await installKeyboardActionsMock(page)
-    await page.goto('/')
-    await expect(page.getByRole('log', { name: 'Messages in #general' })).toBeVisible()
+    await openGeneralRoom(page)
     await expect(page.getByText("A message alice didn't send.")).toBeVisible()
 
     const reactButton = page.getByRole('button', { name: 'React to message from Bob' })
@@ -336,8 +348,7 @@ test.describe('message action bar keyboard access (V-25)', () => {
   // only close paths were onMouseLeave and picking an emoji), and Shift+F10
   // left focus on <body> instead of moving it into the opened menu.
   test('Escape dismisses the reaction picker without picking an emoji, and Shift+F10 moves focus into the context menu', async ({ page }) => {
-    await installKeyboardActionsMock(page)
-    await page.goto('/')
+    await openGeneralRoom(page)
     await expect(page.getByText("A message alice didn't send.")).toBeVisible()
 
     const reactButton = page.getByRole('button', { name: 'React to message from Bob' })
@@ -375,8 +386,7 @@ test.describe('message action bar keyboard access (V-25)', () => {
   })
 
   test('mouse hover still reveals the action bar (no regression)', async ({ page }) => {
-    await installKeyboardActionsMock(page)
-    await page.goto('/')
+    await openGeneralRoom(page)
     await expect(page.getByText("A message alice didn't send.")).toBeVisible()
 
     const reactButton = page.getByRole('button', { name: 'React to message from Bob' })

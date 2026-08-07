@@ -48,15 +48,14 @@ beforeEach(() => {
 let container: HTMLDivElement
 let root: Root
 
-function Harness() {
-  useQueuedMessageSync(true)
-  return null
+function Harness({ reconnectSignal }: { reconnectSignal?: number }) {
+  const sync = useQueuedMessageSync(true, reconnectSignal)
+  return <button type="button" onClick={sync.retry}>{sync.status}</button>
 }
 
 async function flushEffects() {
   await act(async () => {
-    await Promise.resolve()
-    await Promise.resolve()
+    for (let index = 0; index < 6; index += 1) await Promise.resolve()
   })
 }
 
@@ -106,6 +105,94 @@ describe('useQueuedMessageSync', () => {
     })
     expect(vi.mocked(bridge.onMatrixQueuedMessage).mock.invocationCallOrder[0])
       .toBeLessThan(vi.mocked(bridge.matrixQueuedMessages).mock.invocationCallOrder[0])
+  })
+
+  it('restores the saved snapshot even when live updates fail, then retries the listener', async () => {
+    const unlisten = vi.fn()
+    vi.mocked(bridge.onMatrixQueuedMessage)
+      .mockRejectedValueOnce(new Error('listener offline'))
+      .mockResolvedValueOnce(unlisten)
+    vi.mocked(bridge.matrixQueuedMessages).mockResolvedValue([queuedMessage()])
+
+    await act(async () => root.render(<Harness />))
+    await flushEffects()
+
+    expect(container.querySelector('button')?.textContent).toBe('degraded')
+    expect(useMessageStore.getState().messages['room-1']).toHaveLength(1)
+
+    await act(async () => container.querySelector('button')?.click())
+    await flushEffects()
+
+    expect(container.querySelector('button')?.textContent).toBe('ready')
+    expect(bridge.onMatrixQueuedMessage).toHaveBeenCalledTimes(2)
+    expect(bridge.matrixQueuedMessages).toHaveBeenCalledTimes(2)
+    expect(useMessageStore.getState().messages['room-1']).toHaveLength(1)
+  })
+
+  it('surfaces restore failure and replays an update buffered during a successful retry', async () => {
+    let listener: ((update: MatrixQueuedMessageUpdate) => void) | undefined
+    let resolveRetrySnapshot: ((messages: Message[]) => void) | undefined
+    vi.mocked(bridge.onMatrixQueuedMessage).mockImplementation(async (handler) => {
+      listener = handler
+      return () => {}
+    })
+    vi.mocked(bridge.matrixQueuedMessages)
+      .mockRejectedValueOnce(new Error('snapshot offline'))
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveRetrySnapshot = resolve
+      }))
+
+    await act(async () => root.render(<Harness />))
+    await flushEffects()
+    expect(container.querySelector('button')?.textContent).toBe('failed')
+
+    await act(async () => container.querySelector('button')?.click())
+    await flushEffects()
+    expect(container.querySelector('button')?.textContent).toBe('retrying-failed')
+
+    await act(async () => {
+      listener?.({
+        roomId: 'room-1',
+        transactionId: 'txn-1',
+        state: 'sent',
+        eventId: '$event-1',
+      })
+      resolveRetrySnapshot?.([queuedMessage()])
+    })
+    await flushEffects()
+
+    expect(container.querySelector('button')?.textContent).toBe('ready')
+    expect(useMessageStore.getState().messages['room-1']).toHaveLength(1)
+    expect(useMessageStore.getState().messages['room-1']?.[0]).toMatchObject({
+      id: '$event-1',
+      deliveryStatus: 'sent',
+    })
+    expect(bridge.onMatrixQueuedMessage).toHaveBeenCalledOnce()
+  })
+
+  it('coalesces a reconnect retry that arrives while restore is still running', async () => {
+    let rejectFirstSnapshot: ((error: Error) => void) | undefined
+    vi.mocked(bridge.onMatrixQueuedMessage).mockResolvedValue(() => {})
+    vi.mocked(bridge.matrixQueuedMessages)
+      .mockImplementationOnce(() => new Promise((_, reject) => {
+        rejectFirstSnapshot = reject
+      }))
+      .mockResolvedValueOnce([queuedMessage()])
+
+    await act(async () => root.render(<Harness reconnectSignal={1} />))
+    await flushEffects()
+    expect(bridge.matrixQueuedMessages).toHaveBeenCalledOnce()
+
+    await act(async () => root.render(<Harness reconnectSignal={2} />))
+    await flushEffects()
+    expect(bridge.matrixQueuedMessages).toHaveBeenCalledOnce()
+
+    await act(async () => rejectFirstSnapshot?.(new Error('offline restore failed')))
+    await flushEffects()
+
+    expect(bridge.matrixQueuedMessages).toHaveBeenCalledTimes(2)
+    expect(container.querySelector('button')?.textContent).toBe('ready')
+    expect(useMessageStore.getState().messages['room-1']).toHaveLength(1)
   })
 
   it('does not mutate state when unmounted during snapshot loading', async () => {

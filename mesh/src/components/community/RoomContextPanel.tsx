@@ -25,6 +25,7 @@ import { Spinner } from '../ui/Spinner'
 import { StatusDot } from '../ui/StatusDot'
 import { Modal } from '../ui/Modal'
 import { PanelResizeHandle } from '../layout/PanelResizeHandle'
+import { FileAttachmentCard } from '../chat/Message'
 
 export type RoomContextTab = 'people' | 'ledger' | 'files' | 'pins'
 
@@ -94,29 +95,25 @@ export function RoomContextPanel({
   })
   const files = useMemo(
     () => messages.flatMap((message) => (
-      (message.attachments ?? []).map((attachment) => ({ attachment, message }))
+      (message.attachments ?? []).map((attachment, attachmentIndex) => ({
+        attachment,
+        attachmentIndex,
+        message,
+      }))
     )).reverse(),
     [messages],
   )
-  const newestPinnedMessages = useMemo(() => [...pinnedMessages].reverse(), [pinnedMessages])
   const tabs: Array<{ id: RoomContextTab; label: string }> = trust.matrixMode
     ? [
         { id: 'people', label: 'People' },
-        { id: 'ledger', label: 'Ledger' },
-        { id: 'files', label: 'Files' },
         { id: 'pins', label: 'Pins' },
+        { id: 'files', label: 'Files' },
       ]
     : [
         { id: 'people', label: 'People' },
         { id: 'files', label: 'Files' },
       ]
-  const contextTitle = activeTab === 'people'
-    ? 'People here'
-    : activeTab === 'ledger'
-      ? 'Room ledger'
-      : activeTab === 'files'
-        ? 'Shared files'
-        : 'Pinned messages'
+  const signalCheckOpen = activeTab === 'ledger'
 
   const copyRoomLink = async () => {
     try {
@@ -153,12 +150,12 @@ export function RoomContextPanel({
   return (
     <aside
       id="mesh-room-context-panel"
-      className="mesh-room-context-panel relative flex min-w-0 flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-sidebar"
+      className="mesh-room-context-panel relative flex min-w-0 flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-base"
       data-design-token-exception="user-resizable-persisted-room-context-width"
       style={{
         '--mesh-room-context-width': `${panelWidth}px`,
       } as CSSProperties}
-      aria-label={`Room context for ${channel.name}`}
+      aria-label={signalCheckOpen ? `Signal Check for ${channel.name}` : `Details for ${channel.name}`}
       data-mesh-region
       tabIndex={-1}
     >
@@ -171,11 +168,14 @@ export function RoomContextPanel({
         onPointerDown={onResizeStart}
         onResizeBy={onResizeBy}
       />
-      <div className="flex-shrink-0 border-b border-border-subtle">
-        <div className="flex h-conversation-header items-center gap-2 px-3">
-          <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-primary">
-            {contextTitle}
-          </h2>
+      <div className="flex-shrink-0 border-b border-border-subtle bg-surface-raised">
+        <div className="flex h-conversation-header items-center gap-2 px-4">
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-sm font-semibold text-primary">
+              {signalCheckOpen ? 'Signal Check' : 'Room details'}
+            </h2>
+            <p className="mt-0.5 truncate text-meta text-muted">#{channel.name}</p>
+          </div>
           <button
             type="button"
             className="flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
@@ -185,32 +185,34 @@ export function RoomContextPanel({
             <Icon name="x" size="sm" />
           </button>
         </div>
-        <div
-          className="flex min-w-0 overflow-x-auto px-2"
-          role="tablist"
-          aria-label="Room context"
-          onKeyDown={handleTabKeyDown}
-        >
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              id={`room-context-tab-${tab.id}`}
-              type="button"
-              role="tab"
-              tabIndex={activeTab === tab.id ? 0 : -1}
-              aria-selected={activeTab === tab.id}
-              aria-controls={`room-context-${tab.id}`}
-              className={`min-h-8 flex-1 border-b-2 border-transparent px-2 text-caption font-medium transition-colors ${
-                activeTab === tab.id
-                  ? 'border-accent text-primary'
-                  : 'text-muted hover:bg-surface-hover hover:text-secondary'
-              }`}
-              onClick={() => onTabChange(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        {!signalCheckOpen && (
+          <div
+            className="mx-3 mb-3 flex min-w-0 gap-1 overflow-x-auto rounded-panel bg-surface-sunken p-1"
+            role="tablist"
+            aria-label="Details"
+            onKeyDown={handleTabKeyDown}
+          >
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                id={`room-context-tab-${tab.id}`}
+                type="button"
+                role="tab"
+                tabIndex={activeTab === tab.id ? 0 : -1}
+                aria-selected={activeTab === tab.id}
+                aria-controls={`room-context-${tab.id}`}
+                className={`min-h-8 flex-1 rounded-control border px-2 text-caption font-medium transition-colors ${
+                  activeTab === tab.id
+                    ? 'border-border-subtle bg-surface-selected text-primary'
+                    : 'border-transparent text-muted hover:bg-surface-hover hover:text-secondary'
+                }`}
+                onClick={() => onTabChange(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {activeTab === 'people' && (
@@ -220,13 +222,17 @@ export function RoomContextPanel({
           aria-labelledby="room-context-tab-people"
           className="flex min-h-0 flex-1 flex-col"
         >
-          <div className="px-4 pb-1 pt-4">
-            <p className="text-meta font-semibold uppercase tracking-caption text-muted">
-              In this room · {members.length}
-            </p>
-            <p className="mt-1 text-caption text-muted">
-              {members.filter((member) => member.online).length} online now
-            </p>
+          <div className="mx-3 mt-3 flex items-center gap-3 rounded-panel border border-border-subtle bg-surface-raised px-3 py-3">
+            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-panel bg-accent/10 text-accent">
+              <Icon name="users" size="sm" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-semibold text-primary">People in this room</p>
+              <p className="mt-0.5 truncate text-caption text-muted">
+                {members.filter((member) => member.online).length} online now
+              </p>
+            </div>
+            <span className="font-mono text-title font-semibold text-primary">{members.length}</span>
           </div>
           <MemberList
             embedded
@@ -244,13 +250,13 @@ export function RoomContextPanel({
       {activeTab === 'ledger' && trust.matrixMode && (
         <div
           id="room-context-ledger"
-          role="tabpanel"
-          aria-labelledby="room-context-tab-ledger"
+          role="region"
+          aria-label="Signal Check"
           className="flex-1 space-y-5 overflow-y-auto px-4 py-4"
         >
           <section>
             <p className="text-caption font-semibold uppercase tracking-caption text-muted">
-              Room ledger
+              Signal Check
             </p>
             <h2 className="mt-1 truncate text-sm font-semibold text-primary">#{channel.name}</h2>
             <p className="mt-1 truncate text-caption text-muted">
@@ -438,29 +444,38 @@ export function RoomContextPanel({
             </p>
           </div>
           {files.length > 0 ? (
-            <div className="space-y-1.5">
-              {files.map(({ attachment, message }, index) => (
-                <button
-                  key={`${message.id}:${attachment.fileHash}:${index}`}
-                  type="button"
-                  className="flex min-h-control-lg w-full items-start gap-2 rounded-panel border border-transparent p-2 text-left transition-colors hover:border-border-subtle hover:bg-surface-hover"
-                  onClick={() => requestNavigation(message)}
+            <div className="space-y-3">
+              {files.map(({ attachment, attachmentIndex, message }) => (
+                <article
+                  key={`${message.id}:${attachment.fileHash}:${attachmentIndex}`}
+                  className="space-y-2 border-b border-border-subtle pb-3 last:border-b-0"
                 >
-                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-control bg-surface-active text-accent">
-                    <Icon name="file" size="sm" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-xs font-medium text-secondary">
-                      {attachment.filename}
-                    </span>
-                    <span className="file-size mt-0.5 block text-caption text-muted">
-                      {formatFileSize(attachment.size)} · {message.authorDisplayName}
-                    </span>
-                    <span className="tnum block text-caption text-muted">
+                  <div className="flex items-center justify-between gap-2 px-1 text-caption text-muted">
+                    <span className="truncate">{message.authorDisplayName}</span>
+                    <span className="tnum flex-shrink-0">
                       {formatFederatedTimestamp(message.timestamp, 'MMM d, HH:mm')}
                     </span>
-                  </span>
-                </button>
+                  </div>
+                  <FileAttachmentCard
+                    attachment={attachment}
+                    roomId={channel.id}
+                    eventId={message.id}
+                    attachmentIndex={attachmentIndex}
+                    compact
+                  />
+                  <div className="flex items-center justify-between gap-2 px-1">
+                    <span className="text-caption font-medium text-muted">
+                      {trust.matrixMode ? 'Protected' : 'Shared file'} · {formatFileSize(attachment.size)}
+                    </span>
+                    <button
+                      type="button"
+                      className="min-h-8 rounded-control px-2 text-caption font-semibold text-text-link hover:bg-surface-hover"
+                      onClick={() => requestNavigation(message)}
+                    >
+                      Go to message
+                    </button>
+                  </div>
+                </article>
               ))}
             </div>
           ) : (
@@ -512,7 +527,7 @@ export function RoomContextPanel({
             </div>
           ) : pinnedEventCount > 0 ? (
             <div className="space-y-1.5">
-              {newestPinnedMessages.map((message) => (
+              {pinnedMessages.map((message) => (
                 <button
                   key={message.id}
                   type="button"
@@ -528,6 +543,9 @@ export function RoomContextPanel({
                   </span>
                   <span className="tnum mt-1 block text-caption text-muted">
                     {message.authorDisplayName} · {formatFederatedTimestamp(message.timestamp, 'MMM d, HH:mm')}
+                  </span>
+                  <span className="mt-1 block text-caption font-semibold text-accent">
+                    Go to message
                   </span>
                 </button>
               ))}
@@ -653,7 +671,7 @@ function protectionLabel(state: RoomTrustSnapshot['protection']) {
 
 function permissionRoomStatusLabel(status: MatrixPermissionRoomStatus) {
   if (status === 'loaded') return 'Loaded'
-  if (status === 'matrix-default') return 'Matrix default'
+  if (status === 'matrix-default') return 'Service default'
   if (status === 'inaccessible') return 'Not accessible'
   if (status === 'unsupported') return 'Unsupported'
   return 'Failed'

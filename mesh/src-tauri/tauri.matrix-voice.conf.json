@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "build": {
+    "beforeDevCommand": "npm run install:matrix-voice-deps && npm run dev:matrix-voice",
+    "beforeBuildCommand": "npm run build:matrix-voice"
+  },
+  "app": {
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; connect-src ipc: http://ipc.localhost https://livekit-jwt.call.matrix.org wss://*.call.matrix.org https://rtc.matrix.tchncs.de wss://rtc.matrix.tchncs.de https://livekit.quassel.io wss://livekit.quassel.io; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:"
+    }
+  }
+}

@@ -3,6 +3,24 @@ impl MatrixBackend {
         BackendError::from_sdk_error(error)
     }
 
+    fn map_matrix_send_error(error: matrix_sdk::Error) -> BackendError {
+        if matches!(
+            &error,
+            matrix_sdk::Error::OlmError(olm)
+                if matches!(
+                    olm.as_ref(),
+                    OlmError::SessionRecipientCollectionError(
+                        SessionRecipientCollectionError::SendingFromUnverifiedDevice
+                            | SessionRecipientCollectionError::CrossSigningNotSetup
+                    )
+                )
+        ) {
+            BackendError::device_verification_required()
+        } else {
+            Self::map_error(error)
+        }
+    }
+
     fn map_secure_storage_error(error: impl std::fmt::Display) -> BackendError {
         BackendError::Crypto(format!(
             "the operating-system secure store is unavailable or corrupt: {error}"

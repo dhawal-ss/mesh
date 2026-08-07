@@ -2,11 +2,16 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CreateCommunityModal } from './CreateCommunityModal'
+import {
+  COMMUNITY_DESCRIPTION_MAX_LENGTH,
+  COMMUNITY_NAME_MAX_LENGTH,
+} from '../../lib/community-metadata-limits'
 
 const bridgeMocks = vi.hoisted(() => ({
   createCommunity: vi.fn(),
   createChannel: vi.fn(),
   getChannels: vi.fn(),
+  updateCommunityAccess: vi.fn(),
   joinOrRequestCommunity: vi.fn(),
 }))
 
@@ -15,6 +20,7 @@ vi.mock('../../lib/bridge', () => ({
   createCommunity: bridgeMocks.createCommunity,
   createChannel: bridgeMocks.createChannel,
   getChannels: bridgeMocks.getChannels,
+  updateCommunityAccess: bridgeMocks.updateCommunityAccess,
   joinOrRequestCommunity: bridgeMocks.joinOrRequestCommunity,
   searchCommunityDirectory: vi.fn(),
   requestCommunityAccess: vi.fn(),
@@ -46,6 +52,11 @@ describe('CreateCommunityModal', () => {
       }),
     )
     bridgeMocks.getChannels.mockReset().mockResolvedValue([])
+    bridgeMocks.updateCommunityAccess.mockReset().mockResolvedValue({
+      alias: null,
+      discoverable: false,
+      joinRule: 'invite',
+    })
     bridgeMocks.joinOrRequestCommunity.mockReset().mockResolvedValue({
       status: 'joined',
       community: {
@@ -65,7 +76,7 @@ describe('CreateCommunityModal', () => {
     document.body.querySelectorAll('[data-radix-portal]').forEach((portal) => portal.remove())
   })
 
-  it('creates from a two-step identity and template flow', async () => {
+  it('creates from a two-step identity, access, and gaming starter-room flow', async () => {
     await act(async () => {
       root.render(<CreateCommunityModal isOpen onClose={() => {}} />)
     })
@@ -77,7 +88,7 @@ describe('CreateCommunityModal', () => {
       'Create a community',
     )
 
-    const nameInput = document.body.querySelector<HTMLInputElement>('input[placeholder="e.g. Design Club"]')
+    const nameInput = document.body.querySelector<HTMLInputElement>('input[placeholder="e.g. Canyon Raiders"]')
     await act(async () => {
       const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
       setValue?.call(nameInput, 'Design Club')
@@ -87,14 +98,11 @@ describe('CreateCommunityModal', () => {
     const next = Array.from(document.body.querySelectorAll('button'))
       .find((button) => button.textContent === 'Next')
     await act(async () => next?.click())
-    expect(document.body.textContent).toContain('Choose a starting layout')
-
-    const gaming = Array.from(document.body.querySelectorAll('button'))
-      .find((button) => button.textContent?.includes('Gaming'))
-    await act(async () => gaming?.click())
+    expect(document.body.textContent).toContain('Access and starter rooms')
+    expect(document.body.textContent).toContain('#clips-and-builds')
 
     const create = Array.from(document.body.querySelectorAll('button'))
-      .find((button) => button.textContent === 'Create Community')
+      .find((button) => button.textContent === 'Create community')
     await act(async () => {
       create?.click()
       await Promise.resolve()
@@ -102,8 +110,47 @@ describe('CreateCommunityModal', () => {
     })
 
     expect(bridgeMocks.createCommunity).toHaveBeenCalledWith('Design Club', '')
-    expect(bridgeMocks.createChannel).toHaveBeenCalledWith('!server:example.org', 'squad-up', 'text')
-    expect(bridgeMocks.createChannel).toHaveBeenCalledWith('!server:example.org', 'clips', 'text')
+    expect(bridgeMocks.updateCommunityAccess).toHaveBeenCalledWith('!server:example.org', '', false)
+    expect(bridgeMocks.createChannel).toHaveBeenCalledWith('!server:example.org', 'general', 'text')
+    expect(bridgeMocks.createChannel).toHaveBeenCalledWith('!server:example.org', 'clips-and-builds', 'text')
+    expect(bridgeMocks.createChannel).toHaveBeenCalledWith('!server:example.org', 'playtest-notes', 'text')
+  })
+
+  it('turns Find into an invitation-or-create path and keeps directories advanced', async () => {
+    const onTabChange = vi.fn()
+    await act(async () => {
+      root.render(
+        <CreateCommunityModal
+          embedded
+          isOpen
+          activeTab="discover"
+          onTabChange={onTabChange}
+          onClose={() => {}}
+        />,
+      )
+    })
+
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.textContent).toContain('Find your next crew')
+    expect(document.body.textContent).toContain('Use an invitation')
+    expect(document.body.textContent).toContain('Create a community')
+    expect(document.body.textContent).toContain('Advanced: use another directory')
+    expect(document.body.textContent).not.toContain('public directory source configured')
+    expect(document.body.textContent).not.toContain('Leave blank to search Mesh')
+
+    await act(async () => {
+      [...document.body.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'Use an invitation')
+        ?.click()
+    })
+    expect(onTabChange).toHaveBeenCalledWith('join')
+
+    await act(async () => {
+      [...document.body.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'Create a community')
+        ?.click()
+    })
+    expect(onTabChange).toHaveBeenCalledWith('create')
   })
 
   it('keeps the dialog open and exposes a retryable error when creation fails', async () => {
@@ -114,7 +161,7 @@ describe('CreateCommunityModal', () => {
     })
 
     const nameInput = document.body.querySelector<HTMLInputElement>(
-      'input[placeholder="e.g. Design Club"]',
+      'input[placeholder="e.g. Canyon Raiders"]',
     )
     await act(async () => {
       const setValue = Object.getOwnPropertyDescriptor(
@@ -130,7 +177,7 @@ describe('CreateCommunityModal', () => {
     await act(async () => next?.click())
 
     const create = Array.from(document.body.querySelectorAll('button'))
-      .find((button) => button.textContent === 'Create Community')
+      .find((button) => button.textContent === 'Create community')
     await act(async () => {
       create?.click()
       await Promise.resolve()
@@ -149,13 +196,13 @@ describe('CreateCommunityModal', () => {
       channelType: 'text'
       unreadCount: number
     }> = []
-    let plansAttempt = 0
+    let clipsAttempt = 0
     bridgeMocks.getChannels.mockImplementation(async () => [...rooms])
     bridgeMocks.createChannel.mockImplementation(async (
       communityId: string,
       name: string,
     ) => {
-      if (name === 'plans' && plansAttempt++ === 0) {
+      if (name === 'clips-and-builds' && clipsAttempt++ === 0) {
         throw new Error('room service unavailable')
       }
       const created = {
@@ -173,7 +220,7 @@ describe('CreateCommunityModal', () => {
       root.render(<CreateCommunityModal isOpen onClose={() => {}} />)
     })
     const nameInput = document.body.querySelector<HTMLInputElement>(
-      'input[placeholder="e.g. Design Club"]',
+      'input[placeholder="e.g. Canyon Raiders"]',
     )
     await act(async () => {
       const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
@@ -187,16 +234,16 @@ describe('CreateCommunityModal', () => {
     })
     await act(async () => {
       [...document.body.querySelectorAll<HTMLButtonElement>('button')]
-        .find((button) => button.textContent === 'Create Community')
+        .find((button) => button.textContent === 'Create community')
         ?.click()
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    expect(document.body.textContent).toContain('exists. Retry will add only missing rooms')
+    expect(document.body.textContent).toContain('Community created. Some rooms still need attention.')
     expect(bridgeMocks.createCommunity).toHaveBeenCalledTimes(1)
     expect(bridgeMocks.createChannel).toHaveBeenCalledWith(
       '!server:example.org',
-      'photos',
+      'general',
       'text',
     )
 
@@ -208,9 +255,9 @@ describe('CreateCommunityModal', () => {
     })
 
     expect(bridgeMocks.createCommunity).toHaveBeenCalledTimes(1)
-    expect(bridgeMocks.createChannel.mock.calls.filter((call) => call[1] === 'photos')).toHaveLength(1)
-    expect(bridgeMocks.createChannel.mock.calls.filter((call) => call[1] === 'plans')).toHaveLength(2)
-    expect(rooms.map((room) => room.name).sort()).toEqual(['photos', 'plans'])
+    expect(bridgeMocks.createChannel.mock.calls.filter((call) => call[1] === 'general')).toHaveLength(1)
+    expect(bridgeMocks.createChannel.mock.calls.filter((call) => call[1] === 'clips-and-builds')).toHaveLength(2)
+    expect(rooms.map((room) => room.name).sort()).toEqual(['clips-and-builds', 'general', 'playtest-notes'])
   })
 
   it('does not treat Enter inside the description textarea as Next', async () => {
@@ -218,7 +265,7 @@ describe('CreateCommunityModal', () => {
       root.render(<CreateCommunityModal isOpen onClose={() => {}} />)
     })
     const nameInput = document.body.querySelector<HTMLInputElement>(
-      'input[placeholder="e.g. Design Club"]',
+      'input[placeholder="e.g. Canyon Raiders"]',
     )
     const description = document.body.querySelector<HTMLTextAreaElement>(
       '#create-community-description',
@@ -230,7 +277,63 @@ describe('CreateCommunityModal', () => {
       description?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     })
     expect(document.body.textContent).toContain('Name and identity')
-    expect(document.body.textContent).not.toContain('Choose a starting layout')
+    expect(document.body.textContent).not.toContain('Access and starter rooms')
+  })
+
+  it('bounds community details and blocks overlong values with accessible guidance', async () => {
+    await act(async () => {
+      root.render(<CreateCommunityModal isOpen onClose={() => {}} />)
+    })
+
+    const nameInput = document.body.querySelector<HTMLInputElement>(
+      'input[placeholder="e.g. Canyon Raiders"]',
+    )
+    const description = document.body.querySelector<HTMLTextAreaElement>(
+      '#create-community-description',
+    )
+    expect(nameInput?.maxLength).toBe(COMMUNITY_NAME_MAX_LENGTH)
+    expect(description?.maxLength).toBe(COMMUNITY_DESCRIPTION_MAX_LENGTH)
+    expect(nameInput?.getAttribute('aria-describedby')).toBeTruthy()
+    expect(description?.getAttribute('aria-describedby')).toBe(
+      'create-community-description-supporting',
+    )
+    expect(document.body.textContent).toContain(
+      `${COMMUNITY_NAME_MAX_LENGTH} characters remaining.`,
+    )
+    expect(document.body.textContent).toContain(
+      `${COMMUNITY_DESCRIPTION_MAX_LENGTH} characters remaining.`,
+    )
+
+    await act(async () => {
+      const setInputValue = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set
+      setInputValue?.call(nameInput, 'n'.repeat(COMMUNITY_NAME_MAX_LENGTH + 1))
+      nameInput?.dispatchEvent(new Event('input', { bubbles: true }))
+      const setTextareaValue = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        'value',
+      )?.set
+      setTextareaValue?.call(
+        description,
+        'd'.repeat(COMMUNITY_DESCRIPTION_MAX_LENGTH + 1),
+      )
+      description?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    expect(nameInput?.getAttribute('aria-invalid')).toBe('true')
+    expect(description?.getAttribute('aria-invalid')).toBe('true')
+    expect(document.body.textContent).toContain(
+      `Community name must be ${COMMUNITY_NAME_MAX_LENGTH} characters or fewer.`,
+    )
+    expect(document.body.textContent).toContain(
+      `Description must be ${COMMUNITY_DESCRIPTION_MAX_LENGTH} characters or fewer.`,
+    )
+    const next = [...document.body.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Next')
+    expect(next?.disabled).toBe(true)
+    expect(bridgeMocks.createCommunity).not.toHaveBeenCalled()
   })
 
   it('retries refresh after creation without recreating the community or starter rooms', async () => {
@@ -263,7 +366,7 @@ describe('CreateCommunityModal', () => {
       root.render(<CreateCommunityModal isOpen onClose={() => {}} />)
     })
     const nameInput = document.body.querySelector<HTMLInputElement>(
-      'input[placeholder="e.g. Design Club"]',
+      'input[placeholder="e.g. Canyon Raiders"]',
     )
     await act(async () => {
       const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
@@ -277,7 +380,7 @@ describe('CreateCommunityModal', () => {
     })
     await act(async () => {
       [...document.body.querySelectorAll<HTMLButtonElement>('button')]
-        .find((button) => button.textContent === 'Create Community')
+        .find((button) => button.textContent === 'Create community')
         ?.click()
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
@@ -290,10 +393,10 @@ describe('CreateCommunityModal', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
     expect(bridgeMocks.createCommunity).toHaveBeenCalledTimes(1)
-    expect(bridgeMocks.createChannel).toHaveBeenCalledTimes(2)
+    expect(bridgeMocks.createChannel).toHaveBeenCalledTimes(3)
   })
 
-  it('joins a standard Matrix community invitation directly', async () => {
+  it('reviews a standard Matrix community invitation before joining', async () => {
     const onClose = vi.fn()
 
     await act(async () => {
@@ -306,8 +409,13 @@ describe('CreateCommunityModal', () => {
         />,
       )
     })
+    const review = Array.from(document.body.querySelectorAll('button'))
+      .find((button) => button.textContent === 'Review invitation')
+    await act(async () => review?.click())
+    expect(bridgeMocks.joinOrRequestCommunity).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('Destination ready to review')
     const join = Array.from(document.body.querySelectorAll('button'))
-      .find((button) => button.textContent === 'Join Community')
+      .find((button) => button.textContent === 'Continue with current account')
     await act(async () => {
       join?.click()
       await Promise.resolve()
@@ -318,5 +426,26 @@ describe('CreateCommunityModal', () => {
       'mesh://join?v=3&kind=matrix&room=!server:example.org&via=example.org',
     )
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps invalid invitation input editable and never attempts a join', async () => {
+    await act(async () => {
+      root.render(
+        <CreateCommunityModal
+          embedded
+          isOpen
+          activeTab="join"
+          initialInvite="not an invitation"
+          onClose={() => {}}
+        />,
+      )
+    })
+    const review = Array.from(document.body.querySelectorAll('button'))
+      .find((button) => button.textContent === 'Review invitation')
+    await act(async () => review?.click())
+
+    expect(document.body.querySelector<HTMLInputElement>('input')?.value).toBe('not an invitation')
+    expect(document.body.textContent).toContain('Check the invitation link or code')
+    expect(bridgeMocks.joinOrRequestCommunity).not.toHaveBeenCalled()
   })
 })

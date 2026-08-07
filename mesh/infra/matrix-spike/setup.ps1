@@ -7,13 +7,19 @@ $ErrorActionPreference = 'Stop'
 $spikeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $runtimeRoot = Join-Path $spikeRoot 'runtime'
 $certRoot = Join-Path $runtimeRoot 'certs'
-$synapseImage = 'matrixdotorg/synapse:v1.157.1@sha256:d1fce43d7501428c461f2758dc10342555b946dc9f1d03c1b1b8aec1a4e8d130'
+$synapseImage = 'matrixdotorg/synapse:v1.157.2@sha256:097e3120b8ecf97e4f92537d7af2da41564c706e33fc740f3741c9defacc2af1'
 $runningOnWindows = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
     [System.Runtime.InteropServices.OSPlatform]::Windows
 )
 
 function Remove-MatrixSpikeRuntimeDirectory {
     param([Parameter(Mandatory = $true)][string]$Target)
+
+    $targetItem = Get-Item -LiteralPath $Target -Force -ErrorAction Stop
+    if (($targetItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 -or
+        $null -ne $targetItem.LinkType) {
+        throw "Refusing to clean a linked Matrix spike runtime directory: $Target"
+    }
 
     try {
         Remove-Item -LiteralPath $Target -Recurse -Force -ErrorAction Stop
@@ -49,10 +55,15 @@ if ($Reset) {
         [System.IO.Path]::DirectorySeparatorChar,
         [System.IO.Path]::AltDirectorySeparatorChar
     )
-    $runtimePrefix = $runtimeFullPath + [System.IO.Path]::DirectorySeparatorChar
+    $pathComparison = if ($runningOnWindows) {
+        [System.StringComparison]::OrdinalIgnoreCase
+    } else {
+        [System.StringComparison]::Ordinal
+    }
     foreach ($directoryName in @('hs1', 'hs2')) {
         $target = [System.IO.Path]::GetFullPath((Join-Path $runtimeRoot $directoryName))
-        if (-not $target.StartsWith($runtimePrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $targetParent = [System.IO.Path]::GetDirectoryName($target)
+        if (-not [System.String]::Equals($targetParent, $runtimeFullPath, $pathComparison)) {
             throw "Refusing to reset path outside the Matrix spike runtime: $target"
         }
         if (Test-Path -LiteralPath $target) {

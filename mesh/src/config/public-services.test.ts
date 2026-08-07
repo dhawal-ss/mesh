@@ -15,6 +15,7 @@ describe('public-service catalog', () => {
     ])
     expect(MATRIX_ORG_SERVICE).toMatchObject({
       accountDomain: 'matrix.org',
+      minimumAge: 18,
       prominent: true,
       operator: 'The Matrix.org Foundation C.I.C.',
       freeUseLimits: {
@@ -68,6 +69,7 @@ describe('public-service catalog', () => {
       accountDomain: 'incomplete.example',
       termsUrl: '',
       registration: { kind: 'external', url: 'https://user:secret@example.com/', label: '' },
+      minimumAge: 0,
       reviewAfter: '2026-07-01',
     }
     const result = validatePublicServiceCatalog([incomplete])
@@ -76,6 +78,7 @@ describe('public-service catalog', () => {
     expect(result.errors).toEqual(expect.arrayContaining([
       expect.stringContaining('registration must provide a safe external HTTPS flow'),
       expect.stringContaining('termsUrl must be a safe HTTPS URL'),
+      expect.stringContaining('minimumAge must be an explicit age'),
       expect.stringContaining('reviewAfter must follow lastReviewedAt'),
     ]))
   })

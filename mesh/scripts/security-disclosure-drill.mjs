@@ -4,9 +4,11 @@ import { spawnSync } from 'node:child_process'
 
 const online = process.argv.includes('--online')
 const root = new URL('../../', import.meta.url)
-const [policy, publicPage] = await Promise.all([
+const [policy, publicPage, supportPage, incidentGuide] = await Promise.all([
   readFile(new URL('SECURITY.md', root), 'utf8'),
   readFile(new URL('site/security/index.html', root), 'utf8'),
+  readFile(new URL('site/support/index.html', root), 'utf8'),
+  readFile(new URL('mesh/docs/operations/INCIDENT_RESPONSE.rst', root), 'utf8'),
 ])
 
 const unavailable = policy.includes('Confidential route status: unavailable')
@@ -17,6 +19,10 @@ if (unavailable) {
   assert.doesNotMatch(publicPage, /security\/advisories\/new/)
   assert.match(publicPage, /Confidential reporting is not available yet/)
   assert.match(policy, /production beta is blocked/i)
+  assert.doesNotMatch(supportPage, /private security report/i)
+  assert.match(supportPage, /security reporting status/i)
+  assert.doesNotMatch(incidentGuide, /vulnerabilities use GitHub private vulnerability reporting/i)
+  assert.match(incidentGuide, /consumer beta remains\s+blocked/i)
 } else {
   assert.match(policy, /security\/advisories\/new|mailto:/)
   assert.match(publicPage, /security\/advisories\/new|mailto:/)

@@ -463,7 +463,7 @@ export function Sheet({
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay asChild>
           <motion.div
-            className="fixed inset-0 z-overlay bg-surface-scrim"
+            className="fixed inset-0 z-overlay bg-surface-scrim backdrop-blur-sm"
             variants={variants.overlay}
             initial="initial"
             animate="animate"
@@ -816,6 +816,8 @@ export function Command({
   open,
   onOpenChange,
   title = 'Command palette',
+  description = 'Rooms, people, settings, and actions',
+  placeholder = 'Search Mesh…',
   options,
   onSelect,
   filterOptions,
@@ -824,6 +826,8 @@ export function Command({
   open: boolean
   onOpenChange: (open: boolean) => void
   title?: string
+  description?: string
+  placeholder?: string
   options: ComboboxOption[]
   onSelect: (value: string) => void | Promise<void>
   filterOptions?: ComboboxFilter
@@ -842,12 +846,24 @@ export function Command({
     >
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-overlay bg-surface-scrim" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/4 z-modal w-11/12 max-w-lg -translate-x-1/2 overflow-hidden rounded-panel border border-border-subtle bg-surface-raised shadow-overlay outline-none">
-          <DialogPrimitive.Title className="sr-only">{title}</DialogPrimitive.Title>
+        <DialogPrimitive.Content className="mesh-command-surface fixed left-1/2 top-1/4 z-modal w-11/12 max-w-lg -translate-x-1/2 overflow-hidden rounded-panel border border-border-strong bg-surface-overlay shadow-overlay outline-none">
+          <div className="flex items-center justify-between gap-4 border-b border-border-subtle px-4 py-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-9 w-9 flex-none items-center justify-center rounded-panel bg-accent/10 text-accent">
+                <Icon name="search" size="sm" />
+              </span>
+              <div className="min-w-0">
+                <DialogPrimitive.Title className="truncate text-sm font-semibold text-content">{title}</DialogPrimitive.Title>
+                <p className="truncate text-xs text-content-muted">{description}</p>
+              </div>
+            </div>
+            <kbd className="rounded-control border border-border-subtle bg-surface-sunken px-2 py-1 font-mono text-meta text-content-muted">Esc</kbd>
+          </div>
           <Combobox
             label={title}
             className="mesh-command-combobox"
             options={options}
+            placeholder={placeholder}
             disabled={busyValue !== null}
             maxEmptyOptions={maxEmptyOptions}
             filterOptions={filterOptions}

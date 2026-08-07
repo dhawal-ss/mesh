@@ -2,7 +2,7 @@ name: mesh-matrix-spike
 
 services:
   synapse1:
-    image: matrixdotorg/synapse:v1.157.1@sha256:d1fce43d7501428c461f2758dc10342555b946dc9f1d03c1b1b8aec1a4e8d130
+    image: matrixdotorg/synapse:v1.157.2@sha256:097e3120b8ecf97e4f92537d7af2da41564c706e33fc740f3741c9defacc2af1
     restart: unless-stopped
     volumes:
       - ./runtime/hs1:/data
@@ -13,7 +13,7 @@ services:
         aliases: [synapse1]
 
   synapse2:
-    image: matrixdotorg/synapse:v1.157.1@sha256:d1fce43d7501428c461f2758dc10342555b946dc9f1d03c1b1b8aec1a4e8d130
+    image: matrixdotorg/synapse:v1.157.2@sha256:097e3120b8ecf97e4f92537d7af2da41564c706e33fc740f3741c9defacc2af1
     restart: unless-stopped
     volumes:
       - ./runtime/hs2:/data
@@ -24,7 +24,7 @@ services:
         aliases: [synapse2]
 
   federation1:
-    image: nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
+    image: nginx:1.30.4-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46
     restart: unless-stopped
     depends_on: [synapse1]
     volumes:
@@ -37,7 +37,7 @@ services:
         aliases: [hs1.mesh.test]
 
   federation2:
-    image: nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
+    image: nginx:1.30.4-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46
     restart: unless-stopped
     depends_on: [synapse2]
     volumes:

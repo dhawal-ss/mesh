@@ -7,13 +7,15 @@ import { useFileDownloadStore } from '../store/file-downloads'
 import { useMembershipStore } from '../store/membership'
 import { useMessageNavigationStore } from '../store/message-navigation'
 import { useMessageStore } from '../store/messages'
-import { useNetworkStore } from '../store/network'
+import { resetNetworkStateForAccountTransition } from '../store/network'
+import { useMeshNavigationStore } from '../store/navigation'
 import { useRoomPinStore } from '../store/room-pins'
 import { useShellStore } from '../store/shell'
 import { useTypingStore } from '../store/typing'
 import { useVoiceStore } from '../store/voice'
 import { resetMatrixAccountPreferences } from '../store/settings'
 import { roomTabStorageKey } from './room-tabs'
+import { clearNewcomerChecklistsForAccount } from './onboarding-checklist'
 import { safeLocalStorageRemove } from './safe-storage'
 
 /**
@@ -24,13 +26,14 @@ import { safeLocalStorageRemove } from './safe-storage'
  * stores; native secure storage remains the session authority.
  */
 export function clearRendererAccountState(removedAccountId?: string | null): void {
-  if (removedAccountId) safeLocalStorageRemove(roomTabStorageKey(removedAccountId))
+  if (removedAccountId) {
+    safeLocalStorageRemove(roomTabStorageKey(removedAccountId))
+    clearNewcomerChecklistsForAccount(removedAccountId)
+  }
+  useMeshNavigationStore.getState().resetForAccountTransition(removedAccountId)
   resetMatrixAccountPreferences()
 
-  const emojiCommunities = Object.keys(useServerEmojiStore.getState().byCommunity)
-  for (const communityId of emojiCommunities) {
-    useServerEmojiStore.getState().clear(communityId)
-  }
+  useServerEmojiStore.getState().clearAll()
 
   useRoomPinStore.getState().clear()
   useVoiceStore.getState().resetVoiceState()
@@ -53,18 +56,25 @@ export function clearRendererAccountState(removedAccountId?: string | null): voi
     conversationEntities: {},
     conversationOrder: [],
     conversations: [],
+    requests: [],
+    blockedAccounts: [],
+    blockedAccountsNextCursor: null,
     messageEntities: {},
     messageOrder: {},
     messages: {},
     activeConversationId: null,
     isDmMode: false,
     conversationLoad: { status: 'idle', error: null, generation: 0 },
+    requestLoad: { status: 'idle', error: null, generation: 0 },
+    blockedAccountLoad: { status: 'idle', error: null, generation: 0 },
     messageLoads: {},
   })
   useMembershipStore.setState({
     memberEntities: {},
     memberOrder: {},
     members: {},
+    rosterNextCursor: {},
+    rosterStateComplete: {},
   })
   useMessageStore.setState({
     messageEntities: {},
@@ -81,13 +91,7 @@ export function clearRendererAccountState(removedAccountId?: string | null): voi
   useDraftStore.setState({ drafts: {} })
   useFileDownloadStore.setState({ downloads: {} })
   useMessageNavigationStore.setState({ pending: null })
-  useNetworkStore.setState({
-    status: {
-      state: 'connecting',
-      peerCount: 0,
-      averageLatency: 0,
-    },
-  })
+  resetNetworkStateForAccountTransition()
   useVoiceStore.setState({
     localPublicKey: null,
     matrixRtcMembersByRoom: {},

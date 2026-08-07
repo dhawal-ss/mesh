@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { AnimatePresence, motion } from './lib/lazy-motion'
 import { OnboardingFlow } from './components/onboarding/OnboardingFlow'
@@ -10,25 +10,22 @@ import { useChannelStore } from './store/channels'
 import { useNetworkStore } from './store/network'
 import { refreshMatrixPreferences, useSettingsStore } from './store/settings'
 import * as bridge from './lib/bridge'
-import { Spinner } from './components/ui/Spinner'
 import { variants } from './lib/motion'
+import { AsyncStatus } from './components/ui/AsyncStatus'
+import { Button } from './components/ui/Button'
 import { matrixIdentity, matrixProfileIdentity } from './lib/matrixIdentity'
-import type { Identity } from './types/ipc'
+import type { Community, Identity } from './types/ipc'
 import { registerPoll } from './lib/scheduler'
 import { useShellStore } from './store/shell'
-import { describeError } from './lib/errors'
+import { beginInvitationActivation } from './lib/invitation-activation'
+import { clearRendererAccountState } from './lib/account-transition'
+import { mapSettledWithConcurrency } from './lib/concurrency'
 
 const AppLayout = lazy(() =>
   import('./components/layout/AppLayout').then((module) => ({
     default: module.AppLayout,
   })),
 )
-const InvitationConfirmation = lazy(() =>
-  import('./components/onboarding/InvitationConfirmation').then((module) => ({
-    default: module.InvitationConfirmation,
-  })),
-)
-
 const BOOTSTRAP_STEPS = {
   connecting: { label: 'Connecting to the DHT', progress: 28 },
   syncing: { label: 'Resolving nearby peers with mDNS', progress: 62 },
@@ -44,6 +41,15 @@ const MATRIX_BOOTSTRAP_STEPS = {
 } as const
 
 const MATRIX_STATUS_POLL_INTERVAL_MS = 5_000
+
+type BootstrapIssue = {
+  kind: 'startup' | 'communities'
+  blockedCount: number
+}
+
+type CommunityLoadNotice = {
+  blockedCount: number
+}
 
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms))
 
@@ -89,17 +95,123 @@ function mapMatrixNetworkState(authenticated: boolean, syncRunning: boolean) {
   } as const
 }
 
+function ColdStartStatus({
+  invitationName,
+  onRecovery,
+}: {
+  invitationName?: string | null
+  onRecovery: () => void
+}) {
+  const [delayed, setDelayed] = useState(false)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDelayed(true), 8_000)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  const destination = invitationName?.trim()
+  return (
+    <AsyncStatus
+      title={delayed
+        ? 'Mesh is taking longer to open'
+        : destination
+          ? `Opening invitation to ${destination}`
+          : 'Opening Mesh'}
+      detail={delayed
+        ? 'Try again, or open sign-in and recovery if this keeps happening.'
+        : destination
+          ? 'Keeping this destination ready while Mesh checks access.'
+          : 'Restoring your rooms and settings.'}
+      actions={delayed ? (
+        <>
+          <Button onClick={() => window.location.reload()}>Try again</Button>
+          <Button variant="secondary" onClick={onRecovery}>Sign-in and recovery</Button>
+          <Button variant="ghost" onClick={() => window.close()}>Close Mesh</Button>
+        </>
+      ) : undefined}
+    />
+  )
+}
+
+function BootstrapRecovery({
+  issue,
+  retrying,
+  onRetry,
+  onOpenSignInRecovery,
+}: {
+  issue: BootstrapIssue
+  retrying: boolean
+  onRetry: () => void
+  onOpenSignInRecovery?: () => void
+}) {
+  const blockedLabel = `${issue.blockedCount} communit${issue.blockedCount === 1 ? 'y' : 'ies'}`
+  const title = issue.kind === 'startup'
+    ? "Mesh couldn't open your saved account"
+    : issue.blockedCount > 0
+      ? 'Some communities need attention'
+      : "Mesh couldn't load your communities"
+  const detail = issue.kind === 'startup'
+    ? 'Your saved account has not been replaced. Try again, or open sign-in and recovery if this keeps happening.'
+    : issue.blockedCount > 0
+      ? `Mesh kept ${blockedLabel} hidden because it could not open ${issue.blockedCount === 1 ? 'it' : 'them'} safely. Your account and service choice have not changed.`
+      : 'Your account is still signed in. Check your connection and try again; your account service and communities remain separate.'
+
+  return (
+    <AsyncStatus
+      title={title}
+      detail={detail}
+      assertive
+      actions={(
+        <>
+          <Button disabled={retrying} onClick={onRetry}>
+            {retrying ? 'Trying again…' : 'Try again'}
+          </Button>
+          {onOpenSignInRecovery ? (
+            <Button variant="secondary" disabled={retrying} onClick={onOpenSignInRecovery}>
+              Open sign-in and recovery
+            </Button>
+          ) : null}
+        </>
+      )}
+    />
+  )
+}
+
+function CommunityLoadBanner({
+  notice,
+  retrying,
+  onRetry,
+}: {
+  notice: CommunityLoadNotice
+  retrying: boolean
+  onRetry: () => void
+}) {
+  const label = `${notice.blockedCount} communit${notice.blockedCount === 1 ? 'y' : 'ies'}`
+  return (
+    <div
+      role="status"
+      className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-status-warning/30 bg-status-warning/10 px-4 py-2 text-xs text-content"
+    >
+      <span>
+        Mesh could not open {label} safely. Your account and service choice have not changed.
+      </span>
+      <Button variant="ghost" size="sm" disabled={retrying} onClick={onRetry}>
+        {retrying ? 'Trying again…' : 'Try again'}
+      </Button>
+    </div>
+  )
+}
+
 export default function App() {
   const isTauriRuntime = bridge.isTauriRuntime()
   const identity = useIdentityStore((state) => state.identity)
   const isLoading = useIdentityStore((state) => state.isLoading)
   const setIdentity = useIdentityStore((state) => state.setIdentity)
   const setLoading = useIdentityStore((state) => state.setLoading)
+  const clearIdentity = useIdentityStore((state) => state.clear)
   const activeCommunityId = useCommunityStore((s) => s.activeCommunityId)
   const communityIdsKey = useCommunityStore((s) => s.communityOrder.join('\u0000'))
   const setCommunities = useCommunityStore((s) => s.setCommunities)
   const upsertCommunity = useCommunityStore((s) => s.upsertCommunity)
-  const setActiveCommunity = useCommunityStore((s) => s.setActiveCommunity)
   const setChannels = useChannelStore((s) => s.setChannels)
   const replaceCommunityChannels = useChannelStore((s) => s.replaceCommunityChannels)
   const setCommunityRefresh = useChannelStore((s) => s.setCommunityRefresh)
@@ -110,15 +222,30 @@ export default function App() {
     .join('\u0000')
   const setActiveChannel = useChannelStore((s) => s.setActiveChannel)
   const setNetworkStatus = useNetworkStore((s) => s.setStatus)
-  const setBackupConfigured = useSettingsStore((s) => s.setBackupConfigured)
+  const activateBackupAccount = useSettingsStore((s) => s.activateBackupAccount)
   const scheduleBackupReminder = useSettingsStore((s) => s.scheduleBackupReminder)
   const pendingInvitation = useShellStore((state) => state.pendingInvitation)
   const setPendingInvitation = useShellStore((state) => state.setPendingInvitation)
   const [showOnboarding, setShowOnboarding] = useState(!isTauriRuntime)
   const [backendStatus, setBackendStatus] = useState<bridge.BackendStatus | null>(null)
-  const [invitationConfirming, setInvitationConfirming] = useState(false)
-  const [invitationConfirmationError, setInvitationConfirmationError] = useState<unknown>(null)
+  const [bootstrapIssue, setBootstrapIssue] = useState<BootstrapIssue | null>(null)
+  const [bootstrapRetrying, setBootstrapRetrying] = useState(false)
+  const [communityLoadNotice, setCommunityLoadNotice] = useState<CommunityLoadNotice | null>(null)
+  const [communityNoticeRetrying, setCommunityNoticeRetrying] = useState(false)
+  const [initializationAttempt, setInitializationAttempt] = useState(0)
   const pendingInvitationEpochRef = useRef(0)
+
+  const applyCommunityListing = useCallback((listing: bridge.EntityListResult<Community>) => {
+    setCommunities(listing.entities)
+    const blockedCount = listing.blockedEntities.length
+    setCommunityLoadNotice(
+      blockedCount > 0 && listing.entities.length > 0 ? { blockedCount } : null,
+    )
+    return {
+      blockedCount,
+      allBlocked: blockedCount > 0 && listing.entities.length === 0,
+    }
+  }, [setCommunities])
 
   useEffect(() => {
     if (!isTauriRuntime) return
@@ -170,7 +297,6 @@ export default function App() {
         .then((pending) => {
           if (!active || pendingInvitationEpochRef.current !== epoch) return
           setPendingInvitation(pending)
-          setInvitationConfirmationError(null)
           if (pending) {
             showToast('Community invitation saved securely and ready to review.', 'success')
           }
@@ -199,11 +325,17 @@ export default function App() {
   }, [isTauriRuntime, setPendingInvitation])
 
   useEffect(() => {
+    if (!pendingInvitation) return
+    beginInvitationActivation(pendingInvitation.handle, pendingInvitation.storedAt)
+  }, [pendingInvitation])
+
+  useEffect(() => {
     let active = true
     if (!isTauriRuntime) {
       void bridge.getBackendStatus().then((status) => {
         if (!active) return
         setBackendStatus(status)
+        setBootstrapIssue(null)
         setLoading(false)
       })
       return () => {
@@ -212,6 +344,7 @@ export default function App() {
     }
 
     const init = async () => {
+      let phase: BootstrapIssue['kind'] = 'startup'
       try {
         const nextBackendStatus = await bridge.getBackendStatus()
         if (!active) return
@@ -219,19 +352,29 @@ export default function App() {
 
         if (nextBackendStatus.kind === 'matrix') {
           if (nextBackendStatus.authenticated) {
+            activateBackupAccount(nextBackendStatus.userId)
             const signedInIdentity = await loadMatrixIdentity(
               nextBackendStatus.userId,
               isTauriRuntime,
             )
             if (!active) return
-            const communities = await bridge.getCommunities()
+            phase = 'communities'
+            const listing = await bridge.getCommunitiesResult()
             if (!active) return
+            const listingState = applyCommunityListing(listing)
+            if (listingState.allBlocked) {
+              setBootstrapIssue({
+                kind: 'communities',
+                blockedCount: listingState.blockedCount,
+              })
+              setLoading(false)
+              return
+            }
             if (signedInIdentity) {
               setIdentity(signedInIdentity)
             }
-            setCommunities(communities)
-            setActiveCommunity(communities[0]?.id ?? null)
           }
+          setBootstrapIssue(null)
           setShowOnboarding(!nextBackendStatus.authenticated)
           setLoading(false)
           return
@@ -245,20 +388,25 @@ export default function App() {
           return
         }
 
-        const communities = await bridge.getCommunities()
+        phase = 'communities'
+        const listing = await bridge.getCommunitiesResult()
         if (!active) return
-        setIdentity(existingIdentity)
-        setCommunities(communities)
-
-        if (communities.length > 0) {
-          setActiveCommunity(communities[0].id)
+        const listingState = applyCommunityListing(listing)
+        if (listingState.allBlocked) {
+          setBootstrapIssue({
+            kind: 'communities',
+            blockedCount: listingState.blockedCount,
+          })
+          setLoading(false)
+          return
         }
-
+        setIdentity(existingIdentity)
+        setBootstrapIssue(null)
         setShowOnboarding(!isProfileComplete(existingIdentity))
       } catch (err) {
         if (!active) return
         console.error('Init error:', err)
-        setShowOnboarding(true)
+        setBootstrapIssue({ kind: phase, blockedCount: 0 })
         setLoading(false)
       }
     }
@@ -267,7 +415,108 @@ export default function App() {
     return () => {
       active = false
     }
-  }, [isTauriRuntime, setActiveCommunity, setCommunities, setIdentity, setLoading])
+  }, [
+    activateBackupAccount,
+    applyCommunityListing,
+    initializationAttempt,
+    isTauriRuntime,
+    setIdentity,
+    setLoading,
+  ])
+
+  const retryCommunityBootstrap = useCallback(async () => {
+    setBootstrapRetrying(true)
+    try {
+      const listing = await bridge.getCommunitiesResult()
+      const listingState = applyCommunityListing(listing)
+      if (listingState.allBlocked) {
+        setBootstrapIssue({
+          kind: 'communities',
+          blockedCount: listingState.blockedCount,
+        })
+        return
+      }
+      setBootstrapIssue(null)
+      setShowOnboarding(false)
+    } catch (error) {
+      console.error('Failed to retry the community list:', error)
+      setBootstrapIssue({ kind: 'communities', blockedCount: 0 })
+    } finally {
+      setBootstrapRetrying(false)
+      setLoading(false)
+    }
+  }, [applyCommunityListing, setLoading])
+
+  const openSignInRecovery = useCallback(() => {
+    const previousAccountId = backendStatus?.userId ?? null
+    clearRendererAccountState(previousAccountId)
+    clearIdentity()
+    setBackendStatus((current) => current ? {
+      ...current,
+      authenticated: false,
+      userId: null,
+      deviceId: null,
+      syncRunning: false,
+      sessionE2eeReady: false,
+    } : null)
+    setBootstrapIssue(null)
+    setShowOnboarding(true)
+    setLoading(false)
+  }, [backendStatus?.userId, clearIdentity, setLoading])
+
+  const completeMatrixOnboarding = useCallback(async () => {
+    activateBackupAccount(backendStatus?.userId ?? null)
+    setShowOnboarding(false)
+    setBootstrapIssue(null)
+    setLoading(true)
+    try {
+      const listing = await bridge.getCommunitiesResult()
+      const listingState = applyCommunityListing(listing)
+      if (listingState.allBlocked) {
+        setBootstrapIssue({
+          kind: 'communities',
+          blockedCount: listingState.blockedCount,
+        })
+      }
+    } catch (error) {
+      console.error('Failed to load communities after onboarding:', error)
+      setBootstrapIssue({ kind: 'communities', blockedCount: 0 })
+    } finally {
+      setLoading(false)
+    }
+  }, [activateBackupAccount, applyCommunityListing, backendStatus?.userId, setLoading])
+
+  const retryCommunityNotice = useCallback(async () => {
+    setCommunityNoticeRetrying(true)
+    try {
+      const listing = await bridge.getCommunitiesResult()
+      const listingState = applyCommunityListing(listing)
+      if (listingState.allBlocked) {
+        setBootstrapIssue({
+          kind: 'communities',
+          blockedCount: listingState.blockedCount,
+        })
+      }
+    } catch (error) {
+      console.error('Failed to retry hidden communities:', error)
+      showToast(
+        "Mesh still couldn't open those communities. Check your connection and try again.",
+        'error',
+      )
+    } finally {
+      setCommunityNoticeRetrying(false)
+    }
+  }, [applyCommunityListing])
+
+  const retryBootstrap = useCallback(() => {
+    if (bootstrapIssue?.kind === 'startup') {
+      setBootstrapIssue(null)
+      setLoading(true)
+      setInitializationAttempt((attempt) => attempt + 1)
+      return
+    }
+    void retryCommunityBootstrap()
+  }, [bootstrapIssue?.kind, retryCommunityBootstrap, setLoading])
 
   useEffect(() => {
     if (!isTauriRuntime || backendStatus?.kind !== 'matrix') {
@@ -361,39 +610,6 @@ export default function App() {
     showOnboarding,
   ])
 
-  const confirmPendingInvitation = async () => {
-    if (!pendingInvitation || invitationConfirming) return
-    const handle = pendingInvitation.handle
-    const epoch = ++pendingInvitationEpochRef.current
-    setInvitationConfirming(true)
-    setInvitationConfirmationError(null)
-    try {
-      const community = await bridge.joinPendingInvitation(handle)
-      if (
-        pendingInvitationEpochRef.current !== epoch
-        || useShellStore.getState().pendingInvitation?.handle !== handle
-      ) return
-      setPendingInvitation(null)
-      upsertCommunity(community)
-      setActiveCommunity(community.id)
-      showToast(`Joined ${community.name}.`, 'success')
-    } catch (error) {
-      if (
-        pendingInvitationEpochRef.current !== epoch
-        || useShellStore.getState().pendingInvitation?.handle !== handle
-      ) return
-      console.error('Could not open community invitation:', error)
-      setInvitationConfirmationError(error)
-      const description = describeError(error, {
-        operation: 'open this invitation',
-        resource: 'community',
-      })
-      showToast(`${description.title}: ${description.body}`, 'error')
-    } finally {
-      setInvitationConfirming(false)
-    }
-  }
-
   const clearPendingInvitationForHandle = async (handle: string | undefined) => {
     const epoch = ++pendingInvitationEpochRef.current
     if (isTauriRuntime && handle) await bridge.clearPendingInvitation(handle)
@@ -402,18 +618,6 @@ export default function App() {
       || useShellStore.getState().pendingInvitation?.handle !== handle
     ) return
     setPendingInvitation(null)
-    setInvitationConfirmationError(null)
-  }
-
-  const discardPendingInvitation = async () => {
-    const handle = pendingInvitation?.handle
-    try {
-      await clearPendingInvitationForHandle(handle)
-    } catch (error) {
-      if (useShellStore.getState().pendingInvitation?.handle === handle) {
-        setInvitationConfirmationError(error)
-      }
-    }
   }
 
   useEffect(() => {
@@ -452,6 +656,7 @@ export default function App() {
     repairSelection()
 
     const loadCommunity = async (communityId: string) => {
+      if (!alive) return
       const state = useChannelStore.getState()
       const current = state.refreshByCommunity[communityId]
       const generation = (current?.generation ?? 0) + 1
@@ -490,7 +695,7 @@ export default function App() {
       const [selectedCommunityId, ...remainingCommunityIds] = prioritizedCommunityIds
       if (selectedCommunityId) await loadCommunity(selectedCommunityId)
       if (!alive) return
-      await Promise.allSettled(remainingCommunityIds.map(loadCommunity))
+      await mapSettledWithConcurrency(remainingCommunityIds, 4, loadCommunity, () => alive)
     })()
 
     return () => {
@@ -570,13 +775,34 @@ export default function App() {
     }
   }, [isTauriRuntime, upsertCommunity])
 
+  if (bootstrapIssue) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-surface-canvas px-4">
+        <BootstrapRecovery
+          issue={bootstrapIssue}
+          retrying={bootstrapRetrying}
+          onRetry={retryBootstrap}
+          onOpenSignInRecovery={bootstrapIssue.kind === 'startup' ? () => {
+            setBootstrapIssue(null)
+            setBootstrapRetrying(false)
+            setShowOnboarding(true)
+            setLoading(false)
+          } : undefined}
+        />
+      </div>
+    )
+  }
+
   if (isLoading && !showOnboarding) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-surface-canvas">
-        <div className="flex flex-col items-center gap-3">
-          <Spinner size={24} />
-          <p className="text-sm text-muted">Loading...</p>
-        </div>
+        <ColdStartStatus
+          invitationName={pendingInvitation?.communityName}
+          onRecovery={() => {
+            setShowOnboarding(true)
+            setLoading(false)
+          }}
+        />
       </div>
     )
   }
@@ -630,6 +856,7 @@ export default function App() {
                     return
                   }
                   const status = await bridge.matrixRegisterAccount(request)
+                  activateBackupAccount(status.userId)
                   setBackendStatus(status)
                   const registeredIdentity = await loadMatrixIdentity(status.userId, true)
                   if (registeredIdentity) setIdentity(registeredIdentity)
@@ -656,33 +883,25 @@ export default function App() {
                     return
                   }
                   const status = await bridge.matrixLogin(request)
+                  activateBackupAccount(status.userId)
                   setBackendStatus(status)
                   const signedInIdentity = await loadMatrixIdentity(status.userId, true)
                   if (signedInIdentity) setIdentity(signedInIdentity)
                 }}
                 onMatrixOidcLogin={async (homeserver) => {
                   const status = await bridge.matrixStartOidcLogin(homeserver)
+                  activateBackupAccount(status.userId)
                   setBackendStatus(status)
                   const signedInIdentity = await loadMatrixIdentity(status.userId, true)
                   if (signedInIdentity) setIdentity(signedInIdentity)
                 }}
                 onMatrixSwitchAccount={async (profileId) => {
                   const status = await bridge.matrixSwitchAccount(profileId)
+                  activateBackupAccount(status.userId)
                   setBackendStatus(status)
                   const signedInIdentity = await loadMatrixIdentity(status.userId, true)
                   if (signedInIdentity) setIdentity(signedInIdentity)
                 }}
-                onCreateBackupCode={async () => {
-                  if (!isTauriRuntime) {
-                    return {
-                      recoveryKey: 'MESH-FROST-LANTERN-HARBOR-COPPER-ORBIT-MEADOW',
-                      secureStorageState: 'saved',
-                      verificationState: 'verified',
-                    }
-                  }
-                  return bridge.matrixEnableRecovery()
-                }}
-                onBackupConfigured={() => setBackupConfigured(true)}
                 onBackupSkipped={scheduleBackupReminder}
                 initialProfile={identity ?? undefined}
                 onGenerateIdentity={async () => {
@@ -814,18 +1033,11 @@ export default function App() {
                   }
                 }}
                 onComplete={() => {
-                  setShowOnboarding(false)
                   if (isTauriRuntime && bridge.isMatrixBackend()) {
-                    void bridge
-                      .getCommunities()
-                      .then((communities) => {
-                        setCommunities(communities)
-                        setActiveCommunity(communities[0]?.id ?? null)
-                      })
-                      .catch((error) => {
-                        console.error('Failed to load Matrix communities after onboarding:', error)
-                      })
+                    void completeMatrixOnboarding()
+                    return
                   }
+                  setShowOnboarding(false)
                 }}
               />
             </motion.div>
@@ -838,34 +1050,35 @@ export default function App() {
               initial="initial"
               animate="animate"
               exit="exit"
-              className="h-full"
+              className="flex h-full min-h-0 flex-col"
             >
-              <Suspense
-                fallback={
-                  <div
-                    className="flex h-full items-center justify-center"
-                    role="status"
-                    aria-label="Loading Mesh"
-                  >
-                    <Spinner />
-                  </div>
-                }
-              >
-                <AppLayout />
-              </Suspense>
-              {pendingInvitation &&
-              backendStatus?.kind === 'matrix' &&
-              backendStatus.authenticated ? (
-                <Suspense fallback={null}>
-                  <InvitationConfirmation
-                    pending={pendingInvitation}
-                    confirming={invitationConfirming}
-                    confirmationError={invitationConfirmationError}
-                    onConfirm={() => void confirmPendingInvitation()}
-                    onDiscard={() => void discardPendingInvitation()}
-                  />
-                </Suspense>
+              {communityLoadNotice ? (
+                <CommunityLoadBanner
+                  notice={communityLoadNotice}
+                  retrying={communityNoticeRetrying}
+                  onRetry={() => void retryCommunityNotice()}
+                />
               ) : null}
+              <div className="min-h-0 flex-1">
+                <Suspense
+                  fallback={
+                    <div
+                      className="flex h-full flex-col items-center justify-center gap-3 text-center"
+                    >
+                      <AsyncStatus
+                        title={pendingInvitation
+                          ? `Opening invitation to ${pendingInvitation.communityName?.trim() || 'your community'}`
+                          : 'Bringing in your rooms'}
+                        detail={pendingInvitation
+                          ? 'Keeping this destination ready while Mesh checks access.'
+                          : 'You can keep this window open while Mesh prepares the first view.'}
+                      />
+                    </div>
+                  }
+                >
+                  <AppLayout onSignInRequired={openSignInRecovery} />
+                </Suspense>
+              </div>
             </motion.div>
           </ErrorBoundary>
         )}

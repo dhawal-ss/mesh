@@ -158,6 +158,18 @@ class AdmissionServiceTests(unittest.TestCase):
         proof.update(changes)
         return proof
 
+    def config_environment(self, signing_key: bytes) -> dict[str, str]:
+        return {
+            "MESH_SERVER_NAME": "mesh.test",
+            "MESH_HOMESERVER_PUBLIC_URL": "http://127.0.0.1:8008",
+            "MESH_HOMESERVER_INTERNAL_URL": "http://synapse:8008",
+            "MESH_PUBLIC_ORIGIN": "http://127.0.0.1:8090",
+            "MESH_ADMISSION_SERVICE_USER_ID": "@mesh-admission-service:mesh.test",
+            "MESH_ADMISSION_SERVICE_ACCESS_TOKEN": "admission-bot-token",
+            "MESH_ADMISSION_SIGNING_KEY": signing_key.hex(),
+            "MESH_ADMISSION_SQLITE_PATH": str(Path(self.temporary.name) / "config.sqlite3"),
+        }
+
     def claim_proof(self, code: str, user_id: str = "@claimant:public.test") -> dict[str, Any]:
         return self.identity_proof(
             purpose="claim",
@@ -232,6 +244,43 @@ class AdmissionServiceTests(unittest.TestCase):
         with self.assertRaises(admission.AdmissionError) as context:
             retired_application.resolve_invitation(code)
         self.assertEqual(context.exception.code, "invitation_key_retired")
+
+    def test_environment_binds_current_and_previous_key_ids_to_their_secret_material(self) -> None:
+        current_key = bytes(range(32))
+        previous_key = bytes(reversed(range(32)))
+        current_id = admission.hashlib.sha256(current_key).hexdigest()[:16]
+        previous_id = admission.hashlib.sha256(previous_key).hexdigest()[:16]
+        environment = self.config_environment(current_key)
+        environment.update({
+            "MESH_ADMISSION_SIGNING_KEY_ID": current_id,
+            "MESH_ADMISSION_PREVIOUS_SIGNING_KEYS": f"{previous_id}:{previous_key.hex()}",
+        })
+        with mock.patch.dict(admission.os.environ, environment, clear=True):
+            loaded = admission.Config.from_environment()
+        self.assertEqual(loaded.signing_key_id, current_id)
+        self.assertEqual(loaded.previous_signing_keys, {previous_id: previous_key})
+
+        invalid_current = dict(environment)
+        invalid_current["MESH_ADMISSION_SIGNING_KEY_ID"] = "0123456789abcdef"
+        with mock.patch.dict(admission.os.environ, invalid_current, clear=True):
+            with self.assertRaisesRegex(SystemExit, "must match the configured signing key"):
+                admission.Config.from_environment()
+
+        invalid_previous = dict(environment)
+        invalid_previous["MESH_ADMISSION_PREVIOUS_SIGNING_KEYS"] = (
+            f"0123456789abcdef:{previous_key.hex()}"
+        )
+        with mock.patch.dict(admission.os.environ, invalid_previous, clear=True):
+            with self.assertRaisesRegex(SystemExit, "must match its signing key"):
+                admission.Config.from_environment()
+
+        duplicate_previous = dict(environment)
+        duplicate_previous["MESH_ADMISSION_PREVIOUS_SIGNING_KEYS"] = (
+            f"{previous_id}:{previous_key.hex()},{previous_id}:{previous_key.hex()}"
+        )
+        with mock.patch.dict(admission.os.environ, duplicate_previous, clear=True):
+            with self.assertRaisesRegex(SystemExit, "IDs must be unique"):
+                admission.Config.from_environment()
 
     def test_service_identity_is_bound_to_the_configured_non_admin_bot(self) -> None:
         self.application.verify_service_identity()
@@ -335,15 +384,18 @@ class AdmissionServiceTests(unittest.TestCase):
             self.store.begin_claim(digest, "@second:mesh.test", now_ms)
         self.assertEqual(raised.exception.code, "invitation_claiming")
 
-    def test_html_opens_the_app_without_sending_capability_in_http_path(self) -> None:
+    def test_html_preserves_invitation_until_the_user_opens_or_installs_the_app(self) -> None:
         code, _ = self.create()
         payload = self.application.invitation_html().decode("utf-8")
         derived = admission.registration_token(self.config.signing_key, code)
 
         self.assertIn('new URL("mesh://join")', payload)
         self.assertIn('window.location.hash.slice(1)', payload)
-        self.assertIn('history.replaceState', payload)
         self.assertIn('target.searchParams.set("api"', payload)
+        self.assertIn('href="https://mesh.dhawal.org/download/"', payload)
+        self.assertIn('target="_blank"', payload)
+        self.assertNotIn('history.replaceState', payload)
+        self.assertNotIn('window.location.replace', payload)
         self.assertNotIn(code, payload)
         self.assertNotIn(derived, payload)
         self.assertIn("default-src 'none'", payload)

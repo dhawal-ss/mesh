@@ -53,7 +53,11 @@ impl MeshBackend for LegacyP2pBackend {
         }
     }
 
-    async fn login(&self, _request: MatrixLogin) -> BackendResult<BackendStatus> {
+    async fn login(
+        &self,
+        _request: MatrixLogin,
+        _attempt_id: String,
+    ) -> BackendResult<BackendStatus> {
         Err(BackendError::Unsupported("legacy-p2p"))
     }
 

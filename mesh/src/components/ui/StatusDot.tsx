@@ -11,7 +11,7 @@ export function StatusDot({ state, label, className }: StatusDotProps) {
     connected:    'bg-status-success',
     degraded:     'bg-status-warning',
     disconnected: 'bg-status-danger',
-    connecting:   'bg-accent animate-pulse-soft',
+    connecting:   'bg-accent',
   }
 
   return (

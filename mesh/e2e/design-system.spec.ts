@@ -20,8 +20,8 @@ function contrastRatio(foreground: string, background: string): number {
   )
 }
 
-async function sampleAmbientMotion(page: Page): Promise<string[]> {
-  const probe = page.locator('[data-ambient-motion-probe]')
+async function samplePartyResponseMotion(page: Page): Promise<string[]> {
+  const probe = page.locator('[data-party-response-probe]')
   await expect(probe).toBeAttached()
   return probe.evaluate(async (element) => {
     const transforms: string[] = []
@@ -30,6 +30,37 @@ async function sampleAmbientMotion(page: Page): Promise<string[]> {
       await new Promise((resolve) => window.setTimeout(resolve, 80))
     }
     return transforms
+  })
+}
+
+async function expectPartyResponseMotionAfterPreferenceChange(page: Page) {
+  const probe = page.locator('[data-party-response-probe]')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await expect(probe).toHaveAttribute('data-reduced-motion', 'true')
+  await probe.evaluate((element) => {
+    const target = element as HTMLElement & {
+      meshMotionFrame?: number
+      meshMotionSamples?: string[]
+    }
+    if (target.meshMotionFrame !== undefined) cancelAnimationFrame(target.meshMotionFrame)
+    target.meshMotionSamples = []
+    const sample = () => {
+      target.meshMotionSamples?.push(getComputedStyle(target).transform)
+      target.meshMotionFrame = requestAnimationFrame(sample)
+    }
+    sample()
+  })
+
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await expect(probe).toHaveAttribute('data-reduced-motion', 'false')
+  await expect.poll(async () => probe.evaluate((element) => {
+    const target = element as HTMLElement & { meshMotionSamples?: string[] }
+    return new Set(target.meshMotionSamples ?? []).size
+  })).toBeGreaterThan(1)
+
+  await probe.evaluate((element) => {
+    const target = element as HTMLElement & { meshMotionFrame?: number }
+    if (target.meshMotionFrame !== undefined) cancelAnimationFrame(target.meshMotionFrame)
   })
 }
 
@@ -53,9 +84,13 @@ test('renders every supported theme and exposes keyboard-operable primitives', a
     await expect(page.locator(`section[data-theme="${theme}"]`)).toBeVisible()
   }
   const themeSurfaceColors = await page.locator('section[data-theme]').evaluateAll((sections) =>
-    sections.map((section) => getComputedStyle(section).backgroundColor),
+    Object.fromEntries(sections.map((section) => [
+      section.getAttribute('data-theme'),
+      getComputedStyle(section).backgroundColor,
+    ])),
   )
-  expect(new Set(themeSurfaceColors).size).toBe(3)
+  expect(themeSurfaceColors.light).not.toBe(themeSurfaceColors.dark)
+  expect(themeSurfaceColors['high-contrast']).toBe('rgb(0, 0, 0)')
 
   await page.getByRole('button', { name: 'ocean' }).click()
   await expect(page.locator('html')).toHaveAttribute('data-accent', 'ocean')
@@ -111,35 +146,32 @@ test('renders the command palette as one compact surface', async ({ page }) => {
   await expect(input).toHaveCSS('border-top-width', '0px')
   await expect(listbox).toHaveCSS('position', 'static')
   await expect(listbox).toHaveCSS('box-shadow', 'none')
+  await expect(dialog).not.toContainText('Mute microphone')
+  await expect(dialog).not.toContainText('Deafen audio')
 })
 
-test('runs ambient motion when the operating system allows it', async ({ page }) => {
+test('runs bounded Party Response motion when the operating system allows it', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Mesh design-system kitchen sink' })).toBeVisible()
 
-  expect(new Set(await sampleAmbientMotion(page)).size).toBeGreaterThan(1)
+  await expectPartyResponseMotionAfterPreferenceChange(page)
 })
 
-test('updates ambient motion when the OS preference changes without a reload', async ({ page }) => {
+test('updates Party Response motion when the OS preference changes without a reload', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Mesh design-system kitchen sink' })).toBeVisible()
-  expect(new Set(await sampleAmbientMotion(page)).size).toBeGreaterThan(1)
+  await expectPartyResponseMotionAfterPreferenceChange(page)
 
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  await expect(page.locator('[data-ambient-motion-probe]')).toHaveAttribute(
+  await expect(page.locator('[data-party-response-probe]')).toHaveAttribute(
     'data-reduced-motion',
     'true',
   )
-  expect(new Set((await sampleAmbientMotion(page)).slice(1)).size).toBe(1)
+  expect(new Set((await samplePartyResponseMotion(page)).slice(1)).size).toBe(1)
 
-  await page.emulateMedia({ reducedMotion: 'no-preference' })
-  await expect(page.locator('[data-ambient-motion-probe]')).toHaveAttribute(
-    'data-reduced-motion',
-    'false',
-  )
-  expect(new Set(await sampleAmbientMotion(page)).size).toBeGreaterThan(1)
+  await expectPartyResponseMotionAfterPreferenceChange(page)
 })
 
 test('@a11y has no automated WCAG A/AA violations across the component gallery', async ({ page }) => {
@@ -175,6 +207,6 @@ test.describe('reduced motion and narrow layout', () => {
     }))
     expect(dimensions.reduced).toBe(true)
     expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport)
-    expect(new Set(await sampleAmbientMotion(page)).size).toBe(1)
+    expect(new Set(await samplePartyResponseMotion(page)).size).toBe(1)
   })
 })

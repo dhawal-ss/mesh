@@ -160,12 +160,44 @@ impl MatrixBackend {
     }
 
     fn safe_media_filename(filename: &str) -> BackendResult<String> {
-        let safe = Path::new(filename.trim())
+        let trimmed = filename.trim();
+        if !trimmed.is_empty() && trimmed != filename {
+            return Err(BackendError::InvalidConfiguration(
+                "attachment filename is not safe on this platform".into(),
+            ));
+        }
+        let safe = Path::new(trimmed)
             .file_name()
             .and_then(|name| name.to_str())
             .filter(|name| !name.is_empty())
             .unwrap_or("attachment")
             .to_owned();
+        if safe.len() > 255
+            || safe.contains(['<', '>', ':', '"', '/', '\\', '|', '?', '*'])
+            || safe.ends_with(['.', ' '])
+            || safe.chars().any(char::is_control)
+        {
+            return Err(BackendError::InvalidConfiguration(
+                "attachment filename is not safe on this platform".into(),
+            ));
+        }
+        let device_basename = safe
+            .split('.')
+            .next()
+            .unwrap_or_default()
+            .to_ascii_uppercase();
+        let reserved_device = matches!(device_basename.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+            || device_basename.strip_prefix("COM").is_some_and(|suffix| {
+                matches!(suffix, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")
+            })
+            || device_basename.strip_prefix("LPT").is_some_and(|suffix| {
+                matches!(suffix, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")
+            });
+        if reserved_device {
+            return Err(BackendError::InvalidConfiguration(
+                "attachment filename uses a reserved device name".into(),
+            ));
+        }
         if classify_attachment(&safe, None, &[]).disposition == AttachmentDisposition::Active {
             return Err(BackendError::InvalidConfiguration(
                 "active attachment filenames are not allowed".into(),

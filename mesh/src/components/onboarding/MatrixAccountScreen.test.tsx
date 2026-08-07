@@ -48,17 +48,27 @@ describe('MatrixAccountScreen', () => {
   it('requires an explicit account-service choice', async () => {
     await renderScreen()
 
-    expect(container.textContent).toContain('Choose your account service')
+    expect(container.textContent).toContain('Pick an account service')
     expect(container.textContent).not.toContain('Mesh service')
     expect(container.textContent).not.toContain('matrix.mesh.dhawal.org')
-    expect(container.textContent).toContain('Matrix.org')
+    expect(container.textContent).toContain('Public account service')
+    expect(container.textContent).toContain('operated independently by the Matrix.org Foundation')
     expect(container.textContent).toContain('independently')
-    expect(container.textContent).toContain('opens this service in your browser')
-    expect(container.textContent).toContain('Return to Mesh afterward')
-    // Public services now expose registration and sign-in as equal, explicit choices.
+    expect(container.textContent).toContain('Ages 18+')
+    expect(container.textContent).toContain('Create account in your browser')
+    expect(container.textContent).toContain('return to Mesh')
+    const signIn = findButton('Sign in')
+    const createAccount = findLink('Create account')
+    // Sign-in is the single obvious primary action; account creation remains
+    // available as a quieter provider-owned browser path.
+    expect(signIn.compareDocumentPosition(createAccount) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(findLink('Create account').getAttribute('href')).toMatch(/^https:\/\//)
     expect(findLink('Terms').getAttribute('href')).toMatch(/^https:\/\//)
     expect(findLink('Privacy').getAttribute('href')).toMatch(/^https:\/\//)
+    const policyDetails = [...container.querySelectorAll<HTMLDetailsElement>('details')]
+      .find((details) => details.querySelector('summary')?.textContent?.includes('Policies and independence'))
+    expect(policyDetails?.open).toBe(false)
     expect(findButton('Sign in')).toBeTruthy()
     expect(findButton('More public services')).toBeTruthy()
     expect(findButton('Use another service')).toBeTruthy()
@@ -72,11 +82,27 @@ describe('MatrixAccountScreen', () => {
     expect(container.textContent).toContain('Garden Club')
     expect(container.textContent).toContain('Invited by Maya')
     expect(container.textContent).toContain('Community service')
-    expect(container.textContent).toContain('Community route')
+    const serviceDetails = container.querySelector<HTMLDetailsElement>('details')
+    expect(serviceDetails?.open).toBe(false)
+    expect(serviceDetails?.querySelector('summary')?.textContent).toContain('Service details')
+    expect(serviceDetails?.textContent).toContain('Community route')
+    expect(serviceDetails?.textContent).toContain('community.example')
     expect(container.textContent).toContain('Invitation only')
     expect(container.textContent).toContain('Choose where your account lives below')
     expect(container.textContent).not.toContain('!garden:community.example')
     expect(container.textContent).not.toContain('registration-token')
+  })
+
+  it('does not let a configured service silently override an invitation choice', async () => {
+    await renderScreen({
+      initialPendingInvitation: pendingInvitationMetadata(),
+      initialAccountService: 'matrix.org',
+    })
+
+    expect(container.textContent).toContain('Pick an account service')
+    expect(container.querySelector('form')).toBeNull()
+    expect(findButton('Sign in')).toBeTruthy()
+    expect(findButton('Use another service')).toBeTruthy()
   })
 
   it('does not offer a hard-coded Mesh account service without an invitation', async () => {
@@ -103,7 +129,7 @@ describe('MatrixAccountScreen', () => {
       await new Promise((resolve) => window.requestAnimationFrame(resolve))
     })
     expect(document.activeElement).toBe(container.querySelector('h1'))
-    expect(document.activeElement?.textContent).toContain('Choose your account service')
+    expect(document.activeElement?.textContent).toContain('Pick an account service')
   })
 
   it('keeps an expired prominent service visible but unavailable', async () => {
@@ -111,9 +137,11 @@ describe('MatrixAccountScreen', () => {
     vi.setSystemTime(new Date('2030-01-01T00:00:00Z'))
     await renderScreen()
 
-    expect(container.textContent).toContain('Matrix.org')
+    expect(container.textContent).toContain('Public account service')
     expect(container.textContent).toContain('Review expired')
-    expect(findButton('Create account').disabled).toBe(true)
+    expect(container.textContent).toContain('Account creation is unavailable')
+    expect([...container.querySelectorAll('a')]
+      .some((link) => link.textContent?.trim() === 'Create account')).toBe(false)
     expect(findButton('Sign in').disabled).toBe(true)
   })
 
@@ -125,6 +153,8 @@ describe('MatrixAccountScreen', () => {
     expect(container.textContent).toContain('manually reviewed')
     expect(container.textContent).toContain('tchncs.de')
     expect(container.textContent).toContain('quassel.io')
+    expect(container.textContent).toContain('Ages 16+')
+    expect(container.textContent).toContain('Ages 18+')
     expect(findLink('Terms').getAttribute('href')).toMatch(/^https:\/\//)
     expect(container.textContent).not.toContain('server directory')
   })
@@ -140,7 +170,7 @@ describe('MatrixAccountScreen', () => {
     })
 
     await act(async () => clickLink(findLink('Create account')))
-    expect(container.textContent).toContain('Finish with Matrix.org')
+    expect(container.textContent).toContain('Finish with Public account service')
     expect(container.textContent).toContain('saved your place for two hours')
     expect(container.textContent).toContain('invitation remains protected')
     expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY))
@@ -154,9 +184,9 @@ describe('MatrixAccountScreen', () => {
       onNext,
     })
 
-    expect(container.textContent).toContain('Finish with Matrix.org')
+    expect(container.textContent).toContain('Finish with Public account service')
     await act(async () => findButton('I created my account: sign in').click())
-    expect(container.textContent).toContain('Sign in to Matrix.org')
+    expect(container.textContent).toContain('Sign in to Public account service')
     expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY)).not.toBeNull()
 
     await act(async () => {
@@ -191,6 +221,7 @@ describe('MatrixAccountScreen', () => {
     })
 
     expect(failedLogin).toHaveBeenCalledOnce()
+    expect(document.activeElement).toBe(container.querySelector('[role="alert"]'))
     expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY))
       .toContain('"accountServiceId":"matrix-org"')
 
@@ -198,7 +229,7 @@ describe('MatrixAccountScreen', () => {
     root = createRoot(container)
     await renderScreen({ initialPendingInvitation: pendingInvitation })
 
-    expect(container.textContent).toContain('Finish with Matrix.org')
+    expect(container.textContent).toContain('Finish with Public account service')
     expect(container.textContent).toContain('invitation remains protected')
   })
 
@@ -261,7 +292,7 @@ describe('MatrixAccountScreen', () => {
     await act(async () => findButton('I created my account: sign in').click())
 
     expect(container.textContent).toContain('saved invitation is missing or expired')
-    expect(container.textContent).toContain('Choose your account service')
+    expect(container.textContent).toContain('Pick an account service')
     expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY)).toBeNull()
   })
 
@@ -276,7 +307,7 @@ describe('MatrixAccountScreen', () => {
     await act(async () => findButton('I created my account: sign in').click())
 
     expect(container.textContent).toContain('could not find the saved community invitation yet')
-    expect(container.textContent).toContain('Finish with Matrix.org')
+    expect(container.textContent).toContain('Finish with Public account service')
     expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY)).not.toBeNull()
   })
 
@@ -286,7 +317,7 @@ describe('MatrixAccountScreen', () => {
     await renderScreen({ onMatrixLogin: login, onNext })
 
     await act(async () => findButton('Sign in').click())
-    expect(container.textContent).toContain('Sign in to Matrix.org')
+    expect(container.textContent).toContain('Sign in to Public account service')
     expect(container.textContent).toContain('10 MB')
     expect(container.textContent).toContain('100 MB')
 
@@ -329,16 +360,55 @@ describe('MatrixAccountScreen', () => {
     }))
   })
 
+  it('offers the invitation service for existing accounts without forcing it', async () => {
+    const login = vi.fn(async () => {})
+    await renderScreen({
+      initialPendingInvitation: pendingInvitationMetadata(),
+      onMatrixLogin: login,
+    })
+
+    const invitationServiceButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Sign in with Garden community service"]',
+    )
+    expect(invitationServiceButton).toBeTruthy()
+    expect(container.textContent).toContain('It remains optional')
+    const serviceDetails = invitationServiceButton
+      ?.closest('article')
+      ?.querySelector<HTMLDetailsElement>('details')
+    expect(serviceDetails?.open).toBe(false)
+    expect(serviceDetails?.querySelector('summary')?.textContent).toContain('Service details')
+    expect(serviceDetails?.textContent).toContain('community.example')
+
+    await act(async () => invitationServiceButton?.click())
+    expect(container.textContent).toContain('Sign in to Garden community service')
+    await act(async () => {
+      setInputValue(findInput('username'), 'alice')
+      setInputValue(findInput('password'), 'correct horse battery staple')
+      submitForm()
+      await Promise.resolve()
+    })
+
+    expect(login).toHaveBeenCalledWith(expect.objectContaining({
+      homeserver: 'community.example',
+      username: 'alice',
+    }))
+  })
+
   it('offers provider-owned password and username recovery help', async () => {
     await renderScreen()
     await act(async () => findButton('Sign in').click())
 
+    const recoveryHelp = container.querySelector<HTMLElement>('[aria-label="Sign-in help"]')
+    const submit = findButton('Sign in')
+    expect(recoveryHelp).not.toBeNull()
+    expect(submit.compareDocumentPosition(recoveryHelp!) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(findButton('Forgot password?')).toBeTruthy()
     expect(findButton('Forgot username?')).toBeTruthy()
 
     await act(async () => findButton('Forgot password?').click())
     expect(container.textContent).toContain('Mesh never stores your account password')
-    expect(findLink('Open Matrix.org account help').getAttribute('href'))
+    expect(findLink('Open account service help').getAttribute('href'))
       .toBe('https://app.element.io/#/login')
 
     await act(async () => findButton('Forgot username?').click())
@@ -489,14 +559,26 @@ describe('MatrixAccountScreen', () => {
     })
 
     const browserButton = findButton('Use browser sign-in')
+    const serviceDetails = container.querySelector<HTMLElement>(
+      '[aria-label="Public account service details"]',
+    )
     expect(browserButton.disabled).toBe(true)
     expect(browserButton.getAttribute('aria-describedby')).toBe('browser-sign-in-availability')
+    expect(serviceDetails).not.toBeNull()
+    expect(browserButton.compareDocumentPosition(serviceDetails!) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(container.textContent).toContain('Browser sign-in opens from the installed Mesh app')
   })
 
   it('rejects credential-bearing and insecure custom-service addresses before probing', async () => {
     await renderScreen()
     await act(async () => findButton('Use another service').click())
+
+    await act(async () => {
+      setInputValue(findInput('homeserver'), 'not a service')
+      findButton('Check service').click()
+    })
+    expect(container.textContent).toContain('service address is invalid')
 
     await act(async () => {
       setInputValue(
@@ -550,7 +632,7 @@ describe('MatrixAccountScreen', () => {
     })
 
     expect(container.textContent).toContain('Direct account creation is closed')
-    expect(findLink('Create a Matrix.org account in your browser')).toBeTruthy()
+    expect(findLink('Create an account in your browser')).toBeTruthy()
   })
 
   it('clears the prior provider before checking a custom service', async () => {
@@ -559,12 +641,12 @@ describe('MatrixAccountScreen', () => {
       findButton('Sign in').click()
       await Promise.resolve()
     })
-    expect(container.querySelector('[aria-label="Matrix.org service details"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Public account service details"]')).not.toBeNull()
 
     await act(async () => findButton('Back to service choices').click())
     await act(async () => findButton('Use another service').click())
 
-    expect(container.querySelector('[aria-label="Matrix.org service details"]')).toBeNull()
+    expect(container.querySelector('[aria-label="Public account service details"]')).toBeNull()
     expect(findButton('Check service')).toBeTruthy()
   })
 
@@ -819,6 +901,7 @@ describe('MatrixAccountScreen', () => {
     onMatrixOidcLogin?: (homeserver: string) => Promise<void>
     onMatrixSwitchAccount?: (profileId: string) => Promise<void>
     initialPendingInvitation?: PendingInvitationMetadata
+    initialAccountService?: string
     onDiscardPendingInvitation?: () => Promise<void>
     onNext?: (outcome: 'registered' | 'signed-in') => void
   } = {}) {
@@ -835,6 +918,7 @@ describe('MatrixAccountScreen', () => {
           onMatrixOidcLogin={overrides.onMatrixOidcLogin ?? vi.fn(async () => {})}
           onMatrixSwitchAccount={overrides.onMatrixSwitchAccount}
           initialPendingInvitation={overrides.initialPendingInvitation}
+          initialAccountService={overrides.initialAccountService}
           onDiscardPendingInvitation={overrides.onDiscardPendingInvitation}
           onNext={overrides.onNext ?? (() => {})}
         />,

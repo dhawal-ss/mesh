@@ -5,7 +5,6 @@ import { motionDurations, transitions } from '../../lib/motion'
 import { describeError } from '../../lib/errors'
 import { Button } from '../ui/Button'
 import { useIdentityStore } from '../../store/identity'
-import { useReducedMotionPreference } from '../../hooks/useReducedMotionPreference'
 import type { OnboardingFlowProps } from './types'
 
 type IdentityScreenProps = Pick<OnboardingFlowProps, 'onGenerateIdentity'> & {
@@ -26,7 +25,6 @@ function formatFingerprint(publicKey?: string) {
 }
 
 export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onNext }: IdentityScreenProps) {
-  const reduceMotion = useReducedMotionPreference()
   const identity = useIdentityStore((s) => s.identity)
   const [attempt, setAttempt] = useState(0)
   const [phase, setPhase] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
@@ -106,22 +104,9 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
         </div>
 
         <div className="h-1 overflow-hidden rounded-full bg-surface-hover">
-          <motion.div
-            className="h-full w-1/3 rounded-full bg-accent"
-            animate={
-              reduceMotion
-                ? { x: 0, opacity: phase === 'done' ? 0.95 : 1 }
-                : phase === 'done'
-                  ? { x: ['-20%', '120%'], opacity: [0.45, 0.95] }
-                  : { x: ['-35%', '115%'] }
-            }
-            transition={
-              reduceMotion
-                ? transitions.reduced
-                : phase === 'done'
-                  ? transitions.celebration
-                  : transitions.ambientLoop
-            }
+          <div
+            className="h-full rounded-full bg-accent"
+            style={{ width: phase === 'done' || phase === 'error' ? '100%' : '34%' }}
           />
         </div>
 
@@ -137,7 +122,7 @@ export function IdentityScreen({ backendKind = 'matrix', onGenerateIdentity, onN
               )}
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ ...transitions.enter, delay: index * motionDurations.stagger }}
+              transition={{ ...transitions.enter, delay: index * motionDurations.press }}
             >
               {step}
             </motion.span>

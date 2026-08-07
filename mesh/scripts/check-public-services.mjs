@@ -11,6 +11,7 @@ const domains = new Set()
 const allowedLoginMethods = new Set(['password', 'browser'])
 const datePattern = /^\d{4}-\d{2}-\d{2}$/
 const maxResponseBytes = 128 * 1024
+const maxHealthResponseBytes = 1024
 
 function safeHttpsUrl(value, { originOnly = false, allowFragment = false } = {}) {
   try {
@@ -22,6 +23,25 @@ function safeHttpsUrl(value, { originOnly = false, allowFragment = false } = {})
   } catch {
     return false
   }
+}
+
+function safeMatrixRtcAuthorizationUrl(value) {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:'
+      && !url.username
+      && !url.password
+      && !url.search
+      && !url.hash
+      && url.port === ''
+      && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u.test(url.hostname)
+  } catch {
+    return false
+  }
+}
+
+function normalizedEndpoint(value) {
+  return String(value ?? '').replace(/\/+$/u, '')
 }
 
 function requireValue(condition, message) {
@@ -73,7 +93,18 @@ if (!Array.isArray(catalog) || catalog.length === 0) {
     for (const key of ['displayName', 'serviceAddress', 'operator', 'jurisdiction']) {
       requireValue(nonEmptyString(service[key]), `${path}.${key} is required`)
     }
+    requireValue(
+      Number.isSafeInteger(service.minimumAge)
+        && service.minimumAge >= 13
+        && service.minimumAge <= 120,
+      `${path}.minimumAge must be an explicit age from 13 to 120`,
+    )
     requireValue(safeHttpsUrl(service.homeserverUrl, { originOnly: true }), `${path}.homeserverUrl is unsafe`)
+    requireValue(
+      service.matrixRtc?.type === 'livekit'
+        && safeMatrixRtcAuthorizationUrl(service.matrixRtc?.authorizationUrl),
+      `${path}.matrixRtc must identify one reviewed HTTPS LiveKit authorization endpoint`,
+    )
     requireValue(
       service.registration?.kind === 'external'
         && safeHttpsUrl(service.registration?.url, { allowFragment: true })
@@ -133,6 +164,8 @@ if (errors.length === 0) {
       discovery: 'failed',
       versions: 'failed',
       loginMethods: [],
+      matrixRtcFocus: 'failed',
+      matrixRtcHealth: 'failed',
     }
     try {
       const wellKnownResponse = await fetch(
@@ -153,6 +186,40 @@ if (errors.length === 0) {
       const discovered = wellKnown?.['m.homeserver']?.base_url
       requireValue(discovered === service.homeserverUrl, `${service.id} discovery changed to ${String(discovered)}`)
       report.discovery = discovered
+
+      const liveKitFoci = (wellKnown?.['org.matrix.msc4143.rtc_foci'] ?? [])
+        .filter((focus) => focus?.type === 'livekit')
+      const expectedFocus = normalizedEndpoint(service.matrixRtc.authorizationUrl)
+      requireValue(liveKitFoci.length === 1, `${service.id} must advertise exactly one LiveKit focus`)
+      requireValue(
+        liveKitFoci.every((focus) => safeMatrixRtcAuthorizationUrl(focus?.livekit_service_url)),
+        `${service.id} advertises an unsafe LiveKit focus`,
+      )
+      requireValue(
+        normalizedEndpoint(liveKitFoci[0]?.livekit_service_url) === expectedFocus,
+        `${service.id} LiveKit focus changed from the reviewed endpoint`,
+      )
+      report.matrixRtcFocus = liveKitFoci[0]?.livekit_service_url ?? 'failed'
+
+      const healthResponse = await fetch(`${expectedFocus}/healthz`, {
+        signal: AbortSignal.timeout(timeoutMs),
+        redirect: 'error',
+      })
+      requireValue(healthResponse.status === 200, `${service.id} MatrixRTC health returned ${healthResponse.status}`)
+      const healthLength = Number(healthResponse.headers.get('content-length'))
+      requireValue(
+        !Number.isFinite(healthLength) || healthLength <= maxHealthResponseBytes,
+        `${service.id} MatrixRTC health response exceeds ${maxHealthResponseBytes} bytes`,
+      )
+      if (healthResponse.status === 200
+        && (!Number.isFinite(healthLength) || healthLength <= maxHealthResponseBytes)) {
+        const healthBytes = await healthResponse.arrayBuffer()
+        requireValue(
+          healthBytes.byteLength <= maxHealthResponseBytes,
+          `${service.id} MatrixRTC health response exceeds ${maxHealthResponseBytes} bytes`,
+        )
+        if (healthBytes.byteLength <= maxHealthResponseBytes) report.matrixRtcHealth = 'healthy'
+      }
 
       const versionsResponse = await fetch(
         `${service.homeserverUrl}/_matrix/client/versions`,

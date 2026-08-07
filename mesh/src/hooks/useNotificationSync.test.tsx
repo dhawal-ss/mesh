@@ -8,7 +8,14 @@ import type {
 } from '../types/ipc'
 
 const bridgeMocks = vi.hoisted(() => ({
-  setNotificationContext: vi.fn<(context: NotificationPresentationContext) => Promise<void>>(
+  getNotificationAccountScope: vi.fn(() => Promise.resolve({
+    accountGeneration: 7,
+    userId: '@alice:example.org',
+  })),
+  setNotificationContext: vi.fn<(
+    scope: { accountGeneration: number; userId: string },
+    context: NotificationPresentationContext,
+  ) => Promise<void>>(
     () => Promise.resolve(),
   ),
   sendTestNotification: vi.fn(() => Promise.resolve()),
@@ -16,9 +23,12 @@ const bridgeMocks = vi.hoisted(() => ({
     () => Promise<'all' | 'mentions' | 'nothing'>
   >(() => Promise.resolve('mentions')),
   setMatrixRoomNotificationMode: vi.fn(() => Promise.resolve()),
-  playNotificationSound: vi.fn(),
   notificationHandler: undefined as ((notification: MatrixNotification) => void) | undefined,
   unreadHandler: undefined as ((update: MatrixUnreadUpdate) => void) | undefined,
+}))
+
+const interfaceSoundMocks = vi.hoisted(() => ({
+  play: vi.fn(() => Promise.resolve(true)),
 }))
 
 vi.mock('../lib/bridge', () => ({
@@ -28,11 +38,11 @@ vi.mock('../lib/bridge', () => ({
   updateMatrixUserPreferences: vi.fn((preferences) =>
     Promise.resolve({ ...preferences, updatedAt: new Date().toISOString() }),
   ),
+  getNotificationAccountScope: bridgeMocks.getNotificationAccountScope,
   setNotificationContext: bridgeMocks.setNotificationContext,
   sendTestNotification: bridgeMocks.sendTestNotification,
   getMatrixRoomNotificationMode: bridgeMocks.getMatrixRoomNotificationMode,
   setMatrixRoomNotificationMode: bridgeMocks.setMatrixRoomNotificationMode,
-  playNotificationSound: bridgeMocks.playNotificationSound,
   onMatrixNotification: vi.fn((handler) => {
     bridgeMocks.notificationHandler = handler
     return Promise.resolve(vi.fn())
@@ -41,6 +51,10 @@ vi.mock('../lib/bridge', () => ({
     bridgeMocks.unreadHandler = handler
     return Promise.resolve(vi.fn())
   }),
+}))
+
+vi.mock('../lib/interface-sounds', () => ({
+  playInterfaceSound: interfaceSoundMocks.play,
 }))
 
 vi.mock('../components/ui/Toast', () => ({
@@ -61,7 +75,11 @@ const room = {
 }
 
 function Harness() {
-  useNotificationSync({ matrixMode: true, activeRoomId: room.id })
+  useNotificationSync({
+    matrixMode: true,
+    accountUserId: '@alice:example.org',
+    activeRoomId: room.id,
+  })
   return null
 }
 
@@ -82,6 +100,10 @@ describe('useNotificationSync', () => {
     bridgeMocks.notificationHandler = undefined
     bridgeMocks.unreadHandler = undefined
     bridgeMocks.getMatrixRoomNotificationMode.mockResolvedValue('mentions')
+    bridgeMocks.getNotificationAccountScope.mockResolvedValue({
+      accountGeneration: 7,
+      userId: '@alice:example.org',
+    })
     useChannelStore.getState().setChannels([room])
     useDmStore.getState().setConversations([])
     useSettingsStore.setState((state) => ({
@@ -115,25 +137,31 @@ describe('useNotificationSync', () => {
     })
     await flushEffects()
 
-    expect(bridgeMocks.setNotificationContext).toHaveBeenCalledWith({
-      activeRoomId: room.id,
-      notificationsEnabled: true,
-      doNotDisturb: false,
-      showMessageContent: false,
-      quietHoursActive: false,
-      mutedRoomIds: [],
-    })
+    expect(bridgeMocks.getNotificationAccountScope).toHaveBeenCalledWith(
+      '@alice:example.org',
+    )
+    expect(bridgeMocks.setNotificationContext).toHaveBeenCalledWith(
+      { accountGeneration: 7, userId: '@alice:example.org' },
+      {
+        activeRoomId: room.id,
+        notificationsEnabled: true,
+        doNotDisturb: false,
+        showMessageContent: false,
+        quietHoursActive: false,
+        mutedRoomIds: [],
+      },
+    )
     expect(bridgeMocks.getMatrixRoomNotificationMode).toHaveBeenCalledWith(room.id)
     expect(useSettingsStore.getState().getChannelNotificationLevel(room.id)).toBe('mentions')
 
     act(() => {
       bridgeMocks.notificationHandler?.({
-        roomId: room.id,
+        roomId: '!other:example.org',
         eventId: '$event',
         sender: '@friend:example.org',
         displayName: 'Friend',
         preview: 'Hello',
-        isMention: false,
+        isMention: true,
         isDm: false,
         avatarUrl: null,
       })
@@ -144,7 +172,10 @@ describe('useNotificationSync', () => {
       })
     })
 
-    expect(bridgeMocks.playNotificationSound).toHaveBeenCalledWith('pulse')
+    expect(interfaceSoundMocks.play).toHaveBeenCalledWith('message-mention', {
+      contextKey: '!other:example.org',
+      focused: false,
+    })
     expect(useChannelStore.getState().channelEntities[room.id]).toMatchObject({
       unreadCount: 6,
       unreadMentions: 2,
@@ -200,4 +231,45 @@ describe('useNotificationSync', () => {
       unreadMentions: 3,
     })
   })
+
+  it('preserves a local room setting changed while remote settings are loading', async () => {
+    let resolveMode!: (mode: 'all' | 'mentions' | 'nothing') => void
+    bridgeMocks.getMatrixRoomNotificationMode.mockReturnValue(new Promise((resolve) => {
+      resolveMode = resolve
+    }))
+    await act(async () => {
+      root.render(<Harness />)
+      await Promise.resolve()
+    })
+
+    act(() => {
+      useSettingsStore.getState().setChannelNotificationLevel(room.id, 'nothing')
+    })
+    resolveMode('mentions')
+    await flushEffects()
+
+    expect(bridgeMocks.setMatrixRoomNotificationMode).toHaveBeenCalledWith(room.id, 'nothing')
+    expect(useSettingsStore.getState().getChannelNotificationLevel(room.id)).toBe('nothing')
+  })
+
+  it('does not apply a policy scope after its account shell is gone', async () => {
+    let resolveScope: ((scope: { accountGeneration: number; userId: string }) => void) | undefined
+    bridgeMocks.getNotificationAccountScope.mockReturnValue(new Promise((resolve) => {
+      resolveScope = resolve
+    }))
+
+    await act(async () => {
+      root.render(<Harness />)
+    })
+    await act(async () => {
+      root.render(null)
+    })
+    await act(async () => {
+      resolveScope?.({ accountGeneration: 7, userId: '@alice:example.org' })
+      await Promise.resolve()
+    })
+
+    expect(bridgeMocks.setNotificationContext).not.toHaveBeenCalled()
+  })
+
 })

@@ -9,6 +9,25 @@ const bridgeMocks = vi.hoisted(() => ({
   inviteMatrixUser: vi.fn(),
 }))
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
+}
+
+function setInputValue(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    'value',
+  )?.set
+  setter?.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
 vi.mock('../../lib/bridge', () => ({
   isMatrixBackend: () => bridgeMocks.matrixMode,
   generateInviteLink: bridgeMocks.generateInviteLink,
@@ -68,7 +87,8 @@ describe('InviteModal', () => {
 
     expect(document.body.querySelector('[role="alert"]')).not.toBeNull()
     expect(document.body.textContent).not.toContain('Failed to generate link')
-    expect(copyButton?.disabled).toBe(true)
+    expect(document.body.textContent).not.toContain("Mesh couldn't invite this person")
+    expect(copyButton).toBeUndefined()
   })
 
   it('makes a private link primary while retaining direct account invites in Matrix mode', async () => {
@@ -101,9 +121,113 @@ describe('InviteModal', () => {
     expect(bridgeMocks.generateInviteLink).toHaveBeenCalledWith('!community:mesh.test')
     expect(document.body.textContent).toContain('Copy Invite Link')
     expect(document.body.textContent).toContain(
-      'They enter automatically after signing in.',
+      'They review the destination and choose when to join.',
     )
     expect(document.body.textContent).toContain('Already on Mesh')
+    expect(document.body.textContent).toContain('Mesh username or full account ID')
+    expect(document.body.textContent).toContain('Use the full account ID for someone on another service.')
+  })
+
+  it('does not render a direct-account failure as an invite-link failure', async () => {
+    bridgeMocks.matrixMode = true
+    bridgeMocks.inviteMatrixUser.mockRejectedValueOnce(new Error('private server detail'))
+
+    await act(async () => {
+      root.render(
+        <InviteModal
+          isOpen
+          onClose={() => {}}
+          communityId="!community:mesh.test"
+          communityName="Mesh Test"
+        />,
+      )
+    })
+    const input = document.body.querySelector('input') as HTMLInputElement
+    const sendButton = Array.from(document.body.querySelectorAll('button'))
+      .find((button) => button.textContent?.includes('Send invite'))
+
+    await act(async () => {
+      setInputValue(input, 'maya')
+    })
+    await act(async () => {
+      sendButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(document.body.textContent).toContain("Mesh couldn't invite this person")
+    expect(document.body.textContent).not.toContain("Mesh couldn't create an invite link")
+    expect(document.body.querySelector('[role="alert"]')?.textContent)
+      .toContain("Mesh couldn't invite this person. Try again.")
+  })
+
+  it('keeps simultaneous link and direct-account outcomes scoped when they settle out of order', async () => {
+    bridgeMocks.matrixMode = true
+    const link = deferred<string>()
+    const directInvite = deferred<void>()
+    bridgeMocks.generateInviteLink.mockReturnValueOnce(link.promise)
+    bridgeMocks.inviteMatrixUser.mockReturnValueOnce(directInvite.promise)
+
+    await act(async () => {
+      root.render(
+        <InviteModal
+          isOpen
+          onClose={() => {}}
+          communityId="!community:mesh.test"
+          communityName="Mesh Test"
+        />,
+      )
+    })
+    const input = document.body.querySelector('input') as HTMLInputElement
+    await act(async () => {
+      setInputValue(input, 'maya')
+    })
+    const buttons = () => Array.from(document.body.querySelectorAll('button'))
+    await act(async () => {
+      buttons().find((button) => button.textContent?.includes('Create invite link'))?.click()
+      buttons().find((button) => button.textContent?.includes('Send invite'))?.click()
+    })
+
+    await act(async () => {
+      directInvite.reject(new Error('direct invite rejected'))
+      await Promise.resolve()
+    })
+    expect(document.body.textContent).toContain("Mesh couldn't invite this person")
+    expect(document.body.textContent).not.toContain("Mesh couldn't create an invite link")
+
+    await act(async () => {
+      link.resolve('https://mesh.test/invite/abcdefghijklmnopqrstuvwxyzABCDEFG_123456789')
+      await Promise.resolve()
+    })
+    expect(document.body.textContent).toContain('Copy Invite Link')
+    expect(document.body.textContent).toContain("Mesh couldn't invite this person")
+  })
+
+  it('invalidates in-flight outcomes when the modal closes', async () => {
+    const link = deferred<string>()
+    bridgeMocks.generateInviteLink.mockReturnValueOnce(link.promise)
+
+    await act(async () => {
+      root.render(
+        <InviteModal
+          isOpen
+          onClose={() => {}}
+          communityId="community-1"
+          communityName="Mesh Test"
+        />,
+      )
+    })
+    const buttons = () => Array.from(document.body.querySelectorAll('button'))
+    await act(async () => {
+      buttons().find((button) => button.textContent?.includes('Create invite link'))?.click()
+      buttons().find((button) => button.getAttribute('aria-label') === 'Close dialog')?.click()
+    })
+    await act(async () => {
+      link.resolve('https://mesh.test/invite/stale-link-that-must-not-render')
+      await Promise.resolve()
+    })
+
+    expect(document.body.textContent).not.toContain('stale-link-that-must-not-render')
   })
 
   it('clears the copy reset timer when the modal unmounts', async () => {

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-mark-thread-read"
+description = "Enables the matrix_mark_thread_read command without any pre-configured scope."
+commands.allow = ["matrix_mark_thread_read"]
+
+[[permission]]
+identifier = "deny-matrix-mark-thread-read"
+description = "Denies the matrix_mark_thread_read command without any pre-configured scope."
+commands.deny = ["matrix_mark_thread_read"]

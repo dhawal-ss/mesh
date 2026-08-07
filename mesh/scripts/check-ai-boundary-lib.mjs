@@ -24,6 +24,8 @@ const REQUIRED_FORBIDDEN_ACTIONS = new Set([
 ])
 
 const NETWORK_AI_PACKAGE_PATTERNS = [
+  /^ai$/i,
+  /^@ai-sdk\//i,
   /^openai$/i,
   /^@anthropic-ai\/sdk$/i,
   /^@google\/(?:generative-ai|genai)$/i,
@@ -33,6 +35,8 @@ const NETWORK_AI_PACKAGE_PATTERNS = [
   /^replicate$/i,
   /^together-ai$/i,
   /^@huggingface\/inference$/i,
+  /^@langchain\//i,
+  /^langchain$/i,
   /^ollama$/i,
   /^async-openai$/i,
   /^anthropic(?:-sdk)?$/i,
@@ -92,6 +96,15 @@ function isNetworkAiPackage(packageName, reviewedPackages) {
     !reviewedPackages.has(packageName)
     && NETWORK_AI_PACKAGE_PATTERNS.some((pattern) => pattern.test(packageName))
   )
+}
+
+function npmAliasedPackage(specifier) {
+  if (typeof specifier !== 'string' || !specifier.startsWith('npm:')) return null
+  const target = specifier.slice('npm:'.length)
+  const match = target.startsWith('@')
+    ? target.match(/^(@[^/@]+\/[^/@]+)(?:@.+)?$/)
+    : target.match(/^([^/@]+)(?:@.+)?$/)
+  return match?.[1] ?? null
 }
 
 function loadAiBoundaryManifest(rootDir) {
@@ -344,9 +357,16 @@ function manifestPackages(rootDir) {
   const packageJson = path.join(rootDir, 'package.json')
   if (fs.existsSync(packageJson)) {
     const manifest = JSON.parse(fs.readFileSync(packageJson, 'utf8'))
-    for (const section of ['dependencies', 'devDependencies', 'optionalDependencies']) {
-      for (const packageName of Object.keys(manifest[section] ?? {})) {
+    for (const section of [
+      'dependencies',
+      'devDependencies',
+      'optionalDependencies',
+      'peerDependencies',
+    ]) {
+      for (const [packageName, specifier] of Object.entries(manifest[section] ?? {})) {
         packages.push({ file: packageJson, packageName })
+        const aliasedPackage = npmAliasedPackage(specifier)
+        if (aliasedPackage) packages.push({ file: packageJson, packageName: aliasedPackage })
       }
     }
   }
@@ -409,6 +429,7 @@ export function analyzeAiBoundary(rootDir) {
     const relativePath = path.relative(absoluteRoot, filePath)
     const source = fs.readFileSync(filePath, 'utf8')
     const uncommentedSource = sourceWithoutComments(source)
+    const aiModule = isAiModule(relativePath, source)
 
     for (const packageName of importedPackages(uncommentedSource)) {
       if (isNetworkAiPackage(packageName, reviewedPackages)) {
@@ -421,16 +442,16 @@ export function analyzeAiBoundary(rootDir) {
     }
 
     for (const host of urlHosts(uncommentedSource)) {
-      if (NETWORK_AI_HOSTS.has(host) && !reviewedHosts.has(host)) {
+      if ((NETWORK_AI_HOSTS.has(host) || aiModule) && !reviewedHosts.has(host)) {
         violations.push(violation(
           'network-ai-endpoint',
           relativePath,
-          `third-party inference endpoint "${host}" is not reviewed`,
+          `AI network endpoint "${host}" is not reviewed`,
         ))
       }
     }
 
-    if (!isAiModule(relativePath, source)) continue
+    if (!aiModule) continue
 
     for (const marker of REQUIRED_AI_MARKERS) {
       if (!source.includes(marker)) {

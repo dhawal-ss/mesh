@@ -1,6 +1,10 @@
 import type { BackendStatus } from './bridge'
 import type { VoiceConnectionState } from '../types/ipc'
 
+export const VOICE_COMING_SOON_TITLE = 'Voice calling is coming soon'
+export const VOICE_COMING_SOON_DETAIL =
+  'Voice rooms stay visible while Mesh finishes private calling. You can keep using messages.'
+
 /**
  * The only condition under which Mesh may load the legacy SimplePeer engine.
  *
@@ -25,7 +29,7 @@ export function canStartMatrixVoice(status: BackendStatus | null): boolean {
       status.capabilities.voice &&
       status.voiceService.provider === 'matrix-rtc' &&
       status.voiceService.availability === 'ready' &&
-      status.voiceService.mediaE2eeVerified,
+      status.voiceService.mediaE2eeReady,
   )
 }
 
@@ -58,15 +62,22 @@ export function voiceMediaErrorMessage(
   kind: 'camera' | 'screen',
 ): string {
   if (isPermissionDeniedError(error)) {
-    const label = kind === 'camera' ? 'camera' : 'screen sharing'
-    return `Mesh can’t access ${label}. Allow ${label} access for Mesh in your system settings, then try again.`
-  }
-  if (error instanceof Error && error.message.trim()) {
-    return error.message.trim()
+      const label = kind === 'camera' ? 'camera' : 'screen sharing'
+      return `Mesh can’t access ${label}. Allow ${label} access for Mesh in your system settings, then try again.`
   }
   return kind === 'camera'
-    ? 'The camera could not be changed.'
-    : 'Screen sharing could not be changed.'
+    ? 'Mesh could not change your camera. Check that it is connected and not being used by another app, then try again.'
+    : 'Mesh could not change screen sharing. Check that the window or screen is still available, then try again.'
+}
+
+export const PRIVATE_VOICE_FAILURE_MESSAGE =
+  'Private voice was stopped to keep this call secure. Try again.'
+
+export function voiceConnectionUserMessage(reason: string | null | undefined): string | null {
+  if (!reason) return null
+  return /(?:matrixrtc|private media|media encryption|media key|activation metadata|publication lease|key distribution)/i.test(reason)
+    ? PRIVATE_VOICE_FAILURE_MESSAGE
+    : reason
 }
 
 const PUSH_TO_TALK_INTERACTIVE_SELECTOR = [

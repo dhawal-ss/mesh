@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -16,17 +17,13 @@ import type { RoomContextTab } from '../community/RoomContextPanel'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
 import { ScopedErrorBoundary } from '../ui/ScopedErrorBoundary'
 import { Icon } from '../ui/Icon'
-import { useShellStore } from '../../store/shell'
 import { useDmStore } from '../../store/dms'
 import { useRoomTrust } from '../../hooks/useRoomTrust'
 import { useRoomPinStore } from '../../store/room-pins'
-import { isMatrixBackend, onMatrixRoomPinsUpdate } from '../../lib/bridge'
+import { isMatrixBackend, markThreadRead, onMatrixRoomPinsUpdate } from '../../lib/bridge'
 import { setVolatileInviteLink } from '../../lib/pending-invitation-runtime'
 import {
-  readStoredBoolean,
-  ROOM_CONTEXT_OPEN_KEY,
   ROOM_CONTEXT_WIDTH_KEY,
-  writeStoredBoolean,
 } from '../../lib/layout-preferences'
 import { usePersistentPanelWidth } from '../../hooks/usePersistentPanelWidth'
 import { MemberListSkeleton, Skeleton } from '../ui/Skeleton'
@@ -34,6 +31,16 @@ import {
   ROOM_CONTEXT_COMPACT_QUERY,
   useMediaQuery,
 } from '../../hooks/useMediaQuery'
+import { useCurrentMeshRoute, useMeshNavigationStore } from '../../store/navigation'
+import { useMessageStore } from '../../store/messages'
+import { groupThreadReplies, mergeThreadMessages } from '../../lib/threads'
+import type { Message } from '../../types/ipc'
+import { restorePaneTriggerFocus } from '../../lib/pane-focus'
+import { useCompactPaneFocus } from '../../hooks/useCompactPaneFocus'
+import { useMessageNavigationStore } from '../../store/message-navigation'
+import { useMatrixThreadContext } from '../../hooks/useMatrixThreadContext'
+
+const EMPTY_MESSAGES: Message[] = []
 
 function createLazyRoomContextPanel() {
   return lazy(() =>
@@ -45,29 +52,31 @@ function createLazyRoomContextPanel() {
 const ChatView = lazy(() =>
   import('../chat/ChatView').then((module) => ({ default: module.ChatView })),
 )
+const ThreadPanel = lazy(() =>
+  import('../chat/ThreadPanel').then((module) => ({ default: module.ThreadPanel })),
+)
 
 export function ContentArea() {
   const activeChannel = useActiveChannel()
   const communityCount = useCommunityStore((state) => state.communityOrder.length)
   const activeCommunityId = useCommunityStore((state) => state.activeCommunityId)
-  const openServerModal = useShellStore((state) => state.openServerModal)
   const setDmMode = useDmStore((state) => state.setDmMode)
   const channels = useChannelStore((state) => state.channels)
   const setActiveChannel = useChannelStore((state) => state.setActiveChannel)
-  const setDiagnosticsOpen = useShellStore((state) => state.setDiagnosticsOpen)
   const compactRoomContext = useMediaQuery(ROOM_CONTEXT_COMPACT_QUERY)
+  const route = useCurrentMeshRoute()
+  const navigate = useMeshNavigationStore((state) => state.navigate)
+  const closePane = useMeshNavigationStore((state) => state.closePane)
+  const drawer = useMeshNavigationStore((state) => state.drawer)
+  const setDrawer = useMeshNavigationStore((state) => state.setDrawer)
 
-  const [showContext, setShowContext] = useState(() => (
-    readStoredBoolean(ROOM_CONTEXT_OPEN_KEY, false) && !compactRoomContext
-  ))
   const previousCompactRoomContext = useRef(compactRoomContext)
   const roomContextWidth = usePersistentPanelWidth({
     storageKey: ROOM_CONTEXT_WIDTH_KEY,
-    defaultWidth: 260,
-    minimum: 240,
-    maximum: 420,
+    defaultWidth: 280,
+    minimum: 220,
+    maximum: 320,
   })
-  const [contextTab, setContextTab] = useState<RoomContextTab>('people')
   const [inviteDraft, setInviteDraft] = useState('')
   const [RoomContextPanel, setRoomContextPanel] = useState(
     createLazyRoomContextPanel,
@@ -75,26 +84,100 @@ export function ContentArea() {
   const { members } = usePresence()
   const trust = useRoomTrust(activeChannel?.id, members)
   const activeTextRoomId = activeChannel?.channelType === 'text' ? activeChannel.id : null
+  const roomMessages = useMessageStore((state) => (
+    activeTextRoomId ? state.messages[activeTextRoomId] ?? EMPTY_MESSAGES : EMPTY_MESSAGES
+  ))
+  const threadRootId = route.kind === 'room'
+    && route.roomId === activeTextRoomId
+    && route.pane?.kind === 'thread'
+      ? route.pane.rootEventId
+      : null
+  const threadContext = useMatrixThreadContext(
+    activeTextRoomId,
+    threadRootId,
+    isMatrixBackend(),
+  )
+  const thread = useMemo(() => {
+    if (!threadRootId) return { root: null, replies: EMPTY_MESSAGES }
+    const { repliesByRoot } = groupThreadReplies(roomMessages)
+    const localRoot = roomMessages.find((message) => message.id === threadRootId) ?? null
+    const serverRoot = threadContext.context?.root ?? null
+    return {
+      root: serverRoot && localRoot ? { ...serverRoot, ...localRoot } : serverRoot ?? localRoot,
+      replies: mergeThreadMessages(
+        threadContext.context?.replies ?? EMPTY_MESSAGES,
+        repliesByRoot.get(threadRootId) ?? EMPTY_MESSAGES,
+      ),
+    }
+  }, [roomMessages, threadContext.context, threadRootId])
+  const threadNavigationRequest = useMessageNavigationStore((state) => {
+    const pending = state.pending
+    return pending?.message.channelId === activeTextRoomId
+      && pending.message.threadRootId === threadRootId
+        ? pending
+        : null
+  })
+  const showThread = threadRootId !== null
+  const closeThread = useCallback(() => {
+    const rootId = threadRootId
+    closePane()
+    restorePaneTriggerFocus('mesh-thread-panel', rootId)
+  }, [closePane, threadRootId])
+  useCompactPaneFocus({
+    active: showThread,
+    compact: compactRoomContext,
+    panelId: 'mesh-thread-panel',
+    onClose: closeThread,
+  })
+  const routeContextTab: RoomContextTab | null = route.kind === 'room'
+    && route.roomId === activeTextRoomId
+      ? route.pane?.kind === 'details'
+        ? route.pane.tab
+        : route.pane?.kind === 'signal'
+          ? 'ledger'
+          : null
+      : null
+  const showContext = routeContextTab !== null
+  const contextTab = routeContextTab ?? 'people'
   const loadRoomPins = useRoomPinStore((state) => state.load)
   const clearRoomPins = useRoomPinStore((state) => state.clear)
   const closeContext = useCallback((restoreFocus = true) => {
-    setShowContext(false)
+    closePane()
+    if (useMeshNavigationStore.getState().drawer === 'secondary') setDrawer('none')
     if (restoreFocus && typeof document !== 'undefined') {
-      window.requestAnimationFrame(() => {
-        document.getElementById('mesh-room-context-toggle')?.focus()
-      })
+      restorePaneTriggerFocus('mesh-room-context-panel')
     }
-  }, [])
+  }, [closePane, setDrawer])
 
   useEffect(() => {
-    writeStoredBoolean(ROOM_CONTEXT_OPEN_KEY, showContext)
-  }, [showContext])
+    if (!routeContextTab) {
+      if (drawer === 'secondary') setDrawer('none')
+      return
+    }
+    setDrawer(compactRoomContext ? 'secondary' : 'none')
+  }, [compactRoomContext, drawer, routeContextTab, setDrawer])
+
+  useEffect(() => {
+    if (compactRoomContext && drawer === 'context' && showContext) {
+      closeContext(false)
+    }
+  }, [closeContext, compactRoomContext, drawer, showContext])
 
   useEffect(() => {
     const wasCompact = previousCompactRoomContext.current
     previousCompactRoomContext.current = compactRoomContext
     if (!wasCompact && compactRoomContext && showContext) closeContext()
   }, [closeContext, compactRoomContext, showContext])
+
+  const openContext = useCallback((tab: RoomContextTab) => {
+    if (route.kind !== 'room') return
+    navigate({
+      ...route,
+      pane: tab === 'ledger'
+        ? { kind: 'signal', subject: { kind: 'room', id: route.roomId } }
+        : { kind: 'details', tab },
+    }, { focus: false })
+  }, [navigate, route])
 
   useLayoutEffect(() => {
     if (!showContext) return
@@ -208,8 +291,8 @@ export function ContentArea() {
             <div className="mt-5 space-y-4">
               <p className="text-sm font-medium text-secondary">You're in. What first?</p>
               <div className="grid gap-2 sm:grid-cols-3">
-                <FirstAction label="Join a community" icon="userPlus" onClick={() => openServerModal('join')} />
-                <FirstAction label="Make a community" icon="plus" onClick={() => openServerModal('create')} />
+                <FirstAction label="Join a community" icon="userPlus" onClick={() => navigate({ kind: 'communities', mode: 'join' })} />
+                <FirstAction label="Make a community" icon="plus" onClick={() => navigate({ kind: 'communities', mode: 'create' })} />
                 <FirstAction label="Message a friend" icon="send" onClick={() => setDmMode(true)} />
               </div>
               <form
@@ -218,7 +301,7 @@ export function ContentArea() {
                   event.preventDefault()
                   if (inviteDraft.trim()) {
                     setVolatileInviteLink(inviteDraft.trim())
-                    openServerModal('join')
+                    navigate({ kind: 'communities', mode: 'join' })
                   }
                 }}
               >
@@ -249,24 +332,26 @@ export function ContentArea() {
   }
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1">
+    <div className="relative flex min-h-0 min-w-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
         <ErrorBoundary scope="content">
           {activeChannel.channelType === 'voice' ? (
             <VoiceView
               channelId={activeChannel.id}
               channelName={activeChannel.name}
-              onCheckAgain={() => {
-                // VoiceView performs device and session checks; this callback is
-                // retained as an explicit parent-owned retry seam.
-              }}
-              onOpenDiagnostics={() => setDiagnosticsOpen(true)}
               onBackToChat={() => {
                 const textRoom = channels.find((candidate) => (
                   candidate.communityId === activeChannel.communityId
                   && candidate.channelType === 'text'
                 ))
-                if (textRoom) setActiveChannel(textRoom.id)
+                if (textRoom) {
+                  setActiveChannel(textRoom.id)
+                  navigate({
+                    kind: 'room',
+                    communityId: textRoom.communityId,
+                    roomId: textRoom.id,
+                  })
+                }
               }}
             />
           ) : (
@@ -277,16 +362,56 @@ export function ContentArea() {
                 showContextToggle
                 isContextOpen={showContext}
                 activeContextTab={contextTab}
-                onToggleContext={() => setShowContext((current) => !current)}
-                onOpenContext={(tab) => {
-                  setContextTab(tab)
-                  setShowContext(true)
+                onToggleContext={() => {
+                  if (showContext) closeContext()
+                  else openContext(contextTab)
                 }}
+                onOpenContext={openContext}
               />
             </Suspense>
           )}
         </ErrorBoundary>
       </div>
+
+      {activeChannel.channelType === 'text' && showThread && (
+        <>
+          <button
+            type="button"
+            className="mesh-room-context-backdrop"
+            aria-label="Dismiss thread"
+            onClick={closeThread}
+          />
+          <Suspense fallback={<ThreadPanelLoadingFallback onClose={closeThread} />}>
+            <ThreadPanel
+              title={`#${activeChannel.name}`}
+              root={thread.root}
+              replies={thread.replies}
+              trust={trust}
+              onReply={(root, target = root) => {
+                window.dispatchEvent(new CustomEvent('mesh:reply-in-thread', {
+                  detail: { rootId: root.id, targetId: target.id },
+                }))
+              }}
+              onClose={closeThread}
+              onMarkRead={async (rootEventId, eventId) => {
+                await markThreadRead(activeChannel.id, rootEventId, eventId)
+                threadContext.clearUnread()
+              }}
+              loadState={threadContext.status}
+              unreadCount={threadContext.context?.unreadCount}
+              unreadMentions={threadContext.context?.unreadMentions}
+              unreadStateAvailable={threadContext.context?.unreadStateAvailable}
+              hasMore={threadContext.context?.hasMore}
+              onRetry={threadContext.retry}
+              targetMessageId={threadNavigationRequest?.message.id}
+              targetRequestId={threadNavigationRequest?.requestId}
+              onNavigationComplete={(requestId) => (
+                useMessageNavigationStore.getState().completeNavigation(requestId)
+              )}
+            />
+          </Suspense>
+        </>
+      )}
 
       {activeChannel.channelType === 'text' && showContext && (
         <>
@@ -318,11 +443,11 @@ export function ContentArea() {
                 members={members}
                 trust={trust}
                 activeTab={contextTab}
-                onTabChange={setContextTab}
+                onTabChange={openContext}
                 onClose={() => closeContext()}
                 panelWidth={roomContextWidth.width}
-                panelWidthMinimum={240}
-                panelWidthMaximum={420}
+                panelWidthMinimum={220}
+                panelWidthMaximum={320}
                 onResizeStart={roomContextWidth.startResize}
                 onResizeBy={roomContextWidth.resizeBy}
               />
@@ -351,6 +476,36 @@ function ChatViewLoadingFallback() {
         <Skeleton width="36%" height={12} />
       </div>
     </div>
+  )
+}
+
+function ThreadPanelLoadingFallback({ onClose }: { onClose: () => void }) {
+  return (
+    <aside
+      id="mesh-thread-panel"
+      className="mesh-secondary-pane flex min-h-0 flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-base"
+      aria-label="Loading thread"
+      aria-busy="true"
+      tabIndex={-1}
+    >
+      <div className="flex h-conversation-header flex-shrink-0 items-center gap-3 border-b border-border-subtle bg-surface-raised px-4">
+        <span className="min-w-0 flex-1 text-xs font-medium text-secondary" role="status">
+          Loading thread
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="min-h-10 rounded-control px-2 text-xs font-medium text-muted hover:bg-surface-hover hover:text-primary"
+        >
+          Close
+        </button>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-3 p-4" aria-hidden="true">
+        <Skeleton width="58%" height={12} />
+        <Skeleton width="82%" height={12} />
+        <Skeleton width="46%" height={12} />
+      </div>
+    </aside>
   )
 }
 

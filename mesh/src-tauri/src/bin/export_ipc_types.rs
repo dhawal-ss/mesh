@@ -4,24 +4,27 @@ use mesh_lib::backend::{
     BackendCapabilities, BackendKind, BackendStatus, CommunityModerationResult,
     CommunityPermissionAggregate, CommunityPermissionAggregateStatus, CommunityPermissionId,
     CommunityPermissionProjection, ConversationPrivacyOverride, CustomEmoji,
-    MatrixCommunityAdmission, MatrixNotification, MatrixPermissionRoomStatus,
-    MatrixPermissionStateChanged, MatrixPersonalDataExport, MatrixQueuedMessageState,
-    MatrixQueuedMessageUpdate, MatrixRecoveryHealth, MatrixRecoverySecureStorageState,
-    MatrixRecoverySetupResult, MatrixRecoveryVerificationState, MatrixRoomNotificationMode,
-    MatrixRoomPermissionProjection, MatrixRoomPins, MatrixRoomPinsUpdate,
-    MatrixRoomPowerLevelProjection, MatrixRoomUpgrade, MatrixRtcJoinResult, MatrixRtcMediaKey,
-    MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause, MatrixRtcMember,
-    MatrixRtcMembershipUpdate, MatrixUnreadUpdate, ModerationAuditEntry, ModerationRoomOutcome,
-    NotificationPresentationContext, PendingInvitationMetadata, ReadReceiptMode, UserPreferences,
-    VoiceProvider, VoiceServiceAvailability, VoiceServiceStatus,
+    MatrixCommunityAdmission, MatrixIgnoredUsersChanged, MatrixNotification,
+    MatrixPermissionRoomStatus, MatrixPermissionStateChanged, MatrixPersonalDataExport,
+    MatrixQueuedMessageState, MatrixQueuedMessageUpdate, MatrixRecoveryHealth,
+    MatrixRecoverySecureStorageState, MatrixRecoverySetupResult, MatrixRecoveryVerificationState,
+    MatrixRoomNotificationMode, MatrixRoomPermissionProjection, MatrixRoomPins,
+    MatrixRoomPinsUpdate, MatrixRoomPowerLevelProjection, MatrixRoomUpgrade, MatrixRtcJoinResult,
+    MatrixRtcMediaKey, MatrixRtcMediaKeyFailure, MatrixRtcMediaKeyLease, MatrixRtcMediaKeyPause,
+    MatrixRtcMember, MatrixRtcMembershipUpdate, MatrixUnreadUpdate, ModerationAuditEntry,
+    ModerationRoomOutcome, NotificationPresentationContext, PendingInvitationMetadata,
+    ReadReceiptMode, UserPreferences, VoiceProvider, VoiceServiceAvailability, VoiceServiceStatus,
 };
 use mesh_lib::types::{
     community::{ChannelDto, CommunityDto},
-    dm::{DirectMessageDto, DmConversationDto, ReadReceiptDto},
+    dm::{
+        BlockedAccountDto, BlockedAccountPageDto, DirectMessageDto, DmConversationDto,
+        DmRequestDto, ReadReceiptDto,
+    },
     identity::IdentityDto,
     message::{
-        AttachmentDto, AttachmentThumbnailDto, MessageDto, UndecryptableMessageDto,
-        UndecryptableMessageReason,
+        AttachmentDto, AttachmentThumbnailDto, MatrixThreadContextDto, MessageDto,
+        UndecryptableMessageDto, UndecryptableMessageReason,
     },
     peer::{NetworkStatusDto, PeerDto},
 };
@@ -52,6 +55,7 @@ fn generated_contract() -> String {
     output.push_str(&declaration::<MatrixPersonalDataExport>());
     output.push_str(&declaration::<MatrixNotification>());
     output.push_str(&declaration::<MatrixUnreadUpdate>());
+    output.push_str(&declaration::<MatrixIgnoredUsersChanged>());
     output.push_str(&declaration::<MatrixPermissionRoomStatus>());
     output.push_str(&declaration::<CommunityPermissionAggregateStatus>());
     output.push_str(&declaration::<CommunityPermissionId>());
@@ -95,7 +99,11 @@ fn generated_contract() -> String {
     output.push_str(&declaration::<UndecryptableMessageReason>());
     output.push_str(&declaration::<UndecryptableMessageDto>());
     output.push_str(&declaration::<MessageDto>());
+    output.push_str(&declaration::<MatrixThreadContextDto>());
     output.push_str(&declaration::<DmConversationDto>());
+    output.push_str(&declaration::<DmRequestDto>());
+    output.push_str(&declaration::<BlockedAccountDto>());
+    output.push_str(&declaration::<BlockedAccountPageDto>());
     output.push_str(&declaration::<ReadReceiptDto>());
     output.push_str(&declaration::<DirectMessageDto>());
     output.push_str(&declaration::<PeerDto>());

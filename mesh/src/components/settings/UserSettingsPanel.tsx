@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { lazy, Suspense, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
@@ -9,17 +9,29 @@ import {
   useSettingsStore,
 } from '../../store/settings'
 import { sequenceCardProps, type SequenceCardPosition } from '../ui/SequenceCard'
-import { Icon } from '../ui/Icon'
+import { Icon, type IconName } from '../ui/Icon'
 import { PixelMark } from '../ui/PixelMark'
+import { Avatar } from '../ui/Avatar'
 import type {
   AppearanceAccent,
   AppearanceDensity,
   AppearanceTheme,
   AppearanceTransparency,
-  NotificationSoundId,
   ReadReceiptMode,
 } from '../../store/settings'
 import type { Identity } from '../../types/ipc'
+import { ThemePackagePanel } from './ThemePackagePanel'
+import { INTERFACE_SOUND_SETTINGS, type InterfaceSoundId } from '../../lib/interface-sound-contract'
+import { playInterfaceSound } from '../../lib/interface-sounds'
+import { PUBLIC_SERVICES } from '../../config/public-services'
+
+const DiagnosticsPanel = lazy(() =>
+  import('./DiagnosticsPanel').then((module) => ({ default: module.DiagnosticsPanel })),
+)
+
+const SecurityDevicesPanel = lazy(() =>
+  import('./SecurityDevicesPanel').then((module) => ({ default: module.SecurityDevicesPanel })),
+)
 
 interface UserSettingsPanelProps {
   open: boolean
@@ -34,14 +46,18 @@ interface UserSettingsPanelProps {
   backupReminderDue?: boolean
   onTestNotification?: () => Promise<void> | void
   onOpenDiagnostics?: () => void
+  /** Route-owned You uses the same controls without creating a nested settings dialog. */
+  embedded?: boolean
+  activeSection?: UserSettingsTab
+  onSectionChange?: (section: UserSettingsTab) => void
 }
 
 const ACCENT_CHOICES = [
-  { id: 'violet', label: 'Violet', description: 'Mesh default' },
+  { id: 'violet', label: 'Violet', description: 'Night violet' },
   { id: 'sand', label: 'Sand', description: 'Low-contrast warmth' },
   { id: 'ocean', label: 'Ocean', description: 'Cool blue' },
   { id: 'forest', label: 'Forest', description: 'Muted green' },
-  { id: 'ember', label: 'Ember', description: 'Burnt orange' },
+  { id: 'ember', label: 'Ember', description: 'Party Room default' },
   { id: 'rose', label: 'Rose', description: 'Soft magenta' },
 ] as const satisfies ReadonlyArray<{
   id: AppearanceAccent
@@ -49,15 +65,40 @@ const ACCENT_CHOICES = [
   description: string
 }>
 
-type UserSettingsTab = 'account' | 'appearance' | 'notifications' | 'privacy' | 'devices'
+export type UserSettingsTab =
+  | 'profile'
+  | 'account'
+  | 'appearance'
+  | 'notifications'
+  | 'privacy'
+  | 'devices'
+  | 'advanced'
 
 const SETTINGS_TABS = [
+  ['profile', 'Profile'],
   ['account', 'Account'],
   ['appearance', 'Appearance'],
   ['notifications', 'Notifications'],
-  ['privacy', 'Privacy'],
-  ['devices', 'Devices'],
+  ['privacy', 'Privacy and voice'],
+  ['devices', 'Safety and devices'],
+  ['advanced', 'Advanced'],
 ] as const satisfies ReadonlyArray<readonly [UserSettingsTab, string]>
+
+function accountServiceFromMatrixId(matrixAccountId: string | null) {
+  const separator = matrixAccountId?.indexOf(':') ?? -1
+  const accountDomain = separator >= 0
+    ? matrixAccountId?.slice(separator + 1).trim().toLowerCase() || null
+    : null
+  if (!accountDomain) return null
+
+  const publicService = PUBLIC_SERVICES.find(
+    (service) => service.accountDomain.toLowerCase() === accountDomain,
+  )
+  return {
+    accountDomain,
+    displayName: publicService?.displayName ?? accountDomain,
+  }
+}
 
 export function UserSettingsPanel({
   open,
@@ -72,14 +113,20 @@ export function UserSettingsPanel({
   backupReminderDue = false,
   onTestNotification,
   onOpenDiagnostics,
+  embedded = false,
+  activeSection,
+  onSectionChange,
 }: UserSettingsPanelProps) {
+  const accountService = matrixMode ? accountServiceFromMatrixId(matrixAccountId) : null
   const notifications = useSettingsStore((state) => state.notifications)
   const appearance = useSettingsStore((state) => state.appearance)
   const privacy = useSettingsStore((state) => state.privacy)
   const matrixPreferenceSync = useSettingsStore((state) => state.matrixPreferenceSync)
+  const signalCheckEnabled = useSettingsStore((state) => state.signalCheckEnabled)
   const setNotificationsEnabled = useSettingsStore((state) => state.setNotificationsEnabled)
   const setNotificationSound = useSettingsStore((state) => state.setNotificationSound)
-  const setNotificationSoundId = useSettingsStore((state) => state.setNotificationSoundId)
+  const setInterfaceSoundVolume = useSettingsStore((state) => state.setInterfaceSoundVolume)
+  const setInterfaceSoundEnabled = useSettingsStore((state) => state.setInterfaceSoundEnabled)
   const setShowMessageContent = useSettingsStore((state) => state.setShowMessageContent)
   const setDoNotDisturb = useSettingsStore((state) => state.setDoNotDisturb)
   const setQuietHoursEnabled = useSettingsStore((state) => state.setQuietHoursEnabled)
@@ -88,6 +135,8 @@ export function UserSettingsPanel({
   const setAppearanceDensity = useSettingsStore((state) => state.setAppearanceDensity)
   const setAppearanceAccent = useSettingsStore((state) => state.setAppearanceAccent)
   const setAppearanceTransparency = useSettingsStore((state) => state.setAppearanceTransparency)
+  const setReduceMotion = useSettingsStore((state) => state.setReduceMotion)
+  const setSignalCheckEnabled = useSettingsStore((state) => state.setSignalCheckEnabled)
   const setReadReceiptMode = useSettingsStore((state) => state.setReadReceiptMode)
   const setSendTypingIndicators = useSettingsStore((state) => state.setSendTypingIndicators)
   const setConversationReadReceiptMode = useSettingsStore(
@@ -103,15 +152,19 @@ export function UserSettingsPanel({
   const [profileError, setProfileError] = useState<unknown | null>(null)
   const [profileSaved, setProfileSaved] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
+  const [showAccountAddress, setShowAccountAddress] = useState(false)
   const [testingNotification, setTestingNotification] = useState(false)
+  const [showEmbeddedDiagnostics, setShowEmbeddedDiagnostics] = useState(false)
+  const [showEmbeddedSecurity, setShowEmbeddedSecurity] = useState(false)
   const [testNotificationStatus, setTestNotificationStatus] = useState<'sent' | 'failed' | null>(
     null,
   )
-  const [advancedUnlocked, setAdvancedUnlocked] = useState(false)
-  const [activeTab, setActiveTab] = useState<UserSettingsTab>('appearance')
-  const versionTapCount = useRef(0)
+  const [localActiveTab, setLocalActiveTab] = useState<UserSettingsTab>('appearance')
+  const activeTab = activeSection ?? localActiveTab
   const settingsScrollRef = useRef<HTMLDivElement>(null)
   const tabRefs = useRef<Partial<Record<UserSettingsTab, HTMLButtonElement>>>({})
+  const diagnosticsTriggerRef = useRef<HTMLButtonElement>(null)
+  const securityReturnFocusRef = useRef<HTMLButtonElement | null>(null)
   const visibleSettingsTabs = matrixMode
     ? SETTINGS_TABS
     : SETTINGS_TABS.filter(([id]) => id !== 'privacy')
@@ -121,6 +174,20 @@ export function UserSettingsPanel({
   const effectivePrivacy = activeConversationId
     ? effectiveConversationPrivacy(privacy, activeConversationId)
     : privacy
+
+  const openSecurity = (trigger: HTMLButtonElement) => {
+    if (!embedded) {
+      onOpenSecurity()
+      return
+    }
+    securityReturnFocusRef.current = trigger
+    setShowEmbeddedSecurity(true)
+  }
+
+  const closeEmbeddedSecurity = () => {
+    setShowEmbeddedSecurity(false)
+    window.requestAnimationFrame(() => securityReturnFocusRef.current?.focus())
+  }
 
   const testNotification = async () => {
     if (!onTestNotification || testingNotification) return
@@ -136,21 +203,12 @@ export function UserSettingsPanel({
     }
   }
 
-  useEffect(() => {
-    if (!open) return
-    const unlockAdvanced = (event: KeyboardEvent) => {
-      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'd') {
-        event.preventDefault()
-        setAdvancedUnlocked(true)
-      }
-    }
-    document.addEventListener('keydown', unlockAdvanced)
-    return () => document.removeEventListener('keydown', unlockAdvanced)
-  }, [open])
-
   const activateTab = (id: UserSettingsTab, focus = false) => {
+    setShowEmbeddedDiagnostics(false)
+    setShowEmbeddedSecurity(false)
     if (focus) tabRefs.current[id]?.focus()
-    setActiveTab(id)
+    if (onSectionChange) onSectionChange(id)
+    else setLocalActiveTab(id)
     window.requestAnimationFrame(() => {
       if (settingsScrollRef.current) settingsScrollRef.current.scrollTop = 0
       const tab = tabRefs.current[id]
@@ -203,19 +261,25 @@ export function UserSettingsPanel({
   }
 
   return (
-    <Modal
+    <SettingsFrame
+      embedded={embedded}
       open={open}
       onClose={onClose}
       title="User Settings"
       description="Make Mesh feel like yours."
-      size="lg"
-      className="overflow-hidden"
+      size="xl"
+      className="mesh-settings-dialog overflow-hidden"
       closeLabel="Close user settings"
     >
-      <div className="-mx-4 border-b border-border-subtle px-4">
-        <label className="block py-2 text-xs font-medium text-secondary sm:hidden">
-          Settings section
+      <div className={`mesh-settings-layout grid min-h-0 ${embedded ? 'h-full grid-cols-1' : '-mx-5 -mb-5 sm:grid-cols-[12rem_minmax(0,1fr)]'}`}>
+      {!embedded && (
+      <div className="mesh-settings-navigation border-b border-border-subtle bg-surface-sunken px-3 py-3 sm:border-b-0 sm:border-r">
+        <div className="block py-2 sm:hidden">
+          <label htmlFor="user-settings-section" className="block text-xs font-medium text-secondary">
+            Settings section
+          </label>
           <select
+            id="user-settings-section"
             value={activeTab}
             onChange={(event) => activateTab(event.target.value as UserSettingsTab)}
             className="mt-1 block min-h-11 w-full rounded-control border border-border bg-surface-sunken px-3 text-sm text-primary"
@@ -224,12 +288,25 @@ export function UserSettingsPanel({
               <option key={id} value={id}>{label}</option>
             ))}
           </select>
-        </label>
-        <div className="relative hidden sm:block">
+        </div>
+        <div className="hidden sm:flex sm:h-full sm:flex-col">
+          <div className="mb-4 flex items-center gap-2.5 rounded-control border border-border-subtle bg-surface-raised px-2.5 py-2.5">
+            <Avatar
+              color={identity.avatarColor}
+              size={32}
+              name={identity.displayName}
+              imageUrl={identity.avatarUrl}
+            />
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold text-primary">{identity.displayName}</span>
+              <span className="block truncate text-caption text-muted">Your Mesh</span>
+            </span>
+          </div>
+          <p className="mb-2 px-2 text-2xs font-semibold uppercase tracking-section text-muted">Settings</p>
           <div
             role="tablist"
             aria-label="User settings"
-            className="flex min-w-0 gap-1 overflow-x-auto pr-8"
+            className="flex min-w-0 flex-col gap-1 overflow-y-auto"
           >
           {visibleSettingsTabs.map(([id, label]) => (
             <button
@@ -241,40 +318,41 @@ export function UserSettingsPanel({
               aria-selected={activeTab === id}
               aria-controls={`user-settings-panel-${id}`}
               tabIndex={activeTab === id ? 0 : -1}
-              className={`relative min-h-11 flex-shrink-0 px-3 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
-                activeTab === id ? 'text-accent' : 'text-muted hover:text-primary'
+              className={`relative flex min-h-10 flex-shrink-0 items-center gap-2.5 rounded-control px-3 text-left text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
+                activeTab === id
+                  ? 'bg-accent/15 text-primary'
+                  : 'text-muted hover:bg-surface-hover hover:text-primary'
               }`}
               onClick={() => activateTab(id)}
               onKeyDown={(event) => navigateTabs(event, id)}
             >
+              <Icon name={settingsTabIcon(id)} size="sm" className={activeTab === id ? 'text-accent' : undefined} />
               {label}
               {activeTab === id && (
-                <span className="absolute inset-x-1 bottom-0 h-0.5 rounded-full bg-accent" aria-hidden="true" />
+                <span className="ml-auto h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true" />
               )}
             </button>
           ))}
           </div>
-          <div
-            className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface-raised to-transparent"
-            aria-hidden="true"
-          />
         </div>
       </div>
+      )}
 
-      <div ref={settingsScrollRef} className="mesh-settings-scroll overflow-y-auto py-5 pr-1">
+      <div className={`mesh-settings-content min-w-0 px-5 ${embedded ? '' : 'pb-5'}`}>
+      <div ref={settingsScrollRef} className={`${embedded ? 'h-full' : 'mesh-settings-scroll'} mx-auto w-full max-w-5xl overflow-y-auto py-5 pr-1`}>
         <div
-          id={`user-settings-panel-${activeTab}`}
-          role="tabpanel"
-          aria-labelledby={`user-settings-tab-${activeTab}`}
-          tabIndex={0}
+          id={embedded ? undefined : `user-settings-panel-${activeTab}`}
+          role={embedded ? undefined : 'tabpanel'}
+          aria-labelledby={embedded ? undefined : `user-settings-tab-${activeTab}`}
+          tabIndex={embedded ? undefined : 0}
         >
-        {activeTab === 'account' && (
+        {activeTab === 'profile' && (
         <section className="border-b border-border-subtle pb-5">
-          <p className="text-2xs uppercase tracking-signal text-muted">Account</p>
+          <p className="text-2xs uppercase tracking-signal text-muted">Profile</p>
           <div className="mt-3 min-w-0">
             <p className="truncate text-base font-semibold text-primary">{identity.displayName}</p>
             <p className="truncate font-mono text-xs text-muted">
-              {matrixAccountId ? 'Mesh account' : identity.publicKey}
+              {matrixAccountId ? 'Mesh account' : 'Local Mesh identity'}
             </p>
           </div>
           <p className="mt-3 text-xs leading-5 text-muted">
@@ -341,10 +419,71 @@ export function UserSettingsPanel({
         </section>
         )}
 
+        {activeTab === 'account' && (
+          <section className="space-y-4 border-b border-border-subtle pb-5" aria-labelledby="account-settings-heading">
+            <div>
+              <p id="account-settings-heading" className="text-sm font-medium text-primary">Account</p>
+              <p className="mt-1 text-xs leading-5 text-muted">
+                Your account service and a community's service can be different. Compatible services
+                communicate when community rules allow it, and no public service is operated or guaranteed by Mesh.
+              </p>
+            </div>
+            <div className="rounded-control border border-border-subtle bg-surface-sunken px-3 py-3">
+              <p className="text-caption font-semibold uppercase tracking-eyebrow text-muted">Current account service</p>
+              <p className="mt-1 text-sm font-medium text-primary">
+                {matrixMode
+                  ? accountService?.displayName ?? 'Account service unavailable'
+                  : 'This device'}
+              </p>
+              {matrixMode && accountService && accountService.displayName !== accountService.accountDomain && (
+                <p className="mt-0.5 text-xs text-secondary">{accountService.accountDomain}</p>
+              )}
+              {matrixMode && (
+                <p className="mt-2 text-xs leading-5 text-muted">
+                  This account is hosted independently from Mesh and can differ from a community's service.
+                </p>
+              )}
+              <button
+                type="button"
+                className="mt-3 min-h-9 rounded-control px-2 text-sm font-semibold text-accent hover:bg-accent/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                aria-expanded={showAccountAddress}
+                onClick={() => setShowAccountAddress((shown) => !shown)}
+              >
+                {showAccountAddress ? 'Hide account address' : 'Show account address'}
+              </button>
+              {showAccountAddress && (
+                <p className="mt-2 break-all font-mono text-xs text-secondary">
+                  {matrixAccountId ?? identity.publicKey}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {matrixMode && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={(event) => openSecurity(event.currentTarget)}
+                >
+                  Review recovery and sign-out
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(event) => openSecurity(event.currentTarget)}
+                title="Review this account before returning to the account service chooser"
+              >
+                Use another service
+              </Button>
+            </div>
+            <p className="text-xs leading-5 text-muted">
+              Switching accounts must close an active voice party and fully stop the current account before another one starts.
+            </p>
+          </section>
+        )}
+
         {activeTab === 'appearance' && (
         <section
-          id="user-settings-panel-appearance"
-          role="tabpanel"
           className="space-y-5"
           aria-labelledby="appearance-settings-heading"
         >
@@ -389,6 +528,12 @@ export function UserSettingsPanel({
                 ['opaque', 'Opaque'],
               ]}
               onChange={(value) => setAppearanceTransparency(value as AppearanceTransparency)}
+            />
+            <ToggleRow
+              label="Reduce motion"
+              description="Remove translation, fades, loops, and theme color transitions while keeping status text and focus changes."
+              checked={appearance.reduceMotion}
+              onChange={setReduceMotion}
             />
           </div>
 
@@ -440,6 +585,8 @@ export function UserSettingsPanel({
             </p>
           </fieldset>
 
+          <ThemePackagePanel />
+
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle pt-4">
             <button
               type="button"
@@ -447,18 +594,19 @@ export function UserSettingsPanel({
               onClick={() => {
                 setAppearanceTheme('dark')
                 setAppearanceDensity('default')
-                setAppearanceAccent('violet')
-                setAppearanceTransparency('readable')
+                setAppearanceAccent('ember')
+                setAppearanceTransparency('opaque')
+                setReduceMotion(false)
               }}
             >
-              Reset to Mesh default
+              Reset display choices
             </button>
             <div className="ml-auto flex items-center gap-3">
               <span className="flex items-center gap-2 text-caption text-muted">
                 <span className="h-2 w-2 rounded-full bg-status-success" aria-hidden="true" />
                 Saved on this device
               </span>
-              <Button variant="primary" onClick={onClose}>Done</Button>
+              {!embedded && <Button variant="primary" onClick={onClose}>Done</Button>}
             </div>
           </div>
         </section>
@@ -719,12 +867,54 @@ export function UserSettingsPanel({
             onChange={setNotificationsEnabled}
           />
           <ToggleRow
-            label="Notification sounds"
-            description="Play a sound when an enabled notification arrives."
+            label="Interface sounds"
+            description="Use the short Party Steps cues below. Visible status always remains authoritative."
             checked={notifications.sound}
-            disabled={!notifications.enabled}
             onChange={setNotificationSound}
           />
+          <label
+            htmlFor="interface-sound-volume"
+            className={`block rounded-control bg-surface-hover px-3 py-3 text-xs font-medium text-muted ${
+              notifications.sound ? '' : 'opacity-50'
+            }`}
+          >
+            <span className="flex items-center justify-between gap-3">
+              <span>Sound volume</span>
+              <span className="font-mono text-primary">{Math.round(notifications.soundVolume * 100)}%</span>
+            </span>
+            <input
+              id="interface-sound-volume"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              value={Math.round(notifications.soundVolume * 100)}
+              disabled={!notifications.sound}
+              onChange={(event) => setInterfaceSoundVolume(Number(event.target.value) / 100)}
+              className="mt-2 block w-full accent-accent"
+            />
+          </label>
+          <div className="sequence-card-group" aria-label="Party Steps sound events">
+            {INTERFACE_SOUND_SETTINGS.map((setting, index) => (
+              <SoundEventRow
+                key={setting.id}
+                sound={setting.id}
+                label={setting.label}
+                description={setting.description}
+                previewLabel={setting.previewLabel}
+                checked={notifications.soundEvents[setting.id]}
+                volume={notifications.soundVolume}
+                sequencePosition={
+                  index === 0
+                    ? 'first'
+                    : index === INTERFACE_SOUND_SETTINGS.length - 1
+                      ? 'last'
+                      : 'middle'
+                }
+                onChange={(enabled) => setInterfaceSoundEnabled(setting.id, enabled)}
+              />
+            ))}
+          </div>
           <ToggleRow
             label="Show message text"
             description="Include message text in notifications. It may appear on lock screens, mirrored displays, and notification history."
@@ -732,28 +922,6 @@ export function UserSettingsPanel({
             disabled={!notifications.enabled}
             onChange={setShowMessageContent}
           />
-          <label
-            htmlFor="notification-sound"
-            className={`block rounded-control bg-surface-hover px-3 py-3 text-xs font-medium text-muted ${
-              !notifications.enabled || !notifications.sound ? 'opacity-50' : ''
-            }`}
-          >
-            Sound
-            <select
-              id="notification-sound"
-              className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent"
-              value={notifications.soundId}
-              disabled={!notifications.enabled || !notifications.sound}
-              onChange={(event) =>
-                setNotificationSoundId(event.target.value as NotificationSoundId)
-              }
-            >
-              <option value="mesh">Mesh default</option>
-              <option value="chime">Chime</option>
-              <option value="pulse">Pulse</option>
-              <option value="soft">Soft</option>
-            </select>
-          </label>
           <ToggleRow
             label="Do not disturb"
             description="Pause notifications, sounds, unread badges, and taskbar alerts until turned off."
@@ -851,13 +1019,37 @@ export function UserSettingsPanel({
             </div>
             <p className="mt-1 text-xs leading-5 text-muted">
               {backupReminderDue
-                ? 'Your messages are not backed up yet. Save a backup code so a lost device does not mean lost messages.'
+                ? 'Message backup needs attention. Review its status and save or test your backup code.'
                 : 'Review where you are signed in, trust devices you recognize, and manage your message backup.'}
             </p>
-            <Button className="mt-3" variant="secondary" size="sm" onClick={onOpenSecurity}>
+            <Button
+              className="mt-3"
+              variant="secondary"
+              size="sm"
+              onClick={(event) => openSecurity(event.currentTarget)}
+            >
               Open your devices
             </Button>
           </section>
+        )}
+
+        {embedded
+          && matrixMode
+          && showEmbeddedSecurity
+          && (activeTab === 'account' || activeTab === 'devices') && (
+            <Suspense
+              fallback={(
+                <p role="status" className="rounded-control bg-surface-hover px-3 py-2 text-xs text-muted">
+                  Opening safety and devices…
+                </p>
+              )}
+            >
+              <SecurityDevicesPanel
+                embedded
+                open
+                onClose={closeEmbeddedSecurity}
+              />
+            </Suspense>
         )}
 
         {matrixMode && activeTab === 'privacy' && (
@@ -881,7 +1073,7 @@ export function UserSettingsPanel({
           </section>
         )}
 
-        {activeTab === 'devices' && advancedUnlocked && (
+        {activeTab === 'advanced' && (
           <section
             className="rounded-panel border border-border-subtle bg-surface-sunken p-4"
             aria-labelledby="advanced-settings-heading"
@@ -890,33 +1082,64 @@ export function UserSettingsPanel({
               Advanced
             </p>
             <p className="mt-1 text-xs leading-5 text-muted">
-              Support tools for troubleshooting this Mesh installation.
+              Signal Check is an explicit per-device support mode. It adds contextual checks only
+              where they are useful and never uploads a support bundle automatically.
             </p>
+            <div className="mt-4">
+              <ToggleRow
+                label="Show Signal Check details"
+                description="Allow one-subject, redacted checks and reviewed local support bundles on this device. Turning this off removes diagnostic actions."
+                checked={signalCheckEnabled}
+                onChange={(enabled) => {
+                  setSignalCheckEnabled(enabled)
+                  if (!enabled) setShowEmbeddedDiagnostics(false)
+                }}
+              />
+            </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              {onOpenDiagnostics && (
-                <Button variant="secondary" size="sm" onClick={onOpenDiagnostics}>
-                  System diagnostics
+              {signalCheckEnabled && (embedded || onOpenDiagnostics) && (
+                <Button
+                  ref={diagnosticsTriggerRef}
+                  variant="secondary"
+                  size="sm"
+                  onClick={embedded
+                    ? () => setShowEmbeddedDiagnostics((shown) => !shown)
+                    : onOpenDiagnostics}
+                  aria-expanded={embedded ? showEmbeddedDiagnostics : undefined}
+                >
+                  Review Signal Check
                 </Button>
               )}
             </div>
+            <p className="mt-4 border-t border-border-subtle pt-3 text-xs leading-5 text-muted">
+              Raw logs, credentials, access tokens, account and room identifiers, file paths,
+              environment variables, and message content are never shown. Voice and admission
+              capabilities stay fail-closed after a successful check.
+            </p>
+            {embedded && signalCheckEnabled && showEmbeddedDiagnostics && (
+              <Suspense
+                fallback={(
+                  <p role="status" className="mt-4 rounded-control bg-surface-hover px-3 py-2 text-xs text-muted">
+                    Opening Signal Check…
+                  </p>
+                )}
+              >
+                <DiagnosticsPanel
+                  embedded
+                  open
+                  onClose={() => {
+                    setShowEmbeddedDiagnostics(false)
+                    window.requestAnimationFrame(() => diagnosticsTriggerRef.current?.focus())
+                  }}
+                  backendKind={matrixMode ? 'matrix' : 'legacy-p2p'}
+                />
+              </Suspense>
+            )}
+            <p className="mt-3 text-caption text-muted">Mesh 0.1.0 · Backend facts remain hidden until Signal Check is on.</p>
           </section>
         )}
-
-        {activeTab === 'devices' && (
-        <button
-          type="button"
-          className="mx-auto flex min-h-8 items-center rounded-control px-2 text-caption text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          aria-label="Mesh version 0.1.0"
-          onClick={() => {
-            versionTapCount.current += 1
-            if (versionTapCount.current >= 5) setAdvancedUnlocked(true)
-          }}
-        >
-          Mesh 0.1.0
-        </button>
-        )}
         </div>
-        {visibleSettingsTabs
+        {!embedded && visibleSettingsTabs
           .filter(([id]) => id !== activeTab)
           .map(([id]) => (
             <div
@@ -928,8 +1151,31 @@ export function UserSettingsPanel({
             />
           ))}
       </div>
-    </Modal>
+      </div>
+      </div>
+    </SettingsFrame>
   )
+}
+
+function SettingsFrame({
+  embedded,
+  children,
+  ...modalProps
+}: React.ComponentProps<typeof Modal> & { embedded: boolean; children: ReactNode }) {
+  if (embedded) {
+    return <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
+  }
+  return <Modal {...modalProps}>{children}</Modal>
+}
+
+function settingsTabIcon(tab: UserSettingsTab): IconName {
+  if (tab === 'profile') return 'users'
+  if (tab === 'account') return 'users'
+  if (tab === 'appearance') return 'image'
+  if (tab === 'notifications') return 'activity'
+  if (tab === 'privacy') return 'shieldCheck'
+  if (tab === 'advanced') return 'settings'
+  return 'settings'
 }
 
 function PrivacyVisibilityRow({
@@ -1002,6 +1248,56 @@ function AppearanceSegmentedControl({
   )
 }
 
+function SoundEventRow({
+  sound,
+  label,
+  description,
+  previewLabel,
+  checked,
+  volume,
+  sequencePosition,
+  onChange,
+}: {
+  sound: InterfaceSoundId
+  label: string
+  description: string
+  previewLabel: string
+  checked: boolean
+  volume: number
+  sequencePosition: SequenceCardPosition
+  onChange: (checked: boolean) => void
+}) {
+  const sequence = sequenceCardProps(sequencePosition)
+  return (
+    <div
+      data-sequence-position={sequence['data-sequence-position']}
+      className={`${sequence.className} flex items-start justify-between gap-4 px-3 py-3`}
+    >
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-primary">{label}</p>
+        <p className="mt-0.5 text-xs leading-5 text-muted">{description}</p>
+        <button
+          type="button"
+          className="mt-2 min-h-8 rounded-control px-2 text-xs font-semibold text-accent hover:bg-accent/10"
+          aria-label={previewLabel}
+          onClick={() => void playInterfaceSound(sound, { preview: true, masterVolume: volume })}
+        >
+          Preview
+        </button>
+      </div>
+      <label className="flex min-h-8 flex-shrink-0 cursor-pointer items-center gap-2 text-xs text-muted">
+        <span className="sr-only">{label}</span>
+        <input
+          type="checkbox"
+          className="h-4 w-4 accent-accent"
+          checked={checked}
+          onChange={(event) => onChange(event.target.checked)}
+        />
+      </label>
+    </div>
+  )
+}
+
 function ToggleRow({
   label,
   description,
@@ -1059,9 +1355,9 @@ function SelectRow({
   return (
     <div
       data-sequence-position={sequence?.['data-sequence-position']}
-      className={`${sequence?.className ?? 'rounded-control bg-surface-hover'} flex items-start justify-between gap-4 px-3 py-3`}
+      className={`${sequence?.className ?? 'rounded-control bg-surface-hover'} flex flex-col items-stretch gap-3 px-3 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4`}
     >
-      <span>
+      <span className="min-w-0">
         <label htmlFor={id} className="block text-sm font-medium text-primary">
           {label}
         </label>
@@ -1072,7 +1368,7 @@ function SelectRow({
       <select
         id={id}
         aria-describedby={`${id}-description`}
-        className="min-h-control-sm max-w-xs rounded-control border border-border bg-surface-sunken px-2 text-xs text-primary outline-none focus:border-accent"
+        className="min-h-control-sm w-full min-w-0 rounded-control border border-border bg-surface-sunken px-2 text-xs text-primary outline-none focus:border-accent sm:w-auto sm:max-w-xs"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >

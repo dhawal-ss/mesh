@@ -35,3 +35,16 @@ export function groupThreadReplies<T extends ThreadableMessage>(
     repliesByRoot,
   }
 }
+
+export function mergeThreadMessages<
+  T extends ThreadableMessage & { timestamp: string },
+>(serverMessages: readonly T[], localMessages: readonly T[]): T[] {
+  const merged = new Map(serverMessages.map((message) => [message.id, message]))
+  for (const message of localMessages) {
+    const serverMessage = merged.get(message.id)
+    merged.set(message.id, serverMessage ? { ...serverMessage, ...message } : message)
+  }
+  return [...merged.values()].sort((left, right) => (
+    left.timestamp.localeCompare(right.timestamp) || left.id.localeCompare(right.id)
+  ))
+}
