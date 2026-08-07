@@ -3661,16 +3661,33 @@ impl MatrixBackend {
 
     async fn install_client(&self, client: Client, homeserver: String, profile_id: String) {
         let ignored_users = Arc::new(RwLock::new(None));
-        match Self::fetch_ignored_user_list(&client).await {
-            Ok(content) => {
-                *ignored_users.write().await = Some(content.ignored_users.into_keys().collect());
+        let initial_ignored_users = match Self::fetch_ignored_user_list(&client).await {
+            Ok(content) => Some(content),
+            Err(BackendError::Network(error)) => {
+                tracing::warn!(
+                    target: "mesh::security",
+                    "The account service is offline; restoring the last synced account block list: {error}"
+                );
+                Self::stored_ignored_user_list(&client)
+                    .await
+                    .unwrap_or_else(|stored_error| {
+                        tracing::warn!(
+                            target: "mesh::security",
+                            "Could not restore the synced account block list: {stored_error}"
+                        );
+                        None
+                    })
             }
             Err(error) => {
                 tracing::warn!(
                     target: "mesh::security",
                     "Notifications will remain suppressed until the account block list is available: {error}"
                 );
+                None
             }
+        };
+        if let Some(content) = initial_ignored_users {
+            *ignored_users.write().await = Some(content.ignored_users.into_keys().collect());
         }
         client.add_event_handler({
             let event_callback = Arc::clone(&self.event_callback);
@@ -4170,8 +4187,11 @@ impl MatrixBackend {
     }
 
     #[doc(hidden)]
-    pub async fn shutdown_for_test(&self) {
-        self.stop_runtime().await;
+    pub async fn shutdown_for_test(&self) -> BackendResult<()> {
+        if let Some(client) = self.stop_runtime().await {
+            client.pause().await.map_err(Self::map_error)?;
+        }
+        Ok(())
     }
 
     pub async fn resume_sync(&self) -> BackendResult<()> {
@@ -5739,10 +5759,10 @@ impl MeshBackend for MatrixBackend {
                     "Remote logout failed during local account removal; continuing cryptographic erasure: {error}"
                 );
             }
-            // matrix-sdk's encrypted SQLite store remains open for as long as
-            // any Client clone is alive. Windows denies directory removal in
-            // that state, so release the final runtime-owned client before the
-            // local account erasure below.
+            // Dropping Client clones alone does not synchronously close every
+            // SQLite pool. Ask the SDK to wait for in-flight store work and
+            // release all database handles before Windows deletion begins.
+            client.pause().await.map_err(Self::map_error)?;
             drop(client);
         }
 
@@ -7375,7 +7395,9 @@ impl MeshBackend for MatrixBackend {
 
     async fn queued_messages(&self) -> BackendResult<Vec<MessageDto>> {
         let _queue_gate = self.send_queue_gate.lock().await;
-        Self::queued_messages_for_client(&self.client().await?).await
+        let client = self.client().await?;
+        let ignored_users = self.ignored_user_list_with_offline_cache(&client).await?;
+        Self::queued_messages_for_client(&client, &ignored_users).await
     }
 
     async fn retry_queued_message(

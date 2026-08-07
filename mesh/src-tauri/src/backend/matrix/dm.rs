@@ -363,8 +363,11 @@ impl MatrixBackend {
     }
 
     async fn reject_ignored_direct_room(&self, client: &Client, room: &Room) -> BackendResult<()> {
-        let ignored_users = self.refresh_ignored_user_list(client).await?;
-        if Self::room_has_ignored_direct_peer(room, &ignored_users)? {
+        let Some(peer) = Self::direct_room_peer(room)? else {
+            return Ok(());
+        };
+        let ignored_users = self.ignored_user_list_with_offline_cache(client).await?;
+        if ignored_users.ignored_users.contains_key(&peer) {
             return Err(BackendError::InvalidConfiguration(
                 "direct messages are blocked for this Matrix user".into(),
             ));
@@ -415,6 +418,50 @@ impl MatrixBackend {
     async fn publish_ignored_user_cache(&self, content: &IgnoredUserListEventContent) {
         let cache = Arc::clone(&self.runtime.read().await.ignored_users);
         *cache.write().await = Some(content.ignored_users.keys().cloned().collect());
+    }
+
+    async fn stored_ignored_user_list(
+        client: &Client,
+    ) -> BackendResult<Option<IgnoredUserListEventContent>> {
+        client
+            .account()
+            .account_data::<IgnoredUserListEventContent>()
+            .await
+            .map_err(Self::map_error)?
+            .map(|raw| raw.deserialize().map_err(Self::map_error))
+            .transpose()
+    }
+
+    async fn cached_ignored_user_list(&self) -> Option<IgnoredUserListEventContent> {
+        let cache = Arc::clone(&self.runtime.read().await.ignored_users);
+        let users = cache.read().await.clone()?;
+        let mut content = IgnoredUserListEventContent::default();
+        content.ignored_users = users
+            .into_iter()
+            .map(|user_id| (user_id, IgnoredUser::new()))
+            .collect();
+        Some(content)
+    }
+
+    async fn ignored_user_list_with_offline_cache(
+        &self,
+        client: &Client,
+    ) -> BackendResult<IgnoredUserListEventContent> {
+        match self.refresh_ignored_user_list(client).await {
+            Ok(content) => Ok(content),
+            Err(error @ BackendError::Network(_)) => {
+                let cached = self.cached_ignored_user_list().await;
+                let Some(cached) = cached else {
+                    return Err(error);
+                };
+                tracing::warn!(
+                    target: "mesh::security",
+                    "The account service is offline; enforcing the last synced account block list"
+                );
+                Ok(cached)
+            }
+            Err(error) => Err(error),
+        }
     }
 
     async fn refresh_ignored_user_list(

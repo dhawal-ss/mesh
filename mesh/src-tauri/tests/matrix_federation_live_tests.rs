@@ -1921,7 +1921,7 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
         .iter()
         .any(|message| message.content == offline_body));
 
-    alice.shutdown_for_test().await;
+    alice.shutdown_for_test().await.unwrap();
     drop(alice);
     let alice = MatrixBackend::with_profile(alice_store.path().to_owned(), alice_profile);
     tokio::time::timeout(Duration::from_secs(20), alice.restore_session())
@@ -2371,7 +2371,7 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
     // before constructing a replacement backend over the same Windows store.
     // Pausing sync alone leaves the session and room-update tasks detached and
     // their SQLite handles remain live after the backend value is dropped.
-    bob.shutdown_for_test().await;
+    bob.shutdown_for_test().await.unwrap();
     drop(bob);
     let restored = MatrixBackend::with_profile(bob_store.path().to_owned(), bob_profile);
     restored.restore_session().await.unwrap();

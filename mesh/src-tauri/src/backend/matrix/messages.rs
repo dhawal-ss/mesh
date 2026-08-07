@@ -712,8 +712,10 @@ impl MatrixBackend {
         }))
     }
 
-    async fn queued_messages_for_client(client: &Client) -> BackendResult<Vec<MessageDto>> {
-        let ignored_users = Self::fetch_ignored_user_list(client).await?;
+    async fn queued_messages_for_client(
+        client: &Client,
+        ignored_users: &IgnoredUserListEventContent,
+    ) -> BackendResult<Vec<MessageDto>> {
         let echoes_by_room = client
             .send_queue()
             .local_echoes()
@@ -736,7 +738,7 @@ impl MatrixBackend {
                     .ok();
             let project_room = room
                 .as_ref()
-                .map(|room| Self::room_has_ignored_direct_peer(room, &ignored_users))
+                .map(|room| Self::room_has_ignored_direct_peer(room, ignored_users))
                 .transpose()?
                 != Some(true);
             if !project_room {
@@ -946,7 +948,8 @@ impl MatrixBackend {
         callback: &Arc<StdRwLock<Option<MatrixBackendEventCallback>>>,
         known: &Arc<Mutex<HashMap<String, HashSet<String>>>>,
     ) -> BackendResult<()> {
-        let messages = Self::queued_messages_for_client(client).await?;
+        let ignored_users = Self::fetch_ignored_user_list(client).await?;
+        let messages = Self::queued_messages_for_client(client, &ignored_users).await?;
         let mut current = HashMap::<String, HashSet<String>>::new();
         let mut updates = Vec::with_capacity(messages.len());
         for message in messages {
