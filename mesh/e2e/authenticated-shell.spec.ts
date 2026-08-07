@@ -132,6 +132,21 @@ async function installAuthenticatedMatrixMock(
         replyToId: null,
         deliveryStatus: 'sent',
       },
+      {
+        id: '$thread-answer',
+        channelId: channels[0].id,
+        authorPublicKey: '@bob:mesh.test',
+        authorDisplayName: 'Bob',
+        authorAvatarColor: '#3ba55c',
+        content: 'Focused answer inside the standard thread.',
+        attachments: [],
+        reactions: {},
+        timestamp: '2026-07-24T00:01:00.000Z',
+        signature: '',
+        replyToId: '$welcome',
+        threadRootId: '$welcome',
+        deliveryStatus: 'sent',
+      },
     ]
 
     const responseFor = (
@@ -313,6 +328,14 @@ async function installAuthenticatedMatrixMock(
           ], nextCursor: null, stateComplete: true }
         case 'matrix_get_messages':
           return timeline.filter((message) => message.channelId === args.roomId)
+        case 'matrix_search_messages': {
+          const query = String(args.query ?? '').toLocaleLowerCase()
+          return timeline
+            .filter((message) => message.content.toLocaleLowerCase().includes(query))
+            .slice(0, Number(args.limit ?? 20))
+        }
+        case 'matrix_cancel_search':
+          return null
         case 'matrix_queued_messages':
           return []
         case 'matrix_load_composer_draft':
@@ -330,6 +353,7 @@ async function installAuthenticatedMatrixMock(
             timestamp: new Date().toISOString(),
             signature: '',
             replyToId: args.replyToId ?? null,
+            threadRootId: args.threadRootId ?? null,
             deliveryStatus: 'sent',
           }
           timeline.push(message)
@@ -358,6 +382,7 @@ async function installAuthenticatedMatrixMock(
             canManage: true,
           }
         case 'matrix_mark_read':
+        case 'matrix_mark_thread_read':
         case 'matrix_set_typing':
         case 'matrix_save_composer_draft':
         case 'matrix_clear_composer_draft':
@@ -553,6 +578,46 @@ test.describe('authenticated desktop shell', () => {
     await expect(page.getByText('Anonymous', { exact: true })).toHaveCount(0)
   })
 
+  test('opens, searches, and marks a standard thread without losing focus context', async ({ page }) => {
+    await openAuthenticatedShell(page)
+
+    const existingThread = page.getByRole('button', {
+      name: 'Open thread for message from Bob, 1 reply',
+    })
+    await expect(existingThread).toBeVisible()
+    await existingThread.click()
+
+    const panel = page.getByRole('complementary', { name: 'Thread in #general' })
+    await expect(panel).toBeVisible()
+    await expect(panel).toContainText('Focused answer inside the standard thread.')
+    await expect(panel).toContainText('1 reply')
+    await expect(panel).toContainText('Last reply')
+    await expect.poll(async () => ipcCalls(page)).toContainEqual({
+      command: 'matrix_mark_thread_read',
+      args: {
+        roomId: '!general:mesh.test',
+        threadRootId: '$welcome',
+        eventId: '$thread-answer',
+      },
+    })
+
+    await panel.getByRole('button', { name: 'Close thread' }).click()
+    await expect(existingThread).toBeFocused()
+
+    await page.getByRole('button', { name: 'Search messages' }).click()
+    await page.getByRole('textbox', { name: 'Search messages' }).fill('focused answer')
+    const threadResult = page.getByRole('option', { name: /Focused answer inside the standard thread/ })
+    await expect(threadResult).toContainText('Thread reply')
+    await threadResult.click()
+
+    await expect(panel).toBeVisible()
+    await expect(
+      panel.locator('[data-thread-message-id="$thread-answer"]'),
+    ).toBeFocused()
+    await panel.getByRole('button', { name: 'Close thread' }).click()
+
+  })
+
   test('restores an account-scoped room route with authoritative mention badges', async ({ page }) => {
     await page.addInitScript(() => {
       const accountId = '@alice:mesh.test'
@@ -646,6 +711,27 @@ test.describe('authenticated desktop shell', () => {
     await expect(page.getByRole('button', { name: 'Text room: welcome' })).toBeVisible()
     await expect(invitationHeading).toHaveCount(0)
     await expectRouteHeadingInset(page, 'Invited Mesh Community')
+
+    const checklistProgress = page.getByRole('progressbar', {
+      name: 'Getting started progress',
+    })
+    await expect(page.getByRole('heading', {
+      name: 'Welcome to Invited Mesh Community',
+    })).toBeVisible()
+    await expect(checklistProgress).toHaveAttribute('aria-valuenow', '3')
+    await expect(checklistProgress).toHaveAttribute('aria-valuetext', '3 of 5 steps complete')
+
+    await page.getByRole('button', { name: 'Text room: welcome' }).click()
+    await expect(page.getByRole('log', { name: 'Messages in #welcome' })).toBeVisible()
+    await expect(checklistProgress).toHaveAttribute('aria-valuenow', '5')
+
+    const hideChecklist = page.getByRole('button', { name: 'Hide getting started' })
+    await hideChecklist.click()
+    const showChecklist = page.getByRole('button', { name: /Show getting started/ })
+    await expect(showChecklist).toBeFocused()
+    await showChecklist.click()
+    await expect(page.getByRole('button', { name: 'Hide getting started' })).toBeFocused()
+    await expectNoWcagViolations(page, 'Newcomer checklist after invitation join')
 
   })
 
@@ -755,6 +841,42 @@ test.describe('authenticated desktop shell', () => {
       'aria-expanded',
       'false',
     )
+  })
+
+  test('keeps a four-pane conversation readable at 1280px', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await openAuthenticatedShell(page)
+
+    const detailsToggle = page.getByRole('button', { name: 'Show Details' })
+    await detailsToggle.click()
+    const context = page.getByRole('complementary', { name: 'Details for general' })
+    await expect(context).toBeVisible()
+
+    const geometry = await page.evaluate(() => {
+      const roomNavigation = document.querySelector<HTMLElement>('.mesh-context-sidebar')!
+      const roomContext = document.querySelector<HTMLElement>('.mesh-room-context-panel')!
+      const title = document.querySelector<HTMLElement>('.mesh-conversation-header h1')!
+      const composer = document.querySelector<HTMLElement>('.mesh-composer')!
+      return {
+        roomNavigationWidth: roomNavigation.getBoundingClientRect().width,
+        roomContextWidth: roomContext.getBoundingClientRect().width,
+        titleWidth: title.getBoundingClientRect().width,
+        titleClipped: title.scrollWidth > title.clientWidth,
+        composerWidth: composer.getBoundingClientRect().width,
+        overflows: document.documentElement.scrollWidth > window.innerWidth,
+      }
+    })
+
+    expect(geometry.roomNavigationWidth).toBeLessThanOrEqual(208)
+    expect(geometry.roomContextWidth).toBeLessThanOrEqual(220)
+    expect(geometry.titleWidth).toBeGreaterThan(56)
+    expect(geometry.titleClipped).toBe(false)
+    expect(geometry.composerWidth).toBeGreaterThan(480)
+    expect(geometry.overflows).toBe(false)
+
+    await context.getByRole('button', { name: 'Close room context' }).click()
+    await expect(context).toHaveCount(0)
+    await expect(detailsToggle).toBeFocused()
   })
 
   test('opens settings as a labelled modal, closes with Escape, and restores focus', async ({ page }) => {
@@ -915,7 +1037,7 @@ test.describe('authenticated desktop shell', () => {
 
     await expect(page.getByRole('heading', { name: 'Voice calling is coming soon' })).toBeVisible()
     await expect(page.getByText(
-      'Voice has not been enabled for this community yet. You can keep using messages.',
+      'Voice calling is coming soon in Mesh. You can keep using messages.',
     )).toBeVisible()
     await expectNoWcagViolations(page, 'Voice-disabled room')
 
@@ -934,6 +1056,51 @@ test.describe('authenticated desktop shell', () => {
 
 test.describe('authenticated narrow shell', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
+
+  test('keeps the local newcomer checklist usable at 320px with reduced motion', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('mesh-newcomer-checklists-v1', JSON.stringify({
+        schemaVersion: 1,
+        entries: [{
+          schemaVersion: 1,
+          accountId: '@alice:mesh.test',
+          communityId: '!mesh-e2e:mesh.test',
+          invitationResolvedAt: 1_785_552_000_000,
+          draftOpenedAt: null,
+          dismissed: false,
+          updatedAt: 1_785_552_000_000,
+        }],
+      }))
+    })
+    await page.setViewportSize({ width: 320, height: 800 })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await openAuthenticatedShell(page)
+
+    await page.getByRole('button', { name: 'Open room navigation' }).click()
+    const navigationDrawer = page.locator('#mesh-context-sidebar')
+    const checklist = navigationDrawer.getByRole('heading', {
+      name: 'Welcome to Mesh Test Community',
+    })
+    await expect(checklist).toBeVisible()
+    const progress = navigationDrawer.getByRole('progressbar', {
+      name: 'Getting started progress',
+    })
+    await expect(progress).toHaveAttribute('aria-valuenow', '5')
+    await expect(progress.locator('span')).toHaveCSS('transition-property', 'none')
+    const drawerBounds = await navigationDrawer.boundingBox()
+    expect(drawerBounds).not.toBeNull()
+    expect(drawerBounds!.x).toBeGreaterThanOrEqual(-0.5)
+    expect(drawerBounds!.x + drawerBounds!.width).toBeLessThanOrEqual(320.5)
+
+    await navigationDrawer.getByRole('button', { name: 'Hide getting started' }).click()
+    const showChecklist = navigationDrawer.getByRole('button', { name: /Show getting started/ })
+    await expect(showChecklist).toBeFocused()
+    await showChecklist.click()
+    await expect(
+      navigationDrawer.getByRole('button', { name: 'Hide getting started' }),
+    ).toBeFocused()
+    await expectNoWcagViolations(page, 'Newcomer checklist at 400 percent zoom equivalent')
+  })
 
   test('@a11y has no automated WCAG A/AA violations with navigation open', async ({ page }) => {
     await openAuthenticatedShell(page)

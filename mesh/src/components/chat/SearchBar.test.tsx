@@ -104,6 +104,32 @@ describe('SearchBar', () => {
     expect(useChannelStore.getState().activeChannelId).toBe('channel-a')
   })
 
+  it('labels thread replies in search results', async () => {
+    vi.spyOn(bridge, 'searchMessages').mockResolvedValue([
+      { ...targetMessage, threadRootId: '$root' },
+    ])
+
+    await act(async () => {
+      root.render(<SearchBar onNavigateToMessage={vi.fn()} />)
+    })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[title="Search messages"]')?.click()
+    })
+    const input = container.querySelector<HTMLInputElement>('input[type="text"]')
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set
+    await act(async () => {
+      setValue?.call(input, 'searched')
+      input?.dispatchEvent(new Event('input', { bubbles: true }))
+      vi.advanceTimersByTime(300)
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Thread reply')
+  })
+
   it('ignores a slower result from an older query', async () => {
     const first = deferred<Message[]>()
     const second = deferred<Message[]>()

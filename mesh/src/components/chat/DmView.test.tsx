@@ -518,7 +518,11 @@ describe('DmView message containment', () => {
 
     const threadButton = [...container.querySelectorAll<HTMLButtonElement>('button')]
       .find((button) => button.textContent === '1 reply')
-    await act(async () => threadButton?.click())
+    await act(async () => {
+      threadButton?.click()
+      await import('./ThreadPanel')
+      await Promise.resolve()
+    })
 
     const navigation = useMeshNavigationStore.getState()
     expect(navigation.entries[navigation.index]).toEqual({
@@ -541,6 +545,68 @@ describe('DmView message containment', () => {
     expect(container.querySelector('#mesh-thread-panel')).toBeNull()
     expect(document.activeElement?.getAttribute('aria-label')).toBe(
       'Open thread for message from $thread-root, 1 reply',
+    )
+  })
+
+  it('hydrates an older Matrix thread that is outside the bounded DM timeline', async () => {
+    vi.mocked(bridge.isMatrixBackend).mockReturnValue(true)
+    vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@me:example.org')
+    vi.spyOn(bridge, 'getDmMessages').mockResolvedValue([])
+    vi.spyOn(bridge, 'matrixDmBlocked').mockResolvedValue(false)
+    vi.spyOn(bridge, 'matrixRoomIsEncrypted').mockResolvedValue(true)
+    vi.spyOn(bridge, 'matrixWaitForRoomUpdate').mockReturnValue(new Promise(() => {}))
+    vi.spyOn(bridge, 'markThreadRead').mockResolvedValue()
+    vi.spyOn(bridge, 'matrixThreadContext').mockResolvedValue({
+      root: {
+        id: '$old-root',
+        channelId: 'conversation-1',
+        authorPublicKey: '@peer:example.org',
+        authorDisplayName: 'Peer',
+        authorAvatarColor: '#52b5f4',
+        content: 'Older hydrated root',
+        attachments: [],
+        reactions: {},
+        timestamp: '2026-07-01T12:00:00.000Z',
+        signature: '',
+      },
+      replies: [{
+        id: '$old-reply',
+        channelId: 'conversation-1',
+        authorPublicKey: '@peer:example.org',
+        authorDisplayName: 'Peer',
+        authorAvatarColor: '#52b5f4',
+        content: 'Older hydrated reply',
+        attachments: [],
+        reactions: {},
+        timestamp: '2026-07-01T12:01:00.000Z',
+        signature: '',
+        threadRootId: '$old-root',
+      }],
+      unreadCount: 1,
+      unreadMentions: 0,
+      unreadStateAvailable: true,
+      hasMore: false,
+    })
+    useMeshNavigationStore.getState().navigate({
+      kind: 'direct',
+      conversationId: 'conversation-1',
+      pane: { kind: 'thread', rootEventId: '$old-root' },
+    })
+
+    await act(async () => {
+      root.render(<DmView />)
+      await import('./ThreadPanel')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(bridge.matrixThreadContext).toHaveBeenCalledWith('conversation-1', '$old-root')
+    expect(container.querySelector('#mesh-thread-panel')?.textContent).toContain('Older hydrated root')
+    expect(container.querySelector('#mesh-thread-panel')?.textContent).toContain('Older hydrated reply')
+    expect(bridge.markThreadRead).toHaveBeenCalledWith(
+      'conversation-1',
+      '$old-root',
+      '$old-reply',
     )
   })
 })

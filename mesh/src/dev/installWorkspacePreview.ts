@@ -21,6 +21,8 @@ let previewQueueRestoreFailuresRemaining = 0
 let previewQueueListenerFailuresRemaining = 0
 let simulateEmojiPickerCancel = false
 let simulateEmojiUploadFailure = false
+let previewLoginAttemptCounter = 0
+let activePreviewLoginAttemptIds = new Set<string>()
 
 const initialPreviewApplications: CommunityApplication[] = [
   {
@@ -374,7 +376,16 @@ function responseFor(command: string, args: PreviewIpcArgs): unknown | Promise<u
         registration: 'open',
         maxUploadBytes: 10 * 1024 * 1024,
       }
+    case 'matrix_reserve_login_attempt': {
+      previewLoginAttemptCounter += 1
+      const attemptId = `preview-login-attempt-${previewLoginAttemptCounter}`
+      activePreviewLoginAttemptIds.add(attemptId)
+      return attemptId
+    }
     case 'matrix_login':
+      if (typeof args.attemptId !== 'string' || !activePreviewLoginAttemptIds.delete(args.attemptId)) {
+        throw new Error('The preview sign-in attempt is no longer active. Please try again.')
+      }
       simulateSignedOut = false
       return backendStatus()
     case 'peek_pending_invitation':
@@ -627,6 +638,7 @@ function responseFor(command: string, args: PreviewIpcArgs): unknown | Promise<u
         timestamp: new Date().toISOString(),
         signature: '',
         replyToId: typeof args.replyToId === 'string' ? args.replyToId : null,
+        threadRootId: typeof args.threadRootId === 'string' ? args.threadRootId : null,
         transactionId,
         clientRequestId: transactionId,
         deliveryStatus: 'sent',
@@ -635,6 +647,7 @@ function responseFor(command: string, args: PreviewIpcArgs): unknown | Promise<u
       return message
     }
     case 'matrix_mark_read':
+    case 'matrix_mark_thread_read':
     case 'matrix_mark_dm_read':
     case 'matrix_set_typing':
     case 'matrix_load_composer_draft':
@@ -722,6 +735,8 @@ export function installWorkspacePreview(
   previewEmojiBytes = {}
   previewEmojiGrantCounter = 0
   previewEmojiGrants = {}
+  previewLoginAttemptCounter = 0
+  activePreviewLoginAttemptIds = new Set<string>()
   document.documentElement.dataset.meshSimulateVoice = simulateVoice ? 'true' : 'false'
 
   safeLocalStorageSet('mesh-layout-room-context-open', 'true')

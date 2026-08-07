@@ -9,6 +9,7 @@ const interfaceSounds = vi.hoisted(() => ({
 }))
 const voiceEngineState = vi.hoisted(() => ({
   connectionWarning: null as string | null,
+  availability: 'invalid-configuration' as 'invalid-configuration' | 'not-configured',
 }))
 
 vi.mock('../../lib/interface-sounds', () => ({
@@ -22,7 +23,7 @@ vi.mock('../../hooks/useVoiceEngine', () => ({
     relayChanged: false,
     voiceService: {
       provider: 'matrix-rtc',
-      availability: 'invalid-configuration',
+      availability: voiceEngineState.availability,
       mediaE2eeReady: false,
     },
     matrixVoiceReady: false,
@@ -52,6 +53,7 @@ describe('VoiceView fail-closed actions', () => {
     })
     interfaceSounds.play.mockClear()
     voiceEngineState.connectionWarning = null
+    voiceEngineState.availability = 'invalid-configuration'
     useVoiceStore.setState({
       currentCommunityId: '!community:mesh.test',
       currentChannelId: '!voice:mesh.test',
@@ -94,6 +96,25 @@ describe('VoiceView fail-closed actions', () => {
     await act(async () => buttons[0]?.click())
 
     expect(backToChat).toHaveBeenCalledOnce()
+  })
+
+  it('does not imply a community owner can enable a globally unavailable release capability', async () => {
+    voiceEngineState.availability = 'not-configured'
+    await act(async () => {
+      root.render(
+        <VoiceView
+          channelId="!voice:mesh.test"
+          channelName="Studio"
+          onBackToChat={vi.fn()}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Voice calling is coming soon in Mesh.')
+    expect(container.textContent).toContain('You can keep using messages.')
+    expect(container.textContent).not.toContain('enabled for this community')
+    expect(container.querySelector('[aria-label*="microphone"]')).toBeNull()
+    expect(container.querySelector('[aria-label*="camera"]')).toBeNull()
   })
 
   it('keeps the connected party focused on media, roster, messages, and explicit leave', async () => {

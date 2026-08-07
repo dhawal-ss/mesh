@@ -82,6 +82,10 @@ export function matrixRoomPermalink(roomId: string): string {
   return `https://matrix.to/#/${encodeURIComponent(roomId)}`
 }
 
+export function matrixEventPermalink(roomId: string, eventId: string): string {
+  return `https://matrix.to/#/${encodeURIComponent(roomId)}/${encodeURIComponent(eventId)}`
+}
+
 export async function copyText(text: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text)

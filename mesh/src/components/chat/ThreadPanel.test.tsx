@@ -50,6 +50,7 @@ describe('ThreadPanel', () => {
     const reply = message('$reply', 'Focused answer', '$root')
     const onReply = vi.fn()
     const onClose = vi.fn()
+    const onMarkRead = vi.fn<() => Promise<void>>().mockResolvedValue(undefined)
 
     await act(async () => {
       root.render(
@@ -59,6 +60,11 @@ describe('ThreadPanel', () => {
           replies={[reply]}
           onReply={onReply}
           onClose={onClose}
+          onMarkRead={onMarkRead}
+          unreadCount={2}
+          unreadMentions={1}
+          unreadStateAvailable
+          hasMore
         />,
       )
     })
@@ -67,6 +73,12 @@ describe('ThreadPanel', () => {
     expect(panel?.getAttribute('aria-label')).toBe('Thread in #concept-art')
     expect(panel?.querySelectorAll('[data-message-id]')).toHaveLength(2)
     expect(panel?.textContent).toContain('1 reply')
+    expect(panel?.textContent).toContain('Last reply')
+    expect(panel?.textContent).toContain('2 unread')
+    expect(panel?.textContent).toContain('1 mention')
+    expect(panel?.textContent).toContain('Latest 1 shown')
+    expect(panel?.querySelector('button[aria-label="Copy thread link"]')).not.toBeNull()
+    expect(onMarkRead).toHaveBeenCalledWith('$root', '$reply')
 
     const replyButton = [...panel!.querySelectorAll<HTMLButtonElement>('button')]
       .find((button) => button.textContent === 'Reply in thread')
@@ -77,6 +89,37 @@ describe('ThreadPanel', () => {
       panel?.querySelector<HTMLButtonElement>('button[aria-label="Close thread"]')?.click()
     })
     expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('focuses a searched thread reply and completes the navigation request', async () => {
+    const scrollIntoView = vi.fn()
+    vi.stubGlobal('HTMLElement', HTMLElement)
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    })
+    const onNavigationComplete = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <ThreadPanel
+          title="#concept-art"
+          root={message('$root', 'Main question')}
+          replies={[message('$reply', 'Focused answer', '$root')]}
+          onReply={vi.fn()}
+          onClose={vi.fn()}
+          targetMessageId="$reply"
+          targetRequestId={7}
+          onNavigationComplete={onNavigationComplete}
+        />,
+      )
+    })
+
+    const target = container.querySelector<HTMLElement>('[data-thread-message-id="$reply"]')
+    expect(document.activeElement).toBe(target)
+    expect(target?.getAttribute('aria-current')).toBe('true')
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center' })
+    expect(onNavigationComplete).toHaveBeenCalledWith(7)
   })
 
   it('keeps a missing root recoverable instead of rendering orphan replies', async () => {
@@ -94,5 +137,29 @@ describe('ThreadPanel', () => {
 
     expect(container.textContent).toContain('Thread unavailable')
     expect(container.querySelector('[data-message-id]')).toBeNull()
+  })
+
+  it('offers a bounded retry when server hydration fails', async () => {
+    const onRetry = vi.fn()
+    await act(async () => {
+      root.render(
+        <ThreadPanel
+          title="Maya Chen"
+          root={null}
+          replies={[]}
+          onReply={vi.fn()}
+          onClose={vi.fn()}
+          loadState="failed"
+          onRetry={onRetry}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Could not load this thread')
+    await act(async () => {
+      [...container.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'Try again')?.click()
+    })
+    expect(onRetry).toHaveBeenCalledOnce()
   })
 })

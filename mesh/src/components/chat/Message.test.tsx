@@ -165,6 +165,26 @@ describe('MessageComponent federated timestamps', () => {
     },
   )
 
+  it('offers a standard thread action before the first reply exists', async () => {
+    const onToggleThread = vi.fn()
+    await act(async () => {
+      root.render(
+        <MessageComponent
+          message={malformedMessage()}
+          isGrouped={false}
+          onToggleThread={onToggleThread}
+        />,
+      )
+    })
+
+    const startThread = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Start a thread from message by Alice"]',
+    )
+    expect(startThread).not.toBeNull()
+    await act(async () => startThread?.click())
+    expect(onToggleThread).toHaveBeenCalledOnce()
+  })
+
   it('keeps DM edit typing local to the edited shared row', async () => {
     vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(true)
     vi.spyOn(bridge, 'getMatrixUserId').mockReturnValue('@alice:example.org')

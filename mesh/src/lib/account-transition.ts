@@ -15,6 +15,7 @@ import { useTypingStore } from '../store/typing'
 import { useVoiceStore } from '../store/voice'
 import { resetMatrixAccountPreferences } from '../store/settings'
 import { roomTabStorageKey } from './room-tabs'
+import { clearNewcomerChecklistsForAccount } from './onboarding-checklist'
 import { safeLocalStorageRemove } from './safe-storage'
 
 /**
@@ -25,7 +26,10 @@ import { safeLocalStorageRemove } from './safe-storage'
  * stores; native secure storage remains the session authority.
  */
 export function clearRendererAccountState(removedAccountId?: string | null): void {
-  if (removedAccountId) safeLocalStorageRemove(roomTabStorageKey(removedAccountId))
+  if (removedAccountId) {
+    safeLocalStorageRemove(roomTabStorageKey(removedAccountId))
+    clearNewcomerChecklistsForAccount(removedAccountId)
+  }
   useMeshNavigationStore.getState().resetForAccountTransition(removedAccountId)
   resetMatrixAccountPreferences()
 

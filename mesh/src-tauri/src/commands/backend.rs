@@ -31,7 +31,7 @@ use crate::types::{
     dm::{
         BlockedAccountDto, BlockedAccountPageDto, DirectMessageDto, DmConversationDto, DmRequestDto,
     },
-    message::MessageDto,
+    message::{MatrixThreadContextDto, MessageDto},
 };
 
 use super::{attachments::AttachmentGrantStore, error::CommandError};
@@ -1860,6 +1860,39 @@ pub async fn matrix_get_messages(
 }
 
 #[tauri::command]
+pub async fn matrix_thread_context(
+    room_id: String,
+    thread_root_id: String,
+    request_id: String,
+    deadline_ms: u64,
+    state: State<'_, AppState>,
+) -> Result<MatrixThreadContextDto, CommandError> {
+    require_matrix(&state)?;
+    if [&room_id, &thread_root_id]
+        .into_iter()
+        .any(|value| value.is_empty() || value.len() > 255)
+    {
+        return Err(CommandError::Validation(
+            "Choose a valid thread to open.".into(),
+        ));
+    }
+    let backend = state.backend.backend();
+    run_native_read(
+        &state,
+        request_id,
+        deadline_ms,
+        "matrix_thread_context",
+        async move {
+            backend
+                .thread_context(room_id, thread_root_id)
+                .await
+                .map_err(map_error)
+        },
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn matrix_edit_message(
     room_id: String,
     event_id: String,
@@ -1972,6 +2005,31 @@ pub async fn matrix_mark_read(
         .backend
         .backend()
         .mark_read(room_id)
+        .await
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn matrix_mark_thread_read(
+    room_id: String,
+    thread_root_id: String,
+    event_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    require_matrix(&state)?;
+    if [&room_id, &thread_root_id, &event_id]
+        .into_iter()
+        .any(|value| value.is_empty() || value.len() > 255)
+    {
+        return Err(CommandError::Validation(
+            "Choose a valid thread reply to mark as read.".into(),
+        ));
+    }
+    let _account_guard = begin_current_account_mutation(&state)?;
+    state
+        .backend
+        .backend()
+        .mark_thread_read(room_id, thread_root_id, event_id)
         .await
         .map_err(map_error)
 }

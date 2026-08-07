@@ -190,6 +190,8 @@ deliveryStatus?: "sent" | "pending" | "failed" | null,
  */
 undecryptable?: UndecryptableMessageDto | null, };
 
+export type MatrixThreadContextDto = { root: MessageDto, replies: Array<MessageDto>, unreadCount: number, unreadMentions: number, unreadStateAvailable: boolean, hasMore: boolean, };
+
 export type DmConversationDto = { id: string, peerPublicKey: string, peerDisplayName: string, peerAvatarColor: string, lastMessageAt: string | null, unreadCount: number, createdAt: string, };
 
 export type DmRequestDto = { roomId: string, inviterUserId: string, inviterDisplayName: string, inviterAvatarColor: string, canAccept: boolean, };

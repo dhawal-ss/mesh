@@ -105,11 +105,12 @@ impl MatrixBackend {
         Ok(())
     }
 
-    fn receipt_thread_for_message(is_thread_event: bool) -> ReceiptThread {
-        if is_thread_event {
-            ReceiptThread::Main
-        } else {
-            ReceiptThread::Unthreaded
+    fn receipt_thread_for_message(thread_root_id: Option<&str>) -> Option<ReceiptThread> {
+        match thread_root_id {
+            Some(root_id) => matrix_sdk::ruma::EventId::parse(root_id)
+                .ok()
+                .map(ReceiptThread::Thread),
+            None => Some(ReceiptThread::Main),
         }
     }
 
@@ -432,9 +433,13 @@ impl MatrixBackend {
                 {
                     anchor_seen = true;
                 } else if anchor_seen
-                    && (Self::is_base_text_message(&value)
-                        || Self::is_undecryptable_message(&value)
-                        || legacy_message_id.is_some())
+                    && (Self::is_undecryptable_message(&value)
+                        || legacy_message_id.is_some()
+                        || (Self::is_base_text_message(&value)
+                            && value
+                                .get("content")
+                                .and_then(Self::thread_root_id)
+                                .is_none()))
                 {
                     qualifying_messages += 1;
                 }
@@ -567,11 +572,181 @@ impl MatrixBackend {
 
     fn thread_root_id(content: &serde_json::Value) -> Option<String> {
         let relation = content.get("m.relates_to")?;
-        (relation.get("rel_type").and_then(serde_json::Value::as_str) == Some("m.thread"))
+        let root_id = (relation.get("rel_type").and_then(serde_json::Value::as_str)
+            == Some("m.thread"))
             .then(|| relation.get("event_id"))
             .flatten()
-            .and_then(serde_json::Value::as_str)
-            .map(str::to_owned)
+            .and_then(serde_json::Value::as_str)?;
+        matrix_sdk::ruma::EventId::parse(root_id)
+            .ok()
+            .map(|root_id| root_id.to_string())
+    }
+
+    fn content_mentions_user(content: &serde_json::Value, user_id: &UserId) -> bool {
+        content
+            .get("m.mentions")
+            .and_then(|mentions| mentions.get("user_ids"))
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            // The event has already crossed the bounded Matrix response
+            // allocation boundary. Keep semantic work bounded as well.
+            .take(100)
+            .filter_map(serde_json::Value::as_str)
+            .filter_map(|candidate| UserId::parse(candidate).ok())
+            .any(|candidate| candidate == user_id)
+    }
+
+    fn effectively_mentioned_event_ids(
+        values: &[serde_json::Value],
+        user_id: &UserId,
+    ) -> HashSet<String> {
+        let mut base_authors = HashMap::<String, String>::new();
+        let mut mentioned = HashSet::<String>::new();
+        let mut redacted = HashSet::<String>::new();
+        let mut latest_replacements = HashMap::<String, (u64, String, bool)>::new();
+
+        for value in values {
+            let event_id = value
+                .get("event_id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            let sender = value
+                .get("sender")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            if !Self::is_base_text_message(value) {
+                continue;
+            }
+            let Some(content) = value.get("content") else {
+                continue;
+            };
+            base_authors.insert(event_id.to_owned(), sender.to_owned());
+            if Self::content_mentions_user(content, user_id) {
+                mentioned.insert(event_id.to_owned());
+            }
+            if value
+                .get("unsigned")
+                .and_then(|unsigned| unsigned.get("redacted_because"))
+                .is_some()
+            {
+                redacted.insert(event_id.to_owned());
+            }
+        }
+
+        for value in values {
+            let event_id = value
+                .get("event_id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            let sender = value
+                .get("sender")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            match value
+                .get("type")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+            {
+                "m.room.message" => {
+                    let Some(content) = value.get("content") else {
+                        continue;
+                    };
+                    let Some(relation) = content.get("m.relates_to") else {
+                        continue;
+                    };
+                    if relation
+                        .get("rel_type")
+                        .and_then(serde_json::Value::as_str)
+                        != Some("m.replace")
+                    {
+                        continue;
+                    }
+                    let Some(target_id) = relation
+                        .get("event_id")
+                        .and_then(serde_json::Value::as_str)
+                        .filter(|target_id| matrix_sdk::ruma::EventId::parse(*target_id).is_ok())
+                    else {
+                        continue;
+                    };
+                    if base_authors.get(target_id).map(String::as_str) != Some(sender) {
+                        continue;
+                    }
+                    let replacement = relation
+                        .get("m.new_content")
+                        .or_else(|| content.get("m.new_content"));
+                    let replacement_mentions = replacement
+                        .is_some_and(|replacement| Self::content_mentions_user(replacement, user_id));
+                    let order = (
+                        value
+                            .get("origin_server_ts")
+                            .and_then(serde_json::Value::as_u64)
+                            .unwrap_or_default(),
+                        event_id.to_owned(),
+                    );
+                    let should_replace = latest_replacements
+                        .get(target_id)
+                        .is_none_or(|(timestamp, replacement_id, _)| {
+                            order > (*timestamp, replacement_id.clone())
+                        });
+                    if should_replace {
+                        latest_replacements.insert(
+                            target_id.to_owned(),
+                            (order.0, order.1, replacement_mentions),
+                        );
+                    }
+                }
+                "m.room.redaction" => {
+                    if let Some(target_id) = value
+                        .get("redacts")
+                        .or_else(|| value.get("content").and_then(|content| content.get("redacts")))
+                        .and_then(serde_json::Value::as_str)
+                        .filter(|target_id| matrix_sdk::ruma::EventId::parse(*target_id).is_ok())
+                    {
+                        redacted.insert(target_id.to_owned());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        for (target_id, (_, _, replacement_mentions)) in latest_replacements {
+            if replacement_mentions {
+                mentioned.insert(target_id);
+            } else {
+                mentioned.remove(&target_id);
+            }
+        }
+        mentioned.retain(|event_id| !redacted.contains(event_id));
+        mentioned
+    }
+
+    fn thread_unread_counts(
+        replies: &[MessageDto],
+        own_user_id: &UserId,
+        mentioned_event_ids: &HashSet<String>,
+        receipt_event_ids: &HashSet<String>,
+    ) -> (u32, u32) {
+        let last_read_index = replies
+            .iter()
+            .enumerate()
+            .filter(|(_, reply)| receipt_event_ids.contains(&reply.id))
+            .map(|(index, _)| index)
+            .max();
+        replies
+            .iter()
+            .enumerate()
+            .filter(|(index, reply)| {
+                last_read_index.is_none_or(|last_read_index| *index > last_read_index)
+                    && reply.author_public_key != own_user_id.as_str()
+                    && reply.deleted_at.is_none()
+            })
+            .fold((0_u32, 0_u32), |(unread, mentions), (_, reply)| {
+                (
+                    unread.saturating_add(1),
+                    mentions.saturating_add(u32::from(mentioned_event_ids.contains(&reply.id))),
+                )
+            })
     }
 
     fn queued_event_content(echo: &LocalEcho) -> Option<(&serde_json::value::RawValue, u64, bool)> {

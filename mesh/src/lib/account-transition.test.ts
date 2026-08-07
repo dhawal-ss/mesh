@@ -17,9 +17,11 @@ import { useTypingStore } from '../store/typing'
 import { useVoiceStore } from '../store/voice'
 import { useSettingsStore } from '../store/settings'
 import { meshNavigationStorageKey } from './mesh-navigation'
+import { beginNewcomerChecklist, readNewcomerChecklist } from './onboarding-checklist'
 
 describe('account transition', () => {
   beforeEach(() => {
+    localStorage.clear()
     clearRendererAccountState()
     useSettingsStore.setState({
       backup: { configured: false, reminderPending: false, dismissedAt: null },
@@ -38,6 +40,16 @@ describe('account transition', () => {
     localStorage.setItem(removedNavigationKey, 'removed-navigation')
     localStorage.setItem(retainedNavigationKey, 'retained-navigation')
     useMeshNavigationStore.getState().initialize('@removed:example.org')
+    beginNewcomerChecklist({
+      accountId: '@removed:example.org',
+      communityId: '!garden:example.org',
+      occurredAt: 100,
+    })
+    beginNewcomerChecklist({
+      accountId: '@retained:example.org',
+      communityId: '!garden:example.org',
+      occurredAt: 100,
+    })
 
     clearRendererAccountState('@removed:example.org')
 
@@ -45,13 +57,19 @@ describe('account transition', () => {
     expect(localStorage.getItem(retainedKey)).toBe('retained-room-title')
     expect(localStorage.getItem(removedNavigationKey)).toBeNull()
     expect(localStorage.getItem(retainedNavigationKey)).toBe('retained-navigation')
+    expect(readNewcomerChecklist(
+      '@removed:example.org',
+      '!garden:example.org',
+    )).toBeNull()
+    expect(readNewcomerChecklist(
+      '@retained:example.org',
+      '!garden:example.org',
+    )).not.toBeNull()
     expect(useMeshNavigationStore.getState()).toMatchObject({
       accountId: 'local-device',
       hydrated: false,
       drawer: 'none',
     })
-    localStorage.removeItem(retainedKey)
-    localStorage.removeItem(retainedNavigationKey)
   })
 
   it('continues account cleanup when browser storage denies removal', () => {

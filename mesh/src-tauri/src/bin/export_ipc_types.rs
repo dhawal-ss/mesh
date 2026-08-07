@@ -23,8 +23,8 @@ use mesh_lib::types::{
     },
     identity::IdentityDto,
     message::{
-        AttachmentDto, AttachmentThumbnailDto, MessageDto, UndecryptableMessageDto,
-        UndecryptableMessageReason,
+        AttachmentDto, AttachmentThumbnailDto, MatrixThreadContextDto, MessageDto,
+        UndecryptableMessageDto, UndecryptableMessageReason,
     },
     peer::{NetworkStatusDto, PeerDto},
 };
@@ -99,6 +99,7 @@ fn generated_contract() -> String {
     output.push_str(&declaration::<UndecryptableMessageReason>());
     output.push_str(&declaration::<UndecryptableMessageDto>());
     output.push_str(&declaration::<MessageDto>());
+    output.push_str(&declaration::<MatrixThreadContextDto>());
     output.push_str(&declaration::<DmConversationDto>());
     output.push_str(&declaration::<DmRequestDto>());
     output.push_str(&declaration::<BlockedAccountDto>());

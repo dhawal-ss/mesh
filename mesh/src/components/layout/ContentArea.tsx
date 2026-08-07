@@ -20,7 +20,7 @@ import { Icon } from '../ui/Icon'
 import { useDmStore } from '../../store/dms'
 import { useRoomTrust } from '../../hooks/useRoomTrust'
 import { useRoomPinStore } from '../../store/room-pins'
-import { isMatrixBackend, onMatrixRoomPinsUpdate } from '../../lib/bridge'
+import { isMatrixBackend, markThreadRead, onMatrixRoomPinsUpdate } from '../../lib/bridge'
 import { setVolatileInviteLink } from '../../lib/pending-invitation-runtime'
 import {
   ROOM_CONTEXT_WIDTH_KEY,
@@ -33,11 +33,12 @@ import {
 } from '../../hooks/useMediaQuery'
 import { useCurrentMeshRoute, useMeshNavigationStore } from '../../store/navigation'
 import { useMessageStore } from '../../store/messages'
-import { groupThreadReplies } from '../../lib/threads'
+import { groupThreadReplies, mergeThreadMessages } from '../../lib/threads'
 import type { Message } from '../../types/ipc'
 import { restorePaneTriggerFocus } from '../../lib/pane-focus'
 import { useCompactPaneFocus } from '../../hooks/useCompactPaneFocus'
-import { ThreadPanel } from '../chat/ThreadPanel'
+import { useMessageNavigationStore } from '../../store/message-navigation'
+import { useMatrixThreadContext } from '../../hooks/useMatrixThreadContext'
 
 const EMPTY_MESSAGES: Message[] = []
 
@@ -50,6 +51,9 @@ function createLazyRoomContextPanel() {
 
 const ChatView = lazy(() =>
   import('../chat/ChatView').then((module) => ({ default: module.ChatView })),
+)
+const ThreadPanel = lazy(() =>
+  import('../chat/ThreadPanel').then((module) => ({ default: module.ThreadPanel })),
 )
 
 export function ContentArea() {
@@ -88,14 +92,31 @@ export function ContentArea() {
     && route.pane?.kind === 'thread'
       ? route.pane.rootEventId
       : null
+  const threadContext = useMatrixThreadContext(
+    activeTextRoomId,
+    threadRootId,
+    isMatrixBackend(),
+  )
   const thread = useMemo(() => {
     if (!threadRootId) return { root: null, replies: EMPTY_MESSAGES }
     const { repliesByRoot } = groupThreadReplies(roomMessages)
+    const localRoot = roomMessages.find((message) => message.id === threadRootId) ?? null
+    const serverRoot = threadContext.context?.root ?? null
     return {
-      root: roomMessages.find((message) => message.id === threadRootId) ?? null,
-      replies: repliesByRoot.get(threadRootId) ?? EMPTY_MESSAGES,
+      root: serverRoot && localRoot ? { ...serverRoot, ...localRoot } : serverRoot ?? localRoot,
+      replies: mergeThreadMessages(
+        threadContext.context?.replies ?? EMPTY_MESSAGES,
+        repliesByRoot.get(threadRootId) ?? EMPTY_MESSAGES,
+      ),
     }
-  }, [roomMessages, threadRootId])
+  }, [roomMessages, threadContext.context, threadRootId])
+  const threadNavigationRequest = useMessageNavigationStore((state) => {
+    const pending = state.pending
+    return pending?.message.channelId === activeTextRoomId
+      && pending.message.threadRootId === threadRootId
+        ? pending
+        : null
+  })
   const showThread = threadRootId !== null
   const closeThread = useCallback(() => {
     const rootId = threadRootId
@@ -360,18 +381,35 @@ export function ContentArea() {
             aria-label="Dismiss thread"
             onClick={closeThread}
           />
-          <ThreadPanel
-            title={`#${activeChannel.name}`}
-            root={thread.root}
-            replies={thread.replies}
-            trust={trust}
-            onReply={(root, target = root) => {
-              window.dispatchEvent(new CustomEvent('mesh:reply-in-thread', {
-                detail: { rootId: root.id, targetId: target.id },
-              }))
-            }}
-            onClose={closeThread}
-          />
+          <Suspense fallback={<ThreadPanelLoadingFallback onClose={closeThread} />}>
+            <ThreadPanel
+              title={`#${activeChannel.name}`}
+              root={thread.root}
+              replies={thread.replies}
+              trust={trust}
+              onReply={(root, target = root) => {
+                window.dispatchEvent(new CustomEvent('mesh:reply-in-thread', {
+                  detail: { rootId: root.id, targetId: target.id },
+                }))
+              }}
+              onClose={closeThread}
+              onMarkRead={async (rootEventId, eventId) => {
+                await markThreadRead(activeChannel.id, rootEventId, eventId)
+                threadContext.clearUnread()
+              }}
+              loadState={threadContext.status}
+              unreadCount={threadContext.context?.unreadCount}
+              unreadMentions={threadContext.context?.unreadMentions}
+              unreadStateAvailable={threadContext.context?.unreadStateAvailable}
+              hasMore={threadContext.context?.hasMore}
+              onRetry={threadContext.retry}
+              targetMessageId={threadNavigationRequest?.message.id}
+              targetRequestId={threadNavigationRequest?.requestId}
+              onNavigationComplete={(requestId) => (
+                useMessageNavigationStore.getState().completeNavigation(requestId)
+              )}
+            />
+          </Suspense>
         </>
       )}
 
@@ -438,6 +476,36 @@ function ChatViewLoadingFallback() {
         <Skeleton width="36%" height={12} />
       </div>
     </div>
+  )
+}
+
+function ThreadPanelLoadingFallback({ onClose }: { onClose: () => void }) {
+  return (
+    <aside
+      id="mesh-thread-panel"
+      className="mesh-secondary-pane flex min-h-0 flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-base"
+      aria-label="Loading thread"
+      aria-busy="true"
+      tabIndex={-1}
+    >
+      <div className="flex h-conversation-header flex-shrink-0 items-center gap-3 border-b border-border-subtle bg-surface-raised px-4">
+        <span className="min-w-0 flex-1 text-xs font-medium text-secondary" role="status">
+          Loading thread
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="min-h-10 rounded-control px-2 text-xs font-medium text-muted hover:bg-surface-hover hover:text-primary"
+        >
+          Close
+        </button>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-3 p-4" aria-hidden="true">
+        <Skeleton width="58%" height={12} />
+        <Skeleton width="82%" height={12} />
+        <Skeleton width="46%" height={12} />
+      </div>
+    </aside>
   )
 }
 

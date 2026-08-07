@@ -257,6 +257,11 @@ export function SearchBar({ onNavigateToMessage, label }: SearchBarProps) {
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-primary">{message.authorDisplayName}</span>
                     <span className="text-xs text-muted">in #{getChannelName(message.channelId)}</span>
+                    {message.threadRootId && (
+                      <span className="rounded-control bg-surface-sunken px-1.5 py-0.5 text-meta font-medium text-secondary">
+                        Thread reply
+                      </span>
+                    )}
                     <span className="tnum ml-auto text-xs text-muted">
                       {formatFederatedTimestamp(message.timestamp, 'MMM d, HH:mm')}
                     </span>

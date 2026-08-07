@@ -45,6 +45,7 @@ interface MessageInputProps {
   communityId?: string
   members?: readonly MemberRecord[]
   onEditLastMessage?: () => void
+  onComposerFocus?: () => void
 }
 
 const TYPING_THROTTLE_MS = 5000
@@ -113,6 +114,7 @@ function MessageInputContent({
   communityId,
   members = [],
   onEditLastMessage,
+  onComposerFocus,
 }: MessageInputProps) {
   const [value, setValue] = useState(() => useDraftStore.getState().drafts[channelId] ?? '')
   const setDraft = useDraftStore((state) => state.setDraft)
@@ -1038,6 +1040,7 @@ function MessageInputContent({
           <textarea
             ref={inputRef}
             value={value}
+            onFocus={onComposerFocus}
             onCompositionStart={() => {
               compositionActiveRef.current = true
             }}

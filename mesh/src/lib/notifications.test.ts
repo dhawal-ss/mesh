@@ -4,6 +4,7 @@ import {
   effectiveMutedRoomIds,
   isMuteActive,
   isQuietHoursActive,
+  matrixEventPermalink,
   matrixRoomPermalink,
 } from './notifications'
 
@@ -62,6 +63,12 @@ describe('notification policy', () => {
   it('creates a working Matrix room permalink without exposing raw delimiters', () => {
     expect(matrixRoomPermalink('!abc:mesh.test')).toBe(
       'https://matrix.to/#/!abc%3Amesh.test',
+    )
+  })
+
+  it('creates a working Matrix event permalink for a thread root', () => {
+    expect(matrixEventPermalink('!abc:mesh.test', '$thread/root')).toBe(
+      'https://matrix.to/#/!abc%3Amesh.test/%24thread%2Froot',
     )
   })
 

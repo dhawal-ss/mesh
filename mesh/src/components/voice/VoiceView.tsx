@@ -285,7 +285,7 @@ function voiceUnavailableDetail(service: VoiceServiceStatus): string {
     return 'This version of Mesh cannot start voice. You can keep using messages.'
   }
   if (service.availability === 'not-configured') {
-    return 'Voice has not been enabled for this community yet. You can keep using messages.'
+    return 'Voice calling is coming soon in Mesh. You can keep using messages.'
   }
   if (!service.mediaE2eeReady) {
     return 'Mesh could not verify private call protection, so it kept your microphone and speakers off.'

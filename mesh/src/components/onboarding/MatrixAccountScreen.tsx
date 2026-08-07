@@ -150,11 +150,22 @@ export function MatrixAccountScreen({
   const availabilityGenerationRef = useRef(0)
   const capabilityGenerationRef = useRef(0)
   const browserGenerationRef = useRef(0)
+  const errorSummaryRef = useRef<HTMLDivElement>(null)
+  const modeHeadingFrameRef = useRef<number | null>(null)
 
   const setError = (message: string | null, cause?: unknown) => {
     setErrorMessage(message)
     setErrorDetails(message && cause !== undefined ? technicalSignInError(cause) : null)
   }
+
+  useEffect(() => {
+    if (!error) return
+    if (modeHeadingFrameRef.current !== null) {
+      window.cancelAnimationFrame(modeHeadingFrameRef.current)
+      modeHeadingFrameRef.current = null
+    }
+    errorSummaryRef.current?.focus()
+  }, [error])
 
   const normalizedUsername = useMemo(() => normalizeUsername(username), [username])
   const createUsernameError = useMemo(
@@ -322,8 +333,16 @@ export function MatrixAccountScreen({
   useEffect(() => {
     if (previousModeRef.current === mode) return
     previousModeRef.current = mode
-    const frame = window.requestAnimationFrame(() => modeHeadingRef.current?.focus())
-    return () => window.cancelAnimationFrame(frame)
+    modeHeadingFrameRef.current = window.requestAnimationFrame(() => {
+      modeHeadingFrameRef.current = null
+      modeHeadingRef.current?.focus()
+    })
+    return () => {
+      if (modeHeadingFrameRef.current !== null) {
+        window.cancelAnimationFrame(modeHeadingFrameRef.current)
+        modeHeadingFrameRef.current = null
+      }
+    }
   }, [mode])
 
   const resetFeedback = () => {
@@ -882,7 +901,7 @@ export function MatrixAccountScreen({
               : 'Recommended public option'}
             description={prominentServiceExpired
               ? 'This option is unavailable until its operator and policies are reviewed again.'
-              : 'Operated independently by the Matrix.org Foundation. Free plan: 10 MB attachments and 100 MB per day.'}
+              : 'Matrix.org is operated independently by the Matrix.org Foundation. Free plan: 10 MB attachments and 100 MB per day.'}
             notice={serviceAgeNotice(MATRIX_ORG_SERVICE)}
             actionLabel="Sign in"
             disabled={prominentServiceExpired}
@@ -916,10 +935,6 @@ export function MatrixAccountScreen({
             Use another service
           </Button>
         </div>
-        <p className="border-t border-border-subtle pt-3 text-xs leading-5 text-muted">
-          Public services are independently operated and may change availability, registration
-          rules, content policies, and limits. Mesh does not endorse or guarantee them.
-        </p>
       </div>
     )
   }
@@ -1222,7 +1237,9 @@ export function MatrixAccountScreen({
 
       {error ? (
         <div
+          ref={errorSummaryRef}
           role="alert"
+          tabIndex={-1}
           className="rounded-control border border-status-danger/40 bg-status-danger/10 px-3 py-2 text-sm text-status-danger"
         >
           <p>{error}</p>
@@ -1633,23 +1650,25 @@ function ServiceChoiceCard({
           </p>
         ) : null}
       </div>
-      {termsUrl || privacyUrl ? (
-        <div className="flex flex-wrap gap-3 text-xs">
-          {termsUrl ? <ExternalLink href={termsUrl}>Terms</ExternalLink> : null}
-          {privacyUrl ? <ExternalLink href={privacyUrl}>Privacy</ExternalLink> : null}
-        </div>
-      ) : null}
       {registrationUrl ? (
         <div className="mesh-service-card-actions space-y-2">
-          <p className="text-xs leading-5 text-muted">
-            Create your account in a browser, then return to Mesh to sign in.
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            {disabled ? (
-              <Button type="button" variant="secondary" disabled>
-                Create account
-              </Button>
-            ) : (
+          <Button
+            type="button"
+            variant={actionVariant}
+            className="w-full"
+            disabled={disabled}
+            aria-label={`${actionLabel} with ${title}`}
+            onClick={onSelect}
+          >
+            {actionLabel}
+          </Button>
+          {disabled ? (
+            <p className="text-center text-xs leading-5 text-muted">
+              Account creation is unavailable until this service is reviewed again.
+            </p>
+          ) : (
+            <p className="text-center text-xs leading-5 text-muted">
+              New here?{' '}
               <a
                 href={registrationUrl}
                 target="_blank"
@@ -1658,21 +1677,13 @@ function ServiceChoiceCard({
                 onClick={(event) => {
                   if (onRegister && !onRegister()) event.preventDefault()
                 }}
-                className="mesh-button no-select inline-flex min-h-10 items-center justify-center rounded-control border border-transparent bg-surface-hover px-4 py-2 text-sm font-semibold text-content transition-[background-color,border-color,color,box-shadow,transform] duration-fast hover:bg-surface-active focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                className="text-accent underline underline-offset-2"
               >
                 Create account
               </a>
-            )}
-            <Button
-              type="button"
-              variant={actionVariant}
-              disabled={disabled}
-              aria-label={`${actionLabel} with ${title}`}
-              onClick={onSelect}
-            >
-              {actionLabel}
-            </Button>
-          </div>
+              {' '}in your browser, then return to Mesh.
+            </p>
+          )}
         </div>
       ) : (
         <Button
@@ -1686,6 +1697,23 @@ function ServiceChoiceCard({
           {actionLabel}
         </Button>
       )}
+      {termsUrl || privacyUrl ? (
+        <details className="rounded-control border border-border-subtle bg-surface-base px-2.5 text-xs">
+          <summary className="flex min-h-9 cursor-pointer items-center font-semibold text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+            Policies and independence
+          </summary>
+          <div className="space-y-2 border-t border-border-subtle py-2 leading-5 text-muted">
+            <p>
+              This service sets its own availability, registration rules, content policies, and
+              limits. Mesh does not operate, endorse, or guarantee it.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              {termsUrl ? <ExternalLink href={termsUrl}>Terms</ExternalLink> : null}
+              {privacyUrl ? <ExternalLink href={privacyUrl}>Privacy</ExternalLink> : null}
+            </div>
+          </div>
+        </details>
+      ) : null}
     </article>
   )
 }
@@ -1711,7 +1739,7 @@ function ExternalLink({
       onClick={(event) => {
         if (onBeforeOpen && !onBeforeOpen()) event.preventDefault()
       }}
-      className="text-accent underline-offset-2 hover:underline"
+      className="text-accent underline underline-offset-2"
     >
       {children}
     </a>

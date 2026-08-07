@@ -29,8 +29,13 @@
     "allPlatformRequiredCases": 63
   },
   "implementation": {
-    "candidateSourceReady": true,
-    "candidateBlockers": []
+    "candidateSourceReady": false,
+    "candidateBlockers": [
+      {
+        "id": "D7",
+        "reason": "No clean exact-SHA source candidate with current protected R0 evidence exists. The locally verified implementation remains uncommitted and cannot be bound to the signed draft-candidate lifecycle without owner-authorized commit and protected CI."
+      }
+    ]
   },
   "decisions": {
     "D1": {

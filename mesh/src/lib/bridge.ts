@@ -39,6 +39,7 @@ import type {
   MatrixRoomUpgrade,
   MatrixRoomPins,
   MatrixRoomPinsUpdate,
+  MatrixThreadContextDto,
   MatrixRecoveryHealth,
   MatrixRecoverySetupResult,
   NotificationPresentationContext,
@@ -146,6 +147,7 @@ const NATIVE_GUARDED_READ_COMMANDS = new Set([
   'matrix_dm_messages',
   'matrix_get_community_permission_projection',
   'matrix_get_messages',
+  'matrix_thread_context',
   'matrix_get_profile',
   'matrix_get_room_notification_mode',
   'matrix_list_channels',
@@ -1326,6 +1328,17 @@ export async function matrixGetMessages(
   )
 }
 
+export async function matrixThreadContext(
+  roomId: string,
+  threadRootId: string,
+): Promise<MatrixThreadContextDto> {
+  return tauriInvoke<MatrixThreadContextDto>(
+    'matrix_thread_context',
+    { roomId, threadRootId },
+    READ_IPC_OPTIONS,
+  )
+}
+
 export async function matrixRoomPins(roomId: string): Promise<MatrixRoomPins> {
   return tauriInvoke('matrix_room_pins', { roomId }, READ_IPC_OPTIONS)
 }
@@ -1709,6 +1722,15 @@ export async function markChannelRead(channelId: string): Promise<void> {
     return tauriInvoke('matrix_mark_read', { roomId: channelId })
   }
   return legacyTauriInvoke('mark_channel_read', { channelId })
+}
+
+export async function markThreadRead(
+  roomId: string,
+  threadRootId: string,
+  eventId: string,
+): Promise<void> {
+  if (!isMatrixBackend()) return
+  return tauriInvoke('matrix_mark_thread_read', { roomId, threadRootId, eventId })
 }
 
 export async function markChannelsRead(channelIds: string[]): Promise<string[]> {

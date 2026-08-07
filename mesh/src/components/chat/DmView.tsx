@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -12,7 +14,7 @@ import { getBackoffDelay, waitForDelay } from '../../lib/scheduler'
 import { federatedTimestampMilliseconds } from '../../lib/federated-time'
 import { shouldGroupMessage } from '../../lib/message-grouping'
 import { resolveSenderIdentity } from '../../lib/matrixIdentity'
-import { groupThreadReplies } from '../../lib/threads'
+import { groupThreadReplies, mergeThreadMessages } from '../../lib/threads'
 import { restorePaneTriggerFocus } from '../../lib/pane-focus'
 import * as bridge from '../../lib/bridge'
 import { useRoomTrust } from '../../hooks/useRoomTrust'
@@ -25,6 +27,7 @@ import { useCurrentMeshRoute, useMeshNavigationStore } from '../../store/navigat
 import { useFailedMessageAnnouncement } from '../../hooks/useFailedMessageAnnouncement'
 import { ROOM_CONTEXT_COMPACT_QUERY, useMediaQuery } from '../../hooks/useMediaQuery'
 import { useCompactPaneFocus } from '../../hooks/useCompactPaneFocus'
+import { useMatrixThreadContext } from '../../hooks/useMatrixThreadContext'
 import type { DirectMessage, Message as MessageType } from '../../types/ipc'
 import { EmptyState } from '../ui/Primitives'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
@@ -37,11 +40,13 @@ import { DmSafetyPanel } from './DmSafetyPanel'
 import type { StagedFile } from './FileAttachment'
 import { MessageComponent } from './Message'
 import { MessageInput } from './MessageInput'
-import { ThreadPanel } from './ThreadPanel'
 import { OfflineQueueSummary } from './OfflineQueueSummary'
 
 const EMPTY_DIRECT_MESSAGES: DirectMessage[] = []
 const EMPTY_MESSAGES: MessageType[] = []
+const ThreadPanel = lazy(() =>
+  import('./ThreadPanel').then((module) => ({ default: module.ThreadPanel })),
+)
 
 type DmBlockState = {
   peerPublicKey: string
@@ -319,6 +324,23 @@ export function DmView() {
     && route.pane?.kind === 'thread'
       ? route.pane.rootEventId
       : null
+  const threadContext = useMatrixThreadContext(
+    activeConversationId,
+    openThreadId,
+    matrixMode,
+  )
+  const openThread = useMemo(() => {
+    if (!openThreadId) return { root: null, replies: EMPTY_MESSAGES }
+    const localRoot = messageById.get(openThreadId) ?? null
+    const serverRoot = threadContext.context?.root ?? null
+    return {
+      root: serverRoot && localRoot ? { ...serverRoot, ...localRoot } : serverRoot ?? localRoot,
+      replies: mergeThreadMessages(
+        threadContext.context?.replies ?? EMPTY_MESSAGES,
+        repliesByRoot.get(openThreadId) ?? EMPTY_MESSAGES,
+      ),
+    }
+  }, [messageById, openThreadId, repliesByRoot, threadContext.context])
   const reportMessages = useMemo(
     () => [...channelMessages]
       .reverse()
@@ -1074,17 +1096,58 @@ export function DmView() {
         />
       )}
       {openThreadId && (
-        <ThreadPanel
-          key={`${activeConversationId}:${openThreadId}`}
-          title={peerName}
-          root={messageById.get(openThreadId) ?? null}
-          replies={repliesByRoot.get(openThreadId) ?? EMPTY_MESSAGES}
-          surface="dm"
-          trust={trust}
-          onReply={beginThreadReply}
-          onClose={closeThread}
-        />
+        <Suspense fallback={<DmThreadPanelLoadingFallback onClose={closeThread} />}>
+          <ThreadPanel
+            key={`${activeConversationId}:${openThreadId}`}
+            title={peerName}
+            root={openThread.root}
+            replies={openThread.replies}
+            surface="dm"
+            trust={trust}
+            onReply={beginThreadReply}
+            onClose={closeThread}
+            onMarkRead={async (rootEventId, eventId) => {
+              await bridge.markThreadRead(activeConversationId, rootEventId, eventId)
+              threadContext.clearUnread()
+            }}
+            loadState={threadContext.status}
+            unreadCount={threadContext.context?.unreadCount}
+            unreadMentions={threadContext.context?.unreadMentions}
+            unreadStateAvailable={threadContext.context?.unreadStateAvailable}
+            hasMore={threadContext.context?.hasMore}
+            onRetry={threadContext.retry}
+          />
+        </Suspense>
       )}
     </div>
+  )
+}
+
+function DmThreadPanelLoadingFallback({ onClose }: { onClose: () => void }) {
+  return (
+    <aside
+      id="mesh-thread-panel"
+      className="mesh-secondary-pane flex min-h-0 flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-base"
+      aria-label="Loading thread"
+      aria-busy="true"
+      tabIndex={-1}
+    >
+      <div className="flex h-conversation-header flex-shrink-0 items-center gap-3 border-b border-border-subtle bg-surface-raised px-4">
+        <span className="min-w-0 flex-1 text-xs font-medium text-secondary" role="status">
+          Loading thread
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="min-h-10 rounded-control px-2 text-xs font-medium text-muted hover:bg-surface-hover hover:text-primary"
+        >
+          Close
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden py-3" aria-hidden="true">
+        <MessageSkeleton />
+        <MessageSkeleton />
+      </div>
+    </aside>
   )
 }

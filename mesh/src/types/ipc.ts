@@ -59,6 +59,7 @@ export type {
   MatrixRecoveryVerificationState,
   MatrixRoomPermissionProjection,
   MatrixRoomPowerLevelProjection,
+  MatrixThreadContextDto,
   MatrixUnreadUpdate,
   NetworkStatusDto,
   NotificationPresentationContext,

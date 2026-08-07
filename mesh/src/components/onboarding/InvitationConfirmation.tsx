@@ -7,6 +7,8 @@ import {
   clearInvitationActivation,
   recordInvitationMilestone,
 } from '../../lib/invitation-activation'
+import { beginNewcomerChecklist } from '../../lib/onboarding-checklist'
+import { useIdentityStore } from '../../store/identity'
 import { useCommunityStore } from '../../store/communities'
 import { useMeshNavigationStore } from '../../store/navigation'
 import { useShellStore } from '../../store/shell'
@@ -149,6 +151,11 @@ export function InvitationSurface({
       ) return
       window.clearTimeout(delayedTimer)
       recordInvitationMilestone(handle, 'community-ready')
+      const accountId = bridge.getMatrixUserId()
+        ?? useIdentityStore.getState().identity?.publicKey
+      if (accountId) {
+        beginNewcomerChecklist({ accountId, communityId: community.id })
+      }
       setPendingInvitation(null)
       upsertCommunity(community)
       setActiveCommunity(community.id)

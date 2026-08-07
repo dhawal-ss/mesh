@@ -1028,7 +1028,7 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
             .await
             .unwrap();
         public_receipt = observer_bob_dm
-            .load_user_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, &alice_user_id)
+            .load_user_receipt(ReceiptType::Read, ReceiptThread::Main, &alice_user_id)
             .await
             .unwrap();
         if public_receipt.is_some() {
@@ -1076,7 +1076,7 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
         observer_dm
             .load_user_receipt(
                 ReceiptType::ReadPrivate,
-                ReceiptThread::Unthreaded,
+                ReceiptThread::Main,
                 &alice_user_id,
             )
             .await
@@ -1118,7 +1118,7 @@ async fn run_matrix_backend_federates_and_recovers_offline_history_once() {
         private_receipt = observer_dm
             .load_user_receipt(
                 ReceiptType::ReadPrivate,
-                ReceiptThread::Unthreaded,
+                ReceiptThread::Main,
                 &alice_user_id,
             )
             .await

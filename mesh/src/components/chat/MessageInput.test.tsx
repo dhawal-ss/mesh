@@ -95,7 +95,7 @@ describe('MessageInput attachment UX', () => {
     onSend = vi.fn(),
     extraProps: Pick<
       React.ComponentProps<typeof MessageInput>,
-      'communityId' | 'members' | 'placeholder'
+      'communityId' | 'members' | 'placeholder' | 'onComposerFocus'
     > = {},
   ) {
     await act(async () => {
@@ -146,6 +146,16 @@ describe('MessageInput attachment UX', () => {
 
     expect(textarea.placeholder).toBe('Message Maya Chen')
     expect(textarea.placeholder).not.toContain('#')
+  })
+
+  it('reports composer focus without requiring text entry', async () => {
+    const onComposerFocus = vi.fn()
+    const textarea = await render(vi.fn(), { onComposerFocus })
+
+    await act(async () => textarea.focus())
+
+    expect(onComposerFocus).toHaveBeenCalledTimes(1)
+    expect(textarea.value).toBe('')
   })
 
   it('clears a text send immediately and stays editable while it is in flight', async () => {

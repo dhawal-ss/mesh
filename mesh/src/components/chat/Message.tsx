@@ -354,6 +354,20 @@ export const MessageComponent = memo(function MessageComponent({
       onSelect: () => void handlePin(),
     })
   }
+  if (onToggleThread && !limitedActions && !isDeleted && !isUndecryptable && !isQueued) {
+    contextMenuItems.push({
+      id: 'thread',
+      label: threadOpen
+        ? 'Close thread'
+        : threadReplyCount > 0
+          ? 'Open thread'
+          : 'Start a thread',
+      onSelect: () => {
+        setContextMenuOpen(false)
+        onToggleThread()
+      },
+    })
+  }
   if (isOwnMessage && !isDeleted && !isUndecryptable) {
     contextMenuItems.push({
       id: 'edit',
@@ -787,6 +801,23 @@ export const MessageComponent = memo(function MessageComponent({
                   aria-label={`Reply to ${message.authorDisplayName}`}
                 >
                   <Icon name="reply" size="sm" />
+                </button>
+              )}
+              {onToggleThread && !limitedActions && (
+                <button
+                  onClick={onToggleThread}
+                  className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                  aria-expanded={threadOpen}
+                  aria-controls="mesh-thread-panel"
+                  aria-label={
+                    threadOpen
+                      ? `Close thread for message from ${message.authorDisplayName}`
+                      : threadReplyCount > 0
+                        ? `Open thread for message from ${message.authorDisplayName}`
+                        : `Start a thread from message by ${message.authorDisplayName}`
+                  }
+                >
+                  <Icon name="messageCircle" size="sm" />
                 </button>
               )}
               {canPinMessage && (

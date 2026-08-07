@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useActiveCommunity, useCommunityStore } from '../../store/communities'
+import { useIdentityStore } from '../../store/identity'
 import { useChannelStore } from '../../store/channels'
 import { useVoiceStore } from '../../store/voice'
 import { ChannelItem } from '../community/ChannelItem'
@@ -27,12 +28,40 @@ import { canStartMatrixVoice, shouldActivateVoiceSession } from '../../lib/voice
 import { EmptyState } from '../ui/Primitives'
 import { useVirtualScroll, type VirtualItem } from '../../hooks/useVirtualScroll'
 import { IconButton } from '../ui/IconButton'
-import { useMeshNavigationStore } from '../../store/navigation'
+import { useCurrentMeshRoute, useMeshNavigationStore } from '../../store/navigation'
 import { ModalLoadingFallback } from '../ui/ModalLoadingFallback'
+import { readNewcomerChecklist } from '../../lib/onboarding-checklist'
 
 const InviteModal = lazy(() =>
   import('../community/InviteModal').then((module) => ({ default: module.InviteModal })),
 )
+const NewcomerChecklist = lazy(() =>
+  import('../community/NewcomerChecklist').then((module) => ({
+    default: module.NewcomerChecklist,
+  })),
+)
+
+function NewcomerChecklistLoadingFallback() {
+  return (
+    <div
+      className="border-b border-border-subtle bg-surface-sunken px-3 py-3"
+      role="status"
+    >
+      <div className="min-h-9">
+        <p className="text-meta font-semibold uppercase tracking-caption text-muted">
+          Getting started
+        </p>
+        <p className="text-sm font-semibold text-primary">Loading your progress</p>
+      </div>
+      <div className="mt-2 h-1.5 rounded-full bg-surface-active" aria-hidden="true" />
+      <div className="mt-2 space-y-1" aria-hidden="true">
+        {Array.from({ length: 5 }, (_, index) => (
+          <div key={index} className="min-h-6" />
+        ))}
+      </div>
+    </div>
+  )
+}
 
 type RoomListEntry =
   | {
@@ -64,6 +93,8 @@ export function ChannelSidebar() {
   const currentCommunityId = useVoiceStore((state) => state.currentCommunityId)
   const setCurrentVoiceSession = useVoiceStore((state) => state.setCurrentVoiceSession)
   const navigate = useMeshNavigationStore((state) => state.navigate)
+  const route = useCurrentMeshRoute()
+  const identityAccountId = useIdentityStore((state) => state.identity?.publicKey ?? null)
   const matrixRtcMembersByRoom = useVoiceStore((state) => state.matrixRtcMembersByRoom)
   const setProfileOpen = useShellStore((state) => state.setProfileOpen)
   const [voiceCollapsed, setVoiceCollapsed] = useState(false)
@@ -78,6 +109,14 @@ export function ChannelSidebar() {
   const matrixVoiceReady = canStartMatrixVoice(bridge.getBackendStatusSnapshot())
 
   const activeCommunity = useActiveCommunity()
+  const accountId = matrixMode ? bridge.getMatrixUserId() ?? identityAccountId : identityAccountId
+  const checklistAvailable = accountId && activeCommunity
+    ? readNewcomerChecklist(accountId, activeCommunity.id) !== null
+    : false
+  const channelOpened = activeCommunity
+    ? (route.kind === 'room' || route.kind === 'voice')
+      && route.communityId === activeCommunity.id
+    : false
   const communityChannels = useMemo(
     () => channels.filter((channel) => channel.communityId === activeCommunityId),
     [activeCommunityId, channels],
@@ -352,6 +391,25 @@ export function ChannelSidebar() {
             <Icon name="ellipsis" size="sm" />
           </IconButton>
         </div>
+
+        {checklistAvailable && accountId && (
+          <ScopedErrorBoundary
+            name="Getting started"
+            description="Your rooms are still available below."
+            resetKey={`${accountId}:${activeCommunity.id}`}
+          >
+            <Suspense fallback={<NewcomerChecklistLoadingFallback />}>
+              <NewcomerChecklist
+                accountId={accountId}
+                communityId={activeCommunity.id}
+                communityName={activeCommunity.name}
+                accountSignedIn
+                communityJoined
+                channelOpened={channelOpened}
+              />
+            </Suspense>
+          </ScopedErrorBoundary>
+        )}
 
         {/* Room list */}
         <div

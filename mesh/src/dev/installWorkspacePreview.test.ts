@@ -27,10 +27,24 @@ describe('installWorkspacePreview', () => {
       registration: 'open',
     })
 
+    const firstAttemptId = await previewInternals().invoke(
+      'matrix_reserve_login_attempt',
+    ) as string
+    const secondAttemptId = await previewInternals().invoke(
+      'matrix_reserve_login_attempt',
+    ) as string
+
+    expect(firstAttemptId).not.toHaveLength(0)
+    expect(secondAttemptId).not.toHaveLength(0)
+    expect(secondAttemptId).not.toBe(firstAttemptId)
+
     await expect(previewInternals().invoke('matrix_login', {
-      homeserver: 'https://matrix.org',
-      username: 'preview',
-      password: 'preview-password',
+      request: {
+        homeserver: 'https://matrix.org',
+        username: 'preview',
+        password: 'preview-password',
+      },
+      attemptId: firstAttemptId,
     })).resolves.toMatchObject({
       authenticated: true,
       userId: '@taylor:mesh.test',

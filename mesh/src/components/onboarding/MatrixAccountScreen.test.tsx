@@ -52,15 +52,23 @@ describe('MatrixAccountScreen', () => {
     expect(container.textContent).not.toContain('Mesh service')
     expect(container.textContent).not.toContain('matrix.mesh.dhawal.org')
     expect(container.textContent).toContain('Public account service')
-    expect(container.textContent).toContain('Operated independently by the Matrix.org Foundation')
+    expect(container.textContent).toContain('operated independently by the Matrix.org Foundation')
     expect(container.textContent).toContain('independently')
     expect(container.textContent).toContain('Ages 18+')
-    expect(container.textContent).toContain('Create your account in a browser')
+    expect(container.textContent).toContain('Create account in your browser')
     expect(container.textContent).toContain('return to Mesh')
-    // Public services now expose registration and sign-in as equal, explicit choices.
+    const signIn = findButton('Sign in')
+    const createAccount = findLink('Create account')
+    // Sign-in is the single obvious primary action; account creation remains
+    // available as a quieter provider-owned browser path.
+    expect(signIn.compareDocumentPosition(createAccount) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(findLink('Create account').getAttribute('href')).toMatch(/^https:\/\//)
     expect(findLink('Terms').getAttribute('href')).toMatch(/^https:\/\//)
     expect(findLink('Privacy').getAttribute('href')).toMatch(/^https:\/\//)
+    const policyDetails = [...container.querySelectorAll<HTMLDetailsElement>('details')]
+      .find((details) => details.querySelector('summary')?.textContent?.includes('Policies and independence'))
+    expect(policyDetails?.open).toBe(false)
     expect(findButton('Sign in')).toBeTruthy()
     expect(findButton('More public services')).toBeTruthy()
     expect(findButton('Use another service')).toBeTruthy()
@@ -131,7 +139,9 @@ describe('MatrixAccountScreen', () => {
 
     expect(container.textContent).toContain('Public account service')
     expect(container.textContent).toContain('Review expired')
-    expect(findButton('Create account').disabled).toBe(true)
+    expect(container.textContent).toContain('Account creation is unavailable')
+    expect([...container.querySelectorAll('a')]
+      .some((link) => link.textContent?.trim() === 'Create account')).toBe(false)
     expect(findButton('Sign in').disabled).toBe(true)
   })
 
@@ -211,6 +221,7 @@ describe('MatrixAccountScreen', () => {
     })
 
     expect(failedLogin).toHaveBeenCalledOnce()
+    expect(document.activeElement).toBe(container.querySelector('[role="alert"]'))
     expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY))
       .toContain('"accountServiceId":"matrix-org"')
 

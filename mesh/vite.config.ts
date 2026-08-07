@@ -45,16 +45,18 @@ function reachabilityPlugin(mode: string) {
 }
 
 // https://vite.dev/config/
-export default defineConfig(async ({ mode }) => {
+export default defineConfig(async ({ command, mode }) => {
   return ({
   plugins: [
-    react({
+    react(command === "build" ? {
       babel: {
         // React Compiler must see the original component source before other
-        // Babel transforms. React 19 needs no compatibility target override.
+        // Babel transforms. Development keeps the same uncompiled semantics
+        // as Vitest while avoiding compiler-expanded modules over the dev
+        // server; production builds retain the reviewed optimization pass.
         plugins: ["babel-plugin-react-compiler"],
       },
-    }),
+    } : {}),
     reachabilityPlugin(mode),
   ],
   resolve: {

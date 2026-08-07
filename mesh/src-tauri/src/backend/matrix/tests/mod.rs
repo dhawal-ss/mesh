@@ -2876,13 +2876,26 @@ fn server_push_rules_are_projected_to_room_notification_modes() {
 #[test]
 fn message_receipts_select_the_matrix_thread_scope_from_event_relations() {
     assert!(matches!(
-        MatrixBackend::receipt_thread_for_message(false),
-        ReceiptThread::Unthreaded
+        MatrixBackend::receipt_thread_for_message(None),
+        Some(ReceiptThread::Main)
     ));
     assert!(matches!(
-        MatrixBackend::receipt_thread_for_message(true),
-        ReceiptThread::Main
+        MatrixBackend::receipt_thread_for_message(Some("$root")),
+        Some(ReceiptThread::Thread(root_id)) if root_id.as_str() == "$root"
     ));
+    assert!(MatrixBackend::receipt_thread_for_message(Some("not-an-event-id")).is_none());
+}
+
+#[test]
+fn authenticated_clients_enable_stable_threading_without_unstable_subscriptions() {
+    let source = include_str!("../../matrix.rs");
+    assert_eq!(
+        source
+            .matches(".with_threading_support(ThreadingSupport::Enabled {")
+            .count(),
+        2
+    );
+    assert_eq!(source.matches("with_subscriptions: false").count(), 2);
 }
 
 #[test]
@@ -3566,6 +3579,20 @@ fn projects_standard_edits_reactions_redactions_and_replies() {
             }
         }),
         json!({
+            "type": "m.room.message",
+            "event_id": "$malformed-thread-reply",
+            "sender": "@bob:example.org",
+            "origin_server_ts": 6,
+            "content": {
+                "msgtype": "m.text",
+                "body": "visible despite malformed thread metadata",
+                "m.relates_to": {
+                    "rel_type": "m.thread",
+                    "event_id": "not-an-event-id"
+                }
+            }
+        }),
+        json!({
             "type": "m.room.redaction",
             "event_id": "$redact-reaction",
             "sender": "@bob:example.org",
@@ -3583,7 +3610,7 @@ fn projects_standard_edits_reactions_redactions_and_replies() {
     ];
 
     let projected = MatrixBackend::project_timeline("!room:example.org", &members, events);
-    assert_eq!(projected.len(), 3);
+    assert_eq!(projected.len(), 4);
     assert_eq!(projected[0].id, "$one");
     assert_eq!(projected[0].content, "");
     assert!(projected[0].edited_at.is_some());
@@ -3595,6 +3622,98 @@ fn projects_standard_edits_reactions_redactions_and_replies() {
     assert_eq!(projected[2].content, "thread body");
     assert_eq!(projected[2].reply_to_id.as_deref(), Some("$one"));
     assert_eq!(projected[2].thread_root_id.as_deref(), Some("$one"));
+    assert_eq!(projected[3].id, "$malformed-thread-reply");
+    assert_eq!(
+        projected[3].content,
+        "visible despite malformed thread metadata"
+    );
+    assert_eq!(projected[3].thread_root_id, None);
+}
+
+#[test]
+fn thread_unread_mentions_follow_valid_edits_redactions_and_receipts() {
+    let values = vec![
+        json!({
+            "type": "m.room.message", "event_id": "$root",
+            "sender": "@alice:example.org", "origin_server_ts": 1,
+            "content": { "msgtype": "m.text", "body": "root" }
+        }),
+        json!({
+            "type": "m.room.message", "event_id": "$reply-one",
+            "sender": "@alice:example.org", "origin_server_ts": 2,
+            "content": {
+                "msgtype": "m.text", "body": "first",
+                "m.mentions": { "user_ids": ["@me:example.org"] },
+                "m.relates_to": { "rel_type": "m.thread", "event_id": "$root" }
+            }
+        }),
+        json!({
+            "type": "m.room.message", "event_id": "$reply-two",
+            "sender": "@alice:example.org", "origin_server_ts": 3,
+            "content": {
+                "msgtype": "m.text", "body": "second",
+                "m.relates_to": { "rel_type": "m.thread", "event_id": "$root" }
+            }
+        }),
+        json!({
+            "type": "m.room.message", "event_id": "$reply-own",
+            "sender": "@me:example.org", "origin_server_ts": 4,
+            "content": {
+                "msgtype": "m.text", "body": "own reply",
+                "m.relates_to": { "rel_type": "m.thread", "event_id": "$root" }
+            }
+        }),
+        json!({
+            "type": "m.room.message", "event_id": "$reply-redacted",
+            "sender": "@alice:example.org", "origin_server_ts": 5,
+            "content": {
+                "msgtype": "m.text", "body": "removed",
+                "m.mentions": { "user_ids": ["@me:example.org"] },
+                "m.relates_to": { "rel_type": "m.thread", "event_id": "$root" }
+            }
+        }),
+        json!({
+            "type": "m.room.message", "event_id": "$edit-one",
+            "sender": "@alice:example.org", "origin_server_ts": 6,
+            "content": {
+                "msgtype": "m.text", "body": "* first edited",
+                "m.relates_to": { "rel_type": "m.replace", "event_id": "$reply-one" },
+                "m.new_content": { "msgtype": "m.text", "body": "first edited" }
+            }
+        }),
+        json!({
+            "type": "m.room.message", "event_id": "$edit-two",
+            "sender": "@alice:example.org", "origin_server_ts": 7,
+            "content": {
+                "msgtype": "m.text", "body": "* second edited",
+                "m.relates_to": { "rel_type": "m.replace", "event_id": "$reply-two" },
+                "m.new_content": {
+                    "msgtype": "m.text", "body": "second edited",
+                    "m.mentions": { "user_ids": ["@me:example.org"] }
+                }
+            }
+        }),
+        json!({
+            "type": "m.room.redaction", "event_id": "$redaction",
+            "sender": "@alice:example.org", "origin_server_ts": 8,
+            "redacts": "$reply-redacted", "content": {}
+        }),
+    ];
+    let own_user_id = UserId::parse("@me:example.org").unwrap();
+    let mentions = MatrixBackend::effectively_mentioned_event_ids(&values, &own_user_id);
+    assert_eq!(mentions, HashSet::from(["$reply-two".to_owned()]));
+
+    let replies = MatrixBackend::project_timeline("!room:example.org", &HashMap::new(), values)
+        .into_iter()
+        .filter(|message| message.thread_root_id.as_deref() == Some("$root"))
+        .collect::<Vec<_>>();
+    let counts = MatrixBackend::thread_unread_counts(
+        &replies,
+        &own_user_id,
+        &mentions,
+        &HashSet::from(["$reply-one".to_owned()]),
+    );
+    assert_eq!(counts, (1, 1));
 }
 
 #[test]

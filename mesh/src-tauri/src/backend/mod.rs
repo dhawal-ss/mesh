@@ -16,7 +16,7 @@ use crate::types::{
     dm::{
         BlockedAccountDto, BlockedAccountPageDto, DirectMessageDto, DmConversationDto, DmRequestDto,
     },
-    message::MessageDto,
+    message::{MatrixThreadContextDto, MessageDto},
 };
 
 pub const LEGACY_MATRIX_EVENT_TYPE: &str = "org.mesh.legacy_archive.v1";
@@ -1983,6 +1983,13 @@ pub trait MeshBackend: Send + Sync {
     ) -> BackendResult<Vec<MessageDto>> {
         Err(BackendError::Unsupported("message history"))
     }
+    async fn thread_context(
+        &self,
+        _room_id: String,
+        _thread_root_id: String,
+    ) -> BackendResult<MatrixThreadContextDto> {
+        Err(BackendError::Unsupported("thread history"))
+    }
     async fn edit_message(
         &self,
         _room_id: String,
@@ -2022,6 +2029,14 @@ pub trait MeshBackend: Send + Sync {
     }
     async fn mark_read(&self, _room_id: String) -> BackendResult<()> {
         Err(BackendError::Unsupported("read receipts"))
+    }
+    async fn mark_thread_read(
+        &self,
+        _room_id: String,
+        _thread_root_id: String,
+        _event_id: String,
+    ) -> BackendResult<()> {
+        Err(BackendError::Unsupported("thread read receipts"))
     }
     async fn set_typing(&self, _room_id: String, _typing: bool) -> BackendResult<()> {
         Err(BackendError::Unsupported("typing notifications"))

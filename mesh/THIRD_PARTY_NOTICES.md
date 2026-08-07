@@ -5,7 +5,7 @@ and Rust dependency graphs. Regenerate this file on every release candidate.
 This inventory does not replace review of the referenced license texts, SBOM,
 source-offer obligations, trademarks, or platform redistributables.
 
-- JavaScript packages: 463
+- JavaScript packages: 462
 - Rust packages: 911
 - Entries requiring license review: 0
 
@@ -367,8 +367,7 @@ from this generated inventory.
 | motion-utils | 12.36.0 | MIT | https://registry.npmjs.org/motion-utils/-/motion-utils-12.36.0.tgz |
 | ms | 2.1.3 | MIT | https://registry.npmjs.org/ms/-/ms-2.1.3.tgz |
 | mz | 2.7.0 | MIT | https://registry.npmjs.org/mz/-/mz-2.7.0.tgz |
-| nanoid | 3.3.16 | MIT | https://registry.npmjs.org/nanoid/-/nanoid-3.3.16.tgz |
-| nanoid | 5.1.7 | MIT | https://registry.npmjs.org/nanoid/-/nanoid-5.1.7.tgz |
+| nanoid | 3.3.18 | MIT | https://registry.npmjs.org/nanoid/-/nanoid-3.3.18.tgz |
 | natural-compare | 1.4.0 | MIT | https://registry.npmjs.org/natural-compare/-/natural-compare-1.4.0.tgz |
 | node-releases | 2.0.36 | MIT | https://registry.npmjs.org/node-releases/-/node-releases-2.0.36.tgz |
 | normalize-path | 3.0.0 | MIT | https://registry.npmjs.org/normalize-path/-/normalize-path-3.0.0.tgz |

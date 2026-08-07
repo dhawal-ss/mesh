@@ -40,7 +40,7 @@ use matrix_sdk::{
     notification_settings::RoomNotificationMode,
     room::{
         reply::{EnforceThread, Reply},
-        MessagesOptions, ParentSpace, Receipts, RoomMemberRole,
+        MessagesOptions, ParentSpace, Receipts, RelationsOptions, RoomMemberRole,
     },
     ruma::{
         api::{
@@ -132,7 +132,7 @@ use matrix_sdk::{
     store::RoomLoadSettings,
     utils::UrlOrQuery,
     Client, ComposerDraft, ComposerDraftType, LoopCtrl, Room, RoomMemberships, RoomState,
-    SessionChange,
+    SessionChange, ThreadingSupport,
 };
 use matrix_sdk_crypto::{
     AttachmentDecryptor, CollectStrategy, OlmError, SessionRecipientCollectionError,
@@ -158,8 +158,8 @@ use crate::types::{
         DmRequestDto, ReadReceiptDto,
     },
     message::{
-        AttachmentDto, AttachmentThumbnailDto, MessageDto, UndecryptableMessageDto,
-        UndecryptableMessageReason,
+        AttachmentDto, AttachmentThumbnailDto, MatrixThreadContextDto, MessageDto,
+        UndecryptableMessageDto, UndecryptableMessageReason,
     },
 };
 
@@ -203,6 +203,9 @@ const PENDING_INVITATION_MAX_CIPHERTEXT_BYTES: usize = PENDING_INVITATION_MAX_BY
 const PENDING_INVITATION_MAX_AGE_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
 const PENDING_INVITATION_JOIN_LEASE_MS: u64 = 90 * 1_000;
 const PENDING_INVITATION_JOIN_TIMEOUT_SECONDS: u64 = 90;
+const THREAD_RELATION_PAGE_SIZE: usize = 100;
+const MAX_THREAD_RELATION_EVENTS: usize = 1_000;
+const MAX_THREAD_REPLIES: usize = 500;
 const TRUSTED_DEVICES_KEY: &str = "matrix-trusted-devices-v1";
 const RECOVERY_TEST_KEY: &str = "matrix-recovery-test-v1";
 const RECOVERY_CREDENTIAL_KEY: &str = "matrix-recovery-credential-v1";
@@ -3001,6 +3004,9 @@ impl MatrixBackend {
         let client = builder
             .sqlite_store(&storage.store_root, Some(&passphrase))
             .handle_refresh_tokens()
+            .with_threading_support(ThreadingSupport::Enabled {
+                with_subscriptions: false,
+            })
             // Follow the SDK's MSC4153 identity-based policy: distribute new
             // room keys only to devices signed by their owner's cross-signing
             // identity, without requiring users to interactively verify every
@@ -3041,6 +3047,9 @@ impl MatrixBackend {
         builder
             .sqlite_store(store.path(), Some(&encoded_passphrase))
             .handle_refresh_tokens()
+            .with_threading_support(ThreadingSupport::Enabled {
+                with_subscriptions: false,
+            })
             // Keep the short-lived OAuth client on the same identity-based
             // sharing policy as the durable client.
             .with_room_key_recipient_strategy(CollectStrategy::IdentityBasedStrategy)
@@ -8535,7 +8544,11 @@ impl MeshBackend for MatrixBackend {
             let Ok(event_id) = matrix_sdk::ruma::EventId::parse(&message.id) else {
                 continue;
             };
-            let receipt_thread = Self::receipt_thread_for_message(message.thread_root_id.is_some());
+            let Some(receipt_thread) =
+                Self::receipt_thread_for_message(message.thread_root_id.as_deref())
+            else {
+                continue;
+            };
             let receipts = room
                 .load_event_receipts(ReceiptType::Read, receipt_thread, &event_id)
                 .await
@@ -8728,6 +8741,159 @@ impl MeshBackend for MatrixBackend {
         }
         Self::resolve_projected_member_display_names(&room, &mut result, requested).await?;
         Ok(result)
+    }
+
+    async fn thread_context(
+        &self,
+        room_id: String,
+        thread_root_id: String,
+    ) -> BackendResult<MatrixThreadContextDto> {
+        let client = self.client().await?;
+        let own_user_id = client.user_id().ok_or(BackendError::NotAuthenticated)?;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let thread_root_id =
+            matrix_sdk::ruma::EventId::parse(thread_root_id).map_err(Self::map_error)?;
+        let room = Self::protected_joined_room(&client, &room_id, "reading a thread").await?;
+        let ignored_users = self.refresh_ignored_user_list(&client).await?;
+
+        let root_event = room
+            .load_or_fetch_event(&thread_root_id, None)
+            .await
+            .map_err(Self::map_error)?;
+        let root_value = root_event
+            .raw()
+            .deserialize_as::<serde_json::Value>()
+            .map_err(Self::map_error)?;
+        if root_value
+            .get("content")
+            .and_then(Self::thread_root_id)
+            .is_some()
+        {
+            return Err(BackendError::InvalidConfiguration(
+                "Choose the first message in the thread.".into(),
+            ));
+        }
+
+        let mut relation_values = Vec::new();
+        let mut from = None;
+        let mut seen_tokens = HashSet::new();
+        let mut has_more = false;
+        loop {
+            let remaining = MAX_THREAD_RELATION_EVENTS.saturating_sub(relation_values.len());
+            if remaining == 0 {
+                has_more = true;
+                break;
+            }
+            let page_size = remaining.min(THREAD_RELATION_PAGE_SIZE) as u32;
+            let page = room
+                .relations(
+                    thread_root_id.clone(),
+                    RelationsOptions {
+                        from,
+                        limit: Some(UInt::from(page_size)),
+                        recurse: true,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(Self::map_error)?;
+            let next = page.prev_batch_token;
+            for event in page.chunk {
+                if relation_values.len() >= MAX_THREAD_RELATION_EVENTS {
+                    has_more = true;
+                    break;
+                }
+                if let Ok(value) = event.raw().deserialize_as::<serde_json::Value>() {
+                    relation_values.push(value);
+                }
+            }
+            let Some(next) = next else {
+                break;
+            };
+            if !seen_tokens.insert(next.clone()) {
+                has_more = true;
+                break;
+            }
+            from = Some(next);
+        }
+
+        let mut values = Vec::with_capacity(relation_values.len().saturating_add(1));
+        values.push(root_value);
+        values.extend(relation_values);
+        values.retain(|value| !Self::is_ignored_non_state_event(value, &ignored_users));
+        let mentioned_event_ids = Self::effectively_mentioned_event_ids(&values, own_user_id);
+        let mut projected =
+            Self::project_timeline(room.room_id().as_str(), &HashMap::new(), values);
+
+        let root_index = projected
+            .iter()
+            .position(|message| message.id == thread_root_id.as_str())
+            .ok_or_else(|| {
+                BackendError::NotFound(
+                    "This thread's first message is not available on the service.".into(),
+                )
+            })?;
+        let root = projected.remove(root_index);
+        let mut replies = projected
+            .into_iter()
+            .filter(|message| message.thread_root_id.as_deref() == Some(thread_root_id.as_str()))
+            .collect::<Vec<_>>();
+
+        let unread_state_available = self
+            .wire_privacy
+            .read()
+            .await
+            .read_receipt_mode_for(room.room_id().as_str())
+            != ReadReceiptMode::Off;
+        let (unread_count, unread_mentions) = if unread_state_available {
+            let mut receipt_event_ids = HashSet::new();
+            for receipt_type in [ReceiptType::Read, ReceiptType::ReadPrivate] {
+                if let Some((event_id, _)) = room
+                    .load_user_receipt(
+                        receipt_type,
+                        ReceiptThread::Thread(thread_root_id.clone()),
+                        own_user_id,
+                    )
+                    .await
+                    .map_err(Self::map_error)?
+                {
+                    receipt_event_ids.insert(event_id.to_string());
+                }
+            }
+            Self::thread_unread_counts(
+                &replies,
+                own_user_id,
+                &mentioned_event_ids,
+                &receipt_event_ids,
+            )
+        } else {
+            (0, 0)
+        };
+
+        if replies.len() > MAX_THREAD_REPLIES {
+            has_more = true;
+            replies = replies.split_off(replies.len() - MAX_THREAD_REPLIES);
+        }
+        let mut display_messages = Vec::with_capacity(replies.len().saturating_add(1));
+        display_messages.push(root);
+        display_messages.extend(replies);
+        let display_message_count = display_messages.len();
+        Self::resolve_projected_member_display_names(
+            &room,
+            &mut display_messages,
+            display_message_count,
+        )
+        .await?;
+        let root = display_messages.remove(0);
+        let replies = display_messages;
+        Ok(MatrixThreadContextDto {
+            root,
+            replies,
+            unread_count,
+            unread_mentions,
+            unread_state_available,
+            has_more,
+        })
     }
 
     async fn edit_message(
@@ -8934,44 +9100,90 @@ impl MeshBackend for MatrixBackend {
         let values = Self::timeline_values(&room, 1, None).await?;
         let Some(event_id) = values
             .iter()
+            .filter(|value| {
+                (Self::is_base_text_message(value) || Self::is_undecryptable_message(value))
+                    && value
+                        .get("content")
+                        .and_then(Self::thread_root_id)
+                        .is_none()
+            })
             .find_map(|value| value.get("event_id").and_then(serde_json::Value::as_str))
         else {
             return Ok(());
         };
-        let is_thread_event = values.iter().any(|value| {
-            value.get("event_id").and_then(serde_json::Value::as_str) == Some(event_id)
-                && value
-                    .get("content")
-                    .and_then(Self::thread_root_id)
-                    .is_some()
-        });
-        let receipt_thread = Self::receipt_thread_for_message(is_thread_event);
         let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
-        if is_thread_event {
-            room.send_multiple_receipts(Receipts::new().fully_read_marker(event_id.clone()))
+        room.send_multiple_receipts(Receipts::new().fully_read_marker(event_id.clone()))
+            .await
+            .map_err(Self::map_error)?;
+        let receipt_type = match read_receipt_mode {
+            ReadReceiptMode::Public => Some(MatrixReceiptType::Read),
+            ReadReceiptMode::Private => Some(MatrixReceiptType::ReadPrivate),
+            ReadReceiptMode::Off => None,
+        };
+        if let Some(receipt_type) = receipt_type {
+            room.send_single_receipt(receipt_type, ReceiptThread::Main, event_id)
                 .await
                 .map_err(Self::map_error)?;
-            let receipt_type = match read_receipt_mode {
-                ReadReceiptMode::Public => Some(MatrixReceiptType::Read),
-                ReadReceiptMode::Private => Some(MatrixReceiptType::ReadPrivate),
-                ReadReceiptMode::Off => None,
-            };
-            if let Some(receipt_type) = receipt_type {
-                room.send_single_receipt(receipt_type, receipt_thread, event_id)
-                    .await
-                    .map_err(Self::map_error)?;
-            }
-            return Ok(());
         }
-        let mut receipts = Receipts::new().fully_read_marker(event_id.clone());
-        receipts = match read_receipt_mode {
-            ReadReceiptMode::Public => receipts.public_read_receipt(event_id),
-            ReadReceiptMode::Private => receipts.private_read_receipt(event_id),
-            ReadReceiptMode::Off => receipts,
-        };
-        room.send_multiple_receipts(receipts)
+        Ok(())
+    }
+
+    async fn mark_thread_read(
+        &self,
+        room_id: String,
+        thread_root_id: String,
+        event_id: String,
+    ) -> BackendResult<()> {
+        let read_receipt_mode = self
+            .wire_privacy
+            .read()
             .await
-            .map_err(Self::map_error)
+            .read_receipt_mode_for(&room_id);
+        let receipt_type = match read_receipt_mode {
+            ReadReceiptMode::Public => MatrixReceiptType::Read,
+            ReadReceiptMode::Private => MatrixReceiptType::ReadPrivate,
+            ReadReceiptMode::Off => return Ok(()),
+        };
+        let client = self.client().await?;
+        let room_id = matrix_sdk::ruma::RoomId::parse(room_id).map_err(Self::map_error)?;
+        let thread_root_id =
+            matrix_sdk::ruma::EventId::parse(thread_root_id).map_err(Self::map_error)?;
+        let event_id = matrix_sdk::ruma::EventId::parse(event_id).map_err(Self::map_error)?;
+        if event_id == thread_root_id {
+            return Err(BackendError::InvalidConfiguration(
+                "A thread receipt must target a reply, not the root message.".into(),
+            ));
+        }
+        let room =
+            Self::protected_joined_room(&client, &room_id, "updating thread receipts").await?;
+        let event = room
+            .load_or_fetch_event(&event_id, None)
+            .await
+            .map_err(Self::map_error)?;
+        let value = event
+            .raw()
+            .deserialize_as::<serde_json::Value>()
+            .map_err(Self::map_error)?;
+        let actual_root = value
+            .get("content")
+            .and_then(Self::thread_root_id)
+            .ok_or_else(|| {
+                BackendError::InvalidConfiguration(
+                    "The selected message is not a valid thread reply.".into(),
+                )
+            })?;
+        if actual_root != thread_root_id.as_str() {
+            return Err(BackendError::InvalidConfiguration(
+                "The selected message belongs to a different thread.".into(),
+            ));
+        }
+        room.send_single_receipt(
+            receipt_type,
+            ReceiptThread::Thread(thread_root_id),
+            event_id,
+        )
+        .await
+        .map_err(Self::map_error)
     }
 
     async fn set_typing(&self, room_id: String, typing: bool) -> BackendResult<()> {

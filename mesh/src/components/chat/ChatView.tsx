@@ -38,6 +38,7 @@ import { useCurrentMeshRoute, useMeshNavigationStore } from '../../store/navigat
 import { canStartMatrixVoice, shouldActivateVoiceSession } from '../../lib/voice-runtime'
 import { useFailedMessageAnnouncement } from '../../hooks/useFailedMessageAnnouncement'
 import { OfflineQueueSummary } from './OfflineQueueSummary'
+import { markNewcomerDraftOpened } from '../../lib/onboarding-checklist'
 
 interface ChatViewProps {
   channel: Channel
@@ -597,6 +598,7 @@ export function ChatView({
   useLayoutEffect(() => {
     if (
       !navigationRequest
+      || navigationRequest.message.threadRootId
       || preparedNavigationId !== navigationRequest.requestId
       || !virtualItems.some((item) => item.key === navigationRequest.message.id)
     ) {
@@ -936,8 +938,21 @@ export function ChatView({
 
   const handleNavigateToMessage = useCallback((message: MessageType) => {
     useMessageNavigationStore.getState().requestNavigation(message)
+    const targetChannel = useChannelStore.getState().channels
+      .find((candidate) => candidate.id === message.channelId)
+    if (targetChannel) {
+      setActiveCommunity(targetChannel.communityId)
+      navigate({
+        kind: 'room',
+        communityId: targetChannel.communityId,
+        roomId: targetChannel.id,
+        pane: message.threadRootId
+          ? { kind: 'thread', rootEventId: message.threadRootId }
+          : undefined,
+      }, { focus: false })
+    }
     setActiveChannel(message.channelId)
-  }, [setActiveChannel])
+  }, [navigate, setActiveChannel, setActiveCommunity])
 
   const handleScroll = useCallback(async (scrollElement: HTMLDivElement) => {
     const position = updateVirtualScroll()
@@ -1692,6 +1707,13 @@ export function ChatView({
             onSend={handleSend}
             communityId={channel.communityId}
             members={communityMembers}
+            onComposerFocus={() => {
+              if (!ownAuthorId) return
+              markNewcomerDraftOpened({
+                accountId: ownAuthorId,
+                communityId: channel.communityId,
+              })
+            }}
             disableAttachments={matrixMode && !bridge.getBackendCapabilities().encryptedAttachments}
             disabled={sendingProtectionUnavailable}
             onEditLastMessage={() => {

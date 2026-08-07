@@ -3,9 +3,14 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PendingInvitationMetadata } from '../../types/ipc'
 import { useCommunityStore } from '../../store/communities'
+import { useIdentityStore } from '../../store/identity'
 import { useMeshNavigationStore } from '../../store/navigation'
 import { useShellStore } from '../../store/shell'
 import * as bridge from '../../lib/bridge'
+import {
+  NEWCOMER_CHECKLIST_STORAGE_KEY,
+  readNewcomerChecklist,
+} from '../../lib/onboarding-checklist'
 import {
   InvitationDestinationCard,
   InvitationSurface,
@@ -41,6 +46,14 @@ describe('InvitationSurface', () => {
       communityOrder: [],
       communities: [],
       activeCommunityId: null,
+    })
+    useIdentityStore.setState({
+      identity: {
+        publicKey: '@taylor:example.org',
+        displayName: 'Taylor',
+        avatarColor: '#7c5cff',
+      },
+      isLoading: false,
     })
     useMeshNavigationStore.getState().resetForAccountTransition()
     useMeshNavigationStore.getState().initialize('@taylor:example.org')
@@ -111,6 +124,14 @@ describe('InvitationSurface', () => {
       kind: 'community',
       communityId: '!lantern:community.example',
     })
+    expect(readNewcomerChecklist(
+      '@taylor:example.org',
+      '!lantern:community.example',
+    )).toMatchObject({
+      invitationResolvedAt: expect.any(Number),
+      draftOpenedAt: null,
+      dismissed: false,
+    })
   })
 
   it('keeps the destination visible and offers one retry after a join failure', async () => {
@@ -131,6 +152,7 @@ describe('InvitationSurface', () => {
     expect(container.textContent).toContain('Canyon Crew')
     expect(findButton('Try again')).toBeTruthy()
     expect(useShellStore.getState().pendingInvitation).toEqual(pending)
+    expect(localStorage.getItem(NEWCOMER_CHECKLIST_STORAGE_KEY)).toBeNull()
   })
 
   it('leaves an invalid invitation saved and returns home without retrying it', async () => {

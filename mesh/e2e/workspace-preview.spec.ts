@@ -2,13 +2,14 @@ import { expect, test } from '@playwright/test'
 import { expectNoWcagViolations } from './helpers/accessibility'
 
 test('workspace preview keeps the direct-message journey healthy', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto('/?dev=workspace')
 
   await page.getByRole('button', { name: 'Direct messages', exact: true }).click()
 
   await expect(page.getByText('Conversations could not be loaded.', { exact: true })).toHaveCount(0)
   const mayaConversation = page.getByRole('button', {
-    name: 'Direct message with Maya Chen',
+    name: 'Direct message with Maya Chen, 1 unread message',
     exact: true,
   })
   await expect(mayaConversation).toBeVisible()
@@ -16,10 +17,11 @@ test('workspace preview keeps the direct-message journey healthy', async ({ page
   await mayaConversation.click()
 
   await expect(page.getByRole('log', { name: 'Messages with Maya Chen', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', {
+  const safetyToggle = page.getByRole('button', {
     name: 'Open Safety with Maya Chen',
     exact: true,
-  })).toBeVisible()
+  })
+  await expect(safetyToggle).toBeVisible()
   await expect(page.getByText(
     'I added the lighting reference to concept-art. The warmer pass is ready for another look.',
     { exact: true },
@@ -27,6 +29,15 @@ test('workspace preview keeps the direct-message journey healthy', async ({ page
   await expect(page.getByPlaceholder('Message Maya Chen')).toBeEnabled()
   await expect(page.getByText('Conversations could not be loaded.', { exact: true })).toHaveCount(0)
   await expect(page.getByText('Messages could not be loaded.', { exact: false })).toHaveCount(0)
+
+  await safetyToggle.click()
+  const safety = page.getByRole('complementary', { name: 'Safety with Maya Chen' })
+  await expect(safety).toBeVisible()
+  await expect(page.getByPlaceholder('Message Maya Chen')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await safety.getByRole('button', { name: 'Close Safety' }).click()
+  await expect(safety).toHaveCount(0)
+  await expect(safetyToggle).toBeFocused()
 })
 
 test('invitation preview reaches a room with a working visible send control', async ({ page }) => {
@@ -73,9 +84,7 @@ test('workspace preview keeps recovery usable in a compact-height window', async
   await testSavedCopy.click()
   await expect(securityPanel.getByText('Message backup is ready')).toBeVisible()
 
-  const createBackup = securityPanel.getByRole('button', { name: 'Create backup code' })
-  await createBackup.click()
-  await expect(securityPanel.getByText('MESH-PREVIEW-ONLY-BACKUP-CODE')).toBeVisible()
+  await expect(securityPanel.getByRole('button', { name: 'Create backup code' })).toHaveCount(0)
   await expect(securityPanel.getByText('Unhandled Mesh design preview IPC command', {
     exact: false,
   })).toHaveCount(0)
