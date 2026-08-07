@@ -665,9 +665,9 @@ describe('CommunitySettings mutation failures', () => {
     expect(document.body.textContent).toContain('2 total')
 
     await act(async () => findButton('Create room').click())
-    expect(document.body.textContent).toContain('Voice unavailable')
+    expect(document.body.textContent).toContain('Voice calling is coming soon')
     expect(document.body.textContent).toContain(
-      'Voice room creation returns automatically after private calling passes its service checks.',
+      'Voice room creation returns automatically when private calling is ready.',
     )
   })
 

@@ -38,6 +38,7 @@ import {
   PRIVATE_VOICE_FAILURE_MESSAGE,
   shouldReleasePushToTalk,
   shouldPublishInitialMicrophone,
+  VOICE_COMING_SOON_TITLE,
   voiceConnectionUserMessage,
 } from '../lib/voice-runtime'
 import { describeError } from '../lib/errors'
@@ -328,7 +329,7 @@ export function useVoiceEngine() {
         ? import.meta.env.MODE === 'test'
         : __MESH_MATRIX_VOICE_FRONTEND__
       if (!matrixVoiceFrontendEnabled) {
-        setConnectionState('disconnected', 'Calling is not included in this text beta build.')
+        setConnectionState('disconnected', `${VOICE_COMING_SOON_TITLE}.`)
         return
       }
 

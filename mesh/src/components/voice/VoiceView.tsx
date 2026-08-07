@@ -7,7 +7,7 @@ import {
   VOICE_RECONNECT_GRACE_MS,
   type VoiceLifecycleState,
 } from '../../lib/voice-lifecycle'
-import { voiceConnectionLabel } from '../../lib/voice-runtime'
+import { VOICE_COMING_SOON_TITLE, voiceConnectionLabel } from '../../lib/voice-runtime'
 import { useVoiceStore } from '../../store/voice'
 import type { VoiceConnectionState, VoiceServiceStatus } from '../../types/ipc'
 import { Button } from '../ui/Button'
@@ -261,12 +261,12 @@ function VoiceUnavailable({
           <span aria-hidden="true" className="hidden sm:inline"> voice</span>
           <span className="sr-only"> voice room</span>
         </h1>
-        <span className="ml-auto text-caption text-content-muted">Unavailable</span>
+        <span className="ml-auto text-caption text-content-muted">Coming soon</span>
       </header>
       <div className="flex min-h-0 flex-1 items-center justify-center p-6">
         <div className="w-full max-w-lg border-y border-border-subtle px-6 py-10 text-center">
           <Icon name="phoneOff" size="lg" className="mx-auto text-content-muted" aria-hidden="true" />
-          <h2 className="mt-5 text-lg font-semibold text-content">Voice is not available for this room</h2>
+          <h2 className="mt-5 text-lg font-semibold text-content">{VOICE_COMING_SOON_TITLE}</h2>
           <p className="mt-2 text-sm leading-6 text-content-secondary">{detail}</p>
           <Button className="mt-6" onClick={onBackToChat}>
             Back to messages

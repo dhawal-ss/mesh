@@ -21,6 +21,7 @@ $evidenceModulePath = Join-Path $infraRoot "MatrixRtcEvidence.psm1"
 $packagePath = Join-Path $repoRoot "package.json"
 $viteConfigPath = Join-Path $repoRoot "vite.config.ts"
 $voiceHookPath = Join-Path $repoRoot "src\hooks\useVoiceEngine.ts"
+$voiceRuntimePath = Join-Path $repoRoot "src\lib\voice-runtime.ts"
 $disabledVoicePath = Join-Path $repoRoot "src\lib\livekit-voice.disabled.ts"
 $betaContractPath = Join-Path $repoRoot "release\beta-contract.json"
 $sourceRoot = Split-Path -Parent $repoRoot
@@ -207,12 +208,14 @@ if (Test-Path -LiteralPath $composePath) {
 if ((Test-Path -LiteralPath $packagePath) -and
     (Test-Path -LiteralPath $viteConfigPath) -and
     (Test-Path -LiteralPath $voiceHookPath) -and
+    (Test-Path -LiteralPath $voiceRuntimePath) -and
     (Test-Path -LiteralPath $disabledVoicePath) -and
     (Test-Path -LiteralPath $betaContractPath)) {
     $buildFailureCount = $failures.Count
     $package = Get-Content -LiteralPath $packagePath -Raw | ConvertFrom-Json
     $viteConfig = Get-Content -LiteralPath $viteConfigPath -Raw
     $voiceHook = Get-Content -LiteralPath $voiceHookPath -Raw
+    $voiceRuntime = Get-Content -LiteralPath $voiceRuntimePath -Raw
     $disabledVoice = Get-Content -LiteralPath $disabledVoicePath -Raw
     $betaContract = Get-Content -LiteralPath $betaContractPath -Raw | ConvertFrom-Json
     if ([string]$package.scripts.'build:matrix' -notmatch '--mode matrix(?:\s|$)') {
@@ -225,7 +228,8 @@ if ((Test-Path -LiteralPath $packagePath) -and
         $viteConfig -notmatch 'livekit-voice\.disabled\.ts') {
         Add-Failure "Vite must exclude the LiveKit implementation from builds that have not passed physical acceptance."
     }
-    if ($voiceHook -notmatch 'Calling is not included in this text beta build' -or
+    if ($voiceHook -notmatch 'VOICE_COMING_SOON_TITLE' -or
+        $voiceRuntime -notmatch "Voice calling is coming soon" -or
         $disabledVoice -notmatch 'Calling is not included in this Mesh build') {
         Add-Failure "The renderer must fail closed when the Matrix media implementation is absent."
     }

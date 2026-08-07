@@ -81,7 +81,8 @@ describe('VoiceView fail-closed actions', () => {
     expect(container.textContent).toContain('Studio voice')
     expect(container.querySelector('#mesh-voice-heading .hidden')?.textContent).toBe(' voice')
     expect(container.querySelector('#mesh-voice-heading .sr-only')?.textContent).toBe(' voice room')
-    expect(container.textContent).toContain('Voice is not available for this room')
+    expect(container.textContent).toContain('Voice calling is coming soon')
+    expect(container.textContent).toContain('Coming soon')
     expect(container.textContent).toContain(
       'Mesh could not verify private call protection, so it kept your microphone and speakers off.',
     )

@@ -13,7 +13,11 @@ import { useChannelStore } from '../../store/channels'
 import { useCommunityMembers, useMembershipStore } from '../../store/membership'
 import * as bridge from '../../lib/bridge'
 import { transitions } from '../../lib/motion'
-import { canStartMatrixVoice } from '../../lib/voice-runtime'
+import {
+  canStartMatrixVoice,
+  VOICE_COMING_SOON_DETAIL,
+  VOICE_COMING_SOON_TITLE,
+} from '../../lib/voice-runtime'
 import type { Channel, CommunityApplication, ModerationAuditEntry } from '../../types/ipc'
 import { Icon, type IconName } from '../ui/Icon'
 import { Avatar } from '../ui/Avatar'
@@ -1369,7 +1373,7 @@ export function CommunitySettings({
                     <p className="mt-2 font-mono text-title font-semibold text-primary">{voiceChannels.length}</p>
                     <p className="mt-1 text-xs text-muted">
                       {matrixMode && !matrixVoiceReady
-                        ? 'Existing rooms stay visible while private calling is unavailable.'
+                        ? VOICE_COMING_SOON_DETAIL
                         : 'For live conversation when the community is ready.'}
                     </p>
                   </div>
@@ -1433,7 +1437,7 @@ export function CommunitySettings({
                               className="flex min-h-11 items-center gap-2 rounded-control border border-border-subtle bg-surface-base px-3 text-xs text-muted"
                             >
                               <Icon name="volume" size="sm" />
-                              Voice unavailable
+                              {VOICE_COMING_SOON_TITLE}
                             </div>
                           ) : (
                             <Button
@@ -1450,7 +1454,7 @@ export function CommunitySettings({
                         </div>
                         {matrixMode && !matrixVoiceReady && (
                           <p className="mt-2 text-xs leading-5 text-muted">
-                            Voice room creation returns automatically after private calling passes its service checks.
+                            Voice room creation returns automatically when private calling is ready.
                           </p>
                         )}
                       </fieldset>

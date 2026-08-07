@@ -851,6 +851,7 @@ test.describe('authenticated desktop shell', () => {
       'true',
     )
     await expect(administration.getByRole('button', { name: 'Voice' })).toHaveCount(0)
+    await expect(administration.getByText('Voice calling is coming soon', { exact: true })).toBeVisible()
     await expectNoWcagViolations(page, 'Community administration route')
 
     await administration.getByRole('button', { name: 'Back to community' }).click()
@@ -904,23 +905,28 @@ test.describe('authenticated desktop shell', () => {
     ).toBeVisible()
   })
 
-  test('@a11y shows MatrixRTC membership but never starts media while encryption is unverified', async ({ page }) => {
+  test('@a11y reaches the coming-soon voice state by keyboard without starting media', async ({ page }) => {
     await openAuthenticatedShell(page)
 
     await expect(page.getByLabel('Lounge call members').getByText('Bob')).toBeVisible()
-    await page.getByRole('button', { name: 'Voice room: Lounge' }).click()
+    const voiceRoom = page.getByRole('button', { name: 'Voice room: Lounge' })
+    await voiceRoom.focus()
+    await page.keyboard.press('Enter')
 
-    await expect(page.getByRole('heading', { name: 'Voice is not available for this room' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Voice calling is coming soon' })).toBeVisible()
     await expect(page.getByText(
       'Voice has not been enabled for this community yet. You can keep using messages.',
     )).toBeVisible()
     await expectNoWcagViolations(page, 'Voice-disabled room')
 
+    const backToMessages = page.getByRole('button', { name: 'Back to messages' })
+    await page.keyboard.press('Tab')
+    await expect(backToMessages).toBeFocused()
+
+    await expect.poll(async () => (await ipcCalls(page)).some((call) => (
+      call.command === 'matrix_rtc_members' && call.args.roomId === '!lounge:mesh.test'
+    ))).toBe(true)
     const calls = await ipcCalls(page)
-    expect(calls).toContainEqual({
-      command: 'matrix_rtc_members',
-      args: { roomId: '!lounge:mesh.test' },
-    })
     expect(calls.some((call) => call.command === 'matrix_rtc_join')).toBe(false)
     expect(calls.some((call) => call.command === 'matrix_rtc_leave')).toBe(false)
   })

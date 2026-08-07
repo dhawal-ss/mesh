@@ -1,5 +1,10 @@
 import { useMemo } from 'react'
-import { canStartMatrixVoice, shouldActivateVoiceSession } from '../../lib/voice-runtime'
+import {
+  canStartMatrixVoice,
+  shouldActivateVoiceSession,
+  VOICE_COMING_SOON_DETAIL,
+  VOICE_COMING_SOON_TITLE,
+} from '../../lib/voice-runtime'
 import { openCommandPalette, openPeopleCommandPalette } from '../../lib/command-palette'
 import * as bridge from '../../lib/bridge'
 import { useChannelStore } from '../../store/channels'
@@ -53,6 +58,7 @@ export function HomeSurface() {
   const navigate = useMeshNavigationStore((state) => state.navigate)
   const matrixMode = bridge.isMatrixBackend()
   const voiceReady = canStartMatrixVoice(bridge.getBackendStatusSnapshot())
+  const voiceComingSoon = matrixMode && !voiceReady
   const joinedCommunities = Object.values(communities)
   const firstVoiceRoom = channels.find((channel) => channel.channelType === 'voice')
   const firstTextRoom = channels.find((channel) => channel.channelType === 'text')
@@ -222,8 +228,10 @@ export function HomeSurface() {
         <HomeSection title="Live now" count={liveParties.length}>
           {liveParties.length === 0 ? (
             <HomeEmpty
-              title="No parties live right now"
-              detail="Open a voice room and your crew can drop in."
+              title={voiceComingSoon ? VOICE_COMING_SOON_TITLE : 'No parties live right now'}
+              detail={voiceComingSoon
+                ? VOICE_COMING_SOON_DETAIL
+                : 'Open a voice room and your crew can drop in.'}
               action={firstVoiceRoom && shouldActivateVoiceSession(matrixMode, voiceReady) ? (
                 <Button
                   size="sm"
@@ -289,7 +297,7 @@ export function HomeSurface() {
                     })
                   }}
                 >
-                  {alreadyConnected ? 'Open' : canJoin ? 'Join' : 'Voice unavailable'}
+                  {alreadyConnected ? 'Open' : canJoin ? 'Join' : VOICE_COMING_SOON_TITLE}
                 </Button>
               </div>
             )

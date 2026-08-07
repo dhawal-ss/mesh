@@ -1,6 +1,10 @@
 import type { BackendStatus } from './bridge'
 import type { VoiceConnectionState } from '../types/ipc'
 
+export const VOICE_COMING_SOON_TITLE = 'Voice calling is coming soon'
+export const VOICE_COMING_SOON_DETAIL =
+  'Voice rooms stay visible while Mesh finishes private calling. You can keep using messages.'
+
 /**
  * The only condition under which Mesh may load the legacy SimplePeer engine.
  *
