@@ -48,10 +48,11 @@ describe('MatrixAccountScreen', () => {
   it('requires an explicit account-service choice', async () => {
     await renderScreen()
 
-    expect(container.textContent).toContain('Choose your account service')
+    expect(container.textContent).toContain('Pick an account service')
     expect(container.textContent).not.toContain('Mesh service')
     expect(container.textContent).not.toContain('matrix.mesh.dhawal.org')
-    expect(container.textContent).toContain('Matrix.org')
+    expect(container.textContent).toContain('Public account service')
+    expect(container.textContent).toContain('Operated independently by the Matrix.org Foundation')
     expect(container.textContent).toContain('independently')
     expect(container.textContent).toContain('Ages 18+')
     expect(container.textContent).toContain('Create your account in a browser')
@@ -90,7 +91,7 @@ describe('MatrixAccountScreen', () => {
       initialAccountService: 'matrix.org',
     })
 
-    expect(container.textContent).toContain('Choose your account service')
+    expect(container.textContent).toContain('Pick an account service')
     expect(container.querySelector('form')).toBeNull()
     expect(findButton('Sign in')).toBeTruthy()
     expect(findButton('Use another service')).toBeTruthy()
@@ -120,7 +121,7 @@ describe('MatrixAccountScreen', () => {
       await new Promise((resolve) => window.requestAnimationFrame(resolve))
     })
     expect(document.activeElement).toBe(container.querySelector('h1'))
-    expect(document.activeElement?.textContent).toContain('Choose your account service')
+    expect(document.activeElement?.textContent).toContain('Pick an account service')
   })
 
   it('keeps an expired prominent service visible but unavailable', async () => {
@@ -128,7 +129,7 @@ describe('MatrixAccountScreen', () => {
     vi.setSystemTime(new Date('2030-01-01T00:00:00Z'))
     await renderScreen()
 
-    expect(container.textContent).toContain('Matrix.org')
+    expect(container.textContent).toContain('Public account service')
     expect(container.textContent).toContain('Review expired')
     expect(findButton('Create account').disabled).toBe(true)
     expect(findButton('Sign in').disabled).toBe(true)
@@ -159,7 +160,7 @@ describe('MatrixAccountScreen', () => {
     })
 
     await act(async () => clickLink(findLink('Create account')))
-    expect(container.textContent).toContain('Finish with Matrix.org')
+    expect(container.textContent).toContain('Finish with Public account service')
     expect(container.textContent).toContain('saved your place for two hours')
     expect(container.textContent).toContain('invitation remains protected')
     expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY))
@@ -173,9 +174,9 @@ describe('MatrixAccountScreen', () => {
       onNext,
     })
 
-    expect(container.textContent).toContain('Finish with Matrix.org')
+    expect(container.textContent).toContain('Finish with Public account service')
     await act(async () => findButton('I created my account: sign in').click())
-    expect(container.textContent).toContain('Sign in to Matrix.org')
+    expect(container.textContent).toContain('Sign in to Public account service')
     expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY)).not.toBeNull()
 
     await act(async () => {
@@ -217,7 +218,7 @@ describe('MatrixAccountScreen', () => {
     root = createRoot(container)
     await renderScreen({ initialPendingInvitation: pendingInvitation })
 
-    expect(container.textContent).toContain('Finish with Matrix.org')
+    expect(container.textContent).toContain('Finish with Public account service')
     expect(container.textContent).toContain('invitation remains protected')
   })
 
@@ -280,7 +281,7 @@ describe('MatrixAccountScreen', () => {
     await act(async () => findButton('I created my account: sign in').click())
 
     expect(container.textContent).toContain('saved invitation is missing or expired')
-    expect(container.textContent).toContain('Choose your account service')
+    expect(container.textContent).toContain('Pick an account service')
     expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY)).toBeNull()
   })
 
@@ -295,7 +296,7 @@ describe('MatrixAccountScreen', () => {
     await act(async () => findButton('I created my account: sign in').click())
 
     expect(container.textContent).toContain('could not find the saved community invitation yet')
-    expect(container.textContent).toContain('Finish with Matrix.org')
+    expect(container.textContent).toContain('Finish with Public account service')
     expect(window.localStorage.getItem(REGISTRATION_CONTINUATION_STORAGE_KEY)).not.toBeNull()
   })
 
@@ -305,7 +306,7 @@ describe('MatrixAccountScreen', () => {
     await renderScreen({ onMatrixLogin: login, onNext })
 
     await act(async () => findButton('Sign in').click())
-    expect(container.textContent).toContain('Sign in to Matrix.org')
+    expect(container.textContent).toContain('Sign in to Public account service')
     expect(container.textContent).toContain('10 MB')
     expect(container.textContent).toContain('100 MB')
 
@@ -389,14 +390,14 @@ describe('MatrixAccountScreen', () => {
     const recoveryHelp = container.querySelector<HTMLElement>('[aria-label="Sign-in help"]')
     const submit = findButton('Sign in')
     expect(recoveryHelp).not.toBeNull()
-    expect(recoveryHelp!.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(submit.compareDocumentPosition(recoveryHelp!) & Node.DOCUMENT_POSITION_FOLLOWING)
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(findButton('Forgot password?')).toBeTruthy()
     expect(findButton('Forgot username?')).toBeTruthy()
 
     await act(async () => findButton('Forgot password?').click())
     expect(container.textContent).toContain('Mesh never stores your account password')
-    expect(findLink('Open Matrix.org account help').getAttribute('href'))
+    expect(findLink('Open account service help').getAttribute('href'))
       .toBe('https://app.element.io/#/login')
 
     await act(async () => findButton('Forgot username?').click())
@@ -548,7 +549,7 @@ describe('MatrixAccountScreen', () => {
 
     const browserButton = findButton('Use browser sign-in')
     const serviceDetails = container.querySelector<HTMLElement>(
-      '[aria-label="Matrix.org service details"]',
+      '[aria-label="Public account service details"]',
     )
     expect(browserButton.disabled).toBe(true)
     expect(browserButton.getAttribute('aria-describedby')).toBe('browser-sign-in-availability')
@@ -620,7 +621,7 @@ describe('MatrixAccountScreen', () => {
     })
 
     expect(container.textContent).toContain('Direct account creation is closed')
-    expect(findLink('Create a Matrix.org account in your browser')).toBeTruthy()
+    expect(findLink('Create an account in your browser')).toBeTruthy()
   })
 
   it('clears the prior provider before checking a custom service', async () => {
@@ -629,12 +630,12 @@ describe('MatrixAccountScreen', () => {
       findButton('Sign in').click()
       await Promise.resolve()
     })
-    expect(container.querySelector('[aria-label="Matrix.org service details"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Public account service details"]')).not.toBeNull()
 
     await act(async () => findButton('Back to service choices').click())
     await act(async () => findButton('Use another service').click())
 
-    expect(container.querySelector('[aria-label="Matrix.org service details"]')).toBeNull()
+    expect(container.querySelector('[aria-label="Public account service details"]')).toBeNull()
     expect(findButton('Check service')).toBeTruthy()
   })
 

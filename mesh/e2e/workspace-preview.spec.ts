@@ -32,7 +32,7 @@ test('workspace preview keeps the direct-message journey healthy', async ({ page
 test('invitation preview reaches a room with a working visible send control', async ({ page }) => {
   await page.goto('/?dev=workspace&simulateInvitation=true&simulateSignedOut=true')
 
-  await page.getByRole('button', { name: 'Sign in with Matrix.org', exact: true }).click()
+  await page.getByRole('button', { name: 'Sign in with Public account service', exact: true }).click()
   await page.getByRole('textbox', { name: 'Username or full account ID', exact: true })
     .fill('taylor')
   await page.getByLabel('Password', { exact: true }).fill('a long preview passphrase')

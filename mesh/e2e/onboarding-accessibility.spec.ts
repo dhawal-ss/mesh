@@ -121,6 +121,8 @@ async function installUnauthenticatedMatrixMock(
             nativeCallbackReady: true,
             reason: '',
           }
+        case 'matrix_reserve_login_attempt':
+          return 'playwright-login-attempt'
         case 'matrix_start_oidc_login':
           authenticated = true
           return null
@@ -224,7 +226,7 @@ test.beforeEach(async ({ page }) => {
   })
 
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Choose your account service' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Pick an account service' })).toBeVisible()
   await waitForAccountScreenMotion(page)
 })
 
@@ -240,8 +242,8 @@ test('@a11y has no automated WCAG A/AA violations on account-service selection',
 })
 
 test('@a11y has no automated WCAG A/AA violations on sign in', async ({ page }) => {
-  await page.getByRole('button', { name: 'Sign in with Matrix.org' }).click()
-  const signInHeading = page.getByRole('heading', { name: 'Sign in to Matrix.org' })
+  await page.getByRole('button', { name: 'Sign in with Public account service' }).click()
+  const signInHeading = page.getByRole('heading', { name: 'Sign in to Public account service' })
   await expect(signInHeading).toBeVisible()
   await waitForAccountScreenMotion(page)
   await expect(signInHeading).toBeFocused()
@@ -250,11 +252,11 @@ test('@a11y has no automated WCAG A/AA violations on sign in', async ({ page }) 
 })
 
 test('makes password and username recovery visible from sign in', async ({ page }) => {
-  await page.getByRole('button', { name: 'Sign in with Matrix.org' }).click()
+  await page.getByRole('button', { name: 'Sign in with Public account service' }).click()
 
   await page.getByRole('button', { name: 'Forgot password?' }).click()
   await expect(page.getByText('Mesh never stores your account password')).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Open Matrix.org account help' })).toHaveAttribute(
+  await expect(page.getByRole('link', { name: 'Open account service help' })).toHaveAttribute(
     'href',
     'https://app.element.io/#/login',
   )
@@ -282,10 +284,10 @@ for (const viewport of [
       await expect(control).toBeInViewport()
     }
 
-    await assertReachable('Sign in with Matrix.org')
+    await assertReachable('Sign in with Public account service')
     await assertReachable('More public services')
     await assertReachable('Use another service')
-    await page.getByRole('button', { name: 'Sign in with Matrix.org' }).click()
+    await page.getByRole('button', { name: 'Sign in with Public account service' }).click()
     if (viewport.height >= 600) {
       await expect(page.locator('input[name="password"]')).toBeInViewport()
       await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeInViewport()
@@ -357,7 +359,7 @@ test('keeps a custom-service outage actionable without leading with technical de
 test('@a11y offers saved-account switching without exposing the qualified account ID', async ({ page }) => {
   await installUnauthenticatedMatrixMock(page)
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'Choose your account service' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Pick an account service' })).toBeVisible()
 
   const savedAccount = page.getByRole('button', { name: /alice Saved on this device Continue/ })
   await expect(savedAccount).toBeVisible()
@@ -469,7 +471,7 @@ test('@a11y prefills an opaque cold-start invitation before account creation', a
     'resolve_pending_invitation',
   ]))
   expect(JSON.stringify(invitationCalls)).not.toContain(invitation)
-  await expect(page.getByRole('button', { name: 'Sign in with Matrix.org' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Sign in with Public account service' })).toBeVisible()
   await page.getByRole('button', { name: 'Create account with Community account service' }).click()
   const destination = page.getByRole('region', { name: 'Invitation destination' })
   await expect(destination.getByText('Friends Community', { exact: true })).toBeVisible()
@@ -491,7 +493,7 @@ test('keeps trust context and account setup usable in a narrow window', async ({
   await expect(shell).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Find your people. Keep the party close.' })).toBeVisible()
   await expect(page.getByRole('list', { name: 'Setup progress' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Sign in with Matrix.org' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Sign in with Public account service' })).toBeVisible()
 
   const bounds = await shell.boundingBox()
   expect(bounds?.x).toBeGreaterThanOrEqual(0)
@@ -510,7 +512,7 @@ test('keeps the first invitation account action above the fold in a narrow windo
   await waitForAccountScreenMotion(page)
 
   await expect(page.getByRole('region', { name: 'Invitation destination' })).toBeInViewport()
-  await expect(page.getByRole('button', { name: 'Sign in with Matrix.org' })).toBeInViewport()
+  await expect(page.getByRole('button', { name: 'Sign in with Public account service' })).toBeInViewport()
   await expect(page.getByRole('heading', { name: 'Canyon Crew is waiting.' })).toBeHidden()
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
   await expectNoWcagViolations(page, 'Narrow invitation account setup')
@@ -526,7 +528,7 @@ test('keeps invitation context and the first account action visible at the minim
   await waitForAccountScreenMotion(page)
 
   await expect(page.getByRole('heading', { name: 'Friends Community is waiting.' })).toBeInViewport()
-  await expect(page.getByRole('button', { name: 'Sign in with Matrix.org' })).toBeInViewport()
+  await expect(page.getByRole('button', { name: 'Sign in with Public account service' })).toBeInViewport()
   await expect(page.getByRole('region', { name: 'Invitation destination' })).toBeHidden()
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(800)
   await expectNoWcagViolations(page, 'Minimum-window invitation account setup')

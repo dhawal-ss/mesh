@@ -71,7 +71,7 @@ test('keeps the default onboarding path within wider-beta runtime budgets', asyn
     await page.goto('about:blank')
     const startedAt = Date.now()
     await page.goto('/')
-    const signIn = page.getByRole('button', { name: 'Sign in with Matrix.org' })
+    const signIn = page.getByRole('button', { name: 'Sign in with Public account service' })
     await expect(signIn).toBeVisible({ timeout: STARTUP_READY_BUDGET_MS })
     const paintedMs = Date.now() - startedAt
     await expect(signIn).toBeEnabled({ timeout: STARTUP_READY_BUDGET_MS })
