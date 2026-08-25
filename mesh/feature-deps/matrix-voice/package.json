@@ -4,6 +4,6 @@
   "version": "0.1.0",
   "license": "AGPL-3.0-only",
   "dependencies": {
-    "livekit-client": "2.20.2"
+    "livekit-client": "2.22.0"
   }
 }
