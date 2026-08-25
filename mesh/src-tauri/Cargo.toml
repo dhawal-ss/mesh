@@ -110,7 +110,7 @@ md-5 = "0.10"
 
 # Storage
 rusqlite = { version = "0.37", features = ["bundled-sqlcipher-vendored-openssl"] }
-keyring = "2.3"
+keyring = "4.1"
 
 # Async runtime
 tokio = { version = "1", features = ["full", "test-util"] }
