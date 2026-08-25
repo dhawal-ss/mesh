@@ -151,4 +151,4 @@ tempfile = "3"
 # builds the toast, calls show(), and drops the handle, so a notification click
 # cannot be observed through it.
 [target.'cfg(windows)'.dependencies]
-tauri-winrt-notification = "0.7.3"
+tauri-winrt-notification = "0.8.1"
