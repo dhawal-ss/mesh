@@ -149,11 +149,11 @@ jobs:
           npm audit --prefix feature-deps/matrix-voice --audit-level=high
           npm audit --prefix feature-deps/legacy-lan --audit-level=high
       - name: Scan repository history for non-URI secrets
-        uses: trufflesecurity/trufflehog@18c7b1fc33e6c16b27ea66ff27cc7e642fb7cd0a # v3.90.6
+        uses: trufflesecurity/trufflehog@bcfcf73aaf4759d4dadc2783177c245a02792318 # v3.97.0
         with:
           extra_args: --results=verified,unknown --exclude-detectors=URI
       - name: Scan repository history for credential-bearing URIs
-        uses: trufflesecurity/trufflehog@18c7b1fc33e6c16b27ea66ff27cc7e642fb7cd0a # v3.90.6
+        uses: trufflesecurity/trufflehog@bcfcf73aaf4759d4dadc2783177c245a02792318 # v3.97.0
         with:
           extra_args: --results=verified,unknown --include-detectors=URI --exclude-paths=.trufflehog-uri-excludes
 
