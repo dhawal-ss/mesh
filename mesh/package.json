@@ -82,7 +82,7 @@
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-dialog": "2.7.2",
     "clsx": "^2.1.1",
-    "framer-motion": "^12.38.0",
+    "framer-motion": "^13.1.1",
     "lucide-react": "^1.26.0",
     "radix-ui": "^1.6.7",
     "react": "^19.1.0",
