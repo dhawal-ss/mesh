@@ -106,7 +106,7 @@ argon2 = "0.5"
 # TURN protocol probe (RFC 5766 long-term credential mechanism)
 hmac = "0.12"
 sha1 = "0.10"
-md-5 = "0.10"
+md-5 = "0.11"
 
 # Storage
 rusqlite = { version = "0.37", features = ["bundled-sqlcipher-vendored-openssl"] }
