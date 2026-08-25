@@ -1,0 +1,69 @@
+# Every triple Mesh ships, because a policy that evaluates one graph says
+# nothing about the other two. D21 promotes Windows, macOS and Linux together,
+# and macOS-only, Linux-only and libp2p crates were never license- or
+# source-checked while this listed Windows alone. For an AGPL-3.0-only project
+# that is a live compliance exposure, not a tidiness issue.
+#
+# Both macOS architectures are listed: "macOS" in the beta contract is not
+# architecture-qualified, aarch64 is what builds here, and covering Intel too
+# costs nothing but an unmatched-allowance warning if it adds nothing.
+#
+# Feature sets are the other half and cannot live here -- one [graph] block
+# describes one feature selection. The Security workflow runs this file once
+# per shipped feature set with --features, so legacy-p2p's libp2p graph is
+# checked as well as matrix-voice's.
+[graph]
+targets = [
+  "x86_64-pc-windows-msvc",
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+]
+no-default-features = true
+features = ["matrix-voice"]
+
+[licenses]
+confidence-threshold = 0.93
+allow = [
+  "0BSD",
+  "AGPL-3.0-only",
+  "Apache-2.0",
+  # Reached only once Linux is in the graph: target-lexicon is a build
+  # dependency of system-deps, which the GTK/appindicator stack needs. The
+  # LLVM exception is strictly more permissive than plain Apache-2.0 -- it
+  # removes the binary-distribution notice requirement and exists to smooth
+  # GPL compatibility -- so it is compatible with AGPL-3.0-only for the same
+  # reasons Apache-2.0 above already is. It also never ships: a build
+  # dependency does not enter the artifact.
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-1-Clause",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "BlueOak-1.0.0",
+  "BSL-1.0",
+  "CC-BY-4.0",
+  "CC0-1.0",
+  "CDLA-Permissive-2.0",
+  "ISC",
+  "MIT",
+  "MIT-0",
+  "MPL-2.0",
+  "OFL-1.1",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+
+[bans]
+# Duplicate versions are a fact of a tree this size and blocking on them would
+# be noise. They are still worth seeing, because each one is code that ships
+# twice.
+multiple-versions = "warn"
+# A wildcard requirement means the next `cargo update` can pull in a version
+# nobody reviewed, which defeats the point of pinning the lockfile.
+wildcards = "deny"

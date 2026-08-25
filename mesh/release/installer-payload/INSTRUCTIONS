@@ -1,0 +1,3 @@
+Candidate builds populate this resource directory with the complete source SBOM,
+the Matrix Windows artifact/reachability SBOM, and the exact-tag source pointer.
+The release preflight rejects publication when that generated payload is absent.

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-unban-member"
+description = "Enables the matrix_unban_member command without any pre-configured scope."
+commands.allow = ["matrix_unban_member"]
+
+[[permission]]
+identifier = "deny-matrix-unban-member"
+description = "Denies the matrix_unban_member command without any pre-configured scope."
+commands.deny = ["matrix_unban_member"]

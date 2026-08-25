@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-check-username-available"
+description = "Enables the check_username_available command without any pre-configured scope."
+commands.allow = ["check_username_available"]
+
+[[permission]]
+identifier = "deny-check-username-available"
+description = "Denies the check_username_available command without any pre-configured scope."
+commands.deny = ["check_username_available"]

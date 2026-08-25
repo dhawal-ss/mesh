@@ -1,0 +1,7 @@
+[package]
+name = "blocked-cargo-provider"
+version = "0.0.0"
+
+[dependencies]
+anthropic-sdk = "0.0.0"
+safe-alias = { package = "cohere-rust", version = "0.0.0" }

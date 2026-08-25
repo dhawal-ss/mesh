@@ -1,0 +1,146 @@
+[
+  {
+    "id": "matrix-org",
+    "displayName": "Matrix.org",
+    "accountDomain": "matrix.org",
+    "serviceAddress": "matrix.org",
+    "homeserverUrl": "https://matrix-client.matrix.org",
+    "matrixRtc": {
+      "type": "livekit",
+      "authorizationUrl": "https://livekit-jwt.call.matrix.org"
+    },
+    "operator": "The Matrix.org Foundation C.I.C.",
+    "jurisdiction": "United Kingdom",
+    "minimumAge": 18,
+    "registration": {
+      "kind": "external",
+      "url": "https://app.element.io/#/register",
+      "label": "Create a Matrix.org account in your browser"
+    },
+    "accountHelpUrl": "https://app.element.io/#/login",
+    "loginMethods": [
+      "password",
+      "browser"
+    ],
+    "termsUrl": "https://matrix.org/legal/terms-and-conditions/",
+    "privacyUrl": "https://matrix.org/legal/privacy-notice/",
+    "supportUrl": "https://matrix.org/contact/",
+    "statusUrl": "https://status.matrix.org/",
+    "freeUseLimits": {
+      "maxAttachmentBytes": 10485760,
+      "dailyUploadBytes": 104857600,
+      "summary": "The documented free plan allows attachments up to 10 MB and 100 MB of data per 24 hours. Accounts not yet assigned to a plan may have different fair-use limits."
+    },
+    "notes": [
+      "Public service operated independently by the Matrix.org Foundation.",
+      "Requires users to be at least 18 and to accept the operator's current terms.",
+      "Availability, registration requirements, and limits may change."
+    ],
+    "sourceUrls": [
+      "https://matrix.org/homeserver/about/",
+      "https://matrix.org/homeserver/pricing/",
+      "https://matrix.org/docs/chat_basics/matrix-for-im/",
+      "https://matrix.org/.well-known/matrix/client"
+    ],
+    "lastReviewedAt": "2026-07-29",
+    "reviewAfter": "2027-02-28",
+    "hardExpiryAfter": "2027-08-31",
+    "prominent": true
+  },
+  {
+    "id": "tchncs-de",
+    "displayName": "tchncs.de",
+    "accountDomain": "tchncs.de",
+    "serviceAddress": "tchncs.de",
+    "homeserverUrl": "https://matrix.tchncs.de",
+    "matrixRtc": {
+      "type": "livekit",
+      "authorizationUrl": "https://rtc.matrix.tchncs.de/livekit/jwt"
+    },
+    "operator": "tchncs.de",
+    "jurisdiction": "Germany; service infrastructure in Germany and Finland",
+    "minimumAge": 16,
+    "registration": {
+      "kind": "external",
+      "url": "https://chat.tchncs.de/#/register",
+      "label": "Create a tchncs.de account in your browser"
+    },
+    "loginMethods": [
+      "password",
+      "browser"
+    ],
+    "termsUrl": "https://tchncs.de/en/matrix/tos",
+    "privacyUrl": "https://tchncs.de/en/matrix/privacy",
+    "supportUrl": "https://tchncs.de/en/contact",
+    "statusUrl": "https://status.tchncs.de/",
+    "freeUseLimits": {
+      "maxAttachmentBytes": null,
+      "dailyUploadBytes": null,
+      "summary": "The provider does not publish current upload limits. Sign-up requires email, accepting the terms, and a Google verification check."
+    },
+    "notes": [
+      "Public community service operated independently from Mesh.",
+      "Requires users to be at least 16 under the operator's current terms.",
+      "The operator reports seven-day IP logging and describes current retention limitations on its privacy page.",
+      "Create accounts in the operator's web client because reCAPTCHA is restricted to approved browser origins."
+    ],
+    "sourceUrls": [
+      "https://tchncs.de/en/matrix",
+      "https://tchncs.de/en/matrix/tos",
+      "https://tchncs.de/en/matrix/privacy",
+      "https://tchncs.de/.well-known/matrix/client"
+    ],
+    "lastReviewedAt": "2026-07-29",
+    "reviewAfter": "2027-02-28",
+    "hardExpiryAfter": "2027-08-31",
+    "prominent": false
+  },
+  {
+    "id": "quassel-io",
+    "displayName": "quassel.io",
+    "accountDomain": "quassel.io",
+    "serviceAddress": "quassel.io",
+    "homeserverUrl": "https://matrix.quassel.io",
+    "matrixRtc": {
+      "type": "livekit",
+      "authorizationUrl": "https://livekit.quassel.io/livekit/jwt"
+    },
+    "operator": "Hannes Thöne",
+    "jurisdiction": "Germany; dedicated server and daily backups in Germany",
+    "minimumAge": 18,
+    "registration": {
+      "kind": "external",
+      "url": "https://chat.quassel.io/#/register",
+      "label": "Create a quassel.io account in your browser"
+    },
+    "loginMethods": [
+      "password",
+      "browser"
+    ],
+    "termsUrl": "https://quassel.io/terms.html",
+    "privacyUrl": "https://quassel.io/privacy.html",
+    "supportUrl": "https://quassel.io/",
+    "statusUrl": "https://uptime.quassel.io/",
+    "freeUseLimits": {
+      "maxAttachmentBytes": 157286400,
+      "dailyUploadBytes": null,
+      "summary": "The provider allows attachments up to 150 MB and does not publish a daily upload limit. Sign-up may pause to control spam."
+    },
+    "notes": [
+      "Small hobby-operated public service, independent from Mesh, with no uptime guarantee.",
+      "The operator requires users to be at least 18.",
+      "Registration currently requires email and may be paused at the operator's discretion."
+    ],
+    "sourceUrls": [
+      "https://quassel.io/",
+      "https://quassel.io/about.html",
+      "https://quassel.io/terms.html",
+      "https://quassel.io/privacy.html",
+      "https://quassel.io/.well-known/matrix/client"
+    ],
+    "lastReviewedAt": "2026-07-29",
+    "reviewAfter": "2027-02-28",
+    "hardExpiryAfter": "2027-08-31",
+    "prominent": false
+  }
+]

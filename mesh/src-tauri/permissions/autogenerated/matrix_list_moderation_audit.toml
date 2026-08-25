@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-list-moderation-audit"
+description = "Enables the matrix_list_moderation_audit command without any pre-configured scope."
+commands.allow = ["matrix_list_moderation_audit"]
+
+[[permission]]
+identifier = "deny-matrix-list-moderation-audit"
+description = "Denies the matrix_list_moderation_audit command without any pre-configured scope."
+commands.deny = ["matrix_list_moderation_audit"]

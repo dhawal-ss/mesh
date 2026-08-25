@@ -1,0 +1,220 @@
+name: Nightly Soak
+
+# Runs long-duration soak and leak-detection tests overnight.
+# Also triggerable manually from the Actions tab for pre-release validation.
+#
+# What it runs:
+#   1. All 13 live libp2p tests (~70s)
+#   2. 60-second leak-detection soak (Phase A baseline + Phase B churn)
+#   3. 45-second topology churn soak
+#   4. Two independent real PostgreSQL dump and isolated Synapse restore drills
+#
+# Legacy soak runtime is about four minutes; repeated restore runtime is
+# independently bounded by its 30-minute job timeout.
+#
+# Full output is captured as an artifact so regressions can be diagnosed
+# after the fact.
+
+on:
+  schedule:
+    # 06:00 UTC every day
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Which tests to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - soak-only
+          - fast-only
+
+env:
+  CARGO_TERM_COLOR: always
+  # Ensure live tests get deterministic behavior
+  RUST_LOG: warn
+
+jobs:
+  homeserver-restore-drill:
+    name: Homeserver restore drill
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Repeatedly restore real Synapse backups into isolated services
+        working-directory: mesh
+        env:
+          MESH_RUN_RESTORE_INTEGRATION: "1"
+          MESH_ABUSE_EMAIL: abuse@mesh.restore.test
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p restore-drill-evidence
+          for iteration in 1 2; do
+            echo "Starting destructive restore drill iteration $iteration of 2."
+            MESH_RESTORE_DRILL_ITERATION="$iteration" \
+              sh infra/homeserver/tests/restore-drill.integration.sh \
+              2>&1 | tee "restore-drill-evidence/restore-cycle-$iteration.log"
+          done
+
+          source_sha="$(git rev-parse HEAD)"
+          cycle_1_sha="$(sha256sum restore-drill-evidence/restore-cycle-1.log | awk '{ print $1 }')"
+          cycle_2_sha="$(sha256sum restore-drill-evidence/restore-cycle-2.log | awk '{ print $1 }')"
+          printf '%s\n' \
+            '{' \
+            '  "schemaVersion": 1,' \
+            "  \"sourceSha\": \"$source_sha\"," \
+            "  \"workflowRunId\": \"$GITHUB_RUN_ID\"," \
+            '  "status": "passed",' \
+            '  "independentRestoreCycles": 2,' \
+            '  "cycles": [' \
+            "    { \"iteration\": 1, \"log\": \"restore-cycle-1.log\", \"sha256\": \"$cycle_1_sha\" }," \
+            "    { \"iteration\": 2, \"log\": \"restore-cycle-2.log\", \"sha256\": \"$cycle_2_sha\" }" \
+            '  ]' \
+            '}' > restore-drill-evidence/restore-drill-report.json
+
+      - name: Upload repeated restore evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: homeserver-restore-drill-${{ github.sha }}-${{ github.run_number }}
+          path: mesh/restore-drill-evidence/
+          if-no-files-found: error
+          retention-days: 90
+
+  soak:
+    name: Long-duration soak
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@d0befba8b9ddf874327619e84c39b094edd58b66 # 1.93.0
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libsqlcipher-dev
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            mesh/src-tauri/target
+          key: ${{ runner.os }}-cargo-soak-${{ hashFiles('mesh/src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Build test binary
+        working-directory: mesh/src-tauri
+        run: cargo test --no-default-features --features legacy-p2p --test live_network_tests --no-run --locked --jobs 1
+
+      - name: Run nightly soak
+        working-directory: mesh/src-tauri
+        shell: bash
+        run: |
+          mkdir -p ../soak-logs
+          LOG_FILE="../soak-logs/soak-${{ github.run_number }}.log"
+          MODE="${{ github.event.inputs.mode || 'all' }}"
+          CARGO_TEST=(cargo test --no-default-features --features legacy-p2p --locked --jobs 1 --test live_network_tests)
+          if [[ "$MODE" != "soak-only" ]]; then
+            "${CARGO_TEST[@]}" -- --ignored --test-threads=1 \
+              --skip leak_detection_soak_60s \
+              --skip repeated_topology_churn_45s 2>&1 | tee -a "$LOG_FILE"
+          fi
+          if [[ "$MODE" != "fast-only" ]]; then
+            "${CARGO_TEST[@]}" leak_detection_soak_60s -- --ignored --nocapture 2>&1 | tee -a "$LOG_FILE"
+            "${CARGO_TEST[@]}" repeated_topology_churn_45s -- --ignored --nocapture 2>&1 | tee -a "$LOG_FILE"
+          fi
+
+      - name: Upload soak logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: soak-logs-${{ github.run_number }}
+          path: mesh/soak-logs/
+          retention-days: 30
+
+  browser-resource-budget:
+    name: Controlled browser resource budget
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mesh/package-lock.json
+
+      - name: Install frontend and browser
+        working-directory: mesh
+        run: |
+          npm ci
+          npx playwright install chromium
+
+      - name: Capture repeated startup and idle-renderer evidence
+        working-directory: mesh
+        run: npx playwright test e2e/runtime-budgets.spec.ts --workers=1
+
+      - name: Upload resource evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-resource-budget-${{ github.run_number }}
+          path: mesh/test-results/resource-budget-browser.json
+          if-no-files-found: error
+          retention-days: 30
+
+  turn-probe:
+    name: TURN probe regression
+    runs-on: ubuntu-latest
+    # Only run if repo secrets for TURN creds exist. Use an environment
+    # gate so operators can wire this to a secret store without touching
+    # the workflow file.
+    if: ${{ vars.MESH_NIGHTLY_TURN_ENABLED == 'true' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@d0befba8b9ddf874327619e84c39b094edd58b66 # 1.93.0
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsqlcipher-dev libssl-dev
+
+      - name: Cache cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            mesh/src-tauri/target
+          key: ${{ runner.os }}-cargo-turn-${{ hashFiles('mesh/src-tauri/Cargo.lock') }}
+
+      - name: Run TURN probe regression
+        working-directory: mesh/src-tauri
+        env:
+          MESH_TURN_URL: ${{ secrets.MESH_TURN_URL }}
+          MESH_TURN_USERNAME: ${{ secrets.MESH_TURN_USERNAME }}
+          MESH_TURN_PASSWORD: ${{ secrets.MESH_TURN_PASSWORD }}
+          MESH_TURN_EXPECT: allocation_ok
+        run: |
+          cargo test --no-default-features --features legacy-p2p --locked --jobs 1 \
+            --test turn_probe_live_tests -- --ignored --nocapture \
+            probes_real_turn_server_with_credentials

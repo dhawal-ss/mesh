@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-cancel-attachment-download"
+description = "Enables the matrix_cancel_attachment_download command without any pre-configured scope."
+commands.allow = ["matrix_cancel_attachment_download"]
+
+[[permission]]
+identifier = "deny-matrix-cancel-attachment-download"
+description = "Denies the matrix_cancel_attachment_download command without any pre-configured scope."
+commands.deny = ["matrix_cancel_attachment_download"]

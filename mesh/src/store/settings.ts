@@ -1,0 +1,1595 @@
+import { create } from 'zustand'
+import { createJSONStorage, persist } from 'zustand/middleware'
+import {
+  getMatrixUserPreferences,
+  isMatrixBackend,
+  setKv,
+  updateMatrixUserPreferences,
+} from '../lib/bridge'
+import { createSafeStorageAdapter, getSafeLocalStorage } from '../lib/safe-storage'
+import {
+  DEFAULT_INTERFACE_SOUND_EVENTS,
+  INTERFACE_SOUND_IDS,
+  type InterfaceSoundId,
+} from '../lib/interface-sound-contract'
+import type { MatrixUserPreferences } from '../types/ipc'
+import {
+  setRuntimeErrorRecordingEnabled,
+} from '../lib/runtime-error-reporting'
+import { registerAccountReset } from '../lib/account-reset-registry'
+
+const MINUTE_MS = 60 * 1_000
+
+export const NOTIFICATION_MUTE_DURATIONS = [
+  { id: 'mute-15m', label: 'Mute for 15 minutes', durationMs: 15 * MINUTE_MS },
+  { id: 'mute-1h', label: 'Mute for 1 hour', durationMs: 60 * MINUTE_MS },
+  { id: 'mute-8h', label: 'Mute for 8 hours', durationMs: 8 * 60 * MINUTE_MS },
+  {
+    id: 'mute-24h',
+    label: 'Mute for 24 hours',
+    durationMs: 24 * 60 * MINUTE_MS,
+  },
+  {
+    id: 'mute-until-enabled',
+    label: 'Mute until turned back on',
+    durationMs: null,
+  },
+] as const
+
+export interface NotificationPreferences {
+  /** Whether desktop notifications are enabled */
+  enabled: boolean
+  /** Whether notification sounds are enabled */
+  sound: boolean
+  /** The retired generic selector, retained only for older account-data readers. */
+  soundId: NotificationSoundId
+  /** Master level applied after each Party Steps event's relative loudness. */
+  soundVolume: number
+  /** Independent controls for the eight bounded Party Steps events. */
+  soundEvents: Record<InterfaceSoundId, boolean>
+  /** Explicit opt-in for bounded message text in native notifications. */
+  showMessageContent: boolean
+  /** Suppress all notification surfaces until explicitly disabled. */
+  doNotDisturb: boolean
+  /** Daily local-time window in which notification surfaces are suppressed. */
+  quietHours: QuietHoursPreferences
+  /** List of channel IDs where notifications are muted */
+  mutedChannels: string[]
+  /** List of community IDs where notifications are muted */
+  mutedCommunities: string[]
+  /** ISO expiry for each muted channel; null means muted until turned back on. */
+  channelMuteUntil: Record<string, string | null>
+  /** ISO expiry for each muted community; null means muted until turned back on. */
+  communityMuteUntil: Record<string, string | null>
+  /** Optimistic mirror of authoritative Matrix room push-rule modes. */
+  channelNotificationLevels: Record<string, NotificationLevel>
+  /**
+   * The level a community's rooms inherit when they have no level of their own.
+   *
+   * Community notification used to be a binary mute while every room carried
+   * three levels, so someone who wanted mentions-only across a 30-room
+   * community had to make the same decision 30 times, once per room, and again
+   * for every room added afterwards.
+   */
+  communityNotificationLevels: Record<string, NotificationLevel>
+}
+
+export type NotificationSoundId = 'mesh' | 'chime' | 'pulse' | 'soft'
+export type NotificationLevel = 'all' | 'mentions' | 'nothing'
+
+export interface QuietHoursPreferences {
+  enabled: boolean
+  /** Local wall-clock time in HH:mm format. */
+  start: string
+  /** Local wall-clock time in HH:mm format. */
+  end: string
+}
+
+/**
+ * `system` follows the operating system's light/dark setting. It is a stored
+ * preference, not a rendered theme: `applyAppearancePreferences` resolves it to
+ * `light` or `dark` before it reaches `data-theme`, so no stylesheet has to know
+ * it exists. High contrast stays an explicit choice because it is a complete
+ * functional theme rather than a light/dark variant, and Windows contrast mode
+ * is already handled independently through `forced-colors`.
+ */
+export type AppearanceTheme = 'system' | 'dark' | 'light' | 'high-contrast'
+/** The themes a stylesheet can actually be asked to render. */
+export type ResolvedAppearanceTheme = Exclude<AppearanceTheme, 'system'>
+export type AppearanceDensity = 'default' | 'compact' | 'comfortable'
+export type AppearanceAccent = 'sand' | 'ocean' | 'violet' | 'forest' | 'ember' | 'rose'
+/**
+ * User text scaling, as a percentage of the reference type scale.
+ *
+ * Mesh ships a fixed-pixel type scale and a Tauri window with zoom hotkeys off,
+ * so before this there was no way for anyone to make the text bigger: a flat
+ * WCAG 1.4.4 failure. Density moves spacing and leading, never type size.
+ */
+export type AppearanceTextScale = 100 | 110 | 125 | 150
+export interface AppearancePreferences {
+  theme: AppearanceTheme
+  density: AppearanceDensity
+  accent: AppearanceAccent
+  reduceMotion: boolean
+  textScale: AppearanceTextScale
+}
+
+export interface BackupPreferences {
+  configured: boolean
+  reminderPending: boolean
+  dismissedAt: string | null
+}
+
+export type AccountBackupPreferences = Record<string, BackupPreferences>
+
+export interface PrivacyPreferences {
+  readReceiptMode: ReadReceiptMode
+  sendTypingIndicators: boolean
+  conversationPrivacy: Record<string, ConversationPrivacyPreference>
+  sharePresence: boolean
+  invisibleMode: boolean
+}
+
+export type ReadReceiptMode = 'public' | 'private' | 'off'
+
+export interface ConversationPrivacyPreference {
+  readReceiptMode?: ReadReceiptMode
+  sendTypingIndicators?: boolean
+}
+
+export type MatrixPreferenceSyncStatus = 'idle' | 'saving' | 'saved' | 'failed'
+
+export interface MatrixPreferenceSyncState {
+  status: MatrixPreferenceSyncStatus
+  error: unknown | null
+}
+
+export const PREFERENCES_SCHEMA_VERSION = 7
+export const LOCAL_SETTINGS_SCHEMA_VERSION = 9
+const MAX_CONVERSATION_PRIVACY_OVERRIDES = 256
+const MAX_ACCOUNT_BACKUP_PREFERENCES = 16
+const LEGACY_UNSCOPED_BACKUP_KEY = '__legacy_unscoped__'
+const MATRIX_SAVE_DEBOUNCE_MS = 350
+const BACKUP_REMINDER_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000
+const DEFAULT_BACKUP: BackupPreferences = {
+  configured: false,
+  reminderPending: false,
+  dismissedAt: null,
+}
+const DEFAULT_APPEARANCE: AppearancePreferences = {
+  theme: 'dark',
+  density: 'default',
+  textScale: 100,
+  /*
+    Ultramarine is the structural accent: it is what an active room row, a
+    palette selection, a settings tab and the send chip are made of. The other
+    five stay a real choice -- picking Vermilion really does turn the planes
+    vermilion -- but the system's own colour is this one.
+  */
+  accent: 'ocean',
+  reduceMotion: false,
+}
+const DEFAULT_NOTIFICATIONS: NotificationPreferences = {
+  enabled: true,
+  sound: true,
+  soundId: 'mesh',
+  soundVolume: 0.6,
+  soundEvents: { ...DEFAULT_INTERFACE_SOUND_EVENTS },
+  showMessageContent: false,
+  doNotDisturb: false,
+  quietHours: {
+    enabled: false,
+    start: '22:00',
+    end: '08:00',
+  },
+  mutedChannels: [],
+  mutedCommunities: [],
+  channelMuteUntil: {},
+  communityMuteUntil: {},
+  channelNotificationLevels: {},
+  communityNotificationLevels: {},
+}
+const DEFAULT_PRIVACY: PrivacyPreferences = {
+  readReceiptMode: 'off',
+  sendTypingIndicators: false,
+  conversationPrivacy: {},
+  sharePresence: false,
+  invisibleMode: false,
+}
+const DEFAULT_MATRIX_PREFERENCE_SYNC: MatrixPreferenceSyncState = {
+  status: 'idle',
+  error: null,
+}
+
+const APPEARANCE_THEMES = new Set<AppearanceTheme>(['system', 'dark', 'light', 'high-contrast'])
+const APPEARANCE_DENSITIES = new Set<AppearanceDensity>(['default', 'compact', 'comfortable'])
+export const APPEARANCE_TEXT_SCALES: readonly AppearanceTextScale[] = [100, 110, 125, 150]
+const APPEARANCE_TEXT_SCALE_SET = new Set<AppearanceTextScale>(APPEARANCE_TEXT_SCALES)
+const APPEARANCE_ACCENTS = new Set<AppearanceAccent>([
+  'sand',
+  'ocean',
+  'violet',
+  'forest',
+  'ember',
+  'rose',
+])
+
+const NOTIFICATION_SOUNDS = new Set<NotificationSoundId>(['mesh', 'chime', 'pulse', 'soft'])
+const NOTIFICATION_LEVELS = new Set<NotificationLevel>(['all', 'mentions', 'nothing'])
+const READ_RECEIPT_MODES = new Set<ReadReceiptMode>(['public', 'private', 'off'])
+const WALL_CLOCK_TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/
+
+type ExtendedMatrixUserPreferences = MatrixUserPreferences & {
+  notificationSoundId?: NotificationSoundId
+  doNotDisturb?: boolean
+  quietHoursEnabled?: boolean
+  quietHoursStart?: string
+  quietHoursEnd?: string
+  mutedChannelUntil?: Record<string, string | null>
+  mutedCommunityUntil?: Record<string, string | null>
+  channelNotificationLevels?: Record<string, NotificationLevel>
+  conversationPrivacy?: Record<string, ConversationPrivacyPreference>
+  interfaceSoundVolume?: number
+  interfaceSoundEvents?: Partial<Record<InterfaceSoundId, boolean>>
+}
+
+function normalizeSoundVolume(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, Math.min(1, value))
+    : DEFAULT_NOTIFICATIONS.soundVolume
+}
+
+function normalizeSoundEvents(
+  value: unknown,
+  legacySoundEnabled: boolean,
+): Record<InterfaceSoundId, boolean> {
+  if (!value || typeof value !== 'object') {
+    return Object.fromEntries(
+      INTERFACE_SOUND_IDS.map((id) => [id, legacySoundEnabled && DEFAULT_INTERFACE_SOUND_EVENTS[id]]),
+    ) as Record<InterfaceSoundId, boolean>
+  }
+
+  const candidate = value as Partial<Record<InterfaceSoundId, unknown>>
+  return Object.fromEntries(
+    INTERFACE_SOUND_IDS.map((id) => [
+      id,
+      typeof candidate[id] === 'boolean'
+        ? candidate[id]
+        : legacySoundEnabled && DEFAULT_INTERFACE_SOUND_EVENTS[id],
+    ]),
+  ) as Record<InterfaceSoundId, boolean>
+}
+
+function normalizeWallClockTime(value: unknown, fallback: string): string {
+  return typeof value === 'string' && WALL_CLOCK_TIME.test(value) ? value : fallback
+}
+
+function normalizeMuteExpirations(
+  mutedIds: unknown,
+  expirations: unknown,
+  now = Date.now(),
+): { ids: string[]; until: Record<string, string | null> } {
+  const legacyIds = Array.isArray(mutedIds)
+    ? mutedIds.filter((id): id is string => typeof id === 'string' && id.length > 0)
+    : []
+  const rawExpirations =
+    expirations && typeof expirations === 'object' ? (expirations as Record<string, unknown>) : {}
+  const ids = new Set([...legacyIds, ...Object.keys(rawExpirations)])
+  const activeIds: string[] = []
+  const until: Record<string, string | null> = {}
+
+  for (const id of ids) {
+    const rawExpiry = rawExpirations[id]
+    // A legacy muted id without an expiry remains muted until turned back on.
+    if (rawExpiry == null) {
+      if (legacyIds.includes(id) || Object.prototype.hasOwnProperty.call(rawExpirations, id)) {
+        activeIds.push(id)
+        until[id] = null
+      }
+      continue
+    }
+    if (typeof rawExpiry !== 'string') continue
+    const expiry = Date.parse(rawExpiry)
+    if (!Number.isFinite(expiry) || expiry <= now) continue
+    activeIds.push(id)
+    until[id] = new Date(expiry).toISOString()
+  }
+
+  return { ids: [...new Set(activeIds)], until }
+}
+
+function normalizeNotificationLevels(value: unknown): Record<string, NotificationLevel> {
+  if (!value || typeof value !== 'object') return {}
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(
+      (entry): entry is [string, NotificationLevel] =>
+        entry[0].length > 0 &&
+        typeof entry[1] === 'string' &&
+        NOTIFICATION_LEVELS.has(entry[1] as NotificationLevel),
+    ),
+  )
+}
+
+export function normalizeNotificationPreferences(
+  preferences: Partial<NotificationPreferences> | undefined,
+  now = Date.now(),
+): NotificationPreferences {
+  const sound = preferences?.sound ?? DEFAULT_NOTIFICATIONS.sound
+  const channels = normalizeMuteExpirations(
+    preferences?.mutedChannels,
+    preferences?.channelMuteUntil,
+    now,
+  )
+  const communities = normalizeMuteExpirations(
+    preferences?.mutedCommunities,
+    preferences?.communityMuteUntil,
+    now,
+  )
+
+  return {
+    enabled: preferences?.enabled ?? DEFAULT_NOTIFICATIONS.enabled,
+    sound,
+    soundId:
+      preferences?.soundId && NOTIFICATION_SOUNDS.has(preferences.soundId)
+        ? preferences.soundId
+        : DEFAULT_NOTIFICATIONS.soundId,
+    soundVolume: normalizeSoundVolume(preferences?.soundVolume),
+    soundEvents: normalizeSoundEvents(preferences?.soundEvents, sound),
+    showMessageContent: preferences?.showMessageContent === true,
+    doNotDisturb: preferences?.doNotDisturb ?? DEFAULT_NOTIFICATIONS.doNotDisturb,
+    quietHours: {
+      enabled: preferences?.quietHours?.enabled ?? DEFAULT_NOTIFICATIONS.quietHours.enabled,
+      start: normalizeWallClockTime(
+        preferences?.quietHours?.start,
+        DEFAULT_NOTIFICATIONS.quietHours.start,
+      ),
+      end: normalizeWallClockTime(
+        preferences?.quietHours?.end,
+        DEFAULT_NOTIFICATIONS.quietHours.end,
+      ),
+    },
+    mutedChannels: channels.ids,
+    mutedCommunities: communities.ids,
+    channelMuteUntil: channels.until,
+    communityMuteUntil: communities.until,
+    channelNotificationLevels: normalizeNotificationLevels(preferences?.channelNotificationLevels),
+    communityNotificationLevels: normalizeNotificationLevels(preferences?.communityNotificationLevels),
+  }
+}
+
+function normalizeAppearancePreferences(
+  preferences: Partial<AppearancePreferences> | undefined,
+): AppearancePreferences {
+  return {
+    theme:
+      preferences?.theme && APPEARANCE_THEMES.has(preferences.theme)
+        ? preferences.theme
+        : DEFAULT_APPEARANCE.theme,
+    density:
+      preferences?.density && APPEARANCE_DENSITIES.has(preferences.density)
+        ? preferences.density
+        : DEFAULT_APPEARANCE.density,
+    textScale:
+      preferences?.textScale && APPEARANCE_TEXT_SCALE_SET.has(preferences.textScale)
+        ? preferences.textScale
+        : DEFAULT_APPEARANCE.textScale,
+    accent:
+      preferences?.accent && APPEARANCE_ACCENTS.has(preferences.accent)
+        ? preferences.accent
+        : DEFAULT_APPEARANCE.accent,
+
+    reduceMotion: preferences?.reduceMotion === true,
+  }
+}
+
+function normalizeBackupPreferences(value: unknown): BackupPreferences {
+  if (!value || typeof value !== 'object') return { ...DEFAULT_BACKUP }
+  const candidate = value as Partial<BackupPreferences>
+  const dismissedAt = typeof candidate.dismissedAt === 'string'
+    && Number.isFinite(Date.parse(candidate.dismissedAt))
+    ? new Date(candidate.dismissedAt).toISOString()
+    : null
+  return {
+    configured: candidate.configured === true,
+    reminderPending: candidate.configured === true
+      ? false
+      : candidate.reminderPending === true,
+    dismissedAt,
+  }
+}
+
+function normalizeBackupAccountId(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const accountId = value.trim()
+  return accountId.startsWith('@')
+    && accountId.includes(':')
+    && accountId.length <= 255
+    && !/\s/.test(accountId)
+    ? accountId
+    : null
+}
+
+function normalizeAccountBackupPreferences(value: unknown): AccountBackupPreferences {
+  if (!value || typeof value !== 'object') return {}
+  const normalized: AccountBackupPreferences = {}
+  for (const [rawAccountId, rawPreferences] of Object.entries(value as Record<string, unknown>)) {
+    if (Object.keys(normalized).length >= MAX_ACCOUNT_BACKUP_PREFERENCES) break
+    const accountId = rawAccountId === LEGACY_UNSCOPED_BACKUP_KEY
+      ? rawAccountId
+      : normalizeBackupAccountId(rawAccountId)
+    if (!accountId) continue
+    normalized[accountId] = normalizeBackupPreferences(rawPreferences)
+  }
+  return normalized
+}
+
+function withActiveBackup(
+  state: Pick<SettingsStore, 'backupAccountId' | 'backupByAccount'>,
+  backup: BackupPreferences,
+) {
+  if (!state.backupAccountId) {
+    return { backup, backupByAccount: state.backupByAccount }
+  }
+
+  const backupByAccount = { ...state.backupByAccount }
+  // Reinsert the active account at the end so insertion order is a bounded,
+  // deterministic approximation of most recently updated state.
+  delete backupByAccount[state.backupAccountId]
+  backupByAccount[state.backupAccountId] = backup
+  while (Object.keys(backupByAccount).length > MAX_ACCOUNT_BACKUP_PREFERENCES) {
+    const oldestAccountId = Object.keys(backupByAccount).find(
+      (accountId) => accountId !== state.backupAccountId,
+    )
+    if (!oldestAccountId) break
+    delete backupByAccount[oldestAccountId]
+  }
+
+  return {
+    backup,
+    backupByAccount,
+  }
+}
+
+export function normalizePrivacyPreferences(
+  preferences: (Partial<PrivacyPreferences> & { sendReadReceipts?: boolean }) | undefined,
+): PrivacyPreferences {
+  const mode = preferences?.readReceiptMode
+  return {
+    readReceiptMode: READ_RECEIPT_MODES.has(mode as ReadReceiptMode)
+      ? (mode as ReadReceiptMode)
+      : preferences?.sendReadReceipts === true
+        ? 'private'
+        : DEFAULT_PRIVACY.readReceiptMode,
+    sendTypingIndicators: preferences?.sendTypingIndicators ?? DEFAULT_PRIVACY.sendTypingIndicators,
+    conversationPrivacy: normalizeConversationPrivacy(preferences?.conversationPrivacy),
+    sharePresence: preferences?.sharePresence ?? DEFAULT_PRIVACY.sharePresence,
+    invisibleMode: preferences?.invisibleMode ?? DEFAULT_PRIVACY.invisibleMode,
+  }
+}
+
+function normalizeConversationPrivacy(
+  value: unknown,
+): Record<string, ConversationPrivacyPreference> {
+  if (!value || typeof value !== 'object') return {}
+
+  const normalized: Record<string, ConversationPrivacyPreference> = {}
+  const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) =>
+    left.localeCompare(right),
+  )
+  for (const [roomId, rawOverride] of entries) {
+    if (
+      Object.keys(normalized).length >= MAX_CONVERSATION_PRIVACY_OVERRIDES ||
+      !roomId.startsWith('!') ||
+      roomId.length > 255 ||
+      /\s/.test(roomId) ||
+      !rawOverride ||
+      typeof rawOverride !== 'object'
+    ) {
+      continue
+    }
+
+    const candidate = rawOverride as Record<string, unknown>
+    const override: ConversationPrivacyPreference = {}
+    if (READ_RECEIPT_MODES.has(candidate.readReceiptMode as ReadReceiptMode)) {
+      override.readReceiptMode = candidate.readReceiptMode as ReadReceiptMode
+    }
+    if (typeof candidate.sendTypingIndicators === 'boolean') {
+      override.sendTypingIndicators = candidate.sendTypingIndicators
+    }
+    if (override.readReceiptMode !== undefined || override.sendTypingIndicators !== undefined) {
+      normalized[roomId] = override
+    }
+  }
+  return normalized
+}
+
+export function effectiveConversationPrivacy(
+  privacy: PrivacyPreferences,
+  roomId: string,
+): { readReceiptMode: ReadReceiptMode; sendTypingIndicators: boolean } {
+  const override = privacy.conversationPrivacy[roomId]
+  return {
+    readReceiptMode: override?.readReceiptMode ?? privacy.readReceiptMode,
+    sendTypingIndicators: override?.sendTypingIndicators ?? privacy.sendTypingIndicators,
+  }
+}
+
+const SYSTEM_DARK_QUERY = '(prefers-color-scheme: dark)'
+
+function prefersSystemDark(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return true
+  try {
+    return window.matchMedia(SYSTEM_DARK_QUERY).matches
+  } catch {
+    // Older WebView2 builds can reject an unsupported query rather than
+    // reporting no match. Mesh's own default is dark, so fall back to it.
+    return true
+  }
+}
+
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
+
+/**
+ * Whether the operating system asks for reduced motion.
+ *
+ * Defaults to false when the query cannot be evaluated: reduced motion is a
+ * departure from the designed interface, so an unreadable preference must not
+ * silently impose it. This is the opposite default from `prefersSystemDark`,
+ * where the fallback is Mesh's own shipped theme.
+ */
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
+  try {
+    return window.matchMedia(REDUCED_MOTION_QUERY).matches
+  } catch {
+    return false
+  }
+}
+
+/** Turns the stored preference into a theme a stylesheet can render. */
+export function resolveAppearanceTheme(theme: AppearanceTheme): ResolvedAppearanceTheme {
+  if (theme !== 'system') return theme
+  return prefersSystemDark() ? 'dark' : 'light'
+}
+
+export function applyAppearancePreferences(preferences: AppearancePreferences): void {
+  if (typeof document === 'undefined') return
+  const root = document.documentElement
+  root.dataset.theme = resolveAppearanceTheme(preferences.theme)
+  root.dataset.density = preferences.density
+  root.dataset.accent = preferences.accent
+
+  /*
+    The switch is resolved here, once, and the stylesheet reads only this
+    attribute.
+
+    Before, the in-app toggle wrote this attribute while the operating-system
+    preference was honoured separately by `@media (prefers-reduced-motion:
+    reduce)` blocks: two mechanisms for one intent, and they did not agree.
+    The media path killed transitions outright; the attribute path only shrank
+    their duration. Which behaviour a person got depended on how they had asked
+    for reduced motion, and globals.css had to write its animation contract
+    twice to cover both. `useReducedMotionPreference` already combined the two
+    for framer-motion; this is the same OR, applied to CSS.
+  */
+  root.dataset.reduceMotion = preferences.reduceMotion || prefersReducedMotion() ? 'true' : 'false'
+  /*
+    Written as an inline custom property rather than a data attribute so the
+    stylesheet needs one declaration instead of one rule per step. The value
+    multiplies the semantic type scale, so the high-resolution blocks that
+    rewrite the reference scale still compose with it.
+  */
+  root.style.setProperty('--text-scale', String(preferences.textScale / 100))
+}
+
+/** Attaches `onChange` to a media query, returning a teardown. */
+function watchMediaQuery(query: string, onChange: () => void): () => void {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => {}
+  let list: MediaQueryList
+  try {
+    list = window.matchMedia(query)
+  } catch {
+    return () => {}
+  }
+  // Safari below 14 and some embedded WebViews only expose the legacy listener.
+  if (typeof list.addEventListener === 'function') {
+    list.addEventListener('change', onChange)
+    return () => list.removeEventListener('change', onChange)
+  }
+  list.addListener(onChange)
+  return () => list.removeListener(onChange)
+}
+
+/**
+ * Repaints when the operating system flips a preference Mesh resolves against.
+ *
+ * Two of them: light/dark, which only matters while the theme is `system`, and
+ * reduced motion, which is ORed into `data-reduce-motion` on every apply and so
+ * always matters. Returns a teardown so tests and account transitions can
+ * detach.
+ */
+export function watchSystemAppearance(
+  readPreferences: () => AppearancePreferences = () => useSettingsStore.getState().appearance,
+): () => void {
+  const detachDark = watchMediaQuery(SYSTEM_DARK_QUERY, () => {
+    const preferences = readPreferences()
+    if (preferences.theme === 'system') applyAppearancePreferences(preferences)
+  })
+  const detachMotion = watchMediaQuery(REDUCED_MOTION_QUERY, () => {
+    applyAppearancePreferences(readPreferences())
+  })
+  return () => {
+    detachDark()
+    detachMotion()
+  }
+}
+
+export function matrixPreferencesToNotifications(
+  preferences: MatrixUserPreferences,
+): NotificationPreferences {
+  const extended = preferences as ExtendedMatrixUserPreferences
+  return normalizeNotificationPreferences({
+    enabled: preferences.notificationsEnabled,
+    sound: preferences.notificationSound,
+    soundId: extended.notificationSoundId,
+    soundVolume: extended.interfaceSoundVolume,
+    soundEvents: normalizeSoundEvents(
+      extended.interfaceSoundEvents,
+      preferences.notificationSound,
+    ),
+    showMessageContent: preferences.showNotificationContent,
+    doNotDisturb: extended.doNotDisturb,
+    quietHours: {
+      enabled: extended.quietHoursEnabled ?? false,
+      start: extended.quietHoursStart ?? DEFAULT_NOTIFICATIONS.quietHours.start,
+      end: extended.quietHoursEnd ?? DEFAULT_NOTIFICATIONS.quietHours.end,
+    },
+    mutedChannels: preferences.mutedChannels,
+    mutedCommunities: preferences.mutedCommunities,
+    channelMuteUntil: extended.mutedChannelUntil,
+    communityMuteUntil: extended.mutedCommunityUntil,
+    channelNotificationLevels: extended.channelNotificationLevels,
+  })
+}
+
+export function matrixPreferencesToPrivacy(preferences: MatrixUserPreferences): PrivacyPreferences {
+  const extended = preferences as ExtendedMatrixUserPreferences
+  return normalizePrivacyPreferences({
+    readReceiptMode: preferences.readReceiptMode === null ? undefined : preferences.readReceiptMode,
+    sendReadReceipts: preferences.sendReadReceipts,
+    sendTypingIndicators: preferences.sendTypingIndicators,
+    conversationPrivacy: extended.conversationPrivacy,
+    sharePresence: preferences.sharePresence,
+    invisibleMode: preferences.invisibleMode,
+  })
+}
+
+export function settingsToMatrixPreferences(
+  notifications: NotificationPreferences,
+  privacy: PrivacyPreferences,
+) {
+  // `satisfies` (not a bare object) keeps excess-property checking on this
+  // literal: a mistyped or stale field name is a compile error here rather than
+  // a value silently dropped on the way to the portable Matrix account data.
+  return {
+    schemaVersion: PREFERENCES_SCHEMA_VERSION,
+    notificationsEnabled: notifications.enabled,
+    notificationSound: notifications.sound,
+    showNotificationContent: notifications.showMessageContent,
+    // Mute state is portable account data and must round-trip: the 30s
+    // preference poll replaces the whole notifications slice from this
+    // projection, so anything dropped here is erased locally within a poll.
+    mutedChannels: notifications.mutedChannels,
+    mutedCommunities: notifications.mutedCommunities,
+    notificationSoundId: notifications.soundId,
+    interfaceSoundVolume: notifications.soundVolume,
+    interfaceSoundEvents: notifications.soundEvents,
+    doNotDisturb: notifications.doNotDisturb,
+    quietHoursEnabled: notifications.quietHours.enabled,
+    quietHoursStart: notifications.quietHours.start,
+    quietHoursEnd: notifications.quietHours.end,
+    // Expiries travel alongside the ids so "mute for 8 hours" survives a
+    // remote refresh. `normalizeMuteExpirations` drops anything already
+    // expired when the projection is read back.
+    mutedChannelUntil: notifications.channelMuteUntil,
+    mutedCommunityUntil: notifications.communityMuteUntil,
+    // Matrix push rules stay authoritative for per-room notification levels;
+    // the account-data mirror is a migration fallback only, so it is not
+    // written back here.
+    channelNotificationLevels: {},
+    // Keep the legacy boolean populated for older Mesh clients. Their true
+    // value means private-only; newer clients use readReceiptMode below.
+    sendReadReceipts: privacy.readReceiptMode === 'private',
+    readReceiptMode: privacy.readReceiptMode,
+    sendTypingIndicators: privacy.sendTypingIndicators,
+    conversationPrivacy: privacy.conversationPrivacy,
+    sharePresence: privacy.sharePresence,
+    invisibleMode: privacy.invisibleMode,
+  } satisfies Omit<MatrixUserPreferences, 'updatedAt'>
+}
+
+export interface SettingsStore {
+  notifications: NotificationPreferences
+  appearance: AppearancePreferences
+  backup: BackupPreferences
+  backupAccountId: string | null
+  backupByAccount: AccountBackupPreferences
+  privacy: PrivacyPreferences
+  matrixPreferenceSync: MatrixPreferenceSyncState
+  /** Explicit per-device opt-in for contextual, redacted diagnostic probes. */
+  signalCheckEnabled: boolean
+  /** Explicit per-device opt-in for bounded, redacted runtime error records. */
+  runtimeErrorReportingEnabled: boolean
+  setNotificationsEnabled: (enabled: boolean) => void
+  setNotificationSound: (sound: boolean) => void
+  setNotificationSoundId: (soundId: NotificationSoundId) => void
+  setInterfaceSoundVolume: (volume: number) => void
+  setInterfaceSoundEnabled: (sound: InterfaceSoundId, enabled: boolean) => void
+  setShowMessageContent: (enabled: boolean) => void
+  setDoNotDisturb: (enabled: boolean) => void
+  setQuietHoursEnabled: (enabled: boolean) => void
+  setQuietHours: (start: string, end: string) => void
+  setAppearanceTheme: (theme: AppearanceTheme) => void
+  setAppearanceDensity: (density: AppearanceDensity) => void
+  setAppearanceTextScale: (textScale: AppearanceTextScale) => void
+  setAppearanceAccent: (accent: AppearanceAccent) => void
+
+  setReduceMotion: (reduceMotion: boolean) => void
+  setSignalCheckEnabled: (enabled: boolean) => void
+  setRuntimeErrorReportingEnabled: (enabled: boolean) => void
+  activateBackupAccount: (accountId: string | null) => void
+  setBackupConfigured: (configured: boolean) => void
+  scheduleBackupReminder: () => void
+  dismissBackupReminder: () => void
+  setReadReceiptMode: (mode: ReadReceiptMode) => void
+  setSendTypingIndicators: (enabled: boolean) => void
+  setConversationReadReceiptMode: (roomId: string, mode: ReadReceiptMode | null) => void
+  setConversationTypingIndicators: (roomId: string, enabled: boolean | null) => void
+  setSharePresence: (enabled: boolean) => void
+  setInvisibleMode: (enabled: boolean) => void
+  muteChannelFor: (channelId: string, durationMs: number | null) => void
+  muteChannel: (channelId: string) => void
+  unmuteChannel: (channelId: string) => void
+  toggleChannelMute: (channelId: string) => void
+  isChannelMuted: (channelId: string, now?: number) => boolean
+  setChannelNotificationLevel: (channelId: string, level: NotificationLevel) => void
+  setCommunityNotificationLevel: (communityId: string, level: NotificationLevel) => void
+  getChannelNotificationLevel: (channelId: string) => NotificationLevel
+  muteCommunityFor: (communityId: string, durationMs: number | null) => void
+  muteCommunity: (communityId: string) => void
+  unmuteCommunity: (communityId: string) => void
+  toggleCommunityMute: (communityId: string) => void
+  isCommunityMuted: (communityId: string, now?: number) => boolean
+}
+
+function muteUntil(durationMs: number | null, now = Date.now()): string | null {
+  if (durationMs == null) return null
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    throw new RangeError('Mute duration must be a positive number of milliseconds or null.')
+  }
+  return new Date(now + durationMs).toISOString()
+}
+
+function hasActiveMute(
+  id: string,
+  mutedIds: string[],
+  expirations: Record<string, string | null>,
+  now = Date.now(),
+): boolean {
+  if (!mutedIds.includes(id)) return false
+  const expiry = expirations[id]
+  if (expiry == null) return true
+  const expiryTime = Date.parse(expiry)
+  return Number.isFinite(expiryTime) && expiryTime > now
+}
+
+function updateConversationPrivacy(
+  privacy: PrivacyPreferences,
+  roomId: string,
+  patch: {
+    readReceiptMode?: ReadReceiptMode | null
+    sendTypingIndicators?: boolean | null
+  },
+): PrivacyPreferences {
+  if (!roomId.startsWith('!') || roomId.length > 255 || /\s/.test(roomId)) return privacy
+
+  const current = privacy.conversationPrivacy[roomId] ?? {}
+  const next: ConversationPrivacyPreference = { ...current }
+  if (Object.prototype.hasOwnProperty.call(patch, 'readReceiptMode')) {
+    if (patch.readReceiptMode == null) delete next.readReceiptMode
+    else next.readReceiptMode = patch.readReceiptMode
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'sendTypingIndicators')) {
+    if (patch.sendTypingIndicators == null) delete next.sendTypingIndicators
+    else next.sendTypingIndicators = patch.sendTypingIndicators
+  }
+
+  const empty = next.readReceiptMode === undefined && next.sendTypingIndicators === undefined
+  if (empty && !privacy.conversationPrivacy[roomId]) return privacy
+  if (
+    !empty &&
+    !privacy.conversationPrivacy[roomId] &&
+    Object.keys(privacy.conversationPrivacy).length >= MAX_CONVERSATION_PRIVACY_OVERRIDES
+  ) {
+    return privacy
+  }
+  if (
+    !empty &&
+    current.readReceiptMode === next.readReceiptMode &&
+    current.sendTypingIndicators === next.sendTypingIndicators
+  ) {
+    return privacy
+  }
+
+  const conversationPrivacy = { ...privacy.conversationPrivacy }
+  if (empty) delete conversationPrivacy[roomId]
+  else conversationPrivacy[roomId] = next
+  return { ...privacy, conversationPrivacy }
+}
+
+function wallClockMinutes(value: string): number {
+  const [hours, minutes] = value.split(':').map(Number)
+  return hours * 60 + minutes
+}
+
+export function isQuietHoursActive(quietHours: QuietHoursPreferences, now = new Date()): boolean {
+  if (!quietHours.enabled) return false
+  const start = wallClockMinutes(quietHours.start)
+  const end = wallClockMinutes(quietHours.end)
+  const current = now.getHours() * 60 + now.getMinutes()
+  if (start === end) return true
+  return start < end ? current >= start && current < end : current >= start || current < end
+}
+
+export function getEffectiveChannelNotificationLevel(
+  notifications: NotificationPreferences,
+  channelId: string,
+  communityId?: string | null,
+  now = new Date(),
+): NotificationLevel {
+  if (
+    !notifications.enabled ||
+    notifications.doNotDisturb ||
+    isQuietHoursActive(notifications.quietHours, now) ||
+    hasActiveMute(
+      channelId,
+      notifications.mutedChannels,
+      notifications.channelMuteUntil,
+      now.getTime(),
+    ) ||
+    (communityId != null &&
+      hasActiveMute(
+        communityId,
+        notifications.mutedCommunities,
+        notifications.communityMuteUntil,
+        now.getTime(),
+      ))
+  ) {
+    return 'nothing'
+  }
+  /*
+    A room's own level wins; otherwise it inherits the community's. Both fall
+    back to 'all', so a community that has never been configured behaves
+    exactly as before.
+  */
+  const inherited = communityId != null
+    ? notifications.communityNotificationLevels[communityId]
+    : undefined
+  return notifications.channelNotificationLevels[channelId] ?? inherited ?? 'all'
+}
+
+/**
+ * Whether the person has deliberately silenced this room, either directly or
+ * through its community.
+ *
+ * Unlike `getEffectiveChannelNotificationLevel` this ignores Do Not Disturb and
+ * quiet hours. Those suppress notification surfaces for a while; they are not a
+ * statement that the room stopped mattering, and treating them as one would
+ * flatten every attention-ordered surface for the duration.
+ */
+export function isRoomSilenced(
+  notifications: NotificationPreferences,
+  channelId: string,
+  communityId?: string | null,
+  now = Date.now(),
+): boolean {
+  if (notifications.channelNotificationLevels[channelId] === 'nothing') return true
+  if (hasActiveMute(
+    channelId,
+    notifications.mutedChannels,
+    notifications.channelMuteUntil,
+    now,
+  )) return true
+  return communityId != null && hasActiveMute(
+    communityId,
+    notifications.mutedCommunities,
+    notifications.communityMuteUntil,
+    now,
+  )
+}
+
+export function migrateSettingsPersistence(
+  persistedState: unknown,
+  _storedVersion: number,
+): Partial<SettingsStore> {
+  if (!persistedState || typeof persistedState !== 'object') return {}
+  const persisted = persistedState as Partial<SettingsStore>
+  const rawNotifications = persisted.notifications as Partial<NotificationPreferences> | undefined
+  const legacySoundEnabled = rawNotifications?.sound ?? DEFAULT_NOTIFICATIONS.sound
+  const rawAppearance = persisted.appearance as Partial<AppearancePreferences> | undefined
+  const persistedWithScopedBackup = persisted as Partial<SettingsStore> & {
+    backupByAccount?: unknown
+  }
+  const backupByAccount = normalizeAccountBackupPreferences(
+    persistedWithScopedBackup.backupByAccount,
+  )
+  if (
+    Object.keys(backupByAccount).length === 0
+    && persisted.backup
+  ) {
+    // Version 7 stored one unscoped device value. Preserve it for audit and
+    // rollback, but never apply it to an account whose ownership is unknown.
+    backupByAccount[LEGACY_UNSCOPED_BACKUP_KEY] = normalizeBackupPreferences(
+      persisted.backup,
+    )
+  }
+
+  return {
+    ...persisted,
+    notifications: normalizeNotificationPreferences({
+      ...rawNotifications,
+      soundVolume: normalizeSoundVolume(rawNotifications?.soundVolume),
+      soundEvents: normalizeSoundEvents(rawNotifications?.soundEvents, legacySoundEnabled),
+    }),
+    appearance: normalizeAppearancePreferences({
+      ...rawAppearance,
+      reduceMotion: rawAppearance?.reduceMotion === true,
+    }),
+    backup: { ...DEFAULT_BACKUP },
+    backupAccountId: null,
+    backupByAccount,
+  }
+}
+
+export const useSettingsStore = create<SettingsStore>()(
+  persist(
+    (set, get) => ({
+      notifications: DEFAULT_NOTIFICATIONS,
+      appearance: DEFAULT_APPEARANCE,
+      backup: { ...DEFAULT_BACKUP },
+      backupAccountId: null,
+      backupByAccount: {},
+      privacy: { ...DEFAULT_PRIVACY, conversationPrivacy: {} },
+      matrixPreferenceSync: DEFAULT_MATRIX_PREFERENCE_SYNC,
+      signalCheckEnabled: false,
+      runtimeErrorReportingEnabled: false,
+
+      setNotificationsEnabled: (enabled) =>
+        set((state) => ({
+          notifications: { ...state.notifications, enabled },
+        })),
+
+      setNotificationSound: (sound) =>
+        set((state) => ({
+          notifications: { ...state.notifications, sound },
+        })),
+
+      setNotificationSoundId: (soundId) =>
+        set((state) => ({
+          notifications: { ...state.notifications, soundId },
+        })),
+
+      setInterfaceSoundVolume: (soundVolume) =>
+        set((state) => ({
+          notifications: {
+            ...state.notifications,
+            soundVolume: normalizeSoundVolume(soundVolume),
+          },
+        })),
+
+      setInterfaceSoundEnabled: (soundId, enabled) =>
+        set((state) => ({
+          notifications: {
+            ...state.notifications,
+            soundEvents: { ...state.notifications.soundEvents, [soundId]: enabled },
+          },
+        })),
+
+      setShowMessageContent: (showMessageContent) =>
+        set((state) => ({
+          notifications: { ...state.notifications, showMessageContent },
+        })),
+
+      setDoNotDisturb: (doNotDisturb) =>
+        set((state) => ({
+          notifications: { ...state.notifications, doNotDisturb },
+        })),
+
+      setQuietHoursEnabled: (enabled) =>
+        set((state) => ({
+          notifications: {
+            ...state.notifications,
+            quietHours: { ...state.notifications.quietHours, enabled },
+          },
+        })),
+
+      setQuietHours: (start, end) => {
+        if (!WALL_CLOCK_TIME.test(start) || !WALL_CLOCK_TIME.test(end)) {
+          throw new RangeError('Quiet hours must use 24-hour HH:mm values.')
+        }
+        set((state) => ({
+          notifications: {
+            ...state.notifications,
+            quietHours: { ...state.notifications.quietHours, start, end },
+          },
+        }))
+      },
+
+      setAppearanceTheme: (theme) => {
+        const appearance = { ...get().appearance, theme }
+        set({ appearance })
+        applyAppearancePreferences(appearance)
+      },
+
+      setAppearanceDensity: (density) => {
+        const appearance = { ...get().appearance, density }
+        set({ appearance })
+        applyAppearancePreferences(appearance)
+      },
+
+      setAppearanceTextScale: (textScale) => {
+        const appearance = { ...get().appearance, textScale }
+        set({ appearance })
+        applyAppearancePreferences(appearance)
+      },
+
+      setAppearanceAccent: (accent) => {
+        const appearance = { ...get().appearance, accent }
+        set({ appearance })
+        applyAppearancePreferences(appearance)
+      },
+
+
+      setReduceMotion: (reduceMotion) => {
+        const appearance = { ...get().appearance, reduceMotion }
+        set({ appearance })
+        applyAppearancePreferences(appearance)
+      },
+
+      setSignalCheckEnabled: (signalCheckEnabled) => set({ signalCheckEnabled }),
+
+      setRuntimeErrorReportingEnabled: (runtimeErrorReportingEnabled) => {
+        setRuntimeErrorRecordingEnabled(runtimeErrorReportingEnabled)
+        set({ runtimeErrorReportingEnabled })
+      },
+
+      activateBackupAccount: (accountId) =>
+        set((state) => {
+          const normalizedAccountId = normalizeBackupAccountId(accountId)
+          return {
+            backupAccountId: normalizedAccountId,
+            backup: normalizedAccountId
+              ? state.backupByAccount[normalizedAccountId] ?? { ...DEFAULT_BACKUP }
+              : { ...DEFAULT_BACKUP },
+          }
+        }),
+
+      setBackupConfigured: (configured) =>
+        set((state) => withActiveBackup(state, {
+            configured,
+            reminderPending: !configured,
+            dismissedAt: null,
+        })),
+
+      scheduleBackupReminder: () =>
+        set((state) => withActiveBackup(state, {
+            configured: false,
+            reminderPending: true,
+            dismissedAt: null,
+        })),
+
+      dismissBackupReminder: () =>
+        set((state) => withActiveBackup(state, {
+            ...state.backup,
+            dismissedAt: new Date().toISOString(),
+        })),
+
+      setReadReceiptMode: (readReceiptMode) =>
+        set((state) => ({ privacy: { ...state.privacy, readReceiptMode } })),
+
+      setSendTypingIndicators: (sendTypingIndicators) =>
+        set((state) => ({
+          privacy: { ...state.privacy, sendTypingIndicators },
+        })),
+
+      setConversationReadReceiptMode: (roomId, readReceiptMode) =>
+        set((state) => ({
+          privacy: updateConversationPrivacy(state.privacy, roomId, {
+            readReceiptMode,
+          }),
+        })),
+
+      setConversationTypingIndicators: (roomId, sendTypingIndicators) =>
+        set((state) => ({
+          privacy: updateConversationPrivacy(state.privacy, roomId, {
+            sendTypingIndicators,
+          }),
+        })),
+
+      setSharePresence: (sharePresence) =>
+        set((state) => ({ privacy: { ...state.privacy, sharePresence } })),
+
+      setInvisibleMode: (invisibleMode) =>
+        set((state) => ({ privacy: { ...state.privacy, invisibleMode } })),
+
+      muteChannelFor: (channelId, durationMs) =>
+        set((state) => {
+          const expiry = muteUntil(durationMs)
+          return {
+            notifications: {
+              ...state.notifications,
+              mutedChannels: [
+                ...state.notifications.mutedChannels.filter((id) => id !== channelId),
+                channelId,
+              ],
+              channelMuteUntil: {
+                ...state.notifications.channelMuteUntil,
+                [channelId]: expiry,
+              },
+            },
+          }
+        }),
+
+      muteChannel: (channelId) => get().muteChannelFor(channelId, null),
+
+      unmuteChannel: (channelId) =>
+        set((state) => {
+          const { [channelId]: _removed, ...channelMuteUntil } =
+            state.notifications.channelMuteUntil
+          return {
+            notifications: {
+              ...state.notifications,
+              mutedChannels: state.notifications.mutedChannels.filter((id) => id !== channelId),
+              channelMuteUntil,
+            },
+          }
+        }),
+
+      toggleChannelMute: (channelId) => {
+        if (get().isChannelMuted(channelId)) {
+          get().unmuteChannel(channelId)
+        } else {
+          get().muteChannel(channelId)
+        }
+      },
+
+      isChannelMuted: (channelId, now) => {
+        const { notifications } = get()
+        return hasActiveMute(
+          channelId,
+          notifications.mutedChannels,
+          notifications.channelMuteUntil,
+          now,
+        )
+      },
+
+      setChannelNotificationLevel: (channelId, level) =>
+        set((state) => {
+          const channelNotificationLevels = {
+            ...state.notifications.channelNotificationLevels,
+          }
+          if (level === 'all') {
+            delete channelNotificationLevels[channelId]
+          } else {
+            channelNotificationLevels[channelId] = level
+          }
+          return {
+            notifications: {
+              ...state.notifications,
+              channelNotificationLevels,
+            },
+          }
+        }),
+
+      setCommunityNotificationLevel: (communityId, level) =>
+        set((state) => {
+          const communityNotificationLevels = {
+            ...state.notifications.communityNotificationLevels,
+          }
+          /*
+            'all' is the absence of a preference rather than a stored value, so
+            choosing it removes the entry. Storing it would freeze the community
+            at today's default and stop it following any future change to it.
+          */
+          if (level === 'all') {
+            delete communityNotificationLevels[communityId]
+          } else {
+            communityNotificationLevels[communityId] = level
+          }
+          return {
+            notifications: {
+              ...state.notifications,
+              communityNotificationLevels,
+            },
+          }
+        }),
+
+      getChannelNotificationLevel: (channelId) =>
+        get().notifications.channelNotificationLevels[channelId] ?? 'all',
+
+      muteCommunityFor: (communityId, durationMs) =>
+        set((state) => {
+          const expiry = muteUntil(durationMs)
+          return {
+            notifications: {
+              ...state.notifications,
+              mutedCommunities: [
+                ...state.notifications.mutedCommunities.filter((id) => id !== communityId),
+                communityId,
+              ],
+              communityMuteUntil: {
+                ...state.notifications.communityMuteUntil,
+                [communityId]: expiry,
+              },
+            },
+          }
+        }),
+
+      muteCommunity: (communityId) => get().muteCommunityFor(communityId, null),
+
+      unmuteCommunity: (communityId) =>
+        set((state) => {
+          const { [communityId]: _removed, ...communityMuteUntil } =
+            state.notifications.communityMuteUntil
+          return {
+            notifications: {
+              ...state.notifications,
+              mutedCommunities: state.notifications.mutedCommunities.filter(
+                (id) => id !== communityId,
+              ),
+              communityMuteUntil,
+            },
+          }
+        }),
+
+      toggleCommunityMute: (communityId) => {
+        if (get().isCommunityMuted(communityId)) {
+          get().unmuteCommunity(communityId)
+        } else {
+          get().muteCommunity(communityId)
+        }
+      },
+
+      isCommunityMuted: (communityId, now) => {
+        const { notifications } = get()
+        return hasActiveMute(
+          communityId,
+          notifications.mutedCommunities,
+          notifications.communityMuteUntil,
+          now,
+        )
+      },
+    }),
+    {
+      name: 'mesh-settings',
+      storage: createJSONStorage(() => createSafeStorageAdapter(getSafeLocalStorage)),
+      partialize: (state) => ({
+        notifications: state.notifications,
+        // Appearance stays device-local; MatrixUserPreferences contains only
+        // portable notification and wire-privacy fields.
+        appearance: state.appearance,
+        // Backup/recovery evidence belongs to a Matrix account, not to the
+        // device-wide appearance/settings projection.
+        backupByAccount: state.backupByAccount,
+        privacy: state.privacy,
+        signalCheckEnabled: state.signalCheckEnabled,
+        runtimeErrorReportingEnabled: state.runtimeErrorReportingEnabled,
+      }),
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState ?? {}) as Partial<SettingsStore>
+        return {
+          ...currentState,
+          ...persisted,
+          notifications: normalizeNotificationPreferences(persisted.notifications),
+          appearance: normalizeAppearancePreferences(persisted.appearance),
+          privacy: normalizePrivacyPreferences(persisted.privacy),
+          backup: { ...DEFAULT_BACKUP },
+          backupAccountId: null,
+          backupByAccount: normalizeAccountBackupPreferences(persisted.backupByAccount),
+          matrixPreferenceSync: DEFAULT_MATRIX_PREFERENCE_SYNC,
+          signalCheckEnabled: persisted.signalCheckEnabled === true,
+          runtimeErrorReportingEnabled: persisted.runtimeErrorReportingEnabled === true,
+        }
+      },
+      version: LOCAL_SETTINGS_SCHEMA_VERSION,
+      migrate: migrateSettingsPersistence,
+      onRehydrateStorage: () => (state) => {
+        if (state) applyAppearancePreferences(state.appearance)
+      },
+    },
+  ),
+)
+
+export function isBackupReminderDue(backup: BackupPreferences, now = Date.now()): boolean {
+  if (backup.configured || !backup.reminderPending) return false
+  if (!backup.dismissedAt) return true
+  const dismissedAt = Date.parse(backup.dismissedAt)
+  return !Number.isFinite(dismissedAt) || now - dismissedAt >= BACKUP_REMINDER_INTERVAL_MS
+}
+
+// Apply defaults immediately when storage is unavailable, and make the initial
+// paint deterministic before any settings UI mounts.
+applyAppearancePreferences(useSettingsStore.getState().appearance)
+watchSystemAppearance()
+
+// Sync muted channels to backend kv_store whenever they change
+// so the Rust desktop notification filter can check them.
+let prevMutedChannels: string[] = useSettingsStore.getState().notifications.mutedChannels
+let prevNotifications = useSettingsStore.getState().notifications
+let prevPrivacy = useSettingsStore.getState().privacy
+let activeMatrixUserId: string | null = null
+let matrixRemoteReady = false
+let applyingRemotePreferences = false
+let localPreferenceRevision = 0
+let matrixSaveRequestId = 0
+let matrixSaveTimer: ReturnType<typeof setTimeout> | null = null
+let matrixSaveChain: Promise<void> = Promise.resolve()
+let channelMuteTimers = new Map<string, ReturnType<typeof setTimeout>>()
+let communityMuteTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+/**
+ * Invalidate every account-scoped preference read/write and clear its renderer
+ * projection while preserving device-local appearance.
+ */
+export function resetMatrixAccountPreferences(): void {
+  activeMatrixUserId = null
+  matrixRemoteReady = false
+  localPreferenceRevision += 1
+  matrixSaveRequestId += 1
+  if (matrixSaveTimer) {
+    clearTimeout(matrixSaveTimer)
+    matrixSaveTimer = null
+  }
+
+  applyingRemotePreferences = true
+  useSettingsStore.setState({
+    notifications: {
+      ...DEFAULT_NOTIFICATIONS,
+      soundEvents: { ...DEFAULT_NOTIFICATIONS.soundEvents },
+      quietHours: { ...DEFAULT_NOTIFICATIONS.quietHours },
+      mutedChannels: [],
+      mutedCommunities: [],
+      channelMuteUntil: {},
+      communityMuteUntil: {},
+      channelNotificationLevels: {},
+    },
+    backup: {
+      ...DEFAULT_BACKUP,
+    },
+    backupAccountId: null,
+    privacy: { ...DEFAULT_PRIVACY, conversationPrivacy: {} },
+    matrixPreferenceSync: { ...DEFAULT_MATRIX_PREFERENCE_SYNC },
+  })
+  applyingRemotePreferences = false
+}
+
+function replaceMuteExpiryTimers(
+  expirations: Record<string, string | null>,
+  currentTimers: Map<string, ReturnType<typeof setTimeout>>,
+  isMuted: (id: string) => boolean,
+  unmute: (id: string) => void,
+): Map<string, ReturnType<typeof setTimeout>> {
+  for (const timer of currentTimers.values()) clearTimeout(timer)
+  const nextTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const now = Date.now()
+  for (const [id, expiry] of Object.entries(expirations)) {
+    if (expiry == null) continue
+    const expiryTime = Date.parse(expiry)
+    if (!Number.isFinite(expiryTime)) continue
+    const delay = Math.max(0, Math.min(expiryTime - now, 2_147_483_647))
+    nextTimers.set(
+      id,
+      setTimeout(() => {
+        if (isMuted(id)) {
+          // The platform timeout limit can be shorter than a persisted expiry.
+          if (expiryTime > Date.now()) {
+            // Any no-op state replacement goes through the subscriber and
+            // safely schedules the remaining interval.
+            const notifications = useSettingsStore.getState().notifications
+            useSettingsStore.setState({ notifications: { ...notifications } })
+          }
+          return
+        }
+        unmute(id)
+      }, delay),
+    )
+  }
+  return nextTimers
+}
+
+function scheduleMuteExpiryCleanup(notifications: NotificationPreferences) {
+  channelMuteTimers = replaceMuteExpiryTimers(
+    notifications.channelMuteUntil,
+    channelMuteTimers,
+    (id) => useSettingsStore.getState().isChannelMuted(id),
+    (id) => useSettingsStore.getState().unmuteChannel(id),
+  )
+  communityMuteTimers = replaceMuteExpiryTimers(
+    notifications.communityMuteUntil,
+    communityMuteTimers,
+    (id) => useSettingsStore.getState().isCommunityMuted(id),
+    (id) => useSettingsStore.getState().unmuteCommunity(id),
+  )
+}
+
+function currentMatrixPreferenceSnapshot() {
+  const state = useSettingsStore.getState()
+  return {
+    notifications: state.notifications,
+    privacy: state.privacy,
+  }
+}
+
+function setMatrixPreferenceSync(next: MatrixPreferenceSyncState) {
+  useSettingsStore.setState({ matrixPreferenceSync: next })
+}
+
+async function persistMatrixPreferences(
+  revision: number,
+  snapshot: ReturnType<typeof currentMatrixPreferenceSnapshot>,
+) {
+  if (!matrixRemoteReady || !activeMatrixUserId || !isMatrixBackend()) return
+
+  const requestId = ++matrixSaveRequestId
+  setMatrixPreferenceSync({ status: 'saving', error: null })
+  try {
+    await updateMatrixUserPreferences(
+      settingsToMatrixPreferences(snapshot.notifications, snapshot.privacy),
+    )
+    if (revision === localPreferenceRevision && requestId === matrixSaveRequestId) {
+      setMatrixPreferenceSync({ status: 'saved', error: null })
+    }
+  } catch (error) {
+    if (revision === localPreferenceRevision && requestId === matrixSaveRequestId) {
+      setMatrixPreferenceSync({ status: 'failed', error })
+    }
+    throw error
+  }
+}
+
+/**
+ * Serialize account-data writes behind a single chain.
+ *
+ * The portable preference document is written as one blob, so two overlapping
+ * writes have no ordering guarantee: a slow earlier write can land after, and
+ * therefore overwrite, a newer one. Queueing keeps last-write-wins honest.
+ */
+function enqueueMatrixPreferenceSave(
+  revision: number,
+  snapshot: ReturnType<typeof currentMatrixPreferenceSnapshot>,
+): Promise<void> {
+  const userId = activeMatrixUserId
+  const save = matrixSaveChain.then(async () => {
+    // A queued write belonging to a signed-out account must never land on the
+    // account that replaced it.
+    if (activeMatrixUserId !== userId) return
+    await persistMatrixPreferences(revision, snapshot)
+  })
+  matrixSaveChain = save.catch(() => {})
+  return save
+}
+
+function scheduleMatrixPreferenceSave() {
+  if (!matrixRemoteReady || !activeMatrixUserId || !isMatrixBackend()) return
+  if (matrixSaveTimer) clearTimeout(matrixSaveTimer)
+  matrixSaveTimer = setTimeout(() => {
+    matrixSaveTimer = null
+    void enqueueMatrixPreferenceSave(
+      localPreferenceRevision,
+      currentMatrixPreferenceSnapshot(),
+    ).catch((error) => {
+      console.error('Failed to sync Matrix preferences:', error)
+    })
+  }, MATRIX_SAVE_DEBOUNCE_MS)
+}
+
+export async function retryMatrixPreferenceSync(): Promise<void> {
+  if (!isMatrixBackend() || !activeMatrixUserId) return
+  if (!matrixRemoteReady) {
+    await refreshMatrixPreferences(activeMatrixUserId)
+    return
+  }
+  await enqueueMatrixPreferenceSave(localPreferenceRevision, currentMatrixPreferenceSnapshot())
+}
+
+/**
+ * Pull the latest portable preferences for the authenticated Matrix account.
+ * Local state remains immediately usable; a concurrent local edit wins over a
+ * stale fetch and is pushed back after the read completes.
+ */
+export async function refreshMatrixPreferences(userId: string): Promise<void> {
+  if (!isMatrixBackend()) return
+  if (activeMatrixUserId !== userId) {
+    activeMatrixUserId = userId
+    matrixRemoteReady = false
+    matrixSaveRequestId += 1
+    setMatrixPreferenceSync(DEFAULT_MATRIX_PREFERENCE_SYNC)
+    if (matrixSaveTimer) {
+      clearTimeout(matrixSaveTimer)
+      matrixSaveTimer = null
+    }
+  }
+
+  const revisionAtStart = localPreferenceRevision
+  let remote: MatrixUserPreferences | null
+  try {
+    remote = await getMatrixUserPreferences()
+  } catch (error) {
+    if (activeMatrixUserId === userId) {
+      matrixSaveRequestId += 1
+      setMatrixPreferenceSync({ status: 'failed', error })
+    }
+    throw error
+  }
+  if (activeMatrixUserId !== userId) return
+  const changedWhileFetching = revisionAtStart !== localPreferenceRevision
+
+  if (remote && !changedWhileFetching) {
+    applyingRemotePreferences = true
+    const channelNotificationLevels =
+      useSettingsStore.getState().notifications.channelNotificationLevels
+    useSettingsStore.setState({
+      notifications: {
+        ...matrixPreferencesToNotifications(remote),
+        // Matrix push rules are authoritative for per-room levels. The custom
+        // account-data mirror is only a migration fallback and must not
+        // overwrite a newer rule changed by another Matrix client.
+        channelNotificationLevels,
+      },
+      privacy: matrixPreferencesToPrivacy(remote),
+    })
+    applyingRemotePreferences = false
+  }
+
+  matrixRemoteReady = true
+  if (!remote || changedWhileFetching) {
+    await enqueueMatrixPreferenceSave(localPreferenceRevision, currentMatrixPreferenceSnapshot())
+  } else {
+    setMatrixPreferenceSync({ status: 'saved', error: null })
+  }
+}
+
+useSettingsStore.subscribe((state) => {
+  const current = state.notifications.mutedChannels
+  if (current !== prevMutedChannels && !isMatrixBackend()) {
+    prevMutedChannels = current
+    setKv('muted_channels', JSON.stringify(current)).catch(() => {})
+  }
+
+  if (state.notifications !== prevNotifications) {
+    prevNotifications = state.notifications
+    scheduleMuteExpiryCleanup(state.notifications)
+    if (!applyingRemotePreferences) {
+      localPreferenceRevision += 1
+      scheduleMatrixPreferenceSave()
+    }
+  }
+
+  if (state.privacy !== prevPrivacy) {
+    prevPrivacy = state.privacy
+    if (!applyingRemotePreferences) {
+      localPreferenceRevision += 1
+      // Privacy and notifications share one account-data blob, so they share
+      // one debounce. Writing privacy immediately raced the notification
+      // debounce and let three quick toggles issue three concurrent whole-blob
+      // writes with no ordering guarantee.
+      scheduleMatrixPreferenceSave()
+    }
+  }
+})
+
+scheduleMuteExpiryCleanup(useSettingsStore.getState().notifications)
+
+registerAccountReset('settings', () => {
+  resetMatrixAccountPreferences()
+})

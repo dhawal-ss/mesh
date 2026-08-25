@@ -1,0 +1,488 @@
+import type {
+  CommunityPermissionAggregate,
+  CommunityPermissionAggregateStatus,
+  CommunityPermissionId,
+  CommunityPermissionProjection,
+  MatrixRoomPermissionProjection,
+  MatrixRoomPowerLevelProjection,
+} from '../types/ipc'
+
+export type {
+  CommunityPermissionAggregate,
+  CommunityPermissionAggregateStatus,
+  CommunityPermissionId,
+  CommunityPermissionProjection,
+  MatrixPermissionRoomStatus,
+  MatrixRoomPermissionProjection,
+  MatrixRoomPowerLevelProjection,
+} from '../types/ipc'
+
+export type CommunityRole = 'owner' | 'admin' | 'member'
+
+export interface MatrixCommunityPermissionPolicy {
+  eventsDefault: number
+  invite: number
+  redact: number
+  kick: number
+  ban: number
+  stateDefault: number
+  powerLevelsEvent: number
+}
+
+export interface CommunityRoleTemplate {
+  id: CommunityRole
+  label: string
+  summary: string
+  powerLevel: number
+  assignable: boolean
+}
+
+export interface EffectiveCommunityPermission {
+  id: CommunityPermissionId
+  label: string
+  description: string
+  scope: 'conversation' | 'members' | 'rooms' | 'security'
+  requiredPowerLevel: number
+  granted: boolean
+  enforcement: 'matrix-room-state'
+}
+
+export interface RoleAssignmentDecision {
+  allowed: boolean
+  reason: string | null
+}
+
+export const MATRIX_COMMUNITY_PERMISSION_POLICY_V1: Readonly<MatrixCommunityPermissionPolicy> = {
+  eventsDefault: 0,
+  invite: 0,
+  redact: 50,
+  kick: 50,
+  ban: 50,
+  stateDefault: 50,
+  powerLevelsEvent: 100,
+}
+
+export const COMMUNITY_ROLE_TEMPLATES: Readonly<Record<CommunityRole, CommunityRoleTemplate>> = {
+  owner: {
+    id: 'owner',
+    label: 'Owner',
+    summary: 'Controls roles and the community security policy.',
+    powerLevel: 100,
+    assignable: false,
+  },
+  admin: {
+    id: 'admin',
+    label: 'Administrator',
+    summary: 'Moderates members and manages rooms without controlling ownership.',
+    powerLevel: 50,
+    assignable: true,
+  },
+  member: {
+    id: 'member',
+    label: 'Member',
+    summary: 'Participates in conversations and can invite people under the default policy.',
+    powerLevel: 0,
+    assignable: true,
+  },
+}
+
+type PermissionDefinition = Omit<
+  EffectiveCommunityPermission,
+  'requiredPowerLevel' | 'granted' | 'enforcement'
+> & {
+  policyKey: keyof MatrixCommunityPermissionPolicy
+}
+
+const PERMISSION_DEFINITIONS: readonly PermissionDefinition[] = [
+  {
+    id: 'participate',
+    label: 'Participate in conversations',
+    description: 'Send standard messages and reactions where the room permits them.',
+    scope: 'conversation',
+    policyKey: 'eventsDefault',
+  },
+  {
+    id: 'invite',
+    label: 'Invite people',
+    description: 'Invite an existing account to a room.',
+    scope: 'members',
+    policyKey: 'invite',
+  },
+  {
+    id: 'redact',
+    label: 'Moderate messages',
+    description: 'Remove another member’s message when the room allows it.',
+    scope: 'conversation',
+    policyKey: 'redact',
+  },
+  {
+    id: 'remove',
+    label: 'Remove members',
+    description: 'Remove a member from the community rooms Mesh can reach.',
+    scope: 'members',
+    policyKey: 'kick',
+  },
+  {
+    id: 'ban',
+    label: 'Ban members',
+    description: 'Prevent a member from rejoining until a permitted moderator reverses the ban.',
+    scope: 'members',
+    policyKey: 'ban',
+  },
+  {
+    id: 'roomState',
+    label: 'Manage rooms',
+    description: 'Change room details and community organization.',
+    scope: 'rooms',
+    policyKey: 'stateDefault',
+  },
+  {
+    id: 'roles',
+    label: 'Manage roles and security',
+    description: 'Change member roles and permission rules.',
+    scope: 'security',
+    policyKey: 'powerLevelsEvent',
+  },
+]
+
+export function getCommunityPermissionMetadata(permissionId: CommunityPermissionId) {
+  const { policyKey: _policyKey, ...metadata } = PERMISSION_DEFINITIONS.find(
+    (permission) => permission.id === permissionId,
+  )!
+  return metadata
+}
+
+export function getEffectiveCommunityPermissions(
+  role: CommunityRole,
+  policy: Readonly<MatrixCommunityPermissionPolicy>,
+): EffectiveCommunityPermission[] {
+  const rolePowerLevel = COMMUNITY_ROLE_TEMPLATES[role].powerLevel
+  return PERMISSION_DEFINITIONS.map(({ policyKey, ...permission }) => {
+    const requiredPowerLevel = policy[policyKey]
+    return {
+      ...permission,
+      requiredPowerLevel,
+      granted: rolePowerLevel >= requiredPowerLevel,
+      enforcement: 'matrix-room-state' as const,
+    }
+  })
+}
+
+export function compareCommunityRolePermissions(
+  previousRole: CommunityRole,
+  nextRole: CommunityRole,
+  policy: Readonly<MatrixCommunityPermissionPolicy>,
+) {
+  const previous = new Map(
+    getEffectiveCommunityPermissions(previousRole, policy)
+      .map((permission) => [permission.id, permission]),
+  )
+  const next = getEffectiveCommunityPermissions(nextRole, policy)
+
+  return {
+    gained: next.filter((permission) => permission.granted && !previous.get(permission.id)?.granted),
+    lost: next.filter((permission) => !permission.granted && previous.get(permission.id)?.granted),
+    effective: next,
+  }
+}
+
+export function evaluateCommunityRoleAssignment({
+  actorRole,
+  targetRole,
+  nextRole,
+  isSelf = false,
+  effectiveOwnerCount = 1,
+}: {
+  actorRole: CommunityRole
+  targetRole: CommunityRole
+  nextRole: CommunityRole
+  isSelf?: boolean
+  effectiveOwnerCount?: number
+}): RoleAssignmentDecision {
+  if (actorRole !== 'owner') {
+    return {
+      allowed: false,
+      reason: 'Only the community owner can change member roles.',
+    }
+  }
+  if (isSelf) {
+    return {
+      allowed: false,
+      reason: 'You cannot change your own role.',
+    }
+  }
+  if (targetRole === 'owner') {
+    return {
+      allowed: false,
+      reason: effectiveOwnerCount <= 1
+        ? 'The final owner is the community recovery path and cannot be removed.'
+        : 'Ownership changes require the separate ownership-transfer flow.',
+    }
+  }
+  if (nextRole === 'owner') {
+    return {
+      allowed: false,
+      reason: 'Ownership changes require the separate ownership-transfer flow.',
+    }
+  }
+  if (targetRole === nextRole) {
+    return {
+      allowed: false,
+      reason: 'This member already has that role.',
+    }
+  }
+  return { allowed: true, reason: null }
+}
+
+export type CommunityPermissionTarget =
+  | { kind: 'current-user'; userId: string }
+  | { kind: 'proposed-role'; userId: string; role: CommunityRole }
+
+type VerifiedRoomProjection = MatrixRoomPermissionProjection & {
+  policy: MatrixRoomPowerLevelProjection
+}
+
+function isVerifiedRoom(room: MatrixRoomPermissionProjection): room is VerifiedRoomProjection {
+  return (room.status === 'loaded' || room.status === 'matrix-default') && room.policy != null
+}
+
+/**
+ * The single source of truth for how a per-room verdict becomes a community
+ * status. `aggregateCommunityPermissionProjection` and
+ * `explainCommunityPermissionProjection` both route through this, so the count
+ * shown in a summary can never disagree with the rooms named in an explanation.
+ */
+function aggregateStatus(
+  hasUnknownRoom: boolean,
+  grantedRoomCount: number,
+  verifiedRoomCount: number,
+): CommunityPermissionAggregateStatus {
+  if (hasUnknownRoom) return 'unknown'
+  if (grantedRoomCount === verifiedRoomCount && verifiedRoomCount > 0) return 'granted-everywhere'
+  return grantedRoomCount > 0 ? 'granted-some-rooms' : 'not-granted'
+}
+
+function hasUnreadableRoom(
+  projection: Pick<CommunityPermissionProjection, 'rooms' | 'discoveryComplete'>,
+): boolean {
+  return !projection.discoveryComplete || projection.rooms.some((room) => !isVerifiedRoom(room))
+}
+
+export function aggregateCommunityPermissionProjection(
+  projection: Pick<CommunityPermissionProjection, 'rooms' | 'discoveryComplete'>,
+  target: CommunityPermissionTarget,
+): CommunityPermissionAggregate[] {
+  const hasUnknownRoom = hasUnreadableRoom(projection)
+  const verifiedRooms = projection.rooms.filter(isVerifiedRoom)
+
+  return PERMISSION_DEFINITIONS.map((definition) => {
+    const grantedRoomCount = verifiedRooms.filter((room) => {
+      const level = permissionTargetLevel(room.policy, target)
+      return level >= permissionThreshold(room.policy, definition.id)
+    }).length
+    return {
+      permissionId: definition.id,
+      status: aggregateStatus(hasUnknownRoom, grantedRoomCount, verifiedRooms.length),
+      grantedRoomCount,
+      verifiedRoomCount: verifiedRooms.length,
+      totalRoomCount: projection.rooms.length,
+    }
+  })
+}
+
+export interface CommunityPermissionRoomOutcome {
+  roomId: string
+  roomName: string
+}
+
+export interface CommunityPermissionExplanation extends CommunityPermissionAggregate {
+  /** Rooms Mesh read, in which the target clears the threshold. */
+  grantedRooms: CommunityPermissionRoomOutcome[]
+  /** Rooms Mesh read, in which the target does not clear the threshold. */
+  deniedRooms: CommunityPermissionRoomOutcome[]
+  /**
+   * Rooms Mesh could not read. These are never counted as a denial: an
+   * unreadable room means Mesh does not know, which is a different answer from
+   * "not allowed" and is presented as such.
+   */
+  unreadableRooms: CommunityPermissionRoomOutcome[]
+}
+
+/**
+ * Names the rooms behind each permission verdict.
+ *
+ * `aggregateCommunityPermissionProjection` answers "how many rooms", which is
+ * enough for a summary but cannot answer the question an admin actually asks:
+ * *which* rooms. The statuses and counts here are computed through the same
+ * helpers as the aggregate, so the two agree by construction.
+ */
+export function explainCommunityPermissionProjection(
+  projection: Pick<CommunityPermissionProjection, 'rooms' | 'discoveryComplete'>,
+  target: CommunityPermissionTarget,
+): CommunityPermissionExplanation[] {
+  const hasUnknownRoom = hasUnreadableRoom(projection)
+  const verifiedRooms = projection.rooms.filter(isVerifiedRoom)
+  const unreadableRooms = projection.rooms
+    .filter((room) => !isVerifiedRoom(room))
+    .map(toRoomOutcome)
+
+  return PERMISSION_DEFINITIONS.map((definition) => {
+    const grantedRooms: CommunityPermissionRoomOutcome[] = []
+    const deniedRooms: CommunityPermissionRoomOutcome[] = []
+    for (const room of verifiedRooms) {
+      const level = permissionTargetLevel(room.policy, target)
+      const bucket = level >= permissionThreshold(room.policy, definition.id)
+        ? grantedRooms
+        : deniedRooms
+      bucket.push(toRoomOutcome(room))
+    }
+    return {
+      permissionId: definition.id,
+      status: aggregateStatus(hasUnknownRoom, grantedRooms.length, verifiedRooms.length),
+      grantedRoomCount: grantedRooms.length,
+      verifiedRoomCount: verifiedRooms.length,
+      totalRoomCount: projection.rooms.length,
+      grantedRooms,
+      deniedRooms,
+      unreadableRooms,
+    }
+  })
+}
+
+/**
+ * Narrows a community-wide projection to a single room so the same presentation
+ * can answer "what can I do *here*".
+ *
+ * `discoveryComplete` is deliberately re-derived rather than inherited. On the
+ * source projection it means "every room in the community was found"; once the
+ * question is about one room, the only thing that matters is whether that room
+ * is present. Inheriting a false flag would report a readable room as unknown
+ * because some *other* room failed to load.
+ */
+export function scopeCommunityPermissionProjectionToRoom(
+  projection: Pick<CommunityPermissionProjection, 'rooms' | 'discoveryComplete'>,
+  roomId: string,
+): Pick<CommunityPermissionProjection, 'rooms' | 'discoveryComplete'> | null {
+  const room = projection.rooms.find((candidate) => candidate.roomId === roomId)
+  if (!room) return null
+  return { rooms: [room], discoveryComplete: true }
+}
+
+function toRoomOutcome(room: MatrixRoomPermissionProjection): CommunityPermissionRoomOutcome {
+  return { roomId: room.roomId, roomName: room.roomName }
+}
+
+export function evaluateAuthoritativeCommunityRoleAssignment({
+  projection,
+  actorUserId,
+  targetUserId,
+  nextRole,
+}: {
+  projection: Pick<CommunityPermissionProjection, 'rooms' | 'discoveryComplete'>
+  actorUserId: string
+  targetUserId: string
+  nextRole: Extract<CommunityRole, 'admin' | 'member'>
+}): RoleAssignmentDecision {
+  if (actorUserId === targetUserId) {
+    return { allowed: false, reason: 'You cannot change your own role.' }
+  }
+
+  const actorPermissions = aggregateCommunityPermissionProjection(projection, {
+    kind: 'current-user',
+    userId: actorUserId,
+  })
+  const rolePermission = actorPermissions.find((permission) => permission.permissionId === 'roles')
+  if (!rolePermission || rolePermission.status === 'unknown') {
+    return {
+      allowed: false,
+      reason: 'Unable to verify role-management permission in every room.',
+    }
+  }
+  if (rolePermission.status !== 'granted-everywhere') {
+    return {
+      allowed: false,
+      reason: 'Your account cannot manage roles in every community room.',
+    }
+  }
+
+  const nextLevel = COMMUNITY_ROLE_TEMPLATES[nextRole].powerLevel
+  for (const room of projection.rooms) {
+    if (
+      (room.status !== 'loaded' && room.status !== 'matrix-default')
+      || room.policy == null
+    ) {
+      return {
+        allowed: false,
+        reason: 'Unable to verify the final owner because one or more rooms could not be read.',
+      }
+    }
+    if (room.policy.privilegedCreatorUserIds.includes(targetUserId)) {
+      return {
+        allowed: false,
+        reason: 'A protected room creator cannot be assigned a lower role.',
+      }
+    }
+
+    const resultingRoleThreshold = Math.max(
+      100,
+      permissionThreshold(room.policy, 'roles'),
+    )
+    // The projection describes rooms joined by the authenticated actor, and
+    // self-targeting is rejected above. Requiring that actor to retain the
+    // resulting role-management authority proves recovery without requesting
+    // or returning the complete joined-member roster.
+    const resultingActorLevel = actorUserId === targetUserId
+      ? nextLevel
+      : permissionTargetLevel(
+          room.policy,
+          { kind: 'current-user', userId: actorUserId },
+        )
+    const recoveryPathExists = resultingActorLevel >= resultingRoleThreshold
+    if (!recoveryPathExists) {
+      return {
+        allowed: false,
+        reason: `${room.roomName} would have no effective owner or recovery path.`,
+      }
+    }
+  }
+
+  return { allowed: true, reason: null }
+}
+
+function permissionTargetLevel(
+  policy: MatrixRoomPowerLevelProjection,
+  target: CommunityPermissionTarget,
+): number {
+  if (policy.privilegedCreatorUserIds.includes(target.userId)) {
+    return Number.POSITIVE_INFINITY
+  }
+  if (target.kind === 'proposed-role') {
+    return COMMUNITY_ROLE_TEMPLATES[target.role].powerLevel
+  }
+  return policy.users[target.userId] ?? policy.usersDefault
+}
+
+function permissionThreshold(
+  policy: MatrixRoomPowerLevelProjection,
+  permissionId: CommunityPermissionId,
+): number {
+  switch (permissionId) {
+    case 'participate':
+      return policy.events['m.room.message'] ?? policy.eventsDefault
+    case 'invite':
+      return policy.invite
+    case 'redact':
+      return Math.max(
+        policy.redact,
+        policy.events['m.room.redaction'] ?? policy.eventsDefault,
+      )
+    case 'remove':
+      return policy.kick
+    case 'ban':
+      return policy.ban
+    case 'roomState':
+      return policy.stateDefault
+    case 'roles':
+      return policy.events['m.room.power_levels'] ?? policy.stateDefault
+  }
+}

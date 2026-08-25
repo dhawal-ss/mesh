@@ -1,0 +1,54 @@
+name: mesh-matrix-spike
+
+services:
+  synapse1:
+    image: matrixdotorg/synapse:v1.157.2@sha256:097e3120b8ecf97e4f92537d7af2da41564c706e33fc740f3741c9defacc2af1
+    restart: unless-stopped
+    volumes:
+      - ./runtime/hs1:/data
+    ports:
+      - "8008:8008"
+    networks:
+      matrix-spike:
+        aliases: [synapse1]
+
+  synapse2:
+    image: matrixdotorg/synapse:v1.157.2@sha256:097e3120b8ecf97e4f92537d7af2da41564c706e33fc740f3741c9defacc2af1
+    restart: unless-stopped
+    volumes:
+      - ./runtime/hs2:/data
+    ports:
+      - "8009:8008"
+    networks:
+      matrix-spike:
+        aliases: [synapse2]
+
+  federation1:
+    image: nginx:1.30.4-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46
+    restart: unless-stopped
+    depends_on: [synapse1]
+    volumes:
+      - ./nginx/hs1.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./runtime/certs:/certs:ro
+    ports:
+      - "8448:8448"
+    networks:
+      matrix-spike:
+        aliases: [hs1.mesh.test]
+
+  federation2:
+    image: nginx:1.30.4-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46
+    restart: unless-stopped
+    depends_on: [synapse2]
+    volumes:
+      - ./nginx/hs2.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./runtime/certs:/certs:ro
+    ports:
+      - "8449:8448"
+    networks:
+      matrix-spike:
+        aliases: [hs2.mesh.test]
+
+networks:
+  matrix-spike:
+    driver: bridge

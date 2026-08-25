@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-redact-message"
+description = "Enables the matrix_redact_message command without any pre-configured scope."
+commands.allow = ["matrix_redact_message"]
+
+[[permission]]
+identifier = "deny-matrix-redact-message"
+description = "Denies the matrix_redact_message command without any pre-configured scope."
+commands.deny = ["matrix_redact_message"]

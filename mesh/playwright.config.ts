@@ -1,0 +1,133 @@
+import { defineConfig, devices } from '@playwright/test'
+
+/**
+ * Playwright configuration for Mesh end-to-end tests.
+ *
+ * Playwright is a development dependency. Install the Chromium runtime once
+ * with:
+ *
+ *   npm run e2e:install
+ *
+ * Then run the suite with:
+ *
+ *   npm run e2e
+ *
+ * The tests cover four production boundaries:
+ *
+ *   1. Browser-level WebRTC tests (e2e/voice-session.spec.ts)
+ *      These use Chromium's fake media devices to exercise the Mesh
+ *      frontend's voice engine against real RTCPeerConnection APIs.
+ *
+ *   2. Full-window Tauri IPC tests (e2e/diagnostics.spec.ts)
+ *      These drive the Vite dev server with a Tauri bridge mock so the
+ *      full React tree renders and IPC commands are recorded. Deeper
+ *      integration (actually launching the Tauri process) requires
+ *      tauri-driver.
+ *
+ *   3. Authenticated responsive shell tests (e2e/authenticated-shell.spec.ts)
+ *      These validate Matrix identity, navigation, messaging, settings,
+ *      keyboard behavior, and narrow-window layout against strict IPC mocks.
+ *
+ *   4. Matrix DM/file tests (e2e/matrix-messaging.spec.ts)
+ *      These validate encrypted DM history, text/attachment sends, download
+ *      decryption handoff, and OS-open behavior against strict IPC mocks.
+ */
+export default defineConfig({
+  testDir: './e2e',
+  // Fail fast in CI, retry locally
+  fullyParallel: true,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 1 : undefined,
+  reporter: [['list'], ['html', { open: 'never' }]],
+
+  use: {
+    // Vite dev server default
+    baseURL: 'http://localhost:1420',
+    trace: 'on-first-retry',
+    video: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+  },
+
+  projects: [
+    {
+      name: 'chromium',
+      testIgnore: [
+        '**/diagnostics.spec.ts',
+        '**/legacy-voice-session.spec.ts',
+        '**/large-timeline-performance.spec.ts',
+      ],
+      use: {
+        ...devices['Desktop Chrome'],
+        // Enable fake media devices for WebRTC tests — required for
+        // tests that exercise getUserMedia without granting real mic
+        // access. This produces a silent audio track that still
+        // propagates through the RTCPeerConnection stack.
+        launchOptions: {
+          args: [
+            '--use-fake-ui-for-media-stream',
+            '--use-fake-device-for-media-stream',
+            '--autoplay-policy=no-user-gesture-required',
+          ],
+        },
+      },
+    },
+    {
+      // The large-timeline budget needs its own project for two reasons: it is
+      // slow enough to distort a normal run, and its heap bounds are only real
+      // when Chromium exposes precise memory. Without the flag,
+      // performance.memory is absent and the two heap assertions silently skip,
+      // which is how a budget ends up passing while measuring nothing.
+      name: 'chromium-performance',
+      testMatch: ['**/large-timeline-performance.spec.ts'],
+      use: {
+        ...devices['Desktop Chrome'],
+        launchOptions: {
+          args: ['--enable-precise-memory-info', '--js-flags=--expose-gc'],
+        },
+      },
+    },
+    {
+      // The evidence generator. Its own project so `npm run e2e` never rewrites
+      // the screenshot set, and so the viewport is pinned to the reference
+      // matrix rather than inherited from whatever the suite last set.
+      name: 'chromium-evidence',
+      testMatch: ['**/capture-evidence.spec.ts'],
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+        deviceScaleFactor: 1,
+      },
+    },
+    {
+      name: 'chromium-lan',
+      testMatch: ['**/diagnostics.spec.ts', '**/legacy-voice-session.spec.ts'],
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: 'http://localhost:1422',
+        launchOptions: {
+          args: [
+            '--use-fake-ui-for-media-stream',
+            '--use-fake-device-for-media-stream',
+            '--autoplay-policy=no-user-gesture-required',
+          ],
+        },
+      },
+    },
+  ],
+
+  webServer: [
+    {
+      command: 'npm run dev',
+      port: 1420,
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+    },
+    {
+      command: 'npm run dev:lan:e2e',
+      port: 1422,
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+    },
+  ],
+})

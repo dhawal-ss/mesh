@@ -1,0 +1,517 @@
+name: Security and feature boundary
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  codeql:
+    name: CodeQL JavaScript and TypeScript SAST
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@18420e3271f74589575af831a523c833acda327f # codeql-bundle-v2.26.2
+        with:
+          languages: javascript-typescript
+          build-mode: none
+      - name: Analyze JavaScript and TypeScript
+        uses: github/codeql-action/analyze@18420e3271f74589575af831a523c833acda327f # codeql-bundle-v2.26.2
+        with:
+          category: /language:javascript-typescript
+
+  dependency-review:
+    name: Dependency and license review
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          config-file: ./.github/dependency-review-config.yml
+
+  feature-matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@d0befba8b9ddf874327619e84c39b094edd58b66 # 1.93.0
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libsqlcipher-dev
+      - name: Check Matrix production artifact
+        working-directory: mesh/src-tauri
+        run: cargo check --no-default-features --features matrix-backend --locked --jobs 1
+      - name: Assert Matrix production tree excludes libp2p
+        working-directory: mesh/src-tauri
+        shell: bash
+        run: |
+          set -o pipefail
+          if cargo tree --no-default-features --features matrix-backend -e normal,build --locked | grep -Eq '(^| )libp2p v'; then
+            echo 'Matrix production dependency tree unexpectedly contains libp2p.' >&2
+            exit 1
+          fi
+      - name: Check experimental LAN artifact
+        working-directory: mesh/src-tauri
+        run: cargo check --no-default-features --features legacy-p2p --locked --jobs 1
+
+  dependency-and-secret-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@d0befba8b9ddf874327619e84c39b094edd58b66 # 1.93.0
+      - name: Install pinned Rust security and policy tools
+        run: |
+          cargo install cargo-audit --version 0.22.2 --locked
+          cargo install cargo-deny --version 0.20.2 --locked
+          cargo install cargo-geiger --version 0.13.0 --locked
+      - name: Report raw Rust advisory status without suppressing legacy findings
+        continue-on-error: true
+        run: |
+          cargo audit --file mesh/src-tauri/Cargo.lock
+      - name: Enforce Matrix shipping and legacy visibility policy
+        working-directory: mesh
+        shell: pwsh
+        run: |
+          ./scripts/check-matrix-release-dependencies.ps1 `
+            -ReportPath release/rust-dependency-report.json
+      # deny.toml lists every shipped triple, but one [graph] block describes
+      # one feature selection, so each shipped feature set needs its own run.
+      # Checking only matrix-voice left libp2p's whole graph unexamined.
+      - name: Enforce Matrix voice license, source and ban policy
+        working-directory: mesh/src-tauri
+        run: cargo deny --locked check licenses sources bans
+      - name: Enforce experimental LAN license, source and ban policy
+        working-directory: mesh/src-tauri
+        run: cargo deny --locked --no-default-features --features legacy-p2p check licenses sources bans
+      - name: Record Matrix voice unsafe-code inventory
+        working-directory: mesh/src-tauri
+        # cargo-geiger 0.13.0 (the latest release; 0.12.0 reproduces identically)
+        # bundles cargo 0.86.0 as a library, whose internal clean/download-batching
+        # panics on this project's matrix-voice dependency graph:
+        # "assertion failed: self.pending_ids.insert(id)" in
+        # cargo::core::package::Downloads::start, called from cargo_geiger's own
+        # pre-scan cargo_clean::clean step. Confirmed independent of this repo's
+        # code: cargo check/build/test for matrix-voice all pass clean, and the
+        # crash reproduces locally with no CI-specific factors involved. No newer
+        # cargo-geiger exists to fix it. continue-on-error so this known upstream
+        # tool bug doesn't block merges; every other step in this job (secret
+        # scanning, SBOM, license/source policy, other feature scans) still
+        # blocks normally. Matches the existing continue-on-error precedent on
+        # the cargo audit step above.
+        continue-on-error: true
+        run: >-
+          cargo geiger
+          --no-default-features
+          --features matrix-voice
+          --locked
+          --output-format Json
+          > ../release/cargo-geiger-matrix-voice.json
+      - name: Upload Rust dependency and unsafe-code evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rust-dependency-policy-${{ github.sha }}
+          path: |
+            mesh/release/rust-dependency-report.json
+            mesh/release/cargo-geiger-matrix-voice.json
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mesh/package-lock.json
+      - name: Enforce the on-device and non-autonomous AI boundary
+        working-directory: mesh
+        run: |
+          node --test scripts/check-ai-boundary.test.mjs
+          node scripts/check-ai-boundary.mjs
+      - name: Audit JavaScript dependencies
+        working-directory: mesh
+        run: |
+          npm audit --audit-level=high
+          npm audit --prefix feature-deps/matrix-voice --audit-level=high
+          npm audit --prefix feature-deps/legacy-lan --audit-level=high
+      - name: Scan repository history for non-URI secrets
+        uses: trufflesecurity/trufflehog@18c7b1fc33e6c16b27ea66ff27cc7e642fb7cd0a # v3.90.6
+        with:
+          extra_args: --results=verified,unknown --exclude-detectors=URI
+      - name: Scan repository history for credential-bearing URIs
+        uses: trufflesecurity/trufflehog@18c7b1fc33e6c16b27ea66ff27cc7e642fb7cd0a # v3.90.6
+        with:
+          extra_args: --results=verified,unknown --include-detectors=URI --exclude-paths=.trufflehog-uri-excludes
+
+  disclosure-drill:
+    name: Confidential disclosure drill
+    # The drill has existed and been wired to check:security-disclosure since
+    # Track F, and no workflow has ever invoked it -- so the one automated check
+    # of whether Mesh can actually receive a vulnerability report has been
+    # running nowhere. The offline half needs no credentials and catches the
+    # real failure: SECURITY.md, the public security page, the support page and
+    # the incident guide drifting out of agreement about whether the
+    # confidential route exists.
+    runs-on: ubuntu-latest
+    # Job-level so the step below can branch on it: the secrets context is not
+    # available to a step `if`, but job `env` is, and job `env` may read secrets.
+    env:
+      SECURITY_DISCLOSURE_TOKEN: ${{ secrets.SECURITY_DISCLOSURE_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Drill the documented disclosure route
+        working-directory: mesh
+        # Explicit `shell: bash` for the pipefail it brings. The default shell
+        # runs `bash -e` without it, so `npm ... | tee` reports tee's exit
+        # status and a failed drill would go green -- which is the exact failure
+        # this job exists to stop.
+        shell: bash
+        run: |
+          npm run --silent check:security-disclosure | tee ../drill-output.txt
+      # r2.confidential-security-reporting requires the --online drill, which
+      # calls GET /repos/{owner}/{repo}/private-vulnerability-reporting. That
+      # endpoint needs Administration:read, and `permissions:` has no
+      # administration scope to grant -- GITHUB_TOKEN cannot reach it at any
+      # setting. So the online half needs a repository secret holding a token
+      # with that permission, and until one exists this step does not run.
+      #
+      # Deliberately not silent about it. A skipped step that reads as a pass is
+      # how a gate comes to validate evidence nothing produces, which is the
+      # failure this whole job exists to stop repeating.
+      - name: Verify the live disclosure route against GitHub
+        id: online
+        if: ${{ env.SECURITY_DISCLOSURE_TOKEN != '' }}
+        working-directory: mesh
+        env:
+          GH_TOKEN: ${{ secrets.SECURITY_DISCLOSURE_TOKEN }}
+        shell: bash
+        run: |
+          node scripts/security-disclosure-drill.mjs --online | tee ../drill-output.txt
+      - name: Record which half of the drill ran
+        env:
+          ONLINE_RESULT: ${{ steps.online.outcome }}
+        run: |
+          if [ "$ONLINE_RESULT" = "success" ]; then
+            echo "Drill ran online. This run can be ingested as r2.confidential-security-reporting evidence." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Drill ran offline only: no SECURITY_DISCLOSURE_TOKEN is configured." >> "$GITHUB_STEP_SUMMARY"
+            echo "r2.confidential-security-reporting stays blocked, and this run is NOT its evidence." >> "$GITHUB_STEP_SUMMARY"
+            echo "It needs a repository secret holding a token with Administration:read." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          cat "$GITHUB_STEP_SUMMARY"
+      - name: Upload sanitized disclosure drill evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: security-disclosure-drill-${{ github.sha }}
+          path: drill-output.txt
+          if-no-files-found: error
+          retention-days: 90
+
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@d0befba8b9ddf874327619e84c39b094edd58b66 # 1.93.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mesh/package-lock.json
+      - name: Install JavaScript dependencies
+        working-directory: mesh
+        run: npm ci
+      - name: Generate complete-source and Matrix-voice-artifact CycloneDX SBOMs
+        working-directory: mesh
+        run: |
+          npm run build:matrix-voice
+          npm run check:release-sboms
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mesh-sboms-${{ github.sha }}
+          path: |
+            mesh/release/source-lockfile.cdx.json
+            mesh/release/matrix-windows-artifact.cdx.json
+          if-no-files-found: error
+          retention-days: 30
+
+  container-supply-chain-r2:
+    name: R2 container SBOM and fixable high scan (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: caddy
+            image: ghcr.io/dhawal-ss/mesh-caddy:2.11.4-mesh.1@sha256:67cf933778f84aadd59f93fc5d2eaf6471df7b415135ae95fc1b1e6e5f4b7e4f
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Enforce Mesh registry digest age and immutable tags
+        if: matrix.name == 'caddy'
+        working-directory: mesh
+        run: npm run check:registry-governance
+      - name: Validate exact container policy and regression contract
+        working-directory: mesh
+        run: npm run check:container-supply-chain
+      - name: Generate digest-bound container SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ matrix.image }}
+          format: cyclonedx-json
+          syft-version: v1.50.0
+          output-file: r2-container-${{ matrix.name }}.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Scan fixable high and critical vulnerabilities
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
+        with:
+          image: ${{ matrix.image }}
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
+          grype-version: v0.116.1
+          output-format: json
+          output-file: r2-container-${{ matrix.name }}-grype.json
+      - name: Validate paired SBOM, exact image, and scanner database evidence
+        run: >-
+          node mesh/scripts/check-container-scan-evidence.mjs
+          --sbom "r2-container-${{ matrix.name }}.cdx.json"
+          --scan "r2-container-${{ matrix.name }}-grype.json"
+          --image '${{ matrix.image }}'
+          --scope release
+          --output "r2-container-${{ matrix.name }}-evidence.json"
+      - name: Upload container scan findings
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: r2-container-scan-findings-${{ matrix.name }}-${{ github.sha }}
+          path: |
+            r2-container-${{ matrix.name }}.cdx.json
+            r2-container-${{ matrix.name }}-grype.json
+            r2-container-${{ matrix.name }}-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Install pinned Cosign for signature discovery
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+      - name: Normalize untrusted upstream signature discovery
+        shell: bash
+        run: |
+          set +e
+          cosign verify \
+            --certificate-identity-regexp='^.+$' \
+            --certificate-oidc-issuer-regexp='^https://.+$' \
+            --output=json \
+            '${{ matrix.image }}' > r2-container-${{ matrix.name }}-signature-raw.json 2> r2-container-${{ matrix.name }}-signature-error.txt
+          status=$?
+          set -e
+          node mesh/scripts/check-container-signature-evidence.mjs \
+            --verification "r2-container-${{ matrix.name }}-signature-raw.json" \
+            --cosign-exit "$status" \
+            --image '${{ matrix.image }}' \
+            --output "r2-container-${{ matrix.name }}-signature.json"
+          rm -f r2-container-${{ matrix.name }}-signature-raw.json r2-container-${{ matrix.name }}-signature-error.txt
+      - name: Verify Mesh-maintained candidate signature
+        if: startsWith(matrix.image, 'ghcr.io/dhawal-ss/')
+        shell: bash
+        run: |
+          cosign verify \
+            --certificate-identity-regexp='^https://github\.com/dhawal-ss/mesh/\.github/workflows/container-candidates\.yml@refs/heads/(main|beta/production-readiness-2026-08)$' \
+            --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
+            --output=json \
+            '${{ matrix.image }}' > r2-container-${{ matrix.name }}-mesh-signature-raw.json
+          node mesh/scripts/check-candidate-container-signature-evidence.mjs \
+            --verification "r2-container-${{ matrix.name }}-mesh-signature-raw.json" \
+            --image '${{ matrix.image }}' \
+            --output "r2-container-${{ matrix.name }}-mesh-signature.json"
+          rm -f r2-container-${{ matrix.name }}-mesh-signature-raw.json
+      - name: Upload immutable container supply-chain evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: r2-container-supply-chain-${{ matrix.name }}-${{ github.sha }}
+          path: |
+            r2-container-${{ matrix.name }}.cdx.json
+            r2-container-${{ matrix.name }}-grype.json
+            r2-container-${{ matrix.name }}-evidence.json
+            r2-container-${{ matrix.name }}-signature.json
+            r2-container-${{ matrix.name }}-mesh-signature.json
+          if-no-files-found: error
+          retention-days: 30
+
+  container-reference-scan-r2:
+    name: Reference R2 container SBOM and disclosed scan (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: synapse
+            image: matrixdotorg/synapse:v1.157.2@sha256:097e3120b8ecf97e4f92537d7af2da41564c706e33fc740f3741c9defacc2af1
+          - name: nginx
+            image: nginx:1.30.4-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46
+          - name: postgres
+            image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Validate exact container policy and regression contract
+        working-directory: mesh
+        run: npm run check:container-supply-chain
+      - name: Generate digest-bound reference container SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ matrix.image }}
+          format: cyclonedx-json
+          syft-version: v1.50.0
+          output-file: r2-reference-container-${{ matrix.name }}.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Record fixable high and critical vulnerabilities
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
+        with:
+          image: ${{ matrix.image }}
+          fail-build: false
+          severity-cutoff: high
+          only-fixed: true
+          grype-version: v0.116.1
+          output-format: json
+          output-file: r2-reference-container-${{ matrix.name }}-grype.json
+      - name: Validate paired reference SBOM, exact image, and scanner database evidence
+        run: >-
+          node mesh/scripts/check-container-scan-evidence.mjs
+          --sbom "r2-reference-container-${{ matrix.name }}.cdx.json"
+          --scan "r2-reference-container-${{ matrix.name }}-grype.json"
+          --image '${{ matrix.image }}'
+          --scope reference
+          --output "r2-reference-container-${{ matrix.name }}-evidence.json"
+      - name: Upload reference container scan findings
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: r2-reference-container-scan-findings-${{ matrix.name }}-${{ github.sha }}
+          path: |
+            r2-reference-container-${{ matrix.name }}.cdx.json
+            r2-reference-container-${{ matrix.name }}-grype.json
+            r2-reference-container-${{ matrix.name }}-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Install pinned Cosign for reference signature discovery
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+      - name: Normalize untrusted reference signature discovery
+        shell: bash
+        run: |
+          set +e
+          cosign verify \
+            --certificate-identity-regexp='^.+$' \
+            --certificate-oidc-issuer-regexp='^https://.+$' \
+            --output=json \
+            '${{ matrix.image }}' > r2-reference-container-${{ matrix.name }}-signature-raw.json 2> r2-reference-container-${{ matrix.name }}-signature-error.txt
+          status=$?
+          set -e
+          node mesh/scripts/check-container-signature-evidence.mjs \
+            --verification "r2-reference-container-${{ matrix.name }}-signature-raw.json" \
+            --cosign-exit "$status" \
+            --image '${{ matrix.image }}' \
+            --output "r2-reference-container-${{ matrix.name }}-signature.json"
+          rm -f r2-reference-container-${{ matrix.name }}-signature-raw.json r2-reference-container-${{ matrix.name }}-signature-error.txt
+      - name: Upload immutable reference container supply-chain evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: r2-reference-container-supply-chain-${{ matrix.name }}-${{ github.sha }}
+          path: |
+            r2-reference-container-${{ matrix.name }}.cdx.json
+            r2-reference-container-${{ matrix.name }}-grype.json
+            r2-reference-container-${{ matrix.name }}-evidence.json
+            r2-reference-container-${{ matrix.name }}-signature.json
+          if-no-files-found: error
+          retention-days: 30
+
+  protected-evidence:
+    name: Protected security evidence manifest
+    if: always()
+    needs: [codeql, dependency-review, feature-matrix, dependency-and-secret-audit, sbom, container-supply-chain-r2, container-reference-scan-r2, disclosure-drill]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Record and validate protected security job outcomes
+        env:
+          CODEQL: ${{ needs.codeql.result }}
+          DEPENDENCY_REVIEW: ${{ needs.dependency-review.result }}
+          FEATURE_MATRIX: ${{ needs.feature-matrix.result }}
+          DEPENDENCY_AUDIT: ${{ needs.dependency-and-secret-audit.result }}
+          SBOM: ${{ needs.sbom.result }}
+          R2_CONTAINERS: ${{ needs.container-supply-chain-r2.result }}
+          R2_REFERENCE_CONTAINERS: ${{ needs.container-reference-scan-r2.result }}
+          DISCLOSURE_DRILL: ${{ needs.disclosure-drill.result }}
+        run: |
+          node mesh/scripts/protected-security-results.mjs
+      - name: Upload protected security payload
+        id: payload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: security-r0-payload-${{ github.sha }}
+          path: mesh/release/security-run-results.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Resolve protected security payload archive size
+        id: payload-metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.payload.outputs.artifact-id }}
+        run: echo "size=$(gh api repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID} --jq .size_in_bytes)" >> "$GITHUB_OUTPUT"
+      - name: Generate protected security evidence manifest
+        working-directory: mesh
+        run: |
+          node scripts/protected-evidence-manifest.mjs \
+            --source-sha "${{ github.sha }}" \
+            --tree-hash "$(git rev-parse HEAD^{tree})" \
+            --workflow-name Security \
+            --run-id "${{ github.run_id }}" \
+            --run-attempt "${{ github.run_attempt }}" \
+            --workflow-uri "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --payload-path release/security-run-results.json \
+            --payload-name security-r0-payload-${{ github.sha }} \
+            --payload-uri "${{ steps.payload.outputs.artifact-url }}" \
+            --payload-digest "${{ steps.payload.outputs.artifact-digest }}" \
+            --payload-size "${{ steps.payload-metadata.outputs.size }}" \
+            --command "all protected R2 security workflow jobs" \
+            --build-mode r2-source-and-container-security \
+            --features matrix-backend,legacy-p2p,r2-container-scan \
+            --retention-days 90 \
+            --output release/security-protected-evidence-manifest.json
+      - name: Upload protected security evidence manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: security-protected-evidence-${{ github.sha }}
+          path: mesh/release/security-protected-evidence-manifest.json
+          if-no-files-found: error
+          retention-days: 90

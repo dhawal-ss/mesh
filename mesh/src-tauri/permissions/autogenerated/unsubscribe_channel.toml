@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-unsubscribe-channel"
+description = "Enables the unsubscribe_channel command without any pre-configured scope."
+commands.allow = ["unsubscribe_channel"]
+
+[[permission]]
+identifier = "deny-unsubscribe-channel"
+description = "Denies the unsubscribe_channel command without any pre-configured scope."
+commands.deny = ["unsubscribe_channel"]

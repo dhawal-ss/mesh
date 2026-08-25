@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-community-access-settings"
+description = "Enables the matrix_community_access_settings command without any pre-configured scope."
+commands.allow = ["matrix_community_access_settings"]
+
+[[permission]]
+identifier = "deny-matrix-community-access-settings"
+description = "Denies the matrix_community_access_settings command without any pre-configured scope."
+commands.deny = ["matrix_community_access_settings"]

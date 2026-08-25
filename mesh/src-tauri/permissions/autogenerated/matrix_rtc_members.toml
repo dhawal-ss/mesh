@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-rtc-members"
+description = "Enables the matrix_rtc_members command without any pre-configured scope."
+commands.allow = ["matrix_rtc_members"]
+
+[[permission]]
+identifier = "deny-matrix-rtc-members"
+description = "Denies the matrix_rtc_members command without any pre-configured scope."
+commands.deny = ["matrix_rtc_members"]

@@ -1,0 +1,182 @@
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../ui/Modal', () => ({
+  Modal: ({
+    children,
+    title,
+  }: {
+    children: React.ReactNode
+    title: string
+  }) => (
+    <section role="dialog" aria-label={title}>
+      {children}
+    </section>
+  ),
+}))
+
+import * as bridge from '../../lib/bridge'
+import { ProtectedImageLightbox } from './ProtectedImageLightbox'
+
+describe('ProtectedImageLightbox', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  })
+
+  afterEach(async () => {
+    await act(async () => root.unmount())
+    container.remove()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('loads validated bytes, supports arrow navigation, and revokes its object URL', async () => {
+    const createObjectURL = vi.fn(() => 'blob:protected-image')
+    const revokeObjectURL = vi.fn()
+    const onPrevious = vi.fn()
+    const onNext = vi.fn()
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL })
+    vi.spyOn(bridge, 'matrixLoadAttachmentImage').mockResolvedValue({
+      bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+      contentType: 'image/png',
+    })
+
+    await act(async () => {
+      root.render(
+        <ProtectedImageLightbox
+          filename="private-image.png"
+          roomId="!private:example.org"
+          eventId="$image:example.org"
+          attachmentIndex={0}
+          thumbnail={{
+            fileHash: 'matrix-sha256:thumbnail',
+            size: 8,
+            width: 320,
+            height: 180,
+            contentType: 'image/png',
+          }}
+          imagePosition={0}
+          imageCount={2}
+          onPrevious={onPrevious}
+          onNext={onNext}
+          onClose={vi.fn()}
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(bridge.matrixLoadAttachmentImage).toHaveBeenCalledWith(
+      '!private:example.org',
+      '$image:example.org',
+      0,
+    )
+    expect(container.querySelector('img')?.getAttribute('src')).toBe(
+      'blob:protected-image',
+    )
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    await act(async () => {
+      dialog?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    })
+    expect(onNext).toHaveBeenCalledOnce()
+
+    // Scoped to the dialog: a window listener stole the arrow keys from every
+    // other surface for as long as the lightbox stayed open.
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    })
+    expect(onNext).toHaveBeenCalledOnce()
+
+    // Text entry inside the dialog keeps its own caret movement.
+    const field = document.createElement('input')
+    dialog?.appendChild(field)
+    await act(async () => {
+      field.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+    })
+    expect(onPrevious).not.toHaveBeenCalled()
+    field.remove()
+
+    const previous = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Previous image',
+    )
+    expect(previous?.getAttribute('aria-keyshortcuts')).toBe('ArrowLeft')
+
+    await act(async () => root.render(<div />))
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:protected-image')
+  })
+
+  it('shows compact loading and semantic failure states and retries', async () => {
+    let rejectLoad: ((reason?: unknown) => void) | undefined
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:retried-image'),
+      revokeObjectURL: vi.fn(),
+    })
+    vi.spyOn(bridge, 'matrixLoadAttachmentImage')
+      .mockImplementationOnce(() => new Promise((_, reject) => {
+        rejectLoad = reject
+      }))
+      .mockResolvedValueOnce({
+        bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+        contentType: 'image/png',
+      })
+
+    await act(async () => {
+      root.render(
+        <ProtectedImageLightbox
+          filename="private-image.png"
+          roomId="!private:example.org"
+          eventId="$image:example.org"
+          attachmentIndex={0}
+          thumbnail={{
+            fileHash: 'matrix-sha256:thumbnail',
+            size: 8,
+            width: 320,
+            height: 180,
+            contentType: 'image/png',
+          }}
+          imagePosition={0}
+          imageCount={1}
+          onPrevious={vi.fn()}
+          onNext={vi.fn()}
+          onClose={vi.fn()}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    const loadingStatus = container.querySelector('[role="status"]')
+    expect(loadingStatus?.textContent).toContain('Loading protected image')
+    expect(loadingStatus?.querySelector('.animate-spin')).not.toBeNull()
+
+    await act(async () => {
+      rejectLoad?.(new Error('private transport detail'))
+      await Promise.resolve()
+    })
+
+    const failure = container.querySelector('[role="alert"]')
+    expect(failure?.textContent).toBe('The full image could not be loaded.')
+    expect(failure?.className).toContain('text-status-danger')
+    expect(container.textContent).not.toContain('private transport detail')
+
+    const retry = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Retry image',
+    )
+    expect(retry).toBeDefined()
+
+    await act(async () => {
+      retry?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(bridge.matrixLoadAttachmentImage).toHaveBeenCalledTimes(2)
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:retried-image')
+  })
+})

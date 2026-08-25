@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <Property Id="MESH_NSIS_INSTALL">
+      <RegistrySearch
+        Id="MeshNsisInstallerMarkerSearch"
+        Root="HKCU"
+        Key="Software\Mesh\Installer"
+        Name="Format"
+        Type="raw" />
+    </Property>
+
+    <CustomAction
+      Id="MeshBlockNsisCoexistence"
+      Error="A consumer Mesh installation is already present. Remove Mesh from Windows Settings, then run this managed installer again. Your Mesh account data will be kept." />
+    <CustomAction
+      Id="MeshSetManagedPublisher"
+      Property="Manufacturer"
+      Value="Mesh managed deployment" />
+
+    <InstallUISequence>
+      <Custom Action="MeshBlockNsisCoexistence" After="AppSearch">
+        MESH_NSIS_INSTALL = "nsis" AND NOT Installed
+      </Custom>
+    </InstallUISequence>
+    <InstallExecuteSequence>
+      <Custom Action="MeshSetManagedPublisher" Before="InstallInitialize">
+        NOT Installed
+      </Custom>
+      <Custom Action="MeshBlockNsisCoexistence" After="AppSearch">
+        MESH_NSIS_INSTALL = "nsis" AND NOT Installed
+      </Custom>
+    </InstallExecuteSequence>
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="MeshMsiInstallerMarker" Guid="*">
+        <RegistryKey Root="HKLM" Key="Software\Mesh\Installer">
+          <RegistryValue Name="Format" Type="string" Value="msi" KeyPath="yes" />
+          <RegistryValue Name="InstallLocation" Type="string" Value="[INSTALLDIR]" />
+          <RegistryValue Name="MarkerVersion" Type="string" Value="1" />
+        </RegistryKey>
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mark-channel-read"
+description = "Enables the mark_channel_read command without any pre-configured scope."
+commands.allow = ["mark_channel_read"]
+
+[[permission]]
+identifier = "deny-mark-channel-read"
+description = "Denies the mark_channel_read command without any pre-configured scope."
+commands.deny = ["mark_channel_read"]

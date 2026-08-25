@@ -1,0 +1,313 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  MESH_MATRIX_VOICE_FRONTEND: matrix-voice
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  matrix-rust:
+    name: Matrix Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@d0befba8b9ddf874327619e84c39b094edd58b66 # 1.93.0
+        with:
+          components: clippy, rustfmt
+
+      - name: Install system dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libsqlcipher-dev
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            mesh/src-tauri/target
+          key: ${{ runner.os }}-cargo-matrix-${{ hashFiles('mesh/src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-matrix-
+
+      - name: Check Matrix backend
+        working-directory: mesh/src-tauri
+        run: cargo check --no-default-features --features matrix-backend --locked --jobs 1
+
+      - name: Lint Matrix backend and tests
+        working-directory: mesh/src-tauri
+        run: cargo clippy --no-default-features --features matrix-backend --all-targets --locked --jobs 1 -- -D warnings
+
+      - name: Check Rust formatting
+        working-directory: mesh/src-tauri
+        run: cargo fmt --check
+
+      - name: Check generated TypeScript IPC DTOs
+        working-directory: mesh
+        run: npm run check:ipc-types
+
+      - name: Check behavior-level security boundaries
+        working-directory: mesh
+        run: npm run check:security-invariants:matrix
+
+      - name: Test Matrix backend
+        working-directory: mesh/src-tauri
+        run: cargo test --no-default-features --features matrix-backend --locked --jobs 1
+
+      - name: Check and test signed-candidate Matrix voice backend
+        working-directory: mesh/src-tauri
+        run: |
+          cargo check --no-default-features --features matrix-voice --locked --jobs 1
+          cargo test --no-default-features --features matrix-voice --locked --jobs 1
+
+  legacy-rust:
+    name: Legacy LAN Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@d0befba8b9ddf874327619e84c39b094edd58b66 # 1.93.0
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libsqlcipher-dev
+
+      - name: Cache cargo registry & legacy build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            mesh/src-tauri/target
+          key: ${{ runner.os }}-cargo-legacy-${{ hashFiles('mesh/src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-legacy-
+
+      - name: Check legacy LAN backend
+        working-directory: mesh/src-tauri
+        run: cargo check --no-default-features --features legacy-p2p --locked --jobs 1
+
+      - name: Test legacy LAN backend
+        working-directory: mesh/src-tauri
+        run: cargo test --no-default-features --features legacy-p2p --locked --jobs 1
+
+      - name: Check legacy behavior-level security boundaries
+        working-directory: mesh
+        run: npm run check:security-invariants:legacy
+
+  check-frontend:
+    name: Frontend Build & Browser E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The readiness validator binds sourceTreeHash to an exact historical
+          # sourceCommit, so a synthetic depth-one PR merge is insufficient.
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            mesh/package-lock.json
+            mesh/feature-deps/matrix-voice/package-lock.json
+            mesh/feature-deps/legacy-lan/package-lock.json
+
+      - name: Install dependencies
+        working-directory: mesh
+        run: npm ci
+
+      - name: TypeScript check
+        working-directory: mesh
+        run: npx tsc --noEmit
+
+      - name: Lint React compiler and Zustand selector contracts
+        working-directory: mesh
+        run: npm run lint
+
+      - name: Check Tauri IPC command contract
+        working-directory: mesh
+        run: npm run check:ipc-contract
+
+      - name: Check renderer and native agree on command arguments
+        working-directory: mesh
+        run: npm run check:ipc-arguments
+
+      - name: Check design token source of truth
+        working-directory: mesh
+        run: npm run check:design-tokens
+
+      - name: Check icon source of truth
+        working-directory: mesh
+        run: npm run check:icons
+
+      - name: Check bundled interface sounds
+        working-directory: mesh
+        run: npm run check:interface-sounds
+
+      - name: Check reviewed public services
+        working-directory: mesh
+        run: npm run check:public-services
+
+      - name: Check protected evidence
+        working-directory: mesh
+        run: npm run check:protected-evidence
+
+      - name: Check public site source
+        working-directory: mesh
+        run: npm run check:public-site
+
+      - name: Check production operations boundary
+        working-directory: mesh
+        run: npm run check:operations-contract
+
+      - name: Check third-party notices and licenses
+        working-directory: mesh
+        run: npm run check:third-party-notices
+
+      - name: Check homeserver recovery scripts
+        working-directory: mesh
+        run: |
+          shellcheck -x -e SC1007 infra/homeserver/*.sh infra/homeserver/tests/*.sh
+          for test_script in infra/homeserver/tests/*.test.sh; do
+            sh "$test_script"
+          done
+          python -m unittest discover -s infra/homeserver/tests -p 'test_*.py' -v
+          cp infra/homeserver/.env.example infra/homeserver/.env
+          trap 'rm -f infra/homeserver/.env' EXIT
+          docker compose \
+            -f infra/homeserver/docker-compose.yml config --quiet
+
+      - name: Run tests
+        working-directory: mesh
+        run: npm run test -- --maxWorkers=4
+
+      - name: Test isolated voice dependency graphs
+        working-directory: mesh
+        run: npm run test:voice-features
+
+      # Both of these gates existed, carried their own tests, and ran in no
+      # workflow at all -- so the installer coexistence contract and the
+      # independence of the three voice lock graphs were enforced only by
+      # whoever happened to run them locally.
+      - name: Check installer coexistence contract
+        working-directory: mesh
+        run: npm run check:installer-coexistence
+
+      - name: Check voice dependency boundary
+        working-directory: mesh
+        run: npm run check:voice-dependency-boundary
+
+      - name: Build non-shipping comparison frontends
+        working-directory: mesh
+        run: |
+          npm run build:lan
+          npm run build:matrix
+
+      - name: Build signed-candidate Matrix voice frontend
+        working-directory: mesh
+        run: npm run build:matrix-voice
+
+      - name: Enforce frontend entry bundle budget
+        working-directory: mesh
+        run: npm run check:bundle-size -- --report release/bundle-report.json
+
+      - name: Install Playwright browser
+        working-directory: mesh
+        run: npm run e2e:install -- --with-deps
+
+      - name: Run browser E2E tests and WCAG scans
+        working-directory: mesh
+        run: npm run e2e
+
+  protected-evidence:
+    name: Protected CI evidence manifest
+    if: always()
+    needs: [matrix-rust, legacy-rust, check-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Fail closed unless every protected job passed
+        env:
+          MATRIX_RUST: ${{ needs.matrix-rust.result }}
+          LEGACY_RUST: ${{ needs.legacy-rust.result }}
+          FRONTEND: ${{ needs.check-frontend.result }}
+        run: |
+          node mesh/scripts/protected-ci-results.mjs
+      - name: Upload protected CI payload
+        id: payload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-r0-payload-${{ github.sha }}
+          path: mesh/release/ci-run-results.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Resolve protected CI payload archive size
+        id: payload-metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.payload.outputs.artifact-id }}
+        run: echo "size=$(gh api repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID} --jq .size_in_bytes)" >> "$GITHUB_OUTPUT"
+      - name: Generate protected CI evidence manifest
+        working-directory: mesh
+        run: |
+          node scripts/protected-evidence-manifest.mjs \
+            --source-sha "${{ github.sha }}" \
+            --tree-hash "$(git rev-parse HEAD^{tree})" \
+            --workflow-name CI \
+            --run-id "${{ github.run_id }}" \
+            --run-attempt "${{ github.run_attempt }}" \
+            --workflow-uri "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --payload-path release/ci-run-results.json \
+            --payload-name ci-r0-payload-${{ github.sha }} \
+            --payload-uri "${{ steps.payload.outputs.artifact-url }}" \
+            --payload-digest "${{ steps.payload.outputs.artifact-digest }}" \
+            --payload-size "${{ steps.payload-metadata.outputs.size }}" \
+            --command "matrix-rust + legacy-rust + check-frontend protected jobs" \
+            --build-mode matrix-voice \
+            --features matrix-voice,legacy-p2p \
+            --retention-days 90 \
+            --output release/ci-protected-evidence-manifest.json
+      - name: Upload protected CI evidence manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-protected-evidence-${{ github.sha }}
+          path: mesh/release/ci-protected-evidence-manifest.json
+          if-no-files-found: error
+          retention-days: 90

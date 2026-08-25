@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-dm-requests"
+description = "Enables the matrix_dm_requests command without any pre-configured scope."
+commands.allow = ["matrix_dm_requests"]
+
+[[permission]]
+identifier = "deny-matrix-dm-requests"
+description = "Denies the matrix_dm_requests command without any pre-configured scope."
+commands.deny = ["matrix_dm_requests"]

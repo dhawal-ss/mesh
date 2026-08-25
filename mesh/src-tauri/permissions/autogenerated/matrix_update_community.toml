@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-update-community"
+description = "Enables the matrix_update_community command without any pre-configured scope."
+commands.allow = ["matrix_update_community"]
+
+[[permission]]
+identifier = "deny-matrix-update-community"
+description = "Denies the matrix_update_community command without any pre-configured scope."
+commands.deny = ["matrix_update_community"]

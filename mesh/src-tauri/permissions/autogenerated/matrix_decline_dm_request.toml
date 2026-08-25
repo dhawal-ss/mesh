@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-decline-dm-request"
+description = "Enables the matrix_decline_dm_request command without any pre-configured scope."
+commands.allow = ["matrix_decline_dm_request"]
+
+[[permission]]
+identifier = "deny-matrix-decline-dm-request"
+description = "Denies the matrix_decline_dm_request command without any pre-configured scope."
+commands.deny = ["matrix_decline_dm_request"]

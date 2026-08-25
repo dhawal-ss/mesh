@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-request-control-log-sync"
+description = "Enables the request_control_log_sync command without any pre-configured scope."
+commands.allow = ["request_control_log_sync"]
+
+[[permission]]
+identifier = "deny-request-control-log-sync"
+description = "Denies the request_control_log_sync command without any pre-configured scope."
+commands.deny = ["request_control_log_sync"]

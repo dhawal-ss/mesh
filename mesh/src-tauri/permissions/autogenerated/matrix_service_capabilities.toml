@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-service-capabilities"
+description = "Enables the matrix_service_capabilities command without any pre-configured scope."
+commands.allow = ["matrix_service_capabilities"]
+
+[[permission]]
+identifier = "deny-matrix-service-capabilities"
+description = "Denies the matrix_service_capabilities command without any pre-configured scope."
+commands.deny = ["matrix_service_capabilities"]

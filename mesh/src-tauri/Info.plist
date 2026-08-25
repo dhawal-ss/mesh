@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSCameraUsageDescription</key>
+  <string>Mesh uses your camera only when you turn on video in a call.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Mesh uses your microphone only while you participate in a call.</string>
+</dict>
+</plist>

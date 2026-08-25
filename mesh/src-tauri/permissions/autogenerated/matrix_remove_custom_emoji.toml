@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-remove-custom-emoji"
+description = "Enables the matrix_remove_custom_emoji command without any pre-configured scope."
+commands.allow = ["matrix_remove_custom_emoji"]
+
+[[permission]]
+identifier = "deny-matrix-remove-custom-emoji"
+description = "Denies the matrix_remove_custom_emoji command without any pre-configured scope."
+commands.deny = ["matrix_remove_custom_emoji"]

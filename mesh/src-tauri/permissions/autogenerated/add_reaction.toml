@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-add-reaction"
+description = "Enables the add_reaction command without any pre-configured scope."
+commands.allow = ["add_reaction"]
+
+[[permission]]
+identifier = "deny-add-reaction"
+description = "Denies the add_reaction command without any pre-configured scope."
+commands.deny = ["add_reaction"]

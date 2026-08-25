@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-export-personal-data"
+description = "Enables the matrix_export_personal_data command without any pre-configured scope."
+commands.allow = ["matrix_export_personal_data"]
+
+[[permission]]
+identifier = "deny-matrix-export-personal-data"
+description = "Denies the matrix_export_personal_data command without any pre-configured scope."
+commands.deny = ["matrix_export_personal_data"]

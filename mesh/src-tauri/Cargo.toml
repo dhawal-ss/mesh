@@ -1,0 +1,154 @@
+[package]
+name = "mesh"
+version = "0.2.0"
+license = "AGPL-3.0-only"
+description = "Matrix-native community communication with a Discord-shaped desktop experience"
+authors = ["Dhawal Ranka"]
+edition = "2021"
+default-run = "mesh"
+
+[features]
+# Matrix is the durable, federated production backend. The legacy libp2p
+# engine remains available during migration and for future LAN/off-grid work.
+default = ["matrix-backend"]
+matrix-backend = [
+  "dep:image",
+  "dep:matrix-sdk",
+  "dep:matrix-sdk-crypto",
+  "dep:qrcode",
+  "dep:reqwest",
+  "dep:ruma",
+]
+# MatrixRTC is part of the single public-beta candidate. Release builds opt into
+# both this native feature and the separately built `matrix-voice` frontend
+# (see MESH_MATRIX_VOICE_FRONTEND); the default remains text-only for tooling.
+matrix-voice = ["matrix-backend"]
+legacy-p2p = ["dep:libp2p"]
+
+[lib]
+name = "mesh_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[test]]
+name = "crypto_tests"
+path = "tests/crypto_tests.rs"
+required-features = ["legacy-p2p"]
+
+[[test]]
+name = "live_network_tests"
+path = "tests/live_network_tests.rs"
+required-features = ["legacy-p2p"]
+
+[[test]]
+name = "turn_probe_live_tests"
+path = "tests/turn_probe_live_tests.rs"
+required-features = ["legacy-p2p"]
+
+[[test]]
+name = "matrix_federation_live_tests"
+path = "tests/matrix_federation_live_tests.rs"
+required-features = ["matrix-backend"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-opener = "=2.5.3"
+tauri-plugin-deep-link = "2"
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = "2"
+
+# P2P Networking
+libp2p = { version = "0.56", optional = true, features = [
+  "tokio",
+  "tcp",
+  "quic",
+  "noise",
+  "yamux",
+  "mdns",
+  "kad",
+  "gossipsub",
+  "identify",
+  "ping",
+  "request-response",
+  "cbor",
+  "macros",
+  "relay",
+  "dcutr",
+] }
+
+# Matrix Networking
+matrix-sdk = { version = "0.18", optional = true, default-features = false, features = [
+  "e2e-encryption",
+  "automatic-room-key-forwarding",
+  "bundled-sqlite",
+  "experimental-send-custom-to-device",
+  "qrcode",
+] }
+matrix-sdk-crypto = { version = "0.18", optional = true }
+qrcode = { version = "0.14", optional = true, default-features = false, features = ["svg"] }
+image = { version = "0.25", optional = true, default-features = false, features = ["jpeg", "png", "webp"] }
+reqwest = { version = "0.12", optional = true, default-features = false, features = ["json", "rustls-tls-native-roots"] }
+ruma = { version = "0.16", optional = true, default-features = false, features = ["unstable-msc2545"] }
+
+# Cryptography
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+x25519-dalek = { version = "2.0", features = ["static_secrets"] }
+chacha20poly1305 = "0.10"
+rand = "0.8"
+sha2 = "0.10"
+base64 = "0.22"
+mime = "0.3"
+hkdf = "0.12"
+argon2 = "0.5"
+# TURN protocol probe (RFC 5766 long-term credential mechanism)
+hmac = "0.12"
+sha1 = "0.10"
+md-5 = "0.10"
+
+# Storage
+rusqlite = { version = "0.37", features = ["bundled-sqlcipher-vendored-openssl"] }
+keyring = "2.3"
+
+# Async runtime
+tokio = { version = "1", features = ["full", "test-util"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ts-rs = { version = "11.1", features = ["serde-compat"] }
+
+# Utilities
+uuid = { version = "1.8", features = ["v4"] }
+nanoid = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+urlencoding = "2.1"
+anyhow = "1"
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+once_cell = "1.19"
+url = "2.5"
+futures = "0.3"
+async-trait = "0.1"
+
+# Tauri Plugins
+tauri-plugin-notification = { version = "2" }
+tauri-plugin-dialog = "=2.7.2"
+
+# Security
+subtle = "2.6"
+zeroize = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+# Already in the tree through tauri-plugin-notification -> notify-rust, at this
+# same version and checksum. Named directly because the plugin's desktop show()
+# builds the toast, calls show(), and drops the handle, so a notification click
+# cannot be observed through it.
+[target.'cfg(windows)'.dependencies]
+tauri-winrt-notification = "0.7.3"

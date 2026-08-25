@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-notification-account-scope"
+description = "Enables the get_notification_account_scope command without any pre-configured scope."
+commands.allow = ["get_notification_account_scope"]
+
+[[permission]]
+identifier = "deny-get-notification-account-scope"
+description = "Denies the get_notification_account_scope command without any pre-configured scope."
+commands.deny = ["get_notification_account_scope"]

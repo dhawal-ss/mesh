@@ -1,0 +1,431 @@
+{
+  "schemaVersion": 1,
+  "mode": "local-only",
+  "dockerfileFrontend": "docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e",
+  "scannerPolicy": {
+    "grypeVersion": "v0.116.1",
+    "grypeWindowsAmd64Url": "https://github.com/anchore/grype/releases/download/v0.116.1/grype_0.116.1_windows_amd64.zip",
+    "grypeWindowsAmd64ArchiveSha256": "a8ad864f2f06c9afcc90d417f46f5587adeaba4e1e46cc4e32a6a076dae2fda7",
+    "grypeWindowsAmd64Sha256": "0ab5d366118e20784222ce13c0f696e5997ae42bbcea80420d264a9c42098b57",
+    "syftVersion": "v1.50.0",
+    "syftWindowsAmd64Url": "https://github.com/anchore/syft/releases/download/v1.50.0/syft_1.50.0_windows_amd64.zip",
+    "syftWindowsAmd64ArchiveSha256": "815ee6973ec5dff6a671d7f41b0e78835a8c45b91d5a39f4743ea1cee833d3be",
+    "syftWindowsAmd64Sha256": "98a3779f229905fec96e16018adf27ed7a93adc2869d17e6fb21961eb501d398",
+    "severityCutoff": "negligible",
+    "onlyFixable": true,
+    "requireZeroFixableFindings": true,
+    "database": {
+      "sourceOrigin": "https://grype.anchore.io/databases/",
+      "maxAgeHours": 120,
+      "requireValid": true,
+      "requireHashValidation": true
+    }
+  },
+  "signing": {
+    "status": "blocked-until-protected-registry-push",
+    "requiredMode": "keyless-oidc",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "repository": "dhawal-ss/mesh",
+    "requiresDigest": true
+  },
+  "provenance": {
+    "status": "local-unsigned-only",
+    "statementType": "https://in-toto.io/Statement/v1",
+    "predicateType": "https://slsa.dev/provenance/v1",
+    "buildType": "urn:mesh:buildtype:local-container-prototype:v1",
+    "builderId": "urn:mesh:local-container-prototype:windows-amd64",
+    "signatureStatus": "blocked-until-protected-registry-push"
+  },
+  "localBuild": {
+    "buildkitProvenance": "disabled-replaced-by-explicit-local-statement",
+    "verifyRepeatImageId": true
+  },
+  "payloadPolicy": {
+    "forbiddenPaths": [
+      ".git/",
+      "bin/bash",
+      "bin/sh",
+      "go/",
+      "sbin/apk",
+      "src/",
+      "usr/bin/bash",
+      "usr/bin/git",
+      "usr/bin/sh"
+    ]
+  },
+  "prohibitions": [
+    "production-reference",
+    "registry-push",
+    "deployment",
+    "release-readiness-claim"
+  ],
+  "prototypes": [
+    {
+      "name": "caddy",
+      "status": "buildable-local",
+      "localTag": "mesh-local/caddy:2.11.4-patched.2",
+      "context": "infra/container-prototypes/caddy",
+      "dockerfile": "infra/container-prototypes/caddy/Dockerfile",
+      "builderImage": "golang:1.26.5-alpine3.23@sha256:622e56dbc11a8cfe87cafa2331e9a201877271cbff918af53d3be315f3da88cc",
+      "builderPackages": [
+        {
+          "name": "ca-certificates",
+          "version": "20260611-r0"
+        },
+        {
+          "name": "git",
+          "version": "2.52.0-r0"
+        }
+      ],
+      "source": {
+        "repository": "https://github.com/caddyserver/caddy.git",
+        "release": "v2.11.4",
+        "commit": "e2eee6a7fce366321294c9c2a79f3146891dcbdf",
+        "releaseArgument": "CADDY_VERSION"
+      },
+      "sourcePatches": [
+        {
+          "path": "infra/container-prototypes/caddy/patches/cel-go-v0.29-compat.patch",
+          "sha256": "570cce32fcd6f674cd5576f4889ac6ab1e0e810816d80229edb071a37d7f413e",
+          "upstreamRepository": "https://github.com/caddyserver/caddy",
+          "upstreamCommit": "b2693fb63a30e6d7be0972c3645e9a2c0a500e93",
+          "upstreamPullRequest": "https://github.com/caddyserver/caddy/pull/7872",
+          "purpose": "preserve Caddy 2.11.4 compatibility with the patched cel-go interpreter API"
+        }
+      ],
+      "dependencyOverrides": [
+        {
+          "module": "github.com/google/cel-go",
+          "version": "v0.29.0"
+        },
+        {
+          "module": "go.opentelemetry.io/otel",
+          "version": "v1.44.0"
+        },
+        {
+          "module": "go.opentelemetry.io/otel/metric",
+          "version": "v1.44.0"
+        },
+        {
+          "module": "go.opentelemetry.io/otel/trace",
+          "version": "v1.44.0"
+        },
+        {
+          "module": "google.golang.org/grpc",
+          "version": "v1.82.1"
+        },
+        {
+          "module": "golang.org/x/text",
+          "version": "v0.40.0"
+        }
+      ],
+      "sbom": {
+        "specVersion": "1.7",
+        "componentCount": 160,
+        "requiredComponents": [
+          {
+            "type": "file",
+            "name": "/usr/bin/caddy"
+          },
+          {
+            "type": "library",
+            "name": "github.com/caddyserver/caddy/v2",
+            "version": "v2.11.4"
+          },
+          {
+            "type": "library",
+            "name": "github.com/google/cel-go",
+            "version": "v0.29.0"
+          },
+          {
+            "type": "library",
+            "name": "go.opentelemetry.io/otel",
+            "version": "v1.44.0"
+          },
+          {
+            "type": "library",
+            "name": "go.opentelemetry.io/otel/metric",
+            "version": "v1.44.0"
+          },
+          {
+            "type": "library",
+            "name": "go.opentelemetry.io/otel/trace",
+            "version": "v1.44.0"
+          },
+          {
+            "type": "library",
+            "name": "golang.org/x/text",
+            "version": "v0.40.0"
+          },
+          {
+            "type": "library",
+            "name": "google.golang.org/grpc",
+            "version": "v1.82.1"
+          }
+        ],
+        "forbiddenComponentNames": [
+          "apk-tools",
+          "bash",
+          "busybox",
+          "git"
+        ]
+      },
+      "smokeChecks": [
+        "caddy-version",
+        "caddy-config-validation",
+        "caddy-http-health"
+      ],
+      "runtime": {
+        "user": "65532:65532",
+        "workingDirectory": "/srv",
+        "command": [
+          "caddy",
+          "run",
+          "--config",
+          "/etc/caddy/Caddyfile",
+          "--adapter",
+          "caddyfile"
+        ],
+        "exposedPorts": [
+          "2019/tcp",
+          "443/tcp",
+          "443/udp",
+          "80/tcp"
+        ],
+        "labels": {
+          "org.mesh.prototype.mode": "local-only",
+          "org.opencontainers.image.licenses": "Apache-2.0",
+          "org.opencontainers.image.revision": "e2eee6a7fce366321294c9c2a79f3146891dcbdf",
+          "org.opencontainers.image.source": "https://github.com/caddyserver/caddy",
+          "org.opencontainers.image.title": "Mesh local Caddy security prototype",
+          "org.opencontainers.image.version": "v2.11.4-mesh-prototype"
+        },
+        "containment": {
+          "readOnlyRootFilesystem": true,
+          "dropAllCapabilities": true,
+          "noNewPrivileges": true,
+          "temporaryFilesystems": [
+            {
+              "path": "/config",
+              "options": "rw,noexec,nosuid,nodev,uid=65532,gid=65532,mode=0700"
+            },
+            {
+              "path": "/data",
+              "options": "rw,noexec,nosuid,nodev,uid=65532,gid=65532,mode=0700"
+            }
+          ]
+        },
+        "payloadPermissions": [
+          {
+            "path": "/config/caddy",
+            "buildPath": "/rootfs/config/caddy",
+            "type": "directory",
+            "owner": "65532:65532",
+            "mode": "0700"
+          },
+          {
+            "path": "/data/caddy",
+            "buildPath": "/rootfs/data/caddy",
+            "type": "directory",
+            "owner": "65532:65532",
+            "mode": "0700"
+          },
+          {
+            "path": "/etc/caddy/Caddyfile",
+            "buildPath": "/rootfs/etc/caddy/Caddyfile",
+            "type": "file",
+            "owner": "0:0",
+            "mode": "0644"
+          },
+          {
+            "path": "/usr/share/caddy/index.html",
+            "buildPath": "/rootfs/usr/share/caddy/index.html",
+            "type": "file",
+            "owner": "0:0",
+            "mode": "0644"
+          },
+          {
+            "path": "/usr/bin/caddy",
+            "buildPath": "/out/caddy",
+            "type": "file",
+            "owner": "0:0",
+            "mode": "0755"
+          }
+        ]
+      },
+      "adoptionBlockers": [
+        "owner approval for a Mesh-operated image registry and maintenance contract",
+        "protected multi-architecture build, SBOM, provenance, and keyless signature evidence",
+        "full disposable federation, backup, restore, health, and cleanup regression campaign"
+      ]
+    },
+    {
+      "name": "lk-jwt-service",
+      "status": "buildable-local",
+      "localTag": "mesh-local/lk-jwt-service:0.5.0-patched.2",
+      "context": "infra/container-prototypes/lk-jwt-service",
+      "dockerfile": "infra/container-prototypes/lk-jwt-service/Dockerfile",
+      "builderImage": "golang:1.26.5-alpine3.23@sha256:622e56dbc11a8cfe87cafa2331e9a201877271cbff918af53d3be315f3da88cc",
+      "builderPackages": [
+        {
+          "name": "ca-certificates",
+          "version": "20260611-r0"
+        },
+        {
+          "name": "git",
+          "version": "2.52.0-r0"
+        }
+      ],
+      "source": {
+        "repository": "https://github.com/element-hq/lk-jwt-service.git",
+        "release": "v0.5.0",
+        "commit": "199ac87dbbf704320b277aebdf10a6280b18c77d",
+        "releaseArgument": "RELEASE_VERSION"
+      },
+      "sourcePatches": [],
+      "dependencyOverrides": [
+        {
+          "module": "github.com/google/cel-go",
+          "version": "v0.29.0"
+        },
+        {
+          "module": "github.com/pion/dtls/v3",
+          "version": "v3.1.4"
+        },
+        {
+          "module": "github.com/pion/stun/v3",
+          "version": "v3.1.5"
+        },
+        {
+          "module": "golang.org/x/net",
+          "version": "v0.57.0"
+        },
+        {
+          "module": "golang.org/x/text",
+          "version": "v0.40.0"
+        }
+      ],
+      "sbom": {
+        "specVersion": "1.7",
+        "componentCount": 82,
+        "requiredComponents": [
+          {
+            "type": "file",
+            "name": "/lk-jwt-service"
+          },
+          {
+            "type": "library",
+            "name": "github.com/google/cel-go",
+            "version": "v0.29.0"
+          },
+          {
+            "type": "library",
+            "name": "github.com/pion/dtls/v3",
+            "version": "v3.1.4"
+          },
+          {
+            "type": "library",
+            "name": "github.com/pion/stun/v3",
+            "version": "v3.1.5"
+          },
+          {
+            "type": "library",
+            "name": "github.com/livekit/protocol",
+            "version": "v1.46.4"
+          },
+          {
+            "type": "library",
+            "name": "github.com/matrix-org/gomatrixserverlib",
+            "version": "v0.0.0-20260506075950-c9c468727353"
+          },
+          {
+            "type": "library",
+            "name": "golang.org/x/net",
+            "version": "v0.57.0"
+          },
+          {
+            "type": "library",
+            "name": "golang.org/x/text",
+            "version": "v0.40.0"
+          },
+          {
+            "type": "library",
+            "name": "lk-jwt-service",
+            "version": "v0.5.0+dirty"
+          }
+        ],
+        "forbiddenComponentNames": [
+          "apk-tools",
+          "bash",
+          "busybox",
+          "git"
+        ]
+      },
+      "smokeChecks": [
+        "authorization-service-healthz"
+      ],
+      "runtime": {
+        "user": "65532:65532",
+        "workingDirectory": "/",
+        "command": [
+          "/lk-jwt-service"
+        ],
+        "exposedPorts": [
+          "8080/tcp"
+        ],
+        "labels": {
+          "org.mesh.prototype.mode": "local-only",
+          "org.opencontainers.image.licenses": "Apache-2.0",
+          "org.opencontainers.image.revision": "199ac87dbbf704320b277aebdf10a6280b18c77d",
+          "org.opencontainers.image.source": "https://github.com/element-hq/lk-jwt-service",
+          "org.opencontainers.image.title": "Mesh local lk-jwt-service security prototype",
+          "org.opencontainers.image.version": "v0.5.0-mesh-prototype"
+        },
+        "containment": {
+          "readOnlyRootFilesystem": true,
+          "dropAllCapabilities": true,
+          "noNewPrivileges": true,
+          "temporaryFilesystems": []
+        },
+        "payloadPermissions": [
+          {
+            "path": "/lk-jwt-service",
+            "buildPath": "/out/lk-jwt-service",
+            "type": "file",
+            "owner": "0:0",
+            "mode": "0755"
+          }
+        ]
+      },
+      "adoptionBlockers": [
+        "upstream integration and ESS checks for the patched dependency graph must pass",
+        "owner approval for a Mesh-operated image registry and maintenance contract",
+        "protected MatrixRTC operator and physical-device acceptance against the signed candidate"
+      ]
+    },
+    {
+      "name": "synapse",
+      "status": "blocked-upstream",
+      "source": {
+        "repository": "https://github.com/element-hq/synapse.git",
+        "release": "v1.158.0",
+        "commit": "7a3e98b6f77ee3a5fe4dbeb934b0a0c1721e6afe"
+      },
+      "diagnosticScans": [
+        {
+          "name": "release",
+          "image": "matrixdotorg/synapse:v1.158.0@sha256:5f868df1f5772907c6dbe973a9b69ab530a5d6bb317c011a3788f7ad78eb1292",
+          "fixedFindings": 62,
+          "fixedHighOrCriticalFindings": 32
+        },
+        {
+          "name": "development",
+          "image": "matrixdotorg/synapse:develop@sha256:bc21cb059a5120032138c7f00ec0f26d4544e1b7f18413c24d4388b0a028d679",
+          "fixedFindings": 62,
+          "fixedHighOrCriticalFindings": 32
+        }
+      ],
+      "blockReason": "The release and current development images retain fixed high or critical findings in Python, OpenSSL, curl, Twisted, and cryptography. The advertised fixes require prerelease or otherwise unreviewed runtime and dependency changes, so a custom image cannot be produced safely from the current supported Synapse stack."
+    }
+  ]
+}

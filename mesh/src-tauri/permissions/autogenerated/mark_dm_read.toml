@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mark-dm-read"
+description = "Enables the mark_dm_read command without any pre-configured scope."
+commands.allow = ["mark_dm_read"]
+
+[[permission]]
+identifier = "deny-mark-dm-read"
+description = "Denies the mark_dm_read command without any pre-configured scope."
+commands.deny = ["mark_dm_read"]

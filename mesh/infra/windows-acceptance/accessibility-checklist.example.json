@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "sourceSha": null,
+  "candidateSha256": null,
+  "candidateSignatureStatus": null,
+  "testedAt": null,
+  "tester": null,
+  "hardware": null,
+  "windowsVersion": null,
+  "webView2Version": null,
+  "nvdaVersion": null,
+  "cases": [
+    {
+      "id": "accessibility.keyboard-only",
+      "status": "not-run",
+      "equipment": "Physical keyboard and signed installed Windows candidate",
+      "steps": "Complete onboarding, open a community invitation, navigate rooms and direct messages, send a message, use menus and dialogs, and sign out without a pointing device.",
+      "expected": "Every action is reachable in a logical order, visible focus never disappears, Escape closes transient UI, and focus returns to the initiating control.",
+      "artifactPath": null,
+      "notes": null
+    },
+    {
+      "id": "accessibility.nvda",
+      "status": "not-run",
+      "equipment": "Current NVDA, speakers or headphones, and signed installed Windows candidate",
+      "steps": "Read onboarding, invitation review, room navigation, message timeline, composer, message actions, notifications, recovery, and voice controls with browse and focus modes.",
+      "expected": "Landmarks, names, roles, states, message order, live updates, errors, and recovery actions are announced once and in context.",
+      "artifactPath": null,
+      "notes": null
+    },
+    {
+      "id": "accessibility.native-200-percent",
+      "status": "not-run",
+      "equipment": "Windows display scaling or text size at 200 percent and signed installed candidate",
+      "steps": "Repeat onboarding, invitation, room, direct-message, settings, recovery, and voice-control journeys at 1280 by 720 logical desktop space.",
+      "expected": "No required control or text is clipped, overlapped, hidden without a reachable scroll path, or dependent on horizontal page scrolling.",
+      "artifactPath": null,
+      "notes": null
+    },
+    {
+      "id": "accessibility.windows-high-contrast",
+      "status": "not-run",
+      "equipment": "Windows contrast theme and signed installed candidate",
+      "steps": "Inspect onboarding, room navigation, unread state, composer, focus, errors, dialogs, recovery, and voice states with a Windows contrast theme enabled.",
+      "expected": "Text, boundaries, selected state, focus, status, and disabled state remain distinguishable without color-only meaning.",
+      "artifactPath": null,
+      "notes": null
+    },
+    {
+      "id": "accessibility.reduced-motion",
+      "status": "not-run",
+      "equipment": "Windows animation effects disabled and signed installed candidate",
+      "steps": "Open and close navigation, settings, dialogs, drawers, onboarding transitions, message actions, and voice controls.",
+      "expected": "Nonessential motion is removed immediately while state changes, focus movement, and progress remain understandable.",
+      "artifactPath": null,
+      "notes": null
+    }
+  ]
+}

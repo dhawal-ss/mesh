@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-join-room"
+description = "Enables the matrix_join_room command without any pre-configured scope."
+commands.allow = ["matrix_join_room"]
+
+[[permission]]
+identifier = "deny-matrix-join-room"
+description = "Denies the matrix_join_room command without any pre-configured scope."
+commands.deny = ["matrix_join_room"]

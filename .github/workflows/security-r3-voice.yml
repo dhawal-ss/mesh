@@ -1,0 +1,134 @@
+name: R3 voice infrastructure security (non-R2)
+
+# Matrix voice is included in the signed draft candidate so it can be tested on
+# real devices. This workflow keeps the R3 MatrixRTC contracts and voice-only
+# images fail-closed and visible; public-beta promotion still requires the
+# separate complete live acceptance campaign.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  matrixrtc-contracts-r3:
+    name: R3 MatrixRTC and operator contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate fail-closed R3 voice contracts
+        working-directory: mesh
+        shell: pwsh
+        run: |
+          ./infra/matrixrtc/test-evidence-validation.ps1
+          ./scripts/matrixrtc-preflight.ps1 -RequireCompose
+          ./scripts/operator-smoke.ps1 -Milestone R3
+
+  container-supply-chain-r3:
+    name: R3 voice container SBOM and fixable high scan (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: lk-jwt-service
+            image: ghcr.io/dhawal-ss/mesh-lk-jwt-service:0.5.0-mesh.2@sha256:78bf2f1e8535928037abc35a9886614b3f722885b54f1f707a570e6991252710
+          - name: livekit-server
+            image: livekit/livekit-server:v1.13.5@sha256:3497163e15c48fef6e7830c78716f9e9d5edc28abf7aa90b61c86e93bbc306b1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Validate explicit R2 and R3 container boundaries
+        working-directory: mesh
+        run: npm run check:container-supply-chain
+      - name: Generate R3 voice container SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ matrix.image }}
+          format: cyclonedx-json
+          syft-version: v1.50.0
+          output-file: r3-container-${{ matrix.name }}.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Scan R3 voice image for fixable high and critical vulnerabilities
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
+        with:
+          image: ${{ matrix.image }}
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
+          grype-version: v0.116.1
+          output-format: json
+          output-file: r3-container-${{ matrix.name }}-grype.json
+      - name: Validate paired SBOM, exact image, and scanner database evidence
+        run: >-
+          node mesh/scripts/check-container-scan-evidence.mjs
+          --sbom "r3-container-${{ matrix.name }}.cdx.json"
+          --scan "r3-container-${{ matrix.name }}-grype.json"
+          --image '${{ matrix.image }}'
+          --output "r3-container-${{ matrix.name }}-evidence.json"
+      - name: Upload R3 voice scan findings
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: r3-container-scan-findings-${{ matrix.name }}-${{ github.sha }}
+          path: |
+            r3-container-${{ matrix.name }}.cdx.json
+            r3-container-${{ matrix.name }}-grype.json
+            r3-container-${{ matrix.name }}-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Install pinned Cosign for R3 signature discovery
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+      - name: Normalize untrusted R3 upstream signature discovery
+        shell: bash
+        run: |
+          set +e
+          cosign verify \
+            --certificate-identity-regexp='^.+$' \
+            --certificate-oidc-issuer-regexp='^https://.+$' \
+            --output=json \
+            '${{ matrix.image }}' > r3-container-${{ matrix.name }}-signature-raw.json 2> r3-container-${{ matrix.name }}-signature-error.txt
+          status=$?
+          set -e
+          node mesh/scripts/check-container-signature-evidence.mjs \
+            --verification "r3-container-${{ matrix.name }}-signature-raw.json" \
+            --cosign-exit "$status" \
+            --image '${{ matrix.image }}' \
+            --output "r3-container-${{ matrix.name }}-signature.json"
+          rm -f r3-container-${{ matrix.name }}-signature-raw.json r3-container-${{ matrix.name }}-signature-error.txt
+      - name: Verify Mesh-maintained candidate signature
+        if: startsWith(matrix.image, 'ghcr.io/dhawal-ss/')
+        shell: bash
+        run: |
+          cosign verify \
+            --certificate-identity-regexp='^https://github\.com/dhawal-ss/mesh/\.github/workflows/container-candidates\.yml@refs/heads/(main|beta/production-readiness-2026-08)$' \
+            --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
+            --output=json \
+            '${{ matrix.image }}' > r3-container-${{ matrix.name }}-mesh-signature-raw.json
+          node mesh/scripts/check-candidate-container-signature-evidence.mjs \
+            --verification "r3-container-${{ matrix.name }}-mesh-signature-raw.json" \
+            --image '${{ matrix.image }}' \
+            --output "r3-container-${{ matrix.name }}-mesh-signature.json"
+          rm -f r3-container-${{ matrix.name }}-mesh-signature-raw.json
+      - name: Upload immutable R3 voice supply-chain evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: r3-container-supply-chain-${{ matrix.name }}-${{ github.sha }}
+          path: |
+            r3-container-${{ matrix.name }}.cdx.json
+            r3-container-${{ matrix.name }}-grype.json
+            r3-container-${{ matrix.name }}-evidence.json
+            r3-container-${{ matrix.name }}-signature.json
+            r3-container-${{ matrix.name }}-mesh-signature.json
+          if-no-files-found: error
+          retention-days: 30

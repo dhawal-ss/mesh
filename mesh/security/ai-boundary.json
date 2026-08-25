@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "productionFeature": "disabled",
+  "network": {
+    "allowedPackages": [],
+    "allowedHosts": []
+  },
+  "authority": {
+    "allowedActions": [
+      "draft-suggestion"
+    ],
+    "forbiddenActions": [
+      "network-request",
+      "send-message",
+      "create-invitation",
+      "remove-member",
+      "ban-member",
+      "change-role",
+      "moderate-content"
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-recover"
+description = "Enables the matrix_recover command without any pre-configured scope."
+commands.allow = ["matrix_recover"]
+
+[[permission]]
+identifier = "deny-matrix-recover"
+description = "Denies the matrix_recover command without any pre-configured scope."
+commands.deny = ["matrix_recover"]

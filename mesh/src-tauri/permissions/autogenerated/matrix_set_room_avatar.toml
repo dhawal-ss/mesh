@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-set-room-avatar"
+description = "Enables the matrix_set_room_avatar command without any pre-configured scope."
+commands.allow = ["matrix_set_room_avatar"]
+
+[[permission]]
+identifier = "deny-matrix-set-room-avatar"
+description = "Denies the matrix_set_room_avatar command without any pre-configured scope."
+commands.deny = ["matrix_set_room_avatar"]

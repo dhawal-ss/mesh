@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "mode": "mesh-maintained-candidate",
+  "registry": "ghcr.io/dhawal-ss",
+  "visibility": "public-required",
+  "ownerApproval": {
+    "approvedAt": "2026-08-10",
+    "scope": "zero-cost GHCR build and maintenance for the hardened Caddy and lk-jwt-service candidates"
+  },
+  "workflow": ".github/workflows/container-candidates.yml",
+  "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+  ],
+  "builderImage": "golang:1.26.5-alpine3.23@sha256:622e56dbc11a8cfe87cafa2331e9a201877271cbff918af53d3be315f3da88cc",
+  "tooling": {
+    "syftVersion": "v1.50.0",
+    "grypeVersion": "v0.116.1",
+    "cosignVersion": "v3.0.6"
+  },
+  "signaturePolicy": {
+    "issuer": "https://token.actions.githubusercontent.com",
+    "identityRegexp": "^https://github\\.com/dhawal-ss/mesh/\\.github/workflows/container-candidates\\.yml@refs/heads/(main|beta/production-readiness-2026-08)$",
+    "maxPayloadBytes": 1048576,
+    "maxSignatures": 16
+  },
+  "maintenance": {
+    "scheduledScan": "weekly",
+    "fixableHighResponseHours": 24,
+    "unfixedCriticalReviewHours": 24,
+    "rebuildRequires": [
+      "source tag and commit binding",
+      "multi-platform build",
+      "CycloneDX SBOM",
+      "zero fixable High or Critical findings",
+      "keyless signature",
+      "registry provenance attestation"
+    ]
+  },
+  "images": [
+    {
+      "name": "caddy",
+      "image": "ghcr.io/dhawal-ss/mesh-caddy:2.11.4-mesh.1",
+      "publishedDigest": "sha256:67cf933778f84aadd59f93fc5d2eaf6471df7b415135ae95fc1b1e6e5f4b7e4f",
+      "context": "infra/container-candidates/caddy",
+      "dockerfile": "infra/container-candidates/caddy/Dockerfile",
+      "sourceRepository": "https://github.com/caddyserver/caddy.git",
+      "sourceRelease": "v2.11.4",
+      "sourceCommit": "e2eee6a7fce366321294c9c2a79f3146891dcbdf",
+      "runtimeUser": "65532:65532",
+      "sourcePatches": [
+        {
+          "path": "infra/container-candidates/caddy/patches/cel-go-v0.29-compat.patch",
+          "sha256": "570cce32fcd6f674cd5576f4889ac6ab1e0e810816d80229edb071a37d7f413e"
+        }
+      ]
+    },
+    {
+      "name": "lk-jwt-service",
+      "image": "ghcr.io/dhawal-ss/mesh-lk-jwt-service:0.5.0-mesh.2",
+      "publishedDigest": "sha256:78bf2f1e8535928037abc35a9886614b3f722885b54f1f707a570e6991252710",
+      "context": "infra/container-candidates/lk-jwt-service",
+      "dockerfile": "infra/container-candidates/lk-jwt-service/Dockerfile",
+      "sourceRepository": "https://github.com/element-hq/lk-jwt-service.git",
+      "sourceRelease": "v0.5.0",
+      "sourceCommit": "199ac87dbbf704320b277aebdf10a6280b18c77d",
+      "runtimeUser": "65532:65532",
+      "sourcePatches": []
+    }
+  ],
+  "blocked": [
+    {
+      "name": "synapse",
+      "reason": "No supported upstream release or reviewed custom dependency stack currently clears the fail-closed fixable High and Critical policy."
+    }
+  ]
+}

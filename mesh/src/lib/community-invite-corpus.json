@@ -1,0 +1,44 @@
+[
+  {
+    "name": "single-via",
+    "url": "mesh://join?v=5&kind=community&room=!garden%3Acommunity.example&via=community.example&admission=https%3A%2F%2Finvites.community.example&code=abcdefghijklmnopqrstuvwxyzABCDEFG_123456789",
+    "accept": true,
+    "via": ["community.example"],
+    "viaTruncated": false
+  },
+  {
+    "name": "deduplicate-and-preserve-order",
+    "url": "mesh://join?v=5&kind=community&room=!garden%3Acommunity.example&via=backup.example%2Ccommunity.example&via=backup.example&admission=https%3A%2F%2Finvites.community.example&code=abcdefghijklmnopqrstuvwxyzABCDEFG_123456789",
+    "accept": true,
+    "via": ["backup.example", "community.example"],
+    "viaTruncated": false
+  },
+  {
+    "name": "truncate-after-deduplication",
+    "url": "mesh://join?v=5&kind=community&room=!garden%3Acommunity.example&via=first.example&via=second.example%2Cthird.example%2Cfourth.example&via=first.example&admission=https%3A%2F%2Finvites.community.example&code=abcdefghijklmnopqrstuvwxyzABCDEFG_123456789",
+    "accept": true,
+    "via": ["first.example", "second.example", "third.example"],
+    "viaTruncated": true
+  },
+  {
+    "name": "reject-empty-via-entry",
+    "url": "mesh://join?v=5&kind=community&room=!garden%3Acommunity.example&via=first.example%2C%2Cthird.example&admission=https%3A%2F%2Finvites.community.example&code=abcdefghijklmnopqrstuvwxyzABCDEFG_123456789",
+    "accept": false,
+    "via": [],
+    "viaTruncated": false
+  },
+  {
+    "name": "reject-invalid-via-server",
+    "url": "mesh://join?v=5&kind=community&room=!garden%3Acommunity.example&via=first.example%2Cbad%20server&admission=https%3A%2F%2Finvites.community.example&code=abcdefghijklmnopqrstuvwxyzABCDEFG_123456789",
+    "accept": false,
+    "via": [],
+    "viaTruncated": false
+  },
+  {
+    "name": "reject-missing-via",
+    "url": "mesh://join?v=5&kind=community&room=!garden%3Acommunity.example&admission=https%3A%2F%2Finvites.community.example&code=abcdefghijklmnopqrstuvwxyzABCDEFG_123456789",
+    "accept": false,
+    "via": [],
+    "viaTruncated": false
+  }
+]

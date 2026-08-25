@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-revoke-device"
+description = "Enables the matrix_revoke_device command without any pre-configured scope."
+commands.allow = ["matrix_revoke_device"]
+
+[[permission]]
+identifier = "deny-matrix-revoke-device"
+description = "Denies the matrix_revoke_device command without any pre-configured scope."
+commands.deny = ["matrix_revoke_device"]

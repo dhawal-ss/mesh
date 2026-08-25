@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.mesh.homeserver.offsite-backup</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>/Users/mesh/mesh/infra/homeserver/offsite-backup.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/mesh/mesh/infra/homeserver</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>RESTIC_REPOSITORY</key>
+    <string>s3:s3.example.invalid/community-matrix</string>
+    <key>RESTIC_PASSWORD_COMMAND</key>
+    <string>security find-generic-password -s "Mesh Restic Password" -w</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>2</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/mesh/mesh/infra/homeserver/runtime/logs/offsite-backup.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/mesh/mesh/infra/homeserver/runtime/logs/offsite-backup.error.log</string>
+</dict>
+</plist>

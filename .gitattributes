@@ -1,0 +1,3 @@
+* text=auto eol=lf
+mesh/infra/container-prototypes/caddy/patches/*.patch whitespace=-space-before-tab
+mesh/infra/container-candidates/caddy/patches/*.patch whitespace=-space-before-tab

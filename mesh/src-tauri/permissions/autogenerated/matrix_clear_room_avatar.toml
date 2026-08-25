@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-clear-room-avatar"
+description = "Enables the matrix_clear_room_avatar command without any pre-configured scope."
+commands.allow = ["matrix_clear_room_avatar"]
+
+[[permission]]
+identifier = "deny-matrix-clear-room-avatar"
+description = "Denies the matrix_clear_room_avatar command without any pre-configured scope."
+commands.deny = ["matrix_clear_room_avatar"]

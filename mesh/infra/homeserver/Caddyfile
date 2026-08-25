@@ -1,0 +1,50 @@
+{
+	email {$ACME_EMAIL}
+	admin off
+}
+
+{$MESH_SERVER_NAME} {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+
+	handle /.well-known/matrix/client {
+		root * /srv/well-known
+		rewrite * /matrix-client.json
+		header Content-Type "application/json"
+		header Access-Control-Allow-Origin "*"
+		header Cache-Control "public, max-age=300"
+		file_server
+	}
+
+	handle /.well-known/matrix/server {
+		header Content-Type "application/json"
+		header Cache-Control "public, max-age=300"
+		respond `{"m.server":"{$MESH_HOMESERVER_HOST}:443"}` 200
+	}
+
+	handle_path /_mesh/admission/* {
+		respond "Community invitations are not available." 404
+	}
+
+	handle /invite/* {
+		respond "Community invitations are not available." 404
+	}
+
+	handle {
+		respond "Mesh service is online." 200
+	}
+}
+
+{$MESH_HOMESERVER_HOST} {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+	@admin_api path /_synapse/admin*
+	respond @admin_api 404
+	reverse_proxy synapse:8008
+}

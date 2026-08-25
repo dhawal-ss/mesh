@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-request-destructive-action-grant"
+description = "Enables the request_destructive_action_grant command without any pre-configured scope."
+commands.allow = ["request_destructive_action_grant"]
+
+[[permission]]
+identifier = "deny-request-destructive-action-grant"
+description = "Denies the request_destructive_action_grant command without any pre-configured scope."
+commands.deny = ["request_destructive_action_grant"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-generate-identity"
+description = "Enables the generate_identity command without any pre-configured scope."
+commands.allow = ["generate_identity"]
+
+[[permission]]
+identifier = "deny-generate-identity"
+description = "Denies the generate_identity command without any pre-configured scope."
+commands.deny = ["generate_identity"]

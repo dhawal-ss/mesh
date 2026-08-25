@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-ensure-dm"
+description = "Enables the matrix_ensure_dm command without any pre-configured scope."
+commands.allow = ["matrix_ensure_dm"]
+
+[[permission]]
+identifier = "deny-matrix-ensure-dm"
+description = "Denies the matrix_ensure_dm command without any pre-configured scope."
+commands.deny = ["matrix_ensure_dm"]

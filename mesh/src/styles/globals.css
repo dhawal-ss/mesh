@@ -1,0 +1,3512 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('@fontsource-variable/inter/files/inter-latin-wght-normal.woff2')
+    format('woff2-variations');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url('@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2') format('woff2');
+}
+
+:root {
+  color-scheme: dark;
+  font-feature-settings: 'liga' 1, 'calt' 1;
+
+  /*
+   * Tier 1: reference colors. This palette is intentionally quiet and
+   * neutral: the accent is reserved for identity, focus, and action.
+   * Components may consume semantic or component tokens only.
+   */
+  --ref-neutral-1: #101113;
+  --ref-neutral-1-rgb: 16 17 19;
+  --ref-neutral-2: #1b1c1f;
+  --ref-neutral-2-rgb: 27 28 31;
+  --ref-neutral-3: #202125;
+  --ref-neutral-3-rgb: 32 33 37;
+  --ref-neutral-4: #27292e;
+  --ref-neutral-4-rgb: 39 41 46;
+  --ref-neutral-5: #2e3036;
+  --ref-neutral-5-rgb: 46 48 54;
+  --ref-neutral-6: #383a40;
+  --ref-neutral-7: #4a4d54;
+  --ref-neutral-7-rgb: 74 77 84;
+  --ref-neutral-8: #5a5e65;
+  --ref-neutral-9: #71757c;
+  --ref-neutral-9-rgb: 113 117 124;
+  --ref-neutral-10: #9fa3aa;
+  --ref-neutral-11: #c6c8cc;
+  --ref-neutral-12: #f0f1f2;
+  --ref-neutral-12-rgb: 240 241 242;
+
+  /* Legacy violet references remain until the active accent aliases migrate. */
+  --ref-mesh-violet-8: #5948b8;
+  --ref-mesh-violet-8-rgb: 89 72 184;
+  --ref-mesh-violet-9: #8c7cff;
+  --ref-mesh-violet-9-rgb: 140 124 255;
+  --ref-mesh-violet-10: #a99cff;
+  --ref-mesh-violet-10-rgb: 169 156 255;
+
+  /*
+   * Quiet Structure is the canonical product palette. Everything soft except
+   * the structural marks, which are dead sharp: the ground is a colder, deeper
+   * near-black and every boundary is an alpha-white hairline rather than a
+   * value step between surfaces.
+   */
+  --ref-quiet-canvas: #0A0A0B;
+  --ref-quiet-canvas-rgb: 10 10 11;
+  /* The one raised surface in the system. Used by the single panel card. */
+  --ref-quiet-raised: #101012;
+  --ref-quiet-raised-rgb: 16 16 18;
+  --ref-quiet-primary: #EDEDEF;
+  --ref-quiet-primary-rgb: 237 237 239;
+  /* Message body text, one step below primary so prose recedes from titles. */
+  --ref-quiet-body: #D6D7DB;
+  --ref-quiet-body-rgb: 214 215 219;
+  --ref-quiet-secondary: #8B8D93;
+  --ref-quiet-secondary-rgb: 139 141 147;
+  /*
+   * Supporting metadata at 4.00:1. Below the 4.5:1 body-text floor, so this is
+   * legal for text at 18px and above (WCAG 1.4.3 large text) and for control
+   * boundaries (1.4.11), and illegal for a 9.5px eyebrow.
+   */
+  --ref-quiet-tertiary: #6E7077;
+  --ref-quiet-tertiary-rgb: 110 112 119;
+
+  /*
+   * The structural accent triad plus the confirmation green. These are the
+   * colours the trust rail, the active plane and the state ticks are made of.
+   */
+  --ref-quiet-ultramarine: #5B8CFF;
+  --ref-quiet-ultramarine-rgb: 91 140 255;
+  --ref-quiet-vermilion: #FF5C4D;
+  --ref-quiet-vermilion-rgb: 255 92 77;
+  --ref-quiet-chrome: #FFC91C;
+  --ref-quiet-chrome-rgb: 255 201 28;
+  --ref-quiet-green: #3DD68C;
+  --ref-quiet-green-rgb: 61 214 140;
+
+  /*
+   * Light ground. Quiet Structure is designed dark; the light theme is a
+   * derivation, not a design. The one rule that cannot be flipped
+   * automatically is the hairline: alpha-white over near-black becomes
+   * alpha-black over the light canvas, re-derived rather than inverted.
+   */
+  --ref-quiet-light-canvas: #F7F6F2;
+  --ref-quiet-light-canvas-rgb: 247 246 242;
+  --ref-quiet-light-primary: #171817;
+  --ref-quiet-light-primary-rgb: 23 24 23;
+  --ref-quiet-light-body: #2F3130;
+  --ref-quiet-light-body-rgb: 47 49 48;
+  --ref-quiet-light-secondary: #5E6160;
+  --ref-quiet-light-secondary-rgb: 94 97 96;
+  --ref-quiet-light-tertiary: #74777A;
+  --ref-quiet-light-tertiary-rgb: 116 119 122;
+  --ref-quiet-light-rule: #6E716F;
+  --ref-quiet-light-rule-rgb: 110 113 111;
+  --ref-quiet-light-rule-soft: #D8D7D2;
+  --ref-quiet-light-rule-soft-rgb: 216 215 210;
+  --ref-quiet-light-rail: #EEEDE8;
+  --ref-quiet-light-rail-rgb: 238 237 232;
+  --ref-quiet-light-hover: #ECEAE4;
+  --ref-quiet-light-hover-rgb: 236 234 228;
+  --ref-quiet-light-active: #E4E2DA;
+  --ref-quiet-light-active-rgb: 228 226 218;
+  --ref-quiet-light-ultramarine: #2A4FB8;
+  --ref-quiet-light-ultramarine-rgb: 42 79 184;
+  --ref-quiet-light-vermilion: #B22C1F;
+  --ref-quiet-light-vermilion-rgb: 178 44 31;
+  --ref-quiet-light-chrome: #7A5A00;
+  --ref-quiet-light-chrome-rgb: 122 90 0;
+  --ref-quiet-light-green: #16663D;
+  --ref-quiet-light-green-rgb: 22 102 61;
+
+  /*
+   * Alpha-white is the whole structural vocabulary. Four strengths, named by
+   * the job they do rather than by their value, so a rule can never be reached
+   * for as a control boundary: .08 is 1.19:1 and would fail WCAG 1.4.11.
+   */
+  /*
+   * The two washes above, resolved against the canvas. A translucent value
+   * cannot be handed to Tailwind's alpha syntax, so the composited result is
+   * carried here and the two are asserted to agree by the token gate.
+   */
+  --ref-quiet-fill: #161617;
+  --ref-quiet-fill-rgb: 22 22 23;
+  --ref-quiet-fill-strong: #1E1E1F;
+  --ref-quiet-fill-strong-rgb: 30 30 31;
+
+  --ref-quiet-rule-alpha: 0.08;
+  --ref-quiet-rule-soft-alpha: 0.045;
+  --ref-quiet-fill-alpha: 0.05;
+  --ref-quiet-fill-hover-alpha: 0.08;
+
+  --ref-accent-8: #A07C00;
+  --ref-accent-8-rgb: 160 124 0;
+  --ref-accent-9: #FFC91C;
+  --ref-accent-9-rgb: 255 201 28;
+  --ref-accent-10: #FFDD6B;
+  --ref-accent-10-rgb: 255 221 107;
+  --ref-accent-11: #FFEFB0;
+  --ref-green-11: #3dbe72;
+  --ref-red-11: #f06a73;
+  --ref-red-11-rgb: 240 106 115;
+  --ref-red-light-11: #b4232a;
+  --ref-red-light-11-rgb: 180 35 42;
+  --ref-amber-11: #f0b232;
+  --ref-amber-11-rgb: 240 178 50;
+  --ref-amber-light-11: #815900;
+  --ref-amber-light-11-rgb: 129 89 0;
+  --ref-blue-11: #6fafff;
+  --ref-blue-11-rgb: 111 175 255;
+  --ref-blue-light-11: #1f5fae;
+  --ref-blue-light-11-rgb: 31 95 174;
+  /*
+   * Light-theme accent ramps. The dark ramps are pale by design (they sit on
+   * near-black), which leaves them at ~1.7:1 on a light canvas: invisible as
+   * fills, rings, and the active-channel marker. Each light ramp is verified at
+   * >= 4.5:1 against white so it works for both text and non-text contrast.
+   */
+  --ref-accent-sand-light-9: #7A5A00;
+  --ref-accent-sand-light-9-rgb: 122 90 0;
+  --ref-accent-sand-light-10: #5C4400;
+  --ref-accent-sand-light-10-rgb: 92 68 0;
+  --ref-accent-sand-light-8: #9C7A1E;
+  --ref-accent-sand-light-8-rgb: 156 122 30;
+  --ref-accent-ocean-light-9: #2A4FB8;
+  --ref-accent-ocean-light-9-rgb: 42 79 184;
+  --ref-accent-ocean-light-10: #1E3A8C;
+  --ref-accent-ocean-light-10-rgb: 30 58 140;
+  --ref-accent-ocean-light-8: #6485D6;
+  --ref-accent-ocean-light-8-rgb: 100 133 214;
+  --ref-accent-violet-light-9: #A31580;
+  --ref-accent-violet-light-9-rgb: 163 21 128;
+  --ref-accent-violet-light-10: #7D1062;
+  --ref-accent-violet-light-10-rgb: 125 16 98;
+  --ref-accent-violet-light-8: #CC5FAE;
+  --ref-accent-violet-light-8-rgb: 204 95 174;
+  --ref-accent-forest-light-9: #4A6B00;
+  --ref-accent-forest-light-9-rgb: 74 107 0;
+  --ref-accent-forest-light-10: #385100;
+  --ref-accent-forest-light-10-rgb: 56 81 0;
+  --ref-accent-forest-light-8: #6E8C22;
+  --ref-accent-forest-light-8-rgb: 110 140 34;
+  --ref-accent-ember-light-9: #B22C1F;
+  --ref-accent-ember-light-9-rgb: 178 44 31;
+  --ref-accent-ember-light-10: #8A2117;
+  --ref-accent-ember-light-10-rgb: 138 33 23;
+  --ref-accent-ember-light-8: #D06A5F;
+  --ref-accent-ember-light-8-rgb: 208 106 95;
+  --ref-accent-rose-light-9: #0F6B73;
+  --ref-accent-rose-light-9-rgb: 15 107 115;
+  --ref-accent-rose-light-10: #0B5157;
+  --ref-accent-rose-light-10-rgb: 11 81 87;
+  --ref-accent-rose-light-8: #4A9AA1;
+  --ref-accent-rose-light-8-rgb: 74 154 161;
+  /*
+   * The rail is the one surface that sits behind every route, so it is the one
+   * surface that must not go cold. This is the canvas taken two steps darker on
+   * the same warm ramp, not pure black.
+   */
+  --ref-quiet-rail: #0D0C0B;
+  --ref-black: #000000;
+  --ref-black-rgb: 0 0 0;
+  --ref-white: #ffffff;
+  --ref-white-rgb: 255 255 255;
+
+  --ref-accent-ocean-9: #5B8CFF;
+  --ref-accent-ocean-9-rgb: 91 140 255;
+  --ref-accent-ocean-10: #8AAEFF;
+  --ref-accent-ocean-10-rgb: 138 174 255;
+  --ref-accent-ocean-8: #3E68B8;
+  --ref-accent-ocean-8-rgb: 62 104 184;
+  --ref-accent-violet-9: #FF5FD1;
+  --ref-accent-violet-9-rgb: 255 95 209;
+  --ref-accent-violet-10: #FF95E1;
+  --ref-accent-violet-10-rgb: 255 149 225;
+  --ref-accent-violet-8: #B04496;
+  --ref-accent-violet-8-rgb: 176 68 150;
+  --ref-accent-forest-9: #B6E82E;
+  --ref-accent-forest-9-rgb: 182 232 46;
+  --ref-accent-forest-10: #CFF06E;
+  --ref-accent-forest-10-rgb: 207 240 110;
+  --ref-accent-forest-8: #77991F;
+  --ref-accent-forest-8-rgb: 119 153 31;
+  --ref-accent-ember-9: #FF5C4D;
+  --ref-accent-ember-9-rgb: 255 92 77;
+  --ref-accent-ember-10: #FF8C82;
+  --ref-accent-ember-10-rgb: 255 140 130;
+  --ref-accent-ember-8: #B0432F;
+  --ref-accent-ember-8-rgb: 176 67 47;
+  --ref-accent-rose-9: #2FD9E8;
+  --ref-accent-rose-9-rgb: 47 217 232;
+  --ref-accent-rose-10: #7CE8F1;
+  --ref-accent-rose-10-rgb: 124 232 241;
+  --ref-accent-rose-8: #22909B;
+  --ref-accent-rose-8-rgb: 34 144 155;
+
+  --ref-avatar-sand: #d4c0a1;
+  --ref-avatar-blue: #60a5fa;
+  --ref-avatar-green: #4ade80;
+  --ref-avatar-red: #f87171;
+  --ref-avatar-violet: #a78bfa;
+  --ref-avatar-orange: #fb923c;
+  --ref-avatar-pink: #f472b6;
+  --ref-avatar-emerald: #34d399;
+  --ref-avatar-yellow: #facc15;
+  --ref-avatar-cyan: #38bdf8;
+
+  /* Tier 2: semantic roles. Feature code should use this tier. */
+  /*
+   * The rail is no longer a darker surface. In Quiet Structure the rail, the
+   * list column and the conversation are all the same near-black ground and
+   * are separated by a rule, not by a value step. Anything that assumed the
+   * rail was the darkest surface is now wrong by construction.
+   */
+  --surface-canvas: var(--ref-quiet-canvas);
+  --surface-rail: var(--ref-quiet-canvas);
+  --surface-sunken-rgb: var(--ref-quiet-canvas-rgb);
+  --surface-sunken: var(--ref-quiet-canvas);
+  --surface-sidebar-rgb: var(--ref-quiet-canvas-rgb);
+  --surface-sidebar: var(--ref-quiet-canvas);
+  --surface-base-rgb: var(--ref-quiet-canvas-rgb);
+  --surface-base: var(--ref-quiet-canvas);
+  --surface-raised-rgb: var(--ref-quiet-raised-rgb);
+  --surface-raised: var(--ref-quiet-raised);
+  /*
+   * The one new surface role. An avatar tile, an input ground and a hovered
+   * row are all the same alpha-white wash, so they composite onto whatever is
+   * behind them instead of needing a surface of their own.
+   */
+  --surface-fill: rgb(var(--ref-white-rgb) / var(--ref-quiet-fill-alpha));
+  --surface-fill-hover: rgb(var(--ref-white-rgb) / var(--ref-quiet-fill-hover-alpha));
+  --surface-overlay-rgb: var(--ref-quiet-raised-rgb);
+  --surface-overlay: var(--ref-quiet-raised);
+  /*
+   * Pre-composited, not translucent.
+   *
+   * Tailwind consumes these through `rgb(var(--surface-hover-rgb) /
+   * <alpha-value>)` and substitutes 1 when no opacity modifier is written, so
+   * a channel triple of pure white here renders `hover:bg-surface-hover` as
+   * opaque white across 223 call sites. The alpha lives in --ref-quiet-fill-*
+   * and the result of applying it to the canvas is what these carry.
+   *
+   * --surface-fill above is the translucent twin, exported as a plain var()
+   * rather than through withAlpha, and it is what to reach for where the wash
+   * has to composite onto something other than the canvas -- over media, over
+   * a plane, or over the one raised surface.
+   */
+  --surface-hover-rgb: var(--ref-quiet-fill-rgb);
+  --surface-hover: var(--ref-quiet-fill);
+  --surface-active-rgb: var(--ref-quiet-fill-strong-rgb);
+  --surface-active: var(--ref-quiet-fill-strong);
+  --surface-selected-rgb: var(--ref-quiet-fill-strong-rgb);
+  --surface-selected: var(--ref-quiet-fill-strong);
+  /*
+   * The backdrop is the canvas at 72%, not black at 70%. Black behind a
+   * near-black ground is a second, colder darkness; the canvas is the app
+   * receding rather than a different surface arriving over it.
+   */
+  --surface-scrim: rgb(var(--ref-quiet-canvas-rgb) / 0.72);
+  --surface-nav-scrim: rgb(var(--ref-black-rgb) / 0.58);
+  --surface-pane-tint: transparent;
+  --surface-qr-rgb: var(--ref-white-rgb);
+  --surface-qr: var(--ref-white);
+  --surface-asset-preview: var(--ref-black);
+
+  --content-normal-rgb: var(--ref-quiet-body-rgb);
+  --content-normal: var(--ref-quiet-body);
+  /*
+   * Message prose sits one step below a title so a screen reads as structure
+   * first and text second. This is the role every timeline body takes.
+   */
+  --content-body-rgb: var(--ref-quiet-body-rgb);
+  --content-body: var(--ref-quiet-body);
+  --content-tertiary-rgb: var(--ref-quiet-tertiary-rgb);
+  --content-tertiary: var(--ref-quiet-tertiary);
+  --content-primary-rgb: var(--ref-quiet-primary-rgb);
+  --content-primary: var(--ref-quiet-primary);
+  --content-secondary-rgb: var(--ref-quiet-secondary-rgb);
+  --content-secondary: var(--ref-quiet-secondary);
+  --content-muted-rgb: var(--ref-quiet-secondary-rgb);
+  --content-muted: var(--ref-quiet-secondary);
+  --content-link-rgb: var(--ref-quiet-ultramarine-rgb);
+  --content-link: var(--ref-quiet-ultramarine);
+  --content-accent-rgb: var(--accent-rgb);
+  --content-accent: var(--accent);
+  --content-on-accent-rgb: var(--ref-quiet-canvas-rgb);
+  --content-on-accent: var(--ref-quiet-canvas);
+  --content-on-status-rgb: var(--ref-quiet-canvas-rgb);
+  --content-on-status: var(--ref-quiet-canvas);
+  --content-on-avatar-rgb: var(--ref-quiet-canvas-rgb);
+  --content-on-avatar: var(--ref-quiet-canvas);
+  --content-on-media-overlay-rgb: var(--ref-white-rgb);
+  --content-on-media-overlay: var(--ref-white);
+  --border-default-rgb: var(--ref-quiet-tertiary-rgb);
+  --border-default: var(--ref-quiet-tertiary);
+  --border-emphasis-rgb: var(--ref-quiet-tertiary-rgb);
+  --border-emphasis: var(--ref-quiet-tertiary);
+  --border-subtle: var(--border-row);
+  --border-strong: var(--ref-quiet-tertiary);
+  /*
+   * The two structural hairlines. `--border-structural` is the boundary
+   * between panes; `--border-row` separates rows inside one list. Both are
+   * decorative under WCAG 1.4.11 (1.19:1 and 1.09:1) and may never carry the
+   * shape of a control -- that is --border-control's job, and it is a
+   * different, measurably stronger colour.
+   */
+  --border-structural: rgb(var(--ref-white-rgb) / var(--ref-quiet-rule-alpha));
+  --border-row: rgb(var(--ref-white-rgb) / var(--ref-quiet-rule-soft-alpha));
+  /*
+   * --border-control is the boundary of an interactive control whose shape is
+   * not otherwise conveyed by a fill. WCAG 1.4.11 requires 3:1 there, which
+   * --border-default (1.50:1 dark / 1.68:1 light) does not meet. Decorative
+   * separators keep using --border-subtle; only controls use this.
+   */
+  --border-control-rgb: var(--ref-quiet-tertiary-rgb);
+  --border-control: var(--ref-quiet-tertiary);
+  --border-focus-rgb: var(--ref-quiet-chrome-rgb);
+  --border-focus: var(--ref-quiet-chrome);
+  --presence-offline-rgb: var(--ref-neutral-9-rgb);
+  --presence-offline: var(--ref-neutral-9);
+  --accent-rgb: var(--ref-quiet-ultramarine-rgb);
+  --accent: var(--ref-quiet-ultramarine);
+  --accent-hover-rgb: var(--ref-accent-ocean-10-rgb);
+  --accent-hover: var(--ref-accent-ocean-10);
+  --accent-muted-rgb: var(--ref-accent-ocean-8-rgb);
+  --accent-muted: var(--ref-accent-ocean-8);
+  /*
+   * Status is the trust rail's vocabulary before it is anything else. Local,
+   * decrypted, verified is success; another homeserver is warning;
+   * undecryptable or an unverified device is danger. Those three colours are
+   * therefore the triad itself, not a separate status ramp that happens to
+   * look similar.
+   */
+  --status-success-rgb: var(--ref-quiet-green-rgb);
+  --status-success: var(--ref-quiet-green);
+  --status-danger-rgb: var(--ref-quiet-vermilion-rgb);
+  --status-danger: var(--ref-quiet-vermilion);
+  --status-warning-rgb: var(--ref-quiet-chrome-rgb);
+  --status-warning: var(--ref-quiet-chrome);
+  --status-info-rgb: var(--ref-quiet-ultramarine-rgb);
+  --status-info: var(--ref-quiet-ultramarine);
+  /*
+   * Solid status fills need a hover face the way --accent-hover does. Without
+   * one, every solid status control reached for an opacity modifier
+   * (bg-status-danger/95, bg-status-warning/80) and invented its own strength.
+   * The color-mix override below moves each fill toward the theme's own text
+   * color, so hover gains contrast in dark and in light without a second ramp.
+   */
+  --status-success-hover: var(--status-success);
+  --status-danger-hover: var(--status-danger);
+  --status-warning-hover: var(--status-warning);
+  --status-info-hover: var(--status-info);
+
+  /*
+   * Container quintuples are the only component-facing interaction palettes.
+   * The first declarations are conservative WebView fallbacks; the
+   * color-mix override below derives translucent states in perceptual OKLCH.
+   *
+   * The 0.78 on every `-line` is measured, not chosen. A container line is the
+   * whole of an advisory notice's chrome, one rule on the leading edge over a
+   * transparent background, so it is a meaningful boundary and owes 3:1 under
+   * WCAG 1.4.11. At the 0.55 it shipped with, all five fell short on the light
+   * canvas (2.28:1 to 2.67:1) and danger also failed on the dark one (2.68:1).
+   * 0.78 is the lowest step that clears 3:1 for every tone on every surface a
+   * notice can sit on; the worst case is success on the light rail at 3.27:1.
+   * check-container-contrast.mjs recomputes all of it from this file.
+   */
+  --surface-container: var(--surface-raised);
+  --surface-container-hover: var(--surface-hover);
+  --surface-container-active: var(--surface-active);
+  --surface-container-line: var(--border-default);
+  --surface-on-container: var(--content-primary);
+  --accent-container: rgb(var(--accent-rgb) / 0.14);
+  --accent-container-hover: rgb(var(--accent-rgb) / 0.2);
+  --accent-container-active: rgb(var(--accent-rgb) / 0.28);
+  --accent-container-line: rgb(var(--accent-rgb) / 0.78);
+  --accent-on-container: var(--content-accent);
+  --success-container: rgb(var(--status-success-rgb) / 0.14);
+  --success-container-hover: rgb(var(--status-success-rgb) / 0.2);
+  --success-container-active: rgb(var(--status-success-rgb) / 0.28);
+  --success-container-line: rgb(var(--status-success-rgb) / 0.78);
+  --success-on-container: var(--status-success);
+  --warning-container: rgb(var(--status-warning-rgb) / 0.14);
+  --warning-container-hover: rgb(var(--status-warning-rgb) / 0.2);
+  --warning-container-active: rgb(var(--status-warning-rgb) / 0.28);
+  --warning-container-line: rgb(var(--status-warning-rgb) / 0.78);
+  --warning-on-container: var(--status-warning);
+  --danger-container: rgb(var(--status-danger-rgb) / 0.14);
+  --danger-container-hover: rgb(var(--status-danger-rgb) / 0.2);
+  --danger-container-active: rgb(var(--status-danger-rgb) / 0.28);
+  --danger-container-line: rgb(var(--status-danger-rgb) / 0.78);
+  --danger-on-container: var(--status-danger);
+  --info-container: rgb(var(--status-info-rgb) / 0.14);
+  --info-container-hover: rgb(var(--status-info-rgb) / 0.2);
+  --info-container-active: rgb(var(--status-info-rgb) / 0.28);
+  --info-container-line: rgb(var(--status-info-rgb) / 0.78);
+  --info-on-container: var(--status-info);
+  --scrollbar: var(--ref-neutral-4);
+  --scrollbar-hover: var(--ref-neutral-6);
+
+  --avatar-sand: var(--ref-avatar-sand);
+  --avatar-blue: var(--ref-avatar-blue);
+  --avatar-green: var(--ref-avatar-green);
+  --avatar-red: var(--ref-avatar-red);
+  --avatar-violet: var(--ref-avatar-violet);
+  --avatar-orange: var(--ref-avatar-orange);
+  --avatar-pink: var(--ref-avatar-pink);
+  --avatar-emerald: var(--ref-avatar-emerald);
+  --avatar-yellow: var(--ref-avatar-yellow);
+  --avatar-cyan: var(--ref-avatar-cyan);
+
+  /* Tier 3: component roles. These may reference semantic tokens only. */
+  --presence-dot-online: var(--status-success);
+
+  /*
+   * Compatibility aliases preserve every existing class and CSS call site.
+   * They can be retired incrementally after components adopt semantic roles.
+   */
+  --bg-tertiary-rgb: var(--surface-sunken-rgb);
+  --bg-tertiary: var(--surface-sunken);
+  --bg-secondary-rgb: var(--surface-sidebar-rgb);
+  --bg-secondary: var(--surface-sidebar);
+  --bg-primary-rgb: var(--surface-base-rgb);
+  --bg-primary: var(--surface-base);
+  --bg-modifier-hover-rgb: var(--surface-hover-rgb);
+  --bg-modifier-hover: var(--surface-hover);
+  --bg-modifier-active-rgb: var(--surface-active-rgb);
+  --bg-modifier-active: var(--surface-active);
+  --bg-modifier-selected-rgb: var(--surface-active-rgb);
+  --bg-modifier-selected: var(--surface-active);
+  --bg-floating-rgb: var(--surface-overlay-rgb);
+  --bg-floating: var(--surface-overlay);
+  --text-normal: var(--content-normal);
+  --text-primary: var(--content-primary);
+  --text-secondary: var(--content-secondary);
+  --text-muted: var(--content-muted);
+  --text-link: var(--content-link);
+  --green: var(--status-success);
+  --red: var(--status-danger);
+  --yellow: var(--status-warning);
+  --blue: var(--status-info);
+
+  /* Typography reference scale */
+  /*
+   * User text scaling (WCAG 1.4.4). Applied at the semantic tier so the
+   * high-resolution blocks below, which rewrite --ref-size-*, keep composing
+   * with it: a 4K workspace at 125% gets both. Set as an inline custom property
+   * on the root element by applyAppearancePreferences.
+   */
+  --text-scale: 1;
+  --ref-size-11: 11px;
+  --ref-size-12: 12px;
+  --ref-size-13: 13px;
+  --ref-size-14: 14px;
+  --ref-size-15: 15px;
+  --ref-size-18: 18px;
+  --ref-size-22: 22px;
+  --ref-size-28: 28px;
+  /*
+   * Quiet Structure's poster steps. The gap between 15px and 30px is
+   * deliberate: there is no mid-sized heading in this system, because a screen
+   * has exactly one title and everything under it is a row.
+   */
+  --ref-size-9-5: 9.5px;
+  --ref-size-10: 10px;
+  --ref-size-12-5: 12.5px;
+  --ref-size-13-5: 13.5px;
+  --ref-size-30: 30px;
+  --ref-size-42: 42px;
+  --ref-size-46: 46px;
+  --ref-size-50: 50px;
+  --ref-size-56: 56px;
+  --ref-size-76: 76px;
+  --font-sans: 'Inter Variable', Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-size-2xs: calc(var(--ref-size-11) * var(--text-scale));
+  --font-size-xs: calc(var(--ref-size-12) * var(--text-scale));
+  --font-size-code: calc(var(--ref-size-13) * var(--text-scale));
+  --font-size-dense: calc(var(--ref-size-13) * var(--text-scale));
+  --font-size-sm: calc(var(--ref-size-14) * var(--text-scale));
+  --font-size-base: calc(var(--ref-size-15) * var(--text-scale));
+  --font-size-md: calc(var(--ref-size-18) * var(--text-scale));
+  --font-size-title: calc(var(--ref-size-22) * var(--text-scale));
+  --font-size-lg: calc(var(--ref-size-28) * var(--text-scale));
+  --font-size-eyebrow: calc(var(--ref-size-9-5) * var(--text-scale));
+  --font-size-count: calc(var(--ref-size-10) * var(--text-scale));
+  --font-size-support: calc(var(--ref-size-12-5) * var(--text-scale));
+  --font-size-row: calc(var(--ref-size-13-5) * var(--text-scale));
+  --font-size-panel: calc(var(--ref-size-15) * var(--text-scale));
+  --font-size-section: calc(var(--ref-size-30) * var(--text-scale));
+  --font-size-numeral: calc(var(--ref-size-42) * var(--text-scale));
+  --font-size-screen-sm: calc(var(--ref-size-46) * var(--text-scale));
+  --font-size-screen: calc(var(--ref-size-56) * var(--text-scale));
+  --font-size-display: calc(var(--ref-size-76) * var(--text-scale));
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --line-height-11: calc(15px * var(--text-scale));
+  --line-height-12: 1.33;
+  --line-height-13: 1.54;
+  --line-height-14: calc(18px * var(--text-scale));
+  --line-height-15: calc(21px * var(--text-scale));
+  --line-height-18: 1.33;
+  --line-height-22: 1.27;
+  --line-height-28: 1.14;
+  --line-height-prose: calc(22px * var(--text-scale));
+  --line-height-eyebrow: 1.5;
+  --line-height-support: 1.4;
+  --line-height-row: 1.3;
+  /* Every poster step is set solid. Only the screen title is tighter. */
+  --line-height-solid: 1;
+  --line-height-screen: 0.95;
+  /* Message prose. 14px at 1.6 is the one place this system is generous. */
+  --line-height-body: 1.6;
+  --letter-spacing-11: 0.05em;
+  --letter-spacing-12: 0.005em;
+  --letter-spacing-13: 0;
+  --letter-spacing-14: -0.01em;
+  --letter-spacing-15: -0.005em;
+  --letter-spacing-18: -0.01em;
+  --letter-spacing-22: -0.015em;
+  --letter-spacing-28: -0.02em;
+  /*
+   * The sharp/soft split runs through the type too. Mono metadata opens up;
+   * Inter titles close down. Nothing sits at zero except code.
+   */
+  --letter-spacing-chip: 0.10em;
+  --letter-spacing-count: 0;
+  --letter-spacing-row: -0.005em;
+  --letter-spacing-panel: -0.015em;
+  --letter-spacing-section: -0.035em;
+  --letter-spacing-screen: -0.05em;
+  --letter-spacing-display: -0.055em;
+  /*
+   * One named role for uppercase metadata. `.mesh-command-combobox` group
+   * headers and `.mesh-beta-badge` already referenced this name, which was
+   * never declared, so both silently lost their tracking. Tailwind aliases
+   * tracking-caption, tracking-section, tracking-signal, tracking-control and
+   * tracking-status onto it so the app ships one value instead of two.
+   */
+  --letter-spacing-eyebrow: 0.16em;
+
+  /*
+   * Radii. The sharp/soft split is the whole idea: things you *touch* get a
+   * radius, things that *structure* do not. An active room row is a flat
+   * ultramarine rectangle with square corners; the avatar inside it still has
+   * an 8px radius.
+   */
+  --radius-plane: 0;
+  --radius-sm: 4px;
+  --radius-default: 8px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-control: 8px;
+  --radius-panel: 14px;
+  --radius-tile: 8px;
+  --radius-rail-item: 9px;
+  --radius-segment: 7px;
+  --radius-community-rest: 9px;
+  --radius-community-active: 9px;
+  --mesh-radius-tile: 8px;
+  --mesh-radius-card: 14px;
+  --mesh-radius-shell: 8px;
+  --border-width-status: 1px;
+  /* Always 1px, never 2px -- except the trust rail, which is the exception. */
+  --rule-width: 1px;
+  --trust-rail-width: 2px;
+  /*
+   * Werkstatt's active-marker weight. EventView, UnreadDivider, Toast,
+   * SearchBar, and CreateCommunityModal were never carried into Quiet
+   * Structure and still consume this value directly; kept rather than
+   * removed so those call sites keep compiling until they are migrated.
+   */
+  --border-width-bar: 3px;
+
+  /* Motion reference values */
+  --ref-dur-50: 50ms;
+  --ref-dur-100: 100ms;
+  --ref-dur-150: 150ms;
+  --ref-dur-200: 200ms;
+  --ref-dur-250: 250ms;
+  --ref-dur-300: 300ms;
+  --ref-dur-1000: 1000ms;
+  --ref-dur-2000: 2000ms;
+  --ref-dur-5000: 5000ms;
+  --ref-dur-8000: 8000ms;
+  --ref-ease-out-quart: cubic-bezier(0.165, 0.84, 0.44, 1);
+  --ref-ease-out-quint: cubic-bezier(0.23, 1, 0.32, 1);
+  --ref-ease-in-out-cubic: cubic-bezier(0.645, 0.045, 0.355, 1);
+  --ref-ease-hover: ease;
+
+  /* Motion semantic roles */
+  --motion-dur-none: 0ms;
+  --motion-dur-press: var(--ref-dur-50);
+  --motion-dur-micro: var(--ref-dur-100);
+  --motion-dur-fast: var(--ref-dur-150);
+  --motion-dur-base: var(--ref-dur-200);
+  --motion-dur-deliberate: var(--ref-dur-250);
+  --motion-dur-maximum: var(--ref-dur-300);
+  --motion-dur-activity: var(--ref-dur-1000);
+  --motion-dur-highlight: var(--ref-dur-2000);
+  --motion-ease-arrive: var(--ref-ease-out-quart);
+  --motion-ease-emphasize: var(--ref-ease-out-quint);
+  --motion-ease-reposition: var(--ref-ease-in-out-cubic);
+  --motion-ease-progress: linear;
+  /*
+   * Toast dwell. These are dismissal deadlines, not transitions, so they sit
+   * beside the motion roles rather than inside the closed transition scale.
+   * Danger has no dwell: an error is dismissed by a person, not by a clock.
+   */
+  --toast-dwell-default: var(--ref-dur-5000);
+  --toast-dwell-warning: var(--ref-dur-8000);
+  --transition-fast: var(--motion-dur-micro) var(--ref-ease-hover);
+  --transition-normal: var(--motion-dur-base) var(--motion-ease-reposition);
+  --motion-offset-tight: 4px;
+  --motion-offset-subtle: 6px;
+  --motion-offset-panel: 8px;
+  --motion-offset-dock: 20px;
+  --motion-scale-recede: 0.9;
+  --motion-scale-press: 0.96;
+  --motion-scale-hover: 1.04;
+
+  /* Density and component geometry. */
+  --density-row-block: 4px;
+  --density-control-sm: 32px;
+  --density-control-md: 36px;
+  --density-control-lg: 44px;
+  --density-panel-gap: 16px;
+  --density-line-height: var(--line-height-15);
+  /*
+   * The timeline gutter: 44px of right-aligned mono time, the 2px trust rail,
+   * and a 20px gap. It replaces the 112px prose gutter of the earlier draft
+   * and hands roughly 90px back to the conversation.
+   */
+  --message-time-width: 44px;
+  --message-rail-gap: 20px;
+  --message-gutter: calc(
+    var(--message-time-width) + var(--trust-rail-width) + var(--message-rail-gap)
+  );
+  --message-group-gap: 12px;
+  --empty-state-icon: 56px;
+  /* Rail selection marker. Matches the channel-list inset marker width. */
+  --community-marker: 3px;
+  --rail-unread-marker-height: 8px;
+  --member-list-width: var(--shell-roster-width);
+  --settings-drawer-width: 420px;
+  --route-surface-columns: var(--shell-channel-width) minmax(0, 1fr);
+  --settings-layout-columns: 12rem minmax(0, 1fr);
+  --device-code-columns: 7rem 1fr;
+  --invitation-confirmation-columns: minmax(0, 1.15fr) minmax(18rem, 0.85fr);
+  --attachment-name-width: 140px;
+  --modal-content-height: 90vh;
+  --settings-content-height: 75vh;
+  --composer-content-height: 200px;
+  --context-action-width: calc(100% - 8px);
+  --content-error-width: 224px;
+  --user-panel-height: 56px;
+  --conversation-header-height: var(--shell-header-height);
+  --conversation-title-padding-top: 22px;
+  --conversation-title-padding-bottom: 20px;
+  /* What the two above collapse to when the viewport is too short for them. */
+  --conversation-title-padding-compact: 10px;
+  --onboarding-shell-height: calc(100vh - 3rem);
+  /*
+   * Fixed rather than density-scaled: onboarding is a single narrow column
+   * (the marketing aside and its two-pane grid were removed), so it does not
+   * grow the way the roster and channel columns do at larger densities.
+   */
+  --onboarding-shell-width: 30rem;
+  --privacy-table-width: 36rem;
+  --voice-controls-label-width: 140px;
+  --voice-tile-min-height: 180px;
+  --rail-separator-height: 2px;
+
+  /* Party Room responsive geometry. The base is the 1280 x 720 matrix. */
+  --shell-rail-width: 60px;
+  --shell-channel-width: 250px;
+  --shell-roster-width: 226px;
+  --shell-header-height: 50px;
+  --shell-pin-height: 40px;
+  --shell-composer-height: 46px;
+  --shell-strip-height: 60px;
+  --shell-media-max-height: 274px;
+  --shell-conversation-padding: 28px;
+  --shell-channel-row-height: 34px;
+  /* The numeral gutter in every ledger: 01, 02, 03 ... */
+  --row-index-width: 34px;
+  --command-band-padding: 60px;
+  --ledger-row-padding: 8px;
+  --shell-occupant-row-height: 40px;
+  --shell-message-padding-block: 4px;
+  --shell-message-measure: 65ch;
+  --shell-media-max-width: 960px;
+
+  /* Layering */
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-dropdown: 20;
+  --z-drawer: 30;
+  --z-overlay: 40;
+  --z-modal: 50;
+  --z-popover: 60;
+  --z-toast: 70;
+  --z-tooltip: 80;
+
+  --elev-overlay: 0 4px 0 rgb(var(--ref-black-rgb) / 0.32);
+  --elev-card: none;
+  --elev-inset: none;
+}
+
+@media (min-width: 1366px) {
+  :root {
+    --shell-channel-width: 258px;
+    --shell-roster-width: 234px;
+    --shell-header-height: 52px;
+    --shell-composer-height: 48px;
+    --shell-strip-height: 64px;
+    --shell-media-max-height: 292px;
+  }
+}
+
+@media (min-width: 1600px) {
+  :root {
+    --shell-rail-width: 60px;
+    --shell-channel-width: 272px;
+    --shell-roster-width: 250px;
+    --shell-header-height: 56px;
+    --shell-composer-height: 50px;
+    --shell-strip-height: 72px;
+    --shell-media-max-height: 342px;
+  }
+}
+
+@media (min-width: 1920px) {
+  :root {
+    --shell-rail-width: 64px;
+    --shell-channel-width: 288px;
+    --shell-roster-width: 272px;
+    --shell-composer-height: 52px;
+    --shell-media-max-height: 410px;
+  }
+}
+
+@media (min-width: 2560px) {
+  :root {
+    --shell-channel-width: 304px;
+    --shell-roster-width: 292px;
+    --shell-strip-height: 76px;
+    --shell-media-max-height: 420px;
+  }
+}
+
+@supports (color: color-mix(in oklch, white, black)) {
+  :root {
+    --accent-container: color-mix(in oklch, var(--accent) 14%, transparent);
+    --accent-container-hover: color-mix(in oklch, var(--accent) 20%, transparent);
+    --accent-container-active: color-mix(in oklch, var(--accent) 28%, transparent);
+    --accent-container-line: color-mix(in oklch, var(--accent) 78%, transparent);
+    --success-container: color-mix(in oklch, var(--status-success) 14%, transparent);
+    --success-container-hover: color-mix(in oklch, var(--status-success) 20%, transparent);
+    --success-container-active: color-mix(in oklch, var(--status-success) 28%, transparent);
+    --success-container-line: color-mix(in oklch, var(--status-success) 78%, transparent);
+    --warning-container: color-mix(in oklch, var(--status-warning) 14%, transparent);
+    --warning-container-hover: color-mix(in oklch, var(--status-warning) 20%, transparent);
+    --warning-container-active: color-mix(in oklch, var(--status-warning) 28%, transparent);
+    --warning-container-line: color-mix(in oklch, var(--status-warning) 78%, transparent);
+    --danger-container: color-mix(in oklch, var(--status-danger) 14%, transparent);
+    --danger-container-hover: color-mix(in oklch, var(--status-danger) 20%, transparent);
+    --danger-container-active: color-mix(in oklch, var(--status-danger) 28%, transparent);
+    --danger-container-line: color-mix(in oklch, var(--status-danger) 78%, transparent);
+    --info-container: color-mix(in oklch, var(--status-info) 14%, transparent);
+    --info-container-hover: color-mix(in oklch, var(--status-info) 20%, transparent);
+    --info-container-active: color-mix(in oklch, var(--status-info) 28%, transparent);
+    --info-container-line: color-mix(in oklch, var(--status-info) 78%, transparent);
+    --status-success-hover: color-mix(in oklch, var(--status-success) 88%, var(--content-primary));
+    --status-danger-hover: color-mix(in oklch, var(--status-danger) 88%, var(--content-primary));
+    --status-warning-hover: color-mix(in oklch, var(--status-warning) 88%, var(--content-primary));
+    --status-info-hover: color-mix(in oklch, var(--status-info) 88%, var(--content-primary));
+  }
+}
+
+:root[data-theme='dark'],
+[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+:root[data-theme='light'],
+[data-theme='light'] {
+  color-scheme: light;
+  /*
+   * Every semantic role is restated here rather than redirected through an
+   * alias tier. Inherited custom properties have already been computed on
+   * their parent, so a nested theme preview can only resolve against its own
+   * palette if the roles themselves are declared inside it -- which is also
+   * why an alias tier between the references and the roles bought nothing and
+   * shipped a third copy of every colour.
+  */
+  --surface-canvas: var(--ref-quiet-light-canvas);
+  --surface-rail: var(--ref-quiet-light-rail);
+  --surface-sunken: var(--ref-quiet-light-rail);
+  --surface-sunken-rgb: var(--ref-quiet-light-rail-rgb);
+  --surface-sidebar: var(--ref-quiet-light-canvas);
+  --surface-sidebar-rgb: var(--ref-quiet-light-canvas-rgb);
+  --surface-base: var(--ref-quiet-light-canvas);
+  --surface-base-rgb: var(--ref-quiet-light-canvas-rgb);
+  --surface-raised: var(--ref-white);
+  --surface-raised-rgb: var(--ref-white-rgb);
+  /*
+   * The hairline has no automatic light-theme equivalent. Alpha-white over
+   * near-black is a lightening wash; over a pale canvas the same idea has to
+   * become an alpha-black one, re-derived against this ground rather than
+   * flipped.
+   */
+  --surface-fill: rgb(var(--ref-black-rgb) / 0.04);
+  --surface-fill-hover: rgb(var(--ref-black-rgb) / 0.07);
+  --border-structural: rgb(var(--ref-black-rgb) / 0.10);
+  --border-row: rgb(var(--ref-black-rgb) / 0.06);
+  --surface-overlay: var(--ref-white);
+  --surface-overlay-rgb: var(--ref-white-rgb);
+  --surface-hover: var(--ref-quiet-light-hover);
+  --surface-hover-rgb: var(--ref-quiet-light-hover-rgb);
+  --surface-active: var(--ref-quiet-light-active);
+  --surface-active-rgb: var(--ref-quiet-light-active-rgb);
+  --surface-selected: var(--ref-quiet-light-active);
+  --surface-selected-rgb: var(--ref-quiet-light-active-rgb);
+  --content-normal: var(--ref-quiet-light-primary);
+  --content-normal-rgb: var(--ref-quiet-light-primary-rgb);
+  --content-primary: var(--ref-quiet-light-primary);
+  --content-primary-rgb: var(--ref-quiet-light-primary-rgb);
+  --content-body: var(--ref-quiet-light-body);
+  --content-body-rgb: var(--ref-quiet-light-body-rgb);
+  --content-secondary: var(--ref-quiet-light-secondary);
+  --content-secondary-rgb: var(--ref-quiet-light-secondary-rgb);
+  --content-muted: var(--ref-quiet-light-secondary);
+  --content-muted-rgb: var(--ref-quiet-light-secondary-rgb);
+  --content-tertiary: var(--ref-quiet-light-tertiary);
+  --content-tertiary-rgb: var(--ref-quiet-light-tertiary-rgb);
+  --border-default: var(--ref-quiet-light-rule);
+  --border-default-rgb: var(--ref-quiet-light-rule-rgb);
+  --border-emphasis: var(--ref-quiet-light-rule);
+  --border-emphasis-rgb: var(--ref-quiet-light-rule-rgb);
+  --border-subtle: var(--border-row);
+  --border-strong: var(--ref-quiet-light-rule);
+  --border-control: var(--ref-quiet-light-rule);
+  --border-control-rgb: var(--ref-quiet-light-rule-rgb);
+  --border-focus: var(--ref-quiet-light-chrome);
+  --border-focus-rgb: var(--ref-quiet-light-chrome-rgb);
+  --accent: var(--ref-quiet-light-ultramarine);
+  --accent-rgb: var(--ref-quiet-light-ultramarine-rgb);
+  --accent-hover: var(--ref-accent-ocean-light-10);
+  --accent-hover-rgb: var(--ref-accent-ocean-light-10-rgb);
+  --accent-muted: var(--ref-accent-ocean-light-8);
+  --accent-muted-rgb: var(--ref-accent-ocean-light-8-rgb);
+  --status-success: var(--ref-quiet-light-green);
+  --status-success-rgb: var(--ref-quiet-light-green-rgb);
+  --content-link-rgb: var(--ref-quiet-light-ultramarine-rgb);
+  --content-link: var(--ref-quiet-light-ultramarine);
+  /*
+   * Light accent fills are dark, so accent-borne text flips to white. The dark
+   * theme keeps near-black on its pale accents.
+   */
+  --content-on-accent-rgb: var(--ref-white-rgb);
+  --content-on-accent: var(--ref-white);
+  --content-on-status-rgb: var(--ref-white-rgb);
+  --content-on-status: var(--ref-white);
+  --status-danger-rgb: var(--ref-quiet-light-vermilion-rgb);
+  --status-danger: var(--ref-quiet-light-vermilion);
+  --status-warning-rgb: var(--ref-quiet-light-chrome-rgb);
+  --status-warning: var(--ref-quiet-light-chrome);
+  --status-info-rgb: var(--ref-quiet-light-ultramarine-rgb);
+  --status-info: var(--ref-quiet-light-ultramarine);
+  --elev-overlay: 0 4px 0 rgb(var(--ref-black-rgb) / 0.14);
+  --elev-card: none;
+  --elev-inset: none;
+}
+
+:root[data-theme='high-contrast'],
+:root[data-contrast='high'],
+[data-theme='high-contrast'],
+[data-contrast='high'] {
+  color-scheme: dark;
+  --surface-canvas: var(--ref-black);
+  --surface-rail: var(--ref-black);
+  --surface-sunken-rgb: var(--ref-black-rgb);
+  --surface-sunken: var(--ref-black);
+  --surface-sidebar-rgb: var(--ref-black-rgb);
+  --surface-sidebar: var(--ref-black);
+  --surface-base-rgb: var(--ref-black-rgb);
+  --surface-base: var(--ref-black);
+  --surface-raised-rgb: var(--ref-neutral-2-rgb);
+  --surface-raised: var(--ref-neutral-2);
+  --surface-overlay-rgb: var(--surface-raised-rgb);
+  --surface-overlay: var(--surface-raised);
+  --surface-hover-rgb: var(--ref-neutral-5-rgb);
+  --surface-hover: var(--ref-neutral-5);
+  --surface-active-rgb: var(--ref-neutral-7-rgb);
+  --surface-active: var(--ref-neutral-7);
+  --surface-selected-rgb: var(--ref-neutral-7-rgb);
+  --surface-selected: var(--ref-neutral-7);
+  --content-normal-rgb: var(--ref-white-rgb);
+  --content-normal: var(--ref-white);
+  --content-primary-rgb: var(--ref-white-rgb);
+  --content-primary: var(--ref-white);
+  --content-secondary-rgb: var(--ref-white-rgb);
+  --content-secondary: var(--ref-white);
+  --content-muted-rgb: var(--ref-neutral-12-rgb);
+  --content-muted: var(--ref-neutral-12);
+  --content-body-rgb: var(--ref-white-rgb);
+  --content-body: var(--ref-white);
+  --content-tertiary-rgb: var(--ref-neutral-12-rgb);
+  --content-tertiary: var(--ref-neutral-12);
+  --border-default-rgb: var(--ref-white-rgb);
+  --border-default: var(--ref-white);
+  --border-emphasis-rgb: var(--ref-white-rgb);
+  --border-emphasis: var(--ref-white);
+  --border-subtle: rgb(var(--ref-white-rgb) / 0.42);
+  --border-strong: rgb(var(--ref-white-rgb) / 0.72);
+  /*
+   * High contrast has no decorative hairlines. A boundary that exists at all
+   * is drawn at full strength, because the whole point of this theme is that
+   * nothing structural is left to be inferred from a 1.19:1 wash.
+   */
+  --border-structural: rgb(var(--ref-white-rgb) / 0.72);
+  --border-row: rgb(var(--ref-white-rgb) / 0.42);
+  --surface-fill: var(--ref-neutral-5);
+  --surface-fill-hover: var(--ref-neutral-7);
+  --content-on-accent-rgb: var(--ref-black-rgb);
+  --content-on-accent: var(--ref-black);
+  --accent-container: var(--accent);
+  --accent-container-hover: var(--accent-hover);
+  --accent-container-active: var(--accent-muted);
+  --accent-container-line: var(--ref-white);
+  /*
+   * High contrast turns every container into a solid fill, so the paired
+   * foreground has to flip with it. Without this, accent-on-accent text is
+   * invisible wherever a container token carries a label.
+   */
+  --accent-on-container: var(--ref-black);
+  --success-container: var(--status-success);
+  --success-container-hover: var(--status-success);
+  --success-container-active: var(--status-success);
+  --success-container-line: var(--ref-white);
+  --success-on-container: var(--ref-black);
+  --warning-container: var(--status-warning);
+  --warning-container-hover: var(--status-warning);
+  --warning-container-active: var(--status-warning);
+  --warning-container-line: var(--ref-white);
+  --warning-on-container: var(--ref-black);
+  --danger-container: var(--status-danger);
+  --danger-container-hover: var(--status-danger);
+  --danger-container-active: var(--status-danger);
+  --danger-container-line: var(--ref-white);
+  --danger-on-container: var(--ref-black);
+  --info-container: var(--status-info);
+  --info-container-hover: var(--status-info);
+  --info-container-active: var(--status-info);
+  --info-container-line: var(--ref-white);
+  --info-on-container: var(--ref-black);
+  /* Keep initials readable when high contrast switches avatar text to black. */
+  --avatar-sand: var(--ref-white);
+  --avatar-blue: var(--ref-white);
+  --avatar-green: var(--ref-white);
+  --avatar-red: var(--ref-white);
+  --avatar-violet: var(--ref-white);
+  --avatar-orange: var(--ref-white);
+  --avatar-pink: var(--ref-white);
+  --avatar-emerald: var(--ref-white);
+  --avatar-yellow: var(--ref-white);
+  --avatar-cyan: var(--ref-white);
+}
+
+:root[data-accent='sand'],
+[data-accent='sand'] {
+  --accent-rgb: var(--ref-accent-9-rgb);
+  --accent: var(--ref-accent-9);
+  --accent-hover-rgb: var(--ref-accent-10-rgb);
+  --accent-hover: var(--ref-accent-10);
+  --accent-muted-rgb: var(--ref-accent-8-rgb);
+  --accent-muted: var(--ref-accent-8);
+}
+
+:root[data-accent='ocean'],
+[data-accent='ocean'] {
+  --accent-rgb: var(--ref-accent-ocean-9-rgb);
+  --accent: var(--ref-accent-ocean-9);
+  --accent-hover-rgb: var(--ref-accent-ocean-10-rgb);
+  --accent-hover: var(--ref-accent-ocean-10);
+  --accent-muted-rgb: var(--ref-accent-ocean-8-rgb);
+  --accent-muted: var(--ref-accent-ocean-8);
+}
+
+:root[data-accent='violet'],
+[data-accent='violet'] {
+  --accent-rgb: var(--ref-accent-violet-9-rgb);
+  --accent: var(--ref-accent-violet-9);
+  --accent-hover-rgb: var(--ref-accent-violet-10-rgb);
+  --accent-hover: var(--ref-accent-violet-10);
+  --accent-muted-rgb: var(--ref-accent-violet-8-rgb);
+  --accent-muted: var(--ref-accent-violet-8);
+}
+
+:root[data-accent='forest'],
+[data-accent='forest'] {
+  --accent-rgb: var(--ref-accent-forest-9-rgb);
+  --accent: var(--ref-accent-forest-9);
+  --accent-hover-rgb: var(--ref-accent-forest-10-rgb);
+  --accent-hover: var(--ref-accent-forest-10);
+  --accent-muted-rgb: var(--ref-accent-forest-8-rgb);
+  --accent-muted: var(--ref-accent-forest-8);
+}
+
+:root[data-accent='ember'],
+[data-accent='ember'] {
+  --accent-rgb: var(--ref-accent-ember-9-rgb);
+  --accent: var(--ref-accent-ember-9);
+  --accent-hover-rgb: var(--ref-accent-ember-10-rgb);
+  --accent-hover: var(--ref-accent-ember-10);
+  --accent-muted-rgb: var(--ref-accent-ember-8-rgb);
+  --accent-muted: var(--ref-accent-ember-8);
+}
+
+:root[data-accent='rose'],
+[data-accent='rose'] {
+  --accent-rgb: var(--ref-accent-rose-9-rgb);
+  --accent: var(--ref-accent-rose-9);
+  --accent-hover-rgb: var(--ref-accent-rose-10-rgb);
+  --accent-hover: var(--ref-accent-rose-10);
+  --accent-muted-rgb: var(--ref-accent-rose-8-rgb);
+  --accent-muted: var(--ref-accent-rose-8);
+}
+
+/*
+ * Light-theme accent ramps. These selectors are deliberately more specific than
+ * the theme-agnostic [data-accent] blocks above so they win regardless of the
+ * order the two attributes are written in.
+ */
+:root[data-theme='light'][data-accent='sand'],
+[data-theme='light'] [data-accent='sand'] {
+  --accent-rgb: var(--ref-accent-sand-light-9-rgb);
+  --accent: var(--ref-accent-sand-light-9);
+  --accent-hover-rgb: var(--ref-accent-sand-light-10-rgb);
+  --accent-hover: var(--ref-accent-sand-light-10);
+  --accent-muted-rgb: var(--ref-accent-sand-light-8-rgb);
+  --accent-muted: var(--ref-accent-sand-light-8);
+}
+
+:root[data-theme='light'][data-accent='ocean'],
+[data-theme='light'] [data-accent='ocean'] {
+  --accent-rgb: var(--ref-accent-ocean-light-9-rgb);
+  --accent: var(--ref-accent-ocean-light-9);
+  --accent-hover-rgb: var(--ref-accent-ocean-light-10-rgb);
+  --accent-hover: var(--ref-accent-ocean-light-10);
+  --accent-muted-rgb: var(--ref-accent-ocean-light-8-rgb);
+  --accent-muted: var(--ref-accent-ocean-light-8);
+}
+
+:root[data-theme='light'][data-accent='violet'],
+[data-theme='light'] [data-accent='violet'] {
+  --accent-rgb: var(--ref-accent-violet-light-9-rgb);
+  --accent: var(--ref-accent-violet-light-9);
+  --accent-hover-rgb: var(--ref-accent-violet-light-10-rgb);
+  --accent-hover: var(--ref-accent-violet-light-10);
+  --accent-muted-rgb: var(--ref-accent-violet-light-8-rgb);
+  --accent-muted: var(--ref-accent-violet-light-8);
+}
+
+:root[data-theme='light'][data-accent='forest'],
+[data-theme='light'] [data-accent='forest'] {
+  --accent-rgb: var(--ref-accent-forest-light-9-rgb);
+  --accent: var(--ref-accent-forest-light-9);
+  --accent-hover-rgb: var(--ref-accent-forest-light-10-rgb);
+  --accent-hover: var(--ref-accent-forest-light-10);
+  --accent-muted-rgb: var(--ref-accent-forest-light-8-rgb);
+  --accent-muted: var(--ref-accent-forest-light-8);
+}
+
+:root[data-theme='light'][data-accent='ember'],
+[data-theme='light'] [data-accent='ember'] {
+  --accent-rgb: var(--ref-accent-ember-light-9-rgb);
+  --accent: var(--ref-accent-ember-light-9);
+  --accent-hover-rgb: var(--ref-accent-ember-light-10-rgb);
+  --accent-hover: var(--ref-accent-ember-light-10);
+  --accent-muted-rgb: var(--ref-accent-ember-light-8-rgb);
+  --accent-muted: var(--ref-accent-ember-light-8);
+}
+
+:root[data-theme='light'][data-accent='rose'],
+[data-theme='light'] [data-accent='rose'] {
+  --accent-rgb: var(--ref-accent-rose-light-9-rgb);
+  --accent: var(--ref-accent-rose-light-9);
+  --accent-hover-rgb: var(--ref-accent-rose-light-10-rgb);
+  --accent-hover: var(--ref-accent-rose-light-10);
+  --accent-muted-rgb: var(--ref-accent-rose-light-8-rgb);
+  --accent-muted: var(--ref-accent-rose-light-8);
+}
+
+/*
+ * The light accent is dark enough to read as body text, so the .text-accent
+ * override below can resolve to the accent itself rather than a separate brown.
+ */
+:root[data-theme='light'],
+[data-theme='light'] {
+  --content-accent-rgb: var(--accent-rgb);
+  --content-accent: var(--accent);
+}
+
+:root[data-density='compact'] {
+  --density-row-block: 4px;
+  --density-control-sm: 32px;
+  --density-control-md: 32px;
+  --density-control-lg: 40px;
+  --density-panel-gap: 12px;
+  --density-line-height: 1.43;
+  --message-group-gap: 12px;
+}
+
+:root[data-density='default'] {
+  --density-row-block: 4px;
+  --density-control-sm: 32px;
+  --density-control-md: 36px;
+  --density-control-lg: 44px;
+  --density-panel-gap: 16px;
+  --density-line-height: var(--line-height-15);
+  --message-group-gap: 12px;
+}
+
+:root[data-density='comfortable'] {
+  --density-row-block: 8px;
+  --density-control-sm: 36px;
+  --density-control-md: 40px;
+  --density-control-lg: 48px;
+  --density-panel-gap: 20px;
+  --density-line-height: 1.71;
+  --message-group-gap: 20px;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-primary);
+  color: var(--text-normal);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-base);
+  line-height: var(--density-line-height);
+  letter-spacing: var(--letter-spacing-15);
+  font-optical-sizing: auto;
+}
+
+.tnum,
+time,
+.badge-count,
+.member-count,
+.file-size {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-11);
+  letter-spacing: var(--letter-spacing-11);
+  font-feature-settings: 'tnum' 1, 'calt' 1;
+}
+
+.identifier,
+code {
+  font-family: var(--font-mono);
+  font-feature-settings: 'ss02' 1, 'zero' 1, 'tnum' 1, 'calt' 0, 'liga' 0;
+}
+
+/* ── Scrollbar: compact app chrome ── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 4px 0;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar);
+  border-radius: 100px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  min-height: 40px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-hover);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::selection {
+  background: rgb(var(--status-info-rgb) / 0.3);
+}
+
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+}
+
+button,
+input,
+a,
+textarea {
+  -webkit-app-region: no-drag;
+  color: inherit;
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-color: var(--border-focus) !important;
+  outline-offset: 2px;
+  scroll-margin-block: 4rem;
+}
+
+/* Text uses a contrast-safe semantic foreground while action fills retain the selected accent. */
+.text-accent {
+  color: rgb(var(--content-accent-rgb) / var(--tw-text-opacity, 1)) !important;
+}
+
+/*
+ * Reduced motion.
+ *
+ * One switch. `applyAppearancePreferences` ORs the in-app toggle with
+ * `(prefers-reduced-motion: reduce)` and writes the answer to
+ * `data-reduce-motion` before the first render, so every rule here keys off
+ * that attribute and nothing keys off the media query. Two mechanisms is how
+ * the same request produced two different results: the media path killed
+ * transitions outright, the attribute path only shortened them, and every rule
+ * in the animation contract further down had to be written twice.
+ *
+ * The only `@media` rule left is the one below it, which covers the frames
+ * before the store module runs and is scoped to `html:not([data-reduce-motion])`
+ * so it can never contradict the resolved answer.
+ */
+html[data-reduce-motion='true'] {
+  --transition-fast: 0ms;
+  --transition-normal: 0ms;
+}
+
+html[data-reduce-motion='true']:focus-within {
+  scroll-behavior: auto;
+}
+
+/*
+ * Movement is removed by naming what may still change, not by deleting every
+ * transition.
+ *
+ * `transition: none` was the old rule, and it went too far: a cross-fade is
+ * not motion, and components ask for exactly that. The message timestamp
+ * (Message.tsx) carries `motion-reduce:translate-x-0 motion-reduce:transition-opacity`
+ * (drop the slide, keep the fade), and the blanket rule discarded the second
+ * half, so the timestamp snapped into place instead. Anything absent from this
+ * list, `transform` and `translate` above all, is dropped.
+ */
+html[data-reduce-motion='true'] *,
+html[data-reduce-motion='true'] *::before,
+html[data-reduce-motion='true'] *::after {
+  transition-property:
+    opacity,
+    color,
+    background-color,
+    border-color,
+    outline-color,
+    text-decoration-color,
+    fill,
+    stroke,
+    box-shadow;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+}
+
+/*
+ * The pixel marks animate their own clip-path on hover, which no property
+ * allowlist can reach because the movement is inside the keyframes.
+ */
+html[data-reduce-motion='true'] .mesh-pixel-avatar-default:hover .mesh-pixel-mark,
+html[data-reduce-motion='true'] .mesh-pixel-brand:hover .mesh-pixel-mark,
+html[data-reduce-motion='true'] .mesh-accent-choice:hover .mesh-pixel-mark,
+html[data-reduce-motion='true'] .mesh-profile-choice:hover .mesh-pixel-mark,
+html[data-reduce-motion='true'] button:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark,
+html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
+  animation: none !important;
+  clip-path: none !important;
+}
+
+/*
+ * Pre-hydration only. `html:not([data-reduce-motion])` stops matching the
+ * moment the store module writes the attribute, which happens on import,
+ * before React mounts. It holds movement still for the frames in between and
+ * is deliberately not a copy of the contract above.
+ */
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-reduce-motion]) *,
+  html:not([data-reduce-motion]) *::before,
+  html:not([data-reduce-motion]) *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  body,
+  [class*='text-'] {
+    color: CanvasText !important;
+  }
+
+  a {
+    color: LinkText !important;
+  }
+
+  :focus-visible {
+    outline-color: Highlight !important;
+  }
+
+  button,
+  input,
+  select,
+  textarea,
+  [role='dialog'] {
+    border-color: ButtonText;
+  }
+}
+
+/*
+  The trust rail and the state tick.
+
+  Both are the same mark at two orientations, and both carry an alpha the
+  utility layer deliberately cannot express: an opacity modifier on a status
+  colour is rejected by the token gate precisely so twelve strengths of the
+  same idea cannot accumulate across the app. These are the two strengths the
+  design specifies, written once.
+*/
+/*
+  The pinned band. A chrome wash rather than a surface step, because the band
+  is a state of the conversation rather than a pane of its own, and it has to
+  sit on the same ground as the rows above and below it.
+*/
+.mesh-pinned-message-bar {
+  background-color: rgb(var(--status-warning-rgb) / 0.045);
+}
+
+.mesh-pinned-message-bar:hover {
+  background-color: rgb(var(--status-warning-rgb) / 0.08);
+}
+
+/*
+  The selected accent swatch: a hairline ring on the swatch itself plus a
+  softer halo, rather than a tinted card with a checkmark bubble beside it.
+  The swatch is the thing being chosen, so the selection sits on it.
+*/
+.mesh-accent-option[data-selected='true'] .mesh-accent-choice {
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 0 3px rgb(var(--accent-rgb) / 0.28);
+}
+
+/*
+  Media overlays dim into the ground rather than sitting on a second surface.
+  A flat bar across the bottom of every tile is a panel; a gradient is the
+  media receding into the canvas it is already on.
+*/
+.mesh-media-scrim {
+  background: linear-gradient(transparent, rgb(var(--ref-quiet-canvas-rgb) / 0.85));
+}
+
+/*
+  Per-peer volume is a 2px track, not a slider thumb riding a rail. The thumb
+  is what makes a range control look like a widget; the track alone is the same
+  mark the trust rail and the state ticks are made of, so the roster gains no
+  new vocabulary to read.
+*/
+.mesh-participant-volume input[type='range'] {
+  height: var(--trust-rail-width);
+  appearance: none;
+  background: var(--surface-fill-hover);
+  border-radius: var(--radius-plane);
+}
+
+.mesh-participant-volume input[type='range']::-webkit-slider-thumb {
+  width: var(--trust-rail-width);
+  height: 10px;
+  appearance: none;
+  border: 0;
+  border-radius: var(--radius-plane);
+  background: var(--accent);
+}
+
+.mesh-participant-volume input[type='range']:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 4px;
+}
+
+.mesh-trust-rail {
+  background-color: rgb(var(--status-success-rgb) / 0.5);
+}
+
+.mesh-trust-rail[data-trust='remote'] {
+  background-color: rgb(var(--status-warning-rgb) / 0.5);
+}
+
+.mesh-trust-rail[data-trust='suspect'] {
+  background-color: rgb(var(--status-danger-rgb) / 0.55);
+}
+
+/*
+  Idle is the structural hairline rather than a dimmed status colour. A muted
+  peer and an absent peer must not read as two strengths of the same green.
+*/
+.mesh-trust-rail[data-trust='idle'] {
+  background-color: var(--border-structural);
+}
+
+.mesh-state-tick {
+  background-color: var(--border-structural);
+}
+
+.mesh-state-tick[data-state='ok'] {
+  background-color: var(--status-success);
+}
+
+.mesh-state-tick[data-state='warning'] {
+  background-color: var(--status-warning);
+}
+
+.mesh-state-tick[data-state='danger'] {
+  background-color: var(--status-danger);
+}
+
+/*
+  The ring on a mark whose owner is on another homeserver. It is a box-shadow
+  rather than a border so it does not change the tile's box and cannot shift a
+  row by a pixel when federation state resolves after first paint.
+*/
+.mesh-remote-mark {
+  box-shadow: 0 0 0 1px rgb(var(--status-warning-rgb) / 0.5);
+}
+
+.mesh-overlay-surface {
+    backdrop-filter: none;
+  }
+
+
+
+/*
+ * Overlays are always opaque. A "window transparency" choice used to sit here,
+ * but both of its states resolved to this same declaration, so the control was
+ * pixel-identical either way. Opaque is also the legible default, so the
+ * setting was removed rather than given an effect nobody asked for.
+ */
+.mesh-overlay-surface {
+  background-color: var(--surface-overlay);
+  backdrop-filter: none;
+}
+
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.mesh-button {
+  border-radius: var(--mesh-radius-tile);
+}
+
+/* Icon buttons share the button family's tile radius so adjacent icon and
+ * text controls line up. Kept as an unlayered override, matching .mesh-button. */
+.mesh-icon-button {
+  border-radius: var(--mesh-radius-tile);
+}
+
+/*
+ * Rows and planes change their face, they do not move.
+ *
+ * This block used to give the rail, the room list, the conversation list and
+ * the send control a 1px press dip and the accent button a 1px hover lift --
+ * the tactile-object signature of the previous system. Quiet Structure has no
+ * elevation language for that movement to belong to, and the colour change is
+ * the whole of the feedback, so only the colour transition survives.
+ */
+.mesh-rail-action,
+.mesh-channel-item,
+.mesh-dm-item,
+.mesh-composer button[aria-label='Send message'] {
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.mesh-input {
+  border-radius: var(--mesh-radius-tile);
+  background-color: var(--surface-base);
+  box-shadow: none;
+}
+
+.mesh-input:focus {
+  box-shadow: none;
+}
+
+/*
+ * The dialog shell lives here in full: border, radius, surface, elevation, and
+ * the padding of every region inside it. Modal.tsx declares structure only, so
+ * the two layers no longer describe different dialogs.
+ */
+.mesh-modal-surface {
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--mesh-radius-shell);
+  background-color: var(--surface-base);
+  box-shadow: var(--elev-overlay);
+}
+
+.mesh-modal-title {
+  padding: 18px 56px 0 20px;
+}
+
+.mesh-modal-description {
+  padding-right: 56px;
+  padding-left: 20px;
+}
+
+.mesh-modal-close {
+  top: 12px;
+  right: 12px;
+}
+
+.mesh-modal-body {
+  border-top: 1px solid var(--border-subtle);
+  /* The gap under the title used to be `mt-4` in the JSX. Same 16px, one layer. */
+  margin-top: 16px;
+  padding: 20px;
+}
+
+/*
+ * A dialog with no visible title opens on its content, not on a stray rule.
+ * The title element is always in the DOM (screen-reader only when untitled),
+ * so this asks the shell whether anything visible precedes the body.
+ */
+.mesh-modal-surface:has(> .sr-only:first-child):not(:has(.mesh-modal-description)) .mesh-modal-body {
+  border-top: 0;
+  margin-top: 0;
+}
+
+.mesh-onboarding-root {
+  background-color: var(--surface-canvas);
+}
+
+.mesh-onboarding-shell {
+  border-color: var(--border-strong);
+  background-color: var(--surface-base);
+  border-radius: var(--mesh-radius-shell);
+  box-shadow: none;
+}
+
+.mesh-asset-preview {
+  background-color: var(--surface-asset-preview);
+}
+
+.mesh-onboarding-content,
+.mesh-onboarding-scroll {
+  min-height: 0;
+}
+
+.mesh-onboarding-scroll {
+  max-height: calc(100vh - 8rem);
+  padding-inline: 4px;
+  scrollbar-gutter: stable both-edges;
+}
+
+.mesh-toast-container {
+  bottom: calc(var(--shell-composer-height) + 4rem);
+}
+
+.mesh-onboarding-scroll h1[tabindex='-1']:focus,
+.mesh-onboarding-scroll [role='heading'][tabindex='-1']:focus,
+[data-mesh-route-heading]:focus {
+  outline: none !important;
+}
+
+/*
+ * Geometry only, deliberately. The block below also forces a transparent
+ * background, and this rule is unlayered while Tailwind's utilities are
+ * layered, so joining it would have beaten `Card`'s own bg-surface-*
+ * variants and made every card transparent. That asymmetry is the C2 finding
+ * about unlayered rules out-ranking the classes components declare; this is
+ * one place not to add to it.
+ */
+.mesh-card {
+  border-radius: var(--mesh-radius-card);
+  box-shadow: none;
+}
+
+.mesh-service-card,
+.mesh-form-card,
+.mesh-inline-card {
+  border-radius: var(--mesh-radius-card);
+  background-color: transparent;
+  box-shadow: none;
+}
+
+.mesh-service-card {
+  transition:
+    border-color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.mesh-typing-dot:nth-child(2) {
+  animation-delay: var(--motion-dur-fast);
+}
+
+.mesh-typing-dot:nth-child(3) {
+  animation-delay: var(--motion-dur-maximum);
+}
+
+.mesh-service-card:focus-within,
+.mesh-service-card:hover {
+  border-color: var(--accent-container-line);
+  background-color: var(--accent-container);
+}
+
+.mesh-profile-choice,
+.mesh-pixel-avatar-default {
+  background-color: var(--ref-black) !important;
+}
+
+#root {
+  isolation: isolate;
+}
+
+/* Full-bleed social workspace: quiet chrome, vivid identity, media-first canvas. */
+.mesh-app-shell {
+  padding: 0;
+  background: var(--surface-rail);
+}
+
+.mesh-community-rail,
+.mesh-context-sidebar,
+.mesh-workspace-main {
+  border-radius: 0;
+}
+
+.mesh-community-rail {
+  overflow-x: hidden;
+  border-right: var(--rule-width) solid var(--border-structural) !important;
+  background: var(--surface-rail);
+}
+
+.mesh-home-row {
+  min-height: 52px;
+  padding: var(--ledger-row-padding) var(--shell-conversation-padding);
+}
+
+/*
+  The continue target is full-bleed. It used to be inset by a gutter so the
+  accent-tinted hover face read as a card; the hover face is now the same
+  alpha-white wash every row uses, so there is nothing left to inset for.
+*/
+.mesh-home-feature {
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: 100%;
+  padding: clamp(18px, 3vw, 32px) var(--shell-conversation-padding);
+  background: transparent;
+  transition: background-color var(--transition-fast);
+}
+
+.mesh-home-feature:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+/*
+  50px. Between the 46px screen-sm step and the 56px screen step, because this
+  is a conversation name rather than a screen title -- one notch under the
+  thing it takes you to.
+*/
+.mesh-home-feature-title {
+  font-size: calc(var(--ref-size-50) * var(--text-scale));
+  line-height: 1;
+  letter-spacing: var(--letter-spacing-display);
+}
+.mesh-home-feature-index { grid-column: 1; }
+.mesh-home-feature-copy { grid-column: 1; }
+.mesh-home-feature-action { grid-column: 2; grid-row: 2; align-self: center; }
+.mesh-home-feature-meta { grid-column: 1 / -1; }
+
+@media (max-width: 520px) {
+  .mesh-home-shortcut,
+  .mesh-home-row time {
+    display: none;
+  }
+
+  .mesh-home-row {
+    gap: 8px;
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .mesh-home-feature { grid-template-columns: minmax(0, 1fr); padding-inline: 12px; }
+  .mesh-home-feature-action { grid-column: 1; grid-row: auto; }
+
+  .mesh-home-empty-wrap {
+    padding: 32px 20px !important;
+  }
+}
+
+.mesh-context-sidebar {
+  overflow: hidden;
+  border-right: var(--rule-width) solid var(--border-structural) !important;
+  background: var(--surface-sidebar);
+}
+
+.mesh-workspace-main {
+  overflow: hidden;
+  background: var(--surface-canvas);
+}
+
+/*
+ * One rail item column for both item types. The column is the full rail width
+ * so the selection marker is painted inside `.mesh-community-rail`, which
+ * clips horizontally: the previous `-left-2` pill fell entirely outside the
+ * 56px rail at the 1280 x 720 reference width and was never drawn. Community
+ * items and rail destinations share this column, so their markers align and
+ * their hit areas are the same width.
+ */
+.mesh-rail-slot {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.mesh-rail-slot[data-rail-active='true'] {
+  box-shadow: inset var(--community-marker) 0 0 var(--accent);
+}
+
+/* Unread without selection: a short stub at the same rail edge, never a dot alone. */
+.mesh-rail-unread {
+  position: absolute;
+  left: 0;
+  width: var(--community-marker);
+  height: var(--rail-unread-marker-height);
+  border-radius: 0;
+  background: var(--content-primary);
+}
+
+.mesh-user-panel {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: var(--surface-sidebar);
+}
+
+.mesh-composer-shell {
+  margin-right: 16px;
+  margin-bottom: 12px;
+  margin-left: 16px;
+}
+
+/*
+  The composer's ground is the alpha-white fill, not a surface of its own, and
+  its boundary is --border-control rather than the structural hairline: the
+  border is what conveys the shape of the control, so WCAG 1.4.11 asks 3:1 of
+  it and the 1.19:1 pane rule would not do.
+*/
+.mesh-composer {
+  border-color: var(--border-control);
+  background: var(--surface-fill);
+  border-radius: var(--radius-control);
+  box-shadow: none;
+}
+
+.mesh-composer:focus-within {
+  border-color: var(--accent-container-line);
+  box-shadow: 0 0 0 2px var(--accent-container);
+}
+
+.mesh-composer button[aria-label='Send message']:not(:disabled) {
+  color: var(--content-on-accent);
+  background: var(--accent);
+}
+
+.mesh-composer-formatting {
+  border-color: var(--border-subtle);
+  background: var(--surface-base);
+}
+
+.mesh-community-rail,
+.mesh-shell-strip-rail-spacer {
+  width: var(--shell-rail-width);
+}
+
+.mesh-context-sidebar {
+  width: var(--mesh-context-sidebar-width, var(--shell-channel-width));
+}
+
+.mesh-room-context-panel {
+  width: var(--mesh-room-context-width, var(--shell-roster-width));
+}
+
+.mesh-secondary-pane {
+  width: min(22rem, 24vw);
+}
+
+.mesh-voice-dock {
+  height: var(--shell-strip-height);
+  min-height: var(--shell-strip-height);
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-block: 0;
+}
+
+.mesh-community-header,
+.mesh-community-shortcuts {
+  background: var(--surface-sidebar);
+}
+
+.mesh-settings-scroll {
+  max-height: calc(var(--modal-content-height) - 9.75rem);
+  scrollbar-gutter: stable both-edges;
+}
+
+.mesh-room-list {
+  overflow-anchor: none;
+}
+
+.mesh-accent-choice {
+  border: 1px solid rgb(var(--ref-white-rgb) / 0.12);
+  background: var(--ref-black);
+  color: var(--mesh-accent-preview);
+}
+
+.mesh-accent-choice[data-accent-preview='violet'] {
+  --mesh-accent-preview: var(--ref-accent-violet-9);
+}
+
+.mesh-accent-choice[data-accent-preview='sand'] {
+  --mesh-accent-preview: var(--ref-accent-9);
+}
+
+.mesh-accent-choice[data-accent-preview='ocean'] {
+  --mesh-accent-preview: var(--ref-accent-ocean-9);
+}
+
+.mesh-accent-choice[data-accent-preview='forest'] {
+  --mesh-accent-preview: var(--ref-accent-forest-9);
+}
+
+.mesh-accent-choice[data-accent-preview='ember'] {
+  --mesh-accent-preview: var(--ref-accent-ember-9);
+}
+
+.mesh-accent-choice[data-accent-preview='rose'] {
+  --mesh-accent-preview: var(--ref-accent-rose-9);
+}
+
+.mesh-pixel-mark {
+  display: block;
+  flex: none;
+  background-color: currentColor;
+  mask: var(--mesh-pixel-mask) center / 100% no-repeat;
+  -webkit-mask: var(--mesh-pixel-mask) center / 100% no-repeat;
+  transform: translateZ(0);
+  transform-origin: center;
+}
+
+.mesh-pixel-mark-hollow {
+  mask-image: var(--mesh-pixel-mask), var(--mesh-pixel-mask);
+  mask-size: 100%, 58%;
+  mask-position: center, center;
+  mask-repeat: no-repeat, no-repeat;
+  mask-composite: exclude;
+  -webkit-mask-image: var(--mesh-pixel-mask), var(--mesh-pixel-mask);
+  -webkit-mask-size: 100%, 58%;
+  -webkit-mask-position: center, center;
+  -webkit-mask-repeat: no-repeat, no-repeat;
+  -webkit-mask-composite: xor;
+}
+
+/*
+  No colour of its own: the brand mark inherits `--content-on-accent` from the
+  tile it sits in, so it follows the theme and the chosen accent. It used to
+  name a reference-tier violet here, which the tile overrode at both call
+  sites, so the declaration was a contract violation that never rendered.
+*/
+.mesh-pixel-mark-brand {
+  --mesh-pixel-mask: url('../assets/pixel/mesh-heart.png');
+}
+
+.mesh-pixel-mark-community {
+  --mesh-pixel-mask: url('../assets/pixel/community-lattice.png');
+}
+
+.mesh-pixel-mark-profile {
+  --mesh-pixel-mask: url('../assets/pixel/profile-signal.png');
+}
+
+.mesh-pixel-brand {
+  overflow: hidden;
+  border: 1px solid var(--accent-container-line);
+  border-radius: var(--mesh-radius-tile);
+  background-color: var(--accent);
+  color: var(--content-on-accent);
+  box-shadow: none;
+}
+
+.mesh-pixel-brand .mesh-pixel-mark {
+  color: var(--content-on-accent) !important;
+}
+
+.mesh-pixel-avatar-default:hover .mesh-pixel-mark,
+.mesh-pixel-brand:hover .mesh-pixel-mark,
+.mesh-accent-choice:hover .mesh-pixel-mark,
+.mesh-profile-choice:hover .mesh-pixel-mark,
+button:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark,
+a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
+  animation: mesh-pixel-reveal var(--motion-dur-fast) steps(8, end) 1;
+}
+
+/*
+ * An empty state is an arrival, not a hover target, so the seeded mark reveals
+ * once when the surface appears. Gated below for reduced motion, where the mark
+ * is simply present at full height.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .mesh-empty-mark .mesh-pixel-mark {
+    animation: mesh-pixel-reveal var(--motion-dur-fast) steps(8, end) 1;
+  }
+}
+
+@keyframes mesh-pixel-reveal {
+  0% {
+    clip-path: inset(0 0 100% 0);
+  }
+
+  100% {
+    clip-path: inset(0);
+  }
+}
+
+@media (max-width: 1023px) {
+  .mesh-onboarding-scroll {
+    max-height: none;
+  }
+}
+
+@media (max-width: 1023px) and (max-height: 700px) {
+  .mesh-onboarding-invitation-destination,
+  .mesh-account-service-header > p {
+    display: none;
+  }
+
+  .mesh-onboarding-content {
+    padding-block: 0.75rem;
+  }
+}
+
+.sequence-card-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.sequence-card {
+  position: relative;
+  border: 1px solid var(--surface-container-line);
+  background: var(--surface-container);
+  color: var(--surface-on-container);
+}
+
+.sequence-card[data-sequence-position='single'] {
+  border-radius: var(--radius-control);
+}
+
+.sequence-card[data-sequence-position='first'] {
+  border-radius: var(--radius-control) var(--radius-control) 0 0;
+}
+
+.sequence-card[data-sequence-position='middle'] {
+  border-top-width: 0;
+  border-radius: 0;
+}
+
+.sequence-card[data-sequence-position='last'] {
+  border-top-width: 0;
+  border-radius: 0 0 var(--radius-control) var(--radius-control);
+}
+
+.sequence-card:hover {
+  background: var(--surface-container-hover);
+}
+
+.sequence-card:focus-within,
+.sequence-card[data-selected='true'] {
+  background: var(--surface-container-active);
+}
+
+.sequence-card:focus-within {
+  z-index: 1;
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+.mesh-panel-resize-handle {
+  position: absolute;
+  inset-block: 0;
+  z-index: var(--z-sticky);
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.mesh-panel-resize-handle::after {
+  position: absolute;
+  inset-block: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  content: '';
+  transition: background-color var(--transition-fast);
+}
+
+.mesh-panel-resize-handle:hover::after,
+.mesh-panel-resize-handle:focus-visible::after {
+  background: var(--border-focus);
+}
+
+.mesh-panel-resize-handle:focus-visible {
+  outline: none;
+}
+
+.mesh-message-content {
+  max-width: min(var(--shell-message-measure), 100%);
+}
+
+/*
+  The room name is the screen title now, and it has a line to itself.
+
+  The 18rem cap existed when the title shared a 50px band with a topic
+  sentence, a member tally and a row of actions. Capping a 56px heading at
+  288px truncates almost every room name, so the constraint is the column
+  rather than an invented width.
+*/
+.mesh-room-title {
+  max-width: 100%;
+}
+
+.mesh-message-lane {
+  max-width: none;
+}
+
+.mesh-home-body,
+.mesh-dm-landing,
+.mesh-route-main,
+.mesh-message-log {
+  scrollbar-gutter: stable both-edges;
+  /*
+    Two z-sticky bands float over this scroller: the "New messages" button and
+    the refresh alert. Without scroll padding either can completely cover a
+    message that was just scrolled or focused, which is WCAG 2.2 failure
+    technique F110 verbatim, and it defeats the feed's keyboard navigation
+    precisely when a reader is paging through history. The reserve matches the
+    tallest of the two bands plus its offset.
+  */
+  scroll-padding-block: 3.5rem 4rem;
+}
+
+.mesh-message-media {
+  width: min(100%, var(--shell-media-max-width));
+  aspect-ratio: 16 / 9;
+  height: clamp(260px, 38vh, var(--shell-media-max-height));
+  max-height: var(--shell-media-max-height);
+  object-position: center;
+  border-radius: var(--mesh-radius-card);
+  box-shadow: none;
+}
+
+.mesh-compact-header,
+.mesh-nav-backdrop,
+.mesh-room-context-backdrop {
+  display: none;
+}
+
+/*
+  The conversation header is the one place a screen title lives, and a 56px
+  title does not fit a 50px band. This variant is content-driven -- 22px above,
+  20px below -- while every other header in the product keeps the fixed band.
+
+  It carries `.mesh-conversation-header` too, so the shared ground and the
+  sticky-surface contract still apply to it. The fixed `height` that used to
+  sit on that class is gone: it was only ever needed by headers that already
+  ask for `h-conversation-header` at the call site, and here it would crush the
+  title it exists to hold.
+*/
+.mesh-conversation-title-header {
+  height: auto;
+  padding-block: var(--conversation-title-padding-top) var(--conversation-title-padding-bottom);
+  padding-inline: var(--shell-conversation-padding);
+}
+
+/*
+  A poster-scale room name is a luxury a short window cannot afford.
+
+  At 500px of height the conversation header was taking 112px of it and the
+  timeline collapsed to nothing -- the message feed was still in the tree and
+  measured zero. The title steps down to the section size and the block padding
+  halves, which gives the conversation back roughly 60px on exactly the
+  viewports that have none to spare.
+*/
+@media (max-height: 640px) {
+  .mesh-conversation-title-header {
+    padding-block: var(--conversation-title-padding-compact);
+  }
+
+  .mesh-conversation-title-header .mesh-room-title {
+    font-size: var(--font-size-section);
+    line-height: var(--line-height-solid);
+    letter-spacing: var(--letter-spacing-section);
+  }
+}
+
+.mesh-conversation-header,
+.mesh-route-header {
+  min-height: var(--shell-header-height);
+  background: var(--surface-base);
+  box-shadow: none;
+}
+
+.mesh-route-tab[aria-selected='true'] {
+  background: transparent;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.mesh-route-navigation [role='tablist'] {
+  gap: 0;
+}
+
+.mesh-route-tab {
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+}
+
+.mesh-route-main .mesh-form-card {
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+  padding-right: 0 !important;
+  padding-left: 0 !important;
+}
+
+.mesh-channel-item {
+  min-height: var(--shell-channel-row-height);
+  border-radius: var(--radius-plane);
+}
+
+.mesh-dm-search-region,
+.mesh-dm-list {
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.mesh-dm-search-shell {
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: transparent;
+  padding-right: 12px;
+  padding-left: 12px;
+}
+
+.mesh-dm-item {
+  border-right-color: transparent;
+  border-left-color: transparent;
+  border-radius: 0;
+  padding-right: 12px;
+  padding-left: 12px;
+}
+
+.mesh-dm-landing { background: var(--surface-base); }
+.mesh-dm-landing-inner { padding: clamp(20px, 3vw, 32px); }
+.mesh-dm-landing-header { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.mesh-dm-landing-title { max-width: none; font-size: var(--font-size-lg); line-height: var(--line-height-28); letter-spacing: var(--letter-spacing-28); }
+.mesh-dm-lead { grid-template-columns: auto auto minmax(0, 1fr) auto auto; align-items: center; padding: 16px 12px; transition: background-color var(--transition-fast); }
+.mesh-dm-lead:hover { background: var(--surface-hover); }
+.mesh-dm-lead:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.mesh-dm-lead-index { white-space: nowrap; }
+.mesh-dm-lead-copy { align-self: center; }
+.mesh-dm-lead-title { font-size: var(--font-size-title); line-height: var(--line-height-22); letter-spacing: var(--letter-spacing-22); }
+.mesh-dm-lead-action { align-self: center; }
+.mesh-dm-lead-time { justify-self: end; }
+.mesh-dm-landing-recent { margin-top: 16px; }
+.mesh-dm-landing-row { min-height: 58px; padding: 8px 12px; }
+
+@media (max-width: 959px) {
+  .mesh-dm-lead { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .mesh-dm-lead-index { grid-column: 1 / -1; }
+  .mesh-dm-lead-time { display: none; }
+}
+
+@media (max-width: 639px) {
+  .mesh-dm-landing-inner { padding: 20px 16px; }
+  .mesh-dm-landing-header { grid-template-columns: minmax(0, 1fr); }
+  .mesh-dm-landing-title { font-size: var(--font-size-title); }
+  .mesh-dm-lead { grid-template-columns: auto minmax(0, 1fr); }
+  .mesh-dm-lead-action { grid-column: 2; justify-self: start; }
+  .mesh-dm-lead-time { display: none; }
+  .mesh-dm-landing-row time { display: none; }
+}
+
+.mesh-room-context-header {
+  background: var(--surface-base);
+}
+
+.mesh-room-context-tabs {
+  margin-right: 0;
+  margin-bottom: 0;
+  margin-left: 0;
+  gap: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+  padding: 0 12px;
+}
+
+.mesh-room-context-tab {
+  border-color: transparent !important;
+  border-radius: 0;
+  background: transparent !important;
+}
+
+.mesh-room-context-tab[aria-selected='true'] {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.mesh-room-context-summary {
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: transparent;
+  padding-right: 0;
+  padding-left: 0;
+}
+
+#community-settings-summary,
+#community-settings-overview {
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+#community-settings-summary {
+  padding-right: 0;
+  padding-left: 0;
+}
+
+#community-settings-summary > .grid {
+  gap: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+#community-settings-summary > .grid > div {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+#community-settings-summary > .grid > div + div {
+  border-top: 1px solid var(--border-subtle);
+}
+
+#community-settings-overview > div {
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.mesh-settings-content label:has(input[name='appearance-accent']) {
+  border-radius: 0;
+  background: transparent;
+}
+
+.mesh-settings-content label:has(input[name='appearance-accent']:checked) {
+  border-color: var(--border-subtle);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+@media (min-width: 640px) {
+  #community-settings-summary > .grid > div + div {
+    border-top: 0;
+    border-left: 1px solid var(--border-subtle);
+  }
+}
+
+.mesh-settings-content [role='tabpanel'] > section:not([hidden]) {
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+  padding: clamp(16px, 3vw, 24px) 0;
+  box-shadow: none;
+}
+
+.mesh-search-popover {
+  width: min(24rem, calc(100vw - 4rem));
+}
+
+.mesh-search-popover,
+.mesh-reaction-picker,
+/*
+  The palette band. It is separated from the app by a rule rather than a
+  shadow, and its page padding is the 60px the design gives every screen that
+  breaks the shell grid, so a selection plane can bleed past it.
+*/
+.mesh-command-surface {
+  border-bottom: var(--rule-width) solid var(--border-structural);
+  border-radius: var(--radius-plane);
+  background: var(--surface-canvas);
+  box-shadow: none;
+  padding-inline: var(--command-band-padding);
+}
+
+.mesh-search-popover [role='option'] {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.mesh-reaction-picker {
+  max-width: min(32rem, calc(100vw - 1rem));
+  max-height: 12rem;
+  overflow-y: auto;
+  gap: 0;
+  padding: 4px;
+}
+
+.mesh-reaction-picker > button {
+  border-radius: 0;
+}
+
+.mesh-voice-controls {
+  max-height: min(22rem, 45vh);
+  overflow-y: auto;
+}
+
+.mesh-call-tile {
+  min-height: var(--voice-tile-min-height);
+}
+
+.mesh-dm-trust-popover {
+  width: min(20rem, calc(100vw - 1rem));
+}
+
+/*
+ * The palette is one field, not a titled dialog. The search icon sits inside
+ * the field on the same row as the input, and the listbox spans both columns
+ * below it, so nothing above the field restates the placeholder.
+ */
+.mesh-command-combobox {
+  position: static;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  padding-block: 20px;
+}
+
+.mesh-command-combobox > * + * {
+  margin-top: 0;
+}
+
+.mesh-field-leading-icon {
+  display: flex;
+  align-items: center;
+  padding-left: 10px;
+  color: var(--content-muted);
+}
+
+.mesh-command-combobox > label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+/*
+  The query is a screen-scale line with a 2px caret, because it is the only
+  thing on the band a person is composing. The caret is the accent so it reads
+  as the same mark the selection plane below it is made of.
+*/
+.mesh-command-combobox > input {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 4px 14px;
+  font-size: var(--font-size-section);
+  line-height: var(--line-height-solid);
+  letter-spacing: var(--letter-spacing-section);
+  font-weight: var(--font-weight-semibold);
+  caret-color: var(--accent);
+}
+
+.mesh-command-combobox > [role='listbox'] {
+  position: static;
+  grid-column: 1 / -1;
+  max-height: 22rem;
+  margin-top: 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.mesh-command-combobox [role='presentation'] {
+  font-family: var(--font-mono);
+  letter-spacing: var(--letter-spacing-eyebrow);
+}
+
+/*
+  A selected row is a plane that bleeds the full width of the band, past the
+  page padding on both sides. That is what makes the palette read as the app
+  opening rather than as a list inside a box.
+*/
+.mesh-command-combobox [role='option'] {
+  border-bottom: var(--rule-width) solid var(--border-row);
+  border-radius: var(--radius-plane);
+  margin-inline: calc(-1 * var(--command-band-padding));
+  padding: var(--ledger-row-padding) var(--command-band-padding);
+}
+
+/* A ruled list ends with content, not with a rule that separates it from air. */
+.mesh-command-combobox [role='option']:last-child,
+.mesh-search-popover [role='option']:last-child {
+  border-bottom: 0;
+}
+
+/*
+ * Keyboard position and mouse position must not look identical. The active
+ * descendant keeps the hover surface and adds the channel-list selection
+ * marker, so the caret is legible without a second background value.
+ */
+
+
+.mesh-invite-grid {
+  gap: 0;
+}
+
+.mesh-invite-section {
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.mesh-invite-destination,
+.mesh-invite-link {
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.mesh-invite-guidance {
+  border-radius: 0;
+  background: transparent;
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.mesh-invite-section + .mesh-invite-section {
+  margin-top: 20px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 20px;
+}
+
+.mesh-dm-safety-header {
+  background: var(--surface-base);
+}
+
+.mesh-dm-safety-body {
+  gap: 0;
+  padding: 0;
+}
+
+.mesh-dm-safety-section {
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 16px;
+}
+
+.mesh-dm-safety-status {
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 0;
+  background: transparent !important;
+}
+
+.mesh-beta-info {
+  gap: 0;
+}
+
+.mesh-beta-info-section {
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.mesh-beta-badge {
+  border-radius: 0;
+  font-family: var(--font-mono);
+  letter-spacing: var(--letter-spacing-eyebrow);
+  text-transform: uppercase;
+}
+
+.mesh-feedback-context,
+.mesh-feedback-privacy {
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.mesh-feedback-field {
+  border-radius: var(--mesh-radius-tile);
+  background: var(--surface-base);
+}
+
+.mesh-feedback-actions {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 16px;
+}
+
+.mesh-feedback-status {
+  font-family: var(--font-mono);
+}
+
+/*
+ * Notice intensities
+ *
+ * There are three ways for Mesh to raise a status surface, and only three.
+ * Each has one named strength, so nobody has to choose between /5, /10, /15,
+ * /20, /25 and /80 for the same idea. The class picks the intensity, the
+ * `data-notice-tone` attribute picks the tone, and every value resolves
+ * through the container quintuples rather than a hand-mixed alpha.
+ *
+ * 1. Inline advisory (`.mesh-notice-advisory`): a rule on the leading edge in
+ *    the tone color, no fill. Use when the surface underneath stays usable and
+ *    the notice annotates content that is already on screen.
+ * 2. Blocking band (`.mesh-notice-band`): top and bottom rule plus the
+ *    container fill. Use when the notice governs the whole region below it and
+ *    has to be read before that region makes sense.
+ * 3. Recoverable failure: the `ErrorState` component. Use when something has
+ *    already failed and there is a retry. This one is never hand-rolled.
+ *
+ * State is never carried by the tone alone: intensity 1 adds an edge rule,
+ * intensity 2 adds two rules and a fill, and all three keep their text.
+ */
+.mesh-notice-advisory,
+.mesh-notice-band {
+  --notice-line: var(--surface-container-line);
+  --notice-fill: var(--surface-container);
+  --notice-content: var(--content-primary);
+  border-radius: 0;
+}
+
+[data-notice-tone='accent'] {
+  --notice-line: var(--accent-container-line);
+  --notice-fill: var(--accent-container);
+  --notice-content: var(--accent-on-container);
+}
+
+[data-notice-tone='success'] {
+  --notice-line: var(--success-container-line);
+  --notice-fill: var(--success-container);
+  --notice-content: var(--success-on-container);
+}
+
+[data-notice-tone='warning'] {
+  --notice-line: var(--warning-container-line);
+  --notice-fill: var(--warning-container);
+  --notice-content: var(--warning-on-container);
+}
+
+[data-notice-tone='danger'] {
+  --notice-line: var(--danger-container-line);
+  --notice-fill: var(--danger-container);
+  --notice-content: var(--danger-on-container);
+}
+
+[data-notice-tone='info'] {
+  --notice-line: var(--info-container-line);
+  --notice-fill: var(--info-container);
+  --notice-content: var(--info-on-container);
+}
+
+.mesh-notice-advisory {
+  border: 0;
+  border-left: 2px solid var(--notice-line);
+  background: transparent;
+  padding: 8px 12px;
+}
+
+/*
+ * High contrast turns the container fill solid, so a band's body text has to
+ * flip to the paired on-container ink. In the tinted themes the band keeps the
+ * caller's own text color and the tone stays in the rules.
+ */
+[data-theme='high-contrast'] .mesh-notice-band,
+[data-contrast='high'] .mesh-notice-band,
+[data-theme='high-contrast'] [data-notice-tone],
+[data-contrast='high'] [data-notice-tone],
+/*
+ * An action inside a band sets its own color, and a parent's `color` never
+ * overrides a child's own declaration however important it is. A link-toned
+ * retry button therefore stayed light blue on the solid fill and measured
+ * 1.2:1. Interactive descendants flip with the band unless they carry a tone
+ * of their own.
+ */
+[data-theme='high-contrast'] [data-notice-tone] :is(a, button):not([data-notice-tone]),
+[data-contrast='high'] [data-notice-tone] :is(a, button):not([data-notice-tone]),
+[data-theme='high-contrast'] .mesh-notice-band :is(a, button):not([data-notice-tone]),
+[data-contrast='high'] .mesh-notice-band :is(a, button):not([data-notice-tone]) {
+  color: var(--notice-content) !important;
+}
+
+.mesh-notice-band {
+  border: 0;
+  border-top: var(--border-width-status) solid var(--notice-line);
+  border-bottom: var(--border-width-status) solid var(--notice-line);
+  background: var(--notice-fill);
+  padding: 12px 16px;
+}
+
+.mesh-error-state {
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.mesh-error-icon {
+  border-radius: 0;
+  background: transparent;
+}
+
+.mesh-error-details {
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.mesh-toast {
+  border-color: var(--border-strong);
+  border-radius: var(--mesh-radius-shell);
+  background: var(--surface-base);
+  box-shadow: var(--elev-overlay);
+}
+
+.mesh-toast-icon {
+  border-radius: 0;
+  background: transparent;
+}
+
+/*
+ * Remaining-dwell hairline. This is bounded progress, which the motion
+ * contract protects, so reduced motion keeps the rule visible and simply stops
+ * it from travelling instead of hiding the indicator.
+ */
+.mesh-toast-progress {
+  transform-origin: left center;
+  animation: mesh-toast-dwell var(--mesh-toast-dwell, var(--toast-dwell-default))
+    var(--motion-ease-progress) 1 forwards;
+}
+
+.mesh-toast[data-dwell-paused='true'] .mesh-toast-progress {
+  animation-play-state: paused;
+}
+
+@keyframes mesh-toast-dwell {
+  from {
+    transform: scaleX(1);
+  }
+
+  to {
+    transform: scaleX(0);
+  }
+}
+
+html[data-reduce-motion='true'] .mesh-toast-progress {
+  animation: none !important;
+  transform: none !important;
+}
+
+/*
+ * Activity indicators, and what they become under reduced motion.
+ *
+ * Both reduced-motion routes above stop `animate-spin`, which left the spinner
+ * as a static loader glyph: decoration, not status. The contract protects
+ * bounded progress, so each indicator swaps continuous movement for a discrete
+ * three-step tick that still advances. The `!important` re-entry below is
+ * deliberate: `html[data-reduce-motion='true'] *` zeroes every animation, and a
+ * process indicator may not disappear merely because duration is reduced.
+ */
+/*
+ * The pixel marks already arrive in eight discrete steps. A loader that
+ * sweeps smoothly is the one piece of motion in the product that could
+ * belong to any application, so it advances on the same cadence.
+ */
+.mesh-spinner-glyph {
+  animation-timing-function: steps(8, end);
+}
+
+.mesh-spinner-steps {
+  display: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.mesh-spinner-steps > span {
+  width: 3px;
+  height: 3px;
+  background: currentColor;
+  opacity: 0.25;
+}
+
+.mesh-spinner-steps > span:nth-child(2) {
+  animation-delay: calc(var(--motion-dur-activity) / 3);
+}
+
+.mesh-spinner-steps > span:nth-child(3) {
+  animation-delay: calc(var(--motion-dur-activity) / 3 * 2);
+}
+
+@keyframes mesh-progress-step {
+  0%, 32% {
+    opacity: 0.25;
+  }
+
+  33%, 100% {
+    opacity: 1;
+  }
+}
+
+/* The amber rule over a loading title is the activity, not a decoration. */
+.mesh-async-rule {
+  position: relative;
+  overflow: hidden;
+  background: var(--border-subtle);
+}
+
+.mesh-async-rule::after {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 40%;
+  background: var(--accent);
+  content: '';
+  animation: mesh-async-sweep var(--motion-dur-activity) var(--motion-ease-reposition) infinite;
+}
+
+@keyframes mesh-async-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(250%);
+  }
+}
+
+@keyframes mesh-async-tick {
+  0%, 33% {
+    transform: scaleX(0.34);
+  }
+
+  34%, 66% {
+    transform: scaleX(0.67);
+  }
+
+  67%, 100% {
+    transform: scaleX(1);
+  }
+}
+
+html[data-reduce-motion='true'] .mesh-spinner-glyph {
+  display: none;
+}
+
+html[data-reduce-motion='true'] .mesh-spinner-steps {
+  display: inline-flex;
+}
+
+html[data-reduce-motion='true'] .mesh-spinner-steps > span {
+  animation: mesh-progress-step var(--motion-dur-activity) var(--motion-ease-progress) infinite !important;
+  animation-duration: var(--motion-dur-activity) !important;
+  animation-iteration-count: infinite !important;
+}
+
+html[data-reduce-motion='true'] .mesh-spinner-steps > span:nth-child(2) {
+  animation-delay: calc(var(--motion-dur-activity) / 3) !important;
+}
+
+html[data-reduce-motion='true'] .mesh-spinner-steps > span:nth-child(3) {
+  animation-delay: calc(var(--motion-dur-activity) / 3 * 2) !important;
+}
+
+html[data-reduce-motion='true'] .mesh-async-rule::after {
+  width: 100%;
+  transform-origin: left center;
+  animation: mesh-async-tick var(--motion-dur-activity) var(--motion-ease-progress) infinite !important;
+  animation-duration: var(--motion-dur-activity) !important;
+  animation-iteration-count: infinite !important;
+}
+
+.mesh-modal-loading {
+  border-color: var(--border-strong);
+  border-radius: var(--mesh-radius-shell);
+  background: var(--surface-base);
+  box-shadow: var(--elev-overlay);
+  overflow: hidden;
+}
+
+.mesh-loading-title {
+  display: block;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 18px 20px 12px;
+}
+
+.mesh-loading-title + span {
+  padding: 12px 20px 0;
+}
+
+.mesh-loading-lines {
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 16px;
+  padding: 16px 20px 20px;
+}
+
+.mesh-skeleton:not(.rounded-full) {
+  border-radius: 0;
+}
+
+.mesh-advanced-settings {
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.mesh-advanced-actions,
+.mesh-advanced-privacy,
+.mesh-advanced-version {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 12px;
+}
+
+.mesh-advanced-loading {
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--font-mono);
+}
+
+.mesh-diagnostics-frame,
+.mesh-diagnostics-consent,
+.mesh-diagnostics-support {
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.mesh-diagnostics-frame {
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.mesh-diagnostics-header,
+.mesh-diagnostics-toolbar {
+  padding-right: 12px;
+  padding-left: 12px;
+}
+
+.mesh-diagnostics-toolbar {
+  justify-content: space-between;
+}
+
+.mesh-diagnostics-scroll {
+  padding-right: 0;
+}
+
+.mesh-diagnostics-content {
+  gap: 0;
+}
+
+.mesh-diagnostics-section {
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 16px 12px;
+}
+
+.mesh-diagnostics-section:first-child {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.mesh-diagnostics-grid {
+  gap: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-left: 1px solid var(--border-subtle);
+}
+
+.mesh-diagnostics-cell {
+  min-width: 0;
+  border-right: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+}
+
+.mesh-diagnostics-disclosure,
+.mesh-diagnostics-bundle,
+.mesh-diagnostics-download,
+.mesh-diagnostics-probe {
+  border-radius: 0;
+  background: transparent;
+}
+
+.mesh-diagnostics-disclosure,
+.mesh-diagnostics-download,
+.mesh-diagnostics-probe {
+  border: 1px solid var(--border-subtle);
+}
+
+.mesh-diagnostics-note,
+.mesh-diagnostics-notice {
+  border-left: 2px solid currentColor;
+  border-radius: 0;
+  background: transparent;
+  padding: 8px 10px;
+}
+
+.mesh-diagnostics-test {
+  border-top-style: dashed;
+}
+
+.mesh-diagnostics-bundle {
+  border: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+}
+
+.mesh-security-frame {
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: transparent;
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.mesh-security-header {
+  padding-right: 12px;
+  padding-left: 12px;
+}
+
+.mesh-security-content {
+  padding-right: 0;
+}
+
+.mesh-security-content > section {
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+  padding: 18px 12px;
+}
+
+.mesh-security-content > section:first-of-type {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.mesh-security-disclosure,
+.mesh-security-status,
+.mesh-security-notice,
+.mesh-security-danger-block,
+.mesh-security-verification {
+  border-radius: 0;
+}
+
+.mesh-security-disclosure {
+  background: transparent;
+}
+
+.mesh-security-status,
+.mesh-security-notice,
+.mesh-security-danger-block,
+.mesh-security-verification {
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-left-width: 2px;
+  background: transparent;
+}
+
+.mesh-security-device-list {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.mesh-security-device-row {
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+  padding: 12px 4px;
+}
+
+.mesh-security-device-row:has(button:focus-visible) {
+  background: var(--surface-hover);
+}
+
+@media (max-width: 639px) {
+  .mesh-diagnostics-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mesh-diagnostics-toolbar {
+    align-items: stretch;
+  }
+
+  .mesh-diagnostics-toolbar > button {
+    flex: 1 1 auto;
+  }
+
+  .mesh-diagnostics-section {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .mesh-security-header,
+  .mesh-security-content > section {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .mesh-security-device-row > div {
+    flex-direction: column;
+  }
+
+  .mesh-security-device-row > div > div:last-child {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@media (min-width: 768px) {
+  .mesh-invite-section:first-child {
+    border-right: 1px solid var(--border-subtle);
+    padding-right: 20px;
+  }
+
+  .mesh-invite-section + .mesh-invite-section {
+    margin-top: 0;
+    border-top: 0;
+    padding-top: 0;
+    padding-left: 20px;
+  }
+}
+
+@media (min-width: 1101px) and (max-width: 1365px) {
+  /* Keep all four desktop panes available without letting persisted maximum
+     widths consume the conversation at standard laptop widths. */
+  .mesh-context-sidebar {
+    width: min(var(--mesh-context-sidebar-width, var(--shell-channel-width)), var(--shell-channel-width));
+  }
+
+  .mesh-room-context-panel {
+    width: min(var(--mesh-room-context-width, var(--shell-roster-width)), var(--shell-roster-width));
+  }
+
+  .mesh-panel-resize-handle {
+    display: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  .mesh-panel-resize-handle,
+  .mesh-member-list {
+    display: none;
+  }
+
+  .mesh-room-context-panel,
+  .mesh-secondary-pane {
+    position: fixed;
+    inset-block: 0;
+    right: 0;
+    z-index: 44;
+    box-shadow: var(--elev-overlay);
+  }
+
+  .mesh-room-context-panel {
+    display: flex;
+    width: min(var(--shell-roster-width), calc(100vw - var(--shell-rail-width)));
+  }
+
+  .mesh-secondary-pane {
+    width: min(22rem, calc(100vw - var(--shell-rail-width)));
+  }
+
+  .mesh-room-context-backdrop {
+    position: fixed;
+    inset: 0 0 0 var(--shell-rail-width);
+    z-index: 43;
+    display: block;
+    border: 0;
+    border-radius: 0;
+    background: var(--surface-nav-scrim);
+  }
+}
+
+@media (max-width: 799px) {
+  .mesh-community-rail,
+  .mesh-context-sidebar,
+  .mesh-workspace-main {
+    border-block: 0;
+    border-radius: 0;
+  }
+
+  .mesh-context-sidebar {
+    position: fixed;
+    inset-block: 0;
+    left: var(--shell-rail-width);
+    z-index: 45;
+    width: min(var(--shell-channel-width), calc(100vw - var(--shell-rail-width)));
+    box-shadow: none;
+    transform: translateX(-110%);
+    transition: transform var(--transition-normal);
+  }
+
+  .mesh-context-sidebar[data-open='false'] {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .mesh-context-sidebar[data-open='true'] {
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateX(0);
+  }
+
+  .mesh-nav-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: block;
+    border: 0;
+    border-radius: 0;
+    background: var(--surface-nav-scrim);
+  }
+
+  .mesh-compact-header {
+    display: flex;
+    height: 44px;
+    flex: 0 0 44px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    padding: 0 10px;
+    background: var(--bg-primary);
+  }
+
+  .mesh-network-label {
+    display: none;
+  }
+}
+
+@media (max-width: 639px) {
+  .mesh-message-media {
+    height: auto;
+    max-height: none;
+    aspect-ratio: 16 / 9;
+  }
+
+  .mesh-voice-dock {
+    gap: 4px;
+    padding-inline: 8px;
+  }
+
+  .mesh-voice-dock-room {
+    min-width: 0;
+    flex: 1 1 auto;
+    gap: 0;
+    padding-inline: 4px;
+  }
+
+  .mesh-voice-dock-room-icon,
+  .mesh-voice-dock-status,
+  .mesh-voice-dock-participants,
+  .mesh-voice-dock-control-label,
+  .mesh-voice-dock-controls > button > span {
+    display: none;
+  }
+
+  .mesh-voice-dock-controls {
+    gap: 2px;
+    padding-left: 4px;
+  }
+
+  .mesh-voice-dock-controls > button,
+  .mesh-voice-dock-controls .mesh-voice-dock-open {
+    display: flex;
+    min-width: 36px;
+    min-height: 40px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .mesh-composer-shell {
+    margin-right: 10px;
+    margin-bottom: 10px;
+    margin-left: 10px;
+  }
+}
+
+@media (min-width: 1600px) {
+  .mesh-voice-dock-participant {
+    min-width: 0;
+    flex-direction: row;
+    gap: 8px;
+  }
+
+  /* Below this width the participant copy is sr-only rather than removed, so
+     the talking state never leaves the accessibility tree. Promoting it back
+     is the not-sr-only reset, not a display switch. */
+  .mesh-voice-dock-participant-copy {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    clip-path: none;
+    white-space: normal;
+  }
+}
+
+@media (hover: none) {
+  .mesh-participant-volume {
+    opacity: 1;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .mesh-message-actions {
+    pointer-events: auto;
+    opacity: 1;
+  }
+
+  /* Without this, grouped-message clock readings are unreachable on a device
+     that cannot hover: the timestamp would simply never appear. The transform
+     reset matters too, because the hover reveal slides the clock 2px and a
+     device that cannot hover would hold it at the offset permanently. */
+  .mesh-message-time {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * High-resolution desktop contract.
+ *
+ * These queries deliberately require both width and height. A 3840 x 1080
+ * ultrawide should keep the normal desktop density, while a true 1440p or 4K
+ * workspace gains slightly larger type, controls, navigation, and media. OS
+ * display scaling still works naturally because these values remain CSS px.
+ */
+@media (min-width: 2560px) and (min-height: 1200px) {
+  :root {
+    --ref-size-11: 12px;
+    --ref-size-12: 13px;
+    --ref-size-13: 14px;
+    --ref-size-14: 15px;
+    --ref-size-15: 16px;
+    --ref-size-18: 19px;
+    --ref-size-22: 23px;
+    --ref-size-28: 30px;
+    --line-height-11: calc(16px * var(--text-scale));
+    --line-height-14: calc(19px * var(--text-scale));
+    --line-height-15: calc(22px * var(--text-scale));
+    --line-height-prose: calc(24px * var(--text-scale));
+    --message-gutter: 72px;
+    --settings-drawer-width: 480px;
+    --route-surface-columns: 280px minmax(0, 1fr);
+    --voice-tile-min-height: 220px;
+    --shell-rail-width: 68px;
+    --shell-channel-width: 296px;
+    --shell-roster-width: 336px;
+    --shell-header-height: 60px;
+    --shell-composer-height: 56px;
+    --shell-strip-height: 80px;
+    --shell-media-max-height: 540px;
+    --shell-conversation-padding: 24px;
+    --shell-channel-row-height: 38px;
+    --shell-occupant-row-height: 44px;
+    --shell-message-padding-block: 5px;
+    --shell-media-max-width: 1120px;
+  }
+
+  :root[data-density='compact'] {
+    --density-control-sm: 34px;
+    --density-control-md: 34px;
+    --density-control-lg: 42px;
+    --density-panel-gap: 14px;
+    --message-group-gap: 14px;
+  }
+
+  :root[data-density='default'] {
+    --density-control-sm: 34px;
+    --density-control-md: 38px;
+    --density-control-lg: 46px;
+    --density-panel-gap: 18px;
+    --message-group-gap: 14px;
+  }
+
+  :root[data-density='comfortable'] {
+    --density-control-sm: 38px;
+    --density-control-md: 42px;
+    --density-control-lg: 50px;
+    --density-panel-gap: 22px;
+    --message-group-gap: 22px;
+  }
+
+  .mesh-home-row {
+    min-height: 58px;
+  }
+
+  .mesh-dm-landing-inner {
+    padding: 36px;
+  }
+
+  .mesh-composer-shell {
+    margin-right: 20px;
+    margin-bottom: 16px;
+    margin-left: 20px;
+  }
+}
+
+@media (min-width: 3200px) and (min-height: 1800px) {
+  :root {
+    --ref-size-11: 13px;
+    --ref-size-12: 14px;
+    --ref-size-13: 15px;
+    --ref-size-14: 16px;
+    --ref-size-15: 17px;
+    --ref-size-18: 20px;
+    --ref-size-22: 25px;
+    --ref-size-28: 32px;
+    --line-height-11: calc(18px * var(--text-scale));
+    --line-height-14: calc(21px * var(--text-scale));
+    --line-height-15: calc(24px * var(--text-scale));
+    --line-height-prose: calc(26px * var(--text-scale));
+    --message-gutter: 80px;
+    --settings-drawer-width: 560px;
+    --route-surface-columns: 320px minmax(0, 1fr);
+    --voice-tile-min-height: 260px;
+    --shell-rail-width: 72px;
+    --shell-channel-width: 336px;
+    --shell-roster-width: 384px;
+    --shell-header-height: 64px;
+    --shell-composer-height: 60px;
+    --shell-strip-height: 88px;
+    --shell-media-max-height: 720px;
+    --shell-conversation-padding: 28px;
+    --shell-channel-row-height: 42px;
+    --shell-occupant-row-height: 48px;
+    --shell-message-padding-block: 6px;
+    --shell-media-max-width: 1440px;
+  }
+
+  :root[data-density='compact'] {
+    --density-control-sm: 36px;
+    --density-control-md: 36px;
+    --density-control-lg: 44px;
+    --density-panel-gap: 16px;
+    --message-group-gap: 16px;
+  }
+
+  :root[data-density='default'] {
+    --density-control-sm: 36px;
+    --density-control-md: 40px;
+    --density-control-lg: 48px;
+    --density-panel-gap: 20px;
+    --message-group-gap: 16px;
+  }
+
+  :root[data-density='comfortable'] {
+    --density-control-sm: 40px;
+    --density-control-md: 44px;
+    --density-control-lg: 52px;
+    --density-panel-gap: 24px;
+    --message-group-gap: 24px;
+  }
+
+  .mesh-home-row {
+    min-height: 64px;
+  }
+
+  .mesh-dm-landing-inner {
+    padding: 44px;
+  }
+
+  .mesh-composer-shell {
+    margin-right: 24px;
+    margin-bottom: 20px;
+    margin-left: 24px;
+  }
+}

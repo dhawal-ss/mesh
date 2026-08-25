@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pick-custom-emoji-grant"
+description = "Enables the pick_custom_emoji_grant command without any pre-configured scope."
+commands.allow = ["pick_custom_emoji_grant"]
+
+[[permission]]
+identifier = "deny-pick-custom-emoji-grant"
+description = "Denies the pick_custom_emoji_grant command without any pre-configured scope."
+commands.deny = ["pick_custom_emoji_grant"]

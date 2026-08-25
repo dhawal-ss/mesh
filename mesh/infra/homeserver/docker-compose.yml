@@ -1,0 +1,184 @@
+name: mesh-homeserver
+
+services:
+  postgres:
+    image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+    restart: unless-stopped
+    stop_grace_period: 60s
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:?POSTGRES_USER is required}"
+      POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB is required}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - ./runtime/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    shm_size: 256m
+    mem_limit: 1g
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+    networks:
+      - synapse-db
+      - admission-db
+
+  synapse:
+    image: matrixdotorg/synapse:v1.157.2@sha256:097e3120b8ecf97e4f92537d7af2da41564c706e33fc740f3741c9defacc2af1
+    restart: unless-stopped
+    stop_grace_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+      UID: "${MESH_RUNTIME_UID:?Run setup.sh to record the host runtime UID}"
+      GID: "${MESH_RUNTIME_GID:?Run setup.sh to record the host runtime GID}"
+    volumes:
+      - ./runtime/synapse:/data
+      - ./create_registration_invite.py:/mesh/create_registration_invite.py:ro
+      - ./bootstrap_admission_service.py:/mesh/bootstrap_admission_service.py:ro
+    ports:
+      - "${SYNAPSE_CONTROL_BIND:-127.0.0.1}:8008:8008/tcp"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8008/health', timeout=3).read()",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+    mem_limit: 2g
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+    networks:
+      - synapse-db
+      - admission-control
+      - matrix-edge
+
+  admission:
+    image: matrixdotorg/synapse:v1.157.2@sha256:097e3120b8ecf97e4f92537d7af2da41564c706e33fc740f3741c9defacc2af1
+    restart: unless-stopped
+    stop_grace_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      synapse:
+        condition: service_healthy
+    entrypoint: ["python", "/mesh/admission_service.py"]
+    user: "${MESH_RUNTIME_UID:?Run setup.sh to record the host runtime UID}:${MESH_RUNTIME_GID:?Run setup.sh to record the host runtime GID}"
+    environment:
+      MESH_SERVER_NAME: "${MESH_SERVER_NAME:?MESH_SERVER_NAME is required}"
+      MESH_HOMESERVER_PUBLIC_URL: "https://${MESH_HOMESERVER_HOST}"
+      MESH_HOMESERVER_INTERNAL_URL: "http://synapse:8008"
+      MESH_PUBLIC_ORIGIN: "https://${MESH_SERVER_NAME}"
+      MESH_ADMISSION_SERVICE_USER_ID: "${MESH_ADMISSION_SERVICE_USER_ID:?MESH_ADMISSION_SERVICE_USER_ID is required}"
+      MESH_ADMISSION_SERVICE_ACCESS_TOKEN: "${MESH_ADMISSION_SERVICE_ACCESS_TOKEN:?MESH_ADMISSION_SERVICE_ACCESS_TOKEN is required}"
+      MESH_ADMISSION_SIGNING_KEY: "${MESH_ADMISSION_SIGNING_KEY:?MESH_ADMISSION_SIGNING_KEY is required}"
+      MESH_ADMISSION_SIGNING_KEY_ID: "${MESH_ADMISSION_SIGNING_KEY_ID:?MESH_ADMISSION_SIGNING_KEY_ID is required}"
+      MESH_ADMISSION_PREVIOUS_SIGNING_KEYS: "${MESH_ADMISSION_PREVIOUS_SIGNING_KEYS:-}"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: mesh_admission
+      POSTGRES_PASSWORD: "${MESH_ADMISSION_DB_PASSWORD:?MESH_ADMISSION_DB_PASSWORD is required}"
+      POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB is required}"
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./admission_service.py:/mesh/admission_service.py:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=3).read()",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    mem_limit: 256m
+    cpus: "0.50"
+    pids_limit: 64
+    read_only: true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=16m,mode=1770,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+    networks:
+      - admission-db
+      - admission-control
+
+  caddy:
+    image: ghcr.io/dhawal-ss/mesh-caddy:2.11.4-mesh.1@sha256:67cf933778f84aadd59f93fc5d2eaf6471df7b415135ae95fc1b1e6e5f4b7e4f
+    profiles: ["public"]
+    restart: unless-stopped
+    stop_grace_period: 30s
+    depends_on:
+      synapse:
+        condition: service_healthy
+    environment:
+      ACME_EMAIL: "${ACME_EMAIL:?ACME_EMAIL is required}"
+      MESH_SERVER_NAME: "${MESH_SERVER_NAME:?MESH_SERVER_NAME is required}"
+      MESH_HOMESERVER_HOST: "${MESH_HOMESERVER_HOST:?MESH_HOMESERVER_HOST is required}"
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./runtime/well-known:/srv/well-known:ro
+      - ./runtime/caddy/data:/data
+      - ./runtime/caddy/config:/config
+    mem_limit: 256m
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+    networks:
+      - matrix-edge
+
+networks:
+  synapse-db:
+    driver: bridge
+    internal: true
+  admission-db:
+    driver: bridge
+    internal: true
+  admission-control:
+    driver: bridge
+    internal: true
+  matrix-edge:
+    driver: bridge
+    internal: false

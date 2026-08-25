@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 6,
+  "scopePolicy": {
+    "callPathComposeDirectories": [
+      "infra/matrixrtc"
+    ]
+  },
+  "scannerPolicy": {
+    "candidateOutage": "fail-closed",
+    "developmentOutage": "blocked-unavailable",
+    "grypeVersion": "v0.116.1",
+    "severityCutoff": "high",
+    "onlyFixable": true,
+    "database": {
+      "sourceOrigin": "https://grype.anchore.io/databases/",
+      "maxAgeHours": 120,
+      "requireValid": true,
+      "requireHashValidation": true
+    }
+  },
+  "sbomPolicy": {
+    "syftVersion": "v1.50.0",
+    "format": "CycloneDX",
+    "specVersion": "1.7",
+    "minimumComponents": 1,
+    "maxScanSkewMinutes": 60
+  },
+  "signatureDiscoveryPolicy": {
+    "cosignVersion": "v3.0.6",
+    "mode": "discovery-only",
+    "identityRegexp": "^.+$",
+    "issuerRegexp": "^https://.+$",
+    "maxPayloadBytes": 1048576,
+    "maxSignatures": 64,
+    "requiresReviewer": true,
+    "trustedForRelease": false
+  },
+  "meshCandidateTrustPolicy": {
+    "cosignVersion": "v3.0.6",
+    "mode": "keyless-github-actions",
+    "identityRegexp": "^https://github\\.com/dhawal-ss/mesh/\\.github/workflows/container-candidates\\.yml@refs/heads/(main|beta/production-readiness-2026-08)$",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "maxPayloadBytes": 1048576,
+    "maxSignatures": 16,
+    "trustedForCandidate": true,
+    "trustedForRelease": false
+  },
+  "requiredUpdateRegressions": [
+    "disposable-federation",
+    "backup",
+    "restore",
+    "health",
+    "cleanup"
+  ],
+  "images": [
+    {
+      "name": "caddy",
+      "milestone": "R2",
+      "derivedScope": "release",
+      "image": "ghcr.io/dhawal-ss/mesh-caddy:2.11.4-mesh.1@sha256:67cf933778f84aadd59f93fc5d2eaf6471df7b415135ae95fc1b1e6e5f4b7e4f",
+      "signaturePolicy": "discover-upstream-support-before-candidate",
+      "candidateTrustPolicy": "mesh-keyless-github-actions"
+    },
+    {
+      "name": "lk-jwt-service",
+      "milestone": "R3",
+      "derivedScope": "release",
+      "image": "ghcr.io/dhawal-ss/mesh-lk-jwt-service:0.5.0-mesh.2@sha256:78bf2f1e8535928037abc35a9886614b3f722885b54f1f707a570e6991252710",
+      "signaturePolicy": "discover-upstream-support-before-candidate",
+      "candidateTrustPolicy": "mesh-keyless-github-actions"
+    },
+    {
+      "name": "livekit-server",
+      "milestone": "R3",
+      "derivedScope": "release",
+      "image": "livekit/livekit-server:v1.13.5@sha256:3497163e15c48fef6e7830c78716f9e9d5edc28abf7aa90b61c86e93bbc306b1",
+      "signaturePolicy": "discover-upstream-support-before-candidate"
+    },
+    {
+      "name": "synapse",
+      "milestone": "R2",
+      "derivedScope": "reference",
+      "image": "matrixdotorg/synapse:v1.157.2@sha256:097e3120b8ecf97e4f92537d7af2da41564c706e33fc740f3741c9defacc2af1",
+      "signaturePolicy": "discover-upstream-support-before-candidate"
+    },
+    {
+      "name": "nginx",
+      "milestone": "R2",
+      "derivedScope": "reference",
+      "image": "nginx:1.30.4-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46",
+      "signaturePolicy": "discover-upstream-support-before-candidate"
+    },
+    {
+      "name": "postgres",
+      "milestone": "R2",
+      "derivedScope": "reference",
+      "image": "postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193",
+      "signaturePolicy": "discover-upstream-support-before-candidate"
+    }
+  ],
+  "exceptions": []
+}

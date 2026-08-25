@@ -1,0 +1,1562 @@
+import { useCallback, useEffect, useState, type ComponentProps, type ReactNode } from 'react'
+import { Modal } from '../ui/Modal'
+import { Button } from '../ui/Button'
+import { Input } from '../ui/Input'
+import { Icon } from '../ui/Icon'
+import { EmptyState } from '../ui/Primitives'
+import { StatusDot } from '../ui/StatusDot'
+import { ErrorState } from '../ui/ErrorState'
+import * as bridge from '../../lib/bridge'
+import { describeError, normalizeError, errorLine } from '../../lib/errors'
+import { clearRegistrationContinuation } from '../../lib/registration-continuation'
+import { clearRendererAccountState } from '../../lib/account-transition'
+import { PUBLIC_SERVICES } from '../../config/public-services'
+import { BackupCodeScreen } from '../onboarding/BackupCodeScreen'
+import { copyText } from '../../lib/notifications'
+import { useSettingsStore } from '../../store/settings'
+
+interface SecurityDevicesPanelProps {
+  open: boolean
+  onClose: () => void
+  embedded?: boolean
+}
+
+/**
+ * The panel is a modal on one route and an inline sub-panel on the other, so
+ * the same group label sits at two depths. Nesting is computed once from
+ * `embedded` instead of hardcoding a level that is wrong in half the app: the
+ * dialog title owns h2, the inline frame owns h3.
+ */
+type HeadingLevel = 3 | 4 | 5
+
+function GroupHeading({
+  level,
+  id,
+  className,
+  children,
+}: {
+  level: HeadingLevel
+  id?: string
+  className: string
+  children: ReactNode
+}) {
+  if (level === 3) return <h3 id={id} className={className}>{children}</h3>
+  if (level === 4) return <h4 id={id} className={className}>{children}</h4>
+  return <h5 id={id} className={className}>{children}</h5>
+}
+
+export function SecurityDevicesPanel({
+  open,
+  onClose,
+  embedded = false,
+}: SecurityDevicesPanelProps) {
+  const [status, setStatus] = useState<bridge.BackendStatus | null>(null)
+  const [devices, setDevices] = useState<bridge.MatrixDevice[]>([])
+  const [loadingDevices, setLoadingDevices] = useState(false)
+  const [loadingRecovery, setLoadingRecovery] = useState(false)
+  const [statusError, setStatusError] = useState<unknown | null>(null)
+  const [devicesError, setDevicesError] = useState<unknown | null>(null)
+  const [recoveryError, setRecoveryError] = useState<unknown | null>(null)
+  const [recoveryAttentionNotice, setRecoveryAttentionNotice] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [recoveryInput, setRecoveryInput] = useState('')
+  const [recoveryTestInput, setRecoveryTestInput] = useState('')
+  const [newRecovery, setNewRecovery] = useState<bridge.MatrixRecoverySetupResult | null>(null)
+  const [recoveryHealth, setRecoveryHealth] = useState<bridge.MatrixRecoveryHealth | null>(null)
+  const [verification, setVerification] = useState<bridge.MatrixVerificationSession | null>(null)
+  const [revokeTarget, setRevokeTarget] = useState<bridge.MatrixDevice | null>(null)
+  const [accountPassword, setAccountPassword] = useState('')
+  const [lostDeviceOpen, setLostDeviceOpen] = useState(false)
+  const [lostDeviceId, setLostDeviceId] = useState('')
+  const [lostDeviceAcknowledged, setLostDeviceAcknowledged] = useState(false)
+  const [confirmRemoval, setConfirmRemoval] = useState(false)
+  const [localRemovalPhrase, setLocalRemovalPhrase] = useState('')
+  const [localRemovalAcknowledged, setLocalRemovalAcknowledged] = useState(false)
+  const [exportResult, setExportResult] = useState<bridge.MatrixPersonalDataExport | null>(null)
+  const [deactivationOpen, setDeactivationOpen] = useState(false)
+  const [deactivationPassword, setDeactivationPassword] = useState('')
+  const [deactivationPhrase, setDeactivationPhrase] = useState('')
+  const [deactivationAcknowledged, setDeactivationAcknowledged] = useState(false)
+  const setBackupConfigured = useSettingsStore((state) => state.setBackupConfigured)
+  const scheduleBackupReminder = useSettingsStore((state) => state.scheduleBackupReminder)
+  const verificationId = verification?.verificationId
+  const verificationPhase = verification?.phase
+
+  const loadDevices = useCallback(async () => {
+    setLoadingDevices(true)
+    setDevicesError(null)
+    try {
+      setDevices(await bridge.matrixDevices())
+    } catch (cause) {
+      setDevices([])
+      setDevicesError(cause)
+    } finally {
+      setLoadingDevices(false)
+    }
+  }, [])
+
+  const loadRecoveryHealth = useCallback(async (verifyStoredIfDue = false) => {
+    setLoadingRecovery(true)
+    setRecoveryError(null)
+    try {
+      const health = await bridge.matrixRecoveryHealth()
+      const testedAt = health.lastSuccessfulTestAt
+        ? Date.parse(health.lastSuccessfulTestAt)
+        : Number.NaN
+      const testIsDue =
+        !Number.isFinite(testedAt) || testedAt < Date.now() - 90 * 24 * 60 * 60 * 1_000
+      if (verifyStoredIfDue && health.secureStorageState === 'saved' && testIsDue) {
+        try {
+          const verified = await bridge.matrixTestStoredRecovery()
+          setRecoveryHealth(verified)
+          if (verified.healthy) {
+            setBackupConfigured(true)
+            setRecoveryAttentionNotice(null)
+          }
+          return
+        } catch {
+          setRecoveryHealth({
+            ...health,
+            healthy: false,
+            warnings: [
+              ...health.warnings,
+              'The saved backup code could not be verified. Open Your devices and try again.',
+            ],
+          })
+          return
+        }
+      }
+      setRecoveryHealth(health)
+      if (health.healthy) {
+        setBackupConfigured(true)
+        setRecoveryAttentionNotice(null)
+      }
+    } catch (cause) {
+      setRecoveryHealth(null)
+      setRecoveryError(cause)
+    } finally {
+      setLoadingRecovery(false)
+    }
+  }, [setBackupConfigured])
+
+  const loadSecurityData = useCallback(async () => {
+    setStatusError(null)
+    setDevicesError(null)
+    setRecoveryError(null)
+    try {
+      const nextStatus = await bridge.getBackendStatus()
+      setStatus(nextStatus)
+      if (nextStatus.authenticated && nextStatus.capabilities.deviceManagement) {
+        await Promise.all([loadDevices(), loadRecoveryHealth(true)])
+      } else {
+        setDevices([])
+        setRecoveryHealth(null)
+      }
+    } catch (cause) {
+      setStatus(null)
+      setDevices([])
+      setRecoveryHealth(null)
+      setStatusError(cause)
+    }
+  }, [loadDevices, loadRecoveryHealth])
+
+  useEffect(() => {
+    if (!open) return
+    void Promise.resolve().then(loadSecurityData)
+  }, [loadSecurityData, open])
+
+  useEffect(() => {
+    if (
+      !open ||
+      !verificationId ||
+      verificationPhase === 'done' ||
+      verificationPhase === 'cancelled'
+    )
+      return
+    const interval = window.setInterval(() => {
+      void bridge
+        .matrixDeviceVerificationStatus(verificationId)
+        .then((next) => {
+          setVerification(next)
+          if (next.phase === 'done') void loadDevices()
+        })
+        .catch((cause) => {
+          setError(errorMessage(cause))
+          window.clearInterval(interval)
+        })
+    }, 1_000)
+    return () => window.clearInterval(interval)
+  }, [loadDevices, open, verificationId, verificationPhase])
+
+  const enableRecovery = async () => {
+    setBusy(true)
+    setError(null)
+    setRecoveryAttentionNotice(null)
+    try {
+      setNewRecovery(await bridge.matrixEnableRecovery())
+      await loadRecoveryHealth()
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const finishNewRecovery = () => {
+    const strictlyHealthy = newRecovery?.secureStorageState === 'saved'
+      && newRecovery.verificationState === 'verified'
+      && recoveryHealth?.healthy === true
+    if (strictlyHealthy) {
+      setBackupConfigured(true)
+      setRecoveryAttentionNotice(null)
+    } else {
+      scheduleBackupReminder()
+      setRecoveryAttentionNotice(
+        'Backup code saved, but backup is not confirmed ready. Use Check again or Test saved copy.',
+      )
+    }
+    setNewRecovery(null)
+  }
+
+  const deferNewRecovery = () => {
+    scheduleBackupReminder()
+    setNewRecovery(null)
+  }
+
+  const closePanel = () => {
+    if (newRecovery) {
+      scheduleBackupReminder()
+      setNewRecovery(null)
+    }
+    setRecoveryInput('')
+    setRecoveryTestInput('')
+    onClose()
+  }
+
+  const recover = async () => {
+    if (!recoveryInput.trim()) return
+    setBusy(true)
+    setError(null)
+    try {
+      await bridge.matrixRecover(recoveryInput.trim())
+      setRecoveryInput('')
+      await loadRecoveryHealth()
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const testRecovery = async () => {
+    if (!recoveryTestInput.trim()) return
+    setBusy(true)
+    setError(null)
+    try {
+      setRecoveryHealth(await bridge.matrixTestRecovery(recoveryTestInput.trim()))
+      setRecoveryTestInput('')
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const testStoredRecovery = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      setRecoveryHealth(await bridge.matrixTestStoredRecovery())
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const startVerification = async (device: bridge.MatrixDevice) => {
+    setBusy(true)
+    setError(null)
+    try {
+      setVerification(await bridge.matrixStartDeviceVerification(device.deviceId))
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const confirmVerification = async (matches: boolean) => {
+    if (!verification) return
+    setBusy(true)
+    setError(null)
+    try {
+      setVerification(
+        await bridge.matrixConfirmDeviceVerification(verification.verificationId, matches),
+      )
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const selectVerificationMethod = async (method: 'sas' | 'qr') => {
+    if (!verification) return
+    setBusy(true)
+    setError(null)
+    try {
+      setVerification(
+        await bridge.matrixSelectDeviceVerificationMethod(verification.verificationId, method),
+      )
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const cancelVerification = async () => {
+    if (!verification) return
+    setBusy(true)
+    try {
+      await bridge.matrixCancelDeviceVerification(verification.verificationId)
+      setVerification(null)
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const revokeDevice = async () => {
+    if (!revokeTarget || !accountPassword) return
+    setBusy(true)
+    setError(null)
+    try {
+      const revoked = await bridge.matrixRevokeDevice(revokeTarget.deviceId, accountPassword)
+      if (!revoked) {
+        setAccountPassword('')
+        return
+      }
+      setRevokeTarget(null)
+      setAccountPassword('')
+      setLostDeviceId('')
+      setLostDeviceAcknowledged(false)
+      await loadDevices()
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const signOut = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await bridge.matrixLogout()
+      onClose()
+      window.location.reload()
+    } catch (cause) {
+      setError(errorMessage(cause))
+      setBusy(false)
+    }
+  }
+
+  const removeAccount = async () => {
+    if (
+      localRemovalPhrase.trim().toUpperCase() !== 'REMOVE LOCAL DATA' ||
+      !localRemovalAcknowledged
+    ) {
+      return
+    }
+    setBusy(true)
+    setError(null)
+    const removedAccountId = status?.userId ?? bridge.getMatrixUserId()
+    try {
+      const removed = await bridge.matrixRemoveLocalAccount()
+      if (!removed) {
+        setBusy(false)
+        return
+      }
+    } catch (cause) {
+      setError(errorMessage(cause))
+      setBusy(false)
+      return
+    }
+    try {
+      clearRegistrationContinuation()
+      clearRendererAccountState(removedAccountId)
+    } catch (cleanupError) {
+      console.warn('The account was removed, but optional renderer cleanup was incomplete.', cleanupError)
+    } finally {
+      setLocalRemovalPhrase('')
+      setLocalRemovalAcknowledged(false)
+      onClose()
+      window.location.reload()
+    }
+  }
+
+  const exportPersonalData = async () => {
+    setExporting(true)
+    setError(null)
+    try {
+      const result = await bridge.matrixExportPersonalData()
+      if (result) setExportResult(result)
+    } catch (cause) {
+      if (normalizeError(cause).code !== 'cancelled') setError(errorMessage(cause))
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const cancelPersonalDataExport = async () => {
+    try {
+      await bridge.matrixCancelPersonalDataExport()
+    } catch (cause) {
+      setError(errorMessage(cause))
+    }
+  }
+
+  const deactivateAccount = async () => {
+    if (
+      !deactivationPassword ||
+      deactivationPhrase.trim().toUpperCase() !== 'DELETE MY ACCOUNT' ||
+      !deactivationAcknowledged
+    ) {
+      return
+    }
+    setBusy(true)
+    setError(null)
+    const removedAccountId = status?.userId ?? bridge.getMatrixUserId()
+    try {
+      const deactivated = await bridge.matrixDeactivateAccount(deactivationPassword)
+      if (!deactivated) {
+        setDeactivationPassword('')
+        setBusy(false)
+        return
+      }
+    } catch (cause) {
+      setDeactivationPassword('')
+      setError(errorMessage(cause))
+      setBusy(false)
+      return
+    }
+    try {
+      clearRendererAccountState(removedAccountId)
+    } catch (cleanupError) {
+      console.warn('The account was deactivated, but optional renderer cleanup was incomplete.', cleanupError)
+    } finally {
+      setDeactivationPassword('')
+      onClose()
+      window.location.reload()
+    }
+  }
+
+  // Modal: the dialog title is h2 at 22px, so a group is h3 at 18px. Inline:
+  // the frame header is h3 at 18px, so a group is h4 one step down the scale.
+  const groupLevel: HeadingLevel = embedded ? 4 : 3
+  const subGroupLevel: HeadingLevel = embedded ? 5 : 4
+  const groupClass = embedded
+    ? 'text-base font-semibold text-content-primary'
+    : 'text-md font-semibold text-content-primary'
+
+  const warningDevices = devices.filter((device) => device.newDevice || device.identityChanged)
+  const revocableDevices = devices.filter((device) => !device.current)
+  const lostDevice = revocableDevices.find((device) => device.deviceId === lostDeviceId) ?? null
+  const accountDomain = status?.userId
+    ? status.userId.split(':').slice(1).join(':').trim().toLowerCase() || null
+    : null
+  const publicAccountService = PUBLIC_SERVICES.find((service) => (
+    service.accountDomain.toLowerCase() === accountDomain
+    || sameHttpsOrigin(service.homeserverUrl, status?.homeserver)
+  )) ?? null
+  const serviceSite = safeHttpsOrigin(status?.homeserver)
+  const accountServiceName = publicAccountService?.displayName
+    ?? accountDomain
+    ?? serviceSite?.hostname
+    ?? 'your account service'
+  const accountHelp = publicAccountService
+    ? {
+        href: publicAccountService.accountHelpUrl ?? publicAccountService.supportUrl,
+        label: publicAccountService.accountHelpUrl
+          ? `Manage account on ${publicAccountService.displayName}`
+          : `Contact ${publicAccountService.displayName} support`,
+      }
+    : serviceSite
+      ? { href: serviceSite.href, label: `Open ${accountServiceName} service site` }
+      : null
+
+  return (
+    <SecurityDevicesFrame embedded={embedded} open={open} onClose={closePanel} title="Your devices">
+      <div className="mesh-security-content max-h-settings overflow-y-auto">
+        {statusError != null && (
+          <ErrorState
+            error={statusError}
+            context={{ operation: 'open safety and devices' }}
+            actionLabel="Retry safety check"
+            onAction={() => void loadSecurityData()}
+            compact
+          />
+        )}
+
+        <section
+          className="rounded-panel border border-border-subtle bg-surface-sunken p-4"
+          aria-labelledby="this-device-heading"
+        >
+          <GroupHeading level={groupLevel} id="this-device-heading" className={groupClass}>
+            This device
+          </GroupHeading>
+          <dl className="mt-3 space-y-2 text-sm">
+            <Row label="Account" value={status ? (status.userId ?? 'Not signed in') : 'Loading…'} />
+            <Row
+              label="Support code"
+              value={status ? (status.deviceId ?? 'Unavailable') : 'Loading…'}
+              mono
+            />
+            <Row
+              label="Private messages"
+              value={status?.sessionE2eeReady ? 'Protected' : 'Unavailable'}
+            />
+          </dl>
+          {/*
+            Kept as a disclosure, not a description: the row above reports a
+            status value, which is not the same as stating what is protected.
+          */}
+          <p className="mt-3 text-xs text-muted">
+            Message contents stay protected in transit.
+          </p>
+        </section>
+
+        <section
+          className="space-y-3 rounded-panel border border-border-subtle bg-surface-sunken p-4"
+          aria-labelledby="message-backup-heading"
+        >
+          <GroupHeading level={groupLevel} id="message-backup-heading" className={groupClass}>
+            Message backup
+          </GroupHeading>
+          {loadingRecovery && !recoveryHealth && !recoveryError && (
+            <p role="status" className="text-xs text-muted">
+              Checking message backup…
+            </p>
+          )}
+          {recoveryError != null && (
+            <ErrorState
+              error={recoveryError}
+              context={{ operation: 'check your message backup' }}
+              actionLabel="Retry backup check"
+              onAction={() => void loadRecoveryHealth()}
+              compact
+            />
+          )}
+          {recoveryAttentionNotice && (
+            <p
+              role="status"
+              className="mesh-security-notice border-l-2 border-container-warning-line p-3 text-xs text-secondary"
+            >
+              {recoveryAttentionNotice}
+            </p>
+          )}
+          {recoveryHealth && (
+            <div
+              className={`mesh-security-status border-l-2 p-3 ${recoveryHealth.healthy ? 'border-container-success-line' : 'border-container-warning-line'}`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-medium text-primary">
+                  {recoveryHealth.healthy
+                    ? 'Message backup is ready'
+                    : 'Message backup needs attention'}
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void loadRecoveryHealth()}
+                >
+                  Check again
+                </Button>
+              </div>
+              <dl className="mt-2 space-y-1 text-xs">
+                <Row label="Backup setup" value={recoveryHealth.recoveryState} />
+                <Row label="Message copy" value={recoveryHealth.backupState} />
+                <Row
+                  label="Saved online"
+                  value={recoveryHealth.backupExistsOnServer ? 'Confirmed' : 'Not confirmed'}
+                />
+                <Row
+                  label="Saved on this device"
+                  value={recoveryStorageLabel(recoveryHealth.secureStorageState)}
+                />
+                <Row
+                  label="Last tested"
+                  value={
+                    recoveryHealth.lastSuccessfulTestAt
+                      ? formatLastSeen(recoveryHealth.lastSuccessfulTestAt)
+                      : 'Never on this device'
+                  }
+                />
+              </dl>
+              {recoveryHealth.warnings.length > 0 && (
+                <p className="mt-2 text-xs text-muted">
+                  Mesh found a problem with this backup. Check again before relying on a new device.
+                </p>
+              )}
+            </div>
+          )}
+          {newRecovery ? (
+            <div className="mesh-security-notice border-l-2 border-container-warning-line p-3">
+              <BackupCodeScreen
+                backupCode={newRecovery.recoveryKey}
+                secureStorageState={newRecovery.secureStorageState}
+                verificationState={newRecovery.verificationState}
+                onCopy={copyText}
+                onContinue={finishNewRecovery}
+                onSkip={deferNewRecovery}
+                embedded
+              />
+            </div>
+          ) : (
+            <>
+              {recoveryHealth && !recoveryHealth.backupEnabled && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy || loadingRecovery || !status?.capabilities.recovery}
+                  onClick={enableRecovery}
+                >
+                  Create backup code
+                </Button>
+              )}
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={busy || loadingRecovery || recoveryHealth?.secureStorageState !== 'saved'}
+                onClick={testStoredRecovery}
+              >
+                Test saved copy
+              </Button>
+              <Input
+                label="Backup code or passphrase"
+                name="recovery-credential"
+                type="password"
+                value={recoveryInput}
+                onChange={setRecoveryInput}
+                autoComplete="off"
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={busy || !recoveryInput.trim()}
+                onClick={recover}
+              >
+                Restore messages
+              </Button>
+              <div className="space-y-2 border-t border-border-subtle pt-3">
+                <p className="text-xs text-muted">
+                  Check your backup code before you need it on another device.
+                </p>
+                <Input
+                  label="Backup code to check"
+                  name="recovery-test-credential"
+                  type="password"
+                  value={recoveryTestInput}
+                  onChange={setRecoveryTestInput}
+                  autoComplete="off"
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy || !recoveryTestInput.trim()}
+                  onClick={testRecovery}
+                >
+                  Check backup code
+                </Button>
+              </div>
+            </>
+          )}
+        </section>
+
+        <section
+          className="space-y-3 rounded-panel border border-border-subtle bg-surface-sunken p-4"
+          aria-labelledby="device-list-heading"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <GroupHeading level={groupLevel} id="device-list-heading" className={groupClass}>
+                Your devices
+              </GroupHeading>
+              <p className="mt-1 text-xs text-muted">
+                Check a new device before using it for protected messages.
+              </p>
+            </div>
+            <span className="font-mono text-meta text-content-muted">
+              {devices.length} {devices.length === 1 ? 'device' : 'devices'}
+            </span>
+          </div>
+
+          <details className="mesh-security-disclosure border border-border-subtle px-3">
+            <summary className="flex min-h-10 cursor-pointer items-center text-xs font-semibold text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus">
+              Add another device
+            </summary>
+            <div className="space-y-2 border-t border-border-subtle py-3 text-xs text-muted">
+              <ol className="list-decimal space-y-1 pl-5">
+                <li>Install and open Mesh on the other device.</li>
+                <li>Sign in there with the same account through {accountServiceName}.</li>
+                <li>When the device appears here, choose Check device.</li>
+              </ol>
+              <p>If both devices can scan, choose Scan with other device.</p>
+            </div>
+          </details>
+
+          <div>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy || loadingDevices}
+              aria-expanded={lostDeviceOpen}
+              aria-controls="lost-device-workflow"
+              onClick={() => {
+                setLostDeviceOpen((current) => !current)
+                setLostDeviceId('')
+                setLostDeviceAcknowledged(false)
+                setRevokeTarget(null)
+                setAccountPassword('')
+                setError(null)
+              }}
+            >
+              {lostDeviceOpen ? 'Close lost-device help' : 'I lost a device'}
+            </Button>
+          </div>
+
+          {lostDeviceOpen && (
+            <section
+              id="lost-device-workflow"
+              aria-labelledby="lost-device-title"
+              className="mesh-security-danger-block space-y-3 border-l-2 border-container-warning-line p-3"
+            >
+              <div>
+                <GroupHeading
+                  level={subGroupLevel}
+                  id="lost-device-title"
+                  className="text-sm font-semibold text-content-primary"
+                >
+                  Sign out a lost device
+                </GroupHeading>
+                <p id="revoke-device-description" className="mt-1 text-xs text-muted">
+                  Signing out cannot delete messages, screenshots, or files already saved on it.
+                </p>
+              </div>
+
+              <ol className="list-decimal space-y-2 pl-5 text-xs text-muted">
+                <li>Select the device you no longer control.</li>
+                <li>Check that your message backup is ready.</li>
+                <li>Sign it out. Only trust devices you still have.</li>
+              </ol>
+
+              <div
+                role="status"
+                className={`mesh-security-status border-l-2 p-3 text-xs ${
+                  recoveryHealth?.healthy
+                    ? 'border-container-success-line text-secondary'
+                    : 'border-container-warning-line text-muted'
+                }`}
+              >
+                {recoveryHealth?.healthy
+                  ? 'Signing out cannot erase anything already saved on the lost device.'
+                  : 'Message backup is not ready, so older messages may not appear on a replacement device.'}
+              </div>
+
+              {revocableDevices.length > 0 ? (
+                <fieldset className="space-y-2">
+                  <legend className="text-xs font-medium text-primary">
+                    Which device was lost?
+                  </legend>
+                  {revocableDevices.map((device) => (
+                    <label
+                      key={device.deviceId}
+                      className="flex cursor-pointer items-start gap-2 rounded-control bg-surface-hover p-2 text-xs text-secondary"
+                    >
+                      <input
+                        type="radio"
+                        name="lost-device"
+                        value={device.deviceId}
+                        checked={lostDeviceId === device.deviceId}
+                        onChange={() => {
+                          setLostDeviceId(device.deviceId)
+                          setLostDeviceAcknowledged(false)
+                        }}
+                        className="mt-0.5 h-4 w-4 accent-accent"
+                      />
+                      <span>
+                        <span className="block font-medium text-primary">
+                          {device.displayName || 'Unnamed device'}
+                        </span>
+                        <span className="block break-all font-mono text-meta text-muted">
+                          {device.deviceId}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </fieldset>
+              ) : (
+                <div className="space-y-1 text-xs text-muted">
+                  <p>No other device is available to sign out.</p>
+                  <AccountHelpLink action={accountHelp} serviceName={accountServiceName} />
+                </div>
+              )}
+
+              {lostDevice && (
+                <label className="flex cursor-pointer items-start gap-2 text-xs text-muted">
+                  <input
+                    type="checkbox"
+                    checked={lostDeviceAcknowledged}
+                    onChange={(event) => setLostDeviceAcknowledged(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-accent"
+                  />
+                  I understand that this cannot erase anything already saved on that device.
+                </label>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  disabled={busy || !lostDevice || !lostDeviceAcknowledged}
+                  onClick={() => {
+                    if (!lostDevice) return
+                    setRevokeTarget(lostDevice)
+                    setAccountPassword('')
+                    setLostDeviceOpen(false)
+                    setError(null)
+                  }}
+                >
+                  Continue to sign out selected device
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => {
+                    setLostDeviceOpen(false)
+                    setLostDeviceId('')
+                    setLostDeviceAcknowledged(false)
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </section>
+          )}
+
+          {warningDevices.length > 0 && (
+            <div
+              role="alert"
+              className="mesh-security-notice border-l-2 border-container-warning-line p-3"
+            >
+              <p className="text-xs font-medium text-primary">Is this you?</p>
+              <p className="mt-1 text-xs text-muted">
+                Trust the {warningDevices.length} new or changed sign-in
+                {warningDevices.length === 1 ? '' : 's'} you recognize, and sign out the rest.
+              </p>
+            </div>
+          )}
+
+          {loadingDevices && (
+            <p role="status" className="text-xs text-muted">
+              Loading registered devices…
+            </p>
+          )}
+          {!loadingDevices && devicesError != null && (
+            <ErrorState
+              error={devicesError}
+              context={{ operation: 'load your devices' }}
+              actionLabel="Retry device list"
+              onAction={() => void loadDevices()}
+              compact
+            />
+          )}
+          {!loadingDevices && !statusError && !devicesError && devices.length === 0 && (
+            <EmptyState
+              variant="compact"
+              icon={<Icon name="shieldCheck" size="lg" />}
+              title="Add another device"
+              description="Open Mesh on another device and sign in to this account."
+            />
+          )}
+          <ul className="mesh-security-device-list">
+            {devices.map((device) => (
+              <li
+                key={device.deviceId}
+                className={`mesh-security-device-row border-b px-1 py-3 ${
+                  device.identityChanged
+                    ? 'border-container-danger-line'
+                    : device.newDevice
+                      ? 'border-container-warning-line'
+                      : 'border-border-subtle'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <StatusDot
+                        state={
+                          device.identityChanged
+                            ? 'disconnected'
+                            : device.newDevice || !device.verified
+                              ? 'degraded'
+                              : 'connected'
+                        }
+                        label={`${device.displayName || 'Unnamed device'}: ${trustLabel(device)}`}
+                      />
+                      <p className="truncate text-sm font-medium text-primary">
+                        {device.displayName || 'Unnamed device'}{' '}
+                        {device.current && <span className="text-accent">(this device)</span>}
+                      </p>
+                    </div>
+                    <p className="mt-1 break-all font-mono text-meta text-muted">
+                      {device.deviceId}
+                    </p>
+                    <p className="mt-1 text-xs text-muted">
+                      {trustLabel(device)} · Last seen {formatLastSeen(device.lastSeenAt)}
+                    </p>
+                    {device.firstSeenAt && (
+                      <p className="mt-1 text-xs text-muted">
+                        First seen by Mesh {formatLastSeen(device.firstSeenAt)}
+                      </p>
+                    )}
+                    {device.identityChanged && (
+                      <p className="mt-2 text-xs font-medium text-status-danger">
+                        This sign-in changed since you trusted it. Check it again or sign it out.
+                      </p>
+                    )}
+                    {!device.identityChanged && device.newDevice && (
+                      <p className="mt-2 text-xs font-medium text-status-warning">
+                        New sign-in. Is this you?
+                      </p>
+                    )}
+                  </div>
+                  {!device.current && (
+                    <div className="flex shrink-0 gap-1">
+                      {!device.crossSigned && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => void startVerification(device)}
+                        >
+                          Check device
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => {
+                          setRevokeTarget(device)
+                          setAccountPassword('')
+                          setError(null)
+                        }}
+                      >
+                        Sign out
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {verification && (
+            <div className="mesh-security-verification space-y-3 border-l-2 border-container-accent-line p-3">
+              <div>
+                <GroupHeading level={subGroupLevel} className="text-sm font-semibold text-content-primary">
+                  Is this you?
+                </GroupHeading>
+                <p aria-live="polite" className="mt-1 text-xs text-muted">
+                  {verificationMessage(verification)}
+                </p>
+              </div>
+              {verification.phase === 'compare' && verification.emojis.length > 0 && (
+                <ol aria-label="Emoji to compare" className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+                  {verification.emojis.map((emoji, index) => (
+                    <li
+                      key={`${emoji.description}-${index}`}
+                      className="rounded-control bg-surface-sunken p-2 text-center"
+                    >
+                      <span aria-hidden="true" className="block text-md">
+                        {emoji.symbol}
+                      </span>
+                      <span className="mt-1 block text-caption text-muted">
+                        {emoji.description}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {verification.phase === 'compare' &&
+                verification.emojis.length === 0 &&
+                verification.decimals && (
+                  <p className="font-mono text-lg tracking-widest text-primary">
+                    {verification.decimals.join(' · ')}
+                  </p>
+                )}
+              {verification.phase === 'qr-show' && verification.qrSvg && (
+                <div className="mx-auto w-full max-w-64 rounded-panel bg-surface-qr p-3">
+                  <img
+                    src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(verification.qrSvg)}`}
+                    alt="Code to scan with your other device"
+                    className="aspect-square h-auto w-full"
+                  />
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {verification.phase === 'choose-method' && (
+                  <>
+                    <Button
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void selectVerificationMethod('sas')}
+                    >
+                      Compare emoji
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void selectVerificationMethod('qr')}
+                    >
+                      Scan with other device
+                    </Button>
+                  </>
+                )}
+                {verification.phase === 'compare' && (
+                  <>
+                    <Button
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void confirmVerification(true)}
+                    >
+                      Yes, that's me
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void confirmVerification(false)}
+                    >
+                      No, they do not match
+                    </Button>
+                  </>
+                )}
+                {verification.phase === 'qr-scanned' && (
+                  <>
+                    <Button
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void confirmVerification(true)}
+                    >
+                      Confirm scan
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void confirmVerification(false)}
+                    >
+                      Reject scan
+                    </Button>
+                  </>
+                )}
+                {verification.phase !== 'done' && verification.phase !== 'cancelled' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => void cancelVerification()}
+                  >
+                    Cancel check
+                  </Button>
+                )}
+                {(verification.phase === 'done' || verification.phase === 'cancelled') && (
+                  <Button variant="ghost" size="sm" onClick={() => setVerification(null)}>
+                    Close
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {revokeTarget && (
+            <div className="mesh-security-danger-block space-y-3 border-l-2 border-container-danger-line p-3">
+              <div>
+                <GroupHeading level={subGroupLevel} className="text-sm font-semibold text-content-primary">
+                  Sign out {revokeTarget.displayName || revokeTarget.deviceId}?
+                </GroupHeading>
+                <p className="mt-1 text-xs text-muted">
+                  Signing out cannot delete what is already saved on it. Mesh does not save the
+                  password you enter.
+                </p>
+                <div className="mt-1 text-xs text-muted">
+                  <AccountHelpLink action={accountHelp} serviceName={accountServiceName} />
+                </div>
+              </div>
+              <Input
+                label="Account password"
+                id="revoke-device-password"
+                aria-describedby="revoke-device-description"
+                type="password"
+                value={accountPassword}
+                onChange={setAccountPassword}
+                autoComplete="current-password"
+              />
+              <div className="flex gap-2">
+                <Button
+                  tone="danger"
+                  size="sm"
+                  disabled={busy || !accountPassword}
+                  onClick={revokeDevice}
+                >
+                  Sign out device
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => setRevokeTarget(null)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {error && (
+          <p
+            role="alert"
+            className="rounded-panel bg-container-danger px-3 py-2 text-sm text-status-danger"
+          >
+            {error}
+          </p>
+        )}
+
+        <section
+          className="space-y-3 border-t border-border-subtle pt-4"
+          aria-labelledby="personal-data-heading"
+        >
+          <div>
+            <GroupHeading level={groupLevel} id="personal-data-heading" className={groupClass}>
+              Your personal data
+            </GroupHeading>
+            <p className="mt-1 text-xs text-muted">
+              Saves messages you authored and their downloaded attachments, not other people's
+              messages or account secrets.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy || exporting}
+              onClick={exportPersonalData}
+            >
+              {exporting ? 'Working…' : 'Export my data'}
+            </Button>
+            {exporting && (
+              <Button variant="secondary" size="sm" onClick={cancelPersonalDataExport}>
+                Cancel export
+              </Button>
+            )}
+          </div>
+          {exportResult && (
+            <div
+              role="status"
+              className="mesh-security-status border-l-2 border-container-success-line p-3"
+            >
+              <p className="text-xs font-medium text-primary">Your export is ready</p>
+              <p className="mt-1 break-all font-mono text-meta text-muted">{exportResult.path}</p>
+              <p className="mt-2 text-xs text-muted">
+                {exportResult.messageCount} message
+                {exportResult.messageCount === 1 ? '' : 's'} across {exportResult.roomCount}{' '}
+                conversation
+                {exportResult.roomCount === 1 ? '' : 's'}, with {exportResult.mediaFileCount} local
+                media file
+                {exportResult.mediaFileCount === 1 ? '' : 's'}.
+              </p>
+              {exportResult.warnings.length > 0 && (
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-status-warning">
+                  {exportResult.warnings.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              )}
+              <p className="mt-2 text-xs text-muted">
+                This folder contains readable conversation content.
+              </p>
+            </div>
+          )}
+        </section>
+
+        <section
+          className="space-y-3 border-t border-border-subtle pt-4"
+          aria-labelledby="deactivate-account-heading"
+        >
+          <div>
+            <GroupHeading level={groupLevel} id="deactivate-account-heading" className={groupClass}>
+              Delete your Mesh account
+            </GroupHeading>
+            <p className="mt-1 text-xs text-muted">
+              This permanently disables the account. Messages already shared may remain in
+              conversation history, backups, exports, or other people's files.
+            </p>
+          </div>
+          {!deactivationOpen ? (
+            <Button
+              variant="outline"
+              tone="danger"
+              size="sm"
+              disabled={busy}
+              onClick={() => {
+                setDeactivationOpen(true)
+                setDeactivationPassword('')
+                setDeactivationPhrase('')
+                setDeactivationAcknowledged(false)
+                setError(null)
+              }}
+            >
+              Start account deletion
+            </Button>
+          ) : (
+            <div className="mesh-security-danger-block space-y-3 border-l-2 border-container-danger-line p-3">
+              <p className="text-xs font-medium text-status-danger">This cannot be undone.</p>
+              <p id="deactivation-description" className="text-xs text-muted">
+                Export anything you want to keep first. Mesh then removes this account's data from
+                this device.
+              </p>
+              <Input
+                label="Account password"
+                id="deactivation-password"
+                aria-describedby="deactivation-description"
+                type="password"
+                value={deactivationPassword}
+                onChange={setDeactivationPassword}
+                autoComplete="current-password"
+              />
+              <Input
+                label='Type "DELETE MY ACCOUNT" to confirm'
+                id="deactivation-confirmation"
+                aria-describedby="deactivation-description"
+                aria-invalid={
+                  deactivationPhrase.length > 0 &&
+                  deactivationPhrase.trim().toUpperCase() !== 'DELETE MY ACCOUNT'
+                }
+                value={deactivationPhrase}
+                onChange={setDeactivationPhrase}
+                autoComplete="off"
+              />
+              <label className="flex cursor-pointer items-start gap-2 text-xs text-muted">
+                <input
+                  type="checkbox"
+                  checked={deactivationAcknowledged}
+                  onChange={(event) => setDeactivationAcknowledged(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-accent"
+                />
+                I understand that shared copies may remain and that I will not be able to sign in
+                again.
+              </label>
+              <div className="text-xs text-muted">
+                <AccountHelpLink action={accountHelp} serviceName={accountServiceName} />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  tone="danger"
+                  size="sm"
+                  disabled={
+                    busy ||
+                    !deactivationPassword ||
+                    deactivationPhrase.trim().toUpperCase() !== 'DELETE MY ACCOUNT' ||
+                    !deactivationAcknowledged
+                  }
+                  onClick={deactivateAccount}
+                >
+                  Permanently delete my account
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => {
+                    setDeactivationOpen(false)
+                    setDeactivationPassword('')
+                    setDeactivationPhrase('')
+                    setDeactivationAcknowledged(false)
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section
+          className="space-y-3 border-t border-border-subtle pt-4"
+          aria-labelledby="account-device-heading"
+        >
+          <div>
+            <GroupHeading level={groupLevel} id="account-device-heading" className={groupClass}>
+              Account on this device
+            </GroupHeading>
+            {/*
+              Two destructive actions with different reach share one control
+              group, so each consequence stays stated. The wording is tighter;
+              nothing a person loses was dropped.
+            */}
+            <p className="mt-1 text-xs text-muted">
+              Sign out keeps downloaded messages here; removing the account deletes only this
+              account's Mesh data saved here. Neither action deletes the account at its service or
+              erases message history already shared.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" size="sm" disabled={busy} onClick={signOut}>
+              Sign out
+            </Button>
+            {!confirmRemoval ? (
+              <Button
+                variant="outline"
+                tone="danger"
+                size="sm"
+                disabled={busy}
+                onClick={() => {
+                  setConfirmRemoval(true)
+                  setLocalRemovalPhrase('')
+                  setLocalRemovalAcknowledged(false)
+                  setError(null)
+                }}
+              >
+                Remove account and local data
+              </Button>
+            ) : (
+              <div className="mesh-security-danger-block w-full space-y-3 border-l-2 border-container-danger-line p-3">
+                <p id="local-removal-description" className="text-xs text-muted">
+                  This cannot be undone. Mesh signs this device out and deletes its saved account
+                  data.
+                </p>
+                <div className="text-xs text-muted">
+                  <AccountHelpLink action={accountHelp} serviceName={accountServiceName} />
+                </div>
+                <Input
+                  label='Type "REMOVE LOCAL DATA" to confirm'
+                  id="local-removal-confirmation"
+                  aria-describedby="local-removal-description"
+                  aria-invalid={
+                    localRemovalPhrase.length > 0 &&
+                    localRemovalPhrase.trim().toUpperCase() !== 'REMOVE LOCAL DATA'
+                  }
+                  value={localRemovalPhrase}
+                  onChange={setLocalRemovalPhrase}
+                  autoComplete="off"
+                />
+                <label className="flex cursor-pointer items-start gap-2 text-xs text-muted">
+                  <input
+                    type="checkbox"
+                    checked={localRemovalAcknowledged}
+                    onChange={(event) => setLocalRemovalAcknowledged(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-accent"
+                  />
+                  I understand that this permanently deletes this account's messages and settings
+                  saved on this device.
+                </label>
+                <div className="flex gap-2">
+                  <Button
+                    tone="danger"
+                    size="sm"
+                    disabled={
+                      busy ||
+                      localRemovalPhrase.trim().toUpperCase() !== 'REMOVE LOCAL DATA' ||
+                      !localRemovalAcknowledged
+                    }
+                    onClick={removeAccount}
+                  >
+                    Permanently remove local account
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      setConfirmRemoval(false)
+                      setLocalRemovalPhrase('')
+                      setLocalRemovalAcknowledged(false)
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+    </SecurityDevicesFrame>
+  )
+}
+
+function SecurityDevicesFrame({
+  embedded,
+  open,
+  onClose,
+  title,
+  children,
+  ...modalProps
+}: ComponentProps<typeof Modal> & { embedded: boolean; children: ReactNode }) {
+  useEffect(() => {
+    if (!embedded || !open) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      event.preventDefault()
+      onClose()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [embedded, onClose, open])
+
+  if (embedded) {
+    if (!open) return null
+    return (
+      <section
+        aria-labelledby="embedded-security-devices-heading"
+        className="mesh-security-frame mt-4 border-y border-border-subtle py-4"
+      >
+        <header className="mesh-security-header mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-border-subtle pb-3">
+          <h3 id="embedded-security-devices-heading" className="text-md font-semibold text-content-primary">
+            Safety and devices
+          </h3>
+          <Button variant="ghost" size="sm" onClick={onClose}>Close devices</Button>
+        </header>
+        {children}
+      </section>
+    )
+  }
+
+  return (
+    <Modal {...modalProps} open={open} onClose={onClose} title={title}>
+      {children}
+    </Modal>
+  )
+}
+
+function safeHttpsOrigin(value: string | null | undefined): URL | null {
+  if (!value) return null
+  try {
+    const parsed = new URL(value)
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) return null
+    return new URL(parsed.origin)
+  } catch {
+    return null
+  }
+}
+
+function sameHttpsOrigin(left: string, right: string | null | undefined): boolean {
+  const leftOrigin = safeHttpsOrigin(left)
+  const rightOrigin = safeHttpsOrigin(right)
+  return leftOrigin !== null && rightOrigin !== null && leftOrigin.origin === rightOrigin.origin
+}
+
+function AccountHelpLink({
+  action,
+  serviceName,
+}: {
+  action: { href: string; label: string } | null
+  serviceName: string
+}) {
+  if (!action) {
+    return (
+      <p>Contact {serviceName} support from another trusted device.</p>
+    )
+  }
+  return (
+    <a
+      href={action.href}
+      target="_blank"
+      rel="noreferrer noopener"
+      className="font-medium text-accent underline-offset-2 hover:underline"
+    >
+      {action.label}
+    </a>
+  )
+}
+
+function Row({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="grid grid-cols-device-code gap-3">
+      <dt className="text-muted">{label}</dt>
+      <dd className={`${mono ? 'break-all font-mono text-xs' : 'break-words'} text-secondary`}>{value}</dd>
+    </div>
+  )
+}
+
+function recoveryStorageLabel(state: bridge.MatrixRecoveryHealth['secureStorageState']): string {
+  switch (state) {
+    case 'saved':
+      return 'Protected copy saved'
+    case 'missing':
+      return 'No protected copy'
+    case 'unavailable':
+      return 'Protected storage unavailable'
+  }
+}
+
+function trustLabel(device: bridge.MatrixDevice): string {
+  if (device.identityChanged || device.newDevice) return 'Not verified yet'
+  if (device.crossSigned || device.verified) return 'Trusted'
+  return 'Not verified yet'
+}
+
+function verificationMessage(session: bridge.MatrixVerificationSession): string {
+  switch (session.phase) {
+    case 'waiting-for-device':
+    case 'started':
+    case 'accepted':
+      return 'Open this request on your other device.'
+    case 'choose-method':
+      return 'Choose how to check.'
+    /*
+      The two comparison phases keep their second clause. It is the whole
+      security value of the step: matching in the same order, and confirming
+      only for a device you are holding.
+    */
+    case 'compare':
+      return 'Do these emoji match on the other device, in the same order?'
+    case 'qr-show':
+      return 'Scan this with your other device. Do not share it.'
+    case 'qr-scanned':
+      return 'Confirm only if you are holding that device.'
+    case 'confirmed':
+      return 'Waiting for the other device to finish.'
+    case 'done':
+      return 'This device is now trusted.'
+    case 'cancelled':
+      return session.cancellationReason
+        ? 'The check was cancelled by the other device.'
+        : 'The check was cancelled.'
+  }
+}
+
+function formatLastSeen(value: string | null): string {
+  if (!value) return 'time unavailable'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'time unavailable'
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date)
+}
+
+function errorMessage(cause: unknown): string {
+  const description = describeError(cause)
+  return errorLine(description)
+}

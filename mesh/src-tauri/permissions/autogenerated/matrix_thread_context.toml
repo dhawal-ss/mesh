@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-matrix-thread-context"
+description = "Enables the matrix_thread_context command without any pre-configured scope."
+commands.allow = ["matrix_thread_context"]
+
+[[permission]]
+identifier = "deny-matrix-thread-context"
+description = "Denies the matrix_thread_context command without any pre-configured scope."
+commands.deny = ["matrix_thread_context"]

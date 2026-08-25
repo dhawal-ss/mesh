@@ -1,0 +1,948 @@
+#![recursion_limit = "512"]
+
+#[cfg(all(feature = "matrix-backend", feature = "legacy-p2p"))]
+compile_error!(
+    "matrix-backend and legacy-p2p are mutually exclusive; build separate Mesh artifacts"
+);
+
+pub mod ai_boundary;
+#[cfg(feature = "legacy-p2p")]
+mod app_runtime;
+pub mod backend;
+mod commands;
+mod crash_report;
+pub mod crypto;
+#[cfg(feature = "legacy-p2p")]
+pub mod migration;
+#[cfg(feature = "legacy-p2p")]
+pub mod network;
+mod security;
+mod startup_recovery;
+mod state;
+#[cfg(feature = "legacy-p2p")]
+mod storage;
+pub mod types;
+
+// Re-export the TURN/STUN probe helpers so integration tests and operator
+// tooling can validate real TURN infrastructure without going through the
+// full Tauri command/state layer. See tests/turn_probe_live_tests.rs.
+#[cfg(feature = "legacy-p2p")]
+pub mod probe_api {
+    pub use crate::commands::voice::{
+        probe_single_ice_server, IceServerConfig, IceServerProbeResult,
+    };
+}
+
+use backend::{BackendKind, BackendStartupPhase};
+use state::AppState;
+use tauri::{Emitter, Manager};
+use tracing_subscriber::EnvFilter;
+
+#[cfg(windows)]
+const PENDING_INVITATION_READY_EVENT: &str = "mesh-pending-invitation-ready";
+#[cfg(any(windows, test))]
+const MAX_NATIVE_INVITATION_URL_BYTES: usize = 8 * 1024;
+
+#[cfg(any(windows, test))]
+fn native_pending_invitation_from_args<I, S>(arguments: I) -> Option<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut invitations = arguments.into_iter().filter_map(|argument| {
+        let argument = argument.as_ref();
+        if argument.len() > MAX_NATIVE_INVITATION_URL_BYTES
+            || argument.chars().any(char::is_control)
+        {
+            return None;
+        }
+        let parsed = url::Url::parse(argument).ok()?;
+        (parsed.scheme() == "mesh"
+            && parsed.host_str() == Some("join")
+            && parsed.username().is_empty()
+            && parsed.password().is_none()
+            && parsed.port().is_none()
+            && matches!(parsed.path(), "" | "/")
+            && parsed.fragment().is_none())
+        .then(|| parsed.to_string())
+    });
+    let invitation = invitations.next()?;
+    // Multiple invitation capabilities in one process launch are ambiguous.
+    // Reject all of them rather than choosing a secret by argument order.
+    invitations.next().is_none().then_some(invitation)
+}
+
+#[cfg(windows)]
+async fn persist_native_pending_invitation(app: &tauri::AppHandle, invitation: String) -> bool {
+    let state = app.state::<AppState>();
+    if state.backend.kind() == BackendKind::LegacyP2p {
+        return false;
+    }
+    match state
+        .backend
+        .backend()
+        .store_pending_invitation(invitation)
+        .await
+    {
+        Ok(_) => true,
+        Err(_) => {
+            // Never format backend errors here: a future parser regression
+            // must not turn an invitation capability into log output.
+            tracing::warn!("Could not securely store a native invitation");
+            false
+        }
+    }
+}
+
+#[cfg(windows)]
+fn store_native_pending_invitation(app: tauri::AppHandle, invitation: String) {
+    tauri::async_runtime::spawn(async move {
+        if persist_native_pending_invitation(&app, invitation).await {
+            // The payload is deliberately empty. The renderer can only
+            // re-peek the native store's non-secret metadata.
+            if let Err(error) = app.emit(PENDING_INVITATION_READY_EVENT, ()) {
+                tracing::warn!("Could not notify Mesh about a stored invitation: {error}");
+            }
+        }
+    });
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    // Initialize structured logging
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("mesh=info")),
+        )
+        .init();
+
+    // Fail closed before anything else starts. Native authority is documented as
+    // the final decision point for AI-originated actions, and that is only true
+    // if something native actually reads the boundary.
+    if let Err(error) = ai_boundary::enforce_boundary_manifest() {
+        tracing::error!(
+            target: "mesh::security",
+            "Mesh will not start: the AI boundary manifest was rejected: {error}"
+        );
+        std::process::exit(1);
+    }
+
+    tracing::info!("Starting Mesh...");
+
+    let mut builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    {
+        // Production invitation URLs are consumed from the secondary process
+        // arguments here, never forwarded through the deep-link webview event.
+        builder = builder.plugin(tauri_plugin_single_instance::init(
+            |app, arguments, _working_directory| {
+                #[cfg(windows)]
+                if let Some(invitation) = native_pending_invitation_from_args(arguments) {
+                    store_native_pending_invitation(app.clone(), invitation);
+                }
+                #[cfg(not(windows))]
+                let _ = arguments;
+                commands::notifications::focus_main_window(app);
+            },
+        ));
+    }
+    let builder = builder
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .on_webview_event(|webview, event| {
+            let tauri::WebviewEvent::DragDrop(tauri::DragDropEvent::Drop { paths, position }) =
+                event
+            else {
+                return;
+            };
+            let app = webview.app_handle().clone();
+            let account_generation = app.state::<AppState>().native_requests.account_generation();
+            let drop_id = uuid::Uuid::new_v4().to_string();
+            let start = commands::attachments::NativeAttachmentDropStart {
+                drop_id: drop_id.clone(),
+                position: commands::attachments::NativeDropPosition {
+                    x: position.x,
+                    y: position.y,
+                },
+                account_generation,
+            };
+            if let Err(error) = app.emit("mesh-native-attachment-drop-start", start.clone()) {
+                tracing::warn!("Could not deliver native attachment drop start: {error}");
+                return;
+            }
+            let store = app
+                .state::<commands::attachments::AttachmentGrantStore>()
+                .inner()
+                .clone();
+            let expose_legacy_path =
+                app.state::<AppState>().backend.kind() == BackendKind::LegacyP2p;
+            let paths = paths.clone();
+            tauri::async_runtime::spawn(async move {
+                let payload = match commands::attachments::grant_native_drop(
+                    &store,
+                    app.state::<AppState>().inner(),
+                    start.clone(),
+                    paths,
+                    expose_legacy_path,
+                )
+                .await
+                {
+                    Ok(payload) => payload,
+                    Err(error) => commands::attachments::NativeAttachmentDrop {
+                        drop_id: start.drop_id,
+                        position: start.position,
+                        files: Vec::new(),
+                        errors: vec![error.to_string()],
+                        account_scope: None,
+                    },
+                };
+                if let Err(error) = app.emit("mesh-native-attachment-drop", payload) {
+                    tracing::warn!("Could not deliver native attachment drop: {error}");
+                }
+            });
+        });
+    let builder = builder.plugin(tauri_plugin_notification::init());
+    let builder = builder.setup(|app| {
+        // Initialize SQLite database
+        let app_data_dir = match app.path().app_data_dir() {
+            Ok(path) => path,
+            Err(_) => {
+                startup_recovery::report_and_exit(
+                    app,
+                    &startup_recovery::fallback_marker_directory(),
+                    startup_recovery::StartupFailure::new(
+                        startup_recovery::StartupFailureKind::AppData,
+                    ),
+                );
+                return Ok(());
+            }
+        };
+        if let Err(error) = std::fs::create_dir_all(&app_data_dir) {
+            startup_recovery::report_and_exit(
+                app,
+                &startup_recovery::fallback_marker_directory(),
+                startup_recovery::StartupFailure::from_app_data_io(&error),
+            );
+            return Ok(());
+        }
+        app.manage(commands::window::WindowGeometryStore::with_data_dir(
+            &app_data_dir,
+        ));
+        commands::window::restore_geometry(app.handle());
+        crash_report::install(&app_data_dir, &app.package_info().version.to_string());
+        app.manage(commands::attachments::AttachmentGrantStore::default());
+        commands::attachments::schedule_startup_cleanup(app.handle().clone());
+        #[cfg(feature = "legacy-p2p")]
+        let db = match storage::Database::new(app_data_dir.clone()) {
+            Ok(database) => database,
+            Err(error) => {
+                startup_recovery::report_and_exit(
+                    app,
+                    &app_data_dir,
+                    startup_recovery::StartupFailure::from_database(&error),
+                );
+                return Ok(());
+            }
+        };
+
+        // Purge any stale entries from the pending_messages queue.
+        // Previous versions queued messages on gossipsub InsufficientPeers,
+        // which is the normal solo-peer state — not a real failure.
+        // Those messages are already in the main messages table, so the
+        // pending entry is dead state. Clear it on startup so the
+        // diagnostics panel doesn't show phantom "N messages pending".
+        #[cfg(feature = "legacy-p2p")]
+        match db.clear_pending_messages() {
+            Ok(cleared) if cleared > 0 => {
+                tracing::info!(
+                    target: "mesh::startup",
+                    "Cleared {} stale pending message(s) from previous InsufficientPeers queueing",
+                    cleared
+                );
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!(
+                    target: "mesh::startup",
+                    "Failed to clear stale pending messages: {}",
+                    e
+                );
+            }
+        }
+
+        // Register database as managed state
+        #[cfg(feature = "legacy-p2p")]
+        app.manage(db);
+
+        // Initialize application state
+        app.manage(commands::notifications::NotificationRuntimeState::default());
+        commands::notifications::configure_tray(app);
+
+        #[cfg(target_os = "macos")]
+        commands::notifications::configure_macos_menu(app);
+
+        let startup_marker_directory = app_data_dir.clone();
+        let app_state = AppState::with_data_dir(app_data_dir);
+        #[cfg(feature = "legacy-p2p")]
+        let backend_kind = app_state.backend.kind();
+        let notification_app = app.handle().clone();
+        app_state
+            .backend
+            .backend()
+            .set_matrix_event_callback(Some(std::sync::Arc::new(move |event| {
+                commands::notifications::handle_matrix_backend_event(&notification_app, event);
+            })));
+        app.manage(app_state);
+
+        #[cfg(windows)]
+        if let Some(invitation) = native_pending_invitation_from_args(
+            std::env::args_os().filter_map(|argument| argument.into_string().ok()),
+        ) {
+            // Setup completes before the renderer initializes. Persisting the
+            // cold-start capability here removes the race between the first
+            // renderer peek, the empty-payload event listener, and a spawned
+            // filesystem/keychain task.
+            let app_handle = app.handle().clone();
+            let persisted = std::thread::scope(|scope| {
+                scope
+                    .spawn(move || {
+                        tauri::async_runtime::block_on(persist_native_pending_invitation(
+                            &app_handle,
+                            invitation,
+                        ))
+                    })
+                    .join()
+            });
+            if persisted.is_err() {
+                tracing::warn!("Could not securely store a cold-start native invitation");
+            }
+        }
+
+        #[cfg(feature = "legacy-p2p")]
+        if backend_kind == BackendKind::LegacyP2p {
+            app_runtime::spawn_voice_sweeper(app.handle().clone());
+            app_runtime::spawn_download_timeout_checker(app.handle().clone());
+            app_runtime::spawn_network_health_monitor(app.handle().clone());
+            app_runtime::spawn_reconnect_watchdog(app.handle().clone());
+        }
+
+        // Log ICE server validation status at startup for operator visibility.
+        // This makes missing/invalid TURN configuration obvious immediately
+        // rather than only when a user tries to make a voice call.
+        #[cfg(feature = "legacy-p2p")]
+        {
+            let db_ref = app.state::<storage::Database>();
+            let custom = db_ref.conn.lock().ok().and_then(|conn| {
+                conn.query_row(
+                    "SELECT value FROM kv_store WHERE key = 'ice_servers'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .ok()
+            });
+            let has_custom = custom
+                .as_deref()
+                .and_then(|json| serde_json::from_str::<Vec<serde_json::Value>>(json).ok())
+                .map(|v| !v.is_empty())
+                .unwrap_or(false);
+            if has_custom {
+                tracing::info!(
+                    target: "mesh::startup",
+                    "ICE server configuration: custom servers loaded from settings"
+                );
+            } else {
+                tracing::warn!(
+                    target: "mesh::startup",
+                    "ICE server configuration: using STUN-only defaults. \
+                     No TURN server configured — voice will fail behind symmetric NATs. \
+                     Configure a TURN server in Settings > Voice & Audio."
+                );
+            }
+        }
+
+        // Start the selected durable communication backend. Matrix is the
+        // production default; libp2p starts only when explicitly selected.
+        let app_handle = app.handle().clone();
+        tauri::async_runtime::spawn(async move {
+            let state = app_handle.state::<AppState>();
+            let startup = state
+                .backend_startup
+                .ensure_started(state.backend.backend(), false)
+                .await;
+            let startup = match startup {
+                Ok(status) => status,
+                Err(error) => {
+                    let Some(failure) =
+                        startup_recovery::StartupFailure::from_unrecoverable_backend(&error)
+                    else {
+                        tracing::error!(target: "mesh::startup", "Backend startup returned an unclassified fatal error");
+                        return;
+                    };
+                    tracing::error!(target: "mesh::startup", "Local account state prevented Mesh from starting safely");
+                    startup_recovery::report_handle_and_exit(
+                        &app_handle,
+                        &startup_marker_directory,
+                        failure,
+                    );
+                    return;
+                }
+            };
+            if startup.phase == BackendStartupPhase::RecoverableFailure {
+                tracing::warn!(
+                    target: "mesh::startup",
+                    issue = ?startup.issue,
+                    "Mesh opened with a recoverable communication-service startup issue"
+                );
+                return;
+            }
+
+            if state.backend.kind() != BackendKind::LegacyP2p {
+                tracing::info!(
+                    target: "mesh::startup",
+                    "Matrix backend selected; legacy libp2p engine is dormant"
+                );
+            }
+
+            #[cfg(feature = "legacy-p2p")]
+            if state.backend.kind() == BackendKind::LegacyP2p {
+                let identity_state = state.identity.clone();
+                let network_state = state.network.clone();
+
+                // Try to load existing identity for the network keypair
+                match crate::crypto::identity::Identity::exists() {
+                    Ok(true) => {
+                        match crate::crypto::identity::Identity::load() {
+                            Ok(identity) => {
+                                *identity_state.write().await = Some(identity);
+
+                                if let Err(e) = app_runtime::ensure_network_started(
+                                    app_handle.clone(),
+                                    identity_state,
+                                    network_state,
+                                )
+                                .await
+                                {
+                                    tracing::error!("Failed to start network: {}", e);
+                                } else {
+                                    tracing::info!("Network started successfully");
+                                }
+                            }
+                            Err(_) => {
+                                tracing::error!("Could not load the local identity from secure account storage");
+                                startup_recovery::report_handle_and_exit(
+                                    &app_handle,
+                                    &startup_marker_directory,
+                                    startup_recovery::StartupFailure::new(
+                                        startup_recovery::StartupFailureKind::Keychain,
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                    Ok(false) => {
+                        tracing::info!("No identity found, waiting for onboarding...");
+                    }
+                    Err(_) => {
+                        tracing::error!("Could not inspect secure account storage for the local identity");
+                        startup_recovery::report_handle_and_exit(
+                            &app_handle,
+                            &startup_marker_directory,
+                            startup_recovery::StartupFailure::new(
+                                startup_recovery::StartupFailureKind::Keychain,
+                            ),
+                        );
+                    }
+                }
+            }
+        });
+
+        Ok(())
+    });
+
+    // The tray reflects unread state. Closing still exits normally; close-to-tray
+    // behavior remains disabled until a recovery menu and lifecycle are tested.
+    #[cfg(not(feature = "legacy-p2p"))]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        commands::attachments::pick_attachment_grants,
+        commands::attachments::pick_custom_emoji_grant,
+        commands::attachments::accept_attachment_drop_grants,
+        commands::attachments::discard_attachment_grant,
+        commands::attachments::discard_staged_attachment,
+        commands::attachments::open_downloaded_file,
+        commands::external::open_external_url,
+        commands::backend::get_backend_status,
+        commands::backend::ensure_backend_started,
+        commands::notifications::get_notification_account_scope,
+        commands::notifications::set_notification_context,
+        commands::notifications::send_test_notification,
+        commands::notifications::notification_permission_state,
+        commands::window::set_window_title,
+        commands::native_requests::cancel_native_request,
+        commands::pending_invitation::peek_pending_invitation,
+        commands::pending_invitation::join_pending_invitation,
+        commands::pending_invitation::clear_pending_invitation,
+        commands::backend::matrix_room_is_encrypted,
+        commands::backend::matrix_room_upgrade,
+        commands::backend::matrix_get_room_notification_mode,
+        commands::backend::matrix_set_room_notification_mode,
+        commands::backend::matrix_reserve_login_attempt,
+        commands::backend::matrix_login,
+        commands::backend::register_account,
+        commands::backend::check_username_available,
+        commands::backend::matrix_service_capabilities,
+        commands::backend::matrix_oidc_status,
+        commands::backend::matrix_start_oidc_login,
+        commands::backend::matrix_cancel_login,
+        commands::backend::matrix_restore_session,
+        commands::backend::matrix_logout,
+        commands::backend::matrix_devices,
+        commands::backend::request_destructive_action_grant,
+        commands::backend::matrix_revoke_device,
+        commands::backend::matrix_remove_local_account,
+        commands::backend::matrix_export_personal_data,
+        commands::backend::matrix_cancel_personal_data_export,
+        commands::backend::matrix_deactivate_account,
+        commands::backend::matrix_accounts,
+        commands::backend::matrix_get_profile,
+        commands::backend::matrix_update_profile_display_name,
+        commands::backend::matrix_update_profile_avatar,
+        commands::backend::matrix_clear_profile_avatar,
+        commands::backend::matrix_load_profile_avatar,
+        commands::backend::matrix_set_room_avatar,
+        commands::backend::matrix_clear_room_avatar,
+        commands::backend::matrix_switch_account,
+        commands::backend::matrix_recovery_health,
+        commands::backend::matrix_test_recovery,
+        commands::backend::matrix_test_stored_recovery,
+        commands::backend::matrix_start_device_verification,
+        commands::backend::matrix_device_verification_status,
+        commands::backend::matrix_select_device_verification_method,
+        commands::backend::matrix_confirm_device_verification,
+        commands::backend::matrix_cancel_device_verification,
+        commands::backend::matrix_user_preferences,
+        commands::backend::matrix_update_user_preferences,
+        commands::backend::matrix_create_community,
+        commands::backend::matrix_list_communities,
+        commands::backend::matrix_community_invites,
+        commands::backend::matrix_decline_community_invite,
+        commands::backend::matrix_list_channels,
+        commands::backend::matrix_create_channel,
+        commands::backend::matrix_join_community_channel,
+        commands::backend::matrix_update_channel,
+        commands::backend::matrix_remove_channel,
+        commands::backend::matrix_list_custom_emoji,
+        commands::backend::matrix_upload_custom_emoji,
+        commands::backend::matrix_remove_custom_emoji,
+        commands::backend::matrix_load_custom_emoji_image,
+        commands::backend::matrix_rtc_join,
+        commands::backend::matrix_rtc_ack_media_key_pause,
+        commands::backend::matrix_rtc_ack_media_key,
+        commands::backend::matrix_rtc_renew_media_key_lease,
+        commands::backend::matrix_rtc_refresh_membership,
+        commands::backend::matrix_rtc_leave,
+        commands::backend::matrix_rtc_members,
+        commands::backend::matrix_send_message,
+        commands::backend::matrix_queued_messages,
+        commands::backend::matrix_retry_queued_message,
+        commands::backend::matrix_cancel_queued_message,
+        commands::backend::matrix_save_composer_draft,
+        commands::backend::matrix_load_composer_draft,
+        commands::backend::matrix_clear_composer_draft,
+        commands::backend::matrix_send_attachment,
+        commands::backend::matrix_cancel_attachment_upload,
+        commands::backend::matrix_download_attachment,
+        commands::backend::matrix_load_attachment_image,
+        commands::backend::matrix_cancel_attachment_download,
+        commands::backend::matrix_dm_conversations,
+        commands::backend::matrix_dm_requests,
+        commands::backend::matrix_blocked_accounts,
+        commands::backend::matrix_accept_dm_request,
+        commands::backend::matrix_decline_dm_request,
+        commands::backend::matrix_block_dm_request,
+        commands::backend::matrix_ensure_dm,
+        commands::backend::matrix_dm_messages,
+        commands::backend::matrix_send_dm,
+        commands::backend::matrix_send_dm_attachment,
+        commands::backend::matrix_mark_dm_read,
+        commands::backend::matrix_set_dm_blocked,
+        commands::backend::matrix_dm_blocked,
+        commands::backend::matrix_get_messages,
+        commands::backend::matrix_thread_context,
+        commands::backend::matrix_thread_list,
+        commands::backend::matrix_edit_message,
+        commands::backend::matrix_redact_message,
+        commands::backend::matrix_report_message,
+        commands::backend::matrix_toggle_reaction,
+        commands::backend::matrix_room_pins,
+        commands::backend::matrix_toggle_room_pin,
+        commands::backend::matrix_mark_read,
+        commands::backend::matrix_set_unread_flag,
+        commands::backend::matrix_mark_thread_read,
+        commands::backend::matrix_mark_rooms_read,
+        commands::backend::matrix_set_typing,
+        commands::backend::matrix_typing_users,
+        commands::backend::matrix_search_messages,
+        commands::backend::matrix_search_messages_everywhere,
+        commands::backend::matrix_cancel_search,
+        commands::backend::matrix_wait_for_room_update,
+        commands::backend::matrix_list_members,
+        commands::backend::matrix_get_community_permission_projection,
+        commands::backend::matrix_invite_to_community,
+        commands::backend::matrix_create_community_invite,
+        commands::backend::matrix_community_access_settings,
+        commands::backend::matrix_update_community_access,
+        commands::backend::matrix_search_community_directory,
+        commands::backend::matrix_search_person_directory,
+        commands::backend::matrix_knock_community,
+        commands::backend::matrix_list_community_applications,
+        commands::backend::matrix_respond_community_application,
+        commands::backend::matrix_join_community,
+        commands::backend::matrix_join_room,
+        commands::backend::matrix_leave_community,
+        commands::backend::matrix_update_community,
+        commands::backend::matrix_update_member_role,
+        commands::backend::matrix_kick_member,
+        commands::backend::matrix_ban_member,
+        commands::backend::matrix_unban_member,
+        commands::backend::matrix_list_moderation_audit,
+        commands::backend::matrix_sync_once,
+        commands::backend::matrix_enable_recovery,
+        commands::backend::matrix_recover,
+    ]);
+
+    #[cfg(feature = "legacy-p2p")]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        commands::attachments::pick_attachment_grants,
+        commands::attachments::pick_custom_emoji_grant,
+        commands::attachments::accept_attachment_drop_grants,
+        commands::attachments::discard_attachment_grant,
+        commands::attachments::discard_staged_attachment,
+        commands::attachments::open_downloaded_file,
+        commands::external::open_external_url,
+        // Backend / Matrix architecture spike
+        commands::backend::get_backend_status,
+        commands::backend::ensure_backend_started,
+        commands::notifications::get_notification_account_scope,
+        commands::notifications::set_notification_context,
+        commands::notifications::send_test_notification,
+        commands::notifications::notification_permission_state,
+        commands::window::set_window_title,
+        commands::native_requests::cancel_native_request,
+        commands::pending_invitation::peek_pending_invitation,
+        commands::pending_invitation::join_pending_invitation,
+        commands::pending_invitation::clear_pending_invitation,
+        commands::backend::matrix_room_is_encrypted,
+        commands::backend::matrix_room_upgrade,
+        commands::backend::matrix_get_room_notification_mode,
+        commands::backend::matrix_set_room_notification_mode,
+        commands::backend::matrix_reserve_login_attempt,
+        commands::backend::matrix_login,
+        commands::backend::register_account,
+        commands::backend::check_username_available,
+        commands::backend::matrix_service_capabilities,
+        commands::backend::matrix_oidc_status,
+        commands::backend::matrix_start_oidc_login,
+        commands::backend::matrix_cancel_login,
+        commands::backend::matrix_restore_session,
+        commands::backend::matrix_logout,
+        commands::backend::matrix_devices,
+        commands::backend::request_destructive_action_grant,
+        commands::backend::matrix_revoke_device,
+        commands::backend::matrix_remove_local_account,
+        commands::backend::matrix_export_personal_data,
+        commands::backend::matrix_cancel_personal_data_export,
+        commands::backend::matrix_deactivate_account,
+        commands::backend::matrix_accounts,
+        commands::backend::matrix_get_profile,
+        commands::backend::matrix_update_profile_display_name,
+        commands::backend::matrix_update_profile_avatar,
+        commands::backend::matrix_clear_profile_avatar,
+        commands::backend::matrix_load_profile_avatar,
+        commands::backend::matrix_set_room_avatar,
+        commands::backend::matrix_clear_room_avatar,
+        commands::backend::matrix_switch_account,
+        commands::backend::matrix_recovery_health,
+        commands::backend::matrix_test_recovery,
+        commands::backend::matrix_test_stored_recovery,
+        commands::backend::matrix_start_device_verification,
+        commands::backend::matrix_device_verification_status,
+        commands::backend::matrix_select_device_verification_method,
+        commands::backend::matrix_confirm_device_verification,
+        commands::backend::matrix_cancel_device_verification,
+        commands::backend::matrix_user_preferences,
+        commands::backend::matrix_update_user_preferences,
+        commands::backend::matrix_create_community,
+        commands::backend::matrix_list_communities,
+        commands::backend::matrix_community_invites,
+        commands::backend::matrix_decline_community_invite,
+        commands::backend::matrix_list_channels,
+        commands::backend::matrix_create_channel,
+        commands::backend::matrix_join_community_channel,
+        commands::backend::matrix_update_channel,
+        commands::backend::matrix_remove_channel,
+        commands::backend::matrix_list_custom_emoji,
+        commands::backend::matrix_upload_custom_emoji,
+        commands::backend::matrix_remove_custom_emoji,
+        commands::backend::matrix_load_custom_emoji_image,
+        commands::backend::matrix_rtc_join,
+        commands::backend::matrix_rtc_ack_media_key_pause,
+        commands::backend::matrix_rtc_ack_media_key,
+        commands::backend::matrix_rtc_renew_media_key_lease,
+        commands::backend::matrix_rtc_refresh_membership,
+        commands::backend::matrix_rtc_leave,
+        commands::backend::matrix_rtc_members,
+        commands::backend::matrix_send_message,
+        commands::backend::matrix_queued_messages,
+        commands::backend::matrix_retry_queued_message,
+        commands::backend::matrix_cancel_queued_message,
+        commands::backend::matrix_save_composer_draft,
+        commands::backend::matrix_load_composer_draft,
+        commands::backend::matrix_clear_composer_draft,
+        commands::backend::matrix_send_attachment,
+        commands::backend::matrix_cancel_attachment_upload,
+        commands::backend::matrix_download_attachment,
+        commands::backend::matrix_load_attachment_image,
+        commands::backend::matrix_cancel_attachment_download,
+        commands::backend::matrix_dm_conversations,
+        commands::backend::matrix_dm_requests,
+        commands::backend::matrix_blocked_accounts,
+        commands::backend::matrix_accept_dm_request,
+        commands::backend::matrix_decline_dm_request,
+        commands::backend::matrix_block_dm_request,
+        commands::backend::matrix_ensure_dm,
+        commands::backend::matrix_dm_messages,
+        commands::backend::matrix_send_dm,
+        commands::backend::matrix_send_dm_attachment,
+        commands::backend::matrix_mark_dm_read,
+        commands::backend::matrix_set_dm_blocked,
+        commands::backend::matrix_dm_blocked,
+        commands::backend::matrix_get_messages,
+        commands::backend::matrix_thread_context,
+        commands::backend::matrix_thread_list,
+        commands::backend::matrix_edit_message,
+        commands::backend::matrix_redact_message,
+        commands::backend::matrix_report_message,
+        commands::backend::matrix_toggle_reaction,
+        commands::backend::matrix_room_pins,
+        commands::backend::matrix_toggle_room_pin,
+        commands::backend::matrix_mark_read,
+        commands::backend::matrix_set_unread_flag,
+        commands::backend::matrix_mark_thread_read,
+        commands::backend::matrix_mark_rooms_read,
+        commands::backend::matrix_set_typing,
+        commands::backend::matrix_typing_users,
+        commands::backend::matrix_search_messages,
+        commands::backend::matrix_search_messages_everywhere,
+        commands::backend::matrix_cancel_search,
+        commands::backend::matrix_wait_for_room_update,
+        commands::backend::matrix_list_members,
+        commands::backend::matrix_get_community_permission_projection,
+        commands::backend::matrix_invite_to_community,
+        commands::backend::matrix_create_community_invite,
+        commands::backend::matrix_community_access_settings,
+        commands::backend::matrix_update_community_access,
+        commands::backend::matrix_search_community_directory,
+        commands::backend::matrix_search_person_directory,
+        commands::backend::matrix_knock_community,
+        commands::backend::matrix_list_community_applications,
+        commands::backend::matrix_respond_community_application,
+        commands::backend::matrix_join_community,
+        commands::backend::matrix_join_room,
+        commands::backend::matrix_leave_community,
+        commands::backend::matrix_update_community,
+        commands::backend::matrix_update_member_role,
+        commands::backend::matrix_kick_member,
+        commands::backend::matrix_ban_member,
+        commands::backend::matrix_unban_member,
+        commands::backend::matrix_list_moderation_audit,
+        commands::backend::matrix_sync_once,
+        commands::backend::matrix_enable_recovery,
+        commands::backend::matrix_recover,
+        // Identity
+        commands::identity::create_identity,
+        commands::identity::generate_identity,
+        commands::identity::get_identity,
+        commands::identity::update_profile,
+        commands::identity::update_display_name,
+        commands::identity::export_identity,
+        commands::identity::import_identity,
+        // Communities
+        commands::community::create_community,
+        commands::community::get_communities,
+        commands::community::get_channels,
+        commands::community::sync_local_channel,
+        commands::community::create_channel,
+        commands::community::update_community_metadata,
+        commands::community::join_community,
+        commands::community::leave_community,
+        commands::community::delete_community,
+        commands::community::generate_invite_link,
+        commands::community::subscribe_channel,
+        commands::community::unsubscribe_channel,
+        commands::control::request_control_log_sync,
+        // Messaging
+        commands::messaging::send_message,
+        commands::messaging::get_messages,
+        commands::messaging::mark_channel_read,
+        commands::messaging::request_message_history,
+        commands::messaging::add_reaction,
+        commands::messaging::edit_message,
+        commands::messaging::delete_message,
+        commands::messaging::search_messages,
+        commands::messaging::broadcast_typing,
+        commands::messaging::get_channel_event_log,
+        // Voice
+        commands::voice::join_voice,
+        commands::voice::leave_voice,
+        commands::voice::set_muted,
+        commands::voice::set_deafened,
+        commands::voice::send_voice_signal,
+        commands::voice::get_ice_servers,
+        commands::voice::get_ice_server_status,
+        commands::voice::validate_ice_servers,
+        commands::voice::set_ice_servers,
+        commands::voice::probe_ice_servers,
+        commands::diagnostics::get_diagnostics,
+        commands::voice::set_kv,
+        // Files
+        commands::files::upload_file,
+        commands::files::upload_dm_file,
+        commands::files::request_file,
+        commands::files::get_community_files,
+        // Moderation
+        commands::moderation::ban_user,
+        commands::moderation::kick_user,
+        commands::moderation::timeout_user,
+        commands::moderation::update_member_role,
+        commands::moderation::get_members,
+        // Direct Messages
+        commands::dm::send_dm,
+        commands::dm::get_dm_conversations,
+        commands::dm::get_dm_messages,
+        commands::dm::mark_dm_read,
+    ]);
+
+    let app = match builder.build(tauri::generate_context!()) {
+        Ok(app) => app,
+        Err(_) => {
+            tracing::error!(target: "mesh::startup", "The native application runtime could not be built");
+            startup_recovery::show_runtime_build_failure();
+            return;
+        }
+    };
+    app.run(|app_handle, event| {
+        /*
+          Window geometry is tracked here rather than written on each event: a
+          drag emits Moved for every frame, so persisting on the event itself
+          would be hundreds of writes to put a window down. The store keeps the
+          last position in memory and the file is written once, on exit.
+        */
+        if let tauri::RunEvent::WindowEvent {
+            label,
+            event: window_event,
+            ..
+        } = &event
+        {
+            if label == "main"
+                && matches!(
+                    window_event,
+                    tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)
+                )
+            {
+                if let (Some(window), Some(store)) = (
+                    app_handle.get_webview_window("main"),
+                    app_handle.try_state::<commands::window::WindowGeometryStore>(),
+                ) {
+                    if let Some(geometry) = commands::window::current_geometry(&window) {
+                        store.record(geometry);
+                    }
+                }
+            }
+            return;
+        }
+        if !matches!(event, tauri::RunEvent::Exit) {
+            return;
+        }
+        if let Some(store) = app_handle.try_state::<commands::window::WindowGeometryStore>() {
+            store.persist();
+        }
+        let Some(state) = app_handle.try_state::<AppState>() else {
+            return;
+        };
+        if let Err(error) = tauri::async_runtime::block_on(state.backend.backend().shutdown()) {
+            // A subsequent startup repeats fail-closed scavenging before
+            // restoring an account. Never treat an exit cleanup failure as a
+            // successful deletion claim.
+            tracing::error!(
+                target: "mesh::privacy",
+                "Mesh could not remove all decrypted session media during exit: {error}"
+            );
+        }
+    });
+}
+
+#[cfg(test)]
+mod native_invitation_tests {
+    use super::*;
+
+    #[test]
+    fn accepts_exactly_one_valid_mesh_join_argument_without_inspecting_other_args() {
+        let secret = "sentinel-invitation-secret";
+        let invitation =
+            format!("mesh://join?v=5&kind=community&room=%21community%3Aexample.org&code={secret}");
+        assert_eq!(
+            native_pending_invitation_from_args(["mesh.exe", "--flag", invitation.as_str()]),
+            Some(invitation)
+        );
+    }
+
+    #[test]
+    fn rejects_ambiguous_or_non_join_urls() {
+        let first = "mesh://join?v=5&code=first";
+        let second = "mesh://join?v=5&code=second";
+        assert_eq!(native_pending_invitation_from_args([first, second]), None);
+        assert_eq!(
+            native_pending_invitation_from_args(["https://example.org/invite/secret"]),
+            None
+        );
+        assert_eq!(
+            native_pending_invitation_from_args(["mesh://user:password@join?v=5&code=secret"]),
+            None
+        );
+        assert_eq!(
+            native_pending_invitation_from_args(["mesh://join/path?v=5&code=secret"]),
+            None
+        );
+    }
+
+    #[test]
+    fn runtime_never_initializes_raw_deep_link_delivery() {
+        let source = include_str!("lib.rs");
+        let implementation = source.split("#[cfg(test)]").next().unwrap();
+        assert!(!implementation.contains(&["tauri_plugin_deep_link", "::init()"].concat()));
+        assert!(!implementation.contains(&["Deep", "LinkExt"].concat()));
+        assert!(!implementation.contains(&["deep-link://", "new-url"].concat()));
+        assert!(implementation.contains("PENDING_INVITATION_READY_EVENT, ()"));
+        assert!(!implementation.contains("app.emit(PENDING_INVITATION_READY_EVENT, invitation"));
+        let native_persist = implementation
+            .split("async fn persist_native_pending_invitation")
+            .nth(1)
+            .unwrap()
+            .split("fn store_native_pending_invitation")
+            .next()
+            .unwrap();
+        assert!(native_persist.contains("Err(_) =>"));
+        assert!(!native_persist.contains("Err(error) =>"));
+        assert!(!native_persist.contains("tracing::warn!(invitation"));
+        assert!(implementation.contains("#[cfg(not(windows))]\n                let _ = arguments;"));
+        assert!(implementation.contains("block_on(persist_native_pending_invitation("));
+        assert!(!implementation.contains("#[cfg(not(windows))]\n        if let Some(invitation)"));
+        for raw_command in [
+            ["commands::backend::matrix_resolve_community_", "invite"].concat(),
+            ["commands::backend::matrix_claim_community_", "invite"].concat(),
+            ["commands::pending_invitation::store_pending_", "invitation"].concat(),
+        ] {
+            assert!(!implementation.contains(&raw_command));
+        }
+    }
+}

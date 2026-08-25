@@ -1,0 +1,332 @@
+import { useMemo } from 'react'
+import { create } from 'zustand'
+import { patchChanges } from '../lib/state'
+import { registerAccountReset } from '../lib/account-reset-registry'
+
+export interface MemberRecord {
+  publicKey: string
+  displayName: string
+  avatarColor: string
+  avatarUrl?: string | null
+  role: 'owner' | 'admin' | 'member'
+  joinStatus: 'invited' | 'joined' | 'left'
+  banStatus: 'none' | 'banned'
+  lastSeen: string | null
+  online?: boolean
+}
+
+export function isCurrentCommunityMember(member: MemberRecord): boolean {
+  return member.joinStatus === 'joined' && member.banStatus === 'none'
+}
+
+interface MembershipStore {
+  /** Normalized member source of truth, scoped by community ID. */
+  memberEntities: Record<string, Record<string, MemberRecord>>
+  memberOrder: Record<string, string[]>
+  /** Ordered compatibility snapshots for roster consumers. */
+  members: Record<string, MemberRecord[]>
+  rosterNextCursor: Record<string, string | null>
+  rosterStateComplete: Record<string, boolean>
+  setRoster: (communityId: string, roster: MemberRecord[]) => void
+  setRosterPage: (
+    communityId: string,
+    roster: MemberRecord[],
+    nextCursor: string | null,
+    stateComplete: boolean,
+    append: boolean,
+  ) => void
+  clearCommunity: (communityId: string) => void
+  upsertMember: (communityId: string, member: MemberRecord) => void
+  removeMember: (communityId: string, publicKey: string) => void
+  banMember: (communityId: string, publicKey: string) => void
+  unbanMember: (communityId: string, publicKey: string) => void
+  updateRole: (communityId: string, publicKey: string, role: MemberRecord['role']) => void
+  touchMember: (communityId: string, publicKey: string) => void
+  getMembersForCommunity: (communityId: string) => MemberRecord[]
+  getActiveMembersForCommunity: (communityId: string) => MemberRecord[]
+  getMemberCount: (communityId: string) => number
+}
+
+function sameOrder(left: string[], right: string[]) {
+  return left.length === right.length && left.every((id, index) => id === right[index])
+}
+
+function normalizeRoster(
+  roster: MemberRecord[],
+  existing: Record<string, MemberRecord>,
+) {
+  const entities: Record<string, MemberRecord> = {}
+  const order: string[] = []
+
+  for (const incoming of roster) {
+    if (entities[incoming.publicKey]) continue
+    const current = existing[incoming.publicKey]
+    entities[incoming.publicKey] =
+      !current || patchChanges(current, incoming) ? incoming : current
+    order.push(incoming.publicKey)
+  }
+
+  return {
+    entities,
+    order,
+    members: order.map((publicKey) => entities[publicKey]),
+  }
+}
+
+export const useMembershipStore = create<MembershipStore>((set, get) => ({
+  memberEntities: {},
+  memberOrder: {},
+  members: {},
+  rosterNextCursor: {},
+  rosterStateComplete: {},
+
+  setRoster: (communityId, roster) =>
+    set((state) => {
+      const normalized = normalizeRoster(
+        roster,
+        state.memberEntities[communityId] ?? {},
+      )
+      const currentOrder = state.memberOrder[communityId] ?? []
+      const unchanged =
+        sameOrder(currentOrder, normalized.order) &&
+        normalized.order.every(
+          (publicKey) =>
+            state.memberEntities[communityId]?.[publicKey] === normalized.entities[publicKey],
+        ) &&
+        state.rosterNextCursor[communityId] === null &&
+        state.rosterStateComplete[communityId] === true
+      if (unchanged) return state
+
+      return {
+        memberEntities: {
+          ...state.memberEntities,
+          [communityId]: normalized.entities,
+        },
+        memberOrder: {
+          ...state.memberOrder,
+          [communityId]: normalized.order,
+        },
+        members: {
+          ...state.members,
+          [communityId]: normalized.members,
+        },
+        rosterNextCursor: { ...state.rosterNextCursor, [communityId]: null },
+        rosterStateComplete: { ...state.rosterStateComplete, [communityId]: true },
+      }
+    }),
+
+  setRosterPage: (communityId, roster, nextCursor, stateComplete, append) =>
+    set((state) => {
+      const combined = append ? [...(state.members[communityId] ?? []), ...roster] : roster
+      const normalized = normalizeRoster(
+        combined,
+        state.memberEntities[communityId] ?? {},
+      )
+      return {
+        memberEntities: {
+          ...state.memberEntities,
+          [communityId]: normalized.entities,
+        },
+        memberOrder: {
+          ...state.memberOrder,
+          [communityId]: normalized.order,
+        },
+        members: {
+          ...state.members,
+          [communityId]: normalized.members,
+        },
+        rosterNextCursor: { ...state.rosterNextCursor, [communityId]: nextCursor },
+        rosterStateComplete: { ...state.rosterStateComplete, [communityId]: stateComplete },
+      }
+    }),
+
+  clearCommunity: (communityId) =>
+    set((state) => {
+      if (
+        !state.memberEntities[communityId] &&
+        !state.memberOrder[communityId] &&
+        !state.members[communityId] &&
+        !(communityId in state.rosterNextCursor) &&
+        !(communityId in state.rosterStateComplete)
+      ) {
+        return state
+      }
+      const memberEntities = { ...state.memberEntities }
+      const memberOrder = { ...state.memberOrder }
+      const members = { ...state.members }
+      const rosterNextCursor = { ...state.rosterNextCursor }
+      const rosterStateComplete = { ...state.rosterStateComplete }
+      delete memberEntities[communityId]
+      delete memberOrder[communityId]
+      delete members[communityId]
+      delete rosterNextCursor[communityId]
+      delete rosterStateComplete[communityId]
+      return { memberEntities, memberOrder, members, rosterNextCursor, rosterStateComplete }
+    }),
+
+  upsertMember: (communityId, incoming) =>
+    set((state) => {
+      const communityEntities = state.memberEntities[communityId] ?? {}
+      const current = communityEntities[incoming.publicKey]
+      const next = !current || patchChanges(current, incoming) ? incoming : current
+      if (current === next) return state
+
+      const order = state.memberOrder[communityId] ?? []
+      if (!current) {
+        return {
+          memberEntities: {
+            ...state.memberEntities,
+            [communityId]: { ...communityEntities, [incoming.publicKey]: next },
+          },
+          memberOrder: {
+            ...state.memberOrder,
+            [communityId]: [...order, incoming.publicKey],
+          },
+          members: {
+            ...state.members,
+            [communityId]: [...(state.members[communityId] ?? []), next],
+          },
+        }
+      }
+
+      return patchMemberState(state, communityId, incoming.publicKey, next)
+    }),
+
+  removeMember: (communityId, publicKey) =>
+    set((state) => {
+      const current = state.memberEntities[communityId]?.[publicKey]
+      if (!current || current.joinStatus === 'left') return state
+      return patchMemberState(
+        state,
+        communityId,
+        publicKey,
+        { ...current, joinStatus: 'left' },
+      )
+    }),
+
+  banMember: (communityId, publicKey) =>
+    set((state) => {
+      const current = state.memberEntities[communityId]?.[publicKey]
+      if (!current || (current.joinStatus === 'left' && current.banStatus === 'banned')) {
+        return state
+      }
+      return patchMemberState(
+        state,
+        communityId,
+        publicKey,
+        { ...current, joinStatus: 'left', banStatus: 'banned' },
+      )
+    }),
+
+  // Lifting a ban does not put the account back in the community. It clears the
+  // ban so the person is free to rejoin, which is the choice they get to make.
+  unbanMember: (communityId, publicKey) =>
+    set((state) => {
+      const current = state.memberEntities[communityId]?.[publicKey]
+      if (!current || current.banStatus === 'none') return state
+      return patchMemberState(
+        state,
+        communityId,
+        publicKey,
+        { ...current, banStatus: 'none' },
+      )
+    }),
+
+  updateRole: (communityId, publicKey, role) =>
+    set((state) => {
+      const current = state.memberEntities[communityId]?.[publicKey]
+      if (!current || current.role === role) return state
+      return patchMemberState(
+        state,
+        communityId,
+        publicKey,
+        { ...current, role },
+      )
+    }),
+
+  touchMember: (communityId, publicKey) =>
+    set((state) => {
+      const current = state.memberEntities[communityId]?.[publicKey]
+      if (!current) return state
+      return patchMemberState(
+        state,
+        communityId,
+        publicKey,
+        { ...current, lastSeen: new Date().toISOString() },
+      )
+    }),
+
+  getMembersForCommunity: (communityId) =>
+    (get().members[communityId] ?? []).filter(isCurrentCommunityMember),
+
+  getActiveMembersForCommunity: (communityId) =>
+    (get().members[communityId] ?? []).filter(isCurrentCommunityMember),
+
+  getMemberCount: (communityId) =>
+    (get().members[communityId] ?? []).filter(isCurrentCommunityMember).length,
+}))
+
+function patchMemberState(
+  state: MembershipStore,
+  communityId: string,
+  publicKey: string,
+  next: MemberRecord,
+): Partial<MembershipStore> {
+  const index = (state.memberOrder[communityId] ?? []).indexOf(publicKey)
+  const members = [...(state.members[communityId] ?? [])]
+  if (index >= 0) members[index] = next
+
+  return {
+    memberEntities: {
+      ...state.memberEntities,
+      [communityId]: {
+        ...state.memberEntities[communityId],
+        [publicKey]: next,
+      },
+    },
+    members: { ...state.members, [communityId]: members },
+  }
+}
+
+const EMPTY_MEMBERS: MemberRecord[] = []
+
+export function useCommunityMembers(communityId: string | null | undefined) {
+  const membershipRecords = useMembershipStore((state) =>
+    communityId
+      ? state.members[communityId] ?? EMPTY_MEMBERS
+      : EMPTY_MEMBERS,
+  )
+  return useMemo(
+    () => membershipRecords.filter(isCurrentCommunityMember),
+    [membershipRecords],
+  )
+}
+
+export function isBannedCommunityMember(member: MemberRecord): boolean {
+  return member.banStatus === 'banned'
+}
+
+// Banned accounts are deliberately absent from every everyday roster. They are
+// listed only where an administrator can act on them, so that a ban stays
+// reversible instead of silently permanent.
+export function useBannedCommunityMembers(communityId: string | null | undefined) {
+  const membershipRecords = useMembershipStore((state) =>
+    communityId
+      ? state.members[communityId] ?? EMPTY_MEMBERS
+      : EMPTY_MEMBERS,
+  )
+  return useMemo(
+    () => membershipRecords.filter(isBannedCommunityMember),
+    [membershipRecords],
+  )
+}
+
+registerAccountReset('membership', () => {
+  useMembershipStore.setState({
+    memberEntities: {},
+    memberOrder: {},
+    members: {},
+    rosterNextCursor: {},
+    rosterStateComplete: {},
+  })
+})

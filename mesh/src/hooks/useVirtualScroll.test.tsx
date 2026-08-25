@@ -1,0 +1,471 @@
+import { StrictMode, act, useLayoutEffect } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import {
+  findVisibleRange,
+  useVirtualScroll,
+  type VirtualItem,
+  type VirtualScrollState,
+} from './useVirtualScroll'
+
+type ResizeCallback = ConstructorParameters<typeof ResizeObserver>[0]
+
+class ResizeObserverMock {
+  static instances: ResizeObserverMock[] = []
+
+  private readonly callback: ResizeCallback
+
+  constructor(callback: ResizeCallback) {
+    this.callback = callback
+    ResizeObserverMock.instances.push(this)
+  }
+
+  observe() {}
+
+  unobserve() {}
+
+  disconnect() {}
+
+  trigger(height: number) {
+    this.callback(
+      [{ contentRect: { height } } as ResizeObserverEntry],
+      this as unknown as ResizeObserver,
+    )
+  }
+}
+
+describe('findVisibleRange', () => {
+  it('preserves inclusive viewport-boundary semantics', () => {
+    const offsets = [0, 100, 200, 300]
+    const heights = [100, 100, 100, 100]
+
+    expect(findVisibleRange(offsets, heights, 100, 300)).toEqual({
+      start: 0,
+      end: 3,
+    })
+    expect(findVisibleRange(offsets, heights, 101, 299)).toEqual({
+      start: 1,
+      end: 3,
+    })
+    expect(findVisibleRange([], [], 0, 100)).toEqual({ start: 0, end: 0 })
+  })
+
+  it('finds a bounded range in 50,000 rows with logarithmic indexed reads', () => {
+    const rowCount = 50_000
+    const offsets = Array.from({ length: rowCount }, (_, index) => index * 100)
+    const heights = Array.from({ length: rowCount }, () => 100)
+    let indexedReads = 0
+    const countReads = (values: number[]) => new Proxy(values, {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) indexedReads += 1
+        return Reflect.get(target, property, receiver)
+      },
+    })
+
+    const range = findVisibleRange(
+      countReads(offsets),
+      countReads(heights),
+      2_500_000,
+      2_500_500,
+    )
+
+    expect(range).toEqual({ start: 24_999, end: 25_005 })
+    expect(range.end - range.start + 1).toBe(7)
+    expect(indexedReads).toBeLessThan(80)
+  })
+})
+
+interface HarnessProps {
+  items: VirtualItem[]
+  onRender: (state: VirtualScrollState) => void
+  /** Navigation lists (member list, sidebars) opt out of bottom pinning. */
+  autoScrollToBottom?: boolean
+}
+
+function Harness({ items, onRender, autoScrollToBottom = true }: HarnessProps) {
+  const {
+    scrollContainerRef,
+    ...state
+  } = useVirtualScroll(items, {
+    estimatedMessageHeight: 100,
+    estimatedGapHeight: 50,
+    overscanPx: 0,
+    bottomThreshold: 10,
+    autoScrollToBottom,
+  })
+  useLayoutEffect(() => {
+    onRender({ ...state, scrollContainerRef })
+  }, [onRender, scrollContainerRef, state])
+  return <div ref={scrollContainerRef} />
+}
+
+describe('useVirtualScroll', () => {
+  let container: HTMLDivElement
+  let root: Root
+  let latest: VirtualScrollState
+  let renderCount: number
+  let animationFrames: Map<number, FrameRequestCallback>
+  let nextFrameId: number
+
+  const render = async (items: VirtualItem[], autoScrollToBottom = true) => {
+    await act(async () => {
+      root.render(
+        <Harness
+          items={items}
+          onRender={captureRender}
+          autoScrollToBottom={autoScrollToBottom}
+        />,
+      )
+    })
+  }
+
+  const captureRender = (state: VirtualScrollState) => {
+    latest = state
+    renderCount += 1
+  }
+
+  const scrollElement = () => {
+    const element = container.querySelector('div')
+    if (!element) throw new Error('virtual scroll element was not rendered')
+    return element
+  }
+
+  const flushAnimationFrame = async () => {
+    const callbacks = [...animationFrames.values()]
+    animationFrames.clear()
+    await act(async () => {
+      callbacks.forEach((callback) => callback(16))
+    })
+  }
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    renderCount = 0
+    animationFrames = new Map()
+    nextFrameId = 1
+    ResizeObserverMock.instances = []
+
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      const id = nextFrameId
+      nextFrameId += 1
+      animationFrames.set(id, callback)
+      return id
+    })
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+      animationFrames.delete(id)
+    })
+  })
+
+  afterEach(async () => {
+    await act(async () => root.unmount())
+    container.remove()
+    vi.unstubAllGlobals()
+  })
+
+  it('prunes measured heights after their rows leave the item window', async () => {
+    const row = { key: 'message-a', type: 'message' as const }
+    await render([row])
+
+    // Measurements are batched into one state update per animation frame.
+    await act(async () => {
+      latest.handleMeasuredHeight(row.key, 240)
+    })
+    await flushAnimationFrame()
+    expect(latest.totalContentHeight).toBe(240)
+
+    await render([])
+    await render([row])
+
+    expect(latest.totalContentHeight).toBe(100)
+  })
+
+  it('coalesces native scroll events into one update per animation frame', async () => {
+    await render([
+      { key: 'message-a', type: 'message' },
+      { key: 'message-b', type: 'message' },
+    ])
+    const element = scrollElement()
+    Object.defineProperty(element, 'clientHeight', { configurable: true, value: 100 })
+    ResizeObserverMock.instances[0].trigger(100)
+    await act(async () => {})
+
+    const rendersBeforeScroll = renderCount
+    element.scrollTop = 10
+    expect(latest.handleScroll()).toEqual({ scrollTop: 10, isAtBottom: false })
+    element.scrollTop = 20
+    latest.handleScroll()
+    element.scrollTop = 30
+    expect(latest.handleScroll()).toEqual({ scrollTop: 30, isAtBottom: false })
+
+    expect(latest.scrollTop).toBe(0)
+    expect(latest.getIsAtBottom()).toBe(false)
+    expect(animationFrames).toHaveLength(1)
+
+    await flushAnimationFrame()
+
+    expect(latest.scrollTop).toBe(30)
+    expect(latest.isAtBottom).toBe(false)
+    expect(renderCount - rendersBeforeScroll).toBe(1)
+  })
+
+  it('preserves the visible anchor and spacer math when a row above it grows', async () => {
+    const rows = Array.from({ length: 10 }, (_, index) => ({
+      key: `message-${index}`,
+      type: 'message' as const,
+    }))
+    await render(rows)
+
+    const element = scrollElement()
+    Object.defineProperty(element, 'clientHeight', { configurable: true, value: 100 })
+    Object.defineProperty(element, 'scrollHeight', {
+      configurable: true,
+      get: () => latest.totalContentHeight,
+    })
+    ResizeObserverMock.instances[0].trigger(100)
+    await act(async () => {})
+
+    element.scrollTop = 201
+    latest.handleScroll()
+    await flushAnimationFrame()
+
+    expect(latest.topSpacerHeight).toBe(200)
+    expect(latest.bottomSpacerHeight).toBe(500)
+
+    await act(async () => {
+      latest.handleMeasuredHeight('message-0', 150)
+    })
+    await flushAnimationFrame()
+
+    expect(element.scrollTop).toBe(251)
+    expect(latest.scrollTop).toBe(251)
+    expect(latest.totalContentHeight).toBe(1050)
+    expect(latest.topSpacerHeight).toBe(250)
+    expect(latest.bottomSpacerHeight).toBe(500)
+  })
+
+  it('centers a virtual row that is outside the rendered range', async () => {
+    const rows = Array.from({ length: 10 }, (_, index) => ({
+      key: `message-${index}`,
+      type: 'message' as const,
+    }))
+    await render(rows)
+
+    const element = scrollElement()
+    Object.defineProperty(element, 'clientHeight', { configurable: true, value: 200 })
+    Object.defineProperty(element, 'scrollHeight', {
+      configurable: true,
+      get: () => latest.totalContentHeight,
+    })
+    ResizeObserverMock.instances[0].trigger(200)
+    await act(async () => {})
+
+    await act(async () => {
+      expect(latest.scrollToItem('message-7', 'center')).toBe(true)
+    })
+
+    expect(element.scrollTop).toBe(650)
+    expect(latest.scrollTop).toBe(650)
+    expect(latest.visibleRange).toEqual({ start: 6, end: 9 })
+    expect(latest.scrollToItem('missing')).toBe(false)
+  })
+
+  it('restores the same viewport position after older rows are prepended', async () => {
+    const rows = Array.from({ length: 6 }, (_, index) => ({
+      key: `message-${index}`,
+      type: 'message' as const,
+    }))
+    await render(rows)
+
+    const element = scrollElement()
+    Object.defineProperty(element, 'clientHeight', { configurable: true, value: 200 })
+    Object.defineProperty(element, 'scrollHeight', {
+      configurable: true,
+      get: () => latest.totalContentHeight,
+    })
+    await act(async () => {
+      ResizeObserverMock.instances[ResizeObserverMock.instances.length - 1]?.trigger(200)
+    })
+
+    element.scrollTop = 250
+    latest.handleScroll()
+    await flushAnimationFrame()
+    latest.setScrollAnchor({ messageId: 'message-2', offset: 50 })
+
+    await render([
+      { key: 'message-older-0', type: 'message' },
+      { key: 'message-older-1', type: 'message' },
+      ...rows,
+    ])
+    await flushAnimationFrame()
+
+    expect(element.scrollTop).toBe(450)
+    expect(latest.scrollTop).toBe(450)
+    expect(latest.topSpacerHeight).toBe(400)
+  })
+
+  it('drops a stale anchor instead of yanking the reader back later', async () => {
+    const rows = Array.from({ length: 6 }, (_, index) => ({
+      key: `message-${index}`,
+      type: 'message' as const,
+    }))
+    await render(rows)
+
+    const element = scrollElement()
+    Object.defineProperty(element, 'clientHeight', { configurable: true, value: 200 })
+    Object.defineProperty(element, 'scrollHeight', {
+      configurable: true,
+      get: () => latest.totalContentHeight,
+    })
+    await act(async () => {
+      ResizeObserverMock.instances[ResizeObserverMock.instances.length - 1]?.trigger(200)
+    })
+
+    element.scrollTop = 250
+    latest.handleScroll()
+    await flushAnimationFrame()
+    // The load this anchor was set for came back empty, so the item list never
+    // changed and the anchor stayed armed.
+    latest.setScrollAnchor({ messageId: 'message-2', offset: 50 })
+
+    // The reader scrolls on and keeps reading.
+    element.scrollTop = 300
+    latest.handleScroll()
+    await flushAnimationFrame()
+
+    // Much later an unrelated message arrives. It lands below the anchor row,
+    // so nothing above moved and the viewport must not be touched.
+    await render([...rows, { key: 'message-6', type: 'message' }])
+    expect(element.scrollTop).toBe(300)
+    expect(latest.scrollTop).toBe(300)
+
+    // That render also consumed the anchor: it belonged to one layout
+    // generation, and a later prepend must not replay it.
+    await render([
+      { key: 'message-older-0', type: 'message' },
+      { key: 'message-older-1', type: 'message' },
+      ...rows,
+      { key: 'message-6', type: 'message' },
+    ])
+    expect(element.scrollTop).toBe(300)
+  })
+
+  it('returns the element to the top when a list without bottom pinning resets', async () => {
+    const rows = Array.from({ length: 6 }, (_, index) => ({
+      key: `row-${index}`,
+      type: 'message' as const,
+    }))
+    await render(rows, false)
+
+    const element = scrollElement()
+    Object.defineProperty(element, 'clientHeight', { configurable: true, value: 200 })
+    await act(async () => {
+      ResizeObserverMock.instances[ResizeObserverMock.instances.length - 1]?.trigger(200)
+    })
+
+    element.scrollTop = 250
+    latest.handleScroll()
+    await flushAnimationFrame()
+    expect(latest.scrollTop).toBe(250)
+
+    await act(async () => {
+      latest.resetLayout()
+    })
+
+    // Leaving the element parked at the old offset while the hook computed the
+    // visible range for offset 0 showed blank space where rows should be.
+    expect(element.scrollTop).toBe(0)
+    expect(latest.scrollTop).toBe(0)
+  })
+
+  it('applies a burst of row measurements in one update per frame', async () => {
+    const rows = Array.from({ length: 4 }, (_, index) => ({
+      key: `message-${index}`,
+      type: 'message' as const,
+    }))
+    await render(rows)
+    const rendersBeforeMeasuring = renderCount
+
+    await act(async () => {
+      rows.forEach((row, index) => latest.handleMeasuredHeight(row.key, 120 + index))
+    })
+    expect(animationFrames).toHaveLength(1)
+    expect(latest.totalContentHeight).toBe(400)
+
+    await flushAnimationFrame()
+
+    expect(latest.totalContentHeight).toBe(120 + 121 + 122 + 123)
+    expect(renderCount - rendersBeforeMeasuring).toBe(1)
+  })
+
+  it('keeps imperative callbacks stable across scroll-only renders', async () => {
+    await render([
+      { key: 'message-a', type: 'message' },
+      { key: 'message-b', type: 'message' },
+    ])
+    const element = scrollElement()
+    Object.defineProperty(element, 'clientHeight', { configurable: true, value: 100 })
+    await act(async () => {
+      ResizeObserverMock.instances[ResizeObserverMock.instances.length - 1]?.trigger(100)
+    })
+    const callbacks = {
+      scrollContainerRef: latest.scrollContainerRef,
+      handleMeasuredHeight: latest.handleMeasuredHeight,
+      handleScroll: latest.handleScroll,
+      getIsAtBottom: latest.getIsAtBottom,
+      scrollToBottom: latest.scrollToBottom,
+      scrollToItem: latest.scrollToItem,
+      resetLayout: latest.resetLayout,
+      setScrollAnchor: latest.setScrollAnchor,
+    }
+
+    element.scrollTop = 25
+    await act(async () => {
+      latest.handleScroll()
+    })
+    await flushAnimationFrame()
+
+    expect({
+      scrollContainerRef: latest.scrollContainerRef,
+      handleMeasuredHeight: latest.handleMeasuredHeight,
+      handleScroll: latest.handleScroll,
+      getIsAtBottom: latest.getIsAtBottom,
+      scrollToBottom: latest.scrollToBottom,
+      scrollToItem: latest.scrollToItem,
+      resetLayout: latest.resetLayout,
+      setScrollAnchor: latest.setScrollAnchor,
+    }).toEqual(callbacks)
+  })
+
+  it('mounts, measures, and unmounts cleanly in Strict Mode', async () => {
+    await act(async () => {
+      root.render(
+        <StrictMode>
+          <Harness
+            items={[{ key: 'message-a', type: 'message' }]}
+            onRender={captureRender}
+          />
+        </StrictMode>,
+      )
+    })
+
+    const element = scrollElement()
+    Object.defineProperty(element, 'clientHeight', { configurable: true, value: 120 })
+    await act(async () => {
+      ResizeObserverMock.instances[ResizeObserverMock.instances.length - 1]?.trigger(120)
+      latest.handleMeasuredHeight('message-a', 140)
+    })
+    await flushAnimationFrame()
+
+    expect(latest.viewportHeight).toBe(120)
+    expect(latest.totalContentHeight).toBe(140)
+    await act(async () => root.unmount())
+    expect(animationFrames).toHaveLength(0)
+
+    root = createRoot(container)
+  })
+})
