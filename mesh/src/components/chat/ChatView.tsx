@@ -1981,22 +1981,25 @@ export function ChatView({
         <button
           type="button"
           onClick={() => onOpenContext('pins')}
-          className="mesh-pinned-message-bar flex h-shell-pin min-w-0 max-w-full flex-shrink-0 items-center gap-3 overflow-hidden border-b border-rule border-outline-variant px-shell-gutter text-left transition-colors"
+          /*
+            Amber marks pinned, and a marker container is what that looks like:
+            an inset card rather than a ruled strip across the conversation. It
+            carries its own ink for the whole row, so nothing inside it names a
+            colour of its own.
+          */
+          className="mesh-pinned-message-bar mx-4 mt-2 flex min-h-shell-pin min-w-0 flex-shrink-0 items-center gap-3 overflow-hidden rounded-lg-inc bg-marker-container px-4 py-2 text-left text-on-marker-container transition-colors hover:bg-marker-container-hover"
           aria-label={`Open pinned message from ${pinnedMessage.authorDisplayName}`}
         >
-          <Icon name="pin" size="xs" className="flex-shrink-0 text-marker" />
-          <span className="flex-none text-label-sm font-medium text-marker">
-            Pinned
-          </span>
+          <Icon name="pin" size="sm" className="flex-shrink-0" />
           <span className="mesh-pinned-message-copy flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden">
-            <span className="flex-shrink-0 text-body-sm text-on-surface-variant">
-              {pinnedMessage.authorDisplayName}
+            <span className="flex-shrink-0 text-body-sm">
+              Pinned by {pinnedMessage.authorDisplayName}
             </span>
-            <span className="min-w-0 truncate text-body-sm text-on-surface">
+            <span className="min-w-0 truncate text-body-sm">
               {pinnedMessage.content || 'Pinned attachment'}
             </span>
           </span>
-          <span className="mesh-pinned-message-action flex-shrink-0 text-label-md font-semibold text-on-surface-variant">
+          <span className="mesh-pinned-message-action flex-shrink-0 text-label-lg">
             View
           </span>
         </button>

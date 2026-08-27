@@ -1452,23 +1452,27 @@ test.describe('authenticated narrow shell', () => {
       await log.evaluate((element) => {
         element.scrollTop = Math.max(1, element.scrollHeight / 3)
       })
-      const divider = log.locator('[data-day-divider="true"]').first()
+      /*
+        The date is a centred chip now, not a full-width band with two rules
+        through it, so the thing that has to be opaque is the chip: messages
+        scroll past on either side of it, and what this guards is that its own
+        text is never drawn over moving content. The full-width coverage this
+        used to require belonged to the band.
+      */
+      const divider = log.locator('[data-day-divider="true"] time').first()
       await expect(divider).toBeVisible()
       const surface = await divider.evaluate((element) => {
         const style = getComputedStyle(element)
-        const bounds = element.getBoundingClientRect()
-        const parentBounds = element.parentElement?.getBoundingClientRect()
         return {
           background: style.backgroundColor,
           opacity: style.opacity,
-          width: bounds.width,
-          parentWidth: parentBounds?.width ?? 0,
+          width: element.getBoundingClientRect().width,
         }
       })
       expect(surface.background, `${scenario.label} divider background`).not.toBe('rgba(0, 0, 0, 0)')
       expect(surface.background, `${scenario.label} divider background`).not.toBe('transparent')
       expect(surface.opacity, `${scenario.label} divider opacity`).toBe('1')
-      expect(surface.width, `${scenario.label} divider coverage`).toBeGreaterThanOrEqual(surface.parentWidth - 1)
+      expect(surface.width, `${scenario.label} divider is wide enough to read`).toBeGreaterThan(48)
       if (evidenceDirectory) {
         await page.screenshot({
           path: join(

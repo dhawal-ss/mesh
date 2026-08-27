@@ -427,6 +427,7 @@ export default {
         'control-md': 'var(--density-control-md)',
         'control-lg': 'var(--density-control-lg)',
         'shell-channel-row': 'var(--shell-channel-row-height)',
+        'shell-pin': 'var(--shell-pin-height)',
       },
       gridAutoRows: {
         voice: 'minmax(var(--voice-tile-min-height), 1fr)',

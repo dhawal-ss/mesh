@@ -1304,14 +1304,6 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
   is a state of the conversation rather than a pane of its own, and it has to
   sit on the same ground as the rows above and below it.
 */
-.mesh-pinned-message-bar {
-  background-color: rgb(var(--marker-rgb) / 0.045);
-}
-
-.mesh-pinned-message-bar:hover {
-  background-color: rgb(var(--marker-rgb) / 0.08);
-}
-
 /*
   The selected accent swatch: a hairline ring on the swatch itself plus a
   softer halo, rather than a tinted card with a checkmark bubble beside it.

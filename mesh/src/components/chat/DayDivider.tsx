@@ -20,18 +20,21 @@ export function DayDivider({ timestamp }: { timestamp: unknown }) {
   const iso = isoTimestamp(timestamp)
 
   return (
+    /*
+      A centred chip, not a ruled line. The two hairlines it used to draw across
+      the timeline were the last rules in the conversation, and a tonal chip
+      says the same thing without them.
+    */
     <div
       data-day-divider="true"
-      className="pointer-events-none sticky top-0 z-sticky flex w-full items-center gap-3 bg-surface px-4 py-2"
+      className="pointer-events-none sticky top-0 z-sticky flex w-full justify-center px-4 py-2"
     >
-      <span aria-hidden="true" className="h-px flex-1 bg-outline-variant" />
       <time
         dateTime={iso}
-        className="rounded-xl bg-surface px-2 py-0.5 text-label-sm font-medium lowercase tracking-label-md text-on-surface-variant"
+        className="rounded-sm bg-surface-container px-3 py-1 text-body-sm text-on-surface-variant"
       >
         {label}
       </time>
-      <span aria-hidden="true" className="h-px flex-1 bg-outline-variant" />
     </div>
   )
 }
