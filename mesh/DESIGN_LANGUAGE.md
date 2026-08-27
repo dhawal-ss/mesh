@@ -219,9 +219,8 @@ Performance claims must come from the current performance fixtures or signed ins
 
 Every surface carries the palette, the type scale and the shape scale. Five have not had their layout rebuilt, and each is named here rather than left for a reader to discover:
 
-- **Direct messages.** Two-line list items at 72 px, the extended FAB for a new chat, and the medium top app bar over the conversation.
+- **Direct messages.** The extended FAB for a new chat, and the medium top app bar over the conversation. The two-line list item is done.
 - **People.** The docked side sheet's primary tabs and the Online / All / Admins filter chips that replace its section headings.
-- **Voice.** `VoiceDock` as a floating toolbar. The call tile, the speaking outline and the grid rules are done.
 - **Settings.** The standard navigation drawer, the M3 switch, and the text-scale slider.
 - **Onboarding.** The wavy linear progress indicator and the step chip.
 
