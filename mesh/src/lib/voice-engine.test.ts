@@ -377,7 +377,7 @@ describe('VoiceEngine integration (with FakeVoicePeer)', () => {
     await localEngine.loadIceServers()
 
     expect(warnings).toEqual([
-      'Voice may not connect on this network. Try another network or ask the community owner for help.',
+      'Voice may not connect on this network. Try another network.',
     ])
     expect(warnings.join(' ')).not.toMatch(/relay|firewall|TURN|NAT/i)
   })
