@@ -429,7 +429,7 @@ export function UserSettingsPanel({
     >
       <div className={`mesh-settings-layout grid min-h-0 ${embedded ? 'h-full grid-cols-1' : '-mx-5 -mb-5 sm:grid-cols-settings'}`}>
       {!embedded && (
-      <div className="mesh-settings-navigation border-b border-outline-variant bg-surface-container-lowest px-3 py-3 sm:border-b-0 sm:border-r">
+      <div className="mesh-settings-navigation px-3 py-5">
         <div className="block py-2 sm:hidden">
           <label htmlFor="user-settings-section" className="block text-body-sm font-medium text-on-surface-variant">
             Settings section
@@ -480,20 +480,22 @@ export function UserSettingsPanel({
               aria-label={label}
               tabIndex={activeTab === id ? 0 : -1}
               /*
-                A numbered ledger, and the active tab is a flat plane rather
-                than a tinted pill with a dot on the end. The dot is gone
-                because aria-selected already carries the state and the plane
-                already shows it.
+                A navigation-drawer item: a 56px pill that fills with the
+                secondary container when it is the section you are in. There is
+                no dot on the end, because aria-selected already carries the
+                state and the fill already shows it. The fill used to be the
+                full-strength primary, which put the loudest colour in the
+                palette on a row of chrome.
               */
-              className={`group relative flex min-h-10 flex-shrink-0 items-center gap-2 rounded-full px-5 text-left text-title-md font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
+              className={`group relative flex min-h-control-lg flex-shrink-0 items-center gap-3 rounded-full px-6 text-left text-label-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
                 activeTab === id
-                  ? 'bg-primary text-on-primary'
+                  ? 'bg-secondary-container text-on-secondary-container'
                   : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
               }`}
               onClick={() => activateTab(id)}
               onKeyDown={(event) => navigateTabs(event, id)}
             >
-              <Icon name={settingsTabIcon(id)} size="xs" className="flex-none" />
+              <Icon name={settingsTabIcon(id)} className="flex-none" />
               {label}
             </button>
           ))}

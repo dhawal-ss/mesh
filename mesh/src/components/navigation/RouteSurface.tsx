@@ -414,7 +414,7 @@ function CommunitiesRouteSurface({ mode }: { mode: CommunitiesMode }) {
         </select>
       </label>
       <div className="grid min-h-0 flex-1 md:grid-cols-route">
-        <nav className="mesh-route-navigation hidden min-h-0 border-r border-outline-variant bg-surface-container-lowest px-3 py-3 md:block" aria-label="Community actions">
+        <nav className="mesh-route-navigation hidden min-h-0 px-3 py-5 md:block" aria-label="Community actions">
           <div role="tablist" aria-orientation="vertical" className="flex flex-col gap-1">
             {COMMUNITY_MODES.map((entry) => (
               <button
@@ -426,13 +426,13 @@ function CommunitiesRouteSurface({ mode }: { mode: CommunitiesMode }) {
                 aria-selected={currentEntry.key === entry.key}
                 aria-controls="mesh-communities-panel"
                 tabIndex={currentEntry.key === entry.key ? 0 : -1}
-                className={`mesh-route-tab min-h-11 rounded-full px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
-                  currentEntry.key === entry.key ? 'bg-primary-container text-on-primary-container' : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
+                className={`mesh-route-tab flex min-h-control-lg items-center rounded-full px-6 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
+                  currentEntry.key === entry.key ? 'bg-secondary-container text-on-secondary-container' : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
                 }`}
                 onClick={() => selectMode(entry)}
                 onKeyDown={(event) => moveModeFocus(event, entry.key)}
               >
-                <span className="flex items-center gap-2 text-body-md font-semibold"><Icon name={entry.icon} size="sm" />{entry.title}</span>
+                <span className="flex items-center gap-3 text-label-lg"><Icon name={entry.icon} />{entry.title}</span>
               </button>
             ))}
           </div>
@@ -611,7 +611,7 @@ function YouRouteSurface({ section }: { section: YouSection }) {
         )}
       </div>
       <div className="grid min-h-0 flex-1 md:grid-cols-route">
-        <nav className="mesh-route-navigation hidden min-h-0 border-r border-outline-variant bg-surface-container-lowest px-3 py-3 md:block" aria-label="You sections">
+        <nav className="mesh-route-navigation hidden min-h-0 px-3 py-5 md:block" aria-label="You sections">
           {!currentPrimaryEntry && (
             <Button
               variant="ghost"
@@ -633,13 +633,13 @@ function YouRouteSurface({ section }: { section: YouSection }) {
                 aria-selected={effectiveSection === entry.section}
                 aria-controls="mesh-you-panel"
                 tabIndex={effectiveSection === entry.section ? 0 : -1}
-                className={`mesh-route-tab min-h-11 rounded-full px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
-                  effectiveSection === entry.section ? 'bg-primary-container text-on-primary-container' : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
+                className={`mesh-route-tab flex min-h-control-lg items-center rounded-full px-6 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
+                  effectiveSection === entry.section ? 'bg-secondary-container text-on-secondary-container' : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
                 }`}
                 onClick={() => selectSection(entry)}
                 onKeyDown={(event) => moveSectionFocus(event, entry.section)}
               >
-                <span className="block text-body-md font-semibold">{entry.title}</span>
+                <span className="block text-label-lg">{entry.title}</span>
               </button>
             ))}
           </div>
@@ -785,7 +785,7 @@ function CommunityAdminRouteSurface({
         </select>
       </label>
       <div className="grid min-h-0 flex-1 md:grid-cols-route">
-        <nav className="mesh-route-navigation hidden min-h-0 overflow-y-auto border-r border-outline-variant bg-surface-container-lowest px-3 py-3 md:block" aria-label="Community administration sections">
+        <nav className="mesh-route-navigation hidden min-h-0 overflow-y-auto px-3 py-5 md:block" aria-label="Community administration sections">
           <div role="tablist" aria-orientation="vertical" className="flex flex-col gap-1">
             {COMMUNITY_ADMIN_SECTIONS.map((entry) => (
               <button
@@ -797,13 +797,13 @@ function CommunityAdminRouteSurface({
                 aria-selected={section === entry.section}
                 aria-controls="mesh-community-admin-panel"
                 tabIndex={section === entry.section ? 0 : -1}
-                className={`mesh-route-tab min-h-11 rounded-full px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
-                  section === entry.section ? 'bg-primary-container text-on-primary-container' : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
+                className={`mesh-route-tab flex min-h-control-lg items-center rounded-full px-6 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
+                  section === entry.section ? 'bg-secondary-container text-on-secondary-container' : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
                 }`}
                 onClick={() => selectSection(entry)}
                 onKeyDown={(event) => moveSectionFocus(event, entry.section)}
               >
-                <span className="block text-body-md font-semibold">{entry.title}</span>
+                <span className="block text-label-lg">{entry.title}</span>
               </button>
             ))}
           </div>
