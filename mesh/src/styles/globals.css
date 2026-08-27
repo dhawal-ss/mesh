@@ -1754,8 +1754,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
   background: var(--surface);
 }
 
-.mesh-community-rail,
-.mesh-shell-strip-rail-spacer {
+.mesh-community-rail {
   width: var(--shell-rail-width);
 }
 
@@ -1772,11 +1771,19 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
   width: min(22rem, 24vw);
 }
 
+/*
+ * The persistent call bar is a Material 3 floating toolbar: a pill above the
+ * shell rather than a strip ruled off from it. It still names the room, the
+ * connection state, the participant count, mute, deafen, leave and the way
+ * back into the call, which is what makes it a call bar rather than chrome.
+ */
 .mesh-voice-dock {
   height: var(--shell-strip-height);
   min-height: var(--shell-strip-height);
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: calc(100% - var(--shell-pane-gap) * 2);
+  margin: 0 var(--shell-pane-gap) var(--shell-pane-gap);
   padding-block: 0;
 }
 
@@ -2168,20 +2175,19 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 }
 
 .mesh-dm-search-shell {
-  border-right: 0;
-  border-left: 0;
-  border-radius: 0;
-  background: transparent;
   padding-right: 12px;
   padding-left: 12px;
 }
 
+/*
+ * A conversation row is a 72px pill, the same shape the room list uses. The
+ * square corners and the transparent side borders this rule used to force were
+ * Quiet Structure's structural plane, and the class list already says what the
+ * row is now -- a rule that contradicts it makes the class a lie.
+ */
 .mesh-dm-item {
-  border-right-color: transparent;
-  border-left-color: transparent;
-  border-radius: 0;
-  padding-right: 12px;
-  padding-left: 12px;
+  min-height: var(--shell-occupant-row-height);
+  border-radius: var(--shape-full);
 }
 
 .mesh-dm-landing { background: var(--surface); }

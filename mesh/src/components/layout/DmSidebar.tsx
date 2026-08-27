@@ -685,9 +685,15 @@ const DmConversationRow = memo(function DmConversationRow({
     <div role="listitem">
       <button
         onClick={() => void onSelect(conversation.id)}
-        className={`mesh-dm-item group flex min-h-14 w-full items-center gap-3 rounded-full px-5 py-2 text-left transition-colors ${
+        /*
+          A Material 3 two-line list item: 72px, a 40px mark, a title-medium
+          headline and the last message as supporting text under it. Selected is
+          the secondary container plus aria-current, the same pill the room list
+          uses, so a person moving between the two lists reads one selection.
+        */
+        className={`mesh-dm-item group flex min-h-shell-occupant w-full items-center gap-3 rounded-full px-4 py-2 text-left transition-colors ${
           active
-            ? 'bg-primary text-on-primary'
+            ? 'bg-secondary-container text-on-secondary-container'
             : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
         }`}
         aria-label={`Direct message with ${shortName}${isRemotePeer ? `, on ${serverName(peer.userId)}` : ''}${conversation.unreadCount > 0
@@ -697,7 +703,7 @@ const DmConversationRow = memo(function DmConversationRow({
       >
         <Avatar
           color={peer.avatarColor}
-          size={26}
+          size={40}
           name={shortName}
           imageUrl={peer.avatarUrl}
           className={isRemotePeer ? 'mesh-remote-mark' : undefined}
@@ -707,13 +713,13 @@ const DmConversationRow = memo(function DmConversationRow({
             <span className="truncate text-title-md font-medium">{shortName}</span>
             {conversation.lastMessageAt && (
               <span className={`tnum ml-auto flex-shrink-0 text-label-sm ${
-                active ? 'text-on-primary' : 'text-on-surface-variant'
+                active ? 'text-on-secondary-container' : 'text-on-surface-variant'
               }`}>
                 {formatShortDate(conversation.lastMessageAt)}
               </span>
             )}
             {conversation.unreadCount > 0 && !active && (
-              <span className="badge-count flex-shrink-0 text-label-sm font-semibold text-primary">
+              <span className="badge-count flex h-4 min-w-4 flex-shrink-0 items-center justify-center rounded-full bg-surface-container-highest px-1 text-label-sm text-on-surface">
                 {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
               </span>
             )}
@@ -722,12 +728,12 @@ const DmConversationRow = memo(function DmConversationRow({
             A preview only when there is one. The fallback under every name read
             "Private conversation", which is what the whole surface is, so it
             named no conversation in particular. The row is avatar-bound at
-            `min-h-14` either way, so a conversation with nothing loaded yet
+            72px either way, so a conversation with nothing loaded yet
             keeps the same height as one with a preview.
           */}
           {latestContent && (
             <span className={`block truncate text-body-sm ${
-              active ? 'text-on-primary' : 'text-on-surface-variant'
+              active ? 'text-on-secondary-container' : 'text-on-surface-variant'
             }`}>
               {latestContent}
             </span>

@@ -230,6 +230,7 @@ export default {
         'control-md': 'var(--density-control-md)',
         'control-lg': 'var(--density-control-lg)',
         'shell-channel-row': 'var(--shell-channel-row-height)',
+        'shell-occupant': 'var(--shell-occupant-row-height)',
         'shell-pin': 'var(--shell-pin-height)',
       },
       gridAutoRows: {

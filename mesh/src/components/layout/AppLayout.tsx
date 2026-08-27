@@ -1093,8 +1093,12 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
         </main>
       </div>
       {voiceRoutesEnabled && <VoiceAudioSink />}
-      {voiceRoutesEnabled && <div className="mesh-party-strip-row flex flex-shrink-0">
-        <div className="mesh-shell-strip-rail-spacer flex-shrink-0" aria-hidden="true" />
+      {/*
+        The call bar is a floating toolbar now, so it centres on the window
+        rather than starting where the rail ends: it is above the shell, not a
+        fifth column of it.
+      */}
+      {voiceRoutesEnabled && <div className="mesh-party-strip-row flex flex-shrink-0 justify-center">
         <VoiceDock />
       </div>}
       {!roomNavigationVisible && <UserPanel controls={false} />}

@@ -102,7 +102,7 @@ export function VoiceDock() {
 
   return (
     <section
-      className="mesh-voice-dock flex flex-shrink-0 items-center gap-4 border-t border-outline-variant bg-surface-container-lowest px-4 py-3"
+      className="mesh-voice-dock flex flex-shrink-0 items-center gap-4 rounded-full bg-surface-container-high px-4 py-2 shadow-elev-3"
       aria-label={`Voice room ${voiceChannel?.name ?? 'Voice'}`}
       data-mesh-region
       tabIndex={-1}
@@ -113,7 +113,7 @@ export function VoiceDock() {
         className="mesh-voice-dock-room flex min-w-64 items-center gap-3 rounded-full px-2 py-1.5 text-left transition-colors hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
         aria-label={`Open voice room ${voiceChannel?.name ?? 'Voice'}`}
       >
-        <span className="mesh-voice-dock-room-icon flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-primary-container-line bg-primary-container text-on-primary-container">
+        <span className="mesh-voice-dock-room-icon flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-primary-container text-on-primary-container">
           <Icon name="volume" size="sm" />
         </span>
         <span className="min-w-0">
@@ -174,7 +174,7 @@ export function VoiceDock() {
         )}
       </div>
 
-      <div className="mesh-voice-dock-controls ml-auto flex flex-shrink-0 items-center gap-2 border-l border-outline-variant pl-4">
+      <div className="mesh-voice-dock-controls ml-auto flex flex-shrink-0 items-center gap-2 pl-2">
         {connectionState === 'disconnected' ? (
           <button
             type="button"
@@ -235,7 +235,7 @@ export function VoiceDock() {
         <button
           type="button"
           onClick={leaveVoice}
-          className="flex min-h-11 items-center gap-2 rounded-full border border-error-container-line px-4 text-body-sm font-semibold text-on-error-container transition-colors hover:bg-error-container-hover"
+          className="flex h-control-lg items-center gap-2 rounded-full bg-error-container px-5 text-label-lg text-on-error-container transition-colors hover:bg-error-container-hover"
           aria-label={`Leave ${voiceChannel?.name ?? 'voice'}`}
         >
           <Icon name="phoneOff" size="sm" />
@@ -266,9 +266,15 @@ function VoiceDockButton({
         onClick={onClick}
         aria-label={label}
         aria-pressed={active}
-        className={`flex min-h-11 items-center justify-center gap-2 rounded-full px-3 transition-colors ${
+        /*
+          A Material 3 floating-toolbar control: a 56px circle. Active is a
+          filled face rather than a tint, and the glyph changes with it -- a
+          muted mic is `micOff`, not a differently coloured `mic` -- so the
+          state is readable in greyscale as well as in colour.
+        */
+        className={`flex h-control-lg min-w-control-lg items-center justify-center gap-2 rounded-full px-3 transition-colors ${
           active
-            ? 'bg-marker-container text-on-marker-container'
+            ? 'bg-marker text-on-marker'
             : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
         }`}
       >
