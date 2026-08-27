@@ -217,11 +217,14 @@ Performance claims must come from the current performance fixtures or signed ins
 
 ## What this contract has not reached yet
 
-Every surface carries the palette, the type scale and the shape scale. Five have not had their layout rebuilt, and each is named here rather than left for a reader to discover:
+Every surface carries the palette, the type scale and the shape scale, and every one has now been measured against the reference rather than assumed. What is left is named here rather than left for a reader to discover:
 
-- **Direct messages.** The extended FAB for a new chat, and the medium top app bar over the conversation. The two-line list item is done.
-- **People.** The docked side sheet's primary tabs and the Online / All / Admins filter chips that replace its section headings.
-- **Settings.** The standard navigation drawer, the M3 switch, and the text-scale slider.
-- **Onboarding.** The wavy linear progress indicator and the step chip.
+- **Direct messages.** The extended FAB for a new chat, and the medium top app bar over the conversation. The two-line list item, the 28 px row and the 56 px search field are done.
+- **People.** The Online / All / Admins filter chips that replace the side sheet's section headings. Its primary tabs are done: 48 px, with a 3 px indicator carrying a rounded top.
+- **Settings.** The M3 switch and the text-scale slider. Both navigation drawers are done -- 56 px pills at 24 px padding that fill with the secondary container -- and the grouped content is cards again.
+- **Onboarding.** The wavy linear progress indicator and the step chip. The 720 px card, the display-size heading and the tonal brand tile are done.
+- **Voice.** Done: both control rows are 56 px circles on an elevated pill, and Leave is the one control keeping a word.
 
-The pixel heart is also still the mask it was: recolouring it into this palette and emitting it as a gutter-free 16x16 bitmap is outstanding. `DESIGN_CONFORMANCE.md` is not reinstated -- the file, its 102 audit screenshots and the Playwright project that captured them were removed under the publication policy for this repository, and restoring a design document to a public tree is not a decision this contract can make for its owner.
+Identity marks now draw from the palette itself -- azure, coral and amber at their light and pale steps plus three neutrals -- rather than from a ten-hue rainbow that spent seven colours the system does not otherwise use. The pixel heart is still the mask it was: recolouring it into this palette and emitting it as a gutter-free 16x16 bitmap is outstanding.
+
+One rule of hygiene came out of this pass and belongs in the contract. Anything written after `@tailwind utilities` is unlayered, so it outranks every utility whatever its specificity: a rule there that restates what a component's class list already says will win silently, and a rule that contradicts it makes the class a lie. `check:design-tokens` reports these, and the count is zero. The same trap caught the base reset itself -- `color: inherit` on `button, input, a, textarea` sat unlayered and quietly beat every `text-` colour on those four elements -- so inherited properties belong inside `@layer base`, where a class can still win. `DESIGN_CONFORMANCE.md` is not reinstated -- the file, its 102 audit screenshots and the Playwright project that captured them were removed under the publication policy for this repository, and restoring a design document to a public tree is not a decision this contract can make for its owner.
