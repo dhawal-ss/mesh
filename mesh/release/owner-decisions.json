@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "2026-08-11.3",
+  "approvedAt": "2026-08-11",
+  "releaseScope": "first-public-beta",
+  "authority": "Product-owner decision authority was explicitly delegated to the Mesh technical lead on 2026-08-03.",
+  "release": {
+    "version": "0.2.0",
+    "tag": "v0.2.0",
+    "channel": "beta",
+    "githubPrerelease": true,
+    "updaterEnabled": false,
+    "license": "AGPL-3.0-only",
+    "contributionPolicy": "DCO-1.1-inbound-equals-outbound-no-CLA"
+  },
+  "windowsDistribution": {
+    "canonicalInstaller": "nsis",
+    "canonicalInstallMode": "currentUser",
+    "secondaryInstaller": "msi",
+    "secondaryAudience": "managed-deployment",
+    "crossFormatBehavior": "block-with-guidance",
+    "userDataOnUninstall": "retain-by-default",
+    "automaticMigration": false
+  },
+  "acceptance": {
+    "windowsMilestone": "R2",
+    "windowsRequiredCases": 55,
+    "allPlatformMilestone": "R4",
+    "allPlatformRequiredCases": 63
+  },
+  "implementation": {
+    "candidateSourceReady": false,
+    "candidateBlockers": [
+      {
+        "id": "D7",
+        "reason": "No merged exact-SHA source candidate with current protected R0 evidence exists. Pull request 37 remains a draft, blocked source candidate, and pull-request workflow evidence cannot substitute for a protected main push of the final reviewed rotation."
+      },
+      {
+        "id": "D13",
+        "reason": "The registry maintenance control has no second named human maintainer with package and protected-workflow access. Source enforcement is present, but candidate trust remains blocked until a real backup owner accepts the role."
+      }
+    ]
+  },
+  "containerCandidateMaintenance": {
+    "status": "approved",
+    "approvedAt": "2026-08-10",
+    "selection": "zero-cost-public-ghcr-hardened-caddy-and-lk-jwt",
+    "summary": "Mesh may build and maintain public GHCR candidate images for Caddy and lk-jwt-service using exact upstream source, patched dependency graphs, non-root scratch runtimes, multi-platform builds, zero-finding scans, keyless signatures, and registry provenance.",
+    "implementationGate": "Every Mesh-published or call-path image remains release scoped and fail-closed. Upstream reference images remain scanned and disclosed without being treated as Mesh-patched release components.",
+    "rollbackOwner": "release-security"
+  },
+  "decisions": {
+    "D1": {
+      "status": "approved",
+      "selection": "session-only-decrypted-media",
+      "summary": "The beta must not persist decrypted attachment bytes in Mesh-managed cache storage. Explicit user exports remain user files.",
+      "implementationStatus": "implemented",
+      "implementationGate": "required-before-candidate",
+      "rollbackOwner": "security-privacy"
+    },
+    "D2": {
+      "status": "approved",
+      "selection": "single-canonical-owner-no-beta-transfer",
+      "summary": "Mesh presents one accountable community owner derived from standard Matrix authority. Ownership transfer is unavailable in beta because immutable creator authority cannot be honestly transferred on all supported room versions.",
+      "implementationStatus": "implemented",
+      "implementationGate": "existing-fail-closed-behavior-must-remain",
+      "rollbackOwner": "protocol-architecture"
+    },
+    "D3": {
+      "status": "approved",
+      "selection": "operational-receipts-not-authoritative-audit",
+      "summary": "The beta exposes immediate per-room moderation outcomes but makes no durable or authoritative audit-log claim.",
+      "implementationStatus": "implemented",
+      "implementationGate": "existing-fail-closed-behavior-must-remain",
+      "rollbackOwner": "trust-safety"
+    },
+    "D4": {
+      "status": "approved",
+      "selection": "standard-matrix-invite-and-knock",
+      "summary": "The beta uses standard Matrix invitations and knock flows. The optional managed admission service remains disabled until POST token verification and least-privilege registration issuance are reviewed.",
+      "implementationStatus": "implemented",
+      "implementationGate": "optional-service-must-remain-fail-closed",
+      "rollbackOwner": "identity-infrastructure"
+    },
+    "D5": {
+      "status": "approved",
+      "selection": "risk-tiered-native-presence-plus-provider-reauth",
+      "summary": "Local account erasure requires a one-use native presence grant. Device revocation and account deactivation additionally require Matrix password reauthentication. Browser-auth account paths and Matrix administrator-role changes fail closed until provider-backed reauthentication is available; routine reversible moderation remains governed by D3 and D9.",
+      "implementationStatus": "implemented",
+      "implementationGate": "required-before-candidate",
+      "rollbackOwner": "security-identity"
+    },
+    "D6": {
+      "status": "approved",
+      "selection": "nsis-consumer-msi-managed",
+      "summary": "NSIS current-user installation is the canonical consumer path and writes a per-user format marker. MSI remains a secondary managed-deployment artifact and writes a per-machine marker. Both UI and silent installers block the opposite format before copying app files, explain uninstall-first recovery, and retain account data by default.",
+      "implementationStatus": "implemented",
+      "implementationGate": "required-before-candidate",
+      "rollbackOwner": "windows-release"
+    },
+    "D7": {
+      "status": "approved",
+      "selection": "signed-draft-prerelease-no-updater",
+      "summary": "The first beta candidate is v0.2.0, published only as a signed draft prerelease until exact-version acceptance completes. Automatic updates remain off.",
+      "implementationStatus": "source-configured-external-evidence-required",
+      "implementationGate": "external-signing-legal-and-acceptance-required",
+      "rollbackOwner": "release-management"
+    },
+    "D8": {
+      "status": "approved",
+      "selection": "best-effort-community-hosting-no-sla",
+      "summary": "Optional Mesh community hosting has no SLA. Publish only measured best-effort targets: 24-hour backup cadence, 24-hour RPO, 12-hour restore target, and 24-hour incident acknowledgement when an operator is available.",
+      "implementationStatus": "source-configured-external-evidence-required",
+      "implementationGate": "two-independent-restore-drills-required-before-publication",
+      "rollbackOwner": "community-operations"
+    },
+    "D9": {
+      "status": "approved",
+      "selection": "standard-moderation-and-rate-limits-only",
+      "summary": "The beta ships standard Matrix moderation and transparent rate limits, without global reputation scores or opaque automated anti-raid decisions.",
+      "implementationStatus": "implemented",
+      "implementationGate": "existing-bounded-controls-must-remain",
+      "rollbackOwner": "trust-safety"
+    },
+    "D10": {
+      "status": "approved",
+      "selection": "mobile-unsupported-in-first-beta",
+      "summary": "iOS and Android are explicitly unsupported in the first beta and require a separate native product and security contract.",
+      "implementationStatus": "implemented",
+      "implementationGate": "claims-and-downloads-must-remain-absent",
+      "rollbackOwner": "product-platform"
+    },
+    "D11": {
+      "status": "approved",
+      "selection": "no-third-party-apps-in-first-beta",
+      "summary": "The beta exposes no third-party app or bot platform. A future platform must be deny-by-default, capability-scoped, consented, observable, and revocable.",
+      "implementationStatus": "implemented",
+      "implementationGate": "extension-surfaces-must-remain-disabled",
+      "rollbackOwner": "platform-security"
+    },
+    "D12": {
+      "status": "approved",
+      "selection": "derived-container-accountability-scope",
+      "summary": "Container accountability is derived from Mesh publication and call-path use. Release-scoped findings fail protected security; upstream reference findings remain scanned, published, and disclosed without becoming waivers.",
+      "implementationStatus": "implemented",
+      "implementationGate": "scope-derivation-and-bidirectional-path-checks-required",
+      "rollbackOwner": "release-security"
+    },
+    "D13": {
+      "status": "approved",
+      "selection": "mesh-registry-maintenance-commitment",
+      "summary": "Mesh-maintained GHCR images require named accountability, bounded digest age, upstream patch triggers, atomic digest rotation, consumer notice, and a fail-closed deprecation path.",
+      "implementationStatus": "source-configured-external-owner-required",
+      "implementationGate": "required-before-candidate",
+      "rollbackOwner": "release-security"
+    },
+    "D14": {
+      "status": "approved",
+      "selection": "manual-publication-immutable-reviewed-tags",
+      "summary": "The lk-jwt-service tag-movement near miss was remediated by publishing the previously unused 0.5.0-mesh.2 tag at the reviewed digest, atomically rotating active references without moving the old tag back, and retiring the one-shot publication authority immediately after use.",
+      "implementationStatus": "live-remediated",
+      "implementationGate": "existing-fail-closed-behavior-must-remain",
+      "rollbackOwner": "release-security"
+    },
+    "D15": {
+      "status": "approved",
+      "selection": "stacked-track-b-sequencing",
+      "summary": "Track B may proceed on a branch stacked on pull request 37 while Track A2 resolves because it is limited to product-source deletions and has no container dependency.",
+      "implementationStatus": "approved-process-contract",
+      "implementationGate": "track-b-must-remain-isolated-from-track-a2-release-controls",
+      "rollbackOwner": "release-management"
+    },
+    "D16": {
+      "status": "approved",
+      "selection": "confirm-own-message-deletion",
+      "summary": "Deleting your own message requires a short confirmation because the beta has no reviewed cross-account undo contract.",
+      "implementationStatus": "implemented",
+      "implementationGate": "required-before-candidate",
+      "rollbackOwner": "product-messaging"
+    },
+    "D17": {
+      "status": "approved",
+      "selection": "administrator-until-authority-narrows",
+      "summary": "The middle community role remains Administrator while its verified authority is broader than a moderator role.",
+      "implementationStatus": "implemented",
+      "implementationGate": "existing-fail-closed-behavior-must-remain",
+      "rollbackOwner": "trust-safety"
+    },
+    "D18": {
+      "status": "approved",
+      "selection": "indie-workshop-first-beta",
+      "summary": "Indie Workshop is the first-beta design language. It keeps familiar communication structure, plain language, explicit account-service choice, accessible state cues, and bounded motion across light, dark, and high-contrast themes.",
+      "implementationStatus": "implemented",
+      "implementationGate": "required-before-candidate",
+      "rollbackOwner": "product-design"
+    },
+    "D19": {
+      "status": "retired",
+      "selection": "original-css-ceiling-restored",
+      "summary": "The proposed CSS ceiling increase is unnecessary. The Matrix voice artifact is below the original 100 KiB raw CSS ceiling with tested build-time liveness and no visual-source deletion.",
+      "implementationStatus": "implemented",
+      "implementationGate": "original-css-ceiling-must-remain-enforced",
+      "rollbackOwner": "product-performance"
+    },
+    "D20": {
+      "status": "approved",
+      "selection": "disclosed-windows-account-local-recovery-copy",
+      "summary": "Mesh may keep a disclosed local recovery copy in Windows Credential Manager for the same Windows account. The copy stays on that device, does not sync, and the UI warns that someone able to use the Windows account may be able to ask Mesh to use it.",
+      "implementationStatus": "implemented",
+      "implementationGate": "required-before-candidate",
+      "rollbackOwner": "security-privacy"
+    }
+  }
+}

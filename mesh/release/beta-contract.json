@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "releaseState": "developer-preview",
+  "candidate": {
+    "version": "0.2.0",
+    "releaseChannel": "beta",
+    "publicationState": "draft-prerelease-until-acceptance",
+    "platform": "windows",
+    "backend": "matrix",
+    "capabilities": [
+      "account-service-choice",
+      "community-invitations",
+      "encrypted-text",
+      "encrypted-attachments",
+      "direct-messages",
+      "device-management",
+      "recovery",
+      "matrix-voice"
+    ],
+    "excludedCapabilities": [
+      "legacy-p2p",
+      "automatic-updates"
+    ]
+  },
+  "distribution": {
+    "canonicalInstaller": "nsis",
+    "canonicalInstallMode": "currentUser",
+    "secondaryInstaller": "msi",
+    "secondaryAudience": "managed-deployment",
+    "crossFormatBehavior": "block-with-guidance",
+    "userDataOnUninstall": "retain-by-default",
+    "automaticUpdates": false
+  },
+  "supportTiers": {
+    "candidate": ["windows"],
+    "acceptancePending": ["macos", "linux"],
+    "unsupported": ["ios", "android", "web"]
+  },
+  "claims": {
+    "consumerBeta": false,
+    "productionReady": false,
+    "communityHostingOptional": true,
+    "accountHostingIndependent": true,
+    "voiceReady": false
+  }
+}
