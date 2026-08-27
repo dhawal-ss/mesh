@@ -5,7 +5,7 @@ import {
   serverName,
   serverReach,
   serverRelation,
-  trustRailLabel,
+  trustBadgeLabel,
   type TrustableEvent,
 } from './trust'
 
@@ -95,21 +95,21 @@ describe('eventTrust', () => {
   })
 })
 
-describe('trustRailLabel', () => {
+describe('trustBadgeLabel', () => {
   /*
     Colour is never the only channel. Every rail carries this sentence as its
     accessible name, so the three states are distinguishable without seeing
     green, chrome or vermilion.
   */
   it('names each state in words', () => {
-    expect(trustRailLabel('ok', 'lantern.dev')).toBe('Encrypted, from lantern.dev, verified device')
-    expect(trustRailLabel('remote', 'nine.chat')).toBe('Encrypted, from another server, nine.chat')
-    expect(trustRailLabel('suspect', 'nine.chat')).toBe('Could not verify this message')
+    expect(trustBadgeLabel('ok', 'lantern.dev')).toBe('Encrypted, from lantern.dev, verified device')
+    expect(trustBadgeLabel('remote', 'nine.chat')).toBe('From another server, nine.chat')
+    expect(trustBadgeLabel('suspect', 'nine.chat')).toBe('Could not verify this message')
   })
 
   it('drops the server clause when the server is unknown', () => {
-    expect(trustRailLabel('ok', null)).toBe('Encrypted, verified device')
-    expect(trustRailLabel('remote', null)).toBe('Encrypted, from another server')
+    expect(trustBadgeLabel('ok', null)).toBe('Encrypted, verified device')
+    expect(trustBadgeLabel('remote', null)).toBe('From another server')
   })
 })
 

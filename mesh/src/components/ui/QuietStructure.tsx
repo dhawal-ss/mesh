@@ -6,7 +6,7 @@ import {
 } from 'react'
 import clsx from 'clsx'
 
-import { trustRailLabel, type TrustTone } from '../../lib/trust'
+import { trustBadgeLabel, type TrustTone } from '../../lib/trust'
 
 /*
   The Quiet Structure primitive set.
@@ -227,7 +227,7 @@ export function TrustRail({ tone, server, className }: TrustRailProps) {
     <span
       role="img"
       data-trust={tone}
-      aria-label={trustRailLabel(tone, server ?? null)}
+      aria-label={trustBadgeLabel(tone, server ?? null)}
       className={clsx(
         'mesh-trust-rail block w-trust-rail flex-none self-stretch rounded-full',
         className,

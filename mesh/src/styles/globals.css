@@ -2023,8 +2023,86 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   outline: none;
 }
 
+/*
+ * The message bubble.
+ *
+ * The row was `[44px time][2px rail][content]`. Both gutters are gone -- the
+ * time is one metadata line above the bubble and the rail is a badge on the
+ * mark -- and what is left is a bubble that aligns to the side the message
+ * came from and stops at --shell-bubble-measure rather than running to a 65ch
+ * measure across the whole pane.
+ */
 .mesh-message-content {
-  max-width: min(var(--shell-message-measure), 100%);
+  max-width: 100%;
+  align-items: flex-start;
+}
+
+.mesh-message-row[data-own='true'] .mesh-message-content {
+  justify-content: flex-end;
+}
+
+.mesh-message-avatar {
+  width: 40px;
+}
+
+.mesh-message-column {
+  max-width: min(var(--shell-bubble-measure), var(--shell-message-measure));
+}
+
+.mesh-message-row[data-own='true'] .mesh-message-column {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.mesh-message-bubble {
+  border-radius: var(--shape-lg-inc);
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+  padding: 8px 12px;
+}
+
+/*
+ * The tail. Six pixels on the corner nearest the mark, so a group reads as one
+ * shape with a point of origin rather than as a stack of identical lozenges.
+ * The first bubble of a group carries it at the bottom of that edge and a
+ * continuation at the top, which is what makes the two distinguishable at a
+ * glance without a second colour or a second size.
+ */
+.mesh-message-row:not([data-grouped='true']) .mesh-message-bubble {
+  border-end-start-radius: 6px;
+}
+
+.mesh-message-row[data-grouped='true'] .mesh-message-bubble {
+  border-start-start-radius: 6px;
+}
+
+.mesh-message-row[data-own='true'] .mesh-message-bubble {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+
+.mesh-message-row[data-own='true']:not([data-grouped='true']) .mesh-message-bubble {
+  border-end-start-radius: var(--shape-lg-inc);
+  border-end-end-radius: 6px;
+}
+
+.mesh-message-row[data-own='true'][data-grouped='true'] .mesh-message-bubble {
+  border-start-start-radius: var(--shape-lg-inc);
+  border-start-end-radius: 6px;
+}
+
+/*
+ * A grouped row keeps the mark's column so the bubbles in one group share an
+ * edge, and a message of your own has no mark at all: the side it sits on is
+ * what says whose it is.
+ */
+.mesh-message-row[data-grouped='true'] .mesh-message-avatar {
+  height: 1px;
+}
+
+.mesh-message-row[data-pending='true'] .mesh-message-bubble {
+  outline: 1px dashed var(--outline);
+  outline-offset: -1px;
 }
 
 /*

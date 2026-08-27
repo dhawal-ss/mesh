@@ -89,7 +89,7 @@ export function EventView({
         <p className="mt-2 flex flex-wrap items-center gap-2 text-body-sm text-on-surface-variant">
           <span>{plan.authorDisplayName}</span>
           <span aria-hidden="true">·</span>
-          <MessageTime value={plan.timestamp} variant="full" />
+          <MessageTime value={plan.timestamp} />
           <span aria-hidden="true">·</span>
           <button
             type="button"

@@ -406,10 +406,18 @@ test.describe('DM message action bar keyboard access (V-25 follow-up)', () => {
       had never been scanned in any state.
     */
     await expectNoWcagViolations(page, 'Direct message edit composer open')
-    // autoFocus leaves the caret at position 0, not the end of the value —
-    // move it explicitly so typed text appends instead of prepending.
-    await page.keyboard.press('End')
+    /*
+      autoFocus leaves the caret at position 0, not the end of the value, so it
+      moves explicitly or the typed text prepends.
+
+      Control+End rather than End: a message is a bubble now and a bubble is at
+      most 62% of the conversation, so this value wraps. End goes to the end of
+      the visual line, which put " v2" into the middle of the sentence.
+    */
+    await expect(editTextarea).toBeFocused()
+    await page.keyboard.press('Control+End')
     await page.keyboard.type(' v2')
+    await expect(editTextarea).toHaveValue("Alice's own DM, editable via keyboard. v2")
     await page.keyboard.press('Enter')
 
     await expect.poll(async () => ipcCalls(page)).toContainEqual({

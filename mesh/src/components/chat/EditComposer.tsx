@@ -81,7 +81,9 @@ export function EditComposer({
 
   return (
     <div className="mt-1 space-y-2">
-      <div className="overflow-hidden rounded-full border border-outline bg-surface-container-lowest focus-within:border-primary">
+      <div /* An outlined field with no ground of its own: it opens inside your own
+         bubble, and a second surface inside a container reads as a hole in it. */
+      className="overflow-hidden rounded-lg border border-current/40 focus-within:border-current">
         <div className="flex items-center gap-1 border-b border-outline-variant px-1.5 py-1">
           <div>
             <Popover
@@ -124,17 +126,19 @@ export function EditComposer({
           onKeyDown={handleKeyDown}
           rows={1}
           autoFocus
-          className="max-h-composer block w-full resize-none bg-transparent px-3 py-2 text-body-lg text-on-surface placeholder:text-on-surface-variant focus:outline-none disabled:opacity-60"
+          /* No colour of its own: an edit composer only ever opens inside your
+             own bubble, so it takes that container's paired ink. */
+          className="max-h-composer block w-full resize-none bg-transparent px-3 py-2 text-body-lg placeholder:opacity-70 focus:outline-none disabled:opacity-60"
         />
       </div>
-      <div className="flex items-center gap-2 text-body-sm text-on-surface-variant">
+      <div className="flex items-center gap-2 text-body-sm opacity-80">
         <span>
           escape to{' '}
           <button
             type="button"
             disabled={disabled}
             onClick={onCancel}
-            className="text-primary hover:underline disabled:opacity-60"
+            className="underline underline-offset-2 hover:no-underline disabled:opacity-60"
           >
             cancel
           </button>
@@ -146,7 +150,7 @@ export function EditComposer({
             type="button"
             disabled={disabled}
             onClick={onSave}
-            className="text-primary hover:underline disabled:opacity-60"
+            className="underline underline-offset-2 hover:no-underline disabled:opacity-60"
           >
             save
           </button>

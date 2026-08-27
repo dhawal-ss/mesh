@@ -35,9 +35,9 @@ export function Skeleton({
 
 /*
  * Loading must resemble the thing being loaded. Every measurement here mirrors
- * the real row in chat/Message.tsx: the same 64px gutter, the same 4px block
- * padding, the same absolutely positioned avatar column, the same 12px group
- * gap, and the same 65ch content measure. Anything else produces two visible
+ * the real bubble in chat/Message.tsx: the same 40px mark in flow, the same
+ * one-line metadata above it, the same 62% column cap, the same 4px block
+ * padding and the same 12px group gap. Anything else produces two visible
  * reflows on the most-used transition in the app.
  */
 const MESSAGE_BODY_WIDTHS = ['92%', '74%', '61%', '85%', '68%'] as const
@@ -53,42 +53,28 @@ export function MessageSkeleton({
   return (
     <div
       aria-hidden="true"
+      data-grouped={grouped ? 'true' : undefined}
       className={clsx(
-        'mesh-message-row-skeleton relative flex min-w-0 max-w-full gap-message-rail-gap px-shell-gutter py-shell-message-y',
+        'mesh-message-row mesh-message-row-skeleton relative flex min-w-0 max-w-full gap-2 px-shell-gutter py-shell-message-y',
         !grouped && 'mt-message-group',
       )}
     >
-      {/*
-        The same gutter a real row has: 44px of time, the 2px rail, a 20px gap,
-        then a 26px mark in flow. A skeleton whose geometry differs from the row
-        it stands in for makes every message visibly jump when it resolves,
-        which is the one thing a loading state exists to avoid.
-      */}
-      <div className="flex w-message-time flex-none justify-end">
-        <Skeleton width={34} height={11} />
-      </div>
-      <Skeleton
-        className="self-stretch"
-        width="var(--trust-rail-width)"
-        height="100%"
-        shape="plane"
-      />
       <div className="mesh-message-content flex min-w-0 flex-1 gap-2">
-        {!grouped && (
-          <span className="flex-none">
-            <Skeleton width={26} height={26} shape="avatar" />
-          </span>
-        )}
-        <div className="min-w-0 flex-1">
+        <span className="mesh-message-avatar flex-none">
+          {!grouped && <Skeleton width={40} height={40} shape="avatar" />}
+        </span>
+        <div className="mesh-message-column flex min-w-0 flex-col">
           {!grouped && (
-            <div className="flex items-center gap-2 py-0.5">
-              <Skeleton width={index % 2 === 0 ? 104 : 132} height={14} />
+            <div className="mb-1 flex items-center gap-2">
+              <Skeleton width={index % 2 === 0 ? 104 : 132} height={11} />
             </div>
           )}
-          <Skeleton className="my-0.5" width={bodyWidth} height={15} />
-          {!grouped && index % 3 === 0 && (
-            <Skeleton className="my-0.5" width="47%" height={15} />
-          )}
+          <div className="mesh-message-bubble min-w-0">
+            <Skeleton width={bodyWidth} height={16} />
+            {!grouped && index % 3 === 0 && (
+              <Skeleton className="mt-1" width="47%" height={16} />
+            )}
+          </div>
         </div>
       </div>
     </div>

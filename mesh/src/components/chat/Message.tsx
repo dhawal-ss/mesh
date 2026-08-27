@@ -34,8 +34,8 @@ import { retainStructuredMentionUserIds } from '../../lib/structured-mentions'
 import { Button } from '../ui/Button'
 import { Tooltip } from '../ui/Tooltip'
 import { Modal, setNextModalRestoreFocusTarget } from '../ui/Modal'
-import { ExceptionLine, TrustRail } from '../ui/QuietStructure'
-import { eventTrust, serverName, trustRailLabel } from '../../lib/trust'
+import { ExceptionLine } from '../ui/QuietStructure'
+import { eventTrust, serverName, trustBadgeLabel } from '../../lib/trust'
 
 interface MessageProps {
   message: MessageType
@@ -67,13 +67,6 @@ interface MessageProps {
   onDelete?: (message: MessageType) => void | Promise<void>
   onReact?: (message: MessageType, emoji: string) => void | Promise<void>
 }
-
-/**
- * The optimistic-send marker: a 2px accent rule inset on the row's leading
- * edge, matching the channel-selection marker. Authored as an inline shadow
- * because the token set has no inset-rule utility; the value is token-backed.
- */
-const PENDING_SEND_MARKER = { boxShadow: 'inset 2px 0 0 0 var(--accent)' } as const
 
 /*
   A send the queue gave up on for a reason retrying cannot change must not offer
@@ -656,71 +649,53 @@ export const MessageComponent = memo(function MessageComponent({
         <div
           ref={rowRef}
           tabIndex={-1}
-          className={`mesh-message-row group relative flex min-w-0 max-w-full gap-message-rail-gap px-shell-gutter py-shell-message-y outline-none transition-colors duration-fast hover:bg-state-hover ${
+          data-own={isOwnMessage ? 'true' : undefined}
+          data-grouped={isGrouped ? 'true' : undefined}
+          className={`mesh-message-row group relative flex min-w-0 max-w-full gap-2 px-shell-gutter py-shell-message-y outline-none ${
             !isGrouped ? 'mt-message-group' : ''
           }`}
-          /* An unacknowledged send is marked, not dimmed: the same 2px rule
-             used for channel selection, so your own words stay at full
-             contrast at exactly the moment you want to reread them. */
-          style={message.deliveryStatus === 'pending' ? PENDING_SEND_MARKER : undefined}
+          data-pending={message.deliveryStatus === 'pending' ? 'true' : undefined}
           onMouseLeave={() => setShowReactions(false)}
           onKeyDown={handleRowKeyDown}
         >
-          {/*
-            The gutter: 44px of right-aligned mono time, then the trust rail.
-
-            This replaces a 112px prose gutter and hands roughly 90px back to
-            the conversation. The time is revealed on hover for a grouped row
-            and always present for the first row of a group, so the column
-            reads as a continuous edge rather than a dotted one.
-          */}
-          <span className="mesh-message-time tnum flex w-message-time flex-none justify-end whitespace-nowrap pt-0.5 text-label-sm text-on-surface-variant">
-            <span
-              className={
-                isGrouped
-                  ? 'opacity-0 transition-opacity duration-instant group-hover:opacity-100 group-focus-within:opacity-100'
-                  : undefined
-              }
-            >
-              <MessageTime value={message.timestamp} variant="clock" />
-            </span>
-          </span>
-
-          {/*
-            The rail spans this row rather than the whole group, so consecutive
-            grouped rows draw a continuous column without any of them needing to
-            know how long the group is. The tooltip is where the origin server
-            and key state live, and the only place they appear.
-          */}
-          <Tooltip
-            side="right"
-            content={(
-              <div className="space-y-1 font-normal">
-                <p className="text-on-surface">{trustRailLabel(trustTone, originServer)}</p>
-                {originServer && <p className="text-label-sm text-on-surface-variant">{originServer}</p>}
-                {message.id.startsWith('$') && (
-                  <p className="text-label-sm text-on-surface-variant">{message.id}</p>
-                )}
-              </div>
-            )}
-          >
-            <TrustRail tone={trustTone} server={originServer} />
-          </Tooltip>
-
           {/* Content */}
           <div className="mesh-message-content flex min-w-0 flex-1 gap-2">
-            {!isGrouped && (
-              <span className="flex-none pt-0.5">
-                <Avatar
-                  color={message.authorAvatarColor}
-                  seed={message.authorPublicKey}
-                  size={26}
-                  name={message.authorDisplayName}
-                  imageUrl={message.authorAvatarUrl}
-                />
+            {!isOwnMessage && (
+              <span className="mesh-message-avatar relative flex-none">
+                {!isGrouped && (
+                  <>
+                    <Avatar
+                      color={message.authorAvatarColor}
+                      seed={message.authorPublicKey}
+                      size={40}
+                      name={message.authorDisplayName}
+                      imageUrl={message.authorAvatarUrl}
+                    />
+                    {/*
+                      The origin badge, and the second of this contract's three
+                      federation carriers. It replaces the 1px chrome ring on
+                      the mark and the 2px rail in the gutter: a mark can carry
+                      a badge on any surface, and a gutter only exists in a
+                      timeline. A local, decrypted, verified sender carries
+                      nothing at all -- the norm gets the one chip in the app
+                      bar and no mark of its own.
+                    */}
+                    {trustTone === 'remote' && (
+                      <Tooltip side="right" content={trustBadgeLabel(trustTone, originServer)}>
+                        <span
+                          role="img"
+                          aria-label={trustBadgeLabel(trustTone, originServer)}
+                          className="mesh-status-badge absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-marker-container text-on-marker-container"
+                        >
+                          <Icon name="globe" size="sm" className="h-2.5 w-2.5" aria-hidden="true" />
+                        </span>
+                      </Tooltip>
+                    )}
+                  </>
+                )}
               </span>
             )}
-            <div className="min-w-0 flex-1">
+            <div className="mesh-message-column flex min-w-0 flex-col">
             {isGrouped && (
               /* A grouped row has no visible header, but the surrounding
                  article still needs a stable element to name itself from.
@@ -731,21 +706,24 @@ export const MessageComponent = memo(function MessageComponent({
               </span>
             )}
             {!isGrouped && (
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
-                {/* Identity hue lives on the avatar, which is decorative
-                    surface area. Painting the name with a hashed colour put
-                    roughly two in five authors below AA on the dark canvas and
-                    turned a busy room into confetti. */}
-                <span id={resolvedAuthorNameId} className="text-body-md font-semibold text-on-surface">
-                  {message.authorDisplayName}
-                </span>
-                <MessageTime
-                  value={message.timestamp}
-                  variant="full"
-                  className="tnum text-body-sm text-on-surface-variant"
-                />
-              </div>
+              /*
+                One metadata line, above the bubble: the name, a separator and
+                the time. It replaces a fixed 44px timestamp column and a
+                hover-revealed clock on every grouped row -- neither of which a
+                bubble has room for, and the second of which meant the time was
+                absent exactly when somebody was not pointing at it.
+
+                Identity hue lives on the avatar, which is decorative surface
+                area. Painting the name with a hashed colour put roughly two in
+                five authors below AA on the dark canvas.
+              */
+              <span className="mesh-message-meta mb-1 flex flex-wrap items-baseline gap-x-1.5 text-label-sm text-on-surface-variant">
+                <span id={resolvedAuthorNameId}>{message.authorDisplayName}</span>
+                <span aria-hidden="true">&middot;</span>
+                <MessageTime value={message.timestamp} className="tnum" />
+              </span>
             )}
+            <div className="mesh-message-bubble min-w-0">
 
             {/*
               These chips carry no live-region role. `role="status"` implies
@@ -910,7 +888,7 @@ export const MessageComponent = memo(function MessageComponent({
                   <img
                     src={message.designPreviewImageUrl}
                     alt={`${message.authorDisplayName} shared concept art`}
-                    className="mesh-message-media mt-3 w-full max-w-3xl rounded-xl border border-outline-variant object-cover"
+                    className="mesh-message-media mt-3 w-full max-w-3xl rounded-lg-inc object-cover"
                   />
                 ) : null}
                 {message.editedAt && (
@@ -985,15 +963,15 @@ export const MessageComponent = memo(function MessageComponent({
                           aria-pressed={mine}
                           aria-label={`${readableKey}, ${users.length} ${users.length === 1 ? 'reaction' : 'reactions'}${mine ? ', you reacted' : ''}`}
                           /*
-                            A square chip inside a hairline. The reaction itself
-                            is the only round thing in the row, which is the
-                            radius rule doing its job: the emoji is content, the
-                            chip around it is structure.
+                            A Material 3 filter chip: 32px, an 8px radius, and
+                            the selected face is the primary container rather
+                            than a tinted outline. The check that carries the
+                            "you reacted" state independently of colour stays.
                           */
-                          className={`inline-flex min-h-6 items-center gap-1 rounded-full border border-rule px-1.5 py-0.5 text-body-sm transition-colors ${
+                          className={`inline-flex h-8 items-center gap-1 rounded-sm px-2 text-body-sm transition-colors ${
                             mine
-                              ? 'border-primary bg-primary-container text-on-primary-container'
-                              : 'border-outline text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
+                              ? 'bg-primary-container text-on-primary-container'
+                              : 'border border-outline text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
                           }`}
                         >
                           {/* A checkmark carries the "you reacted" state independently
@@ -1020,6 +998,7 @@ export const MessageComponent = memo(function MessageComponent({
               </div>
             )}
             </div>
+            </div>
           </div>
 
           {/* Action bar: always mounted (not just on hover) so Tab can reach it;
@@ -1034,7 +1013,7 @@ export const MessageComponent = memo(function MessageComponent({
               aria-label={`Actions for the message from ${message.authorDisplayName}`}
               aria-orientation="horizontal"
               onKeyDown={handleActionsKeyDown}
-              className="mesh-message-actions pointer-events-none absolute -top-4 right-5 z-sticky flex items-center rounded-xl border border-outline-variant bg-surface-container-high opacity-0 shadow-elev-3 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+              className="mesh-message-actions pointer-events-none absolute -top-4 right-5 z-sticky flex h-10 items-center rounded-full bg-surface-container-highest px-1 opacity-0 shadow-elev-2 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
               {/* One-tap quick reactions from the user's recent (or default) emoji. */}
               {quickReactions.map((emoji, quickIndex) => {
                 const custom = (surface === 'dm' ? [] : customEmoji).find(

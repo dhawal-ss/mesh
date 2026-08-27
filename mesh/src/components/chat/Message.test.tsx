@@ -180,6 +180,14 @@ describe('MessageComponent federated timestamps', () => {
     vi.unstubAllGlobals()
   })
 
+  /*
+    A bubble carries one metadata line, on the first message of a group. The
+    fixed timestamp column that used to print a time on every row -- revealed
+    on hover for the grouped ones -- is gone with the gutter it lived in, so a
+    grouped row has no time to render honestly or otherwise. What both cases
+    still owe is that a malformed timestamp never reaches the reader as
+    "Invalid Date".
+  */
   it.each([false, true])(
     'renders honest fallback copy for malformed %s-group timestamps',
     async (isGrouped) => {
@@ -189,7 +197,11 @@ describe('MessageComponent federated timestamps', () => {
         }),
       ).resolves.toBeUndefined()
 
-      expect(container.textContent).toContain('Time unavailable')
+      if (isGrouped) {
+        expect(container.textContent).not.toContain('Time unavailable')
+      } else {
+        expect(container.textContent).toContain('Time unavailable')
+      }
       expect(container.textContent).not.toContain('Invalid Date')
     },
   )
@@ -680,9 +692,15 @@ describe('MessageComponent federated timestamps', () => {
       )
     })
 
+    /*
+      A bubble has no leading edge to rule, so the 2px inset accent mark the row
+      carried became a dashed outline on the bubble, drawn in globals.css from
+      data-pending. What the assertion is for is unchanged: the send is marked,
+      not dimmed, so your own words stay at full contrast while you reread them.
+    */
     const row = container.querySelector<HTMLElement>('.mesh-message-row')
     expect(row?.className).not.toContain('opacity-60')
-    expect(row?.style.boxShadow).toContain('inset')
+    expect(row?.getAttribute('data-pending')).toBe('true')
   })
 
   it('exposes reaction state without relying on colour', async () => {

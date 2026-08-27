@@ -100,10 +100,19 @@ export function eventTrust(
  * carries this sentence and pairs it with the hover tooltip that holds the
  * event id, the origin server and the key state.
  */
-export function trustRailLabel(tone: TrustTone, server: string | null): string {
+/**
+ * The accessible name carried by the origin badge on a sender's mark, and by
+ * the exception card when one is needed.
+ *
+ * It replaces the trust rail's tooltip. The rail spoke for all three tones
+ * because it was drawn on all three; a badge is drawn only for a sender on
+ * another server, and a card only when something is wrong, so the healthy tone
+ * here now describes the one chip in the app bar rather than a per-message mark.
+ */
+export function trustBadgeLabel(tone: TrustTone, server: string | null): string {
   if (tone === 'suspect') return 'Could not verify this message'
   if (tone === 'remote') {
-    return server ? `Encrypted, from another server, ${server}` : 'Encrypted, from another server'
+    return server ? `From another server, ${server}` : 'From another server'
   }
   return server ? `Encrypted, from ${server}, verified device` : 'Encrypted, verified device'
 }
