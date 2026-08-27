@@ -16,15 +16,15 @@ export function Skeleton({
   return (
     <div
       className={clsx(
-        'mesh-skeleton animate-pulse bg-surface-active',
-        // The avatar skeleton must match the avatar, or a person visibly
-        // changes shape the moment their image resolves.
+        'mesh-skeleton animate-pulse bg-surface-container-high',
+        // The skeleton must match the shape of the thing being loaded, or a
+        // person visibly changes shape the moment their image resolves.
         shape === 'avatar' || shape === 'circle'
           ? 'rounded-round'
-          // A structural mark is square while it loads, exactly as it is
-          // once it resolves.
+          // A row and a selection pill are pills while they load, exactly as
+          // they are once they resolve.
           : shape === 'plane'
-            ? 'rounded-plane'
+            ? 'rounded-full'
             : 'rounded',
         className
       )}

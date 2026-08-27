@@ -193,13 +193,13 @@ describe('W2.3 primitive library', () => {
 
   it('clamps progress values and applies its size and tone contracts', () => {
     act(() => {
-      root.render(<Progress label="Upload" value={140} size="lg" tone="success" showValue />)
+      root.render(<Progress label="Upload" value={140} size="lg" tone="accent" showValue />)
     })
 
     const progress = container.querySelector('[role="progressbar"]')
     expect(progress?.getAttribute('aria-valuenow')).toBe('100')
     expect(progress?.className).toContain('h-2')
-    expect(progress?.firstElementChild?.className).toContain('bg-status-success')
+    expect(progress?.firstElementChild?.className).toContain('bg-primary')
     expect(container.textContent).toContain('100%')
   })
 
@@ -266,7 +266,7 @@ describe('W2.3 primitive library', () => {
   it('gives a notice one of the two authored intensities and a tone attribute', () => {
     act(() => {
       root.render(
-        <Notice intensity="band" tone="warning" title="Sync paused">
+        <Notice intensity="band" tone="marker" title="Sync paused">
           Mesh will retry when the connection returns.
         </Notice>,
       )
@@ -275,7 +275,7 @@ describe('W2.3 primitive library', () => {
     const notice = container.firstElementChild
     expect(notice?.className).toContain('mesh-notice-band')
     expect(notice?.className).not.toContain('mesh-notice-advisory')
-    expect(notice?.getAttribute('data-notice-tone')).toBe('warning')
+    expect(notice?.getAttribute('data-notice-tone')).toBe('marker')
     expect(notice?.textContent).toContain('Sync paused')
   })
 

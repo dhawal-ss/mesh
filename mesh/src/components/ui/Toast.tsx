@@ -82,14 +82,14 @@ export function ToastContainer() {
    */
   return (
     <div
-      className="mesh-toast-container pointer-events-none fixed left-4 right-4 z-toast flex flex-col items-end gap-2 sm:left-auto"
+      className="mesh-toast-container pointer-events-none fixed left-4 right-4 z-toast flex flex-col items-start gap-2 sm:right-auto"
       role="region"
       aria-label="Notifications"
     >
       {collapsedCount > 0 && (
         // Deliberately outside both live regions: these were announced on
         // arrival, and a changing count must not re-interrupt the reader.
-        <p className="mesh-toast rounded-panel border border-border-subtle bg-surface-overlay px-2 py-1 text-meta text-content-secondary shadow-overlay">
+        <p className="mesh-toast rounded-xs bg-surface-inverse px-3 py-1 text-body-sm text-on-surface-inverse shadow-elev-3">
           {collapsedCount === 1 ? '1 earlier notification' : `${collapsedCount} earlier notifications`}
         </p>
       )}
@@ -146,13 +146,18 @@ function ToastItem({
       : toast.tone === 'warning'
         ? 'triangleAlert'
         : 'messageCircle'
+  /*
+    The snackbar ground is the inverse surface, so the icon is ink on it rather
+    than a tinted tile. Only the two tones that need a person carry colour:
+    coral for a failure, amber for something that will time out. `success` and
+    `info` are the norm, and the norm gets no colour -- the glyph and the
+    sentence are what distinguish them.
+  */
   const iconTone = toast.tone === 'danger'
-    ? 'bg-container-danger text-on-container-danger'
-    : toast.tone === 'success'
-      ? 'bg-container-success text-on-container-success'
-      : toast.tone === 'warning'
-        ? 'bg-container-warning text-on-container-warning'
-        : 'bg-container-info text-on-container-info'
+    ? 'text-error'
+    : toast.tone === 'warning'
+      ? 'text-marker'
+      : 'text-on-surface-inverse'
   const dwellStyle = dwellMs === null
     ? undefined
     : ({ '--mesh-toast-dwell': `${dwellMs}ms` } as CSSProperties)
@@ -171,32 +176,24 @@ function ToastItem({
       onPointerLeave={() => setPaused(false)}
       onFocus={() => setPaused(true)}
       onBlur={() => setPaused(false)}
-      className={`mesh-toast pointer-events-auto relative w-fit max-w-full items-center gap-2 rounded-panel border border-border-subtle bg-surface-overlay p-2 text-sm font-medium text-content shadow-overlay ${
+      className={`mesh-toast pointer-events-auto relative min-h-12 w-fit max-w-full items-center gap-3 rounded-xs bg-surface-inverse px-4 py-2 text-body-md text-on-surface-inverse shadow-elev-3 ${
         collapsed ? 'hidden' : 'flex'
-      } ${
-        toast.tone === 'danger'
-          ? 'border-l-bar border-l-status-danger'
-          : toast.tone === 'success'
-            ? 'border-l-bar border-l-status-success'
-            : toast.tone === 'warning'
-              ? 'border-l-bar border-l-status-warning'
-              : 'border-l-bar border-l-status-info'
       }`}
     >
-      <span className={`mesh-toast-icon flex h-8 w-8 flex-none items-center justify-center rounded-panel ${iconTone}`}>
+      <span className={`mesh-toast-icon flex flex-none items-center justify-center ${iconTone}`}>
         <Icon name={icon} size="sm" />
       </span>
-      <span className="min-w-0 flex-1 px-1">{toast.message}</span>
+      <span className="min-w-0 flex-1">{toast.message}</span>
       <button
         type="button"
-        className="flex h-8 w-8 flex-none items-center justify-center rounded-panel text-content-muted hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+        className="-mr-2 flex h-control-sm w-control-sm flex-none items-center justify-center rounded-full text-on-surface-inverse hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
         aria-label={`Dismiss notification: ${toast.message}`}
         onClick={() => onDismiss(toast.id)}
       >
         <Icon name="x" size="sm" />
       </button>
       {dwellMs !== null && (
-        <span aria-hidden="true" className="mesh-toast-progress absolute inset-x-0 bottom-0 h-px bg-accent" />
+        <span aria-hidden="true" className="mesh-toast-progress absolute inset-x-0 bottom-0 h-0.5 bg-primary" />
       )}
     </motion.div>
   )

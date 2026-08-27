@@ -799,7 +799,7 @@ export function UserSettingsPanel({
                       card with a checkmark bubble. The swatch is the thing
                       being chosen, so the selection sits on it.
                     */
-                    className={`mesh-accent-option group flex min-h-16 cursor-pointer items-center gap-3 rounded-plane px-3 py-2.5 transition-colors ${APPEARANCE_FOCUS_RING} has-[input:focus-visible]:-outline-offset-2 ${
+                    className={`mesh-accent-option group flex min-h-16 cursor-pointer items-center gap-3 rounded-lg-inc px-3 py-2.5 transition-colors ${APPEARANCE_FOCUS_RING} has-[input:focus-visible]:-outline-offset-2 ${
                       selected ? '' : 'hover:bg-surface-fill'
                     }`}
                     data-selected={selected ? 'true' : undefined}
@@ -1306,7 +1306,7 @@ export function UserSettingsPanel({
           {(testNotificationStatus === 'blocked' || osNotificationsDenied) && (
             <Notice
               role="alert"
-              tone="warning"
+              tone="danger"
               action={(
                 <Button
                   variant="ghost"

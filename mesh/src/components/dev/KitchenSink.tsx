@@ -38,8 +38,8 @@ import { Tooltip } from '../ui/Tooltip'
 import { transitions } from '../../lib/motion'
 import { useReducedMotionPreference } from '../../hooks/useReducedMotionPreference'
 
-const TONES: UiTone[] = ['neutral', 'accent', 'success', 'danger', 'warning']
-const BUTTON_VARIANTS: ButtonVariant[] = ['solid', 'soft', 'outline', 'ghost']
+const TONES: UiTone[] = ['neutral', 'accent', 'danger', 'marker']
+const BUTTON_VARIANTS: ButtonVariant[] = ['filled', 'tonal', 'outlined', 'text', 'elevated']
 const THEMES = ['dark', 'light', 'high-contrast'] as const
 const ACCENTS = ['sand', 'ocean', 'violet', 'forest', 'ember', 'rose'] as const
 const OPTIONS = [

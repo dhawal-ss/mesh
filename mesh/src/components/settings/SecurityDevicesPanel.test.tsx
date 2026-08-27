@@ -443,7 +443,7 @@ describe('SecurityDevicesPanel', () => {
     const confirmButton = findButton(document.body, 'Permanently remove local account')
     // Local data deletion now uses the same explicit danger confirmation bar as remote deletion.
     expect(confirmButton.disabled).toBe(true)
-    expect(confirmButton.className).toContain('bg-status-danger')
+    expect(confirmButton.className).toContain('bg-error')
 
     const phrase = inputForLabel(document.body, 'Type "REMOVE LOCAL DATA" to confirm')
     expect(phrase.getAttribute('aria-describedby')).toBe('local-removal-description')

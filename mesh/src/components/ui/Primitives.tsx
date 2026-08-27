@@ -214,11 +214,10 @@ export const Slider = forwardRef<HTMLInputElement, SliderProps>(
 Slider.displayName = 'Slider'
 
 const badgeTone: Record<UiTone, string> = {
-  neutral: 'bg-surface-hover text-content-secondary',
-  accent: 'bg-container-accent text-on-container-accent',
-  success: 'bg-container-success text-on-container-success',
-  danger: 'bg-container-danger text-on-container-danger',
-  warning: 'bg-container-warning text-on-container-warning',
+  neutral: 'bg-surface-container-high text-on-surface-variant',
+  accent: 'bg-secondary-container text-on-secondary-container',
+  danger: 'bg-error-container text-on-error-container',
+  marker: 'bg-marker-container text-on-marker-container',
 }
 
 export function Badge({
@@ -230,12 +229,12 @@ export function Badge({
   return (
     <span
       className={clsx(
-        // A badge is a small tile of text, not a circular indicator, so it
-        // takes the 3px control radius like every other tile in the system.
-        'inline-flex items-center rounded-control font-medium',
-        size === 'sm' && 'px-1.5 py-0.5 text-caption',
-        size === 'md' && 'px-2 py-0.5 text-xs',
-        size === 'lg' && 'px-2.5 py-1 text-sm',
+        // An M3 badge is a pill. Nothing in this system is uppercased, so it
+        // carries a label role rather than an eyebrow.
+        'inline-flex items-center rounded-full',
+        size === 'sm' && 'px-2 py-0.5 text-label-sm',
+        size === 'md' && 'px-2.5 py-0.5 text-label-md',
+        size === 'lg' && 'px-3 py-1 text-label-lg',
         badgeTone[tone],
         className,
       )}
@@ -253,10 +252,9 @@ export interface ProgressProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 const progressTone: Record<Exclude<UiTone, 'neutral'>, string> = {
-  accent: 'bg-accent',
-  success: 'bg-status-success',
-  danger: 'bg-status-danger',
-  warning: 'bg-status-warning',
+  accent: 'bg-primary',
+  danger: 'bg-error',
+  marker: 'bg-marker',
 }
 
 export function Progress({
@@ -416,7 +414,12 @@ export function SectionHeader({
   )
 }
 
-export type NoticeTone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'info'
+/*
+  A notice speaks for one of four reasons, and "everything is fine" is not one
+  of them: the norm gets one chip per screen and no words per message. `info`
+  and `success` are gone with the colours behind them.
+*/
+export type NoticeTone = 'neutral' | 'accent' | 'danger' | 'marker'
 
 export interface NoticeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title'> {
   /**
@@ -432,12 +435,10 @@ export interface NoticeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title
 }
 
 const noticeTitleTone: Record<NoticeTone, string> = {
-  neutral: 'text-content-primary',
-  accent: 'text-on-container-accent',
-  success: 'text-on-container-success',
-  warning: 'text-on-container-warning',
-  danger: 'text-on-container-danger',
-  info: 'text-on-container-info',
+  neutral: 'text-on-surface',
+  accent: 'text-primary',
+  danger: 'text-error',
+  marker: 'text-marker',
 }
 
 /**
@@ -466,7 +467,7 @@ export function Notice({
       {...props}
     >
       {title && (
-        <p className={clsx('text-caption font-semibold uppercase tracking-eyebrow', noticeTitleTone[tone])}>
+        <p className={clsx('text-title-sm', noticeTitleTone[tone])}>
           {title}
         </p>
       )}

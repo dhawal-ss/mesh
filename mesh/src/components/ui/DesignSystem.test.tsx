@@ -35,8 +35,8 @@ describe('design-system primitives', () => {
     const [remove, create] = container.querySelectorAll('button')
     // Status strengths resolve through the container quintuples now, so an
     // outline danger button borrows the named line rather than an alpha guess.
-    expect(remove.className).toContain('border-container-danger-line')
-    expect(create.className).toContain('bg-accent')
+    expect(remove.className).toContain('border-error-container-line')
+    expect(create.className).toContain('bg-primary')
     expect(remove.type).toBe('button')
   })
 
@@ -47,7 +47,7 @@ describe('design-system primitives', () => {
 
     const dot = container.querySelector('[role="img"]')
     expect(dot?.getAttribute('aria-label')).toBe('Connected to Mesh')
-    expect(dot?.className).toContain('bg-status-success')
+    expect(dot?.className).toContain('bg-outline')
   })
 
   it('renders the kitchen sink across dark, light, and high-contrast themes', () => {

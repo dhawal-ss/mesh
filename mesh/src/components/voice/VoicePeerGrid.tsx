@@ -273,7 +273,8 @@ function VoiceParticipantTile({
       initial={{ opacity: 0, y: motionOffsets.panel }}
       animate={{ opacity: 1, y: 0 }}
       transition={transitions.enter}
-      className={`mesh-call-tile relative flex min-h-0 overflow-hidden rounded-lg border border-rule bg-surface-fill ${featured ? 'sm:col-span-2' : ''} ${speaking ? 'border-status-success' : 'border-border-structural'}`}
+      className={`mesh-call-tile relative flex min-h-0 overflow-hidden rounded-xl bg-surface-container-high ${featured ? 'sm:col-span-2' : ''} `}
+      data-speaking={speaking ? 'true' : undefined}
       aria-label={`${peer.displayName} call tile, ${peer.isSelf ? 'you, ' : ''}${state}`}
     >
       {/*

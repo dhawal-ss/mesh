@@ -34,7 +34,7 @@ describe('Avatar geometry: the circle is a person', () => {
     act(() => {
       root.render(<Avatar color="var(--avatar-blue)" name="Bauhaus" variant="community" seed="!room:example.org" />)
     })
-    expect(avatar().className).toContain('rounded-panel')
+    expect(avatar().className).toContain('rounded-lg')
     expect(avatar().className).not.toContain('rounded-round')
   })
 

@@ -55,7 +55,7 @@ describe('network status', () => {
 
     const dot = container.querySelector('[role="img"]')
     expect(dot?.getAttribute('aria-label')).toContain('Reconnecting to your account service')
-    expect(dot?.className).toContain('bg-status-warning')
+    expect(dot?.className).toContain('bg-marker')
   })
 
   /*

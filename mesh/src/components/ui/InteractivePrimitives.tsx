@@ -26,11 +26,10 @@ export interface SwitchProps extends Omit<React.ComponentPropsWithoutRef<typeof 
 }
 
 const switchTone: Record<UiTone, string> = {
-  neutral: 'data-[state=checked]:bg-content-secondary',
-  accent: 'data-[state=checked]:bg-accent',
-  success: 'data-[state=checked]:bg-status-success',
-  danger: 'data-[state=checked]:bg-status-danger',
-  warning: 'data-[state=checked]:bg-status-warning',
+  neutral: 'data-[state=checked]:bg-on-surface-variant',
+  accent: 'data-[state=checked]:bg-primary',
+  danger: 'data-[state=checked]:bg-error',
+  marker: 'data-[state=checked]:bg-marker',
 }
 
 export function Switch({
@@ -927,11 +926,11 @@ export function Command({
         <DialogPrimitive.Overlay className="fixed inset-0 z-overlay bg-surface-scrim" />
         {/*
           A full-width band anchored to the top of the window, not a floating
-          dialog. The palette is the same architecture opening up rather than a
-          card arriving on top of it, so it spans the window, keeps square
-          corners, and is separated from the app by a rule instead of a shadow.
+          dialog. It spans the window and keeps its top edge flush with it, so
+          only the two corners that meet the app are cut; it is genuinely above
+          the page, so it takes a tonal step and the menu elevation.
         */}
-        <DialogPrimitive.Content className="mesh-command-surface fixed inset-x-0 top-0 z-modal overflow-hidden rounded-plane bg-surface-canvas outline-none">
+        <DialogPrimitive.Content className="mesh-command-surface fixed inset-x-0 top-0 z-modal overflow-hidden rounded-b-xl bg-surface-container-high shadow-elev-3 outline-none">
           {/*
             * The palette is a field. A 36px chip, a title, a description and an
             * Esc key all restated the placeholder above the only control that

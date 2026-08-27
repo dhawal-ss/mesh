@@ -45,8 +45,16 @@ export default {
           hover: withAlpha('--surface-container-high-rgb'),
           active: withAlpha('--surface-container-highest-rgb'),
           selected: withAlpha('--secondary-container-rgb'),
-          fill: withAlpha('--surface-container-rgb'),
-          'fill-hover': withAlpha('--surface-container-high-rgb'),
+          /*
+            --surface-fill was translucent: the comment on it said it was what
+            to reach for where the wash has to composite onto something other
+            than the canvas. Twenty of its twenty-one call sites are `hover:`,
+            so it lands on the state layer rather than on an opaque tone, which
+            is both the M3 answer and the only one that still reads as a hover
+            on a row that already sits on a container.
+          */
+          fill: 'var(--state-layer-hover)',
+          'fill-hover': 'var(--state-layer-pressed)',
         },
 
         // ── Material 3 foreground roles ───────────────────────────────────

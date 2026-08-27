@@ -151,7 +151,12 @@ const connectionBandMotion = {
 } satisfies Variants
 
 interface ConnectionBandCopy {
-  tone: 'warning' | 'danger'
+  /*
+    Amber is transient and will clear on its own; coral cannot clear without
+    the person. The band is the shell's one exception surface, and these are
+    the only two things it has to say about severity.
+  */
+  tone: 'marker' | 'danger'
   icon: IconName
   lead: string
   detail: string
@@ -173,7 +178,7 @@ interface ConnectionBandCopy {
  */
 const CONNECTION_BAND_COPY: Record<DegradedConnectionPhase, ConnectionBandCopy> = {
   reconnecting: {
-    tone: 'warning',
+    tone: 'marker',
     icon: 'refresh',
     lead: 'Reconnecting to your account service.',
     detail: 'Anything you send is saved and goes out automatically.',
@@ -182,7 +187,7 @@ const CONNECTION_BAND_COPY: Record<DegradedConnectionPhase, ConnectionBandCopy> 
       'Reconnecting to your account service. Messages you send are saved and will go out automatically.',
   },
   unreachable: {
-    tone: 'warning',
+    tone: 'marker',
     icon: 'triangleAlert',
     lead: 'Mesh could not check your connection.',
     detail: 'Anything you send is saved and goes out automatically.',
@@ -200,9 +205,9 @@ const CONNECTION_BAND_COPY: Record<DegradedConnectionPhase, ConnectionBandCopy> 
   },
 }
 
-const connectionBandLeadTone: Record<'warning' | 'danger', string> = {
-  warning: 'text-on-container-warning',
-  danger: 'text-on-container-danger',
+const connectionBandLeadTone: Record<'marker' | 'danger', string> = {
+  marker: 'text-on-marker-container',
+  danger: 'text-on-error-container',
 }
 
 /**

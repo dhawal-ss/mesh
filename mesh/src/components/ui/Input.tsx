@@ -7,11 +7,17 @@ export interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElem
   hint?: string
   error?: string
   size?: UiSize
+  /**
+   * `filled` is the Material 3 default: a container ground, cut at the top
+   * corners only, with a 2px active indicator along the bottom edge. `outlined`
+   * is the pill-shaped search field the composer and the sidebars use.
+   */
+  variant?: 'filled' | 'outlined'
   onChange?: ((value: string) => void) | React.ChangeEventHandler<HTMLInputElement>
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, hint, error, size = 'md', className, onChange, id, 'aria-describedby': describedBy, ...props }, ref) => {
+  ({ label, hint, error, size = 'md', variant = 'filled', className, onChange, id, 'aria-describedby': describedBy, ...props }, ref) => {
     const generatedId = useId()
     const inputId = id ?? generatedId
     const supportingTextId = `${inputId}-supporting`
@@ -32,9 +38,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     }
 
     return (
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1">
         {label && (
-          <label htmlFor={inputId} className="text-caption font-semibold text-content-secondary">
+          <label htmlFor={inputId} className="text-body-sm text-on-surface-variant">
             {label}
           </label>
         )}
@@ -42,18 +48,32 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           ref={ref}
           id={inputId}
           data-size={size}
+          data-variant={variant}
           onChange={handleChange}
           aria-invalid={error ? true : undefined}
           aria-describedby={descriptionIds}
           className={clsx(
-            'mesh-input w-full rounded-panel border border-border-control bg-surface-sunken text-content placeholder:text-content-muted',
-            'transition-[border-color,box-shadow,background-color] duration-fast enabled:hover:border-border-emphasis focus:border-accent focus:bg-surface-base focus:outline-none',
+            'mesh-input w-full bg-surface-container-high text-on-surface placeholder:text-on-surface-variant',
+            'transition-[border-color,background-color] duration-fast focus:outline-none',
             'disabled:cursor-not-allowed disabled:opacity-60',
-            error && 'border-status-danger focus:border-status-danger',
+            /*
+              The filled field's whole boundary is the active indicator along
+              its bottom edge, so it is drawn at full strength rather than as a
+              hairline: it conveys the shape of a control and owes 3:1.
+            */
+            variant === 'filled'
+              ? clsx(
+                'rounded-t-xs border-b-2 border-outline enabled:hover:bg-surface-container-highest focus:border-primary',
+                error && 'border-error focus:border-error',
+              )
+              : clsx(
+                'rounded-full border border-outline enabled:hover:bg-surface-container-highest focus:border-2 focus:border-primary',
+                error && 'border-error focus:border-error',
+              ),
             controlHeightClasses[size],
-            size === 'sm' && 'px-2.5 text-xs',
-            size === 'md' && 'px-3 text-sm',
-            size === 'lg' && 'px-3.5 text-base',
+            size === 'sm' && 'px-3 text-body-md',
+            size === 'md' && 'px-4 text-body-lg',
+            size === 'lg' && 'px-4 text-body-lg',
             className,
           )}
           {...props}
@@ -62,7 +82,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           <p
             id={supportingTextId}
             role={error ? 'alert' : undefined}
-            className={clsx('text-xs', error ? 'text-status-danger' : 'text-content-muted')}
+            className={clsx('px-4 text-body-sm', error ? 'text-error' : 'text-on-surface-variant')}
           >
             {error ?? hint}
           </p>

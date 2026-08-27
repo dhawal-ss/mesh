@@ -128,19 +128,19 @@ export function Modal({
             * shipped. Structure stays here, appearance stays there.
             */}
           <motion.div
-            className="mesh-modal-surface mesh-overlay-surface relative text-content"
+            className="mesh-modal-surface mesh-overlay-surface relative text-on-surface"
             variants={variants.modal}
             initial="initial"
             animate="animate"
             exit="exit"
           >
             <DialogPrimitive.Title
-              className={title ? 'mesh-modal-title text-title font-semibold text-content' : 'sr-only'}
+              className={title ? 'mesh-modal-title text-title-lg text-on-surface' : 'sr-only'}
             >
               {title ?? 'Dialog'}
             </DialogPrimitive.Title>
             {description && (
-              <DialogPrimitive.Description className="mesh-modal-description mt-1.5 max-w-2xl text-sm text-content-secondary">
+              <DialogPrimitive.Description className="mesh-modal-description mt-1.5 max-w-2xl text-body-md text-on-surface-variant">
                 {description}
               </DialogPrimitive.Description>
             )}
@@ -148,7 +148,7 @@ export function Modal({
               <button
                 type="button"
                 aria-label={closeLabel}
-                className="mesh-modal-close absolute inline-flex h-control-md w-control-md items-center justify-center rounded-panel border border-transparent text-content-muted hover:border-border-subtle hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                className="mesh-modal-close absolute inline-flex h-control-md w-control-md items-center justify-center rounded-full text-on-surface-variant hover:bg-state-hover hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               >
                 <Icon name="x" size="sm" />
               </button>

@@ -59,18 +59,18 @@ export function Tooltip({ content, side = 'top', children, className }: TooltipP
           * `animate-in` and `animate-out` classes needed tailwindcss-animate,
           * which is not a dependency, so tooltips simply appeared.
           */}
-        <TooltipPrimitive.Content side={side} sideOffset={8} collisionPadding={8} asChild>
+        <TooltipPrimitive.Content side={side} sideOffset={4} collisionPadding={8} asChild>
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={transitions.fast}
             className={clsx(
-              'z-tooltip max-w-xs rounded-panel border border-border-subtle bg-surface-overlay px-3 py-1.5 text-xs font-medium text-content shadow-overlay',
+              'z-tooltip max-w-xs rounded-xs bg-surface-inverse px-2 py-1 text-body-sm text-on-surface-inverse',
               className,
             )}
           >
             {content}
-            <TooltipPrimitive.Arrow className="fill-surface-overlay" />
+            <TooltipPrimitive.Arrow className="fill-surface-inverse" />
           </motion.div>
         </TooltipPrimitive.Content>
       </TooltipPrimitive.Portal>

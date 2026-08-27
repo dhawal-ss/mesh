@@ -52,7 +52,7 @@ export function Avatar({
         `!rounded-full`, which meant every other person in the product was
         drawn as a tile.
       */
-      className={`mesh-pixel-avatar no-select flex flex-shrink-0 items-center justify-center overflow-hidden ${variant === 'community' ? 'rounded-panel' : 'rounded-round'} bg-surface-sunken ${showImage ? '' : 'mesh-pixel-avatar-default'} ${className ?? ''}`}
+      className={`mesh-pixel-avatar no-select flex flex-shrink-0 items-center justify-center overflow-hidden ${variant === 'community' ? 'rounded-lg' : 'rounded-round'} bg-surface-container ${showImage ? '' : 'mesh-pixel-avatar-default'} ${className ?? ''}`}
       data-design-token-exception="Avatar color is member or community identity data."
       style={{
         width: size,

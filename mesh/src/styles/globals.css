@@ -2220,8 +2220,26 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   overflow-y: auto;
 }
 
+/*
+ * The Material 3 small badge. The 2px ring is the surface it sits on, not a
+ * border colour, so the dot stays legible where it overlaps an avatar or a
+ * rail item without drawing a boundary of its own.
+ */
+.mesh-status-badge {
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
 .mesh-call-tile {
   min-height: var(--voice-tile-min-height);
+}
+
+/*
+ * Speaking is a 3px inset outline plus the word, never the outline alone.
+ * Drawn as an inset shadow rather than a border so the tile's own geometry
+ * does not shift by 3px the moment somebody starts talking.
+ */
+.mesh-call-tile[data-speaking='true'] {
+  box-shadow: inset 0 0 0 var(--border-width-bar) var(--primary);
 }
 
 .mesh-dm-trust-popover {
@@ -2445,7 +2463,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   --notice-line: var(--outline-variant);
   --notice-fill: var(--surface-container);
   --notice-content: var(--on-surface);
-  border-radius: 0;
+  border-radius: var(--shape-lg);
 }
 
 [data-notice-tone='accent'] {
@@ -2454,10 +2472,22 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   --notice-content: var(--on-primary-container);
 }
 
-[data-notice-tone='success'] {
-  --notice-line: var(--primary-container-line);
-  --notice-fill: var(--primary-container);
-  --notice-content: var(--on-primary-container);
+[data-notice-tone='marker'] {
+  --notice-line: var(--marker-container-line);
+  --notice-fill: var(--marker-container);
+  --notice-content: var(--on-marker-container);
+}
+
+/*
+ * Scaffolding. `warning` is the previous name for the marker tone and
+ * `success` and `info` are two names for a state this contract does not give a
+ * colour to at all; all three are removed once their call sites are migrated.
+ */
+[data-notice-tone='success'],
+[data-notice-tone='info'] {
+  --notice-line: var(--outline-variant);
+  --notice-fill: var(--surface-container);
+  --notice-content: var(--on-surface);
 }
 
 [data-notice-tone='warning'] {
@@ -2472,11 +2502,6 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   --notice-content: var(--on-error-container);
 }
 
-[data-notice-tone='info'] {
-  --notice-line: var(--primary-container-line);
-  --notice-fill: var(--primary-container);
-  --notice-content: var(--on-primary-container);
-}
 
 .mesh-notice-advisory {
   border: 0;
