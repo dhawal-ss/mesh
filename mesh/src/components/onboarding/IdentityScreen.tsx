@@ -87,7 +87,7 @@ export function IdentityScreen({ onGenerateIdentity, onNext }: IdentityScreenPro
         system already reads.
       */}
       <motion.ol
-        className="border-y border border-outline-variant"
+        className="border-y border-outline-variant"
         aria-label="Account setup"
         initial={{ opacity: 0, y: motionOffsets.subtle }}
         animate={{ opacity: 1, y: 0 }}

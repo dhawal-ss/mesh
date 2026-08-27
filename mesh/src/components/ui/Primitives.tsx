@@ -528,7 +528,7 @@ export function EmptyState({
       aria-describedby={descriptionId}
       className={clsx(
         'flex flex-col items-start justify-center text-left',
-        variant === 'default' && 'gap-2 border-y border border-outline-variant px-5 py-6',
+        variant === 'default' && 'gap-2 border-y border-outline-variant px-5 py-6',
         variant === 'compact' && 'gap-1.5 px-5 py-5',
         className,
       )}

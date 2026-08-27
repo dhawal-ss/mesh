@@ -1317,7 +1317,7 @@ export function DmView() {
     <div className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div
-        className="mesh-conversation-header flex h-conversation-header flex-shrink-0 items-center border-b border border-outline-variant px-5 py-2"
+        className="mesh-conversation-header flex h-conversation-header flex-shrink-0 items-center border-b border-outline-variant px-5 py-2"
         data-tauri-drag-region
       >
         <Avatar

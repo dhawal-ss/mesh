@@ -564,7 +564,7 @@ export function HomeSurface() {
               "where was I". It is the only place the accent appears on this
               surface.
             */
-            className="mesh-home-feature grid gap-4 border-y border border-outline-variant px-5 py-6 text-left transition-colors hover:bg-state-hover"
+            className="mesh-home-feature grid gap-4 border-y border-outline-variant px-5 py-6 text-left transition-colors hover:bg-state-hover"
             onClick={() => openRoute(featuredRecent.route)}
           >
             <SectionLabel accent className="mesh-home-feature-index">
@@ -636,7 +636,7 @@ export function HomeSurface() {
             <button
               key={row.key}
               type="button"
-              className="mesh-home-row group flex w-full items-center gap-3 border-b border border-outline-variant text-left transition-colors hover:bg-state-hover"
+              className="mesh-home-row group flex w-full items-center gap-3 border-b border-outline-variant text-left transition-colors hover:bg-state-hover"
               onClick={() => openRoute(row.route)}
               aria-label={rowAccessibleName(row)}
             >
@@ -748,7 +748,7 @@ function HomeSection({
         headingLevel={2}
         title={title}
         count={count}
-        className="border-b border border-outline-variant px-5 py-2"
+        className="border-b border-outline-variant px-5 py-2"
       />
       <div>{children}</div>
     </section>

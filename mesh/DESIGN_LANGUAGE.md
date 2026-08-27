@@ -9,7 +9,7 @@ The decentralized nature of the product -- homeserver, federation, end-to-end en
 
 ## Principles
 
-1. **Depth is tonal, not linear.** Panes are separated by a step in surface tone and a 28 px radius, never by a 1 px rule. Mesh no longer draws hairlines.
+1. **Depth is tonal, not linear.** Panes are separated by a step in surface tone and a 28 px radius, never by a 1 px rule. What survives of the hairline is Material 3's own divider: a rule between rows *inside* one surface, in `--outline-variant`. Structure between surfaces is never drawn.
 2. **Everything you touch has a radius.** The shape scale is the system; there is no 0 px structural plane, and `--shape-none` exists only for full-bleed media.
 3. **Colour is spent on two jobs.** Azure carries structure, selection and your own words. Coral carries exceptions, mentions and destructive actions. Amber marks pinned and live. Neutrals are chroma-free.
 4. **Exceptions still speak, and now they are the only red thing on the screen.** A healthy, decrypted, verified message carries no badge. Coral appearing anywhere means something needs a person.
@@ -161,7 +161,7 @@ Reduced motion removes spatial travel and repeated decorative movement while pre
 Three carriers, in order of prominence, and no fourth.
 
 - **One assist chip in the app bar.** `--surface-container-high` with a `shield` glyph and a sentence-case label: "Encrypted, 3 on other servers". One per screen, never one per message.
-- **A badge on the mark.** An avatar whose owner is on a different homeserver carries a 16 px `--marker-container` badge with a `globe` glyph. It replaces the 1 px chrome ring and works in member lists, conversation lists, palette results, and the voice roster. Every surface that uses the badge keeps one legend line, now a `--surface-container` card in the details sheet.
+- **A badge on the mark.** An avatar whose owner is on a different homeserver carries a 16 px `--marker-container` badge with a `globe` glyph. It replaces the 1 px chrome ring and works in member lists, conversation lists, palette results, and the voice roster. The badge is decorative, so every surface that shows one names it in words nearby: a legend card in the member list and the conversation list, and the peer's homeserver as the subtitle of a direct-message header.
 - **A coral card, inline in the timeline, only when something is wrong.** An undecryptable event, an unverified device, a withheld key, or a failed federation send earns an icon, what happened, what to do, and one button. This is the only place coral appears in the timeline.
 
 Green leaves the product: a local, decrypted event from a verified device is the norm, and the norm is silence plus the one chip. Per-message encryption labels, per-message origin-server labels, composer encryption strips, and padlock iconography are prohibited. The shell-level connection band is retained as an `--error-container` banner: a degraded link is an exception and has earned its words.

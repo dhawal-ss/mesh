@@ -1019,7 +1019,7 @@ function MessageInputContent({
           markdown continues to work whether or not they are on screen.
         */}
         {hasSelection && <div
-          className="mesh-composer-formatting flex items-center gap-1 border-b border border-outline-variant px-2 py-1"
+          className="mesh-composer-formatting flex items-center gap-1 border-b border-outline-variant px-2 py-1"
           role="toolbar"
           aria-orientation="horizontal"
           aria-label="Message formatting"

@@ -519,7 +519,7 @@ function PartyParticipant({
     /* The bar gutter is reserved on every row, so a row does not indent itself
        by its own bar width the moment its occupant starts talking. */
     <div
-      className="group flex gap-3 border-b border border-outline-variant px-5 py-3"
+      className="group flex gap-3 border-b border-outline-variant px-5 py-3"
       aria-label={`${peer.displayName}, ${accessibleState}`}
     >
       <div className="min-w-0 flex-1">

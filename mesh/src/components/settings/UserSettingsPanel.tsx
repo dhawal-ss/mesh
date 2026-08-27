@@ -834,7 +834,7 @@ export function UserSettingsPanel({
             Appearance is stored on this device only
           </AmbientCard>
 
-          <div className="space-y-2 border-t border border-outline-variant pt-4">
+          <div className="space-y-2 border-t border-outline-variant pt-4">
             <SectionHeader title="Sidebar" headingLevel={4} />
             <p className="text-body-sm text-on-surface-variant">
               Room order, pins, and hidden rooms are saved on this device only.
@@ -1630,7 +1630,7 @@ function AppearanceSegmentedControl({
         {options.map(([optionValue, optionLabel]) => (
           <label
             key={optionValue}
-            className={`relative flex min-h-9 cursor-pointer items-center justify-center rounded-full border-l border border-outline-variant px-3 text-center text-title-md font-medium first:border-l-0 ${APPEARANCE_FOCUS_RING} has-[input:focus-visible]:-outline-offset-2 ${
+            className={`relative flex min-h-9 cursor-pointer items-center justify-center rounded-full border-l border-outline-variant px-3 text-center text-title-md font-medium first:border-l-0 ${APPEARANCE_FOCUS_RING} has-[input:focus-visible]:-outline-offset-2 ${
               value === optionValue
                 ? 'bg-primary text-on-primary'
                 : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
