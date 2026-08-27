@@ -1182,8 +1182,26 @@ input,
 a,
 textarea {
   -webkit-app-region: no-drag;
-  color: inherit;
-  font: inherit;
+}
+
+/*
+ * The colour and font inheritance belongs in the base layer.
+ *
+ * Unlayered, `color: inherit` on these four elements outranks every utility
+ * regardless of specificity, so a `text-primary` on a button did nothing at
+ * all: the control silently drew its parent's ink. This reset exists for the
+ * Tauri drag region beside it, which is not a utility concern and stays where
+ * it is; the two inherited properties move into `base`, where a class in the
+ * utilities layer can win.
+ */
+@layer base {
+  button,
+  input,
+  a,
+  textarea {
+    color: inherit;
+    font: inherit;
+  }
 }
 
 :focus-visible {
@@ -2241,8 +2259,24 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   background: transparent !important;
 }
 
-.mesh-room-context-tab[aria-selected='true'] {
-  box-shadow: inset 0 -2px 0 var(--primary);
+/*
+ * M3 primary tabs. The indicator is a 3px bar with a rounded top that sits on
+ * the bottom edge of the tab, not a 2px line drawn inside the box: it is the
+ * one part of a tab strip that is allowed a shape, and a segmented pill inside
+ * an outline was reading as a filter chip group instead of a tab bar.
+ */
+.mesh-room-context-tab {
+  position: relative;
+}
+
+.mesh-room-context-tab[aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 3px;
+  border-radius: var(--shape-xs) var(--shape-xs) 0 0;
+  background: var(--primary);
 }
 
 #community-settings-summary,

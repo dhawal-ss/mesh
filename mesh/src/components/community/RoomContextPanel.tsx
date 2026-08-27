@@ -258,7 +258,7 @@ export function RoomContextPanel({
         {!signalCheckOpen && (
           <div
             ref={tabListRef}
-            className="mesh-room-context-tabs mx-3 mb-3 flex min-w-0 overflow-x-auto rounded-full border border-outline"
+            className="mesh-room-context-tabs mx-3 mb-3 flex min-w-0 overflow-x-auto"
             role="tablist"
             aria-label="Details"
             onKeyDown={handleTabKeyDown}
@@ -272,11 +272,11 @@ export function RoomContextPanel({
                 tabIndex={activeTab === tab.id ? 0 : -1}
                 aria-selected={activeTab === tab.id}
                 aria-controls={`room-context-${tab.id}`}
-                className={`mesh-room-context-tab min-h-8 flex-1 rounded-full px-2 text-label-sm font-medium transition-colors ${
+                className={`mesh-room-context-tab min-h-control-md flex-1 px-2 text-label-lg transition-colors ${
                   activeTab === tab.id
-                    ? 'text-on-surface'
+                    ? 'text-primary'
                     : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
-                } ${tab.id === tabs[0]?.id ? '' : 'border-l border-outline-variant'}`}
+                }`}
                 onClick={() => onTabChange(tab.id)}
               >
                 {tab.label}
