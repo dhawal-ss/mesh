@@ -657,7 +657,7 @@ function YouRouteSurface({ section }: { section: YouSection }) {
           role="tabpanel"
           tabIndex={0}
           aria-label={currentEntry.title}
-          className="mesh-route-main min-h-0 overflow-hidden"
+          className="mesh-route-main flex min-h-0 flex-col overflow-hidden"
         >
           <Suspense
             fallback={<SimpleSurface title={`Opening ${currentEntry.title}`} />}
@@ -813,7 +813,7 @@ function CommunityAdminRouteSurface({
           role="tabpanel"
           tabIndex={0}
           aria-labelledby={`mesh-community-admin-tab-${currentEntry.section}`}
-          className="mesh-route-main min-h-0 overflow-hidden"
+          className="mesh-route-main flex min-h-0 flex-col overflow-hidden"
         >
           {/* Kept for heading order: the settings body below opens at h3. */}
           <h2 className="sr-only">{currentEntry.title} for {community.name}</h2>

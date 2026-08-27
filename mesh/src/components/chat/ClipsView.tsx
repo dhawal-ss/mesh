@@ -50,7 +50,7 @@ export function ClipsView({
             type="button"
             onClick={() => onOpenClip(clip.id)}
             aria-label={`Open the message ${clip.authorDisplayName} posted in #${channelName}`}
-            className="block w-full overflow-hidden rounded-full border border-outline-variant bg-surface-container-lowest text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+            className="block w-full overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
           >
             {clip.attachments[0]?.thumbnail ? (
               <EncryptedAttachmentPreview

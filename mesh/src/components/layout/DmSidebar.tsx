@@ -307,7 +307,7 @@ export function DmSidebar() {
                         key={request.roomId}
                         role="listitem"
                         aria-busy={saving || undefined}
-                        className="rounded-full border border-outline bg-surface-container-lowest p-3"
+                        className="rounded-md border border-outline bg-surface-container-lowest p-3"
                       >
                         <div className="flex items-center gap-2.5">
                           <Avatar
@@ -434,7 +434,7 @@ export function DmSidebar() {
                         key={account.userId}
                         role="listitem"
                         aria-busy={saving || undefined}
-                        className="rounded-full border border-outline bg-surface-container-lowest p-3"
+                        className="rounded-md border border-outline bg-surface-container-lowest p-3"
                       >
                         <code className="block break-all text-label-sm text-on-surface-variant">
                           {account.userId}
@@ -555,7 +555,7 @@ export function DmSidebar() {
         ) : conversationLoad.status === 'failed' && conversations.length === 0 ? (
           <div
             role="alert"
-            className="rounded-full border border-marker-container-line bg-marker-container px-3 py-3 text-body-sm text-on-marker-container"
+            className="rounded-lg-inc border border-marker-container-line bg-marker-container px-3 py-3 text-body-sm text-on-marker-container"
           >
             <p>Conversations could not be loaded.</p>
             <button

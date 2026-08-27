@@ -183,7 +183,7 @@ export function DiagnosticsPanel({
             <p className="mt-1 text-body-sm text-on-surface-variant">
               Review every field before saving. Mesh never uploads this file.
             </p>
-            <pre className="mesh-diagnostics-bundle mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-full bg-surface p-3 text-body-sm text-on-surface-variant">
+            <pre className="mesh-diagnostics-bundle mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md bg-surface p-3 text-body-sm text-on-surface-variant">
               {supportBundle}
             </pre>
             <div className="mt-3 flex flex-wrap gap-2">

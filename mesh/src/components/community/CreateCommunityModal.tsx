@@ -604,7 +604,7 @@ export function CreateCommunityModal({
                           key={value}
                           // The radio itself is visually hidden, so the card has
                           // to carry the focus ring for it.
-                          className={`cursor-pointer rounded-full border px-3 py-3 has-[input:focus-visible]:outline has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-focus ${
+                          className={`cursor-pointer rounded-lg border px-3 py-3 has-[input:focus-visible]:outline has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-focus ${
                             accessChoice === value
                               ? 'border-primary bg-primary-container'
                               : 'border-outline-variant bg-surface-container-lowest hover:bg-state-hover'
@@ -629,7 +629,7 @@ export function CreateCommunityModal({
                       {COMMUNITY_TEMPLATES.map((option) => (
                         <label
                           key={option.id}
-                          className={`cursor-pointer rounded-full border px-3 py-3 has-[input:focus-visible]:outline has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-focus ${
+                          className={`cursor-pointer rounded-lg border px-3 py-3 has-[input:focus-visible]:outline has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-focus ${
                             template === option.id
                               ? 'border-primary bg-primary-container'
                               : 'border-outline-variant bg-surface-container-lowest hover:bg-state-hover'
@@ -647,7 +647,7 @@ export function CreateCommunityModal({
                         </label>
                       ))}
                     </div>
-                    <div className="mt-2 rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-3">
+                    <div className="mt-2 rounded-md border border-outline-variant bg-surface-container-lowest px-3 py-3">
                       <ul className="space-y-1 text-body-md text-on-surface-variant">
                         {selectedTemplate.starterRooms.map((room) => <li key={room}>#{room}</li>)}
                       </ul>
@@ -781,7 +781,7 @@ export function CreateCommunityModal({
               )}
 
               {reviewedInvite && (
-                <section className="mt-3 rounded-full border border-outline bg-surface-container-lowest px-3 py-3" aria-labelledby="invitation-preview-heading">
+                <section className="mt-3 rounded-md border border-outline bg-surface-container-lowest px-3 py-3" aria-labelledby="invitation-preview-heading">
                   <h3 id="invitation-preview-heading" className="text-body-md font-semibold text-on-surface">Destination ready to review</h3>
                   <dl className="mt-2 space-y-2 text-body-sm">
                     <div className="flex items-start justify-between gap-3"><dt className="text-on-surface-variant">Community</dt><dd className="text-right text-on-surface-variant">Confirmed when you continue</dd></div>

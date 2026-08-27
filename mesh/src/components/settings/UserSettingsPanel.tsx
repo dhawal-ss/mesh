@@ -504,7 +504,7 @@ export function UserSettingsPanel({
       </div>
       )}
 
-      <div className={`mesh-settings-content min-w-0 px-5 ${embedded ? '' : 'pb-5'}`}>
+      <div className={`mesh-settings-content min-h-0 min-w-0 px-5 ${embedded ? 'h-full' : 'pb-5'}`}>
       <div ref={settingsScrollRef} className={`${embedded ? 'h-full' : 'mesh-settings-scroll'} mx-auto w-full max-w-5xl overflow-y-auto py-5 pr-1`}>
         <div
           id={embedded ? undefined : `user-settings-panel-${activeTab}`}
@@ -638,7 +638,7 @@ export function UserSettingsPanel({
         {activeTab === 'account' && (
           <section className="space-y-4 border-b border-outline-variant pb-5" aria-labelledby="account-settings-heading">
             <h3 id="account-settings-heading" className="text-title-sm font-semibold text-on-surface">Account</h3>
-            <div className="rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-3">
+            <div className="rounded-md border border-outline-variant bg-surface-container-lowest px-3 py-3">
               <SectionHeader title="Current account service" headingLevel={4} />
               <p className="mt-1 text-body-md font-medium text-on-surface">
                 {matrixMode
@@ -965,7 +965,7 @@ export function UserSettingsPanel({
 
             <SectionHeader title="What your service can see" headingLevel={4} id="service-visibility-heading" />
             <div
-              className="overflow-x-auto rounded-full border border-outline-variant"
+              className="overflow-x-auto rounded-lg border border-outline-variant"
               role="region"
               aria-labelledby="service-visibility-heading"
               tabIndex={0}
@@ -1065,7 +1065,7 @@ export function UserSettingsPanel({
             </div>
 
             {activeConversationId && (
-              <div className="space-y-3 rounded-full border border-outline-variant bg-surface-container-lowest p-3">
+              <div className="space-y-3 rounded-md border border-outline-variant bg-surface-container-lowest p-3">
                 <div>
                   <h4 className="text-body-md font-semibold text-on-surface">
                     This conversation
@@ -1137,7 +1137,7 @@ export function UserSettingsPanel({
               see, so this block kept only the one fact the table does not
               carry: both services still observe operational detail.
             */}
-            <p className="rounded-full bg-surface-container-high px-3 py-3 text-body-sm text-on-surface-variant">
+            <p className="rounded-xl bg-surface-container-high px-3 py-3 text-body-sm text-on-surface-variant">
               Both services can still see internet addresses, devices, membership, and timing.
             </p>
           </section>
@@ -1175,7 +1175,7 @@ export function UserSettingsPanel({
           />
           <label
             htmlFor="interface-sound-volume"
-            className={`block rounded-full bg-surface-container-high px-3 py-3 text-body-sm font-medium text-on-surface-variant ${
+            className={`block rounded-xl bg-surface-container-high px-3 py-3 text-body-sm font-medium text-on-surface-variant ${
               notifications.sound ? '' : 'opacity-50'
             }`}
           >
@@ -1241,7 +1241,7 @@ export function UserSettingsPanel({
 
           {notifications.quietHours.enabled && (
             <div
-              className="grid gap-3 rounded-full bg-surface-container-high px-3 py-3 sm:grid-cols-2"
+              className="grid gap-3 rounded-xl bg-surface-container-high px-3 py-3 sm:grid-cols-2"
               aria-label="Quiet hours schedule"
             >
               <label htmlFor="quiet-hours-start" className="text-body-sm font-medium text-on-surface-variant">
@@ -1386,7 +1386,7 @@ export function UserSettingsPanel({
             <p className="mt-1 text-body-sm text-on-surface-variant">
               Choose your microphone, speakers, and camera from Voice settings after you join a call.
             </p>
-            <div className="mt-3 rounded-full bg-surface-container-high px-3 py-3 text-body-sm text-on-surface-variant">
+            <div className="mt-3 rounded-xl bg-surface-container-high px-3 py-3 text-body-sm text-on-surface-variant">
               <h4 className="text-body-md font-semibold text-on-surface">Call privacy</h4>
               <p className="mt-1">
                 The service can see who connects, internet addresses, call timing, and traffic
@@ -1620,9 +1620,14 @@ function AppearanceSegmentedControl({
     <fieldset>
       <legend className="text-title-md font-medium text-on-surface">{label}</legend>
       {/*
-        The group carries a 7px outer radius and the selection keeps square
-        inner corners. That is the radius rule in miniature: the group is a
-        control you touch, the selection inside it is a structural mark.
+        The Material 3 segmented button: one outlined pill with square segments
+        inside it, so the container's own ends are the only round corners and
+        the divider between two segments is a straight line.
+
+        Each segment used to carry --shape-full itself while the container
+        clipped it to a 16px box, which drew four lozenges bowing into each
+        other. The selected face is the secondary container rather than the
+        full-strength primary, matching the navigation items beside it.
       */}
       <div
         id={id}
@@ -1632,9 +1637,9 @@ function AppearanceSegmentedControl({
         {options.map(([optionValue, optionLabel]) => (
           <label
             key={optionValue}
-            className={`relative flex min-h-9 cursor-pointer items-center justify-center rounded-full border-l border-outline-variant px-3 text-center text-title-md font-medium first:border-l-0 ${APPEARANCE_FOCUS_RING} has-[input:focus-visible]:-outline-offset-2 ${
+            className={`relative flex min-h-control-sm cursor-pointer items-center justify-center rounded-none border-l border-outline px-4 text-center text-label-lg first:border-l-0 ${APPEARANCE_FOCUS_RING} has-[input:focus-visible]:-outline-offset-2 ${
               value === optionValue
-                ? 'bg-primary text-on-primary'
+                ? 'bg-secondary-container text-on-secondary-container'
                 : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
             }`}
           >
@@ -1723,7 +1728,7 @@ function ToggleRow({
   return (
     <label
       data-sequence-position={sequence?.['data-sequence-position']}
-      className={`${sequence?.className ?? 'rounded-full bg-surface-container-high'} flex items-start justify-between gap-4 px-3 py-3 ${disabled ? 'opacity-50' : 'cursor-pointer'}`}
+      className={`${sequence?.className ?? 'rounded-xl bg-surface-container-high'} flex items-start justify-between gap-4 px-3 py-3 ${disabled ? 'opacity-50' : 'cursor-pointer'}`}
     >
       <span>
         <span className="block text-body-md font-medium text-on-surface">{label}</span>
@@ -1761,7 +1766,7 @@ function SelectRow({
   return (
     <div
       data-sequence-position={sequence?.['data-sequence-position']}
-      className={`${sequence?.className ?? 'rounded-full bg-surface-container-high'} flex flex-col items-stretch gap-3 px-3 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4`}
+      className={`${sequence?.className ?? 'rounded-xl bg-surface-container-high'} flex flex-col items-stretch gap-3 px-3 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4`}
     >
       <span className="min-w-0">
         <label htmlFor={id} className="block text-body-md font-medium text-on-surface">

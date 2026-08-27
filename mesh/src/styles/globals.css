@@ -1435,6 +1435,92 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
   backdrop-filter: none;
 }
 
+/*
+ * The Material 3 checkbox and radio, drawn rather than accented.
+ *
+ * These were the browser's own controls with an accent colour on them, which
+ * is a square with a system checkmark on Windows and something else again
+ * everywhere else -- the one part of the settings screens that was not
+ * designed. Size stays with the class list; this sets only the face, so a
+ * `h-4 w-4` still decides how big the box is.
+ */
+input[type='checkbox'],
+input[type='radio'] {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-grid;
+  place-content: center;
+  flex: none;
+  border: 2px solid var(--outline);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+input[type='checkbox'] {
+  border-radius: var(--shape-xs);
+}
+
+input[type='radio'] {
+  border-radius: var(--shape-round);
+}
+
+input[type='checkbox']::before,
+input[type='radio']::before {
+  content: '';
+  width: 60%;
+  height: 60%;
+  transform: scale(0);
+  transition: transform var(--motion-dur-press) var(--motion-ease-emphasize);
+  background: var(--on-primary);
+}
+
+input[type='checkbox']::before {
+  /* The tick, as a shape rather than a glyph, so no font has to carry it. */
+  clip-path: polygon(14% 46%, 0 60%, 40% 100%, 100% 22%, 86% 10%, 38% 72%);
+  background: var(--on-primary);
+}
+
+input[type='radio']::before {
+  border-radius: var(--shape-round);
+}
+
+input[type='checkbox']:checked,
+input[type='radio']:checked {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+input[type='checkbox']:checked::before,
+input[type='radio']:checked::before {
+  transform: scale(1);
+}
+
+input[type='checkbox']:disabled,
+input[type='radio']:disabled {
+  cursor: not-allowed;
+  border-color: var(--outline-variant);
+}
+
+input[type='checkbox']:focus-visible,
+input[type='radio']:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+/*
+ * The accent swatches and the segmented buttons hide their input and paint the
+ * label instead, so those must not gain a box of their own.
+ */
+input[type='checkbox'].sr-only,
+input[type='radio'].sr-only {
+  appearance: auto;
+  -webkit-appearance: auto;
+  border: 0;
+}
+
 .no-select {
   user-select: none;
   -webkit-user-select: none;
@@ -1980,12 +2066,18 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   color: var(--on-surface);
 }
 
+/*
+ * A grouped list takes the shape scale's 28px at the ends of the group, not
+ * --shape-full. A full radius on a 100px row is half the row's height, so the
+ * first and last cards bowed into lozenges and the group stopped reading as
+ * one card with rows in it.
+ */
 .sequence-card[data-sequence-position='single'] {
-  border-radius: var(--shape-full);
+  border-radius: var(--shape-xl);
 }
 
 .sequence-card[data-sequence-position='first'] {
-  border-radius: var(--shape-full) var(--shape-full) 0 0;
+  border-radius: var(--shape-xl) var(--shape-xl) 0 0;
 }
 
 .sequence-card[data-sequence-position='middle'] {
@@ -1995,7 +2087,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 
 .sequence-card[data-sequence-position='last'] {
   border-top-width: 0;
-  border-radius: 0 0 var(--shape-full) var(--shape-full);
+  border-radius: 0 0 var(--shape-xl) var(--shape-xl);
 }
 
 .sequence-card:hover {

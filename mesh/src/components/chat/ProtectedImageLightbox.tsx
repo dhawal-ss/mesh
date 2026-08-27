@@ -142,7 +142,7 @@ export function ProtectedImageLightbox({
     <Modal open onClose={onClose} title={filename} description="Protected image">
       <div ref={contentRef} className="space-y-3">
         <div
-          className="relative flex min-h-64 w-full items-center justify-center overflow-hidden rounded-full border border-outline-variant bg-surface-container-high"
+          className="relative flex min-h-64 w-full items-center justify-center overflow-hidden rounded-xl border border-outline-variant bg-surface-container-high"
           data-design-token-exception="data-driven-thumbnail-aspect-ratio"
           style={viewStyle}
         >

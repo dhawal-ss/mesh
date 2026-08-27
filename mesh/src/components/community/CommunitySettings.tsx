@@ -912,7 +912,7 @@ export function CommunitySettings({
                     ] as const).map(([value, label]) => (
                       <label
                         key={value}
-                        className={`cursor-pointer rounded-full border px-3 py-3 has-[input:focus-visible]:outline has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-focus ${
+                        className={`cursor-pointer rounded-lg border px-3 py-3 has-[input:focus-visible]:outline has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-focus ${
                           accessSettings.joinRule === value
                             ? 'border-primary bg-secondary-container'
                             : 'border-outline-variant bg-surface-container-lowest'
@@ -1058,7 +1058,7 @@ export function CommunitySettings({
                 </div>
 
                 <div className={`mt-4 grid gap-3 ${voiceRoutesEnabled ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                  <div className="rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-3">
+                  <div className="rounded-md border border-outline-variant bg-surface-container-lowest px-3 py-3">
                     <div className="flex items-center gap-2 text-primary">
                       <Icon name="hash" size="sm" />
                       <span className="text-label-sm font-semibold lowercase tracking-label-md">Text rooms</span>
@@ -1066,7 +1066,7 @@ export function CommunitySettings({
                     <p className="mt-2 text-body-lg font-semibold text-on-surface">{textChannels.length}</p>
                   </div>
                   {voiceRoutesEnabled && (
-                    <div className="rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-3">
+                    <div className="rounded-md border border-outline-variant bg-surface-container-lowest px-3 py-3">
                       <div className="flex items-center gap-2 text-primary">
                         <Icon name="volume" size="sm" />
                         <span className="text-label-sm font-semibold lowercase tracking-label-md">Voice rooms</span>
@@ -1277,7 +1277,7 @@ export function CommunitySettings({
               </h3>
 
               <div className="mt-4 grid grid-cols-2 gap-3">
-                <div className="rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-3">
+                <div className="rounded-md border border-outline-variant bg-surface-container-lowest px-3 py-3">
                   <div className="flex items-center gap-2 text-error">
                     <Icon name="users" size="sm" />
                     <span className="text-label-sm font-semibold lowercase tracking-label-md">Your role</span>
@@ -1286,7 +1286,7 @@ export function CommunitySettings({
                     {isOwner ? 'Community owner' : community.role === 'admin' ? 'Administrator' : 'Member'}
                   </p>
                 </div>
-                <div className="rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-3">
+                <div className="rounded-md border border-outline-variant bg-surface-container-lowest px-3 py-3">
                   <div className="flex items-center gap-2 text-error">
                     <Icon name={matrixMode && isOwner ? 'lock' : 'triangleAlert'} size="sm" />
                     <span className="text-label-sm font-semibold lowercase tracking-label-md">Exit state</span>

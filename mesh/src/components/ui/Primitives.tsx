@@ -281,7 +281,7 @@ export function Progress({
         aria-valuemax={100}
         aria-valuenow={boundedValue}
         className={clsx(
-          'overflow-hidden rounded-full bg-surface-container-high',
+          'overflow-hidden rounded-xl bg-surface-container-high',
           size === 'sm' && 'h-1',
           size === 'md' && 'h-1.5',
           size === 'lg' && 'h-2',

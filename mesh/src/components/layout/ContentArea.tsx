@@ -671,7 +671,7 @@ function FirstAction({
     <button
       type="button"
       onClick={onClick}
-      className="flex min-h-24 flex-col items-center justify-center gap-2 rounded-full border border-outline-variant bg-surface-container p-3 text-body-md font-medium text-on-surface transition-colors hover:border-outline hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+      className="flex min-h-24 flex-col items-center justify-center gap-2 rounded-xl border border-outline-variant bg-surface-container p-3 text-body-md font-medium text-on-surface transition-colors hover:border-outline hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
     >
       <Icon name={icon} />
       {label}
