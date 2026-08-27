@@ -24,8 +24,8 @@
    */
   --ref-n-0: #050507;
   --ref-n-0-rgb: 5 5 7;
-  --ref-n-4: #0F1011;
-  --ref-n-4-rgb: 15 16 17;
+  --ref-n-4: #101014;
+  --ref-n-4-rgb: 16 16 20;
   --ref-n-6: #17171C;
   --ref-n-6-rgb: 23 23 28;
   --ref-n-10: #1D1D23;
@@ -1400,16 +1400,6 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
   -webkit-user-select: none;
 }
 
-.mesh-button {
-  border-radius: var(--shape-lg);
-}
-
-/* Icon buttons share the button family's tile radius so adjacent icon and
- * text controls line up. Kept as an unlayered override, matching .mesh-button. */
-.mesh-icon-button {
-  border-radius: var(--shape-lg);
-}
-
 /*
  * Rows and planes change their face, they do not move.
  *
@@ -1596,10 +1586,9 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 .mesh-workspace-frame {
   gap: var(--shell-pane-gap);
   padding: var(--shell-pane-gap);
-  background: var(--surface-container-lowest);
+  background: var(--surface);
 }
 
-.mesh-community-rail,
 .mesh-context-sidebar,
 .mesh-workspace-main,
 .mesh-room-context-panel {
@@ -1607,9 +1596,16 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
   border-radius: var(--shell-pane-radius);
 }
 
+/*
+ * The rail is the window's own edge, not a pane on it. It carries the ground
+ * tone and no radius, so the list and the conversation are the only rounded
+ * surfaces and the rail reads as the frame they are inset from.
+ */
 .mesh-community-rail {
   overflow-x: hidden;
-  background: var(--surface);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .mesh-home-row {
@@ -1673,7 +1669,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 
 .mesh-workspace-main {
   overflow: hidden;
-  background: var(--surface);
+  background: var(--surface-container-low);
 }
 
 /*
@@ -1717,7 +1713,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
   border: 0;
   border-top: 1px solid var(--outline-variant);
   border-radius: 0;
-  background: var(--surface-container-low);
+  background: var(--surface-container);
 }
 
 .mesh-composer-shell {
@@ -1734,8 +1730,8 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 */
 .mesh-composer {
   border-color: var(--outline);
-  background: var(--surface-container);
-  border-radius: var(--shape-full);
+  background: var(--surface-container-high);
+  border-radius: var(--shape-xl);
   box-shadow: none;
 }
 
@@ -2137,7 +2133,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 .mesh-conversation-header,
 .mesh-route-header {
   min-height: var(--shell-header-height);
-  background: var(--surface);
+  background: var(--surface-container);
   box-shadow: none;
 }
 

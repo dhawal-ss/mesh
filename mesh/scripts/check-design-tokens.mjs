@@ -240,15 +240,18 @@ for (const match of rootBlock.matchAll(/^\s*(--[\w-]+)\s*:\s*([^;]+);/gm)) {
 /*
   Material 3 Expressive's product palette, asserted by value.
 
-  The neutral ramp is chroma-free, which is the one decision that stops an M3
-  palette reading as stock. The three chromatic families are the whole colour
-  budget: azure carries structure and selection, coral carries exceptions, and
-  amber marks pinned and live. There is no green, because a healthy state is
-  silence and coral only means something while it is the only red thing here.
+  The neutral ramp is one cool gray at ten steps, never a hue-shifting one,
+  which is the decision that stops an M3 palette reading as stock. Every step
+  carries the same faint blue cast; --ref-n-4 used to be flatter than its
+  neighbours and was the only break in the ramp. The three chromatic families
+  are the whole colour budget: azure carries structure and selection, coral
+  carries exceptions, and amber marks pinned and live. There is no green,
+  because a healthy state is silence and coral only means something while it
+  is the only red thing here.
 */
 const expectedMaterialColors = new Map([
   ['--ref-n-0', '#050507'],
-  ['--ref-n-4', '#0F1011'],
+  ['--ref-n-4', '#101014'],
   ['--ref-n-6', '#17171C'],
   ['--ref-n-10', '#1D1D23'],
   ['--ref-n-14', '#26262E'],
