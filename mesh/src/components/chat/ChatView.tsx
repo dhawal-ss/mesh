@@ -1896,7 +1896,7 @@ export function ChatView({
             <RoomTrustSummary trust={trust} encryptionLabel={encryptionLabel} onOpenContext={onOpenContext} />
           )}
 
-          <SearchBar label="Find" onNavigateToMessage={handleNavigateToMessage} />
+          <SearchBar onNavigateToMessage={handleNavigateToMessage} />
 
           {matrixMode && onOpenContext && (
             <Tooltip content="Pinned messages" side="bottom">
@@ -1912,14 +1912,13 @@ export function ChatView({
                   nothing becomes unreachable, and at 320px the room name was
                   down to 48px with this button on the line.
                 */
-                className={`hidden h-8 items-center gap-1.5 rounded-full px-2 text-body-sm font-medium transition-colors sm:flex ${
+                className={`mesh-icon-button hidden h-control-md w-control-md items-center justify-center rounded-full transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus sm:flex ${
                   isContextOpen && activeContextTab === 'pins'
                     ? 'bg-secondary-container text-on-secondary-container'
-                    : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface-variant'
+                    : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
                 }`}
               >
-                <Icon name="pin" size="sm" />
-                <span className="hidden sm:inline">Pins</span>
+                <Icon name="pin" />
               </button>
             </Tooltip>
           )}
@@ -1939,14 +1938,13 @@ export function ChatView({
                 }
                 aria-controls="mesh-room-context-panel"
                 aria-expanded={isContextOpen}
-                className={`flex h-8 items-center justify-center gap-1.5 rounded-full px-2 text-body-sm font-medium transition-colors ${
+                className={`mesh-icon-button flex h-control-md w-control-md items-center justify-center rounded-full transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
                   isContextOpen && activeContextTab === 'people'
                     ? 'bg-secondary-container text-on-secondary-container'
-                    : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface-variant'
+                    : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
                 }`}
               >
-                <Icon name="panelRight" size="sm" />
-                <span className="hidden sm:inline">Details</span>
+                <Icon name="panelRight" />
               </button>
             </Tooltip>
           )}

@@ -25,7 +25,6 @@ import { classifySearchResultKind, type SearchResultKind } from '../../lib/searc
 
 interface SearchBarProps {
   onNavigateToMessage: (message: Message) => void
-  label?: string
   scopeId?: string
   resultLocationLabel?: string
 }
@@ -70,7 +69,6 @@ const RESULT_TABS: Array<{ key: ResultTab; label: string }> = [
 
 export function SearchBar({
   onNavigateToMessage,
-  label,
   scopeId,
   resultLocationLabel,
 }: SearchBarProps) {
@@ -360,9 +358,7 @@ export function SearchBar({
             setIsOpen(true)
           }
         }}
-        className={`flex h-8 items-center justify-center gap-1.5 rounded-full text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface-variant ${
-          label ? 'px-2' : 'w-8'
-        }`}
+        className="mesh-icon-button flex h-control-md w-control-md items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
         title="Search messages"
         aria-label="Search messages"
         aria-expanded={isOpen}
@@ -373,8 +369,7 @@ export function SearchBar({
         */
         aria-haspopup="dialog"
       >
-        <Icon name="search" size="sm" />
-        {label && <span className="hidden text-body-sm font-medium md:inline">{label}</span>}
+        <Icon name="search" />
       </button>
 
       <AnimatePresence>

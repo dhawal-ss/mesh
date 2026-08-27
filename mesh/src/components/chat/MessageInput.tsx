@@ -959,13 +959,13 @@ function MessageInputContent({
   return (
     <div
       ref={rootRef}
-      className="mesh-composer-shell -mt-1 mx-3 mb-4 min-w-0 max-w-full sm:mx-5"
+      className="mesh-composer-shell -mt-1 mx-3 mb-4 flex min-w-0 max-w-full items-end gap-3 sm:mx-5"
       onDragOver={disabled || disableAttachments ? undefined : handleDragOver}
       onDragLeave={disabled || disableAttachments ? undefined : handleDragLeave}
       onDrop={disabled || disableAttachments ? undefined : handleDrop}
     >
       <div
-        className={`mesh-composer min-w-0 overflow-hidden rounded-full border border-outline transition-colors ${
+        className={`mesh-composer min-w-0 flex-1 overflow-hidden rounded-full border border-outline transition-colors ${
           isDragOver
             ? 'bg-primary-container ring-2 ring-primary-container-line'
             : 'bg-surface-container'
@@ -1251,29 +1251,6 @@ function MessageInputContent({
             />
           </Popover>
 
-          {/*
-            There was no Send button at all: sending was Enter-only, and the
-            Enter/Shift+Enter contract was documented nowhere in the UI. That is
-            fine for practised users and invisible to everyone else, especially
-            on touch.
-          */}
-          <Tooltip content="Send message (Enter)" side="top">
-            <button
-              type="button"
-              onClick={() => void handleSubmit()}
-              disabled={!canSend}
-              aria-label="Send message"
-              aria-keyshortcuts="Enter"
-              className="mb-1 flex h-control-sm flex-shrink-0 items-center justify-center gap-1.5 rounded-full bg-primary px-3 text-label-md font-semibold text-on-primary transition-colors enabled:hover:bg-primary disabled:opacity-40"
-            >
-              <span aria-hidden="true">Send</span>
-              <Icon
-                name={isUploading ? 'loader' : 'send'}
-                size="sm"
-                className={isUploading ? 'animate-spin' : undefined}
-              />
-            </button>
-          </Tooltip>
         </div>
 
         {/*
@@ -1322,6 +1299,30 @@ function MessageInputContent({
           {draftAtLimit ? 'Message length limit reached. Shorten the message to keep typing.' : ''}
         </p>
       </div>
+
+      {/*
+        The send control is a Material 3 FAB beside the composer, not a button
+        inside it. There was no Send button at all once: sending was Enter-only
+        and the Enter/Shift+Enter contract was documented nowhere in the UI,
+        which is fine for practised users and invisible to everyone else,
+        especially on touch. The word moved into the tooltip and the accessible
+        name; a 56px square at the shape scale's 16px is what carries it now.
+      */}
+      <Tooltip content="Send message (Enter)" side="top">
+        <button
+          type="button"
+          onClick={() => void handleSubmit()}
+          disabled={!canSend}
+          aria-label="Send message"
+          aria-keyshortcuts="Enter"
+          className="mesh-composer-send flex h-control-lg w-control-lg flex-none items-center justify-center rounded-2xl bg-primary text-on-primary shadow-elev-3 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-40 disabled:shadow-none"
+        >
+          <Icon
+            name={isUploading ? 'loader' : 'send'}
+            className={isUploading ? 'animate-spin' : undefined}
+          />
+        </button>
+      </Tooltip>
     </div>
   )
 }

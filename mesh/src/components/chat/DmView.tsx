@@ -1348,7 +1348,6 @@ export function DmView() {
         </span>
         <div className="ml-auto flex items-center gap-1.5">
           <SearchBar
-            label="Find"
             scopeId={activeConversationId}
             resultLocationLabel={peerName}
             onNavigateToMessage={handleNavigateToSearchResult}

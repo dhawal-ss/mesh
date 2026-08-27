@@ -1425,7 +1425,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 .mesh-rail-action,
 .mesh-channel-item,
 .mesh-dm-item,
-.mesh-composer button[aria-label='Send message'] {
+.mesh-composer-send {
   transition:
     background-color var(--transition-fast),
     color var(--transition-fast);
@@ -1751,11 +1751,6 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 .mesh-composer:focus-within {
   border-color: var(--primary-container-line);
   box-shadow: 0 0 0 2px var(--primary-container);
-}
-
-.mesh-composer button[aria-label='Send message']:not(:disabled) {
-  color: var(--on-primary);
-  background: var(--primary);
 }
 
 .mesh-composer-formatting {
