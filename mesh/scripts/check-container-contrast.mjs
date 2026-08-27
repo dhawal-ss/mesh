@@ -289,7 +289,7 @@ export function contrastRatio(foreground, background) {
   return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05)
 }
 
-export const CONTAINER_TONES = ['surface', 'accent', 'success', 'warning', 'danger', 'info']
+export const CONTAINER_TONES = ['primary', 'secondary', 'error', 'marker']
 
 /*
   The themes a person can actually be looking at. The base `:root` block is the
@@ -303,7 +303,7 @@ export const MEASURED_THEMES = ['dark', 'light', 'high-contrast']
   `background: transparent`, so its rule composites straight onto whichever of
   these is behind it, and the rule is judged against that same surface.
 */
-const NOTICE_BACKDROPS = ['--surface-base', '--surface-raised', '--surface-sunken']
+const NOTICE_BACKDROPS = ['--surface', '--surface-container', '--surface-container-high']
 
 /**
  * Contrast of every container line against every surface it can land on.
@@ -447,18 +447,22 @@ export function findBranchDisagreements(css) {
   colour shipped.
 */
 export const TEXT_PAIRS = [
-  ['primary text', '--content-primary', '--surface-base'],
-  ['secondary text', '--content-secondary', '--surface-base'],
-  ['muted text', '--content-muted', '--surface-base'],
-  ['link text', '--content-link', '--surface-base'],
-  ['link text on a raised surface', '--content-link', '--surface-raised'],
-  ['accent text', '--content-accent', '--surface-base'],
-  ['success text', '--status-success', '--surface-base'],
-  ['warning text', '--status-warning', '--surface-base'],
-  ['danger text', '--status-danger', '--surface-base'],
-  ['info text', '--status-info', '--surface-base'],
-  ['text on an accent fill', '--content-on-accent', '--accent'],
-  ['text on a status fill', '--content-on-status', '--status-danger'],
+  ['body text', '--on-surface', '--surface'],
+  ['supporting text', '--on-surface-variant', '--surface'],
+  ['supporting text on a container', '--on-surface-variant', '--surface-container-high'],
+  ['body text on a container', '--on-surface', '--surface-container-highest'],
+  ['link text', '--primary', '--surface'],
+  ['link text on a container', '--primary', '--surface-container-high'],
+  ['error text', '--error', '--surface'],
+  ['error text on a container', '--error', '--surface-container-high'],
+  ['marker text', '--marker', '--surface'],
+  ['text on a primary fill', '--on-primary', '--primary'],
+  ['text on a primary container', '--on-primary-container', '--primary-container'],
+  ['text on a secondary container', '--on-secondary-container', '--secondary-container'],
+  ['text on an error fill', '--on-error', '--error'],
+  ['text on an error container', '--on-error-container', '--error-container'],
+  ['text on a marker fill', '--on-marker', '--marker'],
+  ['text on a marker container', '--on-marker-container', '--marker-container'],
 ]
 
 export function measureTextPairs(css) {

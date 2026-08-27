@@ -26,29 +26,29 @@ const STYLESHEET = `
 :root {
   --ref-dark: #141311;
   --ref-light: #F7F6F2;
-  --status-warning-rgb: 243 166 74;
-  --status-warning: #F3A64A;
-  --surface-base: var(--ref-dark);
-  --warning-container-line: rgb(var(--status-warning-rgb) / 0.78);
+  --error-rgb: 243 166 74;
+  --error: #F3A64A;
+  --surface: var(--ref-dark);
+  --error-container-line: rgb(var(--error-rgb) / 0.78);
 }
 
 @media (min-width: 2560px) {
   :root {
-    --surface-base: #ff0000;
+    --surface: #ff0000;
   }
 }
 
 @supports (color: color-mix(in oklch, white, black)) {
   :root {
-    --warning-container-line: color-mix(in oklch, var(--status-warning) 78%, transparent);
+    --error-container-line: color-mix(in oklch, var(--error) 78%, transparent);
   }
 }
 
 :root[data-theme='light'],
 [data-theme='light'] {
-  --status-warning-rgb: 129 89 0;
-  --status-warning: #815900;
-  --surface-base: var(--ref-light);
+  --error-rgb: 129 89 0;
+  --error: #815900;
+  --surface: var(--ref-light);
 }
 `
 
@@ -70,21 +70,21 @@ test('declarations are read in source order', () => {
 
 test('a width media query never reaches a theme', () => {
   const variables = themeVariables(STYLESHEET, 'dark')
-  assert.equal(resolveColor('var(--surface-base)', variables).r, 0x14)
+  assert.equal(resolveColor('var(--surface)', variables).r, 0x14)
 })
 
 test('a theme block redirects the variables the base block referenced', () => {
   const dark = themeVariables(STYLESHEET, 'dark')
   const light = themeVariables(STYLESHEET, 'light')
-  assert.deepEqual(resolveColor('var(--surface-base)', dark), { r: 20, g: 19, b: 17, a: 1 })
-  assert.deepEqual(resolveColor('var(--surface-base)', light), { r: 247, g: 246, b: 242, a: 1 })
+  assert.deepEqual(resolveColor('var(--surface)', dark), { r: 20, g: 19, b: 17, a: 1 })
+  assert.deepEqual(resolveColor('var(--surface)', light), { r: 247, g: 246, b: 242, a: 1 })
 })
 
 test('includeColorMix picks the declaration branch', () => {
   const mixed = themeVariables(STYLESHEET, 'light', { includeColorMix: true })
   const plain = themeVariables(STYLESHEET, 'light', { includeColorMix: false })
-  assert.match(mixed.get('--warning-container-line'), /^color-mix/)
-  assert.match(plain.get('--warning-container-line'), /^rgb\(/)
+  assert.match(mixed.get('--error-container-line'), /^color-mix/)
+  assert.match(plain.get('--error-container-line'), /^rgb\(/)
 })
 
 test('color-mix with transparent is the same colour at the mixed alpha', () => {
@@ -148,7 +148,7 @@ test('the branches must agree, and disagreement is reported', () => {
   const skewed = STYLESHEET.replace('78%, transparent', '30%, transparent')
   const problems = findBranchDisagreements(skewed)
   assert.ok(
-    problems.some((problem) => problem.token === '--warning-container-line'),
+    problems.some((problem) => problem.token === '--error-container-line'),
     'a fallback that no longer matches its color-mix override must be caught',
   )
 })

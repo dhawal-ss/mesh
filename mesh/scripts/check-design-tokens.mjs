@@ -32,7 +32,7 @@ const [tailwind, globals, main, motion, designLanguage, icon, voiceGrid] = await
 const errors = []
 
 for (const heading of [
-  '# Mesh design language: Quiet Structure',
+  '# Mesh design language: Material 3 Expressive',
   '## Principles',
   '## Positioning against Discord',
   '## Typography',
@@ -58,8 +58,7 @@ if (principleLines.length < 1 || principleLines.length > 5) {
 
 const normalizedDesignLanguage = designLanguage.toLowerCase()
 for (const contractPhrase of [
-  '`Inter Variable`',
-  '`IBM Plex Mono`',
+  '`Roboto Flex`',
   'Reference tokens',
   'Semantic tokens',
   'Component tokens',
@@ -70,19 +69,22 @@ for (const contractPhrase of [
   'With 3',
   '4 to 8',
   'persistent call bar',
+  'shape scale',
+  'state layers',
+  'chroma-free',
 ]) {
   if (!normalizedDesignLanguage.includes(contractPhrase.toLowerCase())) {
     errors.push(`DESIGN_LANGUAGE.md must include the contract phrase ${contractPhrase}`)
   }
 }
 
-for (const iconSize of ['xs: 14', 'sm: 16', 'md: 18', 'lg: 24']) {
+for (const iconSize of ['sm: 20', 'md: 24', 'lg: 40']) {
   if (!icon.includes(iconSize)) {
     errors.push(`Icon.tsx must retain the design-language size ${iconSize}`)
   }
 }
 for (const iconRule of [
-  "strokeWidth={size === 'lg' ? 1.75 : 1.5}",
+  "strokeWidth={size === 'lg' ? 2.25 : 2}",
   'absoluteStrokeWidth',
   'focusable="false"',
 ]) {
@@ -235,129 +237,131 @@ for (const match of rootBlock.matchAll(/^\s*(--[\w-]+)\s*:\s*([^;]+);/gm)) {
   declarations.set(match[1], match[2].trim())
 }
 
-const expectedReferenceColors = new Map([
-  ['--ref-neutral-1', '#101113'],
-  ['--ref-neutral-2', '#1b1c1f'],
-  ['--ref-neutral-3', '#202125'],
-  ['--ref-neutral-4', '#27292e'],
-  ['--ref-neutral-5', '#2e3036'],
-  ['--ref-neutral-6', '#383a40'],
-  ['--ref-neutral-7', '#4a4d54'],
-  ['--ref-neutral-8', '#5a5e65'],
-  ['--ref-neutral-9', '#71757c'],
-  ['--ref-neutral-10', '#9fa3aa'],
-  ['--ref-neutral-11', '#c6c8cc'],
-  ['--ref-neutral-12', '#f0f1f2'],
-  ['--ref-accent-9', '#FFC91C'],
-  ['--ref-accent-10', '#FFDD6B'],
-  ['--ref-accent-11', '#FFEFB0'],
-  ['--ref-green-11', '#3dbe72'],
-  ['--ref-red-11', '#f06a73'],
-  ['--ref-amber-11', '#f0b232'],
-  ['--ref-blue-11', '#6fafff'],
+/*
+  Material 3 Expressive's product palette, asserted by value.
+
+  The neutral ramp is chroma-free, which is the one decision that stops an M3
+  palette reading as stock. The three chromatic families are the whole colour
+  budget: azure carries structure and selection, coral carries exceptions, and
+  amber marks pinned and live. There is no green, because a healthy state is
+  silence and coral only means something while it is the only red thing here.
+*/
+const expectedMaterialColors = new Map([
+  ['--ref-n-0', '#050507'],
+  ['--ref-n-4', '#0F1011'],
+  ['--ref-n-6', '#17171C'],
+  ['--ref-n-10', '#1D1D23'],
+  ['--ref-n-14', '#26262E'],
+  ['--ref-n-17', '#313139'],
+  ['--ref-n-22', '#3D3D46'],
+  ['--ref-n-56', '#8E8E99'],
+  ['--ref-n-80', '#C6C6CE'],
+  ['--ref-n-96', '#F5F5F8'],
+  ['--ref-azure-20', '#002E4E'],
+  ['--ref-azure-30', '#1F3B5C'],
+  ['--ref-azure-40', '#00548F'],
+  ['--ref-azure-80', '#7FC0FF'],
+  ['--ref-azure-90', '#CFE8FF'],
+  ['--ref-azure-92', '#D6E7FA'],
+  ['--ref-coral-20', '#5F1005'],
+  ['--ref-coral-40', '#B3271A'],
+  ['--ref-coral-80', '#FF8F80'],
+  ['--ref-coral-90', '#FFDAD4'],
+  ['--ref-amber-20', '#3D2E00'],
+  ['--ref-amber-40', '#7A5A00'],
+  ['--ref-amber-80', '#FFD24A'],
+  ['--ref-amber-90', '#FFEFC2'],
 ])
 
-for (const [name, expected] of expectedReferenceColors) {
+for (const [name, expected] of expectedMaterialColors) {
   if (declarations.get(name) !== expected) {
-    errors.push(`${name} must use the researched fallback value (${expected})`)
+    errors.push(`${name} must use the approved Material 3 value (${expected})`)
   }
 }
 
 /*
-  Quiet Structure's product palette, asserted by value.
+  Six container tones, six distinct values.
 
-  The ground is #0A0A0B and every boundary above it is an alpha-white hairline
-  rather than a value step, which is why the rail and the canvas are the same
-  colour here and why --border-control is a measurably stronger grey than
-  --border-structural. Both facts are load-bearing: the first is the design,
-  the second is WCAG 1.4.11.
+  Depth is tonal in this contract: a pane is separated from its neighbour by a
+  step on this ramp and a 28px radius, never by a hairline. Two tones resolving
+  to the same value is not a cosmetic near-miss, it is a boundary that has
+  silently stopped existing -- and the rule this replaces asserted the exact
+  opposite, that the rail and the canvas were one ground divided by a rule.
 */
-const expectedQuietStructureColors = new Map([
-  ['--ref-quiet-canvas', '#0A0A0B'],
-  ['--ref-quiet-raised', '#101012'],
-  ['--ref-quiet-primary', '#EDEDEF'],
-  ['--ref-quiet-body', '#D6D7DB'],
-  ['--ref-quiet-secondary', '#8B8D93'],
-  ['--ref-quiet-tertiary', '#6E7077'],
-  ['--ref-quiet-ultramarine', '#5B8CFF'],
-  ['--ref-quiet-vermilion', '#FF5C4D'],
-  ['--ref-quiet-chrome', '#FFC91C'],
-  ['--ref-quiet-green', '#3DD68C'],
-  ['--ref-quiet-light-canvas', '#F7F6F2'],
-  ['--ref-quiet-light-primary', '#171817'],
-  ['--ref-quiet-light-body', '#2F3130'],
-  ['--ref-quiet-light-secondary', '#5E6160'],
-  ['--ref-quiet-light-tertiary', '#74777A'],
-  ['--ref-quiet-light-rule', '#6E716F'],
-  ['--ref-quiet-light-rule-soft', '#D8D7D2'],
-  ['--ref-quiet-light-rail', '#EEEDE8'],
-  ['--ref-quiet-light-hover', '#ECEAE4'],
-  ['--ref-quiet-light-active', '#E4E2DA'],
-  ['--ref-quiet-light-ultramarine', '#2A4FB8'],
-  ['--ref-quiet-light-vermilion', '#B22C1F'],
-  ['--ref-quiet-light-chrome', '#7A5A00'],
-  ['--ref-quiet-light-green', '#16663D'],
-])
+const SURFACE_TONES = [
+  '--surface',
+  '--surface-container-lowest',
+  '--surface-container-low',
+  '--surface-container',
+  '--surface-container-high',
+  '--surface-container-highest',
+]
 
-for (const [name, expected] of expectedQuietStructureColors) {
-  if (declarations.get(name) !== expected) {
-    errors.push(`${name} must use the approved Quiet Structure value (${expected})`)
-  }
+function resolveReference(name, depth = 0) {
+  const declared = declarations.get(name)
+  if (declared === undefined || depth > 8) return declared
+  const indirection = declared.match(/^var\(\s*(--[\w-]+)\s*\)$/)
+  return indirection ? resolveReference(indirection[1], depth + 1) : declared
 }
 
-/*
-  The four alpha strengths the structural vocabulary is made of. They are
-  named rather than typed at call sites so a rule can never be reached for as a
-  control boundary: .08 over the canvas is 1.19:1, and WCAG 1.4.11 asks 3:1 of
-  anything that conveys the shape of a control.
-*/
-const expectedQuietStructureAlphas = new Map([
-  ['--ref-quiet-rule-alpha', '0.08'],
-  ['--ref-quiet-rule-soft-alpha', '0.045'],
-  ['--ref-quiet-fill-alpha', '0.05'],
-  ['--ref-quiet-fill-hover-alpha', '0.08'],
-])
-
-for (const [name, expected] of expectedQuietStructureAlphas) {
-  if (declarations.get(name) !== expected) {
-    errors.push(`${name} must use the approved Quiet Structure alpha (${expected})`)
+const toneValues = new Map()
+for (const tone of SURFACE_TONES) {
+  if (!declarations.has(tone)) {
+    errors.push(`globals.css must define surface tone ${tone}`)
+    continue
   }
-}
-
-/*
-  The composited washes must equal the alpha they claim to be.
-
-  Tailwind consumes --surface-hover-rgb through `rgb(var(...) / <alpha-value>)`
-  and substitutes 1 when no opacity modifier is written, so a channel triple of
-  pure white renders `hover:bg-surface-hover` as opaque white. The fix is a
-  pre-composited value, and the risk a pre-composited value carries is drifting
-  away from the alpha it was derived from, so the two are checked against each
-  other here rather than trusted to stay in step.
-*/
-const CANVAS_CHANNELS = [10, 10, 11]
-const compositeOnCanvas = (alpha) => CANVAS_CHANNELS
-  .map((channel) => Math.round(255 * alpha + channel * (1 - alpha)))
-  .join(' ')
-
-for (const [channels, alphaToken] of [
-  ['--ref-quiet-fill-rgb', '--ref-quiet-fill-alpha'],
-  ['--ref-quiet-fill-strong-rgb', '--ref-quiet-fill-hover-alpha'],
-]) {
-  const alpha = Number(declarations.get(alphaToken))
-  const expected = compositeOnCanvas(alpha)
-  if (declarations.get(channels) !== expected) {
+  const value = resolveReference(tone)
+  if (toneValues.has(value)) {
     errors.push(
-      `${channels} must be white at ${alphaToken} composited over the canvas (${expected}), `
-      + `found ${declarations.get(channels)}`,
+      `${tone} resolves to ${value}, the same value as ${toneValues.get(value)}. The six surface `
+      + 'tones must be six distinct values; a repeated tone is a pane boundary that stopped existing.',
     )
+    continue
+  }
+  toneValues.set(value, tone)
+}
+
+/*
+  State layers replace the four structural alpha-white fills.
+
+  The old vocabulary named four strengths of white and composited two of them
+  against the canvas by hand, which is why this checker used to carry a copy of
+  the canvas channels. An M3 state layer is an opacity applied over whatever
+  role colour is underneath, so there is nothing to pre-composite and nothing
+  to drift out of step.
+*/
+const expectedStateLayers = new Map([
+  ['--state-hover', '0.08'],
+  ['--state-focus', '0.10'],
+  ['--state-pressed', '0.10'],
+  ['--state-drag', '0.16'],
+])
+
+for (const [name, expected] of expectedStateLayers) {
+  if (declarations.get(name) !== expected) {
+    errors.push(`${name} must use the M3 state-layer opacity (${expected})`)
   }
 }
 
-if (declarations.get('--surface-rail') !== declarations.get('--surface-canvas')) {
-  errors.push(
-    'the rail must be the same ground as the canvas. Quiet Structure separates panes with a '
-    + 'rule, not with a value step, so a darker rail is a regression to the previous system.',
-  )
+/*
+  Retired by this contract. Each of these was load-bearing under Quiet
+  Structure and each is now a different mechanism: the hairlines became tonal
+  steps, the alpha fills became state layers, the zero-radius structural plane
+  became the shape scale, and the mono family left the bundle.
+*/
+for (const retired of [
+  '--ref-quiet-rule-alpha',
+  '--ref-quiet-fill-alpha',
+  '--surface-fill',
+  '--border-structural',
+  '--border-row',
+  '--surface-rail',
+  '--radius-plane',
+  '--font-mono',
+]) {
+  if (declarations.has(retired)) {
+    errors.push(`${retired} is retired by the Material 3 contract and must not be redeclared in :root`)
+  }
 }
 
 for (const [index, line] of globals.split(/\r?\n/).entries()) {
@@ -374,36 +378,86 @@ for (const violation of undersizedControlTokens(globals)) {
   errors.push(`${violation.token} must be at least 32px, found ${violation.value}px`)
 }
 
+/*
+  The closed type scale, in M3 role names.
+
+  Thirteen roles, one family, and a floor of 11px for anything informational.
+  The 9.5px uppercase eyebrow and the 10px count are retired rather than
+  renamed: both were below the legible floor and both existed to fit a ruled
+  geometry this contract replaced. Nothing here is uppercased, so there is no
+  tracking token above 0.5px and no eyebrow letter-spacing left to alias.
+*/
 const expectedTypography = new Map([
   ['--ref-size-11', '11px'],
   ['--ref-size-12', '12px'],
-  ['--ref-size-13', '13px'],
   ['--ref-size-14', '14px'],
-  ['--ref-size-15', '15px'],
-  ['--ref-size-18', '18px'],
+  ['--ref-size-16', '16px'],
   ['--ref-size-22', '22px'],
   ['--ref-size-28', '28px'],
-  ['--font-size-2xs', 'var(--ref-size-11)'],
-  ['--font-size-xs', 'var(--ref-size-12)'],
-  ['--font-size-code', 'var(--ref-size-13)'],
-  ['--font-size-dense', 'var(--ref-size-13)'],
-  ['--font-size-sm', 'var(--ref-size-14)'],
-  ['--font-size-base', 'var(--ref-size-15)'],
-  ['--font-size-md', 'var(--ref-size-18)'],
-  ['--font-size-title', 'var(--ref-size-22)'],
-  ['--font-size-lg', 'var(--ref-size-28)'],
+  ['--ref-size-32', '32px'],
+  ['--ref-size-45', '45px'],
+  ['--ref-size-57', '57px'],
+  ['--type-display-lg', 'var(--ref-size-57)'],
+  ['--type-display-sm', 'var(--ref-size-45)'],
+  ['--type-headline-lg', 'var(--ref-size-32)'],
+  ['--type-headline-md', 'var(--ref-size-28)'],
+  ['--type-title-lg', 'var(--ref-size-22)'],
+  ['--type-title-md', 'var(--ref-size-16)'],
+  ['--type-title-sm', 'var(--ref-size-14)'],
+  ['--type-body-lg', 'var(--ref-size-16)'],
+  ['--type-body-md', 'var(--ref-size-14)'],
+  ['--type-body-sm', 'var(--ref-size-12)'],
+  ['--type-label-lg', 'var(--ref-size-14)'],
+  ['--type-label-md', 'var(--ref-size-12)'],
+  ['--type-label-sm', 'var(--ref-size-11)'],
+  ['--type-line-display-lg', '64px'],
+  ['--type-line-display-sm', '52px'],
+  ['--type-line-headline-lg', '40px'],
+  ['--type-line-headline-md', '36px'],
+  ['--type-line-title-lg', '28px'],
+  ['--type-line-title-md', '24px'],
+  ['--type-line-title-sm', '20px'],
+  ['--type-line-body-lg', '24px'],
+  ['--type-line-body-md', '20px'],
+  ['--type-line-body-sm', '16px'],
+  ['--type-line-label-lg', '20px'],
+  ['--type-line-label-md', '16px'],
+  ['--type-line-label-sm', '16px'],
+  ['--type-track-display-lg', '-0.25px'],
+  ['--type-track-title-md', '0.15px'],
+  ['--type-track-title-sm', '0.1px'],
+  ['--type-track-body-lg', '0.5px'],
+  ['--type-track-body-md', '0.25px'],
+  ['--type-track-body-sm', '0.4px'],
+  ['--type-track-label-lg', '0.1px'],
+  ['--type-track-label-md', '0.5px'],
+  ['--type-track-label-sm', '0.5px'],
   ['--font-weight-regular', '400'],
   ['--font-weight-medium', '500'],
   ['--font-weight-semibold', '600'],
-  ['--font-sans', "'Inter Variable', Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif"],
-  ['--font-mono', "'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace"],
-  ['--line-height-11', '15px'],
-  ['--line-height-14', '18px'],
-  ['--line-height-15', '21px'],
-  ['--letter-spacing-11', '0.05em'],
-  ['--letter-spacing-14', '-0.01em'],
-  ['--letter-spacing-15', '-0.005em'],
+  ['--font-sans', "'Roboto Flex', Roboto, ui-sans-serif, system-ui, sans-serif"],
+  /*
+    Not --font-mono. There is no vendored monospace family any more; this is a
+    system stack, and it is legal in exactly two places: a fenced code block,
+    and a device key or session id. Both are machine values a person copies.
+  */
+  ['--font-code', "ui-monospace, 'SF Mono', Menlo, Consolas, monospace"],
 ])
+
+/*
+  Nothing informational may sit below 11px.
+
+  The floor is asserted against the reference tier rather than the roles, so a
+  new role cannot reach past the scale for a smaller literal, and --ref-size-11
+  is the smallest step the scale is allowed to contain.
+*/
+for (const [name, value] of declarations) {
+  if (!/^--ref-size-/.test(name)) continue
+  const px = Number(value.replace('px', ''))
+  if (Number.isFinite(px) && px < 11) {
+    errors.push(`${name} is ${value}; 11px is the floor for anything informational`)
+  }
+}
 
 /*
   The semantic type steps carry the user text-scale multiplier (WCAG 1.4.4), so
@@ -416,28 +470,47 @@ const scaledTypography = (expected) => `calc(${expected} * var(--text-scale))`
 
 for (const [name, expected] of expectedTypography) {
   const declared = declarations.get(name)
-  const scalable = name.startsWith('--font-size-') || name.startsWith('--line-height-')
+  const scalable = name.startsWith('--type-') && !name.startsWith('--type-track-')
   if (declared !== expected && !(scalable && declared === scaledTypography(expected))) {
     errors.push(`${name} must use the production typography value (${expected})`)
   }
 }
 
-for (const name of [
-  '--font-size-2xs',
-  '--font-size-xs',
-  '--font-size-code',
-  '--font-size-dense',
-  '--font-size-sm',
-  '--font-size-base',
-  '--font-size-md',
-  '--font-size-title',
-  '--font-size-lg',
-  '--font-weight-regular',
-  '--font-weight-medium',
-  '--font-weight-semibold',
-]) {
+const TYPE_ROLES = [
+  'display-lg', 'display-sm',
+  'headline-lg', 'headline-md',
+  'title-lg', 'title-md', 'title-sm',
+  'body-lg', 'body-md', 'body-sm',
+  'label-lg', 'label-md', 'label-sm',
+]
+
+for (const role of TYPE_ROLES) {
+  for (const name of [`--type-${role}`, `--type-line-${role}`]) {
+    if (!tailwind.includes(`var(${name})`)) {
+      errors.push(`Tailwind must consume typography token ${name}`)
+    }
+  }
+}
+
+for (const name of ['--font-weight-regular', '--font-weight-medium', '--font-sans', '--font-code']) {
   if (!tailwind.includes(`var(${name})`)) {
     errors.push(`Tailwind must consume typography token ${name}`)
+  }
+}
+
+/*
+  The scale is closed. A step outside the thirteen roles is how the old system
+  grew a 9.5px eyebrow, a 10px count and a 10px chip label without anybody
+  deciding to, so a --type-* token that is not one of the roles fails here.
+*/
+const legalTypeTokens = new Set([
+  ...TYPE_ROLES.map((role) => `--type-${role}`),
+  ...TYPE_ROLES.map((role) => `--type-line-${role}`),
+  ...TYPE_ROLES.map((role) => `--type-track-${role}`),
+])
+for (const name of declarations.keys()) {
+  if (name.startsWith('--type-') && !legalTypeTokens.has(name)) {
+    errors.push(`${name} is not one of the thirteen M3 type roles; the scale is closed`)
   }
 }
 
@@ -493,7 +566,7 @@ if (globals.includes('--animation-pulse-soft') || tailwind.includes('pulseSoft')
 for (const requiredRule of [
   "font-feature-settings: 'liga' 1, 'calt' 1",
   'font-optical-sizing: auto',
-  'font-family: var(--font-mono)',
+  'font-family: var(--font-code)',
   "font-feature-settings: 'tnum' 1, 'calt' 1",
   'outline: 2px solid var(--border-focus)',
   'outline-offset: 2px',
@@ -504,127 +577,198 @@ for (const requiredRule of [
 }
 
 /*
-  Two families, both vendored. Spline Sans was the third and is gone: Quiet
-  Structure uses Inter for everything that is prose and IBM Plex Mono for
-  everything that is a machine value, and there was no role left for a
-  fallback sans nobody could name the purpose of.
+  One vendored family. Inter, IBM Plex Mono and Spline Sans are all gone: every
+  UI role is Roboto Flex, and the only monospace left is a system stack behind
+  --font-code, which ships no bytes.
+
+  "Locally" is the load-bearing word rather than any particular directory. Mesh
+  is a Tauri binary that has to render with no network, so the face is resolved
+  out of the installed dependency tree at build time and emitted into dist/. It
+  is not fetched from a font host, which is what the last assertion here is
+  for -- and keeping it a tracked dependency is also what keeps its OFL notice
+  in the generated THIRD_PARTY_NOTICES.md instead of hand-maintained.
 */
-if (globals.includes('Spline Sans')) {
-  errors.push('globals.css must not restore Spline Sans; Quiet Structure ships two families')
+for (const retiredFamily of ['Spline Sans', 'Inter Variable', 'IBM Plex Mono']) {
+  if (globals.includes(retiredFamily)) {
+    errors.push(`globals.css must not restore ${retiredFamily}; Material 3 Expressive ships one family`)
+  }
 }
 
 for (const fontAsset of [
-  '@fontsource-variable/inter/files/inter-latin-wght-normal.woff2',
-  '@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2',
-  '@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2',
+  '@fontsource-variable/roboto-flex/files/roboto-flex-latin-opsz-normal.woff2',
 ]) {
   if (!globals.includes(fontAsset)) {
     errors.push(`globals.css must load the local ${fontAsset} font asset`)
   }
 }
 
-if (main.includes('@fontsource-variable/inter')) {
-  errors.push('src/main.tsx must not duplicate the Inter asset owned by globals.css')
+if (/fonts\.googleapis\.com|fonts\.gstatic\.com/.test(globals) || /fonts\.googleapis\.com/.test(main)) {
+  errors.push('the renderer must not fetch a font from a remote host; Mesh has to render offline')
+}
+
+if (/@fontsource/.test(main)) {
+  errors.push('src/main.tsx must not duplicate a font asset owned by globals.css')
 }
 
 /*
-  Quiet Structure's geometry, asserted by value.
+  The shape scale, asserted by value.
 
-  The sharp/soft split is the design: things you touch get a radius, things
-  that structure do not. --radius-plane is 0 and stays 0 -- an active room row
-  is a flat rectangle with square corners, and the avatar inside it still has
-  an 8px radius. The trust rail is the one 2px rule in the system.
+  Everything you touch has a radius, and the scale is the system: there is no
+  0px structural plane left for an active row or a chip to fall back to.
+  --shape-none is the single exception and exists only for full-bleed media
+  clipped by an ancestor that carries its own radius, which is why it is the
+  only entry here allowed to be zero.
 */
-const expectedQuietStructureGeometry = new Map([
-  ['--radius-plane', '0'],
-  ['--radius-control', '8px'],
-  ['--radius-panel', '14px'],
-  ['--radius-tile', '8px'],
-  ['--radius-rail-item', '9px'],
-  ['--radius-segment', '7px'],
-  ['--radius-community-rest', '9px'],
-  ['--radius-community-active', '9px'],
-  ['--mesh-radius-tile', '8px'],
-  ['--mesh-radius-card', '14px'],
-  ['--mesh-radius-shell', '8px'],
+const expectedShapeScale = new Map([
+  ['--shape-none', '0'],
+  ['--shape-xs', '4px'],
+  ['--shape-sm', '8px'],
+  ['--shape-md', '12px'],
+  ['--shape-lg', '16px'],
+  ['--shape-lg-inc', '20px'],
+  ['--shape-xl', '28px'],
+  ['--shape-xl-inc', '32px'],
+  ['--shape-full', '100px'],
+])
+
+for (const [name, expected] of expectedShapeScale) {
+  if (declarations.get(name) !== expected) {
+    errors.push(`${name} must use the approved Material 3 shape value (${expected})`)
+  }
+}
+
+for (const [name, value] of expectedShapeScale) {
+  if (name === '--shape-none') continue
+  if (declarations.get(name) === '0' || declarations.get(name) === '0px') {
+    errors.push(`${name} is zero; only --shape-none may be, and only for full-bleed media (${value})`)
+  }
+}
+
+/*
+  The elevation ladder.
+
+  Level 0 is `none` and is what everything in normal document flow uses. Tone
+  and shape carry structure now, so a shadow on a pane, a card, a list row or a
+  message bubble is a regression to a system this contract replaced, not a
+  refinement of it. The five lifted steps exist for things that are genuinely
+  above the page.
+*/
+const expectedElevation = new Map([
+  ['--elev-0', 'none'],
+  ['--elev-1', '0 1px 2px rgb(0 0 0 / .40), 0 1px 3px 1px rgb(0 0 0 / .28)'],
+  ['--elev-2', '0 1px 2px rgb(0 0 0 / .40), 0 2px 6px 2px rgb(0 0 0 / .28)'],
+  ['--elev-3', '0 1px 3px rgb(0 0 0 / .45), 0 4px 8px 3px rgb(0 0 0 / .30)'],
+  ['--elev-4', '0 2px 3px rgb(0 0 0 / .45), 0 6px 10px 4px rgb(0 0 0 / .30)'],
+  ['--elev-5', '0 4px 4px rgb(0 0 0 / .45), 0 8px 12px 6px rgb(0 0 0 / .30)'],
+])
+
+for (const [name, expected] of expectedElevation) {
+  if (declarations.get(name) !== expected) {
+    errors.push(`${name} must use the approved Material 3 elevation value (${expected})`)
+  }
+}
+
+/*
+  Shell geometry, asserted by value.
+
+  Every pane is a 28px rounded surface inset by --shell-pane-gap from the
+  window and from its neighbours, so the rule widths, the gutters and the
+  columns the old shell measured its hairlines with are all gone: there is no
+  shared edge left to draw, no row-number gutter, and no message time column.
+*/
+const expectedShellGeometry = new Map([
+  ['--shape-round', '50%'],
   ['--border-width-status', '1px'],
-  ['--rule-width', '1px'],
-  ['--trust-rail-width', '2px'],
-  ['--shell-rail-width', '60px'],
-  ['--shell-channel-width', '250px'],
-  ['--shell-roster-width', '226px'],
-  ['--shell-header-height', '50px'],
+  ['--shell-rail-width', '88px'],
+  ['--shell-list-width', '340px'],
+  ['--shell-roster-width', '400px'],
+  ['--shell-pane-gap', '12px'],
+  ['--shell-pane-radius', 'var(--shape-xl)'],
+  ['--shell-header-height', '64px'],
   ['--shell-pin-height', '40px'],
   ['--shell-composer-height', '46px'],
   ['--shell-strip-height', '60px'],
   ['--shell-media-max-height', '274px'],
-  ['--shell-conversation-padding', '28px'],
-  ['--conversation-title-padding-top', '22px'],
-  ['--conversation-title-padding-bottom', '20px'],
-  ['--conversation-title-padding-compact', '10px'],
-  ['--shell-channel-row-height', '34px'],
-  ['--shell-occupant-row-height', '40px'],
+  ['--shell-channel-row-height', '56px'],
+  ['--shell-occupant-row-height', '72px'],
   ['--shell-message-padding-block', '4px'],
   ['--shell-message-measure', '65ch'],
   ['--shell-media-max-width', '960px'],
-  ['--row-index-width', '34px'],
+  ['--shell-bubble-measure', '62%'],
   ['--command-band-padding', '60px'],
-  ['--ledger-row-padding', '8px'],
-  ['--message-time-width', '44px'],
-  ['--message-rail-gap', '20px'],
-  ['--route-surface-columns', 'var(--shell-channel-width) minmax(0, 1fr)'],
-  ['--settings-layout-columns', '12rem minmax(0, 1fr)'],
+  ['--route-surface-columns', 'var(--shell-list-width) minmax(0, 1fr)'],
   ['--device-code-columns', '7rem 1fr'],
   ['--invitation-confirmation-columns', 'minmax(0, 1.15fr) minmax(18rem, 0.85fr)'],
 ])
 
-
-for (const [name, expected] of expectedQuietStructureGeometry) {
+for (const [name, expected] of expectedShellGeometry) {
   if (declarations.get(name) !== expected) {
-    errors.push(`${name} must use the approved Quiet Structure foundation value (${expected})`)
+    errors.push(`${name} must use the approved Material 3 foundation value (${expected})`)
   }
 }
 
 for (const variable of [
   '--shell-rail-width',
-  '--shell-channel-width',
+  '--shell-list-width',
   '--shell-roster-width',
+  '--shell-pane-gap',
   '--shell-header-height',
   '--shell-pin-height',
   '--shell-composer-height',
   '--shell-strip-height',
   '--shell-media-max-height',
-  '--shell-conversation-padding',
   '--shell-channel-row-height',
   '--shell-occupant-row-height',
   '--shell-message-padding-block',
 ]) {
   if (!tailwind.includes(`var(${variable})`)) {
-    errors.push(`Tailwind must expose Quiet Structure geometry token ${variable}`)
+    errors.push(`Tailwind must expose Material 3 geometry token ${variable}`)
   }
 }
 
-const expectedAliases = new Map([
-  ['--bg-tertiary', 'var(--surface-sunken)'],
-  ['--bg-secondary', 'var(--surface-sidebar)'],
-  ['--bg-primary', 'var(--surface-base)'],
-  ['--bg-modifier-hover', 'var(--surface-hover)'],
-  ['--bg-modifier-active', 'var(--surface-active)'],
-  ['--bg-modifier-selected', 'var(--surface-active)'],
-  ['--bg-floating', 'var(--surface-overlay)'],
-  ['--text-primary', 'var(--content-primary)'],
-  ['--text-secondary', 'var(--content-secondary)'],
-  ['--text-muted', 'var(--content-muted)'],
-  ['--text-link', 'var(--content-link)'],
-  ['--green', 'var(--status-success)'],
-  ['--red', 'var(--status-danger)'],
-  ['--yellow', 'var(--status-warning)'],
-  ['--blue', 'var(--status-info)'],
-])
+/*
+  Retired shell measurements. Each of these measured something the shell no
+  longer draws: a hairline, the gutter a row number sat in, the fixed column a
+  timestamp sat in, the trust rail, or the 3px inset marker the rail slot used
+  before the selection pill replaced it.
+*/
+for (const retired of [
+  '--rule-width',
+  '--trust-rail-width',
+  '--row-index-width',
+  '--message-time-width',
+  '--message-rail-gap',
+  '--message-gutter',
+  '--community-marker',
+  '--rail-unread-marker-height',
+  '--shell-channel-width',
+  '--shell-conversation-padding',
+  '--conversation-title-padding-top',
+  '--conversation-title-padding-bottom',
+  '--conversation-title-padding-compact',
+  '--settings-layout-columns',
+]) {
+  if (declarations.has(retired)) {
+    errors.push(`${retired} measures something this contract no longer draws; delete it`)
+  }
+}
 
-for (const [name, expected] of expectedAliases) {
-  if (declarations.get(name) !== expected) {
-    errors.push(`${name} must remain a compatibility alias to ${expected}`)
+/*
+  The Discord-era CSS compatibility aliases are gone.
+
+  All fifteen pointed at semantic names this contract retires, and fourteen of
+  them had no call site left at all. An alias nothing consumes is not
+  compatibility, it is a second name for a token that can drift away from the
+  first one unnoticed.
+*/
+for (const retiredAlias of [
+  '--bg-tertiary', '--bg-secondary', '--bg-primary',
+  '--bg-modifier-hover', '--bg-modifier-active', '--bg-modifier-selected', '--bg-floating',
+  '--text-primary', '--text-secondary', '--text-muted', '--text-link',
+  '--green', '--red', '--yellow', '--blue',
+]) {
+  if (declarations.has(retiredAlias)) {
+    errors.push(`${retiredAlias} is a retired compatibility alias; consume the semantic role directly`)
   }
 }
 
@@ -643,12 +787,14 @@ for (const [, variable] of colorReferences) {
 
 const requiredVariableBackedValues = [
   '--font-sans',
-  '--font-mono',
-  '--font-size-2xs',
-  '--font-size-lg',
-  '--radius-default',
-  '--radius-panel',
-  '--elev-overlay',
+  '--font-code',
+  '--type-label-sm',
+  '--type-display-lg',
+  '--shape-sm',
+  '--shape-xl',
+  '--shape-full',
+  '--elev-0',
+  '--elev-3',
   '--z-dropdown',
   '--z-modal',
   '--motion-dur-micro',
@@ -659,7 +805,6 @@ const requiredVariableBackedValues = [
   '--density-row-block',
   '--density-control-lg',
   '--route-surface-columns',
-  '--settings-layout-columns',
   '--device-code-columns',
   '--invitation-confirmation-columns',
 ]
@@ -674,20 +819,30 @@ for (const variable of requiredVariableBackedValues) {
 }
 
 const requiredSemanticColorChannels = [
-  '--surface-sunken-rgb',
-  '--surface-base-rgb',
-  '--surface-raised-rgb',
-  '--surface-overlay-rgb',
-  '--surface-hover-rgb',
-  '--surface-active-rgb',
-  '--content-primary-rgb',
-  '--content-secondary-rgb',
-  '--content-muted-rgb',
-  '--content-on-accent-rgb',
-  '--status-success-rgb',
-  '--status-danger-rgb',
-  '--status-warning-rgb',
-  '--status-info-rgb',
+  '--surface-rgb',
+  '--surface-container-lowest-rgb',
+  '--surface-container-low-rgb',
+  '--surface-container-rgb',
+  '--surface-container-high-rgb',
+  '--surface-container-highest-rgb',
+  '--on-surface-rgb',
+  '--on-surface-variant-rgb',
+  '--outline-rgb',
+  '--outline-variant-rgb',
+  '--primary-rgb',
+  '--on-primary-rgb',
+  '--primary-container-rgb',
+  '--on-primary-container-rgb',
+  '--secondary-container-rgb',
+  '--on-secondary-container-rgb',
+  '--error-rgb',
+  '--on-error-rgb',
+  '--error-container-rgb',
+  '--on-error-container-rgb',
+  '--marker-rgb',
+  '--on-marker-rgb',
+  '--marker-container-rgb',
+  '--on-marker-container-rgb',
 ]
 
 for (const variable of requiredSemanticColorChannels) {
@@ -706,23 +861,29 @@ if (!globals.includes('.mesh-asset-preview') || !globals.includes('background-co
   errors.push('The asset preview class must consume --surface-asset-preview')
 }
 
-const containerRoles = ['surface', 'accent', 'success', 'warning', 'danger', 'info']
+/*
+  The M3 tonal role pairs.
+
+  The old six-role container quintuple named four strengths of the same fill
+  per role, which is twelve authors guessing at an intensity. A tonal container
+  is one value with one legible foreground, and interaction on top of it is a
+  state layer rather than a second, third and fourth container token.
+*/
+const containerRoles = ['primary', 'secondary', 'error', 'marker']
 for (const role of containerRoles) {
-  for (const suffix of ['container', 'container-hover', 'container-active', 'container-line']) {
-    const variable = `--${role}-${suffix}`
+  for (const variable of [`--${role}-container`, `--on-${role}-container`]) {
     if (!declarations.has(variable)) {
-      errors.push(`globals.css must define container role ${variable}`)
+      errors.push(`globals.css must define tonal role ${variable}`)
     }
-    if (!tailwind.includes(`var(${variable})`)) {
-      errors.push(`Tailwind must expose container role ${variable}`)
+    if (!tailwind.includes(`var(${variable})`) && !tailwind.includes(`'${variable}-rgb'`)) {
+      errors.push(`Tailwind must expose tonal role ${variable}`)
     }
   }
-  const onContainer = `--${role}-on-container`
-  if (!declarations.has(onContainer)) {
-    errors.push(`globals.css must define container role ${onContainer}`)
-  }
-  if (!tailwind.includes(`var(${onContainer})`)) {
-    errors.push(`Tailwind must expose container role ${onContainer}`)
+}
+
+for (const tone of SURFACE_TONES) {
+  if (!tailwind.includes(`'${tone}-rgb'`)) {
+    errors.push(`Tailwind must expose surface tone ${tone}`)
   }
 }
 
@@ -1348,7 +1509,7 @@ const ENFORCE_NOTICE_INTENSITY = true
  * side effect. Warn for now; flip to true once that pass lands.
  */
 const ENFORCE_CLASS_LIST_TRUTH = false
-const statusOpacityExpression = /\b(?:bg|text|border|border-[xytrbl]|ring|fill|stroke|outline|divide|from|via|to|shadow|caret|decoration|placeholder)-(?:accent|accent-hover|accent-muted|status-(?:success|danger|warning|info|offline))\/\d{1,3}\b/g
+const statusOpacityExpression = /\b(?:bg|text|border|border-[xytrbl]|ring|fill|stroke|outline|divide|from|via|to|shadow|caret|decoration|placeholder)-(?:on-)?(?:primary|error|marker)(?:-container)?\/\d{1,3}\b/g
 
 function statusOpacityViolations(source) {
   const violations = []
@@ -1378,13 +1539,17 @@ function statusOpacityViolations(source) {
  */
 const FONT_SIZE_CLASSES = new Set(
   [
-    'micro', 'caption', 'meta', 'code', '2xs', 'xs', 'dense', 'sm', 'base', 'md', 'title', 'lg',
-    // Quiet Structure's roles. Each ships its own leading, so a fixed-rem
-    // leading-* utility beside one of these is the same defect as before.
-    'eyebrow', 'count', 'chip', 'support', 'row', 'panel', 'body',
-    'section', 'numeral', 'screen-sm', 'screen', 'display',
+    // The thirteen M3 roles. Each ships its own density-aware leading, so a
+    // fixed-rem leading-* utility beside one of these overrides the contracted
+    // line-height with a value that ignores the density system.
+    'display-lg', 'display-sm',
+    'headline-lg', 'headline-md',
+    'title-lg', 'title-md', 'title-sm',
+    'body-lg', 'body-md', 'body-sm',
+    'label-lg', 'label-md', 'label-sm',
   ].map((token) => `text-${token}`),
 )
+
 const fixedLeadingClass = /^leading-(?:3|4|5|6|7|8|9|10)$/
 
 function contractedLeadingViolations(source) {
@@ -1413,13 +1578,13 @@ function contractedLeadingViolations(source) {
 // a plugin the project does not depend on, and it compiled to nothing.
 if (
   unknownUtilityViolations("'tracking-nonsense text-nonsense animate-in rounded-nonsense'").length !== 4
-  || unknownUtilityViolations("'tracking-eyebrow text-caption animate-spin rounded-control bg-container-warning'").length !== 0
+  || unknownUtilityViolations("'tracking-label-md text-body-lg animate-spin rounded-xl bg-primary-container'").length !== 0
   || unknownUtilityViolations('`text-${size} h-4`').length !== 0
-  || statusOpacityViolations("'bg-status-warning/20 border-accent/50 bg-surface-hover/50'").length !== 2
-  || contractedLeadingViolations("'mt-1 text-xs leading-5 text-muted'").length !== 1
-  || contractedLeadingViolations("'text-base leading-prose text-content-primary'").length !== 0
-  || contractedLeadingViolations("'text-sm leading-none'").length !== 0
-  || contractedLeadingViolations("'leading-5 text-primary'").length !== 0
+  || statusOpacityViolations("'bg-error/20 border-primary/50 bg-surface-container/50'").length !== 2
+  || contractedLeadingViolations("'mt-1 text-body-sm leading-5 text-on-surface-variant'").length !== 1
+  || contractedLeadingViolations("'text-body-lg leading-prose text-on-surface'").length !== 0
+  || contractedLeadingViolations("'text-title-sm leading-none'").length !== 0
+  || contractedLeadingViolations("'leading-5 text-on-surface'").length !== 0
 ) {
   throw new Error('Design-token class resolution self-test failed')
 }

@@ -1,19 +1,19 @@
-# Mesh design language: Quiet Structure
+# Mesh design language: Material 3 Expressive
 
 Status: implementation contract  
 Applies to: Windows, macOS, and Linux public beta, light, dark, and high-contrast themes
 
-Quiet Structure makes Mesh feel like a precisely ruled instrument rather than a warm notebook. The interface is a single near-black ground whose architecture is exposed through hairline rules, mono micro-labels and numbered rows. Its one rule: **everything soft except the structural marks, which are dead sharp. Silence is the default state; only exceptions speak.**
+Material 3 Expressive makes Mesh feel like a set of soft, separable panes rather than a ruled instrument. The interface is a family of tonal surfaces, stepped in lightness and cut to a shape scale, with colour spent on two jobs and nothing else. Its one rule: **tone and shape carry structure; colour carries exception. Silence is still the default state, and coral is still the sound an exception makes.**
 
-The decentralized nature of the product -- homeserver, federation, end-to-end encryption, device trust -- is communicated ambiently rather than in prose beside every message.
+The decentralized nature of the product -- homeserver, federation, end-to-end encryption, device trust -- is communicated by one chip per screen and one card per fault, never by prose beside every message.
 
 ## Principles
 
-1. **The norm gets no words.** A message from your own homeserver, decrypted cleanly, from a verified device, is the norm, and it carries no badge, no icon and no label. Mesh refuses to restate a healthy state.
-2. **Only exceptions speak.** An unverified device, an undecryptable event, a failed federation send or a withheld key earns a line of text. Mesh refuses to spend the same words on "encrypted OK".
-3. **Structure is drawn, not implied.** Panes are separated by a one-pixel rule and rows by a softer one; no surface is darker than its neighbour to suggest a boundary. Mesh refuses floating cards, diffuse shadows and elevation used as decoration.
-4. **Sharp where it structures, soft where you touch.** An active row is a flat plane with square corners; the avatar inside it has an eight-pixel radius. Mesh refuses to round a structural mark or to leave a touchable object square.
-5. **State is readable without color.** Every colour carries a second channel: the trust rail pairs with a tooltip and an exception line, the avatar ring pairs with a footer legend and the visible identifier. Mesh refuses color-only selection, presence, speaking, warning, or error states.
+1. **Depth is tonal, not linear.** Panes are separated by a step in surface tone and a 28 px radius, never by a 1 px rule. Mesh no longer draws hairlines.
+2. **Everything you touch has a radius.** The shape scale is the system; there is no 0 px structural plane, and `--shape-none` exists only for full-bleed media.
+3. **Colour is spent on two jobs.** Azure carries structure, selection and your own words. Coral carries exceptions, mentions and destructive actions. Amber marks pinned and live. Neutrals are chroma-free.
+4. **Exceptions still speak, and now they are the only red thing on the screen.** A healthy, decrypted, verified message carries no badge. Coral appearing anywhere means something needs a person.
+5. **State is still readable without colour.** Every M3 colour role pairs with an icon, a label, or a shape change. Selection is a filled pill *and* `aria-current`. Speaking is an outline *and* the word.
 
 ## Positioning against Discord
 
@@ -21,13 +21,13 @@ Mesh keeps the left community rail, adjacent channel or conversation list, centr
 
 Mesh deliberately differs in five ways:
 
-- Home, Direct Messages, and community overviews use one editorial continuation target followed by a numbered ledger. This improves resumption instead of presenting an empty canvas.
-- Surfaces are flat and share one ground. Rules and spacing explain structure; elevation is reserved for content that is actually overlaid.
-- Federation and encryption state is ambient. A two-pixel trust rail in the timeline gutter, a ring on a mark whose owner is on another homeserver, and one caption per screen replace per-message protocol prose.
+- Home, Direct Messages, and community overviews use one editorial continuation target followed by a list of resumable rows. This improves resumption instead of presenting an empty canvas.
+- Panes are inset rounded surfaces separated by a step in tone. Shape and tone explain structure; shadow is reserved for content that is actually overlaid.
+- Federation and encryption state is ambient. One assist chip in the app bar, one badge on a mark whose owner is on another homeserver, and a coral card only when something is wrong replace per-message protocol prose.
 - Account-service choice is explicit, and invitations do not bind account hosting to community hosting. This is a product and trust improvement, not visual novelty.
 - Voice remains visible through a persistent call bar after navigation. This makes an ongoing media state harder to lose.
 
-The near-black ground, the mono micro-labels, and the numbered rows are visual character. They are intentionally different, but are not claimed as functional improvements.
+The chroma-free neutrals, the pixel heart, and the hashed identity marks are visual character. They are intentionally different, but are not claimed as functional improvements.
 
 ## The shape of a room
 
@@ -41,39 +41,35 @@ A room can be read three ways on this device. A shape changes what the surface p
 
 Each shape is derived from something the room already has. An event's plan is the room's pinned message and its replies are reactions, so somebody reading that same room as a conversation sees a pinned plan with ticks on it, which is what a group does by hand anyway. A shape that needed its own wire format would be a room type, would need a power level, and would have a failure mode; none of these do.
 
-The reply set is fixed at three, because a fourth option is a conversation and the room is already that. A chosen reply is marked by a bar and a fill, never by colour alone. `ClipsView.tsx` and `EventView.tsx` were not carried into the Quiet Structure pass and still use the prior geometry (`border-*-bar`); the behaviour they implement is unchanged.
+The reply set is fixed at three, because a fourth option is a conversation and the room is already that. A chosen reply is marked by a bar and a fill, never by colour alone. `ClipsView.tsx` and `EventView.tsx` still carry the geometry that predates this contract; the behaviour they implement is unchanged.
 
 ## Typography
 
-Two families, both vendored locally. Primary UI and editorial hierarchy use `Inter Variable` through `--font-sans`. `IBM Plex Mono` through `--font-mono` is limited to uppercase eyebrows, row numbers, chip labels, timestamps, keyboard hints, and machine values such as server names and latency. Prose is never mono, and Inter is never uppercased. Spline Sans is not part of this system.
+One family, vendored locally. `Roboto Flex` through `--font-sans` carries every role in the product, variable across `opsz 8..144` and `wght 100..900`. It is resolved out of the installed dependency tree at build time and emitted into `dist/`, which is what keeps its OFL notice generated rather than hand-maintained; Mesh is a Tauri binary that has to render with no network, so no face is ever fetched from a font host. There is no `--font-mono` and no second UI family: a monospace stack survives in exactly two places, because both are machine values a person copies rather than reads -- a fenced code block in `MarkdownContent.tsx`, and a device key or session id in `SecurityDevicesPanel.tsx` and `DiagnosticsPanel.tsx`. Nothing is uppercased; M3 label styles are sentence case, and the uppercase eyebrow is gone with them.
 
-Only weights 400, 500, and 600 are permitted. The scale is closed:
+Weights 400, 500, and 600 are permitted. The M3 roles use 400 and 500; 600 is reserved for editorial emphasis inside prose and carries no role of its own. The scale is closed and carries the M3 role names:
 
-| Token | Size | Line height | Letter spacing | Use |
-| --- | ---: | ---: | ---: | --- |
-| `--font-size-2xs` | 11 px | 15 px | 0.05 em | Uppercase metadata and timestamps |
-| `--font-size-xs` | 12 px | 1.33 | 0.005 em | Captions, status, secondary controls |
-| `--font-size-code` / `--font-size-dense` | 13 px | 1.54 | 0 | Code and dense navigation |
-| `--font-size-sm` | 14 px | 18 px | -0.01 em | Controls, navigation, secondary copy |
-| `--font-size-base` | 15 px | 21 px | -0.005 em | Messages, forms, and body copy |
-| `--font-size-md` | 18 px | 1.33 | -0.01 em | Section headings |
-| `--font-size-title` | 22 px | 1.27 | -0.015 em | Route and modal titles |
-| `--font-size-lg` | 28 px | 1.14 | -0.02 em | One primary editorial heading per surface |
-| `--font-size-eyebrow` | 9.5 px | 1.5 | 0.16 em | Mono uppercase section label |
-| `--font-size-count` | 10 px | 1 | 0 | Mono row numbers and badges |
-| `--font-size-chip` | 10 px | 1 | 0.10 em | Mono plane-chip labels |
-| `--font-size-support` | 12.5 px | 1.4 | 0.005 em | Descriptions and topics |
-| `--font-size-row` | 13.5 px | 1.3 | -0.005 em | Room names and list rows |
-| `--font-size-panel` | 15 px | 21 px | -0.015 em | Panel heads |
-| `--font-size-section` | 30 px | 1 | -0.035 em | Section head |
-| `--font-size-numeral` | 42 px | 1 | -0.05 em | Member counts and standalone numerals |
-| `--font-size-screen-sm` | 46 px | 1 | -0.05 em | Secondary screen title |
-| `--font-size-screen` | 56 px | 0.95 | -0.05 em | Screen title |
-| `--font-size-display` | 76 px | 1 | -0.055 em | The one poster-scale heading in setup |
+| Token | Size | Line height | Letter spacing | Weight | Use |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `--type-display-lg` | 57 px | 64 px | -0.25 px | 400 | The one poster heading in setup |
+| `--type-display-sm` | 45 px | 52 px | 0 | 400 | Secondary screen title |
+| `--type-headline-lg` | 32 px | 40 px | 0 | 400 | Route title, large app bar |
+| `--type-headline-md` | 28 px | 36 px | 0 | 400 | Pane heading |
+| `--type-title-lg` | 22 px | 28 px | 0 | 400 | Small app bar title, modal title |
+| `--type-title-md` | 16 px | 24 px | 0.15 px | 500 | List item headline, room name |
+| `--type-title-sm` | 14 px | 20 px | 0.1 px | 500 | Dense title |
+| `--type-body-lg` | 16 px | 24 px | 0.5 px | 400 | Message text |
+| `--type-body-md` | 14 px | 20 px | 0.25 px | 400 | Supporting text |
+| `--type-body-sm` | 12 px | 16 px | 0.4 px | 400 | Captions |
+| `--type-label-lg` | 14 px | 20 px | 0.1 px | 500 | Buttons, tabs |
+| `--type-label-md` | 12 px | 16 px | 0.5 px | 500 | Chips, navigation labels |
+| `--type-label-sm` | 11 px | 16 px | 0.5 px | 500 | Timestamps, badges |
 
-A grey that carries information must clear 4.5:1 on the ground. `--content-secondary` at 5.96:1 is the floor for any mono eyebrow, count, or caption; `--content-tertiary` at 4.00:1 is reserved for text at 18 px and above and for control boundaries.
+Eleven pixels is the floor for anything informational. The 9.5 px uppercase eyebrow and the 10 px count are retired, and no step below `--type-label-sm` may be added to carry them back.
 
-Text must reflow at native 200 percent Windows text scaling without hiding controls, horizontal scrolling of prose, or loss of status. Truncation is allowed only when the full value is available through an accessible name or adjacent detail, and it is how the poster steps stay safe: `--text-scale` reaches 1.5, which puts the display step at 114 px, and `e2e/text-scale-reflow.spec.ts` measures that no heading exceeds its own box and no page scrolls sideways at 100, 125 and 150 percent across three window sizes.
+A grey that carries information must clear 4.5:1 on the ground it sits on. `--on-surface-variant` is the floor for any caption, timestamp or supporting line; `--outline` is reserved for control boundaries and for text at 18 px and above.
+
+Text must reflow at native 200 percent Windows text scaling without hiding controls, horizontal scrolling of prose, or loss of status. Truncation is allowed only when the full value is available through an accessible name or adjacent detail. `--text-scale` reaches 1.5, which puts the display step at 85.5 px rather than the 114 px the previous 76 px display step reached, and `e2e/text-scale-reflow.spec.ts` measures that no heading exceeds its own box and no page scrolls sideways at 100, 125 and 150 percent across three window sizes.
 
 ## Copy
 
@@ -94,31 +90,37 @@ Two exceptions earn their words. A destructive action states what is lost and wh
 
 `scripts/check-copy-density.mjs` enforces the shape: no user-facing string runs past 16 words or two sentences. Sixteen is the renderer's own ninetieth percentile, so the limit bites the tail where the essays live rather than the middle. Two sentences stay legal because "That did not work. Try again." is the right shape for a failure and a sentence-count rule would have banned it alongside the paragraphs. Copy that genuinely needs more is recorded with the fact a reader would lose, which makes an exception visible instead of ambient.
 
+One clause is amended by this contract. "The norm gets no words" becomes **the norm gets one chip per screen and no words per message**: a single assist chip in the app bar states that the room is encrypted and how many people are on other servers, and no message carries a label saying the same thing again. Everything else in this section stands, including the 16-word limit.
+
 ## Spacing and density
 
-The base spacing unit is 4 px. Permitted relationships are 4, 8, 12, 16, 20, 24, 32, and 40 px. Use 4 to bind icon and label, 8 for content within a compact control, 12 for a row, 16 for a component group, 20 or 24 for section rhythm, and 28, 32, or 40 only between major route regions. The conversation column uses 28 px of horizontal padding; a ledger row uses 8 px of vertical padding; the row-number gutter is 34 px.
+The base spacing unit is 4 px. Permitted relationships are 4, 8, 12, 16, 20, 24, 28, 32, and 40 px. Use 4 to bind icon and label, 8 for content within a compact control, 12 for the gap between panes, 16 for a component group and for the inset of a card within a pane, 20 or 24 for section rhythm, and 28, 32, or 40 only between major route regions. The conversation column uses 16, 20 or 24 px of horizontal padding depending on the surface; there is no row-number gutter and no message time column.
 
-`compact`, `default`, and `comfortable` change row padding, panel gaps, and line height through `--density-*`. They do not remove labels, focus indicators, or status. Interactive controls remain at least 32 px high in every density. Primary touch targets use 40 to 48 px where space permits.
+`compact`, `default`, and `comfortable` change row padding, panel gaps, and line height through `--density-*`. They do not remove labels, focus indicators, or status. Interactive controls remain at least 32 px high in every density. Default control heights are 40, 48, and 56 px, and a primary touch target is 48 px.
 
 ## Color system
 
 Color has three tiers:
 
 1. Reference tokens, `--ref-*`, hold literal values only.
-2. Semantic tokens name purpose, such as `--surface-base`, `--content-secondary`, `--status-danger`, and `--border-focus`.
-3. Component tokens may narrow a semantic role, such as `--accent-container-line`; they may not contain new literals.
+2. Semantic tokens name an M3 role, such as `--surface-container-high`, `--on-surface-variant`, `--error`, and `--border-focus`.
+3. Component tokens may narrow a semantic role; they may not contain new literals.
 
-A new color enters only at the reference tier and must be consumed through a semantic name before a component uses it. Components and Tailwind configuration never use hex, numeric RGB, OKLCH literals, stock palette classes, or reference tokens directly.
+A new color enters only at the reference tier and must be consumed through a semantic name before a component uses it. Components and Tailwind configuration never use hex, numeric RGB, OKLCH literals, stock palette classes, or reference tokens directly. This rule predates this contract and outlives it.
 
-The structural vocabulary above the ground is alpha-white rather than a set of surfaces: a pane rule at 0.08, a row separator at 0.045, and a fill at 0.05 that serves avatar tiles, input grounds, and hovered rows alike. None of the three is a control boundary -- at 1.19:1 and below they are decorative under WCAG 1.4.11, and `--border-control` is a separately measured value that clears 3:1. The rail is not a darker surface than the canvas; both are the same ground and a rule divides them.
+The neutral ramp is chroma-free, which is what stops the palette reading as stock Material. Six container tones -- `--surface-container-lowest`, `--surface-container-low`, `--surface-container`, `--surface-container-high`, `--surface-container-highest`, and the `--surface` ground -- are six distinct values, and a pane is separated from its neighbour by a step between them rather than by a rule. Structural hairlines are gone: `--outline-variant` draws a boundary only where a card genuinely has no tonal step available to it.
 
-Light and dark are independently specified complete themes. Alpha-white has no valid light-theme equivalent and is re-derived as alpha-black against the light canvas rather than flipped. High contrast is a complete functional theme, not an inversion. Every text and control pairing must meet WCAG AA: 4.5:1 for normal text and 3:1 for large text, focus indicators, rules that convey state, and non-text controls. Selection, presence, speaking, warning, and failure always include a non-color cue.
+Three chromatic families, and no fourth. Azure is `--primary` and its containers, and carries structure, selection, and your own messages. Coral is `--error` and its containers, and carries exceptions, mentions, and destructive actions. Amber is `--marker` and its containers, and carries pinned and live. Green is not a UI colour in this system: a healthy state is silence plus the one chip, and speaking in a call is `--primary`. That is what keeps coral meaning something.
+
+Interaction is drawn with M3 state layers rather than with fill tokens -- `--state-hover` at 0.08, `--state-focus` and `--state-pressed` at 0.10, `--state-drag` at 0.16, each composited over the role colour underneath.
+
+Light and dark are independently specified complete themes; light is not derived by flipping dark. High contrast is a complete functional theme, not an inversion: it keeps the M3 roles, pushes every on-colour to pure white or pure black, and pairs every container at 7:1. Every text and control pairing must meet WCAG AA: 4.5:1 for normal text and 3:1 for large text, focus indicators, boundaries that convey state, and non-text controls. Selection, presence, speaking, warning, and failure always include a non-color cue.
 
 ## Elevation, radius, and border
 
-`--elev-card` and `--elev-inset` are `none`. `--elev-overlay` is permitted only for a dropdown, popover, modal, menu, or detached command surface that visually covers other content. A component in normal document flow uses rules and surface tokens, not shadow. A plane chip has no ledge: Quiet Structure has no elevation language, so a press changes the face rather than revealing a shadow beneath it.
+Elevation is a five-step ladder plus a true zero. `--elev-0` is `none` and is what everything in normal document flow uses: a pane, a card, a list row, a message bubble. Shadow is spent only on things that are actually above the page -- `--elev-2` for a menu, popover, or tooltip, `--elev-3` for a FAB, a floating toolbar, a modal, or a snackbar, `--elev-4` for an item being dragged, `--elev-5` for the largest permitted lift. Tone does the work everywhere else.
 
-The radius split is the design. Things you touch get a radius: `--radius-control` and `--radius-tile` at 8 px, `--radius-rail-item` at 9 px, `--radius-segment` at 7 px, `--radius-stage` at 12 px, `--radius-panel` at 14 px. Things that structure do not: `--radius-plane` is 0, and it is what an active row, a chip inside a rule, and a segmented selection use. Rules are always 1 px, with the trust rail the single 2 px exception. Status borders use at least `--border-width-status`; focus uses a 2 px explicit outline with a 2 px offset and never becomes the accent.
+The shape scale is the system. `--shape-xs` 4 px, `--shape-sm` 8 px, `--shape-md` 12 px, `--shape-lg` 16 px, `--shape-lg-inc` 20 px, `--shape-xl` 28 px, `--shape-xl-inc` 32 px, and `--shape-full` for a pill or a circle. `--shape-none` is 0 and is legal only on full-bleed media clipped by an ancestor that has its own radius. Every pane is a 28 px rounded surface inset by 12 px from the window and from its neighbours, so there are no shared edges left for a rule to draw. Focus uses a 2 px explicit outline with a 2 px offset through `--border-focus`, and never becomes the primary colour: M3's own focus indicator is not a substitute for an authored focus state.
 
 ## Motion
 
@@ -143,15 +145,19 @@ Reduced motion removes spatial travel and repeated decorative movement while pre
 
 Three carriers, in order of prominence, and no fourth.
 
-- **The trust rail.** A 2 px vertical bar in the timeline gutter spanning the full height of a message group: `--status-success` at 0.5 for a local, decrypted event from a verified device; `--status-warning` at 0.5 for a sender on another homeserver; `--status-danger` at 0.55 for an undecryptable event or an unverified device. Full server and key detail belongs in a hover tooltip and appears nowhere else.
-- **The ring on the mark.** An avatar whose owner is on a different homeserver carries a 1 px chrome ring. This works in member lists, conversation lists, palette results, and the voice roster, where there is no gutter to carry a rail. Every surface that uses rings carries one legend line in its footer.
-- **One ambient line per screen.** A single 11 px caption pinned to the bottom rule. Never one per message.
+- **One assist chip in the app bar.** `--surface-container-high` with a `shield` glyph and a sentence-case label: "Encrypted, 3 on other servers". One per screen, never one per message.
+- **A badge on the mark.** An avatar whose owner is on a different homeserver carries a 16 px `--marker-container` badge with a `globe` glyph. It replaces the 1 px chrome ring and works in member lists, conversation lists, palette results, and the voice roster. Every surface that uses the badge keeps one legend line, now a `--surface-container` card in the details sheet.
+- **A coral card, inline in the timeline, only when something is wrong.** An undecryptable event, an unverified device, a withheld key, or a failed federation send earns an icon, what happened, what to do, and one button. This is the only place coral appears in the timeline.
 
-Only a departure from the norm gains words, as a mono line directly under the message body paired with a dot in the same tone. Per-message encryption labels, per-message origin-server labels, composer encryption strips, and padlock iconography are prohibited. The shell-level connection band is retained: a degraded link is an exception and has earned its words.
+Green leaves the product: a local, decrypted event from a verified device is the norm, and the norm is silence plus the one chip. Per-message encryption labels, per-message origin-server labels, composer encryption strips, and padlock iconography are prohibited. The shell-level connection band is retained as an `--error-container` banner: a degraded link is an exception and has earned its words.
+
+`lib/trust.ts` keeps `eventTrust`, `serverName`, and `serverRelation` unchanged. Only its label function changes, from a rail tooltip into the accessible name carried by the badge and the card.
 
 ## Iconography
 
-All UI icons route through `src/components/ui/Icon.tsx` and Lucide. Sizes are 14 px `xs`, 16 px `sm`, 18 px `md`, and 24 px `lg`. Stroke is 1.5 px, or 1.75 px for `lg`, with absolute stroke width. Icons align to the text cap-height or the center of a square control; they do not receive arbitrary offsets.
+All UI icons route through `src/components/ui/Icon.tsx` and Lucide. Material Symbols Rounded was considered and rejected: it is the M3-native answer, but it would add a font file to a stylesheet and asset budget that is already at its ceiling, and it would delete the stroke assertions that make the single central icon path enforceable. Lucide at a heavier stroke reads correctly at M3 sizes and keeps this a one-file swap.
+
+Sizes are 20 px `sm`, 24 px `md`, and 40 px `lg`. Stroke is 2 px, or 2.25 px for `lg`, with absolute stroke width. Icons align to the text cap-height or the center of a square control; they do not receive arbitrary offsets. The 14 px and 18 px steps are retired: they are below the M3 target sizes and were only ever used to fit the ruled geometry this contract replaces.
 
 An icon may appear without a visible label only when the action is conventional in context and the control has a precise accessible name. Ambiguous actions, destructive actions, onboarding choices, call state, and errors keep visible text. Decorative icons are hidden from assistive technology.
 
@@ -161,35 +167,35 @@ Every interactive component has an authored focus-visible state. Browser-default
 
 | Surface | Anatomy | State contract |
 | --- | --- | --- |
-| Message row | Avatar gutter, author and time metadata, reply context, content, attachments, reactions, contextual actions | Default is flat; hover reveals actions without moving content; focus-visible outlines the active action; selected or targeted adds border plus text cue; disabled actions remain named; loading preserves row position; error is inline and retryable |
-| Composer | Attachment action, labelled editor, formatting affordance, send action, upload and reply context | Focus-within receives the authored accent outline; active send has text/icon state; disabled explains why; loading keeps draft visible; send error preserves the draft and provides retry |
-| Channel list item | Type icon, name, optional unread count, live state | Hover changes surface; focus-visible outlines the row; active and selected use position or border plus label treatment; disabled retains the name; loading uses stable rows; error stays scoped to the list |
-| Community rail item | Real community or product asset, unread state, accessible name | Rest and selected geometry stay square; hover and focus are distinct; selected has a marker plus accessible state; loading never substitutes a fake asset; error exposes recovery text |
-| Member row | Avatar, display name, optional handle, role or presence, call state | Presence and speaking pair color with text/icon/border; focus reveals permitted action; selected and disabled remain readable; loading and error do not reorder the list |
-| Modal | Labelled title, concise consequence or task, content, ordered actions | Opens above an overlay with trapped focus; initial focus is safe; Escape and cancel restore focus; destructive confirmation is explicit; loading locks duplicate submission; error stays inside the modal |
-| Toast | Status icon, short message, optional one-step action, dismiss | Uses `role=status` or alert semantics appropriate to urgency; never carries a multi-step task; hover pauses dismissal; focus reaches the action; error states name recovery |
+| Message bubble | Avatar on the first of a group, one metadata line, bubble with a 6 px tail corner, attachments clipped to the bubble, reaction chips, contextual actions | Default is flat at `--elev-0`; hover reveals an action pill without moving content; focus-visible outlines the active action; selected or targeted adds a shape change plus text cue; disabled actions remain named; loading preserves row position; error is inline and retryable |
+| Composer | Attachment action, labelled editor, formatting affordance, send action, upload and reply context | Focus-within receives the authored focus outline; active send has text/icon state; disabled explains why; loading keeps draft visible; send error preserves the draft and provides retry |
+| Channel list item | Type glyph, name, optional unread badge, live state | Hover and focus apply a state layer, not a fill token; focus-visible outlines the row; active is a `--secondary-container` pill plus `aria-current`; disabled retains the name; loading uses stable rows; error stays scoped to the list |
+| Community rail item | Real community or product asset, unread badge, accessible name | Rest is a circle and selected is a `--shape-lg` tile, so the shape change is itself the selection cue; hover and focus are distinct; selected has a marker plus accessible state; loading never substitutes a fake asset; error exposes recovery text |
+| Member row | Avatar, display name, optional handle, role chip or presence, call state | Presence and speaking pair color with text/icon/shape; focus reveals permitted action; selected and disabled remain readable; loading and error do not reorder the list |
+| Modal | Labelled title, concise consequence or task, content, ordered actions | Opens above a scrim at `--elev-3` with trapped focus; initial focus is safe; Escape and cancel restore focus; destructive confirmation is explicit; loading locks duplicate submission; error stays inside the modal |
+| Snackbar | Status icon, short message, optional one text action, dismiss | Uses `role=status` or alert semantics appropriate to urgency; never carries a multi-step task; hover pauses dismissal; focus reaches the action; error states name recovery |
 | Empty state | Plain heading, reason, one obvious action, optional secondary guidance | No decorative card stack; focus begins at the heading or action; loading is not shown as empty; error uses the error-state anatomy |
-| Error state | What failed, user impact, next action, optional reviewed details | Danger color is paired with icon/text; retry is focusable; raw protocol detail stays behind an explicit disclosure; disabled retry explains its condition |
-| Call tile | Media or avatar, participant name, self marker, mute state, speaking state, connection state | Hover may reveal local controls; focus-visible outlines the tile/control; speaking uses border plus text; selected means locally focused; disabled controls remain named; reconnecting and error preserve identity and provide status |
+| Error state | What failed, user impact, next action, optional reviewed details | Error color is paired with icon/text; retry is focusable; raw protocol detail stays behind an explicit disclosure; disabled retry explains its condition |
+| Call tile | Media or avatar, participant name, self marker, mute state, speaking state, connection state | Hover may reveal local controls; focus-visible outlines the tile/control; speaking uses a 3 px inset outline plus the word; selected means locally focused; disabled controls remain named; reconnecting and error preserve identity and provide status |
 
 ## Voice and video
 
 Voice is a primary route, not an overlay-only utility. Joining is one action. Messages remain reachable during a call.
 
 - A call tile keeps the participant name and audible state visible over media. Camera-off uses the real avatar, not a placeholder illustration.
-- Speaking uses a status-success edge or outline plus the word `Speaking` or `Talking`. Muted, listening, reconnecting, and disconnected are distinct text/icon states.
+- Speaking uses a 3 px inset `--primary` outline plus the word `Speaking` in the tile's state chip. Muted, listening, reconnecting, and disconnected are distinct text/icon states, and muted is an `--error-container` chip.
 - With 2 participants, use two equal tiles. With 3, feature the active speaker across the first row and place two equal tiles below. With 4 to 8, use a responsive grid with no tile smaller than the useful name and status overlay; at 8, use four columns by two rows at 1280 by 720 and reduce columns before shrinking readable content.
 - The active speaker may be featured, but every participant remains visible without opening a secondary panel for groups of eight or fewer.
-- The persistent call bar remains in the application shell after navigation. It names the room, connection state, participant count, mute state, deafen state, leave action, and one action to return to the call. Compact layouts may hide redundant visible labels but retain accessible names and state.
+- The persistent call bar remains in the application shell after navigation, as an M3 floating toolbar. It names the room, connection state, participant count, mute state, deafen state, leave action, and one action to return to the call. Compact layouts may hide redundant visible labels but retain accessible names and state.
 
 ## Mechanical enforcement
 
-`scripts/check-design-tokens.mjs` enforces the closed typography, local font ownership, theme and density selectors, minimum controls, token-only component colors, semantic contrast pairs, geometry, elevation, motion values, reduced-motion support, central icon path, call-state hooks, and this document's required sections. It additionally asserts that the rail resolves to the same ground as the canvas, that the four structural alpha strengths keep their values, and that Spline Sans is not restored. Visual review enforces hierarchy, anatomy, responsive composition, and whether a screenshot satisfies the five principles.
+`scripts/check-design-tokens.mjs` enforces the closed typography, local font ownership, theme and density selectors, minimum controls, token-only component colors, semantic contrast pairs, geometry, elevation, motion values, reduced-motion support, central icon path, call-state hooks, and this document's required sections. It additionally asserts that the elevation ladder exists with level 0 at `none`, that every value on the shape scale is non-zero except `--shape-none`, that the six surface container tones are six distinct values, that Roboto Flex is vendored locally, and that no component file contains a hex, `rgb()`, `oklch()` or a `--ref-*` reference. `scripts/check-container-contrast.mjs` measures every semantic pair out of this stylesheet rather than against literals typed into a checker. Visual review enforces hierarchy, anatomy, responsive composition, and whether a screenshot satisfies the five principles.
 
 ## Budget decision
 
-Quiet Structure reuses the existing token architecture and consolidated shared rules rather than introducing a second styling approach. `check:bundle-size` measures each current build against the checked-in JavaScript and CSS ceilings; historical measurements are not part of this contract.
+Material 3 Expressive reuses the existing token architecture rather than introducing a second styling approach: an elevation ladder, a shape scale, and state layers are added, and the four structural alpha fills, the hairline rules, the trust rail, the state tick, the conversation-title header, the mono family and its whole class surface, and the sub-11 px type steps are removed. `check:bundle-size` measures each current build against the checked-in JavaScript and CSS ceilings; historical measurements are not part of this contract. The CSS ceiling is the binding constraint and no increase is requested.
 
-Pixel-art masks are emitted as cacheable files instead of base64 stylesheet data. Lightning CSS performs behavior-preserving minification, and a tested PostCSS liveness pass removes source tokens that no compiled rule or renderer source can consume while preserving the complete source design contract. No ceiling increase or waiver is requested.
+Pixel-art masks are emitted as cacheable files instead of base64 stylesheet data. Lightning CSS performs behavior-preserving minification, and a tested PostCSS liveness pass removes source tokens that no compiled rule or renderer source can consume while preserving the complete source design contract.
 
 Performance claims must come from the current performance fixtures or signed installed-build acceptance. Historical preview measurements are not release evidence.
