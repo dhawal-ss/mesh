@@ -962,7 +962,7 @@ export function MatrixAccountScreen({
             id="account-welcome-title"
             ref={modeHeadingRef}
             tabIndex={-1}
-            className="text-headline-md font-semibold text-on-surface"
+            className="text-display-lg text-on-surface"
           >
             Welcome to Mesh
           </h1>

@@ -569,10 +569,13 @@
   --conversation-header-height: var(--shell-header-height);
   --onboarding-shell-height: calc(100vh - 3rem);
   /*
-   * Fixed rather than density-scaled: onboarding is a single narrow column,
-   * so it does not grow the way the roster and list columns do.
+   * Fixed rather than density-scaled: onboarding is a single column, so it
+   * does not grow the way the roster and list columns do. The reference draws
+   * it at 720px, which is a 1440px-window measure; below a laptop width that
+   * would leave no margin and stop being a reading measure, so it holds at
+   * 560px there and takes the wider figure only when the window can spend it.
    */
-  --onboarding-shell-width: 30rem;
+  --onboarding-shell-width: 35rem;
   --privacy-table-width: 36rem;
   --voice-controls-label-width: 140px;
   --voice-tile-min-height: 180px;
@@ -1298,6 +1301,12 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
   }
 }
 
+@media (min-width: 1024px) {
+  :root {
+    --onboarding-shell-width: 45rem;
+  }
+}
+
 @media (forced-colors: active) {
   body,
   [class*='text-'] {
@@ -1510,7 +1519,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 .mesh-onboarding-shell {
   border-color: var(--outline);
   background-color: var(--surface-container-low);
-  border-radius: var(--shape-lg);
+  border-radius: var(--shell-pane-radius);
   box-shadow: none;
 }
 
@@ -1894,17 +1903,23 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
   --mesh-pixel-mask: url('../assets/pixel/profile-signal.png');
 }
 
+/*
+ * The brand tile is the primary container, not the primary fill. At the full
+ * strength it is the brightest thing on an onboarding screen whose job is to
+ * point at one button, and the reference sets it on the container with the
+ * pale mark over it.
+ */
 .mesh-pixel-brand {
   overflow: hidden;
   border: 1px solid var(--primary-container-line);
   border-radius: var(--shape-lg);
-  background-color: var(--primary);
-  color: var(--on-primary);
+  background-color: var(--primary-container);
+  color: var(--on-primary-container);
   box-shadow: none;
 }
 
 .mesh-pixel-brand .mesh-pixel-mark {
-  color: var(--on-primary) !important;
+  color: var(--on-primary-container) !important;
 }
 
 .mesh-pixel-avatar-default:hover .mesh-pixel-mark,
