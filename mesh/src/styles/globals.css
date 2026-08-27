@@ -2145,26 +2145,21 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   box-shadow: none;
 }
 
-.mesh-route-tab[aria-selected='true'] {
-  background: transparent;
-  box-shadow: inset 2px 0 0 var(--primary);
-}
-
+/*
+ * A settings destination is a navigation-drawer item: a 56px pill that fills
+ * with the secondary container when it is the section you are in. These rules
+ * made it a ruled strip with a 2px bar down its left edge -- the previous
+ * system's list -- and every one of them contradicted the pill the class list
+ * already declared. The form cards inside the panel are cards again for the
+ * same reason.
+ */
 .mesh-route-navigation [role='tablist'] {
-  gap: 0;
+  gap: 4px;
 }
 
-.mesh-route-tab {
-  border-bottom: 1px solid var(--outline-variant);
-  border-radius: 0;
-}
-
-.mesh-route-main .mesh-form-card {
-  border-right: 0;
-  border-left: 0;
-  border-radius: 0;
-  padding-right: 0 !important;
-  padding-left: 0 !important;
+.mesh-route-main {
+  border-radius: var(--shell-pane-radius);
+  background: var(--surface-container-low);
 }
 
 .mesh-channel-item {
@@ -2248,15 +2243,6 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 
 .mesh-room-context-tab[aria-selected='true'] {
   box-shadow: inset 0 -2px 0 var(--primary);
-}
-
-.mesh-room-context-summary {
-  border-right: 0;
-  border-left: 0;
-  border-radius: 0;
-  background: transparent;
-  padding-right: 0;
-  padding-left: 0;
 }
 
 #community-settings-summary,
@@ -2482,29 +2468,6 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   gap: 0;
 }
 
-.mesh-invite-section {
-  border-right: 0;
-  border-left: 0;
-  border-radius: 0;
-  background: transparent;
-  padding: 0;
-}
-
-.mesh-invite-destination,
-.mesh-invite-link {
-  border-right: 0;
-  border-left: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-.mesh-invite-guidance {
-  border-radius: 0;
-  background: transparent;
-  padding-right: 0;
-  padding-left: 0;
-}
-
 .mesh-invite-section + .mesh-invite-section {
   margin-top: 20px;
   border-top: 1px solid var(--outline-variant);
@@ -2520,12 +2483,17 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   padding: 0;
 }
 
+/*
+ * Grouped content is a card again.
+ *
+ * These rules stripped a Card back to a full-bleed transparent strip -- the
+ * previous system's idea that a section is a band between two hairlines. The
+ * reference groups settings, safety, invite and diagnostics content into 28px
+ * cards on --surface-container, which is what the Card primitive already
+ * declares; every one of these rules contradicted the class list it sat under,
+ * which is why the token gate reports them.
+ */
 .mesh-dm-safety-section {
-  border-top: 0;
-  border-right: 0;
-  border-left: 0;
-  border-radius: 0;
-  background: transparent;
   padding: 16px;
 }
 
@@ -2539,13 +2507,6 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 
 .mesh-beta-info {
   gap: 0;
-}
-
-.mesh-beta-info-section {
-  border-right: 0;
-  border-left: 0;
-  border-radius: 0;
-  background: transparent;
 }
 
 .mesh-beta-badge {
@@ -2694,10 +2655,6 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 
 .mesh-error-details {
   border-top: 1px solid var(--outline-variant);
-  border-radius: 0;
-  background: transparent;
-  padding-right: 0;
-  padding-left: 0;
 }
 
 /*
@@ -2895,13 +2852,6 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
   border-radius: 0;
 }
 
-.mesh-advanced-settings {
-  border-right: 0;
-  border-left: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
 .mesh-advanced-actions,
 .mesh-advanced-privacy,
 .mesh-advanced-version {
@@ -2913,15 +2863,6 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
   border-radius: 0;
   background: transparent;
   font-family: var(--font-code);
-}
-
-.mesh-diagnostics-frame,
-.mesh-diagnostics-consent,
-.mesh-diagnostics-support {
-  border-right: 0;
-  border-left: 0;
-  border-radius: 0;
-  background: transparent;
 }
 
 .mesh-diagnostics-frame {
@@ -2999,15 +2940,6 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
 .mesh-diagnostics-bundle {
   border: 1px solid var(--outline-variant);
   font-family: var(--font-code);
-}
-
-.mesh-security-frame {
-  border-right: 0;
-  border-left: 0;
-  border-radius: 0;
-  background: transparent;
-  padding-right: 0;
-  padding-left: 0;
 }
 
 .mesh-security-header {
