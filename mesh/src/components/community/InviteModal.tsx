@@ -281,7 +281,7 @@ export function InviteModal({
   if (embedded) {
     if (!isOpen) return null
     return (
-      <section aria-labelledby="community-invitations-heading" className="mx-auto w-full max-w-2xl px-shell-gutter py-6">
+      <section aria-labelledby="community-invitations-heading" className="mx-auto w-full max-w-2xl px-5 py-6">
         <header className="mb-5 border-b border-outline-variant pb-4">
           <h2 id="community-invitations-heading" className="text-title-sm font-semibold text-on-surface">
             Invitations for {communityName}

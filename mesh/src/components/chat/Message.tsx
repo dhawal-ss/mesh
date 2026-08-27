@@ -651,7 +651,7 @@ export const MessageComponent = memo(function MessageComponent({
           tabIndex={-1}
           data-own={isOwnMessage ? 'true' : undefined}
           data-grouped={isGrouped ? 'true' : undefined}
-          className={`mesh-message-row group relative flex min-w-0 max-w-full gap-2 px-shell-gutter py-shell-message-y outline-none ${
+          className={`mesh-message-row group relative flex min-w-0 max-w-full gap-2 px-5 py-shell-message-y outline-none ${
             !isGrouped ? 'mt-message-group' : ''
           }`}
           data-pending={message.deliveryStatus === 'pending' ? 'true' : undefined}

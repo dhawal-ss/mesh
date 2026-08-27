@@ -714,7 +714,7 @@ export function ChannelSidebar() {
                       // A heading holds phrasing content, so the collapsible
                       // variant keeps the button and a span and matches
                       // SectionHeader's type by hand instead of nesting a div.
-                      <h3 className={`px-shell-gutter ${headingSpacing}`}>
+                      <h3 className={`px-5 ${headingSpacing}`}>
                         <button
                           onClick={() => entry.groupKey && toggleGroupCollapsed(entry.groupKey)}
                           className="group flex min-h-8 w-full items-center gap-0.5 text-left"
@@ -734,7 +734,7 @@ export function ChannelSidebar() {
                       <SectionHeader
                         headingLevel={3}
                         title={entry.label}
-                        className={`px-shell-gutter ${headingSpacing}`}
+                        className={`px-5 ${headingSpacing}`}
                       />
                     )}
                   </MeasuredRoomRow>

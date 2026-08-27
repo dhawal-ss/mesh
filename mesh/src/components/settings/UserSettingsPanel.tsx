@@ -457,7 +457,7 @@ export function UserSettingsPanel({
               {identity.displayName}
             </span>
           </div>
-          <SectionLabel className="mb-2 block px-shell-gutter">Settings</SectionLabel>
+          <SectionLabel className="mb-2 block px-5">Settings</SectionLabel>
           <div
             role="tablist"
             aria-label="User settings"
@@ -485,7 +485,7 @@ export function UserSettingsPanel({
                 because aria-selected already carries the state and the plane
                 already shows it.
               */
-              className={`group relative flex min-h-10 flex-shrink-0 items-center gap-2 rounded-full px-shell-gutter text-left text-title-md font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
+              className={`group relative flex min-h-10 flex-shrink-0 items-center gap-2 rounded-full px-5 text-left text-title-md font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
                 activeTab === id
                   ? 'bg-primary text-on-primary'
                   : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
@@ -830,11 +830,11 @@ export function UserSettingsPanel({
             on the device rather than on the account, and that is worth saying
             once at the bottom rather than beside each control.
           */}
-          <AmbientCard className="-mx-shell-gutter mt-2">
+          <AmbientCard className="-mx-5 mt-2">
             Appearance is stored on this device only
           </AmbientCard>
 
-          <div className="space-y-2 border-t border-rule border-outline-variant pt-4">
+          <div className="space-y-2 border-t border border-outline-variant pt-4">
             <SectionHeader title="Sidebar" headingLevel={4} />
             <p className="text-body-sm text-on-surface-variant">
               Room order, pins, and hidden rooms are saved on this device only.
@@ -1190,7 +1190,7 @@ export function UserSettingsPanel({
               value={Math.round(notifications.soundVolume * 100)}
               disabled={!notifications.sound}
               onChange={(event) => setInterfaceSoundVolume(Number(event.target.value) / 100)}
-              className="mt-2 block w-full accent-accent"
+              className="mt-2 block w-full accent-primary"
             />
           </label>
           <SectionHeader title="Interface sound events" headingLevel={4} />
@@ -1624,13 +1624,13 @@ function AppearanceSegmentedControl({
       */}
       <div
         id={id}
-        className="mt-2 grid overflow-hidden rounded-full border border-rule border-outline"
+        className="mt-2 grid overflow-hidden rounded-full border border-outline"
         style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
       >
         {options.map(([optionValue, optionLabel]) => (
           <label
             key={optionValue}
-            className={`relative flex min-h-9 cursor-pointer items-center justify-center rounded-full border-l border-rule border-outline-variant px-3 text-center text-title-md font-medium first:border-l-0 ${APPEARANCE_FOCUS_RING} has-[input:focus-visible]:-outline-offset-2 ${
+            className={`relative flex min-h-9 cursor-pointer items-center justify-center rounded-full border-l border border-outline-variant px-3 text-center text-title-md font-medium first:border-l-0 ${APPEARANCE_FOCUS_RING} has-[input:focus-visible]:-outline-offset-2 ${
               value === optionValue
                 ? 'bg-primary text-on-primary'
                 : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
@@ -1693,7 +1693,7 @@ function SoundEventRow({
         <span className="sr-only">{label}</span>
         <input
           type="checkbox"
-          className="h-4 w-4 accent-accent"
+          className="h-4 w-4 accent-primary"
           checked={checked}
           onChange={(event) => onChange(event.target.checked)}
         />
@@ -1729,7 +1729,7 @@ function ToggleRow({
       </span>
       <input
         type="checkbox"
-        className="mt-0.5 h-4 w-4 flex-shrink-0 accent-accent"
+        className="mt-0.5 h-4 w-4 flex-shrink-0 accent-primary"
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}

@@ -1861,7 +1861,7 @@ export function ChatView({
           viewports; a title-large name fits beside its own actions on one line
           at every width the shell supports.
         */
-        className="mesh-conversation-header flex h-conversation-header min-w-0 flex-shrink-0 items-center gap-3 px-shell-gutter"
+        className="mesh-conversation-header flex h-conversation-header min-w-0 flex-shrink-0 items-center gap-3 px-5"
         data-tauri-drag-region
       >
         <h1

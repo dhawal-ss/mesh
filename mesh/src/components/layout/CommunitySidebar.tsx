@@ -218,7 +218,7 @@ export function CommunitySidebar() {
         ) : null}
 
         {communities.length > 0 && (
-          <div className="mx-auto my-1 h-rail-separator w-7 bg-surface-container-highest" />
+          <div className="mx-auto my-1 h-0.5 w-7 bg-surface-container-highest" />
         )}
 
         {communities.map((c) => (

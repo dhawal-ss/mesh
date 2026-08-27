@@ -685,7 +685,7 @@ const DmConversationRow = memo(function DmConversationRow({
     <div role="listitem">
       <button
         onClick={() => void onSelect(conversation.id)}
-        className={`mesh-dm-item group flex min-h-14 w-full items-center gap-3 rounded-full px-shell-gutter py-2 text-left transition-colors ${
+        className={`mesh-dm-item group flex min-h-14 w-full items-center gap-3 rounded-full px-5 py-2 text-left transition-colors ${
           active
             ? 'bg-primary text-on-primary'
             : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'

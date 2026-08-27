@@ -106,7 +106,7 @@ export function InboxSurface() {
 
   return (
     <section className="mesh-inbox-surface flex min-h-0 flex-1 flex-col overflow-hidden" aria-labelledby="mesh-inbox-heading">
-      <header className="mesh-route-header mesh-inbox-header flex flex-shrink-0 items-center gap-3 border-b border-outline-variant px-shell-gutter py-2">
+      <header className="mesh-route-header mesh-inbox-header flex flex-shrink-0 items-center gap-3 border-b border-outline-variant px-5 py-2">
         <div className="min-w-0 flex-1">
           <p
             className="mesh-surface-kicker text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant"
@@ -138,7 +138,7 @@ export function InboxSurface() {
             this, and a third line under it explained what an inbox collects,
             which is a definition of the word at the top of the surface.
           */
-          <div className="border-b border-outline-variant px-shell-gutter py-4">
+          <div className="border-b border-outline-variant px-5 py-4">
             <p className="font-semibold text-on-surface-variant">You are caught up</p>
           </div>
         ) : rows.map((row) => (
@@ -148,7 +148,7 @@ export function InboxSurface() {
           >
             <button
               type="button"
-              className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-shell-gutter text-left"
+              className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-5 text-left"
               onClick={() => openRoute(row.route)}
               aria-label={rowAccessibleName(row)}
             >
@@ -181,7 +181,7 @@ export function InboxSurface() {
             </button>
             <button
               type="button"
-              className="mr-shell-gutter flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface"
+              className="mr-5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface"
               aria-label={`Mark ${row.title} as read`}
               onClick={() => void markRowRead(row)}
             >

@@ -941,7 +941,7 @@ export function Command({
             }}
           />
           {busyOption || note ? (
-            <p role="status" className="border-t border-rule border-outline-variant py-2 text-label-sm text-on-surface-variant">
+            <p role="status" className="border-t border border-outline-variant py-2 text-label-sm text-on-surface-variant">
               {busyOption
                 ? busyValue?.startsWith('person:')
                   ? `Opening a conversation with ${busyOption.title ?? busyOption.label}…`
@@ -954,7 +954,7 @@ export function Command({
               the row numbers are in, so the band reads as one instrument rather
               than a dialog with a hint strip taped to the bottom.
             */
-            <p className="flex items-center gap-3 border-t border-rule border-outline-variant py-2 text-label-sm text-on-surface-variant">
+            <p className="flex items-center gap-3 border-t border border-outline-variant py-2 text-label-sm text-on-surface-variant">
               <span>{'\u2191\u2193'} Move</span>
               <span aria-hidden="true">·</span>
               <span>{'\u23ce'} Open</span>

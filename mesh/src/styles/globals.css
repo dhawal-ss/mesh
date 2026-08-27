@@ -2655,8 +2655,8 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
  * descendants are named here rather than left to inherit.
  */
 .mesh-notice-band,
-[data-notice-tone],
-[data-notice-tone] :is(a, button):not([data-notice-tone]),
+[data-notice-tone]:not(.mesh-notice-advisory),
+[data-notice-tone]:not(.mesh-notice-advisory) :is(a, button):not([data-notice-tone]),
 .mesh-notice-band :is(a, button):not([data-notice-tone]) {
   color: var(--notice-content) !important;
 }

@@ -9,12 +9,6 @@ const withAlpha = (variable: string) => `rgb(var(${variable}) / <alpha-value>)`
   `text-content-primary` both resolved to nothing for months on exactly that.
   check-design-tokens.mjs resolves every class in the renderer against this
   file, so a missing export fails loudly now.
-
-  The blocks marked "migration scaffolding" are the Quiet Structure class names
-  re-pointed at their Material 3 replacements. They exist so the renderer keeps
-  compiling while its 86 files are codemodded surface by surface, and they are
-  deleted in one commit at the end of that pass so anything missed breaks
-  loudly rather than silently keeping the old look.
 */
 export default {
   content: ['./src/**/*.{tsx,ts}', './index.html'],
@@ -34,27 +28,6 @@ export default {
           qr: withAlpha('--surface-qr-rgb'),
           inverse: withAlpha('--inverse-surface-rgb'),
 
-          // Migration scaffolding.
-          canvas: withAlpha('--surface-rgb'),
-          base: withAlpha('--surface-rgb'),
-          sunken: withAlpha('--surface-container-lowest-rgb'),
-          sidebar: withAlpha('--surface-container-low-rgb'),
-          rail: withAlpha('--surface-container-lowest-rgb'),
-          raised: withAlpha('--surface-container-rgb'),
-          overlay: withAlpha('--surface-container-high-rgb'),
-          hover: withAlpha('--surface-container-high-rgb'),
-          active: withAlpha('--surface-container-highest-rgb'),
-          selected: withAlpha('--secondary-container-rgb'),
-          /*
-            --surface-fill was translucent: the comment on it said it was what
-            to reach for where the wash has to composite onto something other
-            than the canvas. Twenty of its twenty-one call sites are `hover:`,
-            so it lands on the state layer rather than on an opaque tone, which
-            is both the M3 answer and the only one that still reads as a hover
-            on a row that already sits on a container.
-          */
-          fill: 'var(--state-layer-hover)',
-          'fill-hover': 'var(--state-layer-pressed)',
         },
 
         // ── Material 3 foreground roles ───────────────────────────────────
@@ -128,108 +101,6 @@ export default {
         'on-avatar': withAlpha('--on-avatar-rgb'),
         'on-media-overlay': withAlpha('--on-media-overlay-rgb'),
         scrim: 'var(--surface-scrim)',
-
-        /*
-          Migration scaffolding: the Quiet Structure colour names, re-pointed.
-
-          Green is not in this list. --status-success resolved to a green that
-          this contract removes from the product, so every call site that asked
-          for it now gets --primary and reads as structure rather than as a
-          second, quieter kind of success.
-        */
-        content: {
-          DEFAULT: withAlpha('--on-surface-rgb'),
-          primary: withAlpha('--on-surface-rgb'),
-          normal: withAlpha('--on-surface-rgb'),
-          body: withAlpha('--on-surface-rgb'),
-          secondary: withAlpha('--on-surface-variant-rgb'),
-          muted: withAlpha('--on-surface-variant-rgb'),
-          tertiary: withAlpha('--outline-rgb'),
-          link: withAlpha('--primary-rgb'),
-          accent: withAlpha('--primary-rgb'),
-          'on-accent': withAlpha('--on-primary-rgb'),
-          'on-status': withAlpha('--on-error-rgb'),
-          'on-avatar': withAlpha('--on-avatar-rgb'),
-          'on-media-overlay': withAlpha('--on-media-overlay-rgb'),
-        },
-        accent: {
-          DEFAULT: withAlpha('--primary-rgb'),
-          hover: withAlpha('--primary-rgb'),
-          muted: withAlpha('--primary-container-rgb'),
-          content: withAlpha('--on-primary-rgb'),
-        },
-        status: {
-          success: withAlpha('--primary-rgb'),
-          danger: withAlpha('--error-rgb'),
-          warning: withAlpha('--marker-rgb'),
-          info: withAlpha('--primary-rgb'),
-          offline: withAlpha('--presence-offline-rgb'),
-          'success-hover': withAlpha('--primary-rgb'),
-          'danger-hover': withAlpha('--error-rgb'),
-          'warning-hover': withAlpha('--marker-rgb'),
-          'info-hover': withAlpha('--primary-rgb'),
-        },
-        container: {
-          surface: withAlpha('--surface-container-rgb'),
-          'surface-hover': withAlpha('--surface-container-high-rgb'),
-          'surface-active': withAlpha('--surface-container-highest-rgb'),
-          'surface-line': withAlpha('--outline-variant-rgb'),
-          accent: withAlpha('--primary-container-rgb'),
-          'accent-hover': 'var(--primary-container-hover)',
-          'accent-active': 'var(--primary-container-active)',
-          'accent-line': 'var(--primary-container-line)',
-          success: withAlpha('--primary-container-rgb'),
-          'success-hover': 'var(--primary-container-hover)',
-          'success-active': 'var(--primary-container-active)',
-          'success-line': 'var(--primary-container-line)',
-          warning: withAlpha('--marker-container-rgb'),
-          'warning-hover': 'var(--marker-container-hover)',
-          'warning-active': 'var(--marker-container-active)',
-          'warning-line': 'var(--marker-container-line)',
-          danger: withAlpha('--error-container-rgb'),
-          'danger-hover': 'var(--error-container-hover)',
-          'danger-active': 'var(--error-container-active)',
-          'danger-line': 'var(--error-container-line)',
-          info: withAlpha('--primary-container-rgb'),
-          'info-hover': 'var(--primary-container-hover)',
-          'info-active': 'var(--primary-container-active)',
-          'info-line': 'var(--primary-container-line)',
-        },
-        'on-container': {
-          surface: withAlpha('--on-surface-rgb'),
-          accent: withAlpha('--on-primary-container-rgb'),
-          success: withAlpha('--on-primary-container-rgb'),
-          warning: withAlpha('--on-marker-container-rgb'),
-          danger: withAlpha('--on-error-container-rgb'),
-          info: withAlpha('--on-primary-container-rgb'),
-        },
-        'border-subtle': withAlpha('--outline-variant-rgb'),
-        'border-strong': withAlpha('--outline-rgb'),
-        'border-structural': withAlpha('--outline-variant-rgb'),
-        'border-row': withAlpha('--outline-variant-rgb'),
-        'border-emphasis': withAlpha('--outline-rgb'),
-        'border-control': withAlpha('--outline-rgb'),
-        border: withAlpha('--outline-rgb'),
-        'border-light': withAlpha('--outline-rgb'),
-        bg: withAlpha('--surface-rgb'),
-        'surface-raised': withAlpha('--surface-container-rgb'),
-        'surface-float': withAlpha('--surface-container-high-rgb'),
-        'bg-tertiary': withAlpha('--surface-container-lowest-rgb'),
-        'bg-secondary': withAlpha('--surface-container-low-rgb'),
-        'bg-primary': withAlpha('--surface-rgb'),
-        'bg-modifier-hover': withAlpha('--surface-container-high-rgb'),
-        'bg-modifier-active': withAlpha('--surface-container-highest-rgb'),
-        'bg-modifier-selected': withAlpha('--secondary-container-rgb'),
-        'bg-floating': withAlpha('--surface-container-high-rgb'),
-        muted: withAlpha('--on-surface-variant-rgb'),
-        'text-link': withAlpha('--primary-rgb'),
-        'accent-bright': withAlpha('--primary-rgb'),
-        'accent-dim': withAlpha('--primary-container-rgb'),
-        green: withAlpha('--primary-rgb'),
-        red: withAlpha('--error-rgb'),
-        yellow: withAlpha('--marker-rgb'),
-        blue: withAlpha('--primary-rgb'),
-        danger: withAlpha('--error-rgb'),
       },
       fontFamily: {
         sans: ['var(--font-sans)'],
@@ -257,31 +128,6 @@ export default {
         'label-md': ['var(--type-label-md)', { lineHeight: 'var(--type-line-label-md)', letterSpacing: 'var(--type-track-label-md)', fontWeight: 'var(--font-weight-medium)' }],
         'label-sm': ['var(--type-label-sm)', { lineHeight: 'var(--type-line-label-sm)', letterSpacing: 'var(--type-track-label-sm)', fontWeight: 'var(--font-weight-medium)' }],
 
-        // Migration scaffolding: the old steps, folded onto the nearest role.
-        micro: ['var(--type-label-sm)', { lineHeight: 'var(--type-line-label-sm)', letterSpacing: 'var(--type-track-label-sm)' }],
-        caption: ['var(--type-label-sm)', { lineHeight: 'var(--type-line-label-sm)', letterSpacing: 'var(--type-track-label-sm)' }],
-        eyebrow: ['var(--type-label-sm)', { lineHeight: 'var(--type-line-label-sm)', letterSpacing: 'var(--type-track-label-sm)' }],
-        count: ['var(--type-label-sm)', { lineHeight: 'var(--type-line-label-sm)', letterSpacing: 'var(--type-track-label-sm)' }],
-        chip: ['var(--type-label-md)', { lineHeight: 'var(--type-line-label-md)', letterSpacing: 'var(--type-track-label-md)' }],
-        '2xs': ['var(--type-label-sm)', { lineHeight: 'var(--type-line-label-sm)', letterSpacing: 'var(--type-track-label-sm)' }],
-        meta: ['var(--type-body-sm)', { lineHeight: 'var(--type-line-body-sm)', letterSpacing: 'var(--type-track-body-sm)' }],
-        xs: ['var(--type-body-sm)', { lineHeight: 'var(--type-line-body-sm)', letterSpacing: 'var(--type-track-body-sm)' }],
-        support: ['var(--type-body-sm)', { lineHeight: 'var(--type-line-body-sm)', letterSpacing: 'var(--type-track-body-sm)' }],
-        code: ['var(--type-body-md)', { lineHeight: 'var(--type-line-body-md)', letterSpacing: 'var(--type-track-body-md)' }],
-        dense: ['var(--type-body-md)', { lineHeight: 'var(--type-line-body-md)', letterSpacing: 'var(--type-track-body-md)' }],
-        sm: ['var(--type-body-md)', { lineHeight: 'var(--type-line-body-md)', letterSpacing: 'var(--type-track-body-md)' }],
-        body: ['var(--type-body-md)', { lineHeight: 'var(--type-line-body-md)', letterSpacing: 'var(--type-track-body-md)' }],
-        base: ['var(--type-body-lg)', { lineHeight: 'var(--type-line-body-lg)', letterSpacing: 'var(--type-track-body-lg)' }],
-        row: ['var(--type-title-md)', { lineHeight: 'var(--type-line-title-md)', letterSpacing: 'var(--type-track-title-md)' }],
-        md: ['var(--type-title-lg)', { lineHeight: 'var(--type-line-title-lg)', letterSpacing: '0' }],
-        title: ['var(--type-title-lg)', { lineHeight: 'var(--type-line-title-lg)', letterSpacing: '0' }],
-        panel: ['var(--type-title-lg)', { lineHeight: 'var(--type-line-title-lg)', letterSpacing: '0' }],
-        lg: ['var(--type-headline-md)', { lineHeight: 'var(--type-line-headline-md)', letterSpacing: '0' }],
-        section: ['var(--type-headline-md)', { lineHeight: 'var(--type-line-headline-md)', letterSpacing: '0' }],
-        screen: ['var(--type-headline-lg)', { lineHeight: 'var(--type-line-headline-lg)', letterSpacing: '0' }],
-        numeral: ['var(--type-display-sm)', { lineHeight: 'var(--type-line-display-sm)', letterSpacing: '0' }],
-        'screen-sm': ['var(--type-display-sm)', { lineHeight: 'var(--type-line-display-sm)', letterSpacing: '0' }],
-        display: ['var(--type-display-lg)', { lineHeight: 'var(--type-line-display-lg)', letterSpacing: 'var(--type-track-display-lg)' }],
       },
       lineHeight: {
         prose: 'var(--line-height-prose)',
@@ -298,16 +144,6 @@ export default {
         'label-md': 'var(--type-track-label-md)',
         'label-sm': 'var(--type-track-label-sm)',
 
-        // Migration scaffolding. Nothing is uppercased any more, so every one
-        // of these resolves to a label tracking rather than the 0.16em the
-        // mono eyebrow used to carry.
-        chip: 'var(--type-track-label-md)',
-        eyebrow: 'var(--type-track-label-md)',
-        caption: 'var(--type-track-label-md)',
-        section: 'var(--type-track-label-md)',
-        signal: 'var(--type-track-label-md)',
-        control: 'var(--type-track-label-md)',
-        status: 'var(--type-track-label-md)',
       },
       borderRadius: {
         DEFAULT: 'var(--shape-sm)',
@@ -323,14 +159,6 @@ export default {
         round: 'var(--shape-round)',
         pane: 'var(--shell-pane-radius)',
 
-        // Migration scaffolding.
-        plane: 'var(--shape-full)',
-        tile: 'var(--shape-lg)',
-        segment: 'var(--shape-full)',
-        control: 'var(--shape-full)',
-        panel: 'var(--shape-xl)',
-        community: 'var(--shape-round)',
-        'community-active': 'var(--shape-lg)',
       },
       boxShadow: {
         none: 'var(--elev-0)',
@@ -341,8 +169,6 @@ export default {
         'elev-4': 'var(--elev-4)',
         'elev-5': 'var(--elev-5)',
 
-        // Migration scaffolding.
-        overlay: 'var(--elev-3)',
       },
       spacing: {
         'density-row': 'var(--density-row-block)',
@@ -357,21 +183,6 @@ export default {
         'conversation-header': 'var(--conversation-header-height)',
         'shell-message-y': 'var(--shell-message-padding-block)',
 
-        /*
-          Migration scaffolding. These are lengths, not tokens: the custom
-          properties behind them measured a hairline, a row-number gutter, a
-          fixed timestamp column and a 28px conversation padding, and all four
-          are things this contract no longer draws. They are written as
-          literals here so the call sites keep compiling and so the next reader
-          can see there is no token left to reach for.
-        */
-        'shell-gutter': '20px',
-        ledger: '8px',
-        'row-index': '34px',
-        'message-time': '44px',
-        'message-rail-gap': '20px',
-        'community-marker': '3px',
-        'rail-separator': '2px',
       },
       width: {
         'member-list': 'var(--member-list-width)',
@@ -384,11 +195,6 @@ export default {
         'shell-list': 'var(--shell-list-width)',
         'shell-roster': 'var(--shell-roster-width)',
 
-        // Migration scaffolding.
-        'row-index': '34px',
-        'message-time': '44px',
-        'trust-rail': '2px',
-        rule: '1px',
       },
       maxWidth: {
         'attachment-name': 'var(--attachment-name-width)',
@@ -410,9 +216,6 @@ export default {
         'shell-channel-row': 'var(--shell-channel-row-height)',
         'shell-occupant': 'var(--shell-occupant-row-height)',
 
-        // Migration scaffolding.
-        'trust-rail': '2px',
-        rule: '1px',
       },
       minWidth: {
         'privacy-table': 'var(--privacy-table-width)',
@@ -446,9 +249,6 @@ export default {
         status: 'var(--border-width-status)',
         bar: 'var(--border-width-bar)',
 
-        // Migration scaffolding: the hairline and the trust rail.
-        rule: '1px',
-        trust: '2px',
       },
       zIndex: {
         base: 'var(--z-base)',

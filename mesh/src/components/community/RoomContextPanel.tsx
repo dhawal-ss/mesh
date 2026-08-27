@@ -236,7 +236,7 @@ export function RoomContextPanel({
         onPointerDown={onResizeStart}
         onResizeBy={onResizeBy}
       />
-      <div className="mesh-room-context-header flex-shrink-0 border-b border-rule border-outline-variant">
+      <div className="mesh-room-context-header flex-shrink-0 border-b border border-outline-variant">
         <div className="flex h-conversation-header items-center gap-2 px-4">
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-title-lg font-semibold text-on-surface">
@@ -258,7 +258,7 @@ export function RoomContextPanel({
         {!signalCheckOpen && (
           <div
             ref={tabListRef}
-            className="mesh-room-context-tabs mx-3 mb-3 flex min-w-0 overflow-x-auto rounded-full border border-rule border-outline"
+            className="mesh-room-context-tabs mx-3 mb-3 flex min-w-0 overflow-x-auto rounded-full border border-outline"
             role="tablist"
             aria-label="Details"
             onKeyDown={handleTabKeyDown}
@@ -276,7 +276,7 @@ export function RoomContextPanel({
                   activeTab === tab.id
                     ? 'text-on-surface'
                     : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
-                } ${tab.id === tabs[0]?.id ? '' : 'border-l border-rule border-outline-variant'}`}
+                } ${tab.id === tabs[0]?.id ? '' : 'border-l border border-outline-variant'}`}
                 onClick={() => onTabChange(tab.id)}
               >
                 {tab.label}
@@ -319,7 +319,7 @@ export function RoomContextPanel({
             the thing, so it is the size of a screen title and the two clauses
             under it are an eyebrow.
           */}
-          <div className="mesh-room-context-summary flex flex-col gap-1 border-b border-rule border-outline-variant px-3 pb-4 pt-3">
+          <div className="mesh-room-context-summary flex flex-col gap-1 border-b border border-outline-variant px-3 pb-4 pt-3">
             <span className="text-display-sm font-semibold text-on-surface">
               {members.length}
             </span>

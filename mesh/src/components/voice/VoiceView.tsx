@@ -141,7 +141,7 @@ export function VoiceView({
       data-voice-jitter-ms={stats.jitterMs ?? undefined}
       data-voice-packet-loss-percent={stats.packetLossPercent ?? undefined}
     >
-      <header className="mesh-conversation-title-header flex flex-none flex-col gap-1.5 border-b border-rule border-outline-variant">
+      <header className="mesh-conversation-title-header flex flex-none flex-col gap-1.5 border-b border border-outline-variant">
         <span className="min-w-0 flex-1">
           <SectionLabel className="block truncate">
             {connectedOccupancy > 0

@@ -277,17 +277,6 @@ function VoiceParticipantTile({
       data-speaking={speaking ? 'true' : undefined}
       aria-label={`${peer.displayName} call tile, ${peer.isSelf ? 'you, ' : ''}${state}`}
     >
-      {/*
-        The trust rail, reused as a speaking rail. Same 2px column, same three
-        tones: green when this peer holds the floor, vermilion when muted, the
-        structural hairline when idle. A person who has learned the mark in the
-        timeline already knows how to read it here.
-      */}
-      <span
-        aria-hidden="true"
-        data-trust={speaking ? 'ok' : muted ? 'suspect' : 'idle'}
-        className="mesh-trust-rail absolute inset-y-0 left-0 z-sticky w-trust-rail"
-      />
       {previewImage ? (
         <img
           src={previewImage}
@@ -380,7 +369,7 @@ function VoiceMediaStage({
           </span>
         </span>
         {peer.speaking ? (
-          <span className="border-l border-trust border-primary pl-3 text-label-md font-semibold text-primary">
+          <span className="rounded-sm bg-primary-container px-2 py-0.5 text-label-md text-on-primary-container">
             Speaking
           </span>
         ) : null}
@@ -530,19 +519,9 @@ function PartyParticipant({
     /* The bar gutter is reserved on every row, so a row does not indent itself
        by its own bar width the moment its occupant starts talking. */
     <div
-      className="group flex gap-3 border-b border-rule border-outline-variant px-shell-gutter py-3"
+      className="group flex gap-3 border-b border border-outline-variant px-5 py-3"
       aria-label={`${peer.displayName}, ${accessibleState}`}
     >
-      {/*
-        The same 2px column as the timeline, reading the same three tones:
-        green when this peer holds the floor, vermilion when muted, the
-        structural hairline when idle.
-      */}
-      <span
-        aria-hidden="true"
-        data-trust={speaking ? 'ok' : muted ? 'suspect' : 'idle'}
-        className="mesh-trust-rail w-trust-rail flex-none self-stretch"
-      />
       <div className="min-w-0 flex-1">
       <div className="flex items-center gap-3">
         <Avatar
@@ -581,7 +560,7 @@ function PartyParticipant({
               onParticipantVolume?.(peer.publicKey, next)
             }}
             aria-label={`${peer.displayName} local volume`}
-            className="min-w-0 flex-1 accent-accent"
+            className="min-w-0 flex-1 accent-primary"
           />
           <span className="tnum w-8 text-right">{Math.round(volume * 100)}%</span>
         </label>

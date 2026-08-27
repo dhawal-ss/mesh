@@ -231,7 +231,7 @@ export function InvitationSurface({
           title="Invitation unavailable"
           detail="This invitation was completed, replaced, or is no longer saved on this device."
         />
-        <div className="p-shell-gutter">
+        <div className="p-5">
           <Button onClick={() => navigate({ kind: 'home' }, { replace: true })}>Back to home</Button>
         </div>
       </section>
@@ -252,7 +252,7 @@ export function InvitationSurface({
     <section className="flex min-h-0 flex-1 flex-col overflow-y-auto" aria-labelledby="mesh-invitation-heading">
       <InvitationHeader title={`Invitation to ${communityName}`} />
 
-      <div className="mx-auto grid w-full max-w-onboarding-shell items-start gap-5 p-shell-gutter lg:grid-cols-invitation-confirmation">
+      <div className="mx-auto grid w-full max-w-onboarding-shell items-start gap-5 p-5 lg:grid-cols-invitation-confirmation">
         <InvitationDestinationCard pending={matchingPending} />
 
         <section className="border border-outline-variant bg-surface p-4" aria-label="Invitation actions">
@@ -374,7 +374,7 @@ function invitationFailureAction(failure: unknown): InvitationFailureAction {
 
 function InvitationHeader({ title, detail }: { title: string; detail?: string }) {
   return (
-    <header className="mesh-route-header flex flex-shrink-0 items-center border-b border-outline-variant px-shell-gutter py-2">
+    <header className="mesh-route-header flex flex-shrink-0 items-center border-b border-outline-variant px-5 py-2">
       <div className="min-w-0">
         <h1
           id="mesh-invitation-heading"

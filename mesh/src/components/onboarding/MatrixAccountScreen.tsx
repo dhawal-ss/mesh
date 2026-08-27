@@ -1347,7 +1347,7 @@ export function MatrixAccountScreen({
               type="checkbox"
               checked={showPassword}
               onChange={(event) => setShowPassword(event.target.checked)}
-              className="h-4 w-4 accent-accent"
+              className="h-4 w-4 accent-primary"
             />
             Show password
           </label>

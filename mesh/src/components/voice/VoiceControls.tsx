@@ -161,7 +161,7 @@ export function VoiceControls({
         between them and Leave breaks out of the row as the only plane, because
         it is the only action here that pressing again does not undo.
       */}
-      <div className="flex w-full max-w-4xl items-center justify-center border-y border-rule border-outline-variant">
+      <div className="flex w-full max-w-4xl items-center justify-center border-y border border-outline-variant">
         <Tooltip
           content={
             inputMode === 'push-to-talk'
@@ -232,7 +232,7 @@ export function VoiceControls({
                   ? 'Unmute microphone'
                   : 'Mute microphone'
             }
-            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-full border-l border-rule border-outline-variant px-3 text-label-md font-semibold transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
+            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-full border-l border border-outline-variant px-3 text-label-md font-semibold transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
               isMuted && !isPushToTalking
                 ? 'bg-marker text-on-error'
                 : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
@@ -253,7 +253,7 @@ export function VoiceControls({
             onClick={() => setDeafened(!isDeafened)}
             aria-pressed={isDeafened}
             aria-label={isDeafened ? 'Turn incoming audio on' : 'Turn incoming audio off'}
-            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-full border-l border-rule border-outline-variant px-3 text-label-md font-semibold transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
+            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-full border-l border border-outline-variant px-3 text-label-md font-semibold transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
               isDeafened
                 ? 'bg-marker text-on-error'
                 : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
@@ -288,7 +288,7 @@ export function VoiceControls({
                   ? isCameraEnabled ? 'Stopping camera' : 'Starting camera'
                   : isCameraEnabled ? 'Turn camera off' : 'Turn camera on'
             }
-            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-full border-l border-rule border-outline-variant px-3 text-label-md font-semibold transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
+            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-full border-l border border-outline-variant px-3 text-label-md font-semibold transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
               isCameraEnabled
                 ? 'bg-primary text-on-primary'
                 : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
@@ -320,7 +320,7 @@ export function VoiceControls({
                   : isScreenSharing ? 'Stop sharing screen' : 'Share screen'
             }
             data-screen-sharing={isScreenSharing || undefined}
-            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-full border-l border-rule border-outline-variant px-3 text-label-md font-semibold transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
+            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-full border-l border border-outline-variant px-3 text-label-md font-semibold transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
               isScreenSharing
                 ? 'bg-primary text-on-primary'
                 : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
@@ -336,7 +336,7 @@ export function VoiceControls({
             <IconButton
               size="lg"
               aria-label="Open voice settings"
-              className="min-h-control-lg w-auto gap-1.5 rounded-full border-l border-rule border-outline-variant px-3 text-label-md font-semibold text-on-surface-variant hover:bg-state-hover hover:text-on-surface"
+              className="min-h-control-lg w-auto gap-1.5 rounded-full border-l border border-outline-variant px-3 text-label-md font-semibold text-on-surface-variant hover:bg-state-hover hover:text-on-surface"
             >
               <Icon name="settings" size="sm" />
               <span aria-hidden="true">Settings</span>
@@ -413,7 +413,7 @@ export function VoiceControls({
             <div className="space-y-1">
               <span className="text-body-sm text-on-surface-variant">Input level</span>
               <div
-                className="h-trust-rail overflow-hidden rounded-full bg-state-pressed"
+                className="h-1 overflow-hidden rounded-full bg-state-pressed"
                 role="meter"
                 aria-label="Microphone input level"
                 aria-valuemin={0}
@@ -494,7 +494,7 @@ function AudioProcessingToggle({
         checked={checked}
         disabled={disabled}
         onChange={onChange}
-        className="h-4 w-4 accent-accent"
+        className="h-4 w-4 accent-primary"
       />
     </label>
   )

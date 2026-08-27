@@ -45,7 +45,7 @@ The reply set is fixed at three, because a fourth option is a conversation and t
 
 ## Typography
 
-One family, vendored locally. `Roboto Flex` through `--font-sans` carries every role in the product, variable across `opsz 8..144` and `wght 100..900`. It is resolved out of the installed dependency tree at build time and emitted into `dist/`, which is what keeps its OFL notice generated rather than hand-maintained; Mesh is a Tauri binary that has to render with no network, so no face is ever fetched from a font host. There is no `--font-mono` and no second UI family: a monospace stack survives in exactly two places, because both are machine values a person copies rather than reads -- a fenced code block in `MarkdownContent.tsx`, and a device key or session id in `SecurityDevicesPanel.tsx` and `DiagnosticsPanel.tsx`. Nothing is uppercased; M3 label styles are sentence case, and the uppercase eyebrow is gone with them.
+One family, vendored locally. `Roboto Flex` through `--font-sans` carries every role in the product, variable across `opsz 8..144` and `wght 100..900`. It is resolved out of the installed dependency tree at build time and emitted into `dist/`, which is what keeps its OFL notice generated rather than hand-maintained; Mesh is a Tauri binary that has to render with no network, so no face is ever fetched from a font host. There is no `--font-mono` and no second UI family: `--font-code` is a system stack that ships no bytes, and it survives in exactly one job -- a machine value a person copies rather than reads. That is a fenced code block in `MarkdownContent.tsx` and the `<code>` primitive in `Primitives.tsx`, a device key in `SecurityDevicesPanel.tsx`, a session id in `DiagnosticsPanel.tsx`, and the recovery grid in `BackupCodeScreen.tsx`. Nothing is uppercased; M3 label styles are sentence case, and the uppercase eyebrow is gone with them.
 
 Weights 400, 500, and 600 are permitted. The M3 roles use 400 and 500; 600 is reserved for editorial emphasis inside prose and carries no role of its own. The scale is closed and carries the M3 role names:
 
@@ -67,7 +67,7 @@ Weights 400, 500, and 600 are permitted. The M3 roles use 400 and 500; 600 is re
 
 Eleven pixels is the floor for anything informational. The 9.5 px uppercase eyebrow and the 10 px count are retired, and no step below `--type-label-sm` may be added to carry them back.
 
-A grey that carries information must clear 4.5:1 on the ground it sits on. `--on-surface-variant` is the floor for any caption, timestamp or supporting line; `--outline` is reserved for control boundaries and for text at 18 px and above.
+A grey that carries information must clear 4.5:1 on the ground it sits on. `--on-surface-variant` at 11.22:1 is the ordinary supporting ink. `--outline` at 5.88:1 is the control boundary (WCAG 1.4.11 asks 3:1 of one) and is legal as text at any size because it clears the body floor; `--outline-variant` at 1.40:1 is decorative and may never carry text or the shape of a control.
 
 Text must reflow at native 200 percent Windows text scaling without hiding controls, horizontal scrolling of prose, or loss of status. Truncation is allowed only when the full value is available through an accessible name or adjacent detail. `--text-scale` reaches 1.5, which puts the display step at 85.5 px rather than the 114 px the previous 76 px display step reached, and `e2e/text-scale-reflow.spec.ts` measures that no heading exceeds its own box and no page scrolls sideways at 100, 125 and 150 percent across three window sizes.
 
@@ -112,7 +112,11 @@ The neutral ramp is chroma-free, which is what stops the palette reading as stoc
 
 Three chromatic families, and no fourth. Azure is `--primary` and its containers, and carries structure, selection, and your own messages. Coral is `--error` and its containers, and carries exceptions, mentions, and destructive actions. Amber is `--marker` and its containers, and carries pinned and live. Green is not a UI colour in this system: a healthy state is silence plus the one chip, and speaking in a call is `--primary`. That is what keeps coral meaning something.
 
-Interaction is drawn with M3 state layers rather than with fill tokens -- `--state-hover` at 0.08, `--state-focus` and `--state-pressed` at 0.10, `--state-drag` at 0.16, each composited over the role colour underneath.
+Interaction is drawn with M3 state layers rather than with fill tokens -- `--state-hover` at 0.08, `--state-focus` and `--state-pressed` at 0.10, `--state-drag` at 0.16, each composited over the role colour underneath. A control with no ground of its own takes the layer; a control that has one takes a hover face in its own family, which is what `--primary-hover`, `--error-hover` and `--marker-hover` are for. Reaching for a container's hover face from a solid fill puts an on-colour on the wrong ground.
+
+A tonal container is a solid colour, not a tint, so it carries exactly one legible foreground for its whole subtree: text sitting on `--marker-container` takes `--on-marker-container`, and neither the role's own ink nor a neutral one is legal there.
+
+A person may choose one of six accents, and an accent re-points `--primary` and the two containers built from it. It introduces no fourth colour job: coral still means exception and amber still means pinned whichever accent is chosen. Each accent carries a container dark enough to hold its own ink, which is a different reference step from the mid-tone the accent itself uses.
 
 Light and dark are independently specified complete themes; light is not derived by flipping dark. High contrast is a complete functional theme, not an inversion: it keeps the M3 roles, pushes every on-colour to pure white or pure black, and pairs every container at 7:1. Every text and control pairing must meet WCAG AA: 4.5:1 for normal text and 3:1 for large text, focus indicators, boundaries that convey state, and non-text controls. Selection, presence, speaking, warning, and failure always include a non-color cue.
 
@@ -120,7 +124,18 @@ Light and dark are independently specified complete themes; light is not derived
 
 Elevation is a five-step ladder plus a true zero. `--elev-0` is `none` and is what everything in normal document flow uses: a pane, a card, a list row, a message bubble. Shadow is spent only on things that are actually above the page -- `--elev-2` for a menu, popover, or tooltip, `--elev-3` for a FAB, a floating toolbar, a modal, or a snackbar, `--elev-4` for an item being dragged, `--elev-5` for the largest permitted lift. Tone does the work everywhere else.
 
-The shape scale is the system. `--shape-xs` 4 px, `--shape-sm` 8 px, `--shape-md` 12 px, `--shape-lg` 16 px, `--shape-lg-inc` 20 px, `--shape-xl` 28 px, `--shape-xl-inc` 32 px, and `--shape-full` for a pill or a circle. `--shape-none` is 0 and is legal only on full-bleed media clipped by an ancestor that has its own radius. Every pane is a 28 px rounded surface inset by 12 px from the window and from its neighbours, so there are no shared edges left for a rule to draw. Focus uses a 2 px explicit outline with a 2 px offset through `--border-focus`, and never becomes the primary colour: M3's own focus indicator is not a substitute for an authored focus state.
+The shape scale is the system. `--shape-xs` 4 px, `--shape-sm` 8 px, `--shape-md` 12 px, `--shape-lg` 16 px, `--shape-lg-inc` 20 px, `--shape-xl` 28 px, `--shape-xl-inc` 32 px, and `--shape-full` for a pill or a circle. `--shape-none` is 0 and is legal only on full-bleed media clipped by an ancestor that has its own radius. Every pane is a 28 px rounded surface inset by 12 px from the window and from its neighbours, so there are no shared edges left for a rule to draw.
+
+Four panes do not fit every window, and the widths say where each one stops being a column:
+
+| Width | Rail | Room list | Roster |
+| --- | --- | --- | --- |
+| 1600 px and up | 88 px column | 340 px column | 400 px docked side sheet |
+| 1000 to 1599 px | 88 px column | 340 px column | side sheet over the conversation |
+| 640 to 999 px | 88 px column | drawer | side sheet over the conversation |
+| Below 640 px | 64 px column, labels hidden | drawer | side sheet over the conversation |
+
+The rail, the list and the roster plus four 12 px gaps are 876 px of chrome. A 1600 px window keeps 724 px of conversation and a 1366 px one keeps 466 px, which is less than the composer needs, so below 1600 the roster is the modal counterpart M3 gives a docked side sheet. Below 1000 px the frame goes full-bleed and the panes lose their inset: a 12 px gutter on four sides is 24 px taken from a window that has none to spare. Focus uses a 2 px explicit outline with a 2 px offset through `--border-focus`, and never becomes the primary colour: M3's own focus indicator is not a substitute for an authored focus state.
 
 ## Motion
 
@@ -157,7 +172,7 @@ Green leaves the product: a local, decrypted event from a verified device is the
 
 All UI icons route through `src/components/ui/Icon.tsx` and Lucide. Material Symbols Rounded was considered and rejected: it is the M3-native answer, but it would add a font file to a stylesheet and asset budget that is already at its ceiling, and it would delete the stroke assertions that make the single central icon path enforceable. Lucide at a heavier stroke reads correctly at M3 sizes and keeps this a one-file swap.
 
-Sizes are 20 px `sm`, 24 px `md`, and 40 px `lg`. Stroke is 2 px, or 2.25 px for `lg`, with absolute stroke width. Icons align to the text cap-height or the center of a square control; they do not receive arbitrary offsets. The 14 px and 18 px steps are retired: they are below the M3 target sizes and were only ever used to fit the ruled geometry this contract replaces.
+Sizes are 20 px `sm`, 24 px `md`, and 40 px `lg`. Stroke is 2 px, or 2.25 px for `lg`, with absolute stroke width. `xs` survives as an alias pointed at 20 px so its call sites keep compiling; it names no step of its own and takes no new ones. Icons align to the text cap-height or the center of a square control; they do not receive arbitrary offsets. The 14 px and 18 px steps are retired: they are below the M3 target sizes and were only ever used to fit the ruled geometry this contract replaces.
 
 An icon may appear without a visible label only when the action is conventional in context and the control has a precise accessible name. Ambiguous actions, destructive actions, onboarding choices, call state, and errors keep visible text. Decorative icons are hidden from assistive technology.
 
@@ -190,7 +205,7 @@ Voice is a primary route, not an overlay-only utility. Joining is one action. Me
 
 ## Mechanical enforcement
 
-`scripts/check-design-tokens.mjs` enforces the closed typography, local font ownership, theme and density selectors, minimum controls, token-only component colors, semantic contrast pairs, geometry, elevation, motion values, reduced-motion support, central icon path, call-state hooks, and this document's required sections. It additionally asserts that the elevation ladder exists with level 0 at `none`, that every value on the shape scale is non-zero except `--shape-none`, that the six surface container tones are six distinct values, that Roboto Flex is vendored locally, and that no component file contains a hex, `rgb()`, `oklch()` or a `--ref-*` reference. `scripts/check-container-contrast.mjs` measures every semantic pair out of this stylesheet rather than against literals typed into a checker. Visual review enforces hierarchy, anatomy, responsive composition, and whether a screenshot satisfies the five principles.
+`scripts/check-design-tokens.mjs` enforces the closed typography, local font ownership, theme and density selectors, minimum controls, token-only component colors, semantic contrast pairs, geometry, elevation, motion values, reduced-motion support, central icon path, call-state hooks, and this document's required sections. It additionally asserts that the elevation ladder exists with level 0 at `none`, that every value on the shape scale is non-zero except `--shape-none`, that the six surface container tones are six distinct values, that Roboto Flex is vendored locally, and that no component file contains a hex, `rgb()`, `oklch()` or a `--ref-*` reference. `scripts/check-container-contrast.mjs` measures sixteen text pairs and four container boundaries out of this stylesheet rather than against literals typed into a checker, in the dark, light and high-contrast themes. It asks branch agreement -- that a token's `color-mix` override and its fallback resolve to the same colour -- of the container and its boundary only. Those two carry a measured requirement and are declared twice in every theme; a hover and a pressed face are transient, nothing measures them, and they are derived perceptually because a block that re-points `--primary` cannot also carry the composited values that follow from it. Visual review enforces hierarchy, anatomy, responsive composition, and whether a screenshot satisfies the five principles.
 
 ## Budget decision
 
@@ -199,3 +214,15 @@ Material 3 Expressive reuses the existing token architecture rather than introdu
 Pixel-art masks are emitted as cacheable files instead of base64 stylesheet data. Lightning CSS performs behavior-preserving minification, and a tested PostCSS liveness pass removes source tokens that no compiled rule or renderer source can consume while preserving the complete source design contract.
 
 Performance claims must come from the current performance fixtures or signed installed-build acceptance. Historical preview measurements are not release evidence.
+
+## What this contract has not reached yet
+
+Every surface carries the palette, the type scale and the shape scale. Five have not had their layout rebuilt, and each is named here rather than left for a reader to discover:
+
+- **Direct messages.** Two-line list items at 72 px, the extended FAB for a new chat, and the medium top app bar over the conversation.
+- **People.** The docked side sheet's primary tabs and the Online / All / Admins filter chips that replace its section headings.
+- **Voice.** `VoiceDock` as a floating toolbar. The call tile, the speaking outline and the grid rules are done.
+- **Settings.** The standard navigation drawer, the M3 switch, and the text-scale slider.
+- **Onboarding.** The wavy linear progress indicator and the step chip.
+
+The pixel heart is also still the mask it was: recolouring it into this palette and emitting it as a gutter-free 16x16 bitmap is outstanding. `DESIGN_CONFORMANCE.md` is not reinstated -- the file, its 102 audit screenshots and the Playwright project that captured them were removed under the publication policy for this repository, and restoring a design document to a public tree is not a decision this contract can make for its owner.

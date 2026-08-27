@@ -171,7 +171,7 @@ export function OnboardingFlow({
                         * state.
                         */}
                       <span
-                        className={`block h-trust-rail w-full rounded-full transition-colors duration-normal ${
+                        className={`block h-1 w-full rounded-full transition-colors duration-normal ${
                           current ? 'bg-primary' : complete ? 'bg-primary-container' : 'bg-state-pressed'
                         }`}
                       />

@@ -124,7 +124,7 @@ export const Checkbox = forwardRef<HTMLInputElement, ChoiceProps>(
           aria-describedby={
             [describedBy, description ? descriptionId : undefined].filter(Boolean).join(' ') || undefined
           }
-          className="mt-0.5 h-4 w-4 rounded border-outline accent-accent"
+          className="mt-0.5 h-4 w-4 rounded border-outline accent-primary"
           {...props}
         />
         <span>
@@ -164,7 +164,7 @@ export const Radio = forwardRef<HTMLInputElement, ChoiceProps>(
           aria-describedby={
             [describedBy, description ? descriptionId : undefined].filter(Boolean).join(' ') || undefined
           }
-          className="mt-0.5 h-4 w-4 border-outline accent-accent"
+          className="mt-0.5 h-4 w-4 border-outline accent-primary"
           {...props}
         />
         <span>
@@ -205,7 +205,7 @@ export const Slider = forwardRef<HTMLInputElement, SliderProps>(
           type="range"
           aria-valuetext={valueText ?? valueLabel}
           data-size={size}
-          className="h-6 w-full accent-accent"
+          className="h-6 w-full accent-primary"
           {...props}
         />
       </div>
@@ -528,8 +528,8 @@ export function EmptyState({
       aria-describedby={descriptionId}
       className={clsx(
         'flex flex-col items-start justify-center text-left',
-        variant === 'default' && 'gap-2 border-y border-rule border-outline-variant px-shell-gutter py-6',
-        variant === 'compact' && 'gap-1.5 px-shell-gutter py-5',
+        variant === 'default' && 'gap-2 border-y border border-outline-variant px-5 py-6',
+        variant === 'compact' && 'gap-1.5 px-5 py-5',
         className,
       )}
       style={style}

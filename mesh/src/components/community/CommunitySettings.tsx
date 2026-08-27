@@ -504,7 +504,7 @@ export function CommunitySettings({
         onClose={onClose}
         communityName={community.name}
       >
-        <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-shell-gutter py-6">
+        <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-5 py-6">
           {/* Community identity */}
           {sectionVisible('general') && <section
             id="community-settings-summary"

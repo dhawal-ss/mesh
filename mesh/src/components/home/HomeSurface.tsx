@@ -318,7 +318,7 @@ export function HomeSurface() {
 
   return (
     <section className="mesh-home-surface flex min-h-0 flex-1 flex-col overflow-hidden" aria-labelledby="mesh-home-heading">
-      <header className="mesh-route-header mesh-home-header flex flex-shrink-0 items-center gap-3 border-b border-outline-variant px-shell-gutter py-2">
+      <header className="mesh-route-header mesh-home-header flex flex-shrink-0 items-center gap-3 border-b border-outline-variant px-5 py-2">
         <div className="min-w-0 flex-1">
           <SectionLabel className="mesh-surface-kicker block">Start here</SectionLabel>
           <h1
@@ -350,7 +350,7 @@ export function HomeSurface() {
                 <div
                   key={invite.roomId}
                   role="listitem"
-                  className="flex items-center gap-3 border-b border-outline-variant px-shell-gutter py-3"
+                  className="flex items-center gap-3 border-b border-outline-variant px-5 py-3"
                   aria-label={communityInviteLabel(invite)}
                 >
                   <Avatar color={invite.inviterAvatarColor} size={32} name={invite.name} />
@@ -564,7 +564,7 @@ export function HomeSurface() {
               "where was I". It is the only place the accent appears on this
               surface.
             */
-            className="mesh-home-feature grid gap-4 border-y border-rule border-outline-variant px-shell-gutter py-6 text-left transition-colors hover:bg-state-hover"
+            className="mesh-home-feature grid gap-4 border-y border border-outline-variant px-5 py-6 text-left transition-colors hover:bg-state-hover"
             onClick={() => openRoute(featuredRecent.route)}
           >
             <SectionLabel accent className="mesh-home-feature-index">
@@ -636,7 +636,7 @@ export function HomeSurface() {
             <button
               key={row.key}
               type="button"
-              className="mesh-home-row group flex w-full items-center gap-3 border-b border-rule border-outline-variant text-left transition-colors hover:bg-state-hover"
+              className="mesh-home-row group flex w-full items-center gap-3 border-b border border-outline-variant text-left transition-colors hover:bg-state-hover"
               onClick={() => openRoute(row.route)}
               aria-label={rowAccessibleName(row)}
             >
@@ -748,7 +748,7 @@ function HomeSection({
         headingLevel={2}
         title={title}
         count={count}
-        className="border-b border-rule border-outline-variant px-shell-gutter py-2"
+        className="border-b border border-outline-variant px-5 py-2"
       />
       <div>{children}</div>
     </section>
@@ -766,7 +766,7 @@ function HomeEmpty({
   action?: React.ReactNode
 }) {
   return (
-    <div className="border-b border-outline-variant px-shell-gutter py-4">
+    <div className="border-b border-outline-variant px-5 py-4">
       <p className="font-semibold text-on-surface-variant">{title}</p>
       {detail && <p className="mt-1 text-body-md text-on-surface-variant">{detail}</p>}
       {action ? <div className="mt-3">{action}</div> : null}

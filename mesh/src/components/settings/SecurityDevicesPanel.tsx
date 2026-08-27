@@ -788,7 +788,7 @@ export function SecurityDevicesPanel({
                           setLostDeviceId(device.deviceId)
                           setLostDeviceAcknowledged(false)
                         }}
-                        className="mt-0.5 h-4 w-4 accent-accent"
+                        className="mt-0.5 h-4 w-4 accent-primary"
                       />
                       <span>
                         <span className="block font-medium text-on-surface">
@@ -814,7 +814,7 @@ export function SecurityDevicesPanel({
                     type="checkbox"
                     checked={lostDeviceAcknowledged}
                     onChange={(event) => setLostDeviceAcknowledged(event.target.checked)}
-                    className="mt-0.5 h-4 w-4 accent-accent"
+                    className="mt-0.5 h-4 w-4 accent-primary"
                   />
                   I understand that this cannot erase anything already saved on that device.
                 </label>
@@ -1261,7 +1261,7 @@ export function SecurityDevicesPanel({
                   type="checkbox"
                   checked={deactivationAcknowledged}
                   onChange={(event) => setDeactivationAcknowledged(event.target.checked)}
-                  className="mt-0.5 h-4 w-4 accent-accent"
+                  className="mt-0.5 h-4 w-4 accent-primary"
                 />
                 I understand that shared copies may remain and that I will not be able to sign in
                 again.
@@ -1365,7 +1365,7 @@ export function SecurityDevicesPanel({
                     type="checkbox"
                     checked={localRemovalAcknowledged}
                     onChange={(event) => setLocalRemovalAcknowledged(event.target.checked)}
-                    className="mt-0.5 h-4 w-4 accent-accent"
+                    className="mt-0.5 h-4 w-4 accent-primary"
                   />
                   I understand that this permanently deletes this account's messages and settings
                   saved on this device.

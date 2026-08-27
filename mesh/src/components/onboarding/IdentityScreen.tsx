@@ -87,7 +87,7 @@ export function IdentityScreen({ onGenerateIdentity, onNext }: IdentityScreenPro
         system already reads.
       */}
       <motion.ol
-        className="border-y border-rule border-outline-variant"
+        className="border-y border border-outline-variant"
         aria-label="Account setup"
         initial={{ opacity: 0, y: motionOffsets.subtle }}
         animate={{ opacity: 1, y: 0 }}
@@ -102,7 +102,7 @@ export function IdentityScreen({ onGenerateIdentity, onNext }: IdentityScreenPro
           return (
             <motion.li
               key={step}
-              className="flex items-center gap-3 border-b border-rule border-outline-variant py-ledger last:border-b-0"
+              className="flex items-center gap-3 py-2"
               initial={{ opacity: 0, y: motionOffsets.tight }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ ...transitions.enter, delay: index * motionDurations.press }}

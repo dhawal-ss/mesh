@@ -400,7 +400,7 @@ function CommunitiesRouteSurface({ mode }: { mode: CommunitiesMode }) {
         id="mesh-communities-heading"
         title="Communities"
       />
-      <label className="border-b border-outline-variant bg-surface-container-lowest px-shell-gutter py-3 text-body-sm font-medium text-on-surface-variant md:hidden">
+      <label className="border-b border-outline-variant bg-surface-container-lowest px-5 py-3 text-body-sm font-medium text-on-surface-variant md:hidden">
         Community action
         <select
           value={currentEntry.key}
@@ -444,7 +444,7 @@ function CommunitiesRouteSurface({ mode }: { mode: CommunitiesMode }) {
           aria-labelledby={`mesh-communities-tab-${currentEntry.key}`}
           className="mesh-route-main min-h-0 overflow-y-auto"
         >
-          <div className="mx-auto w-full max-w-3xl px-shell-gutter py-6">
+          <div className="mx-auto w-full max-w-3xl px-5 py-6">
             <div className="mb-5">
               <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">Community action</p>
               <h2 className="mt-1 text-title-lg font-semibold text-on-surface">
@@ -582,7 +582,7 @@ function YouRouteSurface({ section }: { section: YouSection }) {
         title="You"
         detail={identity?.displayName}
       />
-      <div className="border-b border-outline-variant bg-surface-container-lowest px-shell-gutter py-3 md:hidden">
+      <div className="border-b border-outline-variant bg-surface-container-lowest px-5 py-3 md:hidden">
         {currentPrimaryEntry ? (
           <>
             <label htmlFor="mesh-you-section" className="block text-body-sm font-medium text-on-surface-variant">
@@ -769,7 +769,7 @@ function CommunityAdminRouteSurface({
           </Button>
         )}
       />
-      <label className="border-b border-outline-variant bg-surface-container-lowest px-shell-gutter py-3 text-body-sm font-medium text-on-surface-variant md:hidden">
+      <label className="border-b border-outline-variant bg-surface-container-lowest px-5 py-3 text-body-sm font-medium text-on-surface-variant md:hidden">
         Administration section
         <select
           value={section}
@@ -860,7 +860,7 @@ function SurfaceHeader({
   action?: React.ReactNode
 }) {
   return (
-    <header className="mesh-route-header flex flex-shrink-0 items-center gap-3 border-b border-outline-variant px-shell-gutter py-2">
+    <header className="mesh-route-header flex flex-shrink-0 items-center gap-3 border-b border-outline-variant px-5 py-2">
       <div className="min-w-0 flex-1">
         <h1
           id={id}
@@ -894,7 +894,7 @@ function RuledSection({
         headingLevel={2}
         title={title}
         count={count}
-        className="border-b border-outline-variant px-shell-gutter py-2"
+        className="border-b border-outline-variant px-5 py-2"
       />
       {children}
     </section>
@@ -902,5 +902,5 @@ function RuledSection({
 }
 
 function RouteEmpty({ text }: { text: string }) {
-  return <p className="border-b border-outline-variant px-shell-gutter py-4 text-body-md text-on-surface-variant">{text}</p>
+  return <p className="border-b border-outline-variant px-5 py-4 text-body-md text-on-surface-variant">{text}</p>
 }

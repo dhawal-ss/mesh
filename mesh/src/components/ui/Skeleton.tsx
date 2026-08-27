@@ -55,7 +55,7 @@ export function MessageSkeleton({
       aria-hidden="true"
       data-grouped={grouped ? 'true' : undefined}
       className={clsx(
-        'mesh-message-row mesh-message-row-skeleton relative flex min-w-0 max-w-full gap-2 px-shell-gutter py-shell-message-y',
+        'mesh-message-row mesh-message-row-skeleton relative flex min-w-0 max-w-full gap-2 px-5 py-shell-message-y',
         !grouped && 'mt-message-group',
       )}
     >

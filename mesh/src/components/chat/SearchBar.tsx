@@ -478,7 +478,7 @@ export function SearchBar({
                       setScopeReport(null)
                     }
                   }}
-                  className="h-3.5 w-3.5 rounded-full border-outline-variant accent-accent"
+                  className="h-3.5 w-3.5 rounded-full border-outline-variant accent-primary"
                 />
                 Search all communities
               </label>
