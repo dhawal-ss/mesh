@@ -218,3 +218,59 @@ jobs:
           cargo test --no-default-features --features legacy-p2p --locked --jobs 1 \
             --test turn_probe_live_tests -- --ignored --nocapture \
             probes_real_turn_server_with_credentials
+
+  public-service-liveness:
+    name: Public service liveness
+    runs-on: ubuntu-latest
+    # The reachability half of check:public-services lives here rather than on
+    # the merge path. Three third-party homeservers back that catalog, and a
+    # 502 from any one of them used to fail ci.yml, release-beta.yml,
+    # developer-preview.yml and pages.yml alike -- blocking every merge and
+    # every release on someone else's outage. Drift is still fatal in those
+    # workflows; only liveness moved here, where an operator can watch it
+    # without it gating anyone's work.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mesh/package-lock.json
+
+      - name: Probe reviewed public services
+        working-directory: mesh
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/check-public-services.mjs | tee public-service-report.json
+
+      # The script exits 0 on an unreachable service by design, so failing this
+      # job needs an explicit read of the report. Only liveness is judged here;
+      # integrity drift has already failed the run above.
+      - name: Fail on an unreachable service
+        working-directory: mesh
+        shell: bash
+        run: |
+          node -e '
+            const report = JSON.parse(require("fs").readFileSync("public-service-report.json", "utf8"));
+            const unreachable = report.catalog.filter((service) => !service.reachable);
+            for (const warning of report.warnings) console.log(`warning: ${warning}`);
+            if (unreachable.length === 0) {
+              console.log(`All ${report.catalog.length} reviewed services reachable and drift-checked.`);
+              process.exit(0);
+            }
+            console.error(`Unreachable: ${unreachable.map((service) => service.id).join(", ")}`);
+            console.error("Drift was NOT verified for these services.");
+            process.exit(1);
+          '
+
+      - name: Upload public service report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: public-service-report
+          path: mesh/public-service-report.json
+          retention-days: 14

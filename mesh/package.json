@@ -19,7 +19,7 @@
     "check:bundle-size": "node --test scripts/postcss-prune-custom-properties.test.mjs && node scripts/check-bundle-size.mjs",
     "check:operations-contract": "node scripts/check-operations-contract.mjs",
     "check:security-disclosure": "node scripts/security-disclosure-drill.mjs",
-    "check:public-services": "node scripts/check-public-services.mjs",
+    "check:public-services": "node --test scripts/check-public-services.test.mjs && node scripts/check-public-services.mjs",
     "check:public-site": "node scripts/check-public-site.mjs",
     "check:protected-evidence": "node --test scripts/protected-ci-results.test.mjs scripts/protected-evidence-manifest.test.mjs scripts/protected-security-results.test.mjs",
     "check:ai-boundary": "node scripts/check-ai-boundary.test.mjs && node scripts/check-ai-boundary.mjs",
