@@ -316,3 +316,91 @@ fn group_key_b64_roundtrip() {
     let decoded = encryption::group_key_from_b64(&encoded).expect("decode should succeed");
     assert_eq!(decoded, key);
 }
+
+// ─── Known-answer vectors (frozen wire format) ──────────
+//
+// The round-trip tests above encrypt and decrypt in the same build, so they
+// keep passing even if a dependency bump changes the ciphertext layout. These
+// vectors are frozen bytes: they fail if the on-disk and on-wire format of an
+// already-stored record ever stops being readable by a newer build.
+//
+// The bare vector below was independently reproduced with a non-RustCrypto
+// ChaCha20-Poly1305 implementation, so it pins the standard AEAD output and not
+// merely "whatever this crate did on the day the test was written".
+
+/// Decode a lowercase hex literal used by the frozen vectors below.
+fn kat_hex(text: &str) -> Vec<u8> {
+    assert!(text.len() % 2 == 0, "hex literal must have even length");
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&text[i..i + 2], 16).expect("valid hex literal"))
+        .collect()
+}
+
+/// Key `00..1f`, shared by every frozen vector in this section.
+const KAT_KEY: [u8; 32] = [
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+];
+const KAT_NONCE: [u8; 12] = [
+    0x07, 0x00, 0x00, 0x00, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47,
+];
+const KAT_PLAINTEXT: &[u8] = b"mesh known-answer vector v1";
+
+/// `encrypt` takes an explicit nonce, so its output is fully deterministic and
+/// can be asserted byte-for-byte.
+#[test]
+fn kat_bare_aead_ciphertext_is_byte_exact() {
+    let expected = kat_hex(
+        "2489024a312a02afee87605618013acae7c9cbb25b8c45b8381ec90efbe3ba2a472b96ed953b516b597bb9",
+    );
+    let actual = encryption::encrypt(&KAT_KEY, &KAT_NONCE, KAT_PLAINTEXT).expect("encrypt");
+    assert_eq!(
+        actual, expected,
+        "ChaCha20-Poly1305 ciphertext changed: every previously stored record is now unreadable"
+    );
+    let back = encryption::decrypt(&KAT_KEY, &KAT_NONCE, &expected).expect("decrypt");
+    assert_eq!(back, KAT_PLAINTEXT);
+}
+
+/// The AAD string is part of the authenticated wire format; changing its shape
+/// silently invalidates every stored tag.
+#[test]
+fn kat_community_aad_construction_is_frozen() {
+    assert_eq!(
+        encryption::build_community_aad("kat-community", "kat-channel"),
+        b"kat-community:kat-channel".to_vec()
+    );
+}
+
+/// `encrypt_community_payload` generates its nonce internally, so this vector is
+/// asserted from the decrypt side: a frozen `nonce || ciphertext || tag` blob
+/// must still open. This is the exact regression that would make stored
+/// community history undecryptable.
+#[test]
+fn kat_community_payload_decrypts_frozen_ciphertext() {
+    let frozen = kat_hex(
+        "39e0143ea3c4134941b6f0dc5f2fb4eaa36567be84cd2181f5bd7b9d180789c1\
+         999702fe22e8a5849b7506097ce436ece1dc7d3a2abd1b",
+    );
+    let aad = encryption::build_community_aad("kat-community", "kat-channel");
+    let plaintext = encryption::decrypt_community_payload(&KAT_KEY, &frozen, &aad)
+        .expect("frozen community ciphertext must still decrypt");
+    assert_eq!(plaintext, KAT_PLAINTEXT);
+}
+
+/// Freezes the key-wrap layout *and* the HKDF domain separation: the salt
+/// `mesh-keywrap-v1` and the community ID as `info` both feed the derived key,
+/// so any change to either stops this frozen wrap from opening.
+#[test]
+fn kat_key_wrap_decrypts_frozen_blob() {
+    let frozen = kat_hex(
+        "8fea15c5a2e8bb1b2144ba4eed4001393b2dad1d5198d0bf940e1f61b291520a\
+         400f6dd26b5cb514fc51b1aeb795984e4469e354d6aa45dafb9cacac73a3a60c\
+         31b09a82d89f22c7d6491fe7f0286cb2452cdf09d72998c883854e15",
+    );
+    let recipient = x25519_dalek::StaticSecret::from([0x42u8; 32]);
+    let unwrapped = encryption::decrypt_key_wrap(&recipient, &frozen, "kat-community")
+        .expect("frozen key wrap must still unwrap");
+    assert_eq!(unwrapped, [0xABu8; 32]);
+}

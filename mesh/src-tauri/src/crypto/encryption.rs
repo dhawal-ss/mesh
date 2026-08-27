@@ -258,3 +258,68 @@ pub fn decrypt(
         .decrypt(nonce, ciphertext)
         .map_err(|e| anyhow::anyhow!("decryption failed: {}", e))
 }
+
+/// Known-answer vectors for the community payload format.
+///
+/// These live beside the implementation rather than only in
+/// `tests/crypto_tests.rs` because that integration target is
+/// `required-features = ["legacy-p2p"]`, while `backend/matrix.rs` calls
+/// `encrypt_community_payload` / `decrypt_community_payload` in the
+/// matrix-backend build that actually ships. Without these, the shipping
+/// feature set has no frozen-format coverage at all.
+///
+/// The round-trip tests elsewhere encrypt and decrypt in the same build and so
+/// keep passing across a format change; these do not.
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod format_vectors {
+    use super::*;
+
+    fn hex(text: &str) -> Vec<u8> {
+        (0..text.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&text[i..i + 2], 16).expect("valid hex literal"))
+            .collect()
+    }
+
+    const KEY: [u8; 32] = [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+        0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d,
+        0x1e, 0x1f,
+    ];
+    const PLAINTEXT: &[u8] = b"mesh known-answer vector v1";
+
+    /// Byte-exact: `encrypt` takes an explicit nonce, so it is deterministic.
+    /// This value was independently reproduced with a non-RustCrypto
+    /// ChaCha20-Poly1305 implementation.
+    #[test]
+    fn bare_aead_ciphertext_is_byte_exact() {
+        let nonce: [u8; 12] = [
+            0x07, 0x00, 0x00, 0x00, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47,
+        ];
+        let expected = hex(
+            "2489024a312a02afee87605618013acae7c9cbb25b8c45b8381ec90efbe3ba2a4\
+             72b96ed953b516b597bb9",
+        );
+        assert_eq!(
+            encrypt(&KEY, &nonce, PLAINTEXT).expect("encrypt"),
+            expected,
+            "ChaCha20-Poly1305 output changed: stored records are now unreadable"
+        );
+    }
+
+    /// A frozen `nonce || ciphertext || tag` blob must keep opening. This is the
+    /// regression that would silently orphan stored community history.
+    #[test]
+    fn frozen_community_payload_still_decrypts() {
+        let frozen = hex(
+            "39e0143ea3c4134941b6f0dc5f2fb4eaa36567be84cd2181f5bd7b9d180789c1\
+             999702fe22e8a5849b7506097ce436ece1dc7d3a2abd1b",
+        );
+        let aad = build_community_aad("kat-community", "kat-channel");
+        assert_eq!(aad, b"kat-community:kat-channel".to_vec());
+        let plaintext = decrypt_community_payload(&KEY, &frozen, &aad)
+            .expect("frozen community ciphertext must still decrypt");
+        assert_eq!(plaintext, PLAINTEXT);
+    }
+}
