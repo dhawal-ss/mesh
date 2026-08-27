@@ -656,7 +656,7 @@ export const MessageComponent = memo(function MessageComponent({
         <div
           ref={rowRef}
           tabIndex={-1}
-          className={`mesh-message-row group relative flex min-w-0 max-w-full gap-message-rail-gap px-shell-gutter py-shell-message-y outline-none transition-colors duration-fast hover:bg-surface-fill ${
+          className={`mesh-message-row group relative flex min-w-0 max-w-full gap-message-rail-gap px-shell-gutter py-shell-message-y outline-none transition-colors duration-fast hover:bg-state-hover ${
             !isGrouped ? 'mt-message-group' : ''
           }`}
           /* An unacknowledged send is marked, not dimmed: the same 2px rule
@@ -674,7 +674,7 @@ export const MessageComponent = memo(function MessageComponent({
             and always present for the first row of a group, so the column
             reads as a continuous edge rather than a dotted one.
           */}
-          <span className="mesh-message-time tnum flex w-message-time flex-none justify-end whitespace-nowrap pt-0.5 font-mono text-eyebrow text-content-secondary">
+          <span className="mesh-message-time tnum flex w-message-time flex-none justify-end whitespace-nowrap pt-0.5 text-label-sm text-on-surface-variant">
             <span
               className={
                 isGrouped
@@ -696,10 +696,10 @@ export const MessageComponent = memo(function MessageComponent({
             side="right"
             content={(
               <div className="space-y-1 font-normal">
-                <p className="text-content-primary">{trustRailLabel(trustTone, originServer)}</p>
-                {originServer && <p className="font-mono text-count text-content-secondary">{originServer}</p>}
+                <p className="text-on-surface">{trustRailLabel(trustTone, originServer)}</p>
+                {originServer && <p className="text-label-sm text-on-surface-variant">{originServer}</p>}
                 {message.id.startsWith('$') && (
-                  <p className="font-mono text-count text-content-secondary">{message.id}</p>
+                  <p className="text-label-sm text-on-surface-variant">{message.id}</p>
                 )}
               </div>
             )}
@@ -736,13 +736,13 @@ export const MessageComponent = memo(function MessageComponent({
                     surface area. Painting the name with a hashed colour put
                     roughly two in five authors below AA on the dark canvas and
                     turned a busy room into confetti. */}
-                <span id={resolvedAuthorNameId} className="text-sm font-semibold text-primary">
+                <span id={resolvedAuthorNameId} className="text-body-md font-semibold text-on-surface">
                   {message.authorDisplayName}
                 </span>
                 <MessageTime
                   value={message.timestamp}
                   variant="full"
-                  className="tnum text-meta text-muted"
+                  className="tnum text-body-sm text-on-surface-variant"
                 />
               </div>
             )}
@@ -757,7 +757,7 @@ export const MessageComponent = memo(function MessageComponent({
             {message.deliveryStatus === 'pending' && (
               <div
                 data-delivery-chip="pending"
-                className="mt-1 inline-flex items-center gap-1 text-meta text-status-warning"
+                className="mt-1 inline-flex items-center gap-1 text-body-sm text-marker"
               >
                 <Icon name="loader" size="xs" className="animate-spin" />
                 {isSavedForLater ? 'Saved for later' : 'Sending'}
@@ -771,7 +771,7 @@ export const MessageComponent = memo(function MessageComponent({
                  one-time alert. */
               <motion.div
                 data-delivery-chip="failed"
-                className="mt-1 flex flex-wrap items-center gap-2 text-meta text-status-danger"
+                className="mt-1 flex flex-wrap items-center gap-2 text-body-sm text-error"
                 initial={disableMotion ? false : { x: 0 }}
                 animate={disableMotion ? undefined : { x: [0, -2, 2, 0] }}
                 transition={transitions.failure}
@@ -781,7 +781,7 @@ export const MessageComponent = memo(function MessageComponent({
                   <button
                     type="button"
                     onClick={() => onRetry?.(message)}
-                    className="min-h-control-sm rounded-control bg-container-danger px-2 font-medium transition-colors hover:bg-container-danger-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                    className="min-h-control-sm rounded-full bg-error-container px-2 font-medium transition-colors hover:bg-error-container-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                   >
                     Try again
                   </button>
@@ -793,7 +793,7 @@ export const MessageComponent = memo(function MessageComponent({
                       .then(() => showToast('Message text copied.', 'success'))
                       .catch(() => showToast('Could not copy this message.', 'error'))
                   }}
-                  className="min-h-control-sm rounded-control px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                  className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                 >
                   Copy text
                 </button>
@@ -801,7 +801,7 @@ export const MessageComponent = memo(function MessageComponent({
                   <button
                     type="button"
                     onClick={() => onCancel(message)}
-                    className="min-h-control-sm rounded-control px-2 font-medium text-secondary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                    className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                   >
                     Remove
                   </button>
@@ -812,8 +812,8 @@ export const MessageComponent = memo(function MessageComponent({
             {mutation && mutation.status !== 'success' && mutation.status !== 'superseded' && (
               <div
                 role={mutation.status === 'failed' ? 'alert' : 'status'}
-                className={`mt-1 flex flex-wrap items-center gap-2 text-meta ${
-                  mutation.status === 'failed' ? 'text-status-danger' : 'text-status-warning'
+                className={`mt-1 flex flex-wrap items-center gap-2 text-body-sm ${
+                  mutation.status === 'failed' ? 'text-error' : 'text-marker'
                 }`}
               >
                 <span>
@@ -824,7 +824,7 @@ export const MessageComponent = memo(function MessageComponent({
                 {mutation.status === 'failed' && (
                   <button
                     type="button"
-                    className="min-h-control-sm rounded-control bg-container-danger px-2 font-medium hover:bg-container-danger-hover"
+                    className="min-h-control-sm rounded-full bg-error-container px-2 font-medium hover:bg-error-container-hover"
                     onClick={() => void mutation.retry()}
                   >
                     Retry
@@ -843,7 +843,7 @@ export const MessageComponent = memo(function MessageComponent({
                 which Discord and Element both avoid with a stub.
             */}
             {!replyPreview && message.replyToId && !isUndecryptable && !isDeleted && (
-              <p className="mb-0.5 truncate text-support text-content-secondary">
+              <p className="mb-0.5 truncate text-body-sm text-on-surface-variant">
                 replying to an earlier message
               </p>
             )}
@@ -860,7 +860,7 @@ export const MessageComponent = memo(function MessageComponent({
                   and the answer is what the row is for. The full quote stays in
                   the accessible name and one click still jumps to it.
                 */
-                className="mb-0.5 block w-full min-w-0 truncate rounded-plane text-left text-support text-content-secondary transition-colors enabled:hover:text-content-primary disabled:cursor-default"
+                className="mb-0.5 block w-full min-w-0 truncate rounded-full text-left text-body-sm text-on-surface-variant transition-colors enabled:hover:text-on-surface disabled:cursor-default"
               >
                 <span aria-hidden="true">
                   replying to {replyPreview.authorDisplayName}
@@ -872,7 +872,7 @@ export const MessageComponent = memo(function MessageComponent({
               /* A redaction clears `content`, so without this branch the row
                  rendered as an empty gap that read as a rendering bug. A
                  tombstone keeps the deletion legible and auditable. */
-              <p className="mt-0.5 inline-flex items-center gap-1.5 text-base italic text-content-muted">
+              <p className="mt-0.5 inline-flex items-center gap-1.5 text-body-lg italic text-on-surface-variant">
                 <Icon name="circleX" size="xs" aria-hidden="true" />
                 Message deleted
               </p>
@@ -893,7 +893,7 @@ export const MessageComponent = memo(function MessageComponent({
                 customEmoji={surface === 'dm' ? [] : customEmoji}
               />
             ) : (
-              <div className="text-body text-content-body">
+              <div className="text-body-md text-on-surface">
                 {/*
                   The body role, applied where the design puts it: 14px at 1.6,
                   one ink step below a title so prose recedes from structure.
@@ -910,12 +910,12 @@ export const MessageComponent = memo(function MessageComponent({
                   <img
                     src={message.designPreviewImageUrl}
                     alt={`${message.authorDisplayName} shared concept art`}
-                    className="mesh-message-media mt-3 w-full max-w-3xl rounded-panel border border-border-subtle object-cover"
+                    className="mesh-message-media mt-3 w-full max-w-3xl rounded-xl border border-outline-variant object-cover"
                   />
                 ) : null}
                 {message.editedAt && (
                   <span
-                    className="ml-1 text-caption text-muted"
+                    className="ml-1 text-label-sm text-on-surface-variant"
                     title={`Edited ${formatFullTime(message.editedAt)}`}
                   >
                     (edited)
@@ -952,7 +952,7 @@ export const MessageComponent = memo(function MessageComponent({
                     ? `Close thread for message from ${message.authorDisplayName}`
                     : `Open thread for message from ${message.authorDisplayName}, ${threadReplyCount} ${threadReplyCount === 1 ? 'reply' : 'replies'}`
                 }
-                className="mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-control px-2 text-xs font-medium text-text-link transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                className="mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-full px-2 text-body-sm font-medium text-primary transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               >
                 <Icon name="messageCircle" size="xs" />
                 {threadOpen ? 'Close thread' : `${threadReplyCount} ${threadReplyCount === 1 ? 'reply' : 'replies'}`}
@@ -990,10 +990,10 @@ export const MessageComponent = memo(function MessageComponent({
                             radius rule doing its job: the emoji is content, the
                             chip around it is structure.
                           */
-                          className={`inline-flex min-h-6 items-center gap-1 rounded-plane border border-rule px-1.5 py-0.5 text-xs transition-colors ${
+                          className={`inline-flex min-h-6 items-center gap-1 rounded-full border border-rule px-1.5 py-0.5 text-body-sm transition-colors ${
                             mine
-                              ? 'border-accent bg-container-accent text-content-accent'
-                              : 'border-border-control text-content-secondary hover:bg-surface-fill hover:text-content-primary'
+                              ? 'border-primary bg-primary-container text-primary'
+                              : 'border-outline text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
                           }`}
                         >
                           {/* A checkmark carries the "you reacted" state independently
@@ -1009,7 +1009,7 @@ export const MessageComponent = memo(function MessageComponent({
                           ) : (
                             <span aria-hidden="true">{emoji}</span>
                           )}
-                          <span aria-hidden="true" className="badge-count font-mono text-count font-semibold">{users.length}</span>
+                          <span aria-hidden="true" className="badge-count text-label-sm font-semibold">{users.length}</span>
                         </button>
                       </Tooltip>
                       </motion.span>
@@ -1034,7 +1034,7 @@ export const MessageComponent = memo(function MessageComponent({
               aria-label={`Actions for the message from ${message.authorDisplayName}`}
               aria-orientation="horizontal"
               onKeyDown={handleActionsKeyDown}
-              className="mesh-message-actions pointer-events-none absolute -top-4 right-5 z-sticky flex items-center rounded-panel border border-border-subtle bg-surface-overlay opacity-0 shadow-overlay transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+              className="mesh-message-actions pointer-events-none absolute -top-4 right-5 z-sticky flex items-center rounded-xl border border-outline-variant bg-surface-container-high opacity-0 shadow-elev-3 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
               {/* One-tap quick reactions from the user's recent (or default) emoji. */}
               {quickReactions.map((emoji, quickIndex) => {
                 const custom = (surface === 'dm' ? [] : customEmoji).find(
@@ -1060,7 +1060,7 @@ export const MessageComponent = memo(function MessageComponent({
                       rememberEmoji(emoji)
                     }}
                     aria-label={`Quick react with ${emojiName}`}
-                    className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus motion-safe:active:scale-95"
+                    className="flex h-8 w-8 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus motion-safe:active:scale-95"
                   >
                     {custom ? (
                       <img src={custom.imageUrl} alt="" className="h-5 w-5 object-contain" />
@@ -1080,7 +1080,7 @@ export const MessageComponent = memo(function MessageComponent({
                   <button
                     ref={reactButtonRef}
                     {...actionButtonProps('react')}
-                    className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                    className="flex h-8 w-8 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                     aria-label={`React to message from ${message.authorDisplayName}`}
                     aria-expanded={showReactions}
                   >
@@ -1098,7 +1098,7 @@ export const MessageComponent = memo(function MessageComponent({
                   type="button"
                   {...actionButtonProps('edit')}
                   onClick={handleStartEdit}
-                  className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                  className="flex h-8 w-8 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                   aria-label="Edit message"
                 >
                   <Icon name="squarePen" size="sm" />
@@ -1109,7 +1109,7 @@ export const MessageComponent = memo(function MessageComponent({
                   type="button"
                   {...actionButtonProps('reply')}
                   onClick={() => onReply(message)}
-                  className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                  className="flex h-8 w-8 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                   aria-label={`Reply to ${message.authorDisplayName}`}
                 >
                   <Icon name="reply" size="sm" />
@@ -1120,7 +1120,7 @@ export const MessageComponent = memo(function MessageComponent({
                   type="button"
                   {...actionButtonProps('thread')}
                   onClick={onToggleThread}
-                  className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                  className="flex h-8 w-8 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                   aria-expanded={threadOpen}
                   aria-controls="mesh-thread-panel"
                   aria-label={
@@ -1139,8 +1139,8 @@ export const MessageComponent = memo(function MessageComponent({
                   type="button"
                   {...actionButtonProps('pin')}
                   onClick={() => void handlePin()}
-                  className={`flex h-8 w-8 items-center justify-center transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
-                    isPinned ? 'text-accent' : 'text-muted'
+                  className={`flex h-8 w-8 items-center justify-center transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
+                    isPinned ? 'text-primary' : 'text-on-surface-variant'
                   }`}
                   aria-label={isPinned ? 'Unpin message' : 'Pin message'}
                 >
@@ -1246,7 +1246,7 @@ function UndecryptableMessageNotice({
         <button
           type="button"
           onClick={onOpenSecurity}
-          className="mt-1 min-h-control-sm rounded-plane font-mono text-chip font-semibold uppercase text-content-secondary underline-offset-4 transition-colors hover:text-content-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+          className="mt-1 min-h-control-sm rounded-full text-label-md font-semibold text-on-surface-variant underline-offset-4 transition-colors hover:text-on-surface hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
         >
           Review security
         </button>
@@ -1453,36 +1453,36 @@ export function FileAttachmentCard({
 
   if (compact) {
     return (
-      <div className="rounded-control border border-border-subtle bg-surface-raised p-2.5">
+      <div className="rounded-full border border-outline-variant bg-surface-container p-2.5">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-control bg-surface-hover text-muted">
+          <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-surface-container-high text-on-surface-variant">
             <Icon name="fileText" size="sm" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-xs font-medium text-text-link">{attachment.filename}</span>
-            <span className="block text-caption text-muted">{(attachment.size / 1024 / 1024).toFixed(2)} MB</span>
+            <span className="block truncate text-body-sm font-medium text-primary">{attachment.filename}</span>
+            <span className="block text-label-sm text-on-surface-variant">{(attachment.size / 1024 / 1024).toFixed(2)} MB</span>
           </span>
         </div>
         {isDownloading && (
-          <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-active">
+          <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-container-highest">
             <div
-              className="h-full rounded-full bg-accent transition-[width] duration-normal"
+              className="h-full rounded-full bg-primary transition-[width] duration-normal"
               data-design-token-exception="data-driven-transfer-progress-width"
               style={{ width: `${progressPercent}%` }}
             />
           </div>
         )}
-        {isErrored && <p className="mt-2 text-caption text-status-danger">Download failed. Try again to restart the download.</p>}
+        {isErrored && <p className="mt-2 text-label-sm text-error">Download failed. Try again to restart the download.</p>}
         <button
           type="button"
           onClick={() => void handleAction()}
           disabled={isDownloading && !matrixMode}
-          className={`mt-2 min-h-9 w-full rounded-control px-3 text-xs font-semibold transition-colors ${
+          className={`mt-2 min-h-9 w-full rounded-full px-3 text-body-sm font-semibold transition-colors ${
             isCompleted
-              ? 'bg-container-success text-status-success hover:bg-container-success-hover'
+              ? 'bg-primary-container text-primary hover:bg-primary-container-hover'
               : isErrored
-                ? 'bg-container-danger text-status-danger hover:bg-container-danger-hover'
-                : 'bg-surface-hover text-secondary hover:bg-surface-active'
+                ? 'bg-error-container text-error hover:bg-error-container-hover'
+                : 'bg-surface-container-high text-on-surface-variant hover:bg-surface-container-highest'
           } disabled:opacity-60`}
           aria-label={actionLabel}
         >
@@ -1493,7 +1493,7 @@ export function FileAttachmentCard({
   }
 
   return (
-    <div className="max-w-sm overflow-hidden rounded-panel border border-border-subtle bg-surface-raised">
+    <div className="max-w-sm overflow-hidden rounded-xl border border-outline-variant bg-surface-container">
       {matrixMode && attachment.thumbnail && (
         <EncryptedAttachmentPreview
           key={`${eventId}:${attachmentIndex}:${attachment.thumbnail.fileHash}`}
@@ -1509,40 +1509,40 @@ export function FileAttachmentCard({
       )}
 
       <div className="flex items-center gap-3 p-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-panel bg-surface-hover text-muted">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-container-high text-on-surface-variant">
           <Icon name="fileText" />
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium text-text-link">{attachment.filename}</div>
-          <div className="text-xs text-muted">{(attachment.size / 1024 / 1024).toFixed(2)} MB</div>
+          <div className="truncate text-body-md font-medium text-primary">{attachment.filename}</div>
+          <div className="text-body-sm text-on-surface-variant">{(attachment.size / 1024 / 1024).toFixed(2)} MB</div>
 
           {isDownloading && (
             <div className="mt-1.5">
-              <div className="h-1 overflow-hidden rounded-full bg-surface-active">
+              <div className="h-1 overflow-hidden rounded-full bg-surface-container-highest">
                 <div
-                  className="h-full rounded-full bg-accent transition-[width] duration-normal"
+                  className="h-full rounded-full bg-primary transition-[width] duration-normal"
                   data-design-token-exception="data-driven-transfer-progress-width"
                   style={{ width: `${progressPercent}%` }}
                 />
               </div>
               {download?.matrixState && (
-                <div className="mt-1 text-caption text-muted">{downloadStateLabel(download.matrixState)}</div>
+                <div className="mt-1 text-label-sm text-on-surface-variant">{downloadStateLabel(download.matrixState)}</div>
               )}
             </div>
           )}
-          {isErrored && <div className="mt-1 text-xs text-status-danger">Download failed. Try again to restart the download.</div>}
+          {isErrored && <div className="mt-1 text-body-sm text-error">Download failed. Try again to restart the download.</div>}
         </div>
 
         <button
           onClick={handleAction}
           disabled={isDownloading && !matrixMode}
-          className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+          className={`rounded px-3 py-1.5 text-body-sm font-medium transition-colors ${
             isCompleted
-              ? 'bg-container-success text-status-success hover:bg-container-success-hover'
+              ? 'bg-primary-container text-primary hover:bg-primary-container-hover'
               : isErrored
-                ? 'bg-container-danger text-status-danger hover:bg-container-danger-hover'
-                : 'bg-surface-hover text-secondary hover:bg-surface-active'
+                ? 'bg-error-container text-error hover:bg-error-container-hover'
+                : 'bg-surface-container-high text-on-surface-variant hover:bg-surface-container-highest'
           } disabled:opacity-60`}
           aria-label={actionLabel}
         >

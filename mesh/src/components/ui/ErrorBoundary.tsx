@@ -68,15 +68,15 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       const canSaveErrorReport = isRuntimeErrorRecordingEnabled()
         && getRuntimeErrorSummary().storedCount > 0
       return (
-        <div className="flex min-h-screen items-center justify-center bg-surface-sunken">
-          <div className="flex max-w-sm flex-col items-center gap-4 rounded-panel border border-border-subtle bg-surface-raised px-10 py-9 text-center shadow-overlay">
-            <Icon name="circleX" size="lg" className="text-status-danger" />
-            <h2 className="text-base font-semibold text-primary">Mesh stopped responding</h2>
-            <p className="text-sm text-muted">Reload Mesh to continue. Messages saved on this device will remain.</p>
+        <div className="flex min-h-screen items-center justify-center bg-surface-container-lowest">
+          <div className="flex max-w-sm flex-col items-center gap-4 rounded-xl border border-outline-variant bg-surface-container px-10 py-9 text-center shadow-elev-3">
+            <Icon name="circleX" size="lg" className="text-error" />
+            <h2 className="text-body-lg font-semibold text-on-surface">Mesh stopped responding</h2>
+            <p className="text-body-md text-on-surface-variant">Reload Mesh to continue. Messages saved on this device will remain.</p>
             <div className="mt-1 flex flex-wrap justify-center gap-2">
               <button
                 onClick={() => window.location.reload()}
-                className="rounded-panel bg-accent px-4 py-2 text-sm font-medium text-content-on-accent transition-colors hover:bg-accent-hover"
+                className="rounded-xl bg-primary px-4 py-2 text-body-md font-medium text-on-primary transition-colors hover:bg-primary"
               >
                 Reload Mesh
               </button>
@@ -84,7 +84,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 <button
                   type="button"
                   onClick={() => saveRuntimeErrorReport()}
-                  className="rounded-panel bg-surface-hover px-4 py-2 text-sm font-medium text-primary transition-colors hover:bg-surface-active"
+                  className="rounded-xl bg-surface-container-high px-4 py-2 text-body-md font-medium text-on-surface transition-colors hover:bg-surface-container-highest"
                 >
                   Save issue report
                 </button>
@@ -98,12 +98,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     if (scope === 'content') {
       return (
         <div className="flex flex-1 items-center justify-center" role="alert">
-          <div className="flex max-w-xs flex-col items-center gap-3 rounded-panel border border-border-subtle bg-surface-raised px-8 py-7 text-center shadow-overlay">
-            <p className="text-sm text-secondary">This section stopped responding</p>
-            <p className="text-xs text-muted">Try again or switch to another channel.</p>
+          <div className="flex max-w-xs flex-col items-center gap-3 rounded-xl border border-outline-variant bg-surface-container px-8 py-7 text-center shadow-elev-3">
+            <p className="text-body-md text-on-surface-variant">This section stopped responding</p>
+            <p className="text-body-sm text-on-surface-variant">Try again or switch to another channel.</p>
             <button
               onClick={this.resetError}
-              className="mt-1 rounded-panel bg-surface-hover px-4 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-surface-active"
+              className="mt-1 rounded-xl bg-surface-container-high px-4 py-1.5 text-body-md font-medium text-on-surface transition-colors hover:bg-surface-container-highest"
             >
               Try again
             </button>
@@ -114,11 +114,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
     // feature level
     return (
-      <div className="flex items-center gap-2 rounded-panel border border-border-subtle bg-surface-sunken px-4 py-3" role="alert">
-        <p className="text-xs text-muted">This control stopped responding.</p>
+      <div className="flex items-center gap-2 rounded-xl border border-outline-variant bg-surface-container-lowest px-4 py-3" role="alert">
+        <p className="text-body-sm text-on-surface-variant">This control stopped responding.</p>
         <button
           onClick={this.resetError}
-          className="text-xs font-medium text-text-link transition-colors hover:underline"
+          className="text-body-sm font-medium text-primary transition-colors hover:underline"
         >
           Retry
         </button>

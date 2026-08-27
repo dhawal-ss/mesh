@@ -81,8 +81,8 @@ export function EditComposer({
 
   return (
     <div className="mt-1 space-y-2">
-      <div className="overflow-hidden rounded-control border border-border bg-surface-sunken focus-within:border-accent">
-        <div className="flex items-center gap-1 border-b border-border-subtle px-1.5 py-1">
+      <div className="overflow-hidden rounded-full border border-outline bg-surface-container-lowest focus-within:border-primary">
+        <div className="flex items-center gap-1 border-b border-outline-variant px-1.5 py-1">
           <div>
             <Popover
               open={emojiOpen}
@@ -99,7 +99,7 @@ export function EditComposer({
                   disabled={disabled}
                   aria-label="Open emoji picker"
                   aria-expanded={emojiOpen}
-                  className="flex h-control-sm w-control-sm items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex h-control-sm w-control-sm items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Icon name="smile" size="sm" />
                 </button>
@@ -124,17 +124,17 @@ export function EditComposer({
           onKeyDown={handleKeyDown}
           rows={1}
           autoFocus
-          className="max-h-composer block w-full resize-none bg-transparent px-3 py-2 text-base text-primary placeholder:text-muted focus:outline-none disabled:opacity-60"
+          className="max-h-composer block w-full resize-none bg-transparent px-3 py-2 text-body-lg text-on-surface placeholder:text-on-surface-variant focus:outline-none disabled:opacity-60"
         />
       </div>
-      <div className="flex items-center gap-2 text-meta text-muted">
+      <div className="flex items-center gap-2 text-body-sm text-on-surface-variant">
         <span>
           escape to{' '}
           <button
             type="button"
             disabled={disabled}
             onClick={onCancel}
-            className="text-text-link hover:underline disabled:opacity-60"
+            className="text-primary hover:underline disabled:opacity-60"
           >
             cancel
           </button>
@@ -146,7 +146,7 @@ export function EditComposer({
             type="button"
             disabled={disabled}
             onClick={onSave}
-            className="text-text-link hover:underline disabled:opacity-60"
+            className="text-primary hover:underline disabled:opacity-60"
           >
             save
           </button>

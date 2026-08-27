@@ -125,8 +125,8 @@ describe('ChannelItem notification context menu', () => {
       numbers rather than a scatter of lozenges at different widths.
     */
     expect(button.textContent).toContain('04')
-    expect(container.querySelector('.text-content-accent')).toBeTruthy()
-    expect(container.querySelector('.bg-accent')).toBeNull()
+    expect(container.querySelector('.text-primary')).toBeTruthy()
+    expect(container.querySelector('.bg-primary')).toBeNull()
     act(() => button.click())
     expect(onClick).toHaveBeenCalledOnce()
   })
@@ -375,8 +375,8 @@ describe('ChannelItem room management', () => {
     const trigger = renderManaged({ canManage: true, onRename: vi.fn(), onRemove: vi.fn() })
     await openContextMenu(trigger)
 
-    expect(findMenuItem('Remove room')?.className).toContain('text-status-danger')
-    expect(findMenuItem('Rename room')?.className).not.toContain('text-status-danger')
+    expect(findMenuItem('Remove room')?.className).toContain('text-error')
+    expect(findMenuItem('Rename room')?.className).not.toContain('text-error')
   })
 })
 

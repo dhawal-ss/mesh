@@ -323,7 +323,7 @@ function CommunityLoadBanner({
   return (
     <div
       role="status"
-      className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-container-warning-line bg-container-warning px-4 py-2 text-xs text-content"
+      className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface"
     >
       <span>
         Mesh could not open {label} safely. {blockedCommunityGuidance(notice.reasons)}
@@ -357,7 +357,7 @@ function RoomLoadBanner({
     // the direction check-design-tokens.mjs is pushing every caller.
     <div
       role="status"
-      className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-container-warning-line bg-container-warning px-4 py-2 text-xs text-content"
+      className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface"
     >
       <span>
         Mesh could not open {label} safely. {blockedRoomGuidance(notice.reasons)}
@@ -1182,7 +1182,7 @@ export default function App() {
   if (bootstrapIssue) {
     return (
       <>
-        <div className="flex min-h-screen items-center justify-center bg-surface-canvas px-4">
+        <div className="flex min-h-screen items-center justify-center bg-surface px-4">
           <BootstrapRecovery
             issue={bootstrapIssue}
             retrying={bootstrapRetrying}
@@ -1218,7 +1218,7 @@ export default function App() {
 
   if (isLoading && !showOnboarding) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-surface-canvas">
+      <div className="flex min-h-screen items-center justify-center bg-surface">
         <ColdStartStatus
           invitationName={pendingInvitation?.communityName}
           onRecovery={() => {

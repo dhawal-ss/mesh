@@ -502,19 +502,19 @@ export function MemberList({
         className={
           embedded
             ? 'flex min-h-0 flex-1 flex-col overflow-hidden'
-            : 'mesh-member-list flex w-member-list flex-shrink-0 flex-col overflow-hidden bg-surface-sidebar'
+            : 'mesh-member-list flex w-member-list flex-shrink-0 flex-col overflow-hidden bg-surface-container-low'
         }
       >
         <div className="px-3 pt-3">
-          <div className="flex min-h-9 items-center gap-2 rounded-control border border-border bg-surface-sunken px-3">
-            <Icon name="search" size="xs" className="flex-shrink-0 text-muted" />
+          <div className="flex min-h-9 items-center gap-2 rounded-full border border-outline bg-surface-container-lowest px-3">
+            <Icon name="search" size="xs" className="flex-shrink-0 text-on-surface-variant" />
             <input
               type="search"
               aria-label="Find a community member"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Find a member"
-              className="mesh-input min-w-0 flex-1 border-0 bg-transparent text-xs text-primary placeholder:text-muted"
+              className="mesh-input min-w-0 flex-1 border-0 bg-transparent text-body-sm text-on-surface placeholder:text-on-surface-variant"
             />
           </div>
         </div>
@@ -582,7 +582,7 @@ export function MemberList({
         {bridge.isMatrixBackend() && activeCommunityId && (
           rosterNextCursor || !rosterStateComplete || rosterError != null
         ) ? (
-          <div className="space-y-2 border-t border-border-subtle px-3 py-3" aria-live="polite">
+          <div className="space-y-2 border-t border-outline-variant px-3 py-3" aria-live="polite">
             {rosterError != null ? (
               <ErrorState
                 error={rosterError}
@@ -591,7 +591,7 @@ export function MemberList({
               />
             ) : null}
             {!rosterStateComplete ? (
-              <p className="text-xs text-muted">
+              <p className="text-body-sm text-on-surface-variant">
                 More members appear as the community syncs.
               </p>
             ) : null}
@@ -907,7 +907,7 @@ const MemberRow = memo(function MemberRow({
       data-sequence-position={embedded ? undefined : sequence['data-sequence-position']}
       className={`${
         embedded
-          ? 'rounded-control border border-transparent hover:border-border-subtle hover:bg-surface-hover'
+          ? 'rounded-full border border-transparent hover:border-outline-variant hover:bg-surface-container-high'
           : sequence.className
       } group flex min-h-11 items-center gap-3 px-2 transition-colors`}
     >
@@ -920,7 +920,7 @@ const MemberRow = memo(function MemberRow({
           <button
             type="button"
             aria-label={`View ${member.displayName}'s profile`}
-            className="flex min-w-0 flex-1 items-center gap-3 rounded-control py-1 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-full py-1 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
           >
             <span className="relative flex-shrink-0">
               {/*
@@ -935,13 +935,13 @@ const MemberRow = memo(function MemberRow({
                 size={36}
                 name={member.displayName}
                 imageUrl={member.avatarUrl}
-                className={`!rounded-tile ${isRemoteMember ? 'mesh-remote-mark' : ''}`}
+                className={`!rounded-lg ${isRemoteMember ? 'mesh-remote-mark' : ''}`}
               />
               {/* Status dot */}
               <span
                 aria-hidden="true"
-                className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-round border-status border-surface-sidebar ${
-                  member.online ? 'bg-status-success' : 'bg-status-offline'
+                className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-round border-status border-surface-container-low ${
+                  member.online ? 'bg-primary' : 'bg-offline'
                 }`}
               />
             </span>
@@ -954,16 +954,16 @@ const MemberRow = memo(function MemberRow({
                 full-width Owner pill. Whose row it is should be the last thing
                 to go, not the first.
               */}
-              <span className="min-w-0 flex-1 truncate text-sm font-medium text-secondary">{member.displayName}</span>
+              <span className="min-w-0 flex-1 truncate text-body-md font-medium text-on-surface-variant">{member.displayName}</span>
               {(shortHandle || isRemoteMember) && (
-                <span className="flex-shrink-0 font-mono text-count text-content-secondary">
+                <span className="flex-shrink-0 text-label-sm text-on-surface-variant">
                   {shortHandle ?? serverName(member.publicKey)}
                 </span>
               )}
               {member.role !== 'member' && (
                 <span
-                  className={`flex-shrink-0 rounded px-1.5 py-0.5 text-micro font-semibold ${
-                    member.role === 'owner' ? 'bg-container-accent text-accent' : 'bg-surface-active text-muted'
+                  className={`flex-shrink-0 rounded px-1.5 py-0.5 text-label-sm font-semibold ${
+                    member.role === 'owner' ? 'bg-primary-container text-primary' : 'bg-surface-container-highest text-on-surface-variant'
                   }`}
                 >
                   {member.role === 'owner' ? 'Owner' : 'Admin'}
@@ -1011,7 +1011,7 @@ const MemberRow = memo(function MemberRow({
             <button
               type="button"
               onClick={() => void actions.onDm(member)}
-              className="flex h-8 w-8 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-active hover:text-primary"
+              className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-on-surface"
               title="Message member"
               aria-label={`Message ${member.displayName}`}
             >
@@ -1025,7 +1025,7 @@ const MemberRow = memo(function MemberRow({
               trigger={
                 <button
                   type="button"
-                  className="flex h-8 w-8 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-active hover:text-primary"
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-on-surface"
                   aria-label={`More actions for ${member.displayName}`}
                 >
                   <Icon name="ellipsis" size="sm" />
@@ -1086,7 +1086,7 @@ function MemberProfileCard({
     || canBlock,
   )
   const actionClass =
-    'flex min-h-8 w-full items-center gap-2 rounded-control px-2 text-left text-sm text-secondary transition-colors hover:bg-surface-active hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus'
+    'flex min-h-8 w-full items-center gap-2 rounded-full px-2 text-left text-body-md text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus'
 
   return (
     <div className="flex flex-col">
@@ -1097,34 +1097,34 @@ function MemberProfileCard({
             size={48}
             name={member.displayName}
             imageUrl={member.avatarUrl}
-            className={`!rounded-tile ${isRemoteMember ? 'mesh-remote-mark' : ''}`}
+            className={`!rounded-lg ${isRemoteMember ? 'mesh-remote-mark' : ''}`}
           />
           {/* Status dot */}
           <span
             aria-hidden="true"
-            className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-round border-status border-surface-overlay ${
-              member.online ? 'bg-status-success' : 'bg-status-offline'
+            className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-round border-status border-surface-container-high ${
+              member.online ? 'bg-primary' : 'bg-offline'
             }`}
           />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <span className="truncate text-sm font-semibold text-primary">{member.displayName}</span>
+            <span className="truncate text-body-md font-semibold text-on-surface">{member.displayName}</span>
             {member.role !== 'member' && (
               <span
-                className={`flex-shrink-0 rounded px-1.5 py-0.5 text-micro font-semibold ${
-                  member.role === 'owner' ? 'bg-container-accent text-accent' : 'bg-surface-active text-muted'
+                className={`flex-shrink-0 rounded px-1.5 py-0.5 text-label-sm font-semibold ${
+                  member.role === 'owner' ? 'bg-primary-container text-primary' : 'bg-surface-container-highest text-on-surface-variant'
                 }`}
               >
                 {roleLabel}
               </span>
             )}
           </div>
-          <p className="mt-0.5 truncate font-mono text-xs text-muted">{shortHandle ?? member.publicKey}</p>
-          <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-muted">
+          <p className="mt-0.5 truncate text-body-sm text-on-surface-variant">{shortHandle ?? member.publicKey}</p>
+          <p className="mt-1.5 inline-flex items-center gap-1.5 text-body-sm text-on-surface-variant">
             <span
               aria-hidden="true"
-              className={`h-2 w-2 rounded-round ${member.online ? 'bg-status-success' : 'bg-status-offline'}`}
+              className={`h-2 w-2 rounded-round ${member.online ? 'bg-primary' : 'bg-offline'}`}
             />
             {member.online ? 'Online' : 'Offline'}
           </p>
@@ -1132,7 +1132,7 @@ function MemberProfileCard({
       </div>
       {showActions ? (
         <>
-          <div className="-mx-4 mt-4 border-t border-border-subtle" aria-hidden="true" />
+          <div className="-mx-4 mt-4 border-t border-outline-variant" aria-hidden="true" />
           <div className="mt-3 flex flex-col gap-0.5">
             {canDm && onMessage ? (
               <button type="button" onClick={onMessage} className={actionClass}>
@@ -1162,7 +1162,7 @@ function MemberProfileCard({
               <button
                 type="button"
                 onClick={onBan}
-                className="flex min-h-8 w-full items-center gap-2 rounded-control px-2 text-left text-sm text-status-danger transition-colors hover:bg-container-danger-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                className="flex min-h-8 w-full items-center gap-2 rounded-full px-2 text-left text-body-md text-error transition-colors hover:bg-error-container-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               >
                 <Icon name="triangleAlert" size="sm" />
                 Ban from community
@@ -1179,7 +1179,7 @@ function MemberProfileCard({
                 type="button"
                 onClick={onToggleBlock}
                 disabled={blockStatus !== 'ready' || blockBusy}
-                className="flex min-h-8 w-full items-center gap-2 rounded-control px-2 text-left text-sm text-status-danger transition-colors hover:bg-container-danger-hover disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                className="flex min-h-8 w-full items-center gap-2 rounded-full px-2 text-left text-body-md text-error transition-colors hover:bg-error-container-hover disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               >
                 <Icon name="userX" size="sm" />
                 {blockStatus === 'loading' || blockStatus === 'idle'
@@ -1192,7 +1192,7 @@ function MemberProfileCard({
               </button>
             ) : null}
             {canBlock && blockError != null && (
-              <p className="px-2 text-caption text-status-danger" role="alert">
+              <p className="px-2 text-label-sm text-error" role="alert">
                 The block setting could not be changed. Try again.
               </p>
             )}

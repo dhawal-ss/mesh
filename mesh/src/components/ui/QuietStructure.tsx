@@ -55,10 +55,10 @@ export interface EyebrowProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 /**
- * The uppercase mono section label: 9.5px, 0.16em, secondary ink.
+ * The mono section label: 9.5px, 0.16em, secondary ink.
  *
  * This is one of the four jobs mono has in Quiet Structure. Inter is never
- * uppercased, so an uppercase label is always this component.
+ * uppercased, so an label is always this component.
  */
 export function Eyebrow({ accent, headingLevel, className, ...props }: EyebrowProps) {
   return (
@@ -66,8 +66,8 @@ export function Eyebrow({ accent, headingLevel, className, ...props }: EyebrowPr
       role={headingLevel ? 'heading' : undefined}
       aria-level={headingLevel}
       className={clsx(
-        'font-mono text-eyebrow font-medium uppercase',
-        accent ? 'text-content-accent' : 'text-content-secondary',
+        'text-label-sm font-medium ',
+        accent ? 'text-primary' : 'text-on-surface-variant',
         className,
       )}
       {...props}
@@ -153,7 +153,7 @@ export function SegmentedControl<Value extends string>({
       role="radiogroup"
       aria-label={label}
       className={clsx(
-        'inline-flex overflow-hidden rounded-segment border border-rule border-border-control',
+        'inline-flex overflow-hidden rounded-full border border-rule border-outline',
         className,
       )}
       onKeyDown={(event) => {
@@ -177,20 +177,20 @@ export function SegmentedControl<Value extends string>({
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(option.value)}
             className={clsx(
-              'flex min-h-control-sm flex-col items-center justify-center gap-0.5 rounded-plane px-3 py-1.5',
-              'text-row font-medium transition-colors duration-instant',
-              position > 0 && 'border-l border-rule border-border-structural',
+              'flex min-h-control-sm flex-col items-center justify-center gap-0.5 rounded-full px-3 py-1.5',
+              'text-title-md font-medium transition-colors duration-instant',
+              position > 0 && 'border-l border-rule border-outline-variant',
               selected
-                ? 'bg-accent text-content-on-accent'
-                : 'text-content-secondary hover:bg-surface-fill hover:text-content-primary',
+                ? 'bg-primary text-on-primary'
+                : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface',
             )}
           >
             {option.label}
             {option.hint ? (
               <span
                 className={clsx(
-                  'font-mono text-eyebrow font-medium uppercase',
-                  selected ? 'text-content-on-accent' : 'text-content-secondary',
+                  'text-label-sm font-medium ',
+                  selected ? 'text-on-primary' : 'text-on-surface-variant',
                 )}
               >
                 {option.hint}
@@ -229,7 +229,7 @@ export function TrustRail({ tone, server, className }: TrustRailProps) {
       data-trust={tone}
       aria-label={trustRailLabel(tone, server ?? null)}
       className={clsx(
-        'mesh-trust-rail block w-trust-rail flex-none self-stretch rounded-plane',
+        'mesh-trust-rail block w-trust-rail flex-none self-stretch rounded-full',
         className,
       )}
     />
@@ -261,7 +261,7 @@ export function StateTick({ state, label, className }: StateTickProps) {
       role="img"
       data-state={state}
       aria-label={label}
-      className={clsx('mesh-state-tick block h-trust-rail w-3.5 flex-none rounded-plane', className)}
+      className={clsx('mesh-state-tick block h-trust-rail w-3.5 flex-none rounded-full', className)}
     />
   )
 }
@@ -288,8 +288,8 @@ export function ExceptionLine({ tone = 'warning', children, className }: Excepti
   return (
     <p
       className={clsx(
-        'mt-1 flex items-center gap-1.5 font-mono text-count font-semibold uppercase tracking-chip',
-        tone === 'warning' ? 'text-status-warning' : 'text-status-danger',
+        'mt-1 flex items-center gap-1.5 text-label-sm font-semibold tracking-label-md',
+        tone === 'warning' ? 'text-marker' : 'text-error',
         className,
       )}
     >
@@ -297,7 +297,7 @@ export function ExceptionLine({ tone = 'warning', children, className }: Excepti
         aria-hidden="true"
         className={clsx(
           'h-1 w-1 flex-none rounded-full',
-          tone === 'warning' ? 'bg-status-warning' : 'bg-status-danger',
+          tone === 'warning' ? 'bg-marker' : 'bg-error',
         )}
       />
       {children}
@@ -331,8 +331,8 @@ export function AmbientNote({ confirmed, className, children, ...props }: Ambien
   return (
     <div
       className={clsx(
-        'flex items-center gap-2 border-t border-rule border-border-structural px-shell-gutter py-2',
-        'text-caption normal-case tracking-normal text-content-secondary',
+        'flex items-center gap-2 border-t border-rule border-outline-variant px-shell-gutter py-2',
+        'text-label-sm normal-case tracking-normal text-on-surface-variant',
         className,
       )}
       {...props}

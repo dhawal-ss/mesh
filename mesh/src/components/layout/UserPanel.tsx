@@ -97,10 +97,10 @@ export function UserPanel({ controls = true }: { controls?: boolean } = {}) {
 
   return (
     <>
-      {controls && <div className="mesh-user-panel flex h-user-panel flex-shrink-0 items-center gap-1 bg-surface-sunken px-2">
+      {controls && <div className="mesh-user-panel flex h-user-panel flex-shrink-0 items-center gap-1 bg-surface-container-lowest px-2">
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-control px-1 py-1 text-left transition-colors hover:bg-surface-hover"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-full px-1 py-1 text-left transition-colors hover:bg-surface-container-high"
           onClick={openSettings}
           aria-label={`User settings for ${identity.displayName}`}
         >
@@ -117,7 +117,7 @@ export function UserPanel({ controls = true }: { controls?: boolean } = {}) {
             address" in settings, and permanent chrome is in every screenshot
             and every screen share; the account service is named there too.
           */}
-          <span className="min-w-0 flex-1 truncate text-sm font-medium leading-tight text-primary">
+          <span className="min-w-0 flex-1 truncate text-body-md font-medium leading-tight text-on-surface">
             {identity.displayName}
           </span>
         </button>

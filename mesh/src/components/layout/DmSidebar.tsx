@@ -241,14 +241,14 @@ export function DmSidebar() {
   return (
     <div className="mesh-dm-sidebar flex h-full flex-col">
       {/* Header */}
-      <div className="mesh-dm-header flex min-h-conversation-header flex-shrink-0 items-center gap-3 border-b border-border-subtle bg-surface-sidebar px-3 py-2">
+      <div className="mesh-dm-header flex min-h-conversation-header flex-shrink-0 items-center gap-3 border-b border-outline-variant bg-surface-container-low px-3 py-2">
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-base font-semibold text-primary">Messages</h2>
+          <h2 className="truncate text-body-lg font-semibold text-on-surface">Messages</h2>
         </div>
         <button
           type="button"
           aria-label="Find someone to message"
-          className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-control border border-container-accent-line bg-container-accent px-2.5 text-caption font-semibold text-primary transition-colors hover:border-border-emphasis hover:bg-surface-hover"
+          className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-full border border-primary-container-line bg-primary-container px-2.5 text-label-sm font-semibold text-on-surface transition-colors hover:border-outline hover:bg-surface-container-high"
           onClick={startConversation}
         >
           <Icon name="squarePen" size="sm" />
@@ -260,12 +260,12 @@ export function DmSidebar() {
       {(requests.length > 0
         || requestLoad.status === 'failed'
         || (requestsExpanded && requestAnnouncement.length > 0)) && (
-        <section className="border-b border-border-subtle px-2 py-2" aria-labelledby="dm-requests-heading">
+        <section className="border-b border-outline-variant px-2 py-2" aria-labelledby="dm-requests-heading">
           <button
             ref={requestsHeadingRef}
             id="dm-requests-heading"
             type="button"
-            className="flex min-h-10 w-full items-center gap-2 rounded-control px-2 text-left text-sm font-semibold text-primary hover:bg-surface-hover"
+            className="flex min-h-10 w-full items-center gap-2 rounded-full px-2 text-left text-body-md font-semibold text-on-surface hover:bg-surface-container-high"
             aria-expanded={requestsExpanded}
             aria-controls="dm-request-list"
             onClick={() => setRequestsExpanded((expanded) => !expanded)}
@@ -273,22 +273,22 @@ export function DmSidebar() {
             <Icon name="messageCircle" size="sm" />
             <span>Message requests</span>
             {requests.length > 0 && (
-              <span className="badge-count ml-auto flex h-5 min-w-5 items-center justify-center rounded-round bg-accent px-1 text-meta font-semibold text-content-on-accent">
+              <span className="badge-count ml-auto flex h-5 min-w-5 items-center justify-center rounded-round bg-primary px-1 text-body-sm font-semibold text-on-primary">
                 {requests.length > 99 ? '99+' : requests.length}
               </span>
             )}
           </button>
           {requestsExpanded && (
             <div id="dm-request-list" className="mt-2 space-y-2">
-              <p className="px-2 text-caption text-muted">
+              <p className="px-2 text-label-sm text-on-surface-variant">
                 People you haven&apos;t chatted with yet. Messages stay out of your inbox until you accept.
               </p>
               {requestLoad.status === 'failed' && (
-                <div role="alert" className="rounded-control border border-container-warning-line bg-container-warning px-3 py-2 text-xs text-secondary">
+                <div role="alert" className="rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-surface-variant">
                   <span>Message requests could not be refreshed.</span>{' '}
                   <button
                     type="button"
-                    className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+                    className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
                     onClick={() => void loadRequests().catch(() => {})}
                   >
                     Retry
@@ -307,7 +307,7 @@ export function DmSidebar() {
                         key={request.roomId}
                         role="listitem"
                         aria-busy={saving || undefined}
-                        className="rounded-control border border-border bg-surface-sunken p-3"
+                        className="rounded-full border border-outline bg-surface-container-lowest p-3"
                       >
                         <div className="flex items-center gap-2.5">
                           <Avatar
@@ -316,22 +316,22 @@ export function DmSidebar() {
                             name={request.inviterDisplayName}
                           />
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold text-primary">
+                            <p className="truncate text-body-md font-semibold text-on-surface">
                               {request.inviterDisplayName} wants to message you
                             </p>
-                            <p className="text-caption text-muted">
+                            <p className="text-label-sm text-on-surface-variant">
                               You haven&apos;t chatted with this person before.
                             </p>
                           </div>
                         </div>
-                        <p className="mt-2 text-caption text-secondary">
+                        <p className="mt-2 text-label-sm text-on-surface-variant">
                           {request.canAccept
                             ? 'Only accept if you recognize them. Mesh never asks for your backup code or sign-in code.'
                             : 'Mesh couldn\'t verify this private conversation yet.'}
                         </p>
-                        <details className="mt-1 text-caption text-muted">
+                        <details className="mt-1 text-label-sm text-on-surface-variant">
                           <summary className="cursor-pointer min-h-7 py-1">Show account address</summary>
-                          <code className="block break-all rounded-control bg-surface-base px-2 py-1 text-secondary">
+                          <code className="block break-all rounded-full bg-surface px-2 py-1 text-on-surface-variant">
                             {request.inviterUserId}
                           </code>
                         </details>
@@ -368,7 +368,7 @@ export function DmSidebar() {
                           </Button>
                         </div>
                         {actionError && (
-                          <p role="alert" className="mt-2 text-caption text-status-danger">
+                          <p role="alert" className="mt-2 text-label-sm text-error">
                             {actionError}
                           </p>
                         )}
@@ -383,12 +383,12 @@ export function DmSidebar() {
       )}
 
       {matrixMode && (
-        <section className="border-b border-border-subtle px-2 py-2" aria-labelledby="blocked-accounts-heading">
+        <section className="border-b border-outline-variant px-2 py-2" aria-labelledby="blocked-accounts-heading">
           <button
             ref={blockedHeadingRef}
             id="blocked-accounts-heading"
             type="button"
-            className="flex min-h-10 w-full items-center gap-2 rounded-control px-2 text-left text-sm font-semibold text-primary hover:bg-surface-hover"
+            className="flex min-h-10 w-full items-center gap-2 rounded-full px-2 text-left text-body-md font-semibold text-on-surface hover:bg-surface-container-high"
             aria-expanded={blockedExpanded}
             aria-controls="blocked-account-list"
             onClick={() => {
@@ -400,22 +400,22 @@ export function DmSidebar() {
             <Icon name="shieldCheck" size="sm" />
             <span>Blocked accounts</span>
             {blockedAccounts.length > 0 && (
-              <span className="badge-count ml-auto flex h-5 min-w-5 items-center justify-center rounded-round bg-surface-active px-1 text-meta font-semibold text-secondary">
+              <span className="badge-count ml-auto flex h-5 min-w-5 items-center justify-center rounded-round bg-surface-container-highest px-1 text-body-sm font-semibold text-on-surface-variant">
                 {blockedAccounts.length}{blockedAccountsNextCursor ? '+' : ''}
               </span>
             )}
           </button>
           {blockedExpanded && (
             <div id="blocked-account-list" className="mt-2 space-y-2">
-              <p className="px-2 text-caption text-muted">
+              <p className="px-2 text-label-sm text-on-surface-variant">
                 Their messages and new requests are ignored.
               </p>
               {blockedAccountLoad.status === 'failed' && (
-                <div role="alert" className="rounded-control border border-container-warning-line bg-container-warning px-3 py-2 text-xs text-secondary">
+                <div role="alert" className="rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-surface-variant">
                   <span>Blocked accounts could not be refreshed.</span>{' '}
                   <button
                     type="button"
-                    className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+                    className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
                     onClick={() => void loadBlockedAccounts().catch(() => {})}
                   >
                     Retry
@@ -434,9 +434,9 @@ export function DmSidebar() {
                         key={account.userId}
                         role="listitem"
                         aria-busy={saving || undefined}
-                        className="rounded-control border border-border bg-surface-sunken p-3"
+                        className="rounded-full border border-outline bg-surface-container-lowest p-3"
                       >
-                        <code className="block break-all text-caption text-secondary">
+                        <code className="block break-all text-label-sm text-on-surface-variant">
                           {account.userId}
                         </code>
                         <Button
@@ -449,7 +449,7 @@ export function DmSidebar() {
                           {saving ? 'Unblocking…' : 'Unblock'}
                         </Button>
                         {actionError && (
-                          <p role="alert" className="mt-2 text-caption text-status-danger">
+                          <p role="alert" className="mt-2 text-label-sm text-error">
                             {actionError}
                           </p>
                         )}
@@ -460,7 +460,7 @@ export function DmSidebar() {
               )}
               {blockedAccounts.length === 0
               && blockedAccountLoad.status === 'loaded' && (
-                <p className="px-2 text-caption text-muted">Block an account from a direct message to manage it here.</p>
+                <p className="px-2 text-label-sm text-on-surface-variant">Block an account from a direct message to manage it here.</p>
               )}
               {blockedAccountsNextCursor && (
                 <Button
@@ -491,10 +491,10 @@ export function DmSidebar() {
       >
         {pendingBlockRequest && (
           <>
-            <p className="text-sm text-secondary">
+            <p className="text-body-md text-on-surface-variant">
               Confirm the account address before blocking:
             </p>
-            <code className="mt-2 block break-all rounded-control bg-surface-sunken px-3 py-2 text-caption text-secondary">
+            <code className="mt-2 block break-all rounded-full bg-surface-container-lowest px-3 py-2 text-label-sm text-on-surface-variant">
               {pendingBlockRequest.inviterUserId}
             </code>
             <div className="mt-4 flex flex-wrap justify-end gap-2">
@@ -520,11 +520,11 @@ export function DmSidebar() {
       {/* Conversation search */}
       <div className="mesh-dm-search-region py-2.5">
         <label className="sr-only" htmlFor="dm-search">Find a conversation</label>
-        <div className="mesh-dm-search-shell flex min-h-9 items-center gap-2 border-y border-border px-3">
+        <div className="mesh-dm-search-shell flex min-h-9 items-center gap-2 border-y border-outline px-3">
           <Icon
             name="search"
             size="xs"
-            className="flex-shrink-0 text-muted"
+            className="flex-shrink-0 text-on-surface-variant"
           />
           <input
             id="dm-search"
@@ -532,7 +532,7 @@ export function DmSidebar() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Find a conversation"
-            className="mesh-dm-search min-w-0 flex-1 bg-transparent text-xs text-primary placeholder:text-muted"
+            className="mesh-dm-search min-w-0 flex-1 bg-transparent text-body-sm text-on-surface placeholder:text-on-surface-variant"
           />
         </div>
       </div>
@@ -555,12 +555,12 @@ export function DmSidebar() {
         ) : conversationLoad.status === 'failed' && conversations.length === 0 ? (
           <div
             role="alert"
-            className="rounded-control border border-container-warning-line bg-container-warning px-3 py-3 text-xs text-secondary"
+            className="rounded-full border border-marker-container-line bg-marker-container px-3 py-3 text-body-sm text-on-surface-variant"
           >
             <p>Conversations could not be loaded.</p>
             <button
               type="button"
-              className="mt-2 min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+              className="mt-2 min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
               onClick={() => void loadConversations().catch(() => {})}
             >
               Retry conversations
@@ -619,12 +619,12 @@ export function DmSidebar() {
       {conversationLoad.status === 'failed' && conversations.length > 0 && (
         <div
           role="alert"
-          className="mx-2 mb-2 rounded-control border border-container-warning-line bg-container-warning px-2 py-2 text-xs text-secondary"
+          className="mx-2 mb-2 rounded-full border border-marker-container-line bg-marker-container px-2 py-2 text-body-sm text-on-surface-variant"
         >
           <span>Could not refresh conversations. Showing the last update.</span>{' '}
           <button
             type="button"
-            className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+            className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
             onClick={() => void loadConversations().catch(() => {})}
           >
             Retry
@@ -688,10 +688,10 @@ const DmConversationRow = memo(function DmConversationRow({
     <div role="listitem">
       <button
         onClick={() => void onSelect(conversation.id)}
-        className={`mesh-dm-item group flex min-h-14 w-full items-center gap-3 rounded-plane px-shell-gutter py-2 text-left transition-colors ${
+        className={`mesh-dm-item group flex min-h-14 w-full items-center gap-3 rounded-full px-shell-gutter py-2 text-left transition-colors ${
           active
-            ? 'bg-accent text-content-on-accent'
-            : 'text-content-secondary hover:bg-surface-fill hover:text-content-primary'
+            ? 'bg-primary text-on-primary'
+            : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
         }`}
         aria-label={`Direct message with ${shortName}${isRemotePeer ? `, on ${serverName(peer.userId)}` : ''}${conversation.unreadCount > 0
           ? `, ${conversation.unreadCount} unread ${conversation.unreadCount === 1 ? 'message' : 'messages'}`
@@ -700,8 +700,8 @@ const DmConversationRow = memo(function DmConversationRow({
       >
         <span
           aria-hidden="true"
-          className={`w-row-index flex-none font-mono text-count font-semibold transition-colors duration-instant ${
-            active ? 'text-content-on-accent' : 'text-content-secondary group-hover:text-content-primary'
+          className={`w-row-index flex-none text-label-sm font-semibold transition-colors duration-instant ${
+            active ? 'text-on-primary' : 'text-on-surface-variant group-hover:text-on-surface'
           }`}
         >
           {rowNumber(index)}
@@ -715,16 +715,16 @@ const DmConversationRow = memo(function DmConversationRow({
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="truncate text-row font-medium">{shortName}</span>
+            <span className="truncate text-title-md font-medium">{shortName}</span>
             {conversation.lastMessageAt && (
-              <span className={`tnum ml-auto flex-shrink-0 font-mono text-count ${
-                active ? 'text-content-on-accent' : 'text-content-secondary'
+              <span className={`tnum ml-auto flex-shrink-0 text-label-sm ${
+                active ? 'text-on-primary' : 'text-on-surface-variant'
               }`}>
                 {formatShortDate(conversation.lastMessageAt)}
               </span>
             )}
             {conversation.unreadCount > 0 && !active && (
-              <span className="badge-count flex-shrink-0 font-mono text-count font-semibold text-content-accent">
+              <span className="badge-count flex-shrink-0 text-label-sm font-semibold text-primary">
                 {conversation.unreadCount > 99 ? '99+' : rowNumber(conversation.unreadCount - 1)}
               </span>
             )}
@@ -737,8 +737,8 @@ const DmConversationRow = memo(function DmConversationRow({
             keeps the same height as one with a preview.
           */}
           {latestContent && (
-            <span className={`block truncate text-support ${
-              active ? 'text-content-on-accent' : 'text-content-secondary'
+            <span className={`block truncate text-body-sm ${
+              active ? 'text-on-primary' : 'text-on-surface-variant'
             }`}>
               {latestContent}
             </span>

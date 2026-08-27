@@ -429,16 +429,16 @@ export function UserSettingsPanel({
     >
       <div className={`mesh-settings-layout grid min-h-0 ${embedded ? 'h-full grid-cols-1' : '-mx-5 -mb-5 sm:grid-cols-settings'}`}>
       {!embedded && (
-      <div className="mesh-settings-navigation border-b border-border-subtle bg-surface-sunken px-3 py-3 sm:border-b-0 sm:border-r">
+      <div className="mesh-settings-navigation border-b border-outline-variant bg-surface-container-lowest px-3 py-3 sm:border-b-0 sm:border-r">
         <div className="block py-2 sm:hidden">
-          <label htmlFor="user-settings-section" className="block text-xs font-medium text-secondary">
+          <label htmlFor="user-settings-section" className="block text-body-sm font-medium text-on-surface-variant">
             Settings section
           </label>
           <select
             id="user-settings-section"
             value={activeTabIsPrimary ? activeTab : 'account'}
             onChange={(event) => activateTab(event.target.value as UserSettingsTab)}
-            className="mt-1 block min-h-11 w-full rounded-control border border-border bg-surface-sunken px-3 text-sm text-primary"
+            className="mt-1 block min-h-11 w-full rounded-full border border-outline bg-surface-container-lowest px-3 text-body-md text-on-surface"
           >
             {visibleSettingsTabs.map(([id, label]) => (
               <option key={id} value={id}>{label}</option>
@@ -446,14 +446,14 @@ export function UserSettingsPanel({
           </select>
         </div>
         <div className="hidden sm:flex sm:h-full sm:flex-col">
-          <div className="mb-4 flex items-center gap-2.5 rounded-control border border-border-subtle bg-surface-raised px-2.5 py-2.5">
+          <div className="mb-4 flex items-center gap-2.5 rounded-full border border-outline-variant bg-surface-container px-2.5 py-2.5">
             <Avatar
               color={identity.avatarColor}
               size={32}
               name={identity.displayName}
               imageUrl={identity.avatarUrl}
             />
-            <span className="min-w-0 truncate text-sm font-semibold text-primary">
+            <span className="min-w-0 truncate text-body-md font-semibold text-on-surface">
               {identity.displayName}
             </span>
           </div>
@@ -485,20 +485,20 @@ export function UserSettingsPanel({
                 because aria-selected already carries the state and the plane
                 already shows it.
               */
-              className={`group relative flex min-h-10 flex-shrink-0 items-center gap-2 rounded-plane px-shell-gutter text-left text-row font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
+              className={`group relative flex min-h-10 flex-shrink-0 items-center gap-2 rounded-full px-shell-gutter text-left text-title-md font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
                 activeTab === id
-                  ? 'bg-accent text-content-on-accent'
-                  : 'text-content-secondary hover:bg-surface-fill hover:text-content-primary'
+                  ? 'bg-primary text-on-primary'
+                  : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
               }`}
               onClick={() => activateTab(id)}
               onKeyDown={(event) => navigateTabs(event, id)}
             >
               <span
                 aria-hidden="true"
-                className={`w-row-index flex-none font-mono text-count font-semibold transition-colors duration-instant ${
+                className={`w-row-index flex-none text-label-sm font-semibold transition-colors duration-instant ${
                   activeTab === id
-                    ? 'text-content-on-accent'
-                    : 'text-content-secondary group-hover:text-content-primary'
+                    ? 'text-on-primary'
+                    : 'text-on-surface-variant group-hover:text-on-surface'
                 }`}
               >
                 {rowNumber(position)}
@@ -531,21 +531,21 @@ export function UserSettingsPanel({
           </Button>
         )}
         {activeTab === 'profile' && (
-        <section className="border-b border-border-subtle pb-5" aria-labelledby="profile-settings-heading">
-          <h3 id="profile-settings-heading" className="text-md font-semibold text-content-primary">Profile</h3>
+        <section className="border-b border-outline-variant pb-5" aria-labelledby="profile-settings-heading">
+          <h3 id="profile-settings-heading" className="text-title-sm font-semibold text-on-surface">Profile</h3>
           {/*
             The name, and nothing under it. The mono slot here held the words
             "Mesh account", and the address that would have belonged in it is
             deliberately kept behind "Show account address" in the Account
             section, which also names the service openly.
           */}
-          <p className="mt-3 min-w-0 truncate text-base font-semibold text-primary">
+          <p className="mt-3 min-w-0 truncate text-body-lg font-semibold text-on-surface">
             {identity.displayName}
           </p>
 
           {matrixMode && (
-            <div className="mt-4 space-y-3 border-t border-border pt-4">
-              <p className="text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">
+            <div className="mt-4 space-y-3 border-t border-outline pt-4">
+              <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">
                 Profile picture
               </p>
               <div className="flex items-center gap-3">
@@ -583,14 +583,14 @@ export function UserSettingsPanel({
                   }}
                 />
               </div>
-              <p className="text-xs text-muted">
+              <p className="text-body-sm text-on-surface-variant">
                 PNG, JPEG or WebP. Up to 1 MB.
               </p>
             </div>
           )}
 
           {matrixMode && (
-            <form className="mt-4 space-y-3 border-t border-border pt-4" onSubmit={saveDisplayName}>
+            <form className="mt-4 space-y-3 border-t border-outline pt-4" onSubmit={saveDisplayName}>
               <Input
                 label="Display name"
                 value={displayName}
@@ -616,7 +616,7 @@ export function UserSettingsPanel({
                   <span
                     role="status"
                     aria-label="Display name save status"
-                    className="text-xs text-green"
+                    className="text-body-sm text-primary"
                   >
                     Profile updated
                   </span>
@@ -625,7 +625,7 @@ export function UserSettingsPanel({
               {profileValidation && (
                 <p
                   role="alert"
-                  className="rounded-panel bg-container-danger px-3 py-2 text-xs text-status-danger"
+                  className="rounded-xl bg-error-container px-3 py-2 text-body-sm text-error"
                 >
                   {profileValidation}
                 </p>
@@ -644,30 +644,30 @@ export function UserSettingsPanel({
         )}
 
         {activeTab === 'account' && (
-          <section className="space-y-4 border-b border-border-subtle pb-5" aria-labelledby="account-settings-heading">
-            <h3 id="account-settings-heading" className="text-md font-semibold text-content-primary">Account</h3>
-            <div className="rounded-control border border-border-subtle bg-surface-sunken px-3 py-3">
+          <section className="space-y-4 border-b border-outline-variant pb-5" aria-labelledby="account-settings-heading">
+            <h3 id="account-settings-heading" className="text-title-sm font-semibold text-on-surface">Account</h3>
+            <div className="rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-3">
               <SectionHeader title="Current account service" headingLevel={4} />
-              <p className="mt-1 text-sm font-medium text-primary">
+              <p className="mt-1 text-body-md font-medium text-on-surface">
                 {matrixMode
                   ? accountService?.displayName ?? 'Account service unavailable'
                   : 'This device'}
               </p>
               {matrixMode && accountService && accountService.displayName !== accountService.accountDomain && (
-                <p className="mt-0.5 text-xs text-secondary">{accountService.accountDomain}</p>
+                <p className="mt-0.5 text-body-sm text-on-surface-variant">{accountService.accountDomain}</p>
               )}
               {matrixMode && (
                 <>
                   <button
                     type="button"
-                    className="mt-3 min-h-9 rounded-control px-2 text-sm font-semibold text-accent hover:bg-container-accent-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                    className="mt-3 min-h-9 rounded-full px-2 text-body-md font-semibold text-primary hover:bg-primary-container-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                     aria-expanded={showAccountAddress}
                     onClick={() => setShowAccountAddress((shown) => !shown)}
                   >
                     {showAccountAddress ? 'Hide account address' : 'Show account address'}
                   </button>
                   {showAccountAddress && (
-                    <p className="mt-2 break-all font-mono text-xs text-secondary">
+                    <p className="mt-2 break-all text-body-sm text-on-surface-variant">
                       {matrixAccountId}
                     </p>
                   )}
@@ -692,7 +692,7 @@ export function UserSettingsPanel({
                 Use another service
               </Button>
             </div>
-            <p className="text-xs text-muted">
+            <p className="text-body-sm text-on-surface-variant">
               Switching accounts signs you out and ends any active call.
             </p>
             <SectionHeader title="More account settings" headingLevel={4} />
@@ -730,7 +730,7 @@ export function UserSettingsPanel({
           className="space-y-5"
           aria-labelledby="appearance-settings-heading"
         >
-          <h3 id="appearance-settings-heading" className="text-md font-semibold text-content-primary">
+          <h3 id="appearance-settings-heading" className="text-title-sm font-semibold text-on-surface">
             Appearance
           </h3>
 
@@ -787,7 +787,7 @@ export function UserSettingsPanel({
           </div>
 
           <fieldset>
-            <legend className="font-mono text-eyebrow font-medium uppercase text-content-secondary">Accent color</legend>
+            <legend className="text-label-sm font-medium text-on-surface-variant">Accent color</legend>
             <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {ACCENT_CHOICES.map((choice) => {
                 const selected = appearance.accent === choice.id
@@ -800,7 +800,7 @@ export function UserSettingsPanel({
                       being chosen, so the selection sits on it.
                     */
                     className={`mesh-accent-option group flex min-h-16 cursor-pointer items-center gap-3 rounded-lg-inc px-3 py-2.5 transition-colors ${APPEARANCE_FOCUS_RING} has-[input:focus-visible]:-outline-offset-2 ${
-                      selected ? '' : 'hover:bg-surface-fill'
+                      selected ? '' : 'hover:bg-state-hover'
                     }`}
                     data-selected={selected ? 'true' : undefined}
                   >
@@ -813,15 +813,15 @@ export function UserSettingsPanel({
                       className="sr-only"
                     />
                     <span
-                      className="mesh-accent-choice flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-tile"
+                      className="mesh-accent-choice flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg"
                       data-accent-preview={choice.id}
                       aria-hidden="true"
                     >
                       <PixelMark variant="community" className="h-9 w-9" />
                     </span>
                     <span className="min-w-0">
-                      <span className="block text-row font-medium text-content-primary">{choice.label}</span>
-                      <span className="mt-0.5 block font-mono text-eyebrow uppercase text-content-secondary">
+                      <span className="block text-title-md font-medium text-on-surface">{choice.label}</span>
+                      <span className="mt-0.5 block text-label-sm text-on-surface-variant">
                         {choice.lineage}
                       </span>
                     </span>
@@ -829,7 +829,7 @@ export function UserSettingsPanel({
                 )
               })}
             </div>
-            <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-content-secondary">
+            <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-label-sm text-on-surface-variant">
               <StateTick state="ok" label="Unchanged" />
               Status colors stay consistent. Connected, warning, and destructive actions do not change with your accent.
             </p>
@@ -844,14 +844,14 @@ export function UserSettingsPanel({
             Appearance is stored on this device only
           </AmbientNote>
 
-          <div className="space-y-2 border-t border-rule border-border-structural pt-4">
+          <div className="space-y-2 border-t border-rule border-outline-variant pt-4">
             <SectionHeader title="Sidebar" headingLevel={4} />
-            <p className="text-xs text-muted">
+            <p className="text-body-sm text-on-surface-variant">
               Room order, pins, and hidden rooms are saved on this device only.
             </p>
             <button
               type="button"
-              className="min-h-9 rounded-control px-2 text-sm font-medium text-accent hover:bg-container-accent-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="min-h-9 rounded-full px-2 text-body-md font-medium text-primary hover:bg-primary-container-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               onClick={() => {
                 if (!confirmingRoomOrganizationReset) {
                   setConfirmingRoomOrganizationReset(true)
@@ -895,10 +895,10 @@ export function UserSettingsPanel({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-outline-variant pt-4">
             <button
               type="button"
-              className="min-h-9 rounded-control px-2 text-sm font-medium text-accent hover:bg-container-accent-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="min-h-9 rounded-full px-2 text-body-md font-medium text-primary hover:bg-primary-container-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               onClick={() => {
                 setAppearanceTheme('dark')
                 setAppearanceDensity('default')
@@ -911,8 +911,8 @@ export function UserSettingsPanel({
               Reset display choices
             </button>
             <div className="ml-auto flex items-center gap-3">
-              <span className="flex items-center gap-2 text-caption text-muted">
-                <span className="h-2 w-2 rounded-round bg-status-success" aria-hidden="true" />
+              <span className="flex items-center gap-2 text-label-sm text-on-surface-variant">
+                <span className="h-2 w-2 rounded-round bg-primary" aria-hidden="true" />
                 Saved on this device
               </span>
               {!embedded && <Button variant="primary" onClick={onClose}>Done</Button>}
@@ -923,14 +923,14 @@ export function UserSettingsPanel({
 
         {matrixMode && activeTab === 'privacy' && (
           <section
-            className="space-y-4 border-b border-border-subtle pb-5"
+            className="space-y-4 border-b border-outline-variant pb-5"
             aria-labelledby="privacy-center-heading"
           >
             <div>
-              <h3 id="privacy-center-heading" className="text-md font-semibold text-content-primary">
+              <h3 id="privacy-center-heading" className="text-title-sm font-semibold text-on-surface">
                 Privacy center
               </h3>
-              <p className="mt-1 text-xs text-muted">
+              <p className="mt-1 text-body-sm text-on-surface-variant">
                 Mesh protects message and file contents before they leave your device.
               </p>
             </div>
@@ -940,7 +940,7 @@ export function UserSettingsPanel({
                 <p
                   role="status"
                   aria-label="Privacy settings save status"
-                  className="rounded-control bg-surface-hover px-3 py-2 text-xs text-muted"
+                  className="rounded-full bg-surface-container-high px-3 py-2 text-body-sm text-on-surface-variant"
                 >
                   Applying privacy settings…
                 </p>
@@ -949,14 +949,14 @@ export function UserSettingsPanel({
                 <p
                   role="status"
                   aria-label="Privacy settings save status"
-                  className="rounded-control bg-surface-hover px-3 py-2 text-xs text-green"
+                  className="rounded-full bg-surface-container-high px-3 py-2 text-body-sm text-primary"
                 >
                   Privacy settings saved to your account.
                 </p>
               )}
               {matrixPreferenceSync.status === 'failed' && (
                 <>
-                  <p className="mb-2 rounded-control bg-surface-hover px-3 py-2 text-xs text-muted">
+                  <p className="mb-2 rounded-full bg-surface-container-high px-3 py-2 text-body-sm text-on-surface-variant">
                     Mesh could not confirm them on your account, so other devices may still use the
                     previous settings.
                   </p>
@@ -973,14 +973,14 @@ export function UserSettingsPanel({
 
             <SectionHeader title="What your service can see" headingLevel={4} id="service-visibility-heading" />
             <div
-              className="overflow-x-auto rounded-control border border-border-subtle"
+              className="overflow-x-auto rounded-full border border-outline-variant"
               role="region"
               aria-labelledby="service-visibility-heading"
               tabIndex={0}
             >
-              <table className="w-full min-w-privacy-table text-left text-xs">
+              <table className="w-full min-w-privacy-table text-left text-body-sm">
                 <caption className="sr-only">What your service can see</caption>
-                <thead className="bg-surface-hover text-muted">
+                <thead className="bg-surface-container-high text-on-surface-variant">
                   <tr>
                     <th scope="col" className="px-3 py-2 font-medium">
                       Information
@@ -993,7 +993,7 @@ export function UserSettingsPanel({
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border-subtle text-secondary">
+                <tbody className="divide-y divide-outline-variant text-on-surface-variant">
                   <PrivacyVisibilityRow
                     information="Message and file content"
                     visible="No"
@@ -1073,13 +1073,13 @@ export function UserSettingsPanel({
             </div>
 
             {activeConversationId && (
-              <div className="space-y-3 rounded-control border border-border-subtle bg-surface-sunken p-3">
+              <div className="space-y-3 rounded-full border border-outline-variant bg-surface-container-lowest p-3">
                 <div>
-                  <h4 className="text-sm font-semibold text-content-primary">
+                  <h4 className="text-body-md font-semibold text-on-surface">
                     This conversation
                     {activeConversationName ? `: ${activeConversationName}` : ''}
                   </h4>
-                  <p className="mt-1 text-xs text-muted">
+                  <p className="mt-1 text-body-sm text-on-surface-variant">
                     Overrides the controls above for this conversation only.
                   </p>
                 </div>
@@ -1134,7 +1134,7 @@ export function UserSettingsPanel({
                     sequencePosition="last"
                   />
                 </div>
-                <p className="text-xs text-muted">
+                <p className="text-body-sm text-on-surface-variant">
                   Other compatible apps may publish or display activity differently.
                 </p>
               </div>
@@ -1145,7 +1145,7 @@ export function UserSettingsPanel({
               see, so this block kept only the one fact the table does not
               carry: both services still observe operational detail.
             */}
-            <p className="rounded-control bg-surface-hover px-3 py-3 text-xs text-muted">
+            <p className="rounded-full bg-surface-container-high px-3 py-3 text-body-sm text-on-surface-variant">
               Both services can still see internet addresses, devices, membership, and timing.
             </p>
           </section>
@@ -1153,7 +1153,7 @@ export function UserSettingsPanel({
 
         {matrixMode && activeTab === 'privacy' && (
           <section
-            className="space-y-4 border-b border-border-subtle pb-5"
+            className="space-y-4 border-b border-outline-variant pb-5"
             aria-label="Mesh commitments"
           >
             <GovernedCommitmentsPanel />
@@ -1162,10 +1162,10 @@ export function UserSettingsPanel({
 
         {activeTab === 'notifications' && (
         <section
-          className="space-y-3 border-b border-border-subtle pb-5"
+          className="space-y-3 border-b border-outline-variant pb-5"
           aria-labelledby="notification-settings-heading"
         >
-          <h3 id="notification-settings-heading" className="text-md font-semibold text-content-primary">
+          <h3 id="notification-settings-heading" className="text-title-sm font-semibold text-on-surface">
             Notifications
           </h3>
 
@@ -1183,13 +1183,13 @@ export function UserSettingsPanel({
           />
           <label
             htmlFor="interface-sound-volume"
-            className={`block rounded-control bg-surface-hover px-3 py-3 text-xs font-medium text-muted ${
+            className={`block rounded-full bg-surface-container-high px-3 py-3 text-body-sm font-medium text-on-surface-variant ${
               notifications.sound ? '' : 'opacity-50'
             }`}
           >
             <span className="flex items-center justify-between gap-3">
               <span>Sound volume</span>
-              <span className="font-mono text-primary">{Math.round(notifications.soundVolume * 100)}%</span>
+              <span className="text-on-surface">{Math.round(notifications.soundVolume * 100)}%</span>
             </span>
             <input
               id="interface-sound-volume"
@@ -1249,27 +1249,27 @@ export function UserSettingsPanel({
 
           {notifications.quietHours.enabled && (
             <div
-              className="grid gap-3 rounded-control bg-surface-hover px-3 py-3 sm:grid-cols-2"
+              className="grid gap-3 rounded-full bg-surface-container-high px-3 py-3 sm:grid-cols-2"
               aria-label="Quiet hours schedule"
             >
-              <label htmlFor="quiet-hours-start" className="text-xs font-medium text-muted">
+              <label htmlFor="quiet-hours-start" className="text-body-sm font-medium text-on-surface-variant">
                 Starts
                 <input
                   id="quiet-hours-start"
                   type="time"
-                  className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent"
+                  className="mt-1 block h-control-md w-full rounded-md border border-outline-variant bg-surface-container px-2 text-body-md text-on-surface outline-none transition-colors focus:border-primary"
                   value={notifications.quietHours.start}
                   onChange={(event) =>
                     setQuietHours(event.target.value, notifications.quietHours.end)
                   }
                 />
               </label>
-              <label htmlFor="quiet-hours-end" className="text-xs font-medium text-muted">
+              <label htmlFor="quiet-hours-end" className="text-body-sm font-medium text-on-surface-variant">
                 Ends
                 <input
                   id="quiet-hours-end"
                   type="time"
-                  className="mt-1 block h-control-md w-full rounded-md border border-border-subtle bg-surface-raised px-2 text-sm text-content outline-none transition-colors focus:border-accent"
+                  className="mt-1 block h-control-md w-full rounded-md border border-outline-variant bg-surface-container px-2 text-body-md text-on-surface outline-none transition-colors focus:border-primary"
                   value={notifications.quietHours.end}
                   onChange={(event) =>
                     setQuietHours(notifications.quietHours.start, event.target.value)
@@ -1292,13 +1292,13 @@ export function UserSettingsPanel({
               <span
                 role="status"
                 aria-label="Test notification status"
-                className="text-xs text-green"
+                className="text-body-sm text-primary"
               >
                 Test notification sent
               </span>
             )}
             {testNotificationStatus === 'failed' && (
-              <span role="alert" className="text-xs text-status-danger">
+              <span role="alert" className="text-body-sm text-error">
                 Mesh could not send the test notification. Try again.
               </span>
             )}
@@ -1327,7 +1327,7 @@ export function UserSettingsPanel({
 
           {(notifications.mutedChannels.length > 0 ||
             notifications.mutedCommunities.length > 0) && (
-            <p className="rounded-control bg-surface-hover px-3 py-2 text-xs text-muted">
+            <p className="rounded-full bg-surface-container-high px-3 py-2 text-body-sm text-on-surface-variant">
               Muted: {notifications.mutedCommunities.length} communit
               {notifications.mutedCommunities.length === 1 ? 'y' : 'ies'} and{' '}
               {notifications.mutedChannels.length} channel
@@ -1338,18 +1338,18 @@ export function UserSettingsPanel({
         )}
 
         {matrixMode && activeTab === 'devices' && (!embedded || !showEmbeddedSecurity) && (
-          <section className="border-b border-border-subtle pb-5" aria-labelledby="devices-settings-heading">
+          <section className="border-b border-outline-variant pb-5" aria-labelledby="devices-settings-heading">
             <div className="flex items-center gap-2">
-              <h3 id="devices-settings-heading" className="text-md font-semibold text-content-primary">Your devices</h3>
+              <h3 id="devices-settings-heading" className="text-title-sm font-semibold text-on-surface">Your devices</h3>
               {backupReminderDue && (
                 <span
-                  className="h-2 w-2 rounded-round bg-status-warning"
+                  className="h-2 w-2 rounded-round bg-marker"
                   aria-label="Message backup needs attention"
                 />
               )}
             </div>
             {backupReminderDue && (
-              <p className="mt-1 text-xs text-status-warning">
+              <p className="mt-1 text-body-sm text-marker">
                 Message backup needs attention.
               </p>
             )}
@@ -1370,7 +1370,7 @@ export function UserSettingsPanel({
           && (activeTab === 'account' || activeTab === 'devices') && (
             <Suspense
               fallback={(
-                <p role="status" className="rounded-control bg-surface-hover px-3 py-2 text-xs text-muted">
+                <p role="status" className="rounded-full bg-surface-container-high px-3 py-2 text-body-sm text-on-surface-variant">
                   Opening safety and devices…
                 </p>
               )}
@@ -1385,17 +1385,17 @@ export function UserSettingsPanel({
 
         {activeTab === 'audio-video' && (
           <section
-            className="border-b border-border-subtle pb-5"
+            className="border-b border-outline-variant pb-5"
             aria-labelledby="call-privacy-heading"
           >
-            <h3 id="call-privacy-heading" className="text-md font-semibold text-content-primary">
+            <h3 id="call-privacy-heading" className="text-title-sm font-semibold text-on-surface">
               Audio and video
             </h3>
-            <p className="mt-1 text-xs text-muted">
+            <p className="mt-1 text-body-sm text-on-surface-variant">
               Choose your microphone, speakers, and camera from Voice settings after you join a call.
             </p>
-            <div className="mt-3 rounded-control bg-surface-hover px-3 py-3 text-xs text-muted">
-              <h4 className="text-sm font-semibold text-content-primary">Call privacy</h4>
+            <div className="mt-3 rounded-full bg-surface-container-high px-3 py-3 text-body-sm text-on-surface-variant">
+              <h4 className="text-body-md font-semibold text-on-surface">Call privacy</h4>
               <p className="mt-1">
                 The service can see who connects, internet addresses, call timing, and traffic
                 volume. If private call protection is not verified, your microphone, camera, and
@@ -1411,10 +1411,10 @@ export function UserSettingsPanel({
 
         {activeTab === 'advanced' && (
           <section
-            className="mesh-advanced-settings border-y border-border-subtle p-4"
+            className="mesh-advanced-settings border-y border-outline-variant p-4"
             aria-labelledby="advanced-settings-heading"
           >
-            <h3 id="advanced-settings-heading" className="text-md font-semibold text-content-primary">
+            <h3 id="advanced-settings-heading" className="text-title-sm font-semibold text-on-surface">
               Advanced
             </h3>
             <SectionHeader className="mt-4" title="Optional support controls" headingLevel={4} />
@@ -1480,14 +1480,14 @@ export function UserSettingsPanel({
               The section intro used to repeat this. One statement of the
               redaction rule is the disclosure; two was a lecture.
             */}
-            <p className="mesh-advanced-privacy mt-4 border-t border-border-subtle pt-3 text-xs text-muted">
+            <p className="mesh-advanced-privacy mt-4 border-t border-outline-variant pt-3 text-body-sm text-on-surface-variant">
               A check never shows account details, message content, or private local information,
               and never uploads a support file on its own.
             </p>
             {embedded && signalCheckEnabled && showEmbeddedDiagnostics && (
               <Suspense
                 fallback={(
-                  <p role="status" className="mesh-advanced-loading mt-4 px-3 py-2 text-xs text-muted">
+                  <p role="status" className="mesh-advanced-loading mt-4 px-3 py-2 text-body-sm text-on-surface-variant">
                     Opening connection check...
                   </p>
                 )}
@@ -1503,7 +1503,7 @@ export function UserSettingsPanel({
                 />
               </Suspense>
             )}
-            <p className="mesh-advanced-version mt-3 text-caption text-muted">Mesh {MESH_APP_VERSION}</p>
+            <p className="mesh-advanced-version mt-3 text-label-sm text-on-surface-variant">Mesh {MESH_APP_VERSION}</p>
           </section>
         )}
         </div>
@@ -1566,11 +1566,11 @@ function AccountSettingsLink({
     <button
       type="button"
       data-sequence-position={sequence['data-sequence-position']}
-      className={`${sequence.className} flex min-h-11 w-full items-center justify-between gap-4 px-3 py-2.5 text-left transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus`}
+      className={`${sequence.className} flex min-h-11 w-full items-center justify-between gap-4 px-3 py-2.5 text-left transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus`}
       onClick={onClick}
     >
-      <span className="min-w-0 truncate text-sm font-medium text-primary">{title}</span>
-      <Icon name="chevronDown" size="sm" className="shrink-0 -rotate-90 text-muted" aria-hidden="true" />
+      <span className="min-w-0 truncate text-body-md font-medium text-on-surface">{title}</span>
+      <Icon name="chevronDown" size="sm" className="shrink-0 -rotate-90 text-on-surface-variant" aria-hidden="true" />
     </button>
   )
 }
@@ -1600,10 +1600,10 @@ function PrivacyVisibilityRow({
 }) {
   return (
     <tr>
-      <th scope="row" className="px-3 py-2 font-medium text-primary">
+      <th scope="row" className="px-3 py-2 font-medium text-on-surface">
         {information}
       </th>
-      <td className={`px-3 py-2 font-medium ${isPrivate ? 'text-green' : 'text-status-warning'}`}>
+      <td className={`px-3 py-2 font-medium ${isPrivate ? 'text-primary' : 'text-marker'}`}>
         {visible}
       </td>
       <td className="px-3 py-2">{explanation}</td>
@@ -1626,7 +1626,7 @@ function AppearanceSegmentedControl({
 }) {
   return (
     <fieldset>
-      <legend className="text-row font-medium text-content-primary">{label}</legend>
+      <legend className="text-title-md font-medium text-on-surface">{label}</legend>
       {/*
         The group carries a 7px outer radius and the selection keeps square
         inner corners. That is the radius rule in miniature: the group is a
@@ -1634,16 +1634,16 @@ function AppearanceSegmentedControl({
       */}
       <div
         id={id}
-        className="mt-2 grid overflow-hidden rounded-segment border border-rule border-border-control"
+        className="mt-2 grid overflow-hidden rounded-full border border-rule border-outline"
         style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
       >
         {options.map(([optionValue, optionLabel]) => (
           <label
             key={optionValue}
-            className={`relative flex min-h-9 cursor-pointer items-center justify-center rounded-plane border-l border-rule border-border-structural px-3 text-center text-row font-medium first:border-l-0 ${APPEARANCE_FOCUS_RING} has-[input:focus-visible]:-outline-offset-2 ${
+            className={`relative flex min-h-9 cursor-pointer items-center justify-center rounded-full border-l border-rule border-outline-variant px-3 text-center text-title-md font-medium first:border-l-0 ${APPEARANCE_FOCUS_RING} has-[input:focus-visible]:-outline-offset-2 ${
               value === optionValue
-                ? 'bg-accent text-content-on-accent'
-                : 'text-content-secondary hover:bg-surface-fill hover:text-content-primary'
+                ? 'bg-primary text-on-primary'
+                : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
             }`}
           >
             <input
@@ -1688,18 +1688,18 @@ function SoundEventRow({
       className={`${sequence.className} flex items-start justify-between gap-4 px-3 py-3`}
     >
       <div className="min-w-0">
-        <p className="text-sm font-medium text-primary">{label}</p>
-        <p className="mt-0.5 text-xs text-muted">{description}</p>
+        <p className="text-body-md font-medium text-on-surface">{label}</p>
+        <p className="mt-0.5 text-body-sm text-on-surface-variant">{description}</p>
         <button
           type="button"
-          className="mt-2 min-h-8 rounded-control px-2 text-xs font-semibold text-accent hover:bg-container-accent-hover"
+          className="mt-2 min-h-8 rounded-full px-2 text-body-sm font-semibold text-primary hover:bg-primary-container-hover"
           aria-label={previewLabel}
           onClick={() => void playInterfaceSound(sound, { preview: true, masterVolume: volume })}
         >
           Preview
         </button>
       </div>
-      <label className="flex min-h-8 flex-shrink-0 cursor-pointer items-center gap-2 text-xs text-muted">
+      <label className="flex min-h-8 flex-shrink-0 cursor-pointer items-center gap-2 text-body-sm text-on-surface-variant">
         <span className="sr-only">{label}</span>
         <input
           type="checkbox"
@@ -1731,11 +1731,11 @@ function ToggleRow({
   return (
     <label
       data-sequence-position={sequence?.['data-sequence-position']}
-      className={`${sequence?.className ?? 'rounded-control bg-surface-hover'} flex items-start justify-between gap-4 px-3 py-3 ${disabled ? 'opacity-50' : 'cursor-pointer'}`}
+      className={`${sequence?.className ?? 'rounded-full bg-surface-container-high'} flex items-start justify-between gap-4 px-3 py-3 ${disabled ? 'opacity-50' : 'cursor-pointer'}`}
     >
       <span>
-        <span className="block text-sm font-medium text-primary">{label}</span>
-        <span className="mt-0.5 block text-xs text-muted">{description}</span>
+        <span className="block text-body-md font-medium text-on-surface">{label}</span>
+        <span className="mt-0.5 block text-body-sm text-on-surface-variant">{description}</span>
       </span>
       <input
         type="checkbox"
@@ -1769,20 +1769,20 @@ function SelectRow({
   return (
     <div
       data-sequence-position={sequence?.['data-sequence-position']}
-      className={`${sequence?.className ?? 'rounded-control bg-surface-hover'} flex flex-col items-stretch gap-3 px-3 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4`}
+      className={`${sequence?.className ?? 'rounded-full bg-surface-container-high'} flex flex-col items-stretch gap-3 px-3 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4`}
     >
       <span className="min-w-0">
-        <label htmlFor={id} className="block text-sm font-medium text-primary">
+        <label htmlFor={id} className="block text-body-md font-medium text-on-surface">
           {label}
         </label>
-        <span id={`${id}-description`} className="mt-0.5 block text-xs text-muted">
+        <span id={`${id}-description`} className="mt-0.5 block text-body-sm text-on-surface-variant">
           {description}
         </span>
       </span>
       <select
         id={id}
         aria-describedby={`${id}-description`}
-        className="min-h-control-sm w-full min-w-0 rounded-control border border-border bg-surface-sunken px-2 text-xs text-primary outline-none focus:border-accent sm:w-auto sm:max-w-xs"
+        className="min-h-control-sm w-full min-w-0 rounded-full border border-outline bg-surface-container-lowest px-2 text-body-sm text-on-surface outline-none focus:border-primary sm:w-auto sm:max-w-xs"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >

@@ -218,7 +218,7 @@ export function RoomContextPanel({
   return (
     <aside
       id="mesh-room-context-panel"
-      className="mesh-room-context-panel relative flex min-w-0 flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-base"
+      className="mesh-room-context-panel relative flex min-w-0 flex-shrink-0 flex-col overflow-hidden border-l border-outline-variant bg-surface"
       data-design-token-exception="user-resizable-persisted-room-context-width"
       style={{
         '--mesh-room-context-width': `${panelWidth}px`,
@@ -236,19 +236,19 @@ export function RoomContextPanel({
         onPointerDown={onResizeStart}
         onResizeBy={onResizeBy}
       />
-      <div className="mesh-room-context-header flex-shrink-0 border-b border-rule border-border-structural">
+      <div className="mesh-room-context-header flex-shrink-0 border-b border-rule border-outline-variant">
         <div className="flex h-conversation-header items-center gap-2 px-4">
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-panel font-semibold text-content-primary">
+            <h2 className="truncate text-title-lg font-semibold text-on-surface">
               {signalCheckOpen ? 'Connection check' : 'Room details'}
             </h2>
-            <p className="mt-0.5 truncate font-mono text-eyebrow uppercase text-content-secondary">
+            <p className="mt-0.5 truncate text-label-sm text-on-surface-variant">
               {channel.name}
             </p>
           </div>
           <button
             type="button"
-            className="flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
+            className="flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant"
             aria-label="Close room context"
             onClick={onClose}
           >
@@ -258,7 +258,7 @@ export function RoomContextPanel({
         {!signalCheckOpen && (
           <div
             ref={tabListRef}
-            className="mesh-room-context-tabs mx-3 mb-3 flex min-w-0 overflow-x-auto rounded-segment border border-rule border-border-control"
+            className="mesh-room-context-tabs mx-3 mb-3 flex min-w-0 overflow-x-auto rounded-full border border-rule border-outline"
             role="tablist"
             aria-label="Details"
             onKeyDown={handleTabKeyDown}
@@ -272,11 +272,11 @@ export function RoomContextPanel({
                 tabIndex={activeTab === tab.id ? 0 : -1}
                 aria-selected={activeTab === tab.id}
                 aria-controls={`room-context-${tab.id}`}
-                className={`mesh-room-context-tab min-h-8 flex-1 rounded-plane px-2 font-mono text-eyebrow font-medium uppercase transition-colors ${
+                className={`mesh-room-context-tab min-h-8 flex-1 rounded-full px-2 text-label-sm font-medium transition-colors ${
                   activeTab === tab.id
-                    ? 'text-content-primary'
-                    : 'text-content-secondary hover:bg-surface-fill hover:text-content-primary'
-                } ${tab.id === tabs[0]?.id ? '' : 'border-l border-rule border-border-structural'}`}
+                    ? 'text-on-surface'
+                    : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
+                } ${tab.id === tabs[0]?.id ? '' : 'border-l border-rule border-outline-variant'}`}
                 onClick={() => onTabChange(tab.id)}
               >
                 {tab.label}
@@ -304,9 +304,9 @@ export function RoomContextPanel({
             block or repeating the header's generated fallback here.
           */}
           {(channel.topic ?? '').trim() ? (
-            <section className="mx-3 mt-3 rounded-panel bg-surface-sunken px-3 py-3">
+            <section className="mx-3 mt-3 rounded-xl bg-surface-container-lowest px-3 py-3">
               <Eyebrow className="block">About this room</Eyebrow>
-              <p className="mt-1 whitespace-pre-line text-xs text-content-secondary">
+              <p className="mt-1 whitespace-pre-line text-body-sm text-on-surface-variant">
                 {(channel.topic ?? '').trim()}
               </p>
             </section>
@@ -319,8 +319,8 @@ export function RoomContextPanel({
             the thing, so it is the size of a screen title and the two clauses
             under it are an eyebrow.
           */}
-          <div className="mesh-room-context-summary flex flex-col gap-1 border-b border-rule border-border-structural px-3 pb-4 pt-3">
-            <span className="text-numeral font-semibold text-content-primary">
+          <div className="mesh-room-context-summary flex flex-col gap-1 border-b border-rule border-outline-variant px-3 pb-4 pt-3">
+            <span className="text-display-sm font-semibold text-on-surface">
               {members.length}
             </span>
             <Eyebrow>
@@ -364,22 +364,22 @@ export function RoomContextPanel({
           className="flex-1 space-y-5 overflow-y-auto px-4 py-4"
         >
           <section>
-            <p className="text-caption font-semibold lowercase tracking-eyebrow text-muted">
+            <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">
               Connection check
             </p>
-            <h2 className="mt-1 truncate text-sm font-semibold text-primary">#{channel.name}</h2>
-            <p className="mt-1 truncate text-caption text-muted">
+            <h2 className="mt-1 truncate text-body-md font-semibold text-on-surface">#{channel.name}</h2>
+            <p className="mt-1 truncate text-label-sm text-on-surface-variant">
               {trust.homeService ? `${trust.homeService} · private room` : 'Private room'}
             </p>
           </section>
 
           <section
-            className={`rounded-panel border p-3 ${
+            className={`rounded-xl border p-3 ${
               trust.protection === 'protected'
-                ? 'border-container-success-line bg-container-success'
+                ? 'border-primary-container-line bg-primary-container'
                 : trust.protection === 'unencrypted'
-                  ? 'border-container-warning-line bg-container-warning'
-                  : 'border-border-subtle bg-surface-sunken'
+                  ? 'border-marker-container-line bg-marker-container'
+                  : 'border-outline-variant bg-surface-container-lowest'
             }`}
           >
             <div className="flex items-start gap-2">
@@ -388,17 +388,17 @@ export function RoomContextPanel({
                 size="sm"
                 className={
                   trust.protection === 'protected'
-                    ? 'text-status-success'
+                    ? 'text-primary'
                     : trust.protection === 'unencrypted'
-                      ? 'text-status-warning'
-                      : 'text-muted'
+                      ? 'text-marker'
+                      : 'text-on-surface-variant'
                 }
               />
               <div>
-                <p className="text-xs font-medium text-primary">
+                <p className="text-body-sm font-medium text-on-surface">
                   {protectionLabel(trust.protection)}
                 </p>
-                <p className="mt-1 text-caption text-muted">
+                <p className="mt-1 text-label-sm text-on-surface-variant">
                   Readable only on approved participant devices, not by connected services.
                 </p>
               </div>
@@ -438,15 +438,15 @@ export function RoomContextPanel({
                   const width = Math.max(8, Math.round((service.memberCount / largest) * 100))
                   return (
                     <div key={service.name}>
-                      <div className="flex items-center justify-between gap-3 text-caption">
-                        <span className="identifier truncate font-mono text-secondary">
+                      <div className="flex items-center justify-between gap-3 text-label-sm">
+                        <span className="identifier truncate text-on-surface-variant">
                           {service.name}
                         </span>
-                        <span className="member-count text-muted">{service.memberCount}</span>
+                        <span className="member-count text-on-surface-variant">{service.memberCount}</span>
                       </div>
-                      <div className="mt-1 h-1 overflow-hidden rounded-control bg-surface-active">
+                      <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-container-highest">
                         <div
-                          className="h-full rounded-control bg-accent"
+                          className="h-full rounded-full bg-primary"
                           data-design-token-exception="data-driven-service-distribution-width"
                           style={{ width: `${width}%` }}
                         />
@@ -456,7 +456,7 @@ export function RoomContextPanel({
                 })}
               </div>
             ) : (
-              <p className="text-caption text-muted">
+              <p className="text-label-sm text-on-surface-variant">
                 Service distribution will appear after the member list syncs.
               </p>
             )}
@@ -466,7 +466,7 @@ export function RoomContextPanel({
             <div className="flex items-center justify-between gap-3">
               <LedgerHeading label="Your devices" />
               {trust.devicesNeedReview > 0 && (
-                <span className="text-caption font-medium text-status-warning">
+                <span className="text-label-sm font-medium text-marker">
                   {trust.devicesNeedReview} need review
                 </span>
               )}
@@ -485,7 +485,7 @@ export function RoomContextPanel({
                 })}
               </div>
             ) : (
-              <p className="text-caption text-muted">
+              <p className="text-label-sm text-on-surface-variant">
                 {trust.loadingAccountTrust
                   ? 'Checking the devices signed into your account…'
                   : 'Device details are unavailable right now.'}
@@ -493,7 +493,7 @@ export function RoomContextPanel({
             )}
             <button
               type="button"
-              className="min-h-control-md w-full rounded-control border border-border-subtle px-3 text-xs font-medium text-secondary transition-colors hover:border-border-strong hover:bg-surface-hover hover:text-primary"
+              className="min-h-control-md w-full rounded-full border border-outline-variant px-3 text-body-sm font-medium text-on-surface-variant transition-colors hover:border-outline hover:bg-surface-container-high hover:text-on-surface"
               onClick={() => setSecurityOpen(true)}
             >
               Review devices
@@ -521,14 +521,14 @@ export function RoomContextPanel({
             <div className="grid gap-2">
               <button
                 type="button"
-                className="min-h-control-md rounded-control bg-accent px-3 text-xs font-semibold text-content-on-accent transition-colors hover:bg-accent-hover"
+                className="min-h-control-md rounded-full bg-primary px-3 text-body-sm font-semibold text-on-primary transition-colors hover:bg-primary"
                 onClick={() => setSecurityOpen(true)}
               >
                 Manage devices and recovery
               </button>
               <button
                 type="button"
-                className="min-h-control-md rounded-control border border-border-subtle px-3 text-xs font-medium text-secondary transition-colors hover:border-border-strong hover:bg-surface-hover hover:text-primary"
+                className="min-h-control-md rounded-full border border-outline-variant px-3 text-body-sm font-medium text-on-surface-variant transition-colors hover:border-outline hover:bg-surface-container-high hover:text-on-surface"
                 onClick={() => void copyRoomLink()}
               >
                 Copy room link
@@ -546,8 +546,8 @@ export function RoomContextPanel({
           className="flex-1 overflow-y-auto p-3"
         >
           <div className="mb-3">
-            <p className="text-xs font-medium text-primary">Shared in #{channel.name}</p>
-            <p className="mt-1 text-caption text-muted">
+            <p className="text-body-sm font-medium text-on-surface">Shared in #{channel.name}</p>
+            <p className="mt-1 text-label-sm text-on-surface-variant">
               {files.length} {files.length === 1 ? 'file' : 'files'} in loaded messages
             </p>
           </div>
@@ -556,9 +556,9 @@ export function RoomContextPanel({
               {files.map(({ attachment, attachmentIndex, message }) => (
                 <article
                   key={`${message.id}:${attachment.fileHash}:${attachmentIndex}`}
-                  className="space-y-2 border-b border-border-subtle pb-3 last:border-b-0"
+                  className="space-y-2 border-b border-outline-variant pb-3 last:border-b-0"
                 >
-                  <div className="flex items-center justify-between gap-2 px-1 text-caption text-muted">
+                  <div className="flex items-center justify-between gap-2 px-1 text-label-sm text-on-surface-variant">
                     <span className="truncate">{message.authorDisplayName}</span>
                     <span className="tnum flex-shrink-0">
                       {formatFederatedTimestamp(message.timestamp, 'MMM d, HH:mm')}
@@ -572,12 +572,12 @@ export function RoomContextPanel({
                     compact
                   />
                   <div className="flex items-center justify-between gap-2 px-1">
-                    <span className="text-caption font-medium text-muted">
+                    <span className="text-label-sm font-medium text-on-surface-variant">
                       {trust.matrixMode ? 'Protected' : 'Shared file'} · {formatFileSize(attachment.size)}
                     </span>
                     <button
                       type="button"
-                      className="min-h-8 rounded-control px-2 text-caption font-semibold text-text-link hover:bg-surface-hover"
+                      className="min-h-8 rounded-full px-2 text-label-sm font-semibold text-primary hover:bg-surface-container-high"
                       onClick={() => requestNavigation(message)}
                     >
                       Go to message
@@ -605,13 +605,13 @@ export function RoomContextPanel({
           className="flex-1 overflow-y-auto p-3"
         >
           <div className="mb-3">
-            <p className="text-xs font-medium text-primary">Pinned in #{channel.name}</p>
+            <p className="text-body-sm font-medium text-on-surface">Pinned in #{channel.name}</p>
           </div>
           {pinsLoadFailed ? (
             <div role="alert">
               <EmptyState
                 variant="compact"
-                icon={<Icon name="triangleAlert" className="text-status-warning" />}
+                icon={<Icon name="triangleAlert" className="text-marker" />}
                 title="Pins are unavailable right now"
                 description="Check your connection."
                 action={
@@ -636,20 +636,20 @@ export function RoomContextPanel({
                 <button
                   key={message.id}
                   type="button"
-                  className="min-h-control-lg w-full rounded-panel border border-transparent p-2 text-left transition-colors hover:border-border-subtle hover:bg-surface-hover"
+                  className="min-h-control-lg w-full rounded-xl border border-transparent p-2 text-left transition-colors hover:border-outline-variant hover:bg-surface-container-high"
                   onClick={() => requestNavigation(message)}
                 >
-                  <span className="flex items-center gap-1.5 text-caption text-accent">
+                  <span className="flex items-center gap-1.5 text-label-sm text-primary">
                     <Icon name="pin" size="xs" />
                     Pinned message
                   </span>
-                  <span className="mt-1 block line-clamp-3 text-xs text-secondary">
+                  <span className="mt-1 block line-clamp-3 text-body-sm text-on-surface-variant">
                     {message.content || 'Attachment'}
                   </span>
-                  <span className="tnum mt-1 block text-caption text-muted">
+                  <span className="tnum mt-1 block text-label-sm text-on-surface-variant">
                     {message.authorDisplayName} · {formatFederatedTimestamp(message.timestamp, 'MMM d, HH:mm')}
                   </span>
-                  <span className="mt-1 block text-caption font-semibold text-accent">
+                  <span className="mt-1 block text-label-sm font-semibold text-primary">
                     Go to message
                   </span>
                 </button>
@@ -657,7 +657,7 @@ export function RoomContextPanel({
               {unavailablePinCount > 0 && (
                 <div
                   role="status"
-                  className="rounded-panel bg-surface-sunken px-3 py-2 text-caption text-muted"
+                  className="rounded-xl bg-surface-container-lowest px-3 py-2 text-label-sm text-on-surface-variant"
                 >
                   {unavailablePinCount} pinned {unavailablePinCount === 1 ? 'message is' : 'messages are'} no longer available on this device.
                 </div>
@@ -682,8 +682,8 @@ export function RoomContextPanel({
           className="flex-1 overflow-y-auto p-3"
         >
           <div className="mb-3">
-            <p className="text-xs font-medium text-primary">Your threads in #{channel.name}</p>
-            <p className="mt-1 text-caption text-muted">
+            <p className="text-body-sm font-medium text-on-surface">Your threads in #{channel.name}</p>
+            <p className="mt-1 text-label-sm text-on-surface-variant">
               Threads you started, replied to, or joined
             </p>
           </div>
@@ -691,7 +691,7 @@ export function RoomContextPanel({
             <div role="alert">
               <EmptyState
                 variant="compact"
-                icon={<Icon name="triangleAlert" className="text-status-warning" />}
+                icon={<Icon name="triangleAlert" className="text-marker" />}
                 title="Threads are unavailable right now"
                 description="Check your connection."
                 action={
@@ -721,21 +721,21 @@ export function RoomContextPanel({
                       onClick={() => onOpenThread(item.root.id)}
                       aria-expanded={openThreadId === item.root.id}
                       aria-controls="mesh-thread-panel"
-                      className="min-h-control-lg w-full rounded-panel border border-transparent p-2 text-left transition-colors hover:border-border-subtle hover:bg-surface-hover"
+                      className="min-h-control-lg w-full rounded-xl border border-transparent p-2 text-left transition-colors hover:border-outline-variant hover:bg-surface-container-high"
                     >
-                      <span className="flex items-center gap-1.5 text-caption text-accent">
+                      <span className="flex items-center gap-1.5 text-label-sm text-primary">
                         <Icon name="reply" size="xs" />
                         {item.root.authorDisplayName}
                         {item.unreadMentions > 0 && (
-                          <span className="rounded-control bg-status-danger px-1.5 py-0.5 text-caption font-semibold text-content-on-status">
+                          <span className="rounded-full bg-error px-1.5 py-0.5 text-label-sm font-semibold text-on-error">
                             {item.unreadMentions} {item.unreadMentions === 1 ? 'mention' : 'mentions'}
                           </span>
                         )}
                       </span>
-                      <span className={`mt-1 block line-clamp-2 text-xs ${unread ? 'font-semibold text-primary' : 'text-secondary'}`}>
+                      <span className={`mt-1 block line-clamp-2 text-body-sm ${unread ? 'font-semibold text-on-surface' : 'text-on-surface-variant'}`}>
                         {item.root.content || 'Attachment'}
                       </span>
-                      <span className="tnum mt-1 block text-caption text-muted">
+                      <span className="tnum mt-1 block text-label-sm text-on-surface-variant">
                         {item.replyCount} {item.replyCount === 1 ? 'reply' : 'replies'} · {item.participantCount} {item.participantCount === 1 ? 'person' : 'people'} · {formatFederatedTimestamp(item.lastActivity, 'MMM d, HH:mm')}
                       </span>
                     </button>
@@ -745,7 +745,7 @@ export function RoomContextPanel({
               {threadListHasMore && (
                 <div
                   role="status"
-                  className="rounded-panel bg-surface-sunken px-3 py-2 text-caption text-muted"
+                  className="rounded-xl bg-surface-container-lowest px-3 py-2 text-label-sm text-on-surface-variant"
                 >
                   More threads exist in this room than are shown here.
                 </div>
@@ -795,12 +795,12 @@ export function RoomContextPanel({
       >
         <div className="space-y-3">
           {permissions.error ? (
-            <p className="rounded-panel border border-container-danger-line bg-container-danger px-3 py-2 text-xs text-status-danger">
+            <p className="rounded-xl border border-error-container-line bg-error-container px-3 py-2 text-body-sm text-error">
               {permissions.error}
             </p>
           ) : null}
           {permissions.projection?.discoveryFailureReason ? (
-            <p className="rounded-panel border border-container-warning-line bg-container-warning px-3 py-2 text-xs text-status-warning">
+            <p className="rounded-xl border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-marker">
               {permissions.projection.discoveryFailureReason}
             </p>
           ) : null}
@@ -809,25 +809,25 @@ export function RoomContextPanel({
               {permissions.projection.rooms.map((room) => (
                 <li
                   key={room.roomId}
-                  className="rounded-panel bg-surface-sunken px-3 py-2"
+                  className="rounded-xl bg-surface-container-lowest px-3 py-2"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-xs font-medium text-primary">{room.roomName}</p>
-                      <p className="mt-0.5 text-caption capitalize text-muted">{room.roomKind}</p>
+                      <p className="truncate text-body-sm font-medium text-on-surface">{room.roomName}</p>
+                      <p className="mt-0.5 text-label-sm capitalize text-on-surface-variant">{room.roomKind}</p>
                     </div>
-                    <span className="text-caption font-medium text-secondary">
+                    <span className="text-label-sm font-medium text-on-surface-variant">
                       {permissionRoomStatusLabel(room.status)}
                     </span>
                   </div>
                   {room.failureReason ? (
-                    <p className="mt-2 text-caption text-muted">{room.failureReason}</p>
+                    <p className="mt-2 text-label-sm text-on-surface-variant">{room.failureReason}</p>
                   ) : null}
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-xs text-muted">
+            <p className="text-body-sm text-on-surface-variant">
               {permissions.loading
                 ? 'Checking the community rooms now.'
                 : 'No room permission results are available yet.'}
@@ -851,7 +851,7 @@ export function RoomContextPanel({
 
 function LedgerHeading({ label }: { label: string }) {
   return (
-    <h3 className="text-caption font-semibold lowercase tracking-eyebrow text-muted">{label}</h3>
+    <h3 className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">{label}</h3>
   )
 }
 
@@ -865,14 +865,14 @@ function LedgerRow({
   tone?: 'muted' | 'success' | 'warning'
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 text-xs">
-      <dt className="text-muted">{label}</dt>
+    <div className="flex items-center justify-between gap-3 text-body-sm">
+      <dt className="text-on-surface-variant">{label}</dt>
       <dd className={
         tone === 'success'
-          ? 'font-medium text-status-success'
+          ? 'font-medium text-primary'
           : tone === 'warning'
-            ? 'font-medium text-status-warning'
-            : 'font-medium text-secondary'
+            ? 'font-medium text-marker'
+            : 'font-medium text-on-surface-variant'
       }>
         {value}
       </dd>

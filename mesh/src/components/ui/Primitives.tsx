@@ -26,12 +26,12 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
       ref={ref}
       aria-invalid={error || undefined}
       className={clsx(
-        'mesh-input w-full resize-y rounded-control border border-border-control bg-surface-sunken text-content placeholder:text-content-muted',
-        'transition-[border-color,box-shadow,background-color] duration-fast hover:border-border-emphasis focus:border-accent focus:bg-surface-base focus:outline-none',
-        error && 'border-status-danger focus:border-status-danger',
-        size === 'sm' && 'min-h-20 px-2.5 py-1.5 text-xs',
-        size === 'md' && 'min-h-24 px-3 py-2 text-sm',
-        size === 'lg' && 'min-h-28 px-3.5 py-2.5 text-base',
+        'mesh-input w-full resize-y rounded-full border border-outline bg-surface-container-lowest text-on-surface placeholder:text-on-surface-variant',
+        'transition-[border-color,box-shadow,background-color] duration-fast hover:border-outline focus:border-primary focus:bg-surface focus:outline-none',
+        error && 'border-error focus:border-error',
+        size === 'sm' && 'min-h-20 px-2.5 py-1.5 text-body-sm',
+        size === 'md' && 'min-h-24 px-3 py-2 text-body-md',
+        size === 'lg' && 'min-h-28 px-3.5 py-2.5 text-body-lg',
         className,
       )}
       {...props}
@@ -72,10 +72,10 @@ export function Field({ label, htmlFor, hint, error, required, children, classNa
 
   return (
     <div className={clsx('flex flex-col gap-2', className)}>
-      <label htmlFor={htmlFor} className="text-caption font-semibold text-content-secondary">
+      <label htmlFor={htmlFor} className="text-label-sm font-semibold text-on-surface-variant">
         {label}
         {required && (
-          <span className="ml-1 text-status-danger" aria-hidden="true">
+          <span className="ml-1 text-error" aria-hidden="true">
             *
           </span>
         )}
@@ -85,7 +85,7 @@ export function Field({ label, htmlFor, hint, error, required, children, classNa
         <p
           id={supportingTextId}
           role={error ? 'alert' : undefined}
-          className={clsx('text-xs', error ? 'text-status-danger' : 'text-content-muted')}
+          className={clsx('text-body-sm', error ? 'text-error' : 'text-on-surface-variant')}
         >
           {error ?? hint}
         </p>
@@ -109,9 +109,9 @@ export const Checkbox = forwardRef<HTMLInputElement, ChoiceProps>(
       <label
         htmlFor={inputId}
         className={clsx(
-          'flex cursor-pointer items-start gap-2 text-content',
+          'flex cursor-pointer items-start gap-2 text-on-surface',
           disabled && 'cursor-not-allowed opacity-50',
-          size === 'sm' ? 'text-xs' : size === 'lg' ? 'text-base' : 'text-sm',
+          size === 'sm' ? 'text-body-sm' : size === 'lg' ? 'text-body-lg' : 'text-body-md',
           className,
         )}
       >
@@ -123,13 +123,13 @@ export const Checkbox = forwardRef<HTMLInputElement, ChoiceProps>(
           aria-describedby={
             [describedBy, description ? descriptionId : undefined].filter(Boolean).join(' ') || undefined
           }
-          className="mt-0.5 h-4 w-4 rounded border-border accent-accent"
+          className="mt-0.5 h-4 w-4 rounded border-outline accent-accent"
           {...props}
         />
         <span>
           <span className="block">{label}</span>
           {description && (
-            <span id={descriptionId} className="block text-xs text-content-muted">
+            <span id={descriptionId} className="block text-body-sm text-on-surface-variant">
               {description}
             </span>
           )}
@@ -149,9 +149,9 @@ export const Radio = forwardRef<HTMLInputElement, ChoiceProps>(
       <label
         htmlFor={inputId}
         className={clsx(
-          'flex cursor-pointer items-start gap-2 text-content',
+          'flex cursor-pointer items-start gap-2 text-on-surface',
           disabled && 'cursor-not-allowed opacity-50',
-          size === 'sm' ? 'text-xs' : size === 'lg' ? 'text-base' : 'text-sm',
+          size === 'sm' ? 'text-body-sm' : size === 'lg' ? 'text-body-lg' : 'text-body-md',
           className,
         )}
       >
@@ -163,13 +163,13 @@ export const Radio = forwardRef<HTMLInputElement, ChoiceProps>(
           aria-describedby={
             [describedBy, description ? descriptionId : undefined].filter(Boolean).join(' ') || undefined
           }
-          className="mt-0.5 h-4 w-4 border-border accent-accent"
+          className="mt-0.5 h-4 w-4 border-outline accent-accent"
           {...props}
         />
         <span>
           <span className="block">{label}</span>
           {description && (
-            <span id={descriptionId} className="block text-xs text-content-muted">
+            <span id={descriptionId} className="block text-body-sm text-on-surface-variant">
               {description}
             </span>
           )}
@@ -192,11 +192,11 @@ export const Slider = forwardRef<HTMLInputElement, SliderProps>(
     const inputId = id ?? generatedId
     return (
       <div className={clsx('space-y-1.5', className)}>
-        <div className="flex items-center justify-between gap-3 text-xs">
-          <label htmlFor={inputId} className="font-medium text-content-secondary">
+        <div className="flex items-center justify-between gap-3 text-body-sm">
+          <label htmlFor={inputId} className="font-medium text-on-surface-variant">
             {label}
           </label>
-          {valueLabel && <span className="text-content-muted">{valueLabel}</span>}
+          {valueLabel && <span className="text-on-surface-variant">{valueLabel}</span>}
         </div>
         <input
           ref={ref}
@@ -269,9 +269,9 @@ export function Progress({
   const boundedValue = Math.min(100, Math.max(0, value))
   return (
     <div className={clsx('space-y-1.5', className)} {...props}>
-      <div className="flex items-center justify-between gap-3 text-xs">
-        <span className="text-content-secondary">{label}</span>
-        {showValue && <span className="text-content-muted">{Math.round(boundedValue)}%</span>}
+      <div className="flex items-center justify-between gap-3 text-body-sm">
+        <span className="text-on-surface-variant">{label}</span>
+        {showValue && <span className="text-on-surface-variant">{Math.round(boundedValue)}%</span>}
       </div>
       <div
         role="progressbar"
@@ -280,14 +280,14 @@ export function Progress({
         aria-valuemax={100}
         aria-valuenow={boundedValue}
         className={clsx(
-          'overflow-hidden rounded-control bg-surface-hover',
+          'overflow-hidden rounded-full bg-surface-container-high',
           size === 'sm' && 'h-1',
           size === 'md' && 'h-1.5',
           size === 'lg' && 'h-2',
         )}
       >
         <div
-          className={clsx('h-full rounded-control transition-[width] duration-normal', progressTone[tone])}
+          className={clsx('h-full rounded-full transition-[width] duration-normal', progressTone[tone])}
           style={{ width: `${boundedValue}%` }}
         />
       </div>
@@ -307,7 +307,7 @@ export function Separator({
       role="separator"
       aria-orientation={orientation}
       className={clsx(
-        'shrink-0 bg-border-subtle',
+        'shrink-0 bg-outline-variant',
         orientation === 'horizontal' ? 'h-px w-full' : 'h-full w-px',
         className,
       )}
@@ -349,7 +349,7 @@ export function ScrollArea({ label, className, tabIndex, role, ...props }: Scrol
       aria-label={label}
       tabIndex={tabIndex ?? (scrollable ? 0 : undefined)}
       className={clsx(
-        'overflow-auto overscroll-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent',
+        'overflow-auto overscroll-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary',
         className,
       )}
       {...props}
@@ -391,7 +391,7 @@ export function SectionHeader({
   return (
     <div
       className={clsx(
-        'flex min-h-8 items-center gap-2 font-mono text-eyebrow font-medium uppercase text-content-secondary',
+        'flex min-h-8 items-center gap-2 font-code text-label-sm font-medium text-on-surface-variant',
         className,
       )}
       {...props}
@@ -405,7 +405,7 @@ export function SectionHeader({
         {title}
       </span>
       {count !== undefined && (
-        <span className="ml-auto flex-none font-mono text-count font-semibold normal-case text-content-secondary">
+        <span className="ml-auto flex-none font-code text-label-sm font-semibold normal-case text-on-surface-variant">
           {count}
         </span>
       )}
@@ -461,7 +461,7 @@ export function Notice({
       data-notice-tone={tone === 'neutral' ? undefined : tone}
       className={clsx(
         intensity === 'advisory' ? 'mesh-notice-advisory' : 'mesh-notice-band',
-        'flex flex-col items-start gap-1 text-sm text-content-secondary',
+        'flex flex-col items-start gap-1 text-body-md text-on-surface-variant',
         className,
       )}
       {...props}
@@ -527,7 +527,7 @@ export function EmptyState({
       aria-describedby={descriptionId}
       className={clsx(
         'flex flex-col items-start justify-center text-left',
-        variant === 'default' && 'gap-2 border-y border-rule border-border-structural px-shell-gutter py-6',
+        variant === 'default' && 'gap-2 border-y border-rule border-outline-variant px-shell-gutter py-6',
         variant === 'compact' && 'gap-1.5 px-shell-gutter py-5',
         className,
       )}
@@ -545,7 +545,7 @@ export function EmptyState({
         <div
           aria-hidden="true"
           className={clsx(
-            'mb-0.5 flex h-6 w-6 items-center justify-center text-content-muted',
+            'mb-0.5 flex h-6 w-6 items-center justify-center text-on-surface-variant',
             iconClassName,
           )}
         >
@@ -553,16 +553,16 @@ export function EmptyState({
         </div>
       ) : null}
       {eyebrow && (
-        <p className="text-caption font-semibold uppercase tracking-eyebrow text-content-secondary">
+        <p className="text-label-sm font-semibold tracking-label-md text-on-surface-variant">
           {eyebrow}
         </p>
       )}
       <h3
         id={titleId}
         className={clsx(
-          'text-content-primary',
-          variant === 'default' && 'text-md font-semibold',
-          variant === 'compact' && 'text-sm font-medium',
+          'text-on-surface',
+          variant === 'default' && 'text-title-sm font-semibold',
+          variant === 'compact' && 'text-body-md font-medium',
         )}
       >
         {title}
@@ -570,9 +570,9 @@ export function EmptyState({
       <p
         id={descriptionId}
         className={clsx(
-          'text-content-secondary',
-          variant === 'default' && 'max-w-measure text-sm',
-          variant === 'compact' && 'max-w-xs text-xs',
+          'text-on-surface-variant',
+          variant === 'default' && 'max-w-measure text-body-md',
+          variant === 'compact' && 'max-w-xs text-body-sm',
         )}
       >
         {description}
@@ -590,7 +590,7 @@ export function Kbd({ className, ...props }: HTMLAttributes<HTMLElement>) {
   return (
     <kbd
       className={clsx(
-        'rounded border border-border bg-surface-sunken px-1.5 py-0.5 font-mono text-xs text-content-secondary',
+        'rounded border border-outline bg-surface-container-lowest px-1.5 py-0.5 font-code text-body-sm text-on-surface-variant',
         className,
       )}
       {...props}
@@ -610,9 +610,9 @@ export function Card({
     <div
       className={clsx(
         'mesh-card',
-        variant === 'base' && 'bg-surface-base',
-        variant === 'raised' && 'border border-border-subtle bg-surface-raised',
-        variant === 'outline' && 'border border-border bg-surface-base',
+        variant === 'base' && 'bg-surface',
+        variant === 'raised' && 'border border-outline-variant bg-surface-container',
+        variant === 'outline' && 'border border-outline bg-surface',
         className,
       )}
       style={style}

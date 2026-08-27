@@ -49,7 +49,7 @@ export function InvitationDestinationCard({
   return (
     <section
       aria-label="Invitation destination"
-      className="border border-border-subtle bg-surface-sunken p-3 sm:p-4"
+      className="border border-outline-variant bg-surface-container-lowest p-3 sm:p-4"
     >
       <div className="flex items-start gap-3">
         <Avatar
@@ -60,24 +60,24 @@ export function InvitationDestinationCard({
           className="flex-none"
         />
         <div className="min-w-0 flex-1">
-          <p className="text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">
+          <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">
             Invitation destination
           </p>
-          <h2 className="truncate text-md font-semibold text-primary">{communityName}</h2>
-          <p className="mt-0.5 text-sm text-secondary">Community</p>
+          <h2 className="truncate text-title-sm font-semibold text-on-surface">{communityName}</h2>
+          <p className="mt-0.5 text-body-md text-on-surface-variant">Community</p>
         </div>
       </div>
 
-      <dl className={`mt-3 grid gap-2 border-t border-border-subtle pt-3 text-caption text-secondary ${
+      <dl className={`mt-3 grid gap-2 border-t border-outline-variant pt-3 text-label-sm text-on-surface-variant ${
         compact ? 'grid-cols-3' : 'sm:grid-cols-3'
       }`}>
         <div>
-          <dt className="font-semibold lowercase tracking-eyebrow text-muted">Invited by</dt>
-          <dd className="mt-0.5 truncate text-primary">{inviterName || 'Not provided'}</dd>
+          <dt className="font-semibold lowercase tracking-label-md text-on-surface-variant">Invited by</dt>
+          <dd className="mt-0.5 truncate text-on-surface">{inviterName || 'Not provided'}</dd>
         </div>
         <div>
-          <dt className="font-semibold lowercase tracking-eyebrow text-muted">Access</dt>
-          <dd className="mt-0.5 text-primary">
+          <dt className="font-semibold lowercase tracking-label-md text-on-surface-variant">Access</dt>
+          <dd className="mt-0.5 text-on-surface">
             {requiresApproval
               ? 'Approval required'
               : pending.joinRule
@@ -86,10 +86,10 @@ export function InvitationDestinationCard({
           </dd>
         </div>
         <div>
-          <dt className="font-semibold lowercase tracking-eyebrow text-muted">
+          <dt className="font-semibold lowercase tracking-label-md text-on-surface-variant">
             Suggested service
           </dt>
-          <dd className="mt-0.5 break-words text-primary">{serviceName || 'None'}</dd>
+          <dd className="mt-0.5 break-words text-on-surface">{serviceName || 'None'}</dd>
         </div>
       </dl>
     </section>
@@ -255,15 +255,15 @@ export function InvitationSurface({
       <div className="mx-auto grid w-full max-w-onboarding-shell items-start gap-5 p-shell-gutter lg:grid-cols-invitation-confirmation">
         <InvitationDestinationCard pending={matchingPending} />
 
-        <section className="border border-border-subtle bg-surface-base p-4" aria-label="Invitation actions">
+        <section className="border border-outline-variant bg-surface p-4" aria-label="Invitation actions">
           {phase === 'discarding' ? (
             <div className="space-y-4">
               <div>
-                <p className="text-caption font-semibold lowercase tracking-eyebrow text-status-warning">
+                <p className="text-label-sm font-semibold lowercase tracking-label-md text-marker">
                   Leave this destination
                 </p>
-                <h2 className="mt-1 text-md font-semibold text-primary">Discard the invitation?</h2>
-                <p className="mt-2 text-sm text-secondary">
+                <h2 className="mt-1 text-title-sm font-semibold text-on-surface">Discard the invitation?</h2>
+                <p className="mt-2 text-body-md text-on-surface-variant">
                   Mesh removes the invitation from this device, and a join request you already sent
                   may stay active.
                 </p>
@@ -280,10 +280,10 @@ export function InvitationSurface({
           ) : (
             <div className="space-y-4">
               <div>
-                <p className="text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">
+                <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">
                   Your next move
                 </p>
-                <h2 className="mt-1 text-md font-semibold text-primary">
+                <h2 className="mt-1 text-title-sm font-semibold text-on-surface">
                   {joinInProgress
                     ? `Entering ${communityName}`
                     : phase === 'failed'
@@ -293,7 +293,7 @@ export function InvitationSurface({
                         : `Join ${communityName}`}
                 </h2>
                 {phase === 'delayed' || phase === 'arriving' || phase === 'failed' ? (
-                  <p className="mt-2 text-sm text-secondary">
+                  <p className="mt-2 text-body-md text-on-surface-variant">
                     {phase === 'delayed'
                       ? 'This is taking longer than expected.'
                       : phase === 'arriving'
@@ -304,8 +304,8 @@ export function InvitationSurface({
               </div>
 
               {phase === 'failed' && errorDescription ? (
-                <div role="alert" className="border border-container-danger-line bg-container-danger p-3 text-sm text-secondary">
-                  <p className="font-semibold text-primary">{errorDescription.title}</p>
+                <div role="alert" className="border border-error-container-line bg-error-container p-3 text-body-md text-on-surface-variant">
+                  <p className="font-semibold text-on-surface">{errorDescription.title}</p>
                   <p className="mt-1">{errorDescription.action}</p>
                 </div>
               ) : null}
@@ -374,17 +374,17 @@ function invitationFailureAction(failure: unknown): InvitationFailureAction {
 
 function InvitationHeader({ title, detail }: { title: string; detail?: string }) {
   return (
-    <header className="mesh-route-header flex flex-shrink-0 items-center border-b border-border-subtle px-shell-gutter py-2">
+    <header className="mesh-route-header flex flex-shrink-0 items-center border-b border-outline-variant px-shell-gutter py-2">
       <div className="min-w-0">
         <h1
           id="mesh-invitation-heading"
           data-mesh-route-heading
           tabIndex={-1}
-          className="truncate text-title font-semibold text-primary outline-none"
+          className="truncate text-title-lg font-semibold text-on-surface outline-none"
         >
           {title}
         </h1>
-        {detail ? <p className="truncate text-meta text-muted">{detail}</p> : null}
+        {detail ? <p className="truncate text-body-sm text-on-surface-variant">{detail}</p> : null}
       </div>
     </header>
   )

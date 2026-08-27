@@ -92,15 +92,15 @@ export function ThreadPanel({
     <aside
       ref={panelRef}
       id="mesh-thread-panel"
-      className="mesh-secondary-pane flex min-h-0 flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-base"
+      className="mesh-secondary-pane flex min-h-0 flex-shrink-0 flex-col overflow-hidden border-l border-outline-variant bg-surface"
       aria-label={`Thread in ${title}`}
       tabIndex={-1}
     >
-      <div className="flex h-conversation-header flex-shrink-0 items-center gap-3 border-b border-border-subtle bg-surface-raised px-4">
-        <Icon name="reply" size="sm" className="text-accent" />
+      <div className="flex h-conversation-header flex-shrink-0 items-center gap-3 border-b border-outline-variant bg-surface-container px-4">
+        <Icon name="reply" size="sm" className="text-primary" />
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold text-primary">Thread</h2>
-          <p className="truncate text-caption text-muted">{title}</p>
+          <h2 className="truncate text-body-md font-semibold text-on-surface">Thread</h2>
+          <p className="truncate text-label-sm text-on-surface-variant">{title}</p>
         </div>
         {root?.id.startsWith('$') && (
           <button
@@ -110,7 +110,7 @@ export function ThreadPanel({
                 .then(() => showToast('Thread link copied.', 'success'))
                 .catch(() => showToast('Could not copy this thread link.', 'error'))
             }}
-            className="flex min-h-10 min-w-10 items-center justify-center rounded-control text-muted hover:bg-surface-hover hover:text-primary"
+            className="flex min-h-10 min-w-10 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
             aria-label="Copy thread link"
           >
             <Icon name="messageCircle" size="sm" />
@@ -119,7 +119,7 @@ export function ThreadPanel({
         <button
           type="button"
           onClick={onClose}
-          className="flex min-h-10 min-w-10 items-center justify-center rounded-control text-muted hover:bg-surface-hover hover:text-primary"
+          className="flex min-h-10 min-w-10 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
           aria-label="Close thread"
         >
           <Icon name="x" size="sm" />
@@ -131,8 +131,8 @@ export function ThreadPanel({
           <div
             data-thread-message-id={root.id}
             aria-current={highlightedMessageId === root.id ? 'true' : undefined}
-            className={`m-3 overflow-hidden rounded-panel border border-border-subtle py-2 ${
-              highlightedMessageId === root.id ? 'bg-surface-hover' : 'bg-surface-raised'
+            className={`m-3 overflow-hidden rounded-xl border border-outline-variant py-2 ${
+              highlightedMessageId === root.id ? 'bg-surface-container-high' : 'bg-surface-container'
             }`}
           >
             <MessageComponent
@@ -145,7 +145,7 @@ export function ThreadPanel({
               onReply={() => onReply(root)}
             />
           </div>
-          <div className="flex min-h-10 flex-shrink-0 items-center justify-between border-y border-border-subtle bg-surface-sunken px-4 text-caption text-muted">
+          <div className="flex min-h-10 flex-shrink-0 items-center justify-between border-y border-outline-variant bg-surface-container-lowest px-4 text-label-sm text-on-surface-variant">
             <span>
               {replies.length} {replies.length === 1 ? 'reply' : 'replies'}
               {latestReply && (
@@ -170,7 +170,7 @@ export function ThreadPanel({
             <button
               type="button"
               onClick={() => onReply(root)}
-              className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+              className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
             >
               Reply in thread
             </button>
@@ -181,7 +181,7 @@ export function ThreadPanel({
                 key={reply.id}
                 data-thread-message-id={reply.id}
                 aria-current={highlightedMessageId === reply.id ? 'true' : undefined}
-                className={highlightedMessageId === reply.id ? 'bg-surface-hover' : undefined}
+                className={highlightedMessageId === reply.id ? 'bg-surface-container-high' : undefined}
               >
                 <MessageComponent
                   message={reply}
@@ -197,7 +197,7 @@ export function ThreadPanel({
               <div className="px-4 py-8 text-center">
                 {/* The instruction, without the feature describing itself to
                     somebody who has already opened it. */}
-                <p className="text-sm font-medium text-primary">Reply to start this thread</p>
+                <p className="text-body-md font-medium text-on-surface">Reply to start this thread</p>
               </div>
             )}
           </div>
@@ -205,7 +205,7 @@ export function ThreadPanel({
       ) : (
         <div className="flex flex-1 items-center justify-center px-6 text-center">
           <div>
-            <p className="text-sm font-medium text-primary">
+            <p className="text-body-md font-medium text-on-surface">
               {loadState === 'loading'
                 ? 'Loading thread'
                 : loadState === 'failed'
@@ -213,13 +213,13 @@ export function ThreadPanel({
                   : 'Thread unavailable'}
             </p>
             {loadState === 'failed' && (
-              <p className="mt-1 text-caption text-muted">Check your connection.</p>
+              <p className="mt-1 text-label-sm text-on-surface-variant">Check your connection.</p>
             )}
             {loadState === 'failed' && onRetry && (
               <button
                 type="button"
                 onClick={onRetry}
-                className="mt-3 min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+                className="mt-3 min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
               >
                 Try again
               </button>

@@ -37,7 +37,7 @@ describe('MarkdownContent mentions', () => {
     expect(mentions[0].getAttribute('title')).toBeNull()
     // Non-interactive mention text keeps its readable label instead of relying on dropped span aria-label.
     expect(mentions[0].hasAttribute('aria-label')).toBe(false)
-    expect(mentions[0].className).toContain('bg-container-accent-active')
+    expect(mentions[0].className).toContain('bg-primary-container-active')
     expect(mentions[1].textContent).toBe('@unknown:example.org')
     expect(container.textContent).toContain('@Alice, and @unknown:example.org')
   })
@@ -127,7 +127,7 @@ describe('MarkdownContent mentions', () => {
     expect(link?.textContent).toBe('https://example.org/docs')
     expect(container.textContent).toContain('docs. Do not run this.')
     expect(container.querySelector('a[href^="javascript:"]')).toBeNull()
-    expect(container.querySelector('.text-text-link')?.textContent).not.toBe('run this')
+    expect(container.querySelector('.text-primary')?.textContent).not.toBe('run this')
   })
 
   it('keeps safe links visible without adding a hostname preview card', async () => {
@@ -368,8 +368,8 @@ describe('MarkdownContent code blocks', () => {
       root.render(<MarkdownContent content={'```\nconst x = 1\n```'} />)
     })
     const pre = container.querySelector('pre')
-    expect(pre?.className).toContain('text-content-primary')
-    expect(pre?.className).not.toContain('text-secondary')
+    expect(pre?.className).toContain('text-on-surface')
+    expect(pre?.className).not.toContain('text-on-surface-variant')
   })
 
   it('offers a copy button, because selection inside the virtualizer is fragile', async () => {

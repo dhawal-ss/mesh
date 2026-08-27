@@ -82,7 +82,7 @@ const FORMAT_CONTROLS = [
   ['bold', 'Bold', 'B', 'font-semibold'],
   ['italic', 'Italic', 'I', 'italic font-medium'],
   ['strike', 'Strikethrough', 'S', 'font-medium line-through'],
-  ['code', 'Inline code', '<>', 'font-mono font-medium'],
+  ['code', 'Inline code', '<>', 'font-medium'],
 ] as const satisfies readonly (readonly [MarkdownFormat, string, string, string])[]
 
 interface MentionContext {
@@ -965,17 +965,17 @@ function MessageInputContent({
       onDrop={disabled || disableAttachments ? undefined : handleDrop}
     >
       <div
-        className={`mesh-composer min-w-0 overflow-hidden rounded-control border border-rule border-border-control transition-colors ${
+        className={`mesh-composer min-w-0 overflow-hidden rounded-full border border-rule border-outline transition-colors ${
           isDragOver
-            ? 'bg-container-accent ring-2 ring-container-accent-line'
-            : 'bg-surface-raised'
+            ? 'bg-primary-container ring-2 ring-primary-container-line'
+            : 'bg-surface-container'
         }`}
       >
         {/* Drag overlay */}
         {isDragOver && (
           <div className="flex items-center justify-center gap-2 px-4 py-3">
-            <Icon name="upload" size="sm" className="text-accent" />
-            <span className="text-sm font-medium text-accent">Drop files to attach</span>
+            <Icon name="upload" size="sm" className="text-primary" />
+            <span className="text-body-md font-medium text-primary">Drop files to attach</span>
           </div>
         )}
 
@@ -1004,7 +1004,7 @@ function MessageInputContent({
         )}
 
         {roomNotifyNotice && (
-          <p role="status" className="mx-3 mb-2 text-xs text-content-secondary">
+          <p role="status" className="mx-3 mb-2 text-body-sm text-on-surface-variant">
             {roomNotifyNotice}
           </p>
         )}
@@ -1019,7 +1019,7 @@ function MessageInputContent({
           markdown continues to work whether or not they are on screen.
         */}
         {hasSelection && <div
-          className="mesh-composer-formatting flex items-center gap-1 border-b border-rule border-border-structural px-2 py-1"
+          className="mesh-composer-formatting flex items-center gap-1 border-b border-rule border-outline-variant px-2 py-1"
           role="toolbar"
           aria-orientation="horizontal"
           aria-label="Message formatting"
@@ -1039,7 +1039,7 @@ function MessageInputContent({
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => applyFormatting(format)}
               disabled={disabled || isUploading || isStaging}
-              className={`flex h-control-sm min-w-control-sm items-center justify-center rounded-control px-1.5 text-sm text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-40 ${glyphClass}`}
+              className={`flex h-control-sm min-w-control-sm items-center justify-center rounded-full px-1.5 text-body-md text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-40 ${glyphClass}`}
             >
               {glyph}
             </button>
@@ -1053,7 +1053,7 @@ function MessageInputContent({
               id={`slash-suggestions-${channelId}`}
               role="listbox"
               aria-label="Slash commands"
-              className="absolute bottom-full left-1 right-1 z-dropdown mb-1 overflow-hidden rounded-panel border border-border-subtle bg-surface-overlay shadow-overlay"
+              className="absolute bottom-full left-1 right-1 z-dropdown mb-1 overflow-hidden rounded-xl border border-outline-variant bg-surface-container-high shadow-elev-3"
             >
               {slashSuggestions.map((command, index) => (
                 <button
@@ -1077,12 +1077,12 @@ function MessageInputContent({
                     setSlashDismissed(true)
                     pendingSelectionRef.current = { start: nextCursor, end: nextCursor }
                   }}
-                  className={`flex min-h-control-md w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                    index === activeSlashIndex ? 'bg-surface-hover text-primary' : 'text-secondary hover:bg-surface-hover'
+                  className={`flex min-h-control-md w-full items-center gap-3 px-3 py-2 text-left text-body-md transition-colors ${
+                    index === activeSlashIndex ? 'bg-surface-container-high text-on-surface' : 'text-on-surface-variant hover:bg-surface-container-high'
                   }`}
                 >
-                  <span className="font-mono font-medium">{command.command}</span>
-                  <span className="truncate text-muted">{command.description}</span>
+                  <span className="font-medium">{command.command}</span>
+                  <span className="truncate text-on-surface-variant">{command.description}</span>
                 </button>
               ))}
             </div>
@@ -1092,7 +1092,7 @@ function MessageInputContent({
               id={`mention-suggestions-${channelId}`}
               role="listbox"
               aria-label="Mention suggestions"
-              className="absolute bottom-full left-1 right-1 z-dropdown mb-1 overflow-hidden rounded-panel border border-border-subtle bg-surface-overlay shadow-overlay"
+              className="absolute bottom-full left-1 right-1 z-dropdown mb-1 overflow-hidden rounded-xl border border-outline-variant bg-surface-container-high shadow-elev-3"
             >
               {mentionSuggestions.map((suggestion, index) => {
                 const isRoom = suggestion.kind === 'room'
@@ -1108,15 +1108,15 @@ function MessageInputContent({
                     aria-selected={index === activeMentionIndex}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => selectMention(suggestion)}
-                    className={`flex min-h-control-md w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                      index === activeMentionIndex ? 'bg-surface-hover text-primary' : 'text-secondary hover:bg-surface-hover'
+                    className={`flex min-h-control-md w-full items-center gap-3 px-3 py-2 text-left text-body-md transition-colors ${
+                      index === activeMentionIndex ? 'bg-surface-container-high text-on-surface' : 'text-on-surface-variant hover:bg-surface-container-high'
                     }`}
                   >
                     <span className="truncate font-medium">
                       {isRoom ? '@room' : suggestion.member.displayName}
                     </span>
                     {shortHandle && (
-                      <span className="ml-auto flex-shrink-0 truncate text-xs text-muted">
+                      <span className="ml-auto flex-shrink-0 truncate text-body-sm text-on-surface-variant">
                         {shortHandle}
                       </span>
                     )}
@@ -1133,7 +1133,7 @@ function MessageInputContent({
                 type="button"
                 disabled={disabled || isUploading || isStaging}
                 aria-label="Attach file"
-                className="mb-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded text-muted transition-colors hover:text-secondary disabled:opacity-40"
+                className="mb-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded text-on-surface-variant transition-colors hover:text-on-surface-variant disabled:opacity-40"
               >
                 <Icon name="circlePlus" />
               </button>
@@ -1218,7 +1218,7 @@ function MessageInputContent({
                 : undefined}
             rows={1}
             disabled={disabled || isUploading || isStaging}
-            className="min-h-control-lg max-h-composer min-w-0 flex-1 resize-none bg-transparent px-2 py-2.5 text-base text-content-primary placeholder:text-muted focus:outline-none disabled:opacity-60"
+            className="min-h-control-lg max-h-composer min-w-0 flex-1 resize-none bg-transparent px-2 py-2.5 text-body-lg text-on-surface placeholder:text-on-surface-variant focus:outline-none disabled:opacity-60"
           />
 
           <Popover
@@ -1236,7 +1236,7 @@ function MessageInputContent({
                 disabled={disabled || isUploading || isStaging}
                 aria-label="Open emoji picker"
                 aria-expanded={emojiPickerOpen}
-                className="mb-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-40"
+                className="mb-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Icon name="smile" />
               </button>
@@ -1264,7 +1264,7 @@ function MessageInputContent({
               disabled={!canSend}
               aria-label="Send message"
               aria-keyshortcuts="Enter"
-              className="mb-1 flex h-control-sm flex-shrink-0 items-center justify-center gap-1.5 rounded-plane bg-accent px-3 font-mono text-chip font-semibold uppercase text-content-on-accent transition-colors enabled:hover:bg-accent-hover disabled:opacity-40"
+              className="mb-1 flex h-control-sm flex-shrink-0 items-center justify-center gap-1.5 rounded-full bg-primary px-3 text-label-md font-semibold text-on-primary transition-colors enabled:hover:bg-primary disabled:opacity-40"
             >
               <span aria-hidden="true">Send</span>
               <Icon
@@ -1283,8 +1283,8 @@ function MessageInputContent({
         */}
         {draftBytesUsed > DRAFT_WARNING_BYTES && (
           <div
-            className={`flex items-center justify-end gap-2 px-3 pb-1 text-caption ${
-              draftAtLimit ? 'text-status-warning' : 'text-content-muted'
+            className={`flex items-center justify-end gap-2 px-3 pb-1 text-label-sm ${
+              draftAtLimit ? 'text-marker' : 'text-on-surface-variant'
             }`}
           >
             {draftAtLimit && <Icon name="triangleAlert" size="xs" aria-hidden="true" />}
@@ -1297,7 +1297,7 @@ function MessageInputContent({
         )}
         {draftSyncStatus === 'failed' && (
           <div
-            className="flex min-h-control-sm items-center justify-between gap-3 border-t border-border-subtle px-3 py-1.5 text-xs text-secondary"
+            className="flex min-h-control-sm items-center justify-between gap-3 border-t border-outline-variant px-3 py-1.5 text-body-sm text-on-surface-variant"
           >
             <span role="status">
               Your draft is still here, but it is not saved for restart.
@@ -1305,7 +1305,7 @@ function MessageInputContent({
             <button
               type="button"
               onClick={retryDraftSync}
-              className="min-h-control-sm rounded-control px-2 font-medium text-accent transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="min-h-control-sm rounded-full px-2 font-medium text-primary transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             >
               Retry
             </button>

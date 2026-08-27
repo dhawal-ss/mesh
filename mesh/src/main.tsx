@@ -114,7 +114,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <AppMotionConfig>
       {DevKitchenSink && devView === 'kitchen-sink'
         ? (
-            <React.Suspense fallback={<div className="min-h-screen bg-surface-sunken" />}>
+            <React.Suspense fallback={<div className="min-h-screen bg-surface-container-lowest" />}>
               <DevKitchenSink />
             </React.Suspense>
           )

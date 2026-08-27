@@ -103,15 +103,15 @@ describe('HomeSurface', () => {
     const home = await renderHome()
 
     const heading = home.querySelector('[data-mesh-route-heading]')
-    expect(heading?.className).toContain('text-screen-sm')
-    expect(heading?.className).not.toContain('text-lg')
+    expect(heading?.className).toContain('text-display-sm')
+    expect(heading?.className).not.toContain('text-headline-md')
 
     // The lead quotes what somebody said. Prose set at poster scale and clamped
     // to two lines makes the loudest thing on the surface a truncated fragment.
     const lead = home.querySelector('.mesh-home-feature-title')
     if (lead) {
-      expect(lead.className).toContain('text-lg')
-      expect(lead.className).not.toContain('text-screen')
+      expect(lead.className).toContain('text-headline-md')
+      expect(lead.className).not.toContain('text-headline-lg')
     }
   })
 

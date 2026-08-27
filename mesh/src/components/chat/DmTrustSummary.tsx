@@ -51,10 +51,10 @@ export function DmTrustSummary({
         <button
           ref={triggerRef}
           type="button"
-          className={`flex min-h-8 max-w-48 items-center gap-1.5 rounded-control px-2 text-caption font-medium transition-colors ${
+          className={`flex min-h-8 max-w-48 items-center gap-1.5 rounded-full px-2 text-label-sm font-medium transition-colors ${
             trust.protection === 'unencrypted' || needsReview
-                ? 'bg-container-warning text-status-warning hover:bg-container-warning-hover'
-                : 'bg-surface-hover text-muted hover:bg-surface-active hover:text-secondary'
+                ? 'bg-marker-container text-marker hover:bg-marker-container-hover'
+                : 'bg-surface-container-high text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface-variant'
           }`}
           aria-label={`${triggerLabel}. Open conversation safety details.`}
         >
@@ -75,16 +75,16 @@ export function DmTrustSummary({
     >
       <div className="space-y-4">
         <div
-          className={`rounded-panel border px-3 py-2.5 ${
+          className={`rounded-xl border px-3 py-2.5 ${
             trust.protection === 'protected'
-              ? 'border-container-success-line bg-container-success'
+              ? 'border-primary-container-line bg-primary-container'
               : trust.protection === 'unencrypted'
-                ? 'border-container-warning-line bg-container-warning'
-                : 'border-border-subtle bg-surface-sunken'
+                ? 'border-marker-container-line bg-marker-container'
+                : 'border-outline-variant bg-surface-container-lowest'
           }`}
         >
-          <p className="text-xs font-medium text-primary">{protection}</p>
-          <p className="mt-1 text-caption text-muted">
+          <p className="text-body-sm font-medium text-on-surface">{protection}</p>
+          <p className="mt-1 text-label-sm text-on-surface-variant">
             Connected services deliver protected messages but cannot read their contents.
           </p>
         </div>
@@ -117,10 +117,10 @@ export function DmTrustSummary({
 
         <button
           type="button"
-          className={`min-h-control-md w-full rounded-control px-3 text-xs font-semibold transition-colors ${
+          className={`min-h-control-md w-full rounded-full px-3 text-body-sm font-semibold transition-colors ${
             needsReview
-              ? 'bg-accent text-content-on-accent hover:bg-accent-hover'
-              : 'border border-border-subtle text-secondary hover:border-border-strong hover:bg-surface-hover hover:text-primary'
+              ? 'bg-primary text-on-primary hover:bg-primary'
+              : 'border border-outline-variant text-on-surface-variant hover:border-outline hover:bg-surface-container-high hover:text-on-surface'
           }`}
           onClick={() => {
             setNextModalRestoreFocusTarget(triggerRef.current)
@@ -145,14 +145,14 @@ function TrustRow({
   tone?: 'muted' | 'success' | 'warning'
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 text-xs">
-      <dt className="text-muted">{label}</dt>
+    <div className="flex items-center justify-between gap-3 text-body-sm">
+      <dt className="text-on-surface-variant">{label}</dt>
       <dd className={
         tone === 'success'
-          ? 'font-medium text-status-success'
+          ? 'font-medium text-primary'
           : tone === 'warning'
-            ? 'font-medium text-status-warning'
-            : 'font-medium text-secondary'
+            ? 'font-medium text-marker'
+            : 'font-medium text-on-surface-variant'
       }>
         {value}
       </dd>

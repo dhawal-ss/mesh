@@ -69,10 +69,10 @@ export function IdentityScreen({ onGenerateIdentity, onNext }: IdentityScreenPro
           The one poster-scale heading in the product. The file has said so in a
           comment since it was written; this is the size that makes it true.
         */}
-        <h1 className="text-display font-semibold text-content-primary">
+        <h1 className="text-display-lg font-semibold text-on-surface">
           Welcome to Mesh
         </h1>
-        <p className="max-w-sm text-support text-content-secondary">
+        <p className="max-w-sm text-body-sm text-on-surface-variant">
           Mesh is securing this device automatically. You do not need to save or copy anything.
         </p>
       </div>
@@ -80,14 +80,14 @@ export function IdentityScreen({ onGenerateIdentity, onNext }: IdentityScreenPro
       {/*
         Key generation reads as a numbered ledger with a state tick per row.
 
-        It was a bordered panel holding a percentage bar and three uppercase
+        It was a bordered panel holding a percentage bar and three 
         pills, none of which said which step was actually running -- the first
         pill was highlighted whatever the phase was. A ledger says where you
         are because the ticks say it, and it uses the same mark the rest of the
         system already reads.
       */}
       <motion.ol
-        className="border-y border-rule border-border-structural"
+        className="border-y border-rule border-outline-variant"
         aria-label="Account setup"
         initial={{ opacity: 0, y: motionOffsets.subtle }}
         animate={{ opacity: 1, y: 0 }}
@@ -102,14 +102,14 @@ export function IdentityScreen({ onGenerateIdentity, onNext }: IdentityScreenPro
           return (
             <motion.li
               key={step}
-              className="flex items-center gap-3 border-b border-rule border-border-row py-ledger last:border-b-0"
+              className="flex items-center gap-3 border-b border-rule border-outline-variant py-ledger last:border-b-0"
               initial={{ opacity: 0, y: motionOffsets.tight }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ ...transitions.enter, delay: index * motionDurations.press }}
             >
               <span
                 aria-hidden="true"
-                className="w-row-index flex-none font-mono text-count font-semibold text-content-secondary"
+                className="w-row-index flex-none text-label-sm font-semibold text-on-surface-variant"
               >
                 {rowNumber(index)}
               </span>
@@ -117,15 +117,15 @@ export function IdentityScreen({ onGenerateIdentity, onNext }: IdentityScreenPro
                 state={stepState}
                 label={stepState === 'ok' ? 'Done' : stepState === 'danger' ? 'Failed' : stepState === 'warning' ? 'Running' : 'Waiting'}
               />
-              <span className="min-w-0 flex-1 truncate text-row text-content-primary">{step}</span>
+              <span className="min-w-0 flex-1 truncate text-title-md text-on-surface">{step}</span>
             </motion.li>
           )
         })}
       </motion.ol>
 
       <div role="status" className="space-y-1">
-        <p className="flex items-center gap-2 font-mono text-eyebrow uppercase text-content-secondary">
-          <span className="text-content-primary">{detail}</span>
+        <p className="flex items-center gap-2 text-label-sm text-on-surface-variant">
+          <span className="text-on-surface">{detail}</span>
           <span aria-hidden="true">·</span>
           {phase === 'done' ? 'Ready' : phase === 'error' ? 'Check' : 'Protected'}
         </p>
@@ -136,7 +136,7 @@ export function IdentityScreen({ onGenerateIdentity, onNext }: IdentityScreenPro
           own question.
         */}
         {phase === 'done' && (
-          <p className="text-support text-content-secondary">
+          <p className="text-body-sm text-on-surface-variant">
             Account protection is ready. It works automatically on this device.
           </p>
         )}
@@ -156,7 +156,7 @@ export function IdentityScreen({ onGenerateIdentity, onNext }: IdentityScreenPro
         <button
           type="button"
           onClick={() => setAttempt((value) => value + 1)}
-          className="min-h-8 rounded-control px-2 text-sm text-secondary transition-colors hover:bg-surface-hover hover:text-primary"
+          className="min-h-8 rounded-full px-2 text-body-md text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
         >
           Try account setup again
         </button>

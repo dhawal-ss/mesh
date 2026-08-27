@@ -52,7 +52,7 @@ export function TypingIndicator({ channelId }: TypingIndicatorProps) {
 
   return (
     <div
-      className="flex h-6 items-center gap-1.5 px-4 text-xs text-muted"
+      className="flex h-6 items-center gap-1.5 px-4 text-body-sm text-on-surface-variant"
       role="status"
       aria-live="polite"
       aria-atomic="true"
@@ -79,9 +79,9 @@ function formatTypingText(names: string[]): string {
 function TypingDots() {
   return (
     <span className="inline-flex items-center gap-0.5" aria-hidden="true">
-      <span className="mesh-typing-dot h-1 w-1 animate-bounce rounded-round bg-muted" />
-      <span className="mesh-typing-dot h-1 w-1 animate-bounce rounded-round bg-muted" />
-      <span className="mesh-typing-dot h-1 w-1 animate-bounce rounded-round bg-muted" />
+      <span className="mesh-typing-dot h-1 w-1 animate-bounce rounded-round bg-on-surface-variant" />
+      <span className="mesh-typing-dot h-1 w-1 animate-bounce rounded-round bg-on-surface-variant" />
+      <span className="mesh-typing-dot h-1 w-1 animate-bounce rounded-round bg-on-surface-variant" />
     </span>
   )
 }

@@ -527,7 +527,7 @@ describe('CommunitySettings mutation failures', () => {
   it('keeps one 22px heading per surface and puts groups on the section step', async () => {
     await renderSettings()
 
-    const titles = [...document.body.querySelectorAll('[class*="text-title"]')]
+    const titles = [...document.body.querySelectorAll('[class*="text-title-lg"]')]
     expect(titles).toHaveLength(1)
     expect(titles[0]?.textContent).toBe('Community settings')
 
@@ -536,7 +536,7 @@ describe('CommunitySettings mutation failures', () => {
         (heading) => heading.textContent?.trim() === label,
       )
       expect(group).toBeDefined()
-      expect(group?.className).toContain('text-md')
+      expect(group?.className).toContain('text-title-sm')
     }
   })
 

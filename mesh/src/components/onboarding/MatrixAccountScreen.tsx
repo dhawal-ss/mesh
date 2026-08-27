@@ -816,15 +816,15 @@ export function MatrixAccountScreen({
       ref={errorSummaryRef}
       role="alert"
       tabIndex={-1}
-      className="rounded-control border border-container-danger-line bg-container-danger px-3 py-2 text-sm text-status-danger"
+      className="rounded-full border border-error-container-line bg-error-container px-3 py-2 text-body-md text-error"
     >
       <p>{error}</p>
       {signalCheckEnabled && errorDetails ? (
-        <details className="mt-2 text-xs text-muted">
+        <details className="mt-2 text-body-sm text-on-surface-variant">
           <summary className="cursor-pointer underline-offset-2 hover:underline">
             Service details
           </summary>
-          <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-control bg-surface-sunken p-2 font-mono text-meta text-secondary">
+          <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-full bg-surface-container-lowest p-2 text-body-sm text-on-surface-variant">
             {errorDetails}
           </pre>
         </details>
@@ -835,7 +835,7 @@ export function MatrixAccountScreen({
   const noticeRegion = continuationNotice ? (
     <div
       role="alert"
-      className="rounded-control border border-container-warning-line bg-container-warning px-3 py-2 text-xs text-secondary"
+      className="rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-surface-variant"
     >
       {continuationNotice}
     </div>
@@ -891,23 +891,23 @@ export function MatrixAccountScreen({
         className="space-y-5"
       >
         <header className="space-y-2">
-          <p className="text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">
+          <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">
             Continue account setup
           </p>
           <h1
             id="registration-return-title"
             ref={modeHeadingRef}
             tabIndex={-1}
-            className="text-lg font-semibold text-primary"
+            className="text-headline-md font-semibold text-on-surface"
           >
             Finish with {onboardingPublicServiceName(selectedPublicService)}
           </h1>
-          <p className="max-w-md text-sm text-secondary">
+          <p className="max-w-md text-body-md text-on-surface-variant">
             Finish creating the account in your browser, then sign in below.
           </p>
         </header>
 
-        <p className="text-xs text-secondary">
+        <p className="text-body-sm text-on-surface-variant">
           Mesh saved your place for two hours.
         </p>
 
@@ -922,13 +922,13 @@ export function MatrixAccountScreen({
         {noticeRegion}
         {errorSummary}
 
-        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs">
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-body-sm">
           <ExternalLink href={selectedPublicService.registration.url}>
             Open the sign-up page again
           </ExternalLink>
           <button
             type="button"
-            className="min-h-8 rounded-control px-2 text-muted transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+            className="min-h-8 rounded-full px-2 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             onClick={cancelExternalRegistration}
           >
             Cancel
@@ -962,7 +962,7 @@ export function MatrixAccountScreen({
             id="account-welcome-title"
             ref={modeHeadingRef}
             tabIndex={-1}
-            className="text-lg font-semibold text-primary"
+            className="text-headline-md font-semibold text-on-surface"
           >
             Welcome to Mesh
           </h1>
@@ -1021,7 +1021,7 @@ export function MatrixAccountScreen({
           </Button>
         </div>
 
-        <p className="text-xs text-muted">
+        <p className="text-body-sm text-on-surface-variant">
           {invitationCreate
             ? `${communityServiceName} keeps your account and runs independently from Mesh.`
             : externalCreate
@@ -1030,7 +1030,7 @@ export function MatrixAccountScreen({
           {' '}
           <button
             type="button"
-            className="underline underline-offset-2 transition-colors hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+            className="underline underline-offset-2 transition-colors hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             onClick={() => {
               setServiceListIntent('create')
               changeMode('select')
@@ -1051,12 +1051,12 @@ export function MatrixAccountScreen({
           <h1
             ref={modeHeadingRef}
             tabIndex={-1}
-            className="text-lg font-semibold text-primary"
+            className="text-headline-md font-semibold text-on-surface"
           >
             {creatingHere ? 'Choose a service' : 'Sign in'}
           </h1>
           {creatingHere ? (
-            <p className="max-w-md text-sm text-secondary">
+            <p className="max-w-md text-body-md text-on-surface-variant">
               Each service runs independently from Mesh and creates your account on its own page.
             </p>
           ) : null}
@@ -1095,7 +1095,7 @@ export function MatrixAccountScreen({
           service's own page behind Terms, which is where somebody comparing
           services is actually going to look.
         */}
-        <ul className="mesh-account-service-list divide-y divide-border-subtle border-y border-border-subtle">
+        <ul className="mesh-account-service-list divide-y divide-outline-variant border-y border-outline-variant">
           {offeredCommunityService && pendingInvitationHandle ? (
             <ServiceRow
               key="community-service"
@@ -1159,7 +1159,7 @@ export function MatrixAccountScreen({
         accent belongs on the button you are meant to press.
       */}
       <header className="space-y-2">
-        <h1 ref={modeHeadingRef} tabIndex={-1} className="text-lg font-semibold text-primary">
+        <h1 ref={modeHeadingRef} tabIndex={-1} className="text-headline-md font-semibold text-on-surface">
           {isCreate
             ? `Create your account with ${selectedServiceName}`
             : isAdvanced
@@ -1171,7 +1171,7 @@ export function MatrixAccountScreen({
       {savedSignInNotice ? (
         <p
           role="status"
-          className="rounded-control border border-container-warning-line bg-container-warning px-3 py-2 text-sm text-secondary"
+          className="rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-md text-on-surface-variant"
         >
           {savedSignInNotice}
         </p>
@@ -1180,7 +1180,7 @@ export function MatrixAccountScreen({
       {selectedService?.kind === 'community' ? (
         <section
           aria-label={`${selectedService.name} service details`}
-          className="mesh-inline-card border border-border-subtle p-3 text-xs text-secondary"
+          className="mesh-inline-card border border-outline-variant p-3 text-body-sm text-on-surface-variant"
         >
           <p>
             Your account is stored at {displayServiceAddress(selectedService.address)}, which runs
@@ -1191,9 +1191,9 @@ export function MatrixAccountScreen({
 
       {!selectedPublicService ? (
         checkingCapabilities ? (
-          <p role="status" className="text-xs text-muted">Checking this service…</p>
+          <p role="status" className="text-body-sm text-on-surface-variant">Checking this service…</p>
         ) : capabilities ? (
-          <p role="status" className="text-xs text-muted">
+          <p role="status" className="text-body-sm text-on-surface-variant">
             {capabilitySummary(capabilities)}
           </p>
         ) : null
@@ -1202,24 +1202,24 @@ export function MatrixAccountScreen({
       {!isCreate && savedAccounts.length > 0 ? (
         <section
           aria-label="Saved accounts"
-          className="space-y-2 rounded-panel border border-border-subtle bg-surface-sunken p-3"
+          className="space-y-2 rounded-xl border border-outline-variant bg-surface-container-lowest p-3"
         >
-          <p className="text-2xs lowercase tracking-eyebrow text-muted">Continue without a password</p>
+          <p className="text-label-sm lowercase tracking-label-md text-on-surface-variant">Continue without a password</p>
           {savedAccounts.map((account) => (
             <button
               key={account.profileId}
               type="button"
               disabled={submitting || switchingProfile !== null}
-              className="flex w-full items-center justify-between gap-3 rounded-control bg-surface-base px-3 py-2 text-left transition-colors hover:bg-surface-hover disabled:cursor-wait disabled:opacity-60"
+              className="flex w-full items-center justify-between gap-3 rounded-full bg-surface px-3 py-2 text-left transition-colors hover:bg-surface-container-high disabled:cursor-wait disabled:opacity-60"
               onClick={() => void switchAccount(account.profileId)}
             >
               <span className="min-w-0">
-                <span className="block truncate text-sm font-medium text-primary">
+                <span className="block truncate text-body-md font-medium text-on-surface">
                   {friendlyAccountName(account.userId)}
                 </span>
-                <span className="block truncate text-xs text-muted">Saved on this device</span>
+                <span className="block truncate text-body-sm text-on-surface-variant">Saved on this device</span>
               </span>
-              <span className="text-xs font-medium text-accent">
+              <span className="text-body-sm font-medium text-primary">
                 {switchingProfile === account.profileId ? 'Opening…' : 'Continue'}
               </span>
             </button>
@@ -1254,21 +1254,21 @@ export function MatrixAccountScreen({
           hint={usernameHint}
         />
         {!isCreate && accountIdBelongsElsewhere && !isAdvanced ? (
-          <p className="rounded-control border border-container-warning-line bg-container-warning px-3 py-2 text-xs text-secondary">
-            This account belongs to <span className="font-medium text-primary">{accountIdService}</span>.
+          <p className="rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-surface-variant">
+            This account belongs to <span className="font-medium text-on-surface">{accountIdService}</span>.
             Go back and choose{' '}
-            <span className="font-medium text-primary">My service is not listed</span>.
+            <span className="font-medium text-on-surface">My service is not listed</span>.
           </p>
         ) : null}
         {isCreate && normalizedUsername && !createUsernameError && availability !== 'idle' ? (
           <p
             role="status"
-            className={`text-xs ${
+            className={`text-body-sm ${
               availability === 'available'
-                ? 'text-status-success'
+                ? 'text-primary'
                 : availability === 'taken' || availability === 'error'
-                  ? 'text-status-danger'
-                  : 'text-muted'
+                  ? 'text-error'
+                  : 'text-on-surface-variant'
             }`}
           >
             {availabilityMessage(availability, normalizedUsername)}
@@ -1305,17 +1305,17 @@ export function MatrixAccountScreen({
                 {[1, 2, 3, 4].map((score) => (
                   <span
                     key={score}
-                    className={`h-1 rounded-panel ${
+                    className={`h-1 rounded-xl ${
                       score <= strength.score
                         ? strength.strongEnough
-                          ? 'bg-status-success'
-                          : 'bg-status-warning'
-                        : 'bg-surface-active'
+                          ? 'bg-primary'
+                          : 'bg-marker'
+                        : 'bg-surface-container-highest'
                     }`}
                   />
                 ))}
               </div>
-              <p className={`text-xs ${strength.strongEnough ? 'text-status-success' : 'text-muted'}`}>
+              <p className={`text-body-sm ${strength.strongEnough ? 'text-primary' : 'text-on-surface-variant'}`}>
                 {password ? `${strength.label} password` : 'Password strength'}
               </p>
             </div>
@@ -1342,7 +1342,7 @@ export function MatrixAccountScreen({
             />
           ) : null}
 
-          <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-muted">
+          <label className="inline-flex cursor-pointer items-center gap-2 text-body-sm text-on-surface-variant">
             <input
               type="checkbox"
               checked={showPassword}
@@ -1362,7 +1362,7 @@ export function MatrixAccountScreen({
         ) : null}
 
         {isAdvanced ? (
-          <div className="space-y-3 border-t border-border pt-4">
+          <div className="space-y-3 border-t border-outline pt-4">
             <Input
               label="Service address"
               name="homeserver"
@@ -1394,7 +1394,7 @@ export function MatrixAccountScreen({
       </div>
 
       {!isCreate && capabilities && !capabilities.passwordLogin && !capabilities.browserLogin ? (
-        <p role="alert" className="rounded-control border border-container-danger-line bg-container-danger px-3 py-2 text-sm text-status-danger">
+        <p role="alert" className="rounded-full border border-error-container-line bg-error-container px-3 py-2 text-body-md text-error">
           This service does not offer a sign-in method that Mesh can use.
         </p>
       ) : null}
@@ -1415,13 +1415,13 @@ export function MatrixAccountScreen({
       {!isCreate ? (
         <section
           aria-label="Sign-in help"
-          className="space-y-2 border-t border-border-subtle pt-3"
+          className="space-y-2 border-t border-outline-variant pt-3"
         >
-          <p className="text-xs font-medium text-primary">Having trouble signing in?</p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+          <p className="text-body-sm font-medium text-on-surface">Having trouble signing in?</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-body-sm">
             <button
               type="button"
-              className="min-h-8 rounded-control px-1 text-secondary underline-offset-2 transition-colors hover:text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="min-h-8 rounded-full px-1 text-on-surface-variant underline-offset-2 transition-colors hover:text-on-surface hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               aria-expanded={recoveryHelp === 'password'}
               onClick={() => setRecoveryHelp((current) => current === 'password' ? null : 'password')}
             >
@@ -1429,7 +1429,7 @@ export function MatrixAccountScreen({
             </button>
             <button
               type="button"
-              className="min-h-8 rounded-control px-1 text-secondary underline-offset-2 transition-colors hover:text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="min-h-8 rounded-full px-1 text-on-surface-variant underline-offset-2 transition-colors hover:text-on-surface hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               aria-expanded={recoveryHelp === 'username'}
               onClick={() => setRecoveryHelp((current) => current === 'username' ? null : 'username')}
             >
@@ -1437,7 +1437,7 @@ export function MatrixAccountScreen({
             </button>
           </div>
           {recoveryHelp ? (
-            <div role="status" className="space-y-2 border-t border-border pt-2 text-xs text-secondary">
+            <div role="status" className="space-y-2 border-t border-outline pt-2 text-body-sm text-on-surface-variant">
               {recoveryHelp === 'password' ? (
                 <>
                   <p>
@@ -1515,7 +1515,7 @@ export function MatrixAccountScreen({
             <p
               id="browser-sign-in-availability"
               role="status"
-              className="text-xs text-muted"
+              className="text-body-sm text-on-surface-variant"
             >
               Browser sign-in opens from the installed Mesh app.
             </p>
@@ -1525,9 +1525,9 @@ export function MatrixAccountScreen({
 
       {selectedPublicService ? (
         checkingCapabilities ? (
-          <p role="status" className="text-xs text-muted">Checking this service…</p>
+          <p role="status" className="text-body-sm text-on-surface-variant">Checking this service…</p>
         ) : capabilities ? (
-          <p role="status" className="text-xs text-muted">
+          <p role="status" className="text-body-sm text-on-surface-variant">
             {capabilitySummary(capabilities)}
           </p>
         ) : null
@@ -1544,7 +1544,7 @@ export function MatrixAccountScreen({
       {selectedPublicService ? (
         <p
           aria-label={`${onboardingPublicServiceName(selectedPublicService)} details`}
-          className="flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs text-muted"
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 text-label-sm text-on-surface-variant"
         >
           <span>Run independently by {sentence(selectedPublicService.operator)}</span>
           <PolicyLink href={selectedPublicService.termsUrl}>Terms</PolicyLink>
@@ -1553,27 +1553,27 @@ export function MatrixAccountScreen({
       ) : null}
 
       {isCreate ? (
-        <p className="text-center text-sm text-secondary">
+        <p className="text-center text-body-md text-on-surface-variant">
           Already have an account with this service?{' '}
           <button
             type="button"
-            className="inline-flex min-h-8 items-center rounded-control px-1 text-accent transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+            className="inline-flex min-h-8 items-center rounded-full px-1 text-primary transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             onClick={() => changeMode('sign-in')}
           >
             Sign in
           </button>
         </p>
       ) : (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border-subtle pt-2 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-outline-variant pt-2 text-body-sm">
           <button
             type="button"
-            className="inline-flex min-h-8 items-center rounded-control px-2 text-muted transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+            className="inline-flex min-h-8 items-center rounded-full px-2 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             onClick={() => changeMode('select')}
           >
             Back
           </button>
           {selectedPublicService ? (
-            <span className="text-muted">
+            <span className="text-on-surface-variant">
               Need an account?{' '}
               <ExternalLink
                 href={selectedPublicService.registration.url}
@@ -1611,7 +1611,7 @@ function CommunityInvitationPassport({
   return (
     <section
       aria-label="Community invitation"
-      className={`space-y-3 rounded-panel border border-border-subtle bg-surface-sunken p-3 text-xs text-secondary ${compact ? '' : 'sm:p-4'}`}
+      className={`space-y-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-3 text-body-sm text-on-surface-variant ${compact ? '' : 'sm:p-4'}`}
     >
       <div className="flex items-start gap-3">
         <Avatar
@@ -1622,39 +1622,39 @@ function CommunityInvitationPassport({
           className="flex-none"
         />
         <div className="min-w-0 space-y-0.5">
-          <p className="text-2xs lowercase tracking-eyebrow text-muted">Community invitation</p>
-          <h2 className="truncate text-sm font-semibold text-primary">{title}</h2>
+          <p className="text-label-sm lowercase tracking-label-md text-on-surface-variant">Community invitation</p>
+          <h2 className="truncate text-body-md font-semibold text-on-surface">{title}</h2>
           {inviter ? <p>Invited by {inviter}.</p> : null}
         </div>
       </div>
 
       {communityService || joinRule ? (
-        <dl className="grid gap-x-4 gap-y-2 border-t border-border-subtle pt-3 sm:grid-cols-2">
+        <dl className="grid gap-x-4 gap-y-2 border-t border-outline-variant pt-3 sm:grid-cols-2">
           {communityService ? (
             <div>
-              <dt className="text-2xs lowercase tracking-eyebrow text-muted">Community service</dt>
-              <dd className="truncate text-primary">{communityService}</dd>
+              <dt className="text-label-sm lowercase tracking-label-md text-on-surface-variant">Community service</dt>
+              <dd className="truncate text-on-surface">{communityService}</dd>
             </div>
           ) : null}
           {joinRule ? (
             <div>
-              <dt className="text-2xs lowercase tracking-eyebrow text-muted">Access</dt>
-              <dd className="text-primary">{joinRule}</dd>
+              <dt className="text-label-sm lowercase tracking-label-md text-on-surface-variant">Access</dt>
+              <dd className="text-on-surface">{joinRule}</dd>
             </div>
           ) : null}
         </dl>
       ) : null}
 
       {serviceAddress ? (
-        <details className="rounded-control border border-border-subtle bg-surface-base px-3">
-          <summary className="flex min-h-10 cursor-pointer items-center font-semibold text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus">
+        <details className="rounded-full border border-outline-variant bg-surface px-3">
+          <summary className="flex min-h-10 cursor-pointer items-center font-semibold text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus">
             Service details
           </summary>
-          <dl className="space-y-2 border-t border-border-subtle py-3">
+          <dl className="space-y-2 border-t border-outline-variant py-3">
             {serviceAddress ? (
               <div>
-                <dt className="text-2xs lowercase tracking-eyebrow text-muted">Service address</dt>
-                <dd className="break-all text-primary">{serviceAddress}</dd>
+                <dt className="text-label-sm lowercase tracking-label-md text-on-surface-variant">Service address</dt>
+                <dd className="break-all text-on-surface">{serviceAddress}</dd>
               </div>
             ) : null}
           </dl>
@@ -1691,24 +1691,24 @@ function SavedAccounts({
   return (
     <section
       aria-label="Saved accounts"
-      className="space-y-2 rounded-panel border border-border-subtle bg-surface-sunken p-3"
+      className="space-y-2 rounded-xl border border-outline-variant bg-surface-container-lowest p-3"
     >
-      <p className="text-2xs lowercase tracking-eyebrow text-muted">Continue without a password</p>
+      <p className="text-label-sm lowercase tracking-label-md text-on-surface-variant">Continue without a password</p>
       {accounts.map((account) => (
         <button
           key={account.profileId}
           type="button"
           disabled={disabled || switchingProfile !== null}
-          className="flex w-full items-center justify-between gap-3 rounded-control bg-surface-base px-3 py-2 text-left transition-colors hover:bg-surface-hover disabled:cursor-wait disabled:opacity-60"
+          className="flex w-full items-center justify-between gap-3 rounded-full bg-surface px-3 py-2 text-left transition-colors hover:bg-surface-container-high disabled:cursor-wait disabled:opacity-60"
           onClick={() => onSelect(account.profileId)}
         >
           <span className="min-w-0">
-            <span className="block truncate text-sm font-medium text-primary">
+            <span className="block truncate text-body-md font-medium text-on-surface">
               {friendlyAccountName(account.userId)}
             </span>
-            <span className="block truncate text-xs text-muted">Saved on this device</span>
+            <span className="block truncate text-body-sm text-on-surface-variant">Saved on this device</span>
           </span>
-          <span className="text-xs font-medium text-accent">
+          <span className="text-body-sm font-medium text-primary">
             {switchingProfile === account.profileId ? 'Opening…' : 'Continue'}
           </span>
         </button>
@@ -1759,17 +1759,17 @@ function ServiceRow({
   privacyUrl?: string
 }) {
   const label = `${action === 'create' ? 'Create account with' : 'Sign in with'} ${title}`
-  const rowClass = 'group flex w-full items-center gap-3 px-1 py-3 text-left transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus'
+  const rowClass = 'group flex w-full items-center gap-3 px-1 py-3 text-left transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus'
   const body = (
     <>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-primary">{title}</span>
-        <span className="block truncate text-xs text-muted">{detail}</span>
+        <span className="block truncate text-body-md font-medium text-on-surface">{title}</span>
+        <span className="block truncate text-body-sm text-on-surface-variant">{detail}</span>
       </span>
       <Icon
         name="arrowRight"
         size="sm"
-        className="flex-none text-muted transition-transform duration-fast motion-safe:group-hover:translate-x-0.5"
+        className="flex-none text-on-surface-variant transition-transform duration-fast motion-safe:group-hover:translate-x-0.5"
       />
     </>
   )
@@ -1806,7 +1806,7 @@ function ServiceRow({
         are still links, and still reachable; they are simply not the offer.
       */}
       {termsUrl || privacyUrl ? (
-        <p className="flex flex-wrap gap-3 px-1 pb-3 text-2xs">
+        <p className="flex flex-wrap gap-3 px-1 pb-3 text-label-sm">
           {termsUrl ? <PolicyLink href={termsUrl}>Terms</PolicyLink> : null}
           {privacyUrl ? <PolicyLink href={privacyUrl}>Privacy</PolicyLink> : null}
         </p>
@@ -1821,7 +1821,7 @@ function PolicyLink({ href, children }: { href: string; children: ReactNode }) {
       href={href}
       target="_blank"
       rel="noreferrer noopener"
-      className="text-muted underline-offset-2 transition-colors hover:text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+      className="text-on-surface-variant underline-offset-2 transition-colors hover:text-on-surface hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
     >
       {children}
     </a>
@@ -1851,7 +1851,7 @@ function ExternalActionButton({
       onClick={(event) => {
         if (!onBeforeOpen()) event.preventDefault()
       }}
-      className="mesh-button no-select inline-flex h-control-lg w-full items-center justify-center rounded-control border border-accent bg-accent px-4 font-semibold text-accent-content transition-colors duration-fast hover:bg-accent-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+      className="mesh-button no-select inline-flex h-control-lg w-full items-center justify-center rounded-full border border-primary bg-primary px-4 font-semibold text-on-primary transition-colors duration-fast hover:bg-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
     >
       {children}
     </a>
@@ -1875,7 +1875,7 @@ function ExternalLink({
       onClick={(event) => {
         if (onBeforeOpen && !onBeforeOpen()) event.preventDefault()
       }}
-      className="text-accent underline underline-offset-2"
+      className="text-primary underline underline-offset-2"
     >
       {children}
     </a>

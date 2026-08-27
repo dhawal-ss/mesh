@@ -134,14 +134,14 @@ export function VoiceView({
 
   return (
     <section
-      className="relative flex h-full min-h-0 w-full flex-col bg-surface-canvas"
+      className="relative flex h-full min-h-0 w-full flex-col bg-surface"
       aria-labelledby="mesh-voice-heading"
       data-voice-join-latency-ms={stats.joinLatencyMs ?? undefined}
       data-voice-round-trip-ms={stats.roundTripTimeMs ?? undefined}
       data-voice-jitter-ms={stats.jitterMs ?? undefined}
       data-voice-packet-loss-percent={stats.packetLossPercent ?? undefined}
     >
-      <header className="mesh-conversation-title-header flex flex-none flex-col gap-1.5 border-b border-rule border-border-structural">
+      <header className="mesh-conversation-title-header flex flex-none flex-col gap-1.5 border-b border-rule border-outline-variant">
         <span className="min-w-0 flex-1">
           <Eyebrow className="block truncate">
             {connectedOccupancy > 0
@@ -150,7 +150,7 @@ export function VoiceView({
           </Eyebrow>
           <h1
             id="mesh-voice-heading"
-            className="mt-1 truncate text-screen font-semibold text-content-primary outline-none"
+            className="mt-1 truncate text-headline-lg font-semibold text-on-surface outline-none"
             data-mesh-route-heading
             tabIndex={-1}
           >
@@ -167,7 +167,7 @@ export function VoiceView({
             })
             return (
               <span
-                className={`mt-0.5 flex w-fit items-center gap-1 border-l-2 py-0.5 pl-1.5 text-caption ${voiceStatusToneClass(indicator.tone)}`}
+                className={`mt-0.5 flex w-fit items-center gap-1 border-l-2 py-0.5 pl-1.5 text-label-sm ${voiceStatusToneClass(indicator.tone)}`}
                 data-voice-status={indicator.tone}
                 aria-label={`Call status: ${indicator.label}`}
               >
@@ -181,7 +181,7 @@ export function VoiceView({
           ref={rosterButtonRef}
           type="button"
           onClick={() => setRosterOpen(true)}
-          className="flex min-h-10 items-center gap-2 px-2 text-xs font-semibold text-content-secondary hover:bg-surface-hover hover:text-content voice-wide:hidden"
+          className="flex min-h-10 items-center gap-2 px-2 text-body-sm font-semibold text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface voice-wide:hidden"
           aria-controls="mesh-voice-roster-drawer"
           aria-expanded={rosterOpen}
           aria-label="Open people list"
@@ -192,7 +192,7 @@ export function VoiceView({
         <button
           type="button"
           onClick={onBackToChat}
-          className="flex min-h-10 items-center gap-2 border border-border-subtle px-3 text-xs font-semibold text-content-secondary hover:bg-surface-hover hover:text-content"
+          className="flex min-h-10 items-center gap-2 border border-outline-variant px-3 text-body-sm font-semibold text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
           aria-label={`Open messages from ${channelName}`}
         >
           <Icon name="messageCircle" size="sm" />
@@ -201,7 +201,7 @@ export function VoiceView({
       </header>
 
       {microphonePermission === 'denied' ? (
-        <div className="flex flex-none items-center gap-2 border-b border-container-danger-line bg-container-danger px-4 py-2 text-xs text-status-danger" role="alert">
+        <div className="flex flex-none items-center gap-2 border-b border-error-container-line bg-error-container px-4 py-2 text-body-sm text-error" role="alert">
           <Icon name="micOff" size="sm" aria-hidden="true" />
           <span className="min-w-0 flex-1">
             Mesh cannot use your microphone. Allow access in system settings.
@@ -217,7 +217,7 @@ export function VoiceView({
       ) : null}
 
       {connectionWarning ? (
-        <div className="flex flex-none items-center gap-2 border-b border-container-warning-line bg-container-warning px-4 py-2 text-xs text-status-warning" role="status">
+        <div className="flex flex-none items-center gap-2 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-marker" role="status">
           <Icon name="triangleAlert" size="sm" aria-hidden="true" />
           <span className="min-w-0 flex-1">
             <strong>Call audio needs attention.</strong> {connectionWarning}
@@ -259,7 +259,7 @@ export function VoiceView({
         />
       )}
 
-      <div className="flex-none bg-surface-base">
+      <div className="flex-none bg-surface">
         <VoiceControls
           devices={devices}
           roomName={channelName}
@@ -295,12 +295,12 @@ function VoiceUnavailable({
   onBackToChat: () => void
 }) {
   return (
-    <section className="flex h-full min-h-0 w-full flex-col bg-surface-canvas" aria-labelledby="mesh-voice-heading">
-      <header className="flex h-14 flex-none items-center gap-3 border-b border-border-subtle bg-surface-base px-4">
-        <Icon name="volume" size="sm" className="text-content-muted" aria-hidden="true" />
+    <section className="flex h-full min-h-0 w-full flex-col bg-surface" aria-labelledby="mesh-voice-heading">
+      <header className="flex h-14 flex-none items-center gap-3 border-b border-outline-variant bg-surface px-4">
+        <Icon name="volume" size="sm" className="text-on-surface-variant" aria-hidden="true" />
         <h1
           id="mesh-voice-heading"
-          className="truncate text-sm font-semibold text-content outline-none"
+          className="truncate text-body-md font-semibold text-on-surface outline-none"
           data-mesh-route-heading
           tabIndex={-1}
         >
@@ -308,13 +308,13 @@ function VoiceUnavailable({
           <span aria-hidden="true" className="hidden sm:inline"> voice</span>
           <span className="sr-only"> voice room</span>
         </h1>
-        <span className="ml-auto text-caption text-content-muted">Unavailable</span>
+        <span className="ml-auto text-label-sm text-on-surface-variant">Unavailable</span>
       </header>
       <div className="flex min-h-0 flex-1 items-center justify-center p-6">
-        <div className="w-full max-w-lg border-y border-border-subtle px-6 py-10 text-center">
-          <Icon name="phoneOff" size="lg" className="mx-auto text-content-muted" aria-hidden="true" />
-          <h2 className="mt-5 text-lg font-semibold text-content">Voice is unavailable</h2>
-          <p className="mt-2 text-sm text-content-secondary">{detail}</p>
+        <div className="w-full max-w-lg border-y border-outline-variant px-6 py-10 text-center">
+          <Icon name="phoneOff" size="lg" className="mx-auto text-on-surface-variant" aria-hidden="true" />
+          <h2 className="mt-5 text-headline-md font-semibold text-on-surface">Voice is unavailable</h2>
+          <p className="mt-2 text-body-md text-on-surface-variant">{detail}</p>
           <Button className="mt-6" onClick={onBackToChat}>
             Back to messages
           </Button>
@@ -374,10 +374,10 @@ function VoiceFailureState({
   const reason = useVoiceStore((state) => state.lastReconnectReason)
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center" role="alert">
-      <Icon name="phoneOff" size="lg" className="text-status-danger" aria-hidden="true" />
-      <h2 className="mt-4 text-base font-semibold text-content">Voice could not connect</h2>
+      <Icon name="phoneOff" size="lg" className="text-error" aria-hidden="true" />
+      <h2 className="mt-4 text-body-lg font-semibold text-on-surface">Voice could not connect</h2>
       {reason ? (
-        <p className="mt-2 max-w-md text-sm text-content-secondary">{reason}</p>
+        <p className="mt-2 max-w-md text-body-md text-on-surface-variant">{reason}</p>
       ) : null}
       <div className="mt-5 flex gap-2">
         <Button onClick={onRetry}>Try again</Button>
@@ -448,16 +448,16 @@ function voiceLifecycleLabel(state: VoiceLifecycleState, channelName: string): s
 function voiceStatusToneClass(tone: VoiceStatusIndicator['tone']): string {
   switch (tone) {
     case 'success':
-      return 'text-status-success border-l-status-success'
+      return 'text-primary border-l-primary'
     case 'warning':
-      return 'text-status-warning border-l-status-warning'
+      return 'text-marker border-l-marker'
     case 'danger':
-      return 'text-status-danger border-l-status-danger'
+      return 'text-error border-l-error'
     default:
       // Connected but unmeasured, or a neutral transition (joining/leaving/
       // muted): stay neutral rather than implying a colour-coded state we
       // have not actually measured.
-      return 'text-content-secondary border-l-border-subtle'
+      return 'text-on-surface-variant border-l-outline-variant'
   }
 }
 
@@ -482,17 +482,17 @@ function VoicePreJoinDeviceCheck({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 text-center" role="alert">
-      <Icon name="micOff" size="lg" className="text-status-danger" aria-hidden="true" />
+      <Icon name="micOff" size="lg" className="text-error" aria-hidden="true" />
       <div>
-        <h2 className="text-base font-semibold text-content">Microphone blocked</h2>
-        <p className="mt-2 max-w-md text-sm text-content-secondary">
+        <h2 className="text-body-lg font-semibold text-on-surface">Microphone blocked</h2>
+        <p className="mt-2 max-w-md text-body-md text-on-surface-variant">
           {channelName} is connecting without one. Allow access in system settings.
         </p>
       </div>
       <dl className="grid w-full max-w-xs grid-cols-device-code gap-x-3 gap-y-1 text-left text-body-sm text-on-surface-variant">
-        <dt className="font-medium text-content">Speaker</dt>
+        <dt className="font-medium text-on-surface">Speaker</dt>
         <dd>{hasSpeaker ? 'Ready' : 'No speaker detected'}</dd>
-        <dt className="font-medium text-content">Camera</dt>
+        <dt className="font-medium text-on-surface">Camera</dt>
         <dd>{cameraStatus}</dd>
       </dl>
       <div className="flex gap-2">

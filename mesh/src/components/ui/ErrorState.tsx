@@ -46,20 +46,20 @@ export function ErrorState({
       role="alert"
       aria-labelledby={titleId}
       className={clsx(
-        'mesh-error-state border-y border-container-danger-line text-left',
+        'mesh-error-state border-y border-error-container-line text-left',
         compact ? 'px-3 py-2' : 'p-4',
         className,
       )}
     >
       <div className="flex items-start gap-2.5">
-        <span className="mesh-error-icon mt-0.5 flex h-7 w-7 flex-none items-center justify-center text-on-container-danger" aria-hidden="true">
+        <span className="mesh-error-icon mt-0.5 flex h-7 w-7 flex-none items-center justify-center text-on-error-container" aria-hidden="true">
           <Icon name="triangleAlert" size="sm" />
         </span>
         <div className="min-w-0">
-          <h3 id={titleId} className={clsx('font-semibold text-status-danger', compact ? 'text-xs' : 'text-sm')}>
+          <h3 id={titleId} className={clsx('font-semibold text-error', compact ? 'text-body-sm' : 'text-body-md')}>
             {description.title}
           </h3>
-          <p className={clsx('text-secondary', compact ? 'mt-0.5 text-xs' : 'mt-1 text-sm')}>
+          <p className={clsx('text-on-surface-variant', compact ? 'mt-0.5 text-body-sm' : 'mt-1 text-body-md')}>
             {userMessage ?? description.body}
           </p>
         </div>
@@ -69,11 +69,11 @@ export function ErrorState({
           {primaryAction}
         </Button>
       )}
-      {details && <details className="mt-2 text-xs text-muted">
-        <summary className="flex min-h-8 w-fit cursor-pointer select-none items-center rounded-panel focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus">
+      {details && <details className="mt-2 text-body-sm text-on-surface-variant">
+        <summary className="flex min-h-8 w-fit cursor-pointer select-none items-center rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus">
           Details
         </summary>
-        <pre className="mesh-error-details mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-all py-2 font-mono text-meta text-secondary">
+        <pre className="mesh-error-details mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-all py-2 text-body-sm text-on-surface-variant">
           {details}
         </pre>
         <div className="mt-2 flex items-center gap-2">

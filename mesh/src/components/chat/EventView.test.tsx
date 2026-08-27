@@ -60,13 +60,13 @@ describe('EventView', () => {
 
     const heading = container.querySelector('[data-event-name]')
     expect(heading?.textContent).toContain('game-night')
-    expect(heading?.className).toContain('text-display')
+    expect(heading?.className).toContain('text-display-lg')
 
     // The plan is somebody's sentence, of no known length. It reads, it does
     // not shout.
     const plan = container.querySelector('[data-event-plan]')
     expect(plan?.textContent).toContain('Bring a healer')
-    expect(plan?.className).not.toContain('text-display')
+    expect(plan?.className).not.toContain('text-display-lg')
   })
 
   it('offers the three replies, and says how many people chose each', () => {

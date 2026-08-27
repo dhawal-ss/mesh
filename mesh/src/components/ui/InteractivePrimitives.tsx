@@ -16,7 +16,7 @@ import type { UiSize, UiTone } from './Button'
 import { Icon } from './Icon'
 import { IconButton } from './IconButton'
 
-const overlaySurfaceClass = 'mesh-overlay-surface rounded-panel border border-border-subtle bg-surface-overlay shadow-overlay'
+const overlaySurfaceClass = 'mesh-overlay-surface rounded-xl border border-outline-variant bg-surface-container-high shadow-elev-3'
 
 export interface SwitchProps extends Omit<React.ComponentPropsWithoutRef<typeof SwitchPrimitive.Root>, 'asChild'> {
   label: string
@@ -49,9 +49,9 @@ export function Switch({
   return (
     <div className={clsx('flex items-start justify-between gap-4', disabled && 'opacity-50', className)}>
       <label htmlFor={switchId} className={clsx('cursor-pointer', disabled && 'cursor-not-allowed')}>
-        <span className="block text-sm font-medium text-content">{label}</span>
+        <span className="block text-body-md font-medium text-on-surface">{label}</span>
         {description && (
-          <span id={descriptionId} className="block text-xs text-content-muted">
+          <span id={descriptionId} className="block text-body-sm text-on-surface-variant">
             {description}
           </span>
         )}
@@ -61,7 +61,7 @@ export function Switch({
         disabled={disabled}
         aria-describedby={description ? descriptionId : describedBy}
         className={clsx(
-          'relative shrink-0 rounded-full bg-surface-active transition-colors duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed',
+          'relative shrink-0 rounded-full bg-surface-container-highest transition-colors duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed',
           size === 'sm' && 'h-4 w-7',
           size === 'md' && 'h-5 w-9',
           size === 'lg' && 'h-6 w-11',
@@ -71,7 +71,7 @@ export function Switch({
       >
         <SwitchPrimitive.Thumb
           className={clsx(
-            'block translate-x-0.5 rounded-full bg-content transition-transform duration-fast',
+            'block translate-x-0.5 rounded-full bg-on-surface transition-transform duration-fast',
             size === 'sm' && 'h-3 w-3 data-[state=checked]:translate-x-3.5',
             size === 'md' && 'h-4 w-4 data-[state=checked]:translate-x-4',
             size === 'lg' && 'h-5 w-5 data-[state=checked]:translate-x-5',
@@ -117,7 +117,7 @@ export function Select({
   return (
     <div className={clsx('space-y-1.5', className)}>
       {label && (
-        <div id={labelId} className="text-xs font-medium text-content-secondary">
+        <div id={labelId} className="text-body-sm font-medium text-on-surface-variant">
           {label}
         </div>
       )}
@@ -126,10 +126,10 @@ export function Select({
           aria-labelledby={label ? labelId : undefined}
           aria-label={!label ? (ariaLabel ?? placeholder) : undefined}
           className={clsx(
-            'flex w-full items-center justify-between gap-3 rounded-md border border-border bg-surface-sunken text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50',
-            size === 'sm' && 'px-2.5 py-1.5 text-xs',
-            size === 'md' && 'px-3 py-2 text-sm',
-            size === 'lg' && 'px-3.5 py-2.5 text-base',
+            'flex w-full items-center justify-between gap-3 rounded-md border border-outline bg-surface-container-lowest text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50',
+            size === 'sm' && 'px-2.5 py-1.5 text-body-sm',
+            size === 'md' && 'px-3 py-2 text-body-md',
+            size === 'lg' && 'px-3.5 py-2.5 text-body-lg',
           )}
         >
           <SelectPrimitive.Value placeholder={placeholder} />
@@ -141,7 +141,7 @@ export function Select({
           <SelectPrimitive.Content
             position="popper"
             sideOffset={6}
-            className={clsx('z-popover min-w-40 overflow-hidden p-1 text-content', overlaySurfaceClass)}
+            className={clsx('z-popover min-w-40 overflow-hidden p-1 text-on-surface', overlaySurfaceClass)}
           >
             <SelectPrimitive.Viewport>
               {options.map((option) => (
@@ -149,7 +149,7 @@ export function Select({
                   key={option.value}
                   value={option.value}
                   disabled={option.disabled}
-                  className="relative cursor-default select-none rounded px-7 py-1.5 text-sm outline-none data-[highlighted]:bg-surface-hover data-[disabled]:opacity-40"
+                  className="relative cursor-default select-none rounded px-7 py-1.5 text-body-md outline-none data-[highlighted]:bg-surface-container-high data-[disabled]:opacity-40"
                 >
                   <SelectPrimitive.ItemIndicator className="absolute left-2 inline-flex">
                     <Icon name="check" size="xs" />
@@ -175,8 +175,8 @@ export interface MenuItem {
 
 function menuItemClass(tone: MenuItem['tone']) {
   return clsx(
-    'cursor-default select-none rounded px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-surface-hover data-[disabled]:opacity-40',
-    tone === 'danger' ? 'text-status-danger' : 'text-content',
+    'cursor-default select-none rounded px-2 py-1.5 text-body-md outline-none data-[highlighted]:bg-surface-container-high data-[disabled]:opacity-40',
+    tone === 'danger' ? 'text-error' : 'text-on-surface',
   )
 }
 
@@ -343,20 +343,20 @@ export function Popover({
           }}
           aria-labelledby={label ? titleId : undefined}
           aria-describedby={description ? descriptionId : undefined}
-          className={clsx('z-popover w-72 p-4 text-content', overlaySurfaceClass, className)}
+          className={clsx('z-popover w-72 p-4 text-on-surface', overlaySurfaceClass, className)}
         >
           {label && (
-            <div id={titleId} className="mb-1 text-sm font-semibold">
+            <div id={titleId} className="mb-1 text-body-md font-semibold">
               {label}
             </div>
           )}
           {description && (
-            <div id={descriptionId} className="mb-3 text-xs text-content-secondary">
+            <div id={descriptionId} className="mb-3 text-body-sm text-on-surface-variant">
               {description}
             </div>
           )}
           {children}
-          <PopoverPrimitive.Arrow className="fill-surface-overlay" />
+          <PopoverPrimitive.Arrow className="fill-surface-container-high" />
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>
     </PopoverPrimitive.Root>
@@ -396,7 +396,7 @@ export function Tabs({
         aria-label={label}
         className={clsx(
           'flex gap-1',
-          orientation === 'horizontal' ? 'border-b border-border-subtle' : 'flex-col border-r border-border-subtle',
+          orientation === 'horizontal' ? 'border-b border-outline-variant' : 'flex-col border-r border-outline-variant',
         )}
       >
         {items.map((item) => (
@@ -404,7 +404,7 @@ export function Tabs({
             key={item.value}
             value={item.value}
             disabled={item.disabled}
-            className="border-b-2 border-transparent px-3 py-2 text-sm text-content-secondary outline-none data-[state=active]:border-accent data-[state=active]:text-content focus-visible:bg-surface-hover disabled:opacity-40"
+            className="border-b-2 border-transparent px-3 py-2 text-body-md text-on-surface-variant outline-none data-[state=active]:border-primary data-[state=active]:text-on-surface focus-visible:bg-surface-container-high disabled:opacity-40"
           >
             {item.label}
           </TabsPrimitive.Trigger>
@@ -486,7 +486,7 @@ export function Sheet({
         >
           <motion.div
             className={clsx(
-              'fixed inset-y-0 z-modal flex w-full flex-col overflow-hidden bg-surface-raised text-content shadow-overlay outline-none',
+              'fixed inset-y-0 z-modal flex w-full flex-col overflow-hidden bg-surface-container text-on-surface shadow-elev-3 outline-none',
               side === 'right' ? 'right-0' : 'left-0',
               size === 'sm' && 'sm:w-80',
               size === 'md' && 'sm:w-96',
@@ -498,12 +498,12 @@ export function Sheet({
             exit={{ opacity: 0, x: side === 'right' ? '100%' : '-100%' }}
             transition={transitions.enter}
           >
-            <header className="flex min-h-14 flex-none items-start border-b border-border-subtle px-4 py-3">
+            <header className="flex min-h-14 flex-none items-start border-b border-outline-variant px-4 py-3">
               <div className="min-w-0 pr-10">
                 {/* One size for one role: a drawer title is a dialog title. */}
-                <DialogPrimitive.Title className="text-title font-semibold">{title}</DialogPrimitive.Title>
+                <DialogPrimitive.Title className="text-title-lg font-semibold">{title}</DialogPrimitive.Title>
                 {description && (
-                  <DialogPrimitive.Description className="mt-1 text-xs text-content-secondary">
+                  <DialogPrimitive.Description className="mt-1 text-body-sm text-on-surface-variant">
                     {description}
                   </DialogPrimitive.Description>
                 )}
@@ -717,10 +717,10 @@ export function Combobox({
         setActiveIndex(-1)
       }}
     >
-      <label htmlFor={inputId} className="text-xs font-medium text-content-secondary">
+      <label htmlFor={inputId} className="text-body-sm font-medium text-on-surface-variant">
         {label}
         {required && (
-          <span className="ml-1 text-status-danger" aria-hidden="true">
+          <span className="ml-1 text-error" aria-hidden="true">
             *
           </span>
         )}
@@ -763,18 +763,18 @@ export function Combobox({
         }}
         onKeyDown={onKeyDown}
         className={clsx(
-          'w-full rounded-md border border-border bg-surface-sunken text-content placeholder:text-content-muted focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50',
-          error && 'border-status-danger focus:border-status-danger',
-          size === 'sm' && 'px-2.5 py-1.5 text-xs',
-          size === 'md' && 'px-3 py-2 text-sm',
-          size === 'lg' && 'px-3.5 py-2.5 text-base',
+          'w-full rounded-md border border-outline bg-surface-container-lowest text-on-surface placeholder:text-on-surface-variant focus:border-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-50',
+          error && 'border-error focus:border-error',
+          size === 'sm' && 'px-2.5 py-1.5 text-body-sm',
+          size === 'md' && 'px-3 py-2 text-body-md',
+          size === 'lg' && 'px-3.5 py-2.5 text-body-lg',
         )}
       />
       {(error || description) && (
         <p
           id={supportingTextId}
           role={error ? 'alert' : undefined}
-          className={clsx('text-xs', error ? 'text-status-danger' : 'text-content-muted')}
+          className={clsx('text-body-sm', error ? 'text-error' : 'text-on-surface-variant')}
         >
           {error ?? description}
         </p>
@@ -788,7 +788,7 @@ export function Combobox({
           {visibleFiltered.length === 0 ? (
             // An empty result that does not repeat what was typed makes the
             // person check whether the field even received it.
-            <p className="px-2 py-3 text-sm text-content-muted">
+            <p className="px-2 py-3 text-body-md text-on-surface-variant">
               {query.trim() ? `No matches for “${query.trim()}”. Try another search.` : 'Try another search'}
             </p>
           ) : (
@@ -799,8 +799,8 @@ export function Combobox({
                     <p
                       role="presentation"
                       className={clsx(
-                        'px-2 pb-1 pt-3 font-mono text-eyebrow font-medium uppercase first:pt-1',
-                        option.groupTone === 'accent' ? 'text-content-accent' : 'text-content-secondary',
+                        'px-2 pb-1 pt-3 text-label-sm font-medium first:pt-1',
+                        option.groupTone === 'accent' ? 'text-primary' : 'text-on-surface-variant',
                       )}
                     >
                       {option.group}
@@ -823,10 +823,10 @@ export function Combobox({
                     onClick={() => choose(option)}
                     data-active={index === resolvedActiveIndex ? 'true' : undefined}
                     className={clsx(
-                      'group flex w-full items-center gap-2 rounded-plane px-2 py-1.5 text-left text-row text-content-primary disabled:opacity-40',
+                      'group flex w-full items-center gap-2 rounded-full px-2 py-1.5 text-left text-title-md text-on-surface disabled:opacity-40',
                       index === resolvedActiveIndex
-                        ? 'mesh-combobox-option-active bg-accent text-content-on-accent'
-                        : 'hover:bg-surface-fill',
+                        ? 'mesh-combobox-option-active bg-primary text-on-primary'
+                        : 'hover:bg-state-hover',
                     )}
                   >
                     {/*
@@ -837,10 +837,10 @@ export function Combobox({
                     <span
                       aria-hidden="true"
                       className={clsx(
-                        'w-row-index flex-none font-mono text-count font-semibold',
+                        'w-row-index flex-none text-label-sm font-semibold',
                         index === resolvedActiveIndex
-                          ? 'text-content-on-accent'
-                          : 'text-content-secondary group-hover:text-content-primary',
+                          ? 'text-on-primary'
+                          : 'text-on-surface-variant group-hover:text-on-surface',
                       )}
                     >
                       {rowNumber(index)}
@@ -855,10 +855,10 @@ export function Combobox({
                       {option.subtitle ? (
                         <span
                           className={clsx(
-                            'block truncate text-support',
+                            'block truncate text-body-sm',
                             index === resolvedActiveIndex
-                              ? 'text-content-on-accent'
-                              : 'text-content-secondary',
+                              ? 'text-on-primary'
+                              : 'text-on-surface-variant',
                           )}
                         >
                           {option.subtitle}
@@ -869,7 +869,7 @@ export function Combobox({
                 </Fragment>
               ))}
               {resultsCapped ? (
-                <p role="status" className="px-2 py-2 text-xs text-content-muted">
+                <p role="status" className="px-2 py-2 text-body-sm text-on-surface-variant">
                   Showing the first {visibleFiltered.length} results. Type to narrow the list.
                 </p>
               ) : null}
@@ -960,7 +960,7 @@ export function Command({
             }}
           />
           {busyOption || note ? (
-            <p role="status" className="border-t border-rule border-border-structural py-2 font-mono text-eyebrow uppercase text-content-secondary">
+            <p role="status" className="border-t border-rule border-outline-variant py-2 text-label-sm text-on-surface-variant">
               {busyOption
                 ? busyValue?.startsWith('person:')
                   ? `Opening a conversation with ${busyOption.title ?? busyOption.label}…`
@@ -973,7 +973,7 @@ export function Command({
               the row numbers are in, so the band reads as one instrument rather
               than a dialog with a hint strip taped to the bottom.
             */
-            <p className="flex items-center gap-3 border-t border-rule border-border-structural py-2 font-mono text-eyebrow uppercase text-content-secondary">
+            <p className="flex items-center gap-3 border-t border-rule border-outline-variant py-2 text-label-sm text-on-surface-variant">
               <span>{'\u2191\u2193'} Move</span>
               <span aria-hidden="true">·</span>
               <span>{'\u23ce'} Open</span>

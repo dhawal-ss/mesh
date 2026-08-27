@@ -193,7 +193,7 @@ describe('VoiceDock', () => {
     expect(container.textContent).toContain('Listening')
 
     const rings = container.querySelectorAll<HTMLElement>('.mesh-voice-dock-participant > span:first-of-type')
-    expect(rings[0].className).toContain('bg-status-success')
+    expect(rings[0].className).toContain('bg-primary')
     expect(rings[1].className).toContain('bg-transparent')
   })
 

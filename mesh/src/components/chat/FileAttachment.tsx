@@ -35,7 +35,7 @@ export function FileAttachmentPreview({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -motionOffsets.tight }}
       transition={transitions.enter}
-      className="border-b border-border-subtle px-4 pb-3 pt-3"
+      className="border-b border-outline-variant px-4 pb-3 pt-3"
     >
       <div className="flex flex-wrap gap-2">
         <AnimatePresence>
@@ -53,20 +53,20 @@ export function FileAttachmentPreview({
                 initial={{ opacity: 0, scale: motionScales.recede }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: motionScales.recede }}
-                className="group relative flex items-center gap-2 rounded-control border border-border-subtle bg-surface-hover px-3 py-2 pr-8"
+                className="group relative flex items-center gap-2 rounded-full border border-outline-variant bg-surface-container-high px-3 py-2 pr-8"
               >
-                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-control bg-surface-active text-muted">
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-surface-container-highest text-on-surface-variant">
                   <FileIcon filename={file.name} />
                 </div>
                 <div className="min-w-0">
-                  <p className="max-w-attachment-name truncate text-xs font-medium text-primary">{file.name}</p>
+                  <p className="max-w-attachment-name truncate text-body-sm font-medium text-on-surface">{file.name}</p>
                   {transferFailed ? (
-                    <p role="alert" className="file-size flex items-start gap-1 text-caption text-status-danger">
+                    <p role="alert" className="file-size flex items-start gap-1 text-label-sm text-error">
                       <Icon name="triangleAlert" size="xs" className="mt-px flex-shrink-0" />
                       <span>Upload failed.</span>
                     </p>
                   ) : (
-                    <p className="file-size text-caption text-muted">
+                    <p className="file-size text-label-sm text-on-surface-variant">
                       {transfer
                         ? transfer.state === 'cancelled'
                           ? 'Upload cancelled.'
@@ -77,9 +77,9 @@ export function FileAttachmentPreview({
                     </p>
                   )}
                   {transferActive && (
-                    <div className="mt-1 h-1 overflow-hidden rounded-panel bg-surface-active">
+                    <div className="mt-1 h-1 overflow-hidden rounded-xl bg-surface-container-highest">
                       <div
-                        className="h-full rounded-panel bg-accent transition-[width] duration-normal"
+                        className="h-full rounded-xl bg-primary transition-[width] duration-normal"
                         data-design-token-exception="data-driven-transfer-progress-width"
                         style={{ width: `${progressPercent}%` }}
                       />
@@ -100,7 +100,7 @@ export function FileAttachmentPreview({
                         ? `Publishing ${file.name}`
                         : `Remove ${file.name}`
                   }
-                  className="absolute right-1.5 top-1.5 flex h-8 w-8 items-center justify-center rounded-control bg-surface-hover text-muted transition-colors hover:bg-surface-active hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                  className="absolute right-1.5 top-1.5 flex h-8 w-8 items-center justify-center rounded-full bg-surface-container-high text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                 >
                   <Icon name="x" size="xs" />
                 </button>

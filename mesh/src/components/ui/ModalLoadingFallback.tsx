@@ -19,12 +19,12 @@ export function ModalLoadingFallback({
         aria-label={label}
         aria-live="polite"
         className={clsx(
-          'mesh-modal-loading fixed left-1/2 top-1/2 z-modal min-h-32 w-11/12 -translate-x-1/2 -translate-y-1/2 rounded-panel border border-border-subtle bg-surface-raised text-sm text-content-muted shadow-overlay',
+          'mesh-modal-loading fixed left-1/2 top-1/2 z-modal min-h-32 w-11/12 -translate-x-1/2 -translate-y-1/2 rounded-xl border border-outline-variant bg-surface-container text-body-md text-on-surface-variant shadow-elev-3',
           modalSizeClasses[size],
         )}
       >
         {/* This stands in for a dialog title, so it is sized like one. */}
-        <span className="mesh-loading-title text-title font-semibold text-content">{title}</span>
+        <span className="mesh-loading-title text-title-lg font-semibold text-on-surface">{title}</span>
         <span className="mt-1 block">{label}…</span>
         <div className="mesh-loading-lines space-y-2" aria-hidden="true">
           <Skeleton className="h-8 w-full" />

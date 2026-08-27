@@ -118,10 +118,10 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
   return (
     <div className="space-y-8">
       <div className="space-y-2">
-        <p className="text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">
+        <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">
           {backendKind === 'matrix' ? 'Account setup' : 'Step 3 of 3'}
         </p>
-        <h1 className="text-lg font-semibold text-primary">
+        <h1 className="text-headline-md font-semibold text-on-surface">
           Getting things ready
         </h1>
       </div>
@@ -129,7 +129,7 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
       {isDone && !failure ? primaryAction : null}
 
       <motion.div
-        className="space-y-5 rounded-panel border border-border-subtle bg-surface-sunken p-5"
+        className="space-y-5 rounded-xl border border-outline-variant bg-surface-container-lowest p-5"
         initial={{ y: motionOffsets.subtle }}
         animate={{ y: 0 }}
         transition={transitions.enter}
@@ -141,19 +141,19 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
           aria-atomic="true"
         >
           <div className="space-y-1">
-            <p className="text-sm font-medium text-primary">{state.label}</p>
-            <p className="text-2xs lowercase tracking-eyebrow text-muted">
+            <p className="text-body-md font-medium text-on-surface">{state.label}</p>
+            <p className="text-label-sm lowercase tracking-label-md text-on-surface-variant">
               {state.phase === 'ready' ? 'Complete' : 'In progress'}
             </p>
           </div>
           <div className="text-right">
-            <p className="text-lg font-semibold text-primary">{state.progress}%</p>
-            <p className="text-2xs lowercase tracking-eyebrow text-muted">Setup</p>
+            <p className="text-headline-md font-semibold text-on-surface">{state.progress}%</p>
+            <p className="text-label-sm lowercase tracking-label-md text-on-surface-variant">Setup</p>
           </div>
         </div>
 
         <div
-          className="h-1 overflow-hidden rounded-panel bg-surface-hover"
+          className="h-1 overflow-hidden rounded-xl bg-surface-container-high"
           role="progressbar"
           aria-label="Mesh setup progress"
           aria-valuemin={0}
@@ -162,18 +162,18 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
           aria-valuetext={`${state.label}, ${state.progress}%`}
         >
           <motion.div
-            className="h-full w-full origin-left rounded-panel bg-accent"
+            className="h-full w-full origin-left rounded-xl bg-primary"
             animate={{ scaleX: Math.max(12, state.progress) / 100 }}
             transition={transitions.enter}
           />
         </div>
 
         {/* Bootstrap phases map one-to-one onto the three checklist rows. */}
-        <div className="grid gap-2 text-2xs lowercase tracking-eyebrow text-muted">
+        <div className="grid gap-2 text-label-sm lowercase tracking-label-md text-on-surface-variant">
           {['Signed in', 'Connected', 'Conversations ready'].map((item, index) => (
             <motion.div
               key={item}
-              className="flex items-center justify-between rounded-control bg-surface-hover px-3 py-2"
+              className="flex items-center justify-between rounded-full bg-surface-container-high px-3 py-2"
               initial={{ y: motionOffsets.tight }}
               animate={{ y: 0 }}
               transition={{ ...transitions.enter, delay: index * motionDurations.press }}
@@ -185,7 +185,7 @@ export function ReadyScreen({ backendKind = 'matrix', onComplete, onBootstrap, o
                 work had run. On a product whose whole pitch is trust, that is
                 fabricated reassurance. Each row now reflects real progress.
               */}
-              <span className={index < completedSteps ? 'text-primary' : 'text-muted'}>
+              <span className={index < completedSteps ? 'text-on-surface' : 'text-on-surface-variant'}>
                 {index < completedSteps
                   ? 'Done'
                   : index === completedSteps && !failure

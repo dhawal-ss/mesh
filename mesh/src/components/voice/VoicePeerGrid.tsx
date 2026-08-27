@@ -128,13 +128,13 @@ export function VoicePeerGrid({
   }, [onCloseRoster, rosterDrawerOpen])
 
   return (
-    <div className="relative flex min-h-0 flex-1 overflow-hidden bg-surface-canvas">
+    <div className="relative flex min-h-0 flex-1 overflow-hidden bg-surface">
       <section
         className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto p-3 sm:p-4"
         aria-label={`${channelName} call`}
       >
         {reconnecting ? (
-          <div className="mb-3 flex flex-none items-center gap-2 border border-container-warning-line bg-container-warning px-3 py-2 text-xs text-status-warning" role="status">
+          <div className="mb-3 flex flex-none items-center gap-2 border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-marker" role="status">
             <Icon name="refresh" size="sm" aria-hidden="true" />
             <span>
               <strong>Reconnecting to {channelName}.</strong>
@@ -152,8 +152,8 @@ export function VoicePeerGrid({
           <PartyFocus channelName={channelName} activeSpeaker={activeSpeaker} count={visiblePeers.length} />
         )}
 
-        <div className="mt-3 flex flex-none items-center justify-between border-t border-border-subtle pt-3 voice-wide:hidden">
-          <span className="text-xs text-content-muted">
+        <div className="mt-3 flex flex-none items-center justify-between border-t border-outline-variant pt-3 voice-wide:hidden">
+          <span className="text-body-sm text-on-surface-variant">
             {visiblePeers.length} {visiblePeers.length === 1 ? 'person' : 'people'} in call
           </span>
         </div>
@@ -317,12 +317,12 @@ function VoiceParticipantTile({
         of every tile is a second surface; a gradient is the media dimming into
         the ground it already sits on.
       */}
-      <figcaption className="mesh-media-scrim absolute inset-x-0 bottom-0 px-3 pb-2 pt-6 text-content-on-media-overlay">
+      <figcaption className="mesh-media-scrim absolute inset-x-0 bottom-0 px-3 pb-2 pt-6 text-on-media-overlay">
         <span className="min-w-0">
-          <span className="block truncate text-row font-semibold">
+          <span className="block truncate text-title-md font-semibold">
             {peer.displayName}{peer.isSelf ? ' (you)' : ''}
           </span>
-          <span className={`flex items-center gap-1 font-mono text-eyebrow uppercase ${speaking ? 'text-status-success' : 'text-content-on-media-overlay'}`}>
+          <span className={`flex items-center gap-1 text-label-sm ${speaking ? 'text-primary' : 'text-on-media-overlay'}`}>
             {muted ? <Icon name="micOff" size="xs" aria-hidden="true" /> : null}
             {previewImage || visibleVideo ? `Camera on · ${state}` : state}
           </span>
@@ -353,7 +353,7 @@ function VoiceMediaStage({
       initial={{ opacity: 0, y: motionOffsets.panel }}
       animate={{ opacity: 1, y: 0 }}
       transition={transitions.enter}
-      className="relative mx-auto flex aspect-video min-h-0 w-full max-w-6xl flex-none overflow-hidden border border-border-emphasis bg-surface-sunken"
+      className="relative mx-auto flex aspect-video min-h-0 w-full max-w-6xl flex-none overflow-hidden border border-outline bg-surface-container-lowest"
       aria-label={`${peer.displayName} ${screenSharing ? 'screen share' : 'camera'}`}
     >
       {previewImage ? (
@@ -371,16 +371,16 @@ function VoiceMediaStage({
           className={`h-full w-full ${screenSharing ? 'object-contain' : 'object-cover'}`}
         />
       )}
-      <figcaption className="mesh-media-scrim absolute inset-x-0 bottom-0 flex items-end justify-between px-4 pb-3 pt-8 text-content-on-media-overlay">
+      <figcaption className="mesh-media-scrim absolute inset-x-0 bottom-0 flex items-end justify-between px-4 pb-3 pt-8 text-on-media-overlay">
         <span>
-          <span className="block text-row font-semibold">{peer.displayName}</span>
-          <span className="flex items-center gap-1 font-mono text-eyebrow uppercase text-content-on-media-overlay">
+          <span className="block text-title-md font-semibold">{peer.displayName}</span>
+          <span className="flex items-center gap-1 text-label-sm text-on-media-overlay">
             {screenSharing ? <Icon name="screenShare" size="xs" aria-hidden="true" /> : null}
             {screenSharing ? 'Sharing screen' : 'Camera on'}
           </span>
         </span>
         {peer.speaking ? (
-          <span className="border-l border-trust border-status-success pl-3 font-mono text-chip font-semibold uppercase text-status-success">
+          <span className="border-l border-trust border-primary pl-3 text-label-md font-semibold text-primary">
             Speaking
           </span>
         ) : null}
@@ -399,10 +399,10 @@ function PartyFocus({
   count: number
 }) {
   return (
-    <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col items-center justify-center border-y border-border-subtle px-6 py-10 text-center">
+    <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col items-center justify-center border-y border-outline-variant px-6 py-10 text-center">
       {activeSpeaker ? (
         <>
-          <span className={`border p-1 ${activeSpeaker.speaking ? 'border-status-success' : 'border-border-emphasis'}`}>
+          <span className={`border p-1 ${activeSpeaker.speaking ? 'border-primary' : 'border-outline'}`}>
             <Avatar
               color={activeSpeaker.avatarColor}
               size={80}
@@ -410,13 +410,13 @@ function PartyFocus({
               imageUrl={activeSpeaker.avatarUrl}
             />
           </span>
-          <p className="mt-5 text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">
+          <p className="mt-5 text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">
             {activeSpeaker.speaking ? 'Speaking' : 'Call ready'}
           </p>
-          <h2 className="mt-2 text-lg font-semibold text-content">
+          <h2 className="mt-2 text-headline-md font-semibold text-on-surface">
             {activeSpeaker.speaking ? `${activeSpeaker.displayName} is talking` : channelName}
           </h2>
-          <p className="mt-2 max-w-md text-sm text-content-secondary">
+          <p className="mt-2 max-w-md text-body-md text-on-surface-variant">
             {count === 1
               ? 'You are first in.'
               : `${count} people are here.`}
@@ -424,9 +424,9 @@ function PartyFocus({
         </>
       ) : (
         <>
-          <Icon name="volume" size="lg" className="text-accent" aria-hidden="true" />
-          <h2 className="mt-4 text-lg font-semibold text-content">Call ready</h2>
-          <p className="mt-2 max-w-md text-sm text-content-secondary">
+          <Icon name="volume" size="lg" className="text-primary" aria-hidden="true" />
+          <h2 className="mt-4 text-headline-md font-semibold text-on-surface">Call ready</h2>
+          <p className="mt-2 max-w-md text-body-md text-on-surface-variant">
             You are first in {channelName}.
           </p>
         </>
@@ -460,16 +460,16 @@ function PartyRoster({
     <aside
       ref={containerRef}
       id={id}
-      className={`${className} min-h-0 flex-col border-l border-border-subtle bg-surface-base`}
+      className={`${className} min-h-0 flex-col border-l border-outline-variant bg-surface`}
       aria-label={`People in ${channelName}`}
       role={modal ? 'dialog' : undefined}
       aria-modal={modal || undefined}
       tabIndex={modal ? -1 : undefined}
     >
-      <header className="flex h-14 flex-none items-center justify-between border-b border-border-subtle px-4">
+      <header className="flex h-14 flex-none items-center justify-between border-b border-outline-variant px-4">
         <span>
-          <span className="block text-sm font-semibold text-content">In the call</span>
-          <span className="block text-caption text-content-muted">
+          <span className="block text-body-md font-semibold text-on-surface">In the call</span>
+          <span className="block text-label-sm text-on-surface-variant">
             {peers.length} {peers.length === 1 ? 'person' : 'people'}
           </span>
         </span>
@@ -477,7 +477,7 @@ function PartyRoster({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center text-content-muted hover:bg-surface-hover hover:text-content"
+            className="flex h-9 w-9 items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
             aria-label="Close people list"
           >
             <Icon name="x" size="sm" />
@@ -530,7 +530,7 @@ function PartyParticipant({
     /* The bar gutter is reserved on every row, so a row does not indent itself
        by its own bar width the moment its occupant starts talking. */
     <div
-      className="group flex gap-3 border-b border-rule border-border-row px-shell-gutter py-3"
+      className="group flex gap-3 border-b border-rule border-outline-variant px-shell-gutter py-3"
       aria-label={`${peer.displayName}, ${accessibleState}`}
     >
       {/*
@@ -552,22 +552,22 @@ function PartyParticipant({
           imageUrl={peer.avatarUrl}
         />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-row font-semibold text-content-primary">
+          <span className="block truncate text-title-md font-semibold text-on-surface">
             {peer.displayName}{peer.isSelf ? ' (you)' : ''}
           </span>
-          <span className={`flex items-center gap-1 font-mono text-eyebrow uppercase ${speaking ? 'text-status-success' : 'text-content-secondary'}`}>
+          <span className={`flex items-center gap-1 text-label-sm ${speaking ? 'text-primary' : 'text-on-surface-variant'}`}>
             {sharingScreen ? <Icon name="screenShare" size="xs" aria-hidden="true" /> : null}
             {sharingScreen ? `sharing screen · ${state}` : state}
           </span>
         </span>
-        {muted ? <Icon name="micOff" size="sm" className="text-status-warning" aria-hidden="true" /> : null}
+        {muted ? <Icon name="micOff" size="sm" className="text-marker" aria-hidden="true" /> : null}
       </div>
       {!peer.isSelf ? (
         /* Capped at 100: playback runs through the session sink's audio
            elements, whose gain cannot exceed 1.0, so a range above that would
            be a label that climbs while the level stays fixed. Boost needs a
            Web Audio gain graph before the range can honestly widen. */
-        <label className="mesh-participant-volume mt-2 flex items-center gap-2 font-mono text-eyebrow uppercase text-content-secondary opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        <label className="mesh-participant-volume mt-2 flex items-center gap-2 text-label-sm text-on-surface-variant opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
           <span>Volume</span>
           <input
             type="range"

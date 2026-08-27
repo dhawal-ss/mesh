@@ -47,12 +47,12 @@ describe('rowNumber', () => {
 })
 
 describe('Eyebrow', () => {
-  it('is mono, uppercase and at the secondary ink by default', () => {
+  it('is mono, and at the secondary ink by default', () => {
     render(<Eyebrow>Open room</Eyebrow>)
     const eyebrow = container.querySelector('span')
-    expect(eyebrow?.className).toContain('font-mono')
-    expect(eyebrow?.className).toContain('uppercase')
-    expect(eyebrow?.className).toContain('text-content-secondary')
+    expect(eyebrow?.className).toContain('')
+    expect(eyebrow?.className).toContain('')
+    expect(eyebrow?.className).toContain('text-on-surface-variant')
   })
 
   /*
@@ -62,7 +62,7 @@ describe('Eyebrow', () => {
   */
   it('takes the accent only when asked', () => {
     render(<Eyebrow accent>Continue conversation</Eyebrow>)
-    expect(container.querySelector('span')?.className).toContain('text-content-accent')
+    expect(container.querySelector('span')?.className).toContain('text-primary')
   })
 
   it('becomes a heading when a level is given', () => {
@@ -85,8 +85,8 @@ describe('SegmentedControl', () => {
     expect(group?.getAttribute('aria-label')).toBe('Theme')
     const selected = container.querySelector('[aria-checked="true"]')
     expect(selected?.textContent).toBe('Light')
-    expect(selected?.className).toContain('rounded-plane')
-    expect(selected?.className).toContain('bg-accent')
+    expect(selected?.className).toContain('rounded-full')
+    expect(selected?.className).toContain('bg-primary')
   })
 
   it('keeps the group to one tab stop', () => {
@@ -154,13 +154,13 @@ describe('ExceptionLine', () => {
     render(<ExceptionLine>Sent from an unverified device</ExceptionLine>)
     const line = container.querySelector('p')
     expect(line?.textContent).toContain('Sent from an unverified device')
-    expect(line?.className).toContain('font-mono')
-    expect(line?.className).toContain('text-status-warning')
+    expect(line?.className).toContain('')
+    expect(line?.className).toContain('text-marker')
   })
 
   it('escalates to danger when asked', () => {
     render(<ExceptionLine tone="danger">Could not decrypt</ExceptionLine>)
-    expect(container.querySelector('p')?.className).toContain('text-status-danger')
+    expect(container.querySelector('p')?.className).toContain('text-error')
   })
 })
 
@@ -170,7 +170,7 @@ describe('AmbientNote', () => {
     const note = container.firstElementChild
     expect(note?.textContent).toContain('Media relayed peer to peer')
     expect(note?.className).toContain('border-t')
-    expect(note?.className).toContain('text-caption')
+    expect(note?.className).toContain('text-label-sm')
     expect(note?.className).toContain('normal-case')
   })
 

@@ -41,7 +41,7 @@ export const MarkdownContent = memo(function MarkdownContent({
 
   return (
     <div
-      className={`markdown-content break-words whitespace-pre-wrap text-base leading-prose text-content-primary ${className}`}
+      className={`markdown-content break-words whitespace-pre-wrap text-body-lg leading-prose text-on-surface ${className}`}
     >
       {rendered}
     </div>
@@ -54,7 +54,7 @@ type InlineNode = string | React.ReactElement
  * A fenced code block.
  *
  * Two things were wrong with the plain `<pre>` this replaces. The content was
- * rendered in `text-secondary`, a muted foreground, for the one kind of content
+ * rendered in `text-on-surface-variant`, a muted foreground, for the one kind of content
  * a reader most needs to read precisely. And there was no way to copy it: no
  * clipboard path existed anywhere in the chat surface for code, while manual
  * selection is fragile inside the virtualizer, because scrolling mid-drag
@@ -75,19 +75,19 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
 
   return (
     <div className="group/code relative my-1">
-      <pre className="overflow-x-auto rounded-panel border border-border bg-surface-sunken p-3 font-mono text-code text-content-primary">
+      <pre className="overflow-x-auto rounded-xl border border-outline bg-surface-container-lowest p-3 font-code text-body-md text-on-surface">
         <code data-lang={language || undefined}>{code}</code>
       </pre>
       <div className="absolute right-1.5 top-1.5 flex items-center gap-1.5">
         {language ? (
-          <span aria-hidden="true" className="font-mono text-meta text-muted">{language}</span>
+          <span aria-hidden="true" className="font-code text-body-sm text-on-surface-variant">{language}</span>
         ) : null}
         <button
           type="button"
           onClick={() => {
             void copyText(code).then(() => setCopied(true)).catch(() => setCopied(false))
           }}
-          className="rounded-control border border-border-subtle bg-surface-raised px-1.5 py-0.5 text-meta text-secondary opacity-0 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus group-hover/code:opacity-100"
+          className="rounded-full border border-outline-variant bg-surface-container px-1.5 py-0.5 text-body-sm text-on-surface-variant opacity-0 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus group-hover/code:opacity-100"
         >
           {copied ? 'Copied' : 'Copy'}
         </button>
@@ -108,10 +108,10 @@ function Spoiler({ children }: { children: ReactNode }) {
       type="button"
       aria-expanded={revealed}
       onClick={() => setRevealed((current) => !current)}
-      className={`inline rounded-control px-1 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
+      className={`inline rounded-full px-1 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
         revealed
-          ? 'bg-surface-sunken text-secondary'
-          : 'bg-content text-transparent hover:bg-content/80'
+          ? 'bg-surface-container-lowest text-on-surface-variant'
+          : 'bg-on-surface text-transparent hover:bg-on-surface/80'
       }`}
     >
       {/* The prompt must be part of the button's own content, not an aria-label:
@@ -159,16 +159,16 @@ function parseMarkdown(text: string, mentionOptions: MentionRenderOptions): Reac
       const level = Math.min(6, heading[1].length + 1)
       const tag = `h${level}` as keyof React.JSX.IntrinsicElements
       // A heading inside a message must stay quieter than the room title: the
-      // ladder runs 18/15/14 from the closed scale, not 22px. `text-body` was
+      // ladder runs 18/15/14 from the closed scale, not 22px. `text-body-md` was
       // never a defined utility, so the middle step silently rendered at the
       // inherited size.
       // Each step already carries its contracted line height, so no `leading-*`
       // is layered on top of it here.
       const headingClass = level === 2
-        ? 'my-1 text-md font-semibold text-content-primary'
+        ? 'my-1 text-title-sm font-semibold text-on-surface'
         : level === 3
-          ? 'my-1 text-base font-semibold text-content-primary'
-          : 'my-1 text-sm font-semibold text-content-primary'
+          ? 'my-1 text-body-lg font-semibold text-on-surface'
+          : 'my-1 text-body-md font-semibold text-on-surface'
       elements.push(React.createElement(
         tag,
         { key: `heading-${i}`, className: headingClass },
@@ -188,7 +188,7 @@ function parseMarkdown(text: string, mentionOptions: MentionRenderOptions): Reac
       elements.push(
         <blockquote
           key={`quote-${quoteStart}`}
-          className="my-1 border-l-2 border-border-strong pl-3 text-muted"
+          className="my-1 border-l-2 border-outline pl-3 text-on-surface-variant"
         >
           {parseMarkdown(quoteLines.join('\n'), mentionOptions)}
         </blockquote>,
@@ -348,19 +348,19 @@ function parseInline(
     if (match[1]) {
       const code = match[1].slice(1, -1)
       nodes.push(
-        <code key={key} className="rounded-control bg-surface-sunken px-1 py-0.5 font-mono text-code">
+        <code key={key} className="rounded-full bg-surface-container-lowest px-1 py-0.5 font-code text-body-md">
           {code}
         </code>,
       )
     } else if (match[2]) {
       nodes.push(
-        <strong key={key} className="font-semibold text-primary">
+        <strong key={key} className="font-semibold text-on-surface">
           {match[2].slice(2, -2)}
         </strong>,
       )
     } else if (match[3]) {
       nodes.push(
-        <del key={key} className="text-muted line-through">
+        <del key={key} className="text-on-surface-variant line-through">
           {match[3].slice(2, -2)}
         </del>,
       )
@@ -380,7 +380,7 @@ function parseInline(
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-text-link underline underline-offset-2"
+            className="text-primary underline underline-offset-2"
           >
             {linkText}
           </a>,
@@ -400,7 +400,7 @@ function parseInline(
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-text-link underline underline-offset-2"
+            className="text-primary underline underline-offset-2"
           >
             {url}
           </a>,
@@ -443,8 +443,8 @@ function parseInline(
             data-mention-id={!isRoomWide ? mentionId : undefined}
             data-mention-kind={isRoomWide ? 'room-wide' : 'user'}
             className={isSelf
-              ? 'inline-flex rounded-panel border border-container-accent-line bg-container-accent-active px-1.5 py-0.5 font-medium text-accent'
-              : 'inline-flex rounded-panel bg-container-accent px-1.5 py-0.5 font-medium text-accent hover:bg-container-accent-hover'}
+              ? 'inline-flex rounded-xl border border-primary-container-line bg-primary-container-active px-1.5 py-0.5 font-medium text-primary'
+              : 'inline-flex rounded-xl bg-primary-container px-1.5 py-0.5 font-medium text-primary hover:bg-primary-container-hover'}
           >
             {label}
           </span>,

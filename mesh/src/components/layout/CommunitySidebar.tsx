@@ -218,7 +218,7 @@ export function CommunitySidebar() {
         ) : null}
 
         {communities.length > 0 && (
-          <div className="mx-auto my-1 h-rail-separator w-7 bg-surface-active" />
+          <div className="mx-auto my-1 h-rail-separator w-7 bg-surface-container-highest" />
         )}
 
         {communities.map((c) => (
@@ -361,15 +361,15 @@ function RailAction({
           data-mesh-rail-action={railActionKey}
           aria-label={accessibleLabel}
           aria-current={active ? 'page' : undefined}
-          className={`mesh-rail-action group flex h-12 w-12 flex-col items-center justify-center rounded-control text-meta transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
-            active ? 'text-accent' : 'text-muted hover:text-primary'
+          className={`mesh-rail-action group flex h-12 w-12 flex-col items-center justify-center rounded-full text-body-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
+            active ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface'
           }`}
         >
           <span
-            className={`mesh-rail-action-icon flex h-10 w-10 items-center justify-center rounded-community border transition-all duration-normal ${
+            className={`mesh-rail-action-icon flex h-10 w-10 items-center justify-center rounded-round border transition-all duration-normal ${
               active
-                ? 'rounded-community-active border-container-accent-line bg-container-accent text-on-container-accent'
-                : 'border-transparent bg-surface-sunken group-hover:rounded-community-active group-hover:border-border-subtle group-hover:bg-surface-hover'
+                ? 'rounded-lg border-primary-container-line bg-primary-container text-on-primary-container'
+                : 'border-transparent bg-surface-container-lowest group-hover:rounded-lg group-hover:border-outline-variant group-hover:bg-surface-container-high'
             }`}
           >
             <Icon name={icon} size="md" />

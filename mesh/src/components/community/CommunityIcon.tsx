@@ -199,8 +199,8 @@ export function CommunityIcon({
             aria-current={active ? 'true' : undefined}
             className={`group relative flex h-12 w-12 items-center justify-center overflow-hidden border transition-all duration-normal focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
               active
-                ? 'rounded-community-active border-container-accent-line bg-accent'
-                : 'rounded-community border-border-subtle bg-surface-sunken hover:rounded-community-active hover:border-border-emphasis hover:bg-surface-hover'
+                ? 'rounded-lg border-primary-container-line bg-primary'
+                : 'rounded-round border-outline-variant bg-surface-container-lowest hover:rounded-lg hover:border-outline hover:bg-surface-container-high'
             }`}
           >
             <Avatar
@@ -217,7 +217,7 @@ export function CommunityIcon({
           <span
             data-rail-mention
             aria-hidden="true"
-            className="absolute -bottom-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-round border border-surface-rail bg-status-danger px-1 text-meta font-semibold text-content-on-status"
+            className="absolute -bottom-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-round border border-surface-container-lowest bg-error px-1 text-body-sm font-semibold text-on-error"
           >
             {mentionCount > 99 ? '99+' : mentionCount}
           </span>
@@ -234,7 +234,7 @@ export function CommunityIcon({
           <span
             data-rail-live
             aria-hidden="true"
-            className="pointer-events-none absolute bottom-0 left-1 right-1 h-0.5 bg-status-success"
+            className="pointer-events-none absolute bottom-0 left-1 right-1 h-0.5 bg-primary"
           />
         )}
         <DropdownMenu
@@ -244,7 +244,7 @@ export function CommunityIcon({
             <button
               type="button"
               tabIndex={-1}
-              className="absolute -right-1 -top-1 z-sticky flex h-6 w-6 items-center justify-center rounded-control border border-border bg-surface-overlay text-content-muted opacity-0 transition-opacity hover:text-content group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="absolute -right-1 -top-1 z-sticky flex h-6 w-6 items-center justify-center rounded-full border border-outline bg-surface-container-high text-on-surface-variant opacity-0 transition-opacity hover:text-on-surface group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               aria-label={`More actions for ${community.name}`}
             >
               <Icon name="ellipsis" size="xs" />

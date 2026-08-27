@@ -66,7 +66,7 @@ export function EventView({
       aria-label={`Plan for #${channelName}`}
     >
       <div className="mx-auto w-full max-w-measure">
-        <p className="font-mono text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">
+        <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">
           the plan
         </p>
         {/*
@@ -77,16 +77,16 @@ export function EventView({
         */}
         <h2
           data-event-name
-          className="mt-1 border-b-bar border-border-strong pb-2 text-display-lg text-primary"
+          className="mt-1 border-b-bar border-outline pb-2 text-display-lg text-on-surface"
         >
           #{channelName}
         </h2>
 
-        <p data-event-plan className="mt-4 whitespace-pre-wrap text-lg text-primary">
+        <p data-event-plan className="mt-4 whitespace-pre-wrap text-headline-md text-on-surface">
           {plan.content}
         </p>
 
-        <p className="mt-2 flex flex-wrap items-center gap-2 font-mono text-meta text-muted">
+        <p className="mt-2 flex flex-wrap items-center gap-2 text-body-sm text-on-surface-variant">
           <span>{plan.authorDisplayName}</span>
           <span aria-hidden="true">·</span>
           <MessageTime value={plan.timestamp} variant="full" />
@@ -95,7 +95,7 @@ export function EventView({
             type="button"
             data-event-open-plan
             onClick={() => onOpenPlan(plan.id)}
-            className="rounded-panel text-content-link underline underline-offset-2 hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+            className="rounded-xl text-primary underline underline-offset-2 hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
           >
             Open in the conversation
           </button>
@@ -119,25 +119,25 @@ export function EventView({
                   colour alone: `aria-pressed` names it, the leading bar shows
                   it without hue, and the fill is the third cue.
                 */
-                className={`flex min-h-9 items-center gap-2 rounded-panel border border-border-control px-3 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
+                className={`flex min-h-9 items-center gap-2 rounded-xl border border-outline px-3 text-body-md font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
                   chosen
-                    ? 'border-l-bar border-l-accent bg-surface-selected text-primary'
-                    : 'border-l-bar border-l-transparent text-secondary hover:bg-surface-hover hover:text-primary'
+                    ? 'border-l-bar border-l-primary bg-secondary-container text-on-surface'
+                    : 'border-l-bar border-l-transparent text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
                 }`}
               >
                 <span aria-hidden="true">{reply.emoji}</span>
                 <span>{reply.label}</span>
-                <span className="font-mono text-meta text-muted">{rsvp[reply.id].length}</span>
+                <span className="text-body-sm text-on-surface-variant">{rsvp[reply.id].length}</span>
               </button>
             )
           })}
         </div>
 
         {rsvp.total > 0 && (
-          <div data-event-roster className="mt-6 border-t border-border-subtle pt-4">
+          <div data-event-roster className="mt-6 border-t border-outline-variant pt-4">
             {RSVP_REPLIES.filter((reply) => rsvp[reply.id].length > 0).map((reply) => (
               <section key={reply.id} className="mb-4 last:mb-0">
-                <h3 className="font-mono text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">
+                <h3 className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">
                   {reply.label} · {rsvp[reply.id].length}
                 </h3>
                 <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
@@ -149,7 +149,7 @@ export function EventView({
                         size={24}
                         name={memberNames[userId] ?? userId}
                       />
-                      <span className="truncate text-sm text-secondary">
+                      <span className="truncate text-body-md text-on-surface-variant">
                         {memberNames[userId] ?? userId}
                       </span>
                     </li>

@@ -843,7 +843,7 @@ describe('SecurityDevicesPanel', () => {
         (heading) => heading.textContent?.trim() === label,
       )
       expect(group).toBeDefined()
-      expect(group?.className).toContain('text-md')
+      expect(group?.className).toContain('text-title-sm')
     }
     expect(document.body.querySelector('h2')?.textContent).toBe('Your devices')
   })
@@ -859,14 +859,14 @@ describe('SecurityDevicesPanel', () => {
 
     const frame = document.body.querySelector('#embedded-security-devices-heading')
     expect(frame?.tagName).toBe('H3')
-    expect(frame?.className).toContain('text-md')
+    expect(frame?.className).toContain('text-title-sm')
 
     for (const label of ['This device', 'Message backup', 'Your personal data']) {
       const group = [...document.body.querySelectorAll('h4')].find(
         (heading) => heading.textContent?.trim() === label,
       )
       expect(group).toBeDefined()
-      expect(group?.className).toContain('text-base')
+      expect(group?.className).toContain('text-body-lg')
     }
     expect(document.body.querySelector('h2')).toBeNull()
   })

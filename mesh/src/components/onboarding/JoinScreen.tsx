@@ -60,14 +60,14 @@ export function JoinScreen({
   return (
     <form className="space-y-8" onSubmit={handleSubmit}>
       <div className="space-y-2">
-        <p className="text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">Step 2 of 3</p>
-        <h1 className="text-lg font-semibold text-primary">
+        <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">Step 2 of 3</p>
+        <h1 className="text-headline-md font-semibold text-on-surface">
           Set your profile
         </h1>
       </div>
 
       <motion.div
-        className="space-y-6 rounded-panel border border-border-subtle bg-surface-sunken p-5"
+        className="space-y-6 rounded-xl border border-outline-variant bg-surface-container-lowest p-5"
         initial={{ opacity: 0, y: motionOffsets.subtle }}
         animate={{ opacity: 1, y: 0 }}
         transition={transitions.enter}
@@ -75,8 +75,8 @@ export function JoinScreen({
         <div className="flex items-center gap-4">
           <Avatar color={avatarColor} size={72} name={displayName || 'Me'} />
           <div className="space-y-1">
-            <p className="text-sm font-medium text-primary">{displayName || 'Your name'}</p>
-            <p className="text-2xs lowercase tracking-eyebrow text-muted">Local profile</p>
+            <p className="text-body-md font-medium text-on-surface">{displayName || 'Your name'}</p>
+            <p className="text-label-sm lowercase tracking-label-md text-on-surface-variant">Local profile</p>
           </div>
         </div>
 
@@ -90,7 +90,7 @@ export function JoinScreen({
         />
 
         <div className="space-y-3">
-          <label className="text-2xs lowercase tracking-eyebrow text-muted">Default pixel profile</label>
+          <label className="text-label-sm lowercase tracking-label-md text-on-surface-variant">Default pixel profile</label>
           <div className="grid grid-cols-5 gap-2">
             {palette.map((color) => {
               const selected = avatarColor === color
@@ -100,10 +100,10 @@ export function JoinScreen({
                   type="button"
                   onClick={() => setAvatarColor(color)}
                   className={clsx(
-                    'mesh-profile-choice flex h-11 items-center justify-center rounded-control border bg-surface-sunken transition-[border-color,transform,box-shadow] duration-fast',
+                    'mesh-profile-choice flex h-11 items-center justify-center rounded-full border bg-surface-container-lowest transition-[border-color,transform,box-shadow] duration-fast',
                     selected
-                      ? 'border-accent ring-2 ring-container-accent-line'
-                      : 'border-border-subtle hover:-translate-y-px hover:border-border-emphasis'
+                      ? 'border-primary ring-2 ring-primary-container-line'
+                      : 'border-outline-variant hover:-translate-y-px hover:border-outline'
                   )}
                   style={{ color }}
                   aria-label={`Select avatar color ${color}`}
@@ -117,7 +117,7 @@ export function JoinScreen({
       </motion.div>
 
       {error && (
-        <p className="flex items-start gap-2 text-sm text-status-danger" role="alert">
+        <p className="flex items-start gap-2 text-body-md text-error" role="alert">
           <Icon name="triangleAlert" size="sm" className="mt-0.5 flex-shrink-0" />
           <span>{error}</span>
         </p>

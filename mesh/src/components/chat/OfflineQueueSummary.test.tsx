@@ -37,7 +37,7 @@ describe('OfflineQueueSummary', () => {
 
     expect(container.textContent).toContain('1 message could not be sent')
     // The warning is a persistent visible strip, not only an sr-only region.
-    expect(container.querySelector('.bg-container-danger')?.textContent)
+    expect(container.querySelector('.bg-error-container')?.textContent)
       .toContain('1 message could not be sent.')
 
     const alert = container.querySelector('[role="alert"]')

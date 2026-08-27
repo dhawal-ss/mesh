@@ -510,7 +510,7 @@ export function CommunitySettings({
             id="community-settings-summary"
             tabIndex={-1}
             aria-labelledby="community-settings-summary-heading"
-            className="mb-3 scroll-mt-4 rounded-panel border border-border-subtle bg-surface-raised p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+            className="mb-3 scroll-mt-4 rounded-xl border border-outline-variant bg-surface-container p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
           >
             <div className="flex items-start gap-4">
               <Avatar
@@ -521,15 +521,15 @@ export function CommunitySettings({
                 variant="community"
               />
               <div className="min-w-0 flex-1">
-                <p className="text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">Community profile</p>
-                <h3 id="community-settings-summary-heading" className="mt-1 truncate text-md font-semibold text-primary">{community.name}</h3>
-                <p className="member-count mt-1 text-xs text-muted">
+                <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">Community profile</p>
+                <h3 id="community-settings-summary-heading" className="mt-1 truncate text-title-sm font-semibold text-on-surface">{community.name}</h3>
+                <p className="member-count mt-1 text-body-sm text-on-surface-variant">
                   {communityRoleLabel} · {community.memberCount} member{community.memberCount !== 1 ? 's' : ''}
                 </p>
               </div>
             </div>
             {community.description && (
-              <p className="mt-2 max-w-2xl text-sm text-secondary">{community.description}</p>
+              <p className="mt-2 max-w-2xl text-body-md text-on-surface-variant">{community.description}</p>
             )}
 
             <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -539,28 +539,28 @@ export function CommunitySettings({
                 nested outlines to show two facts. The sunken tint against the
                 raised card is the separation; the border was the level to lose.
               */}
-              <div className="rounded-control bg-surface-sunken px-3 py-2">
-                <div className="flex items-center gap-2 text-accent">
+              <div className="rounded-full bg-surface-container-lowest px-3 py-2">
+                <div className="flex items-center gap-2 text-primary">
                   <Icon name="shieldCheck" size="sm" />
-                  <span className="text-caption font-semibold lowercase tracking-eyebrow">Your role</span>
+                  <span className="text-label-sm font-semibold lowercase tracking-label-md">Your role</span>
                 </div>
-                <p className="mt-1.5 text-sm font-semibold text-primary">{communityRoleLabel}</p>
+                <p className="mt-1.5 text-body-md font-semibold text-on-surface">{communityRoleLabel}</p>
               </div>
-              <div className="rounded-control bg-surface-sunken px-3 py-2">
-                <div className="flex items-center gap-2 text-accent">
+              <div className="rounded-full bg-surface-container-lowest px-3 py-2">
+                <div className="flex items-center gap-2 text-primary">
                   <Icon name="users" size="sm" />
-                  <span className="text-caption font-semibold lowercase tracking-eyebrow">People</span>
+                  <span className="text-label-sm font-semibold lowercase tracking-label-md">People</span>
                 </div>
-                <p className="mt-1.5 text-sm font-semibold text-primary">
+                <p className="mt-1.5 text-body-md font-semibold text-on-surface">
                   {community.memberCount} member{community.memberCount !== 1 ? 's' : ''}
                 </p>
               </div>
-              <div className="rounded-control bg-surface-sunken px-3 py-2">
-                <div className="flex items-center gap-2 text-accent">
+              <div className="rounded-full bg-surface-container-lowest px-3 py-2">
+                <div className="flex items-center gap-2 text-primary">
                   <Icon name="activity" size="sm" />
-                  <span className="text-caption font-semibold lowercase tracking-eyebrow">Community service</span>
+                  <span className="text-label-sm font-semibold lowercase tracking-label-md">Community service</span>
                 </div>
-                <p className="mt-1.5 truncate text-sm font-semibold text-primary">{communityService}</p>
+                <p className="mt-1.5 truncate text-body-md font-semibold text-on-surface">{communityService}</p>
               </div>
             </div>
 
@@ -582,7 +582,7 @@ export function CommunitySettings({
             </Button>
           </section>}
 
-          {!embedded && <div className="mb-6 rounded-panel border border-border-subtle bg-surface-sunken p-3">
+          {!embedded && <div className="mb-6 rounded-xl border border-outline-variant bg-surface-container-lowest p-3">
             <Input
               id="community-settings-section-search"
               label="Find a settings section"
@@ -605,7 +605,7 @@ export function CommunitySettings({
               ))}
             </nav>
             {visibleSettingsSections.length === 0 && (
-              <p role="status" className="mt-3 text-xs text-muted">
+              <p role="status" className="mt-3 text-body-sm text-on-surface-variant">
                 Try a different settings search.
               </p>
             )}
@@ -616,22 +616,22 @@ export function CommunitySettings({
               id="community-settings-overview"
               tabIndex={-1}
               aria-labelledby="community-settings-overview-heading"
-              className="mb-6 scroll-mt-4 rounded-panel border border-border-subtle bg-surface-sunken focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="mb-6 scroll-mt-4 rounded-xl border border-outline-variant bg-surface-container-lowest focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             >
-              <div className="flex flex-col items-stretch gap-3 border-b border-border-subtle px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+              <div className="flex flex-col items-stretch gap-3 border-b border-outline-variant px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                 <div className="flex min-w-0 items-start gap-3">
-                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-control bg-container-accent text-accent">
+                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-primary-container text-primary">
                     <Icon name="squarePen" size="sm" />
                   </div>
                   <div>
-                    <h3 id="community-settings-overview-heading" className="text-md font-semibold text-primary">Public details</h3>
+                    <h3 id="community-settings-overview-heading" className="text-title-sm font-semibold text-on-surface">Public details</h3>
                   </div>
                 </div>
                 <div
-                  className={`flex flex-shrink-0 self-start items-center gap-1.5 rounded-control border px-2.5 py-1 text-xs font-semibold ${
+                  className={`flex flex-shrink-0 self-start items-center gap-1.5 rounded-full border px-2.5 py-1 text-body-sm font-semibold ${
                     metadataDirty
-                      ? 'border-container-accent-line bg-container-accent text-accent'
-                      : 'border-border-subtle bg-surface-raised text-muted'
+                      ? 'border-primary-container-line bg-primary-container text-primary'
+                      : 'border-outline-variant bg-surface-container text-on-surface-variant'
                   }`}
                 >
                   <Icon name={metadataDirty ? 'squarePen' : 'check'} size="xs" />
@@ -641,8 +641,8 @@ export function CommunitySettings({
 
               <div className="space-y-3 p-3">
                 {matrixMode && (
-                  <div className="space-y-2 border-b border-border-subtle pb-3">
-                    <p className="text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">
+                  <div className="space-y-2 border-b border-outline-variant pb-3">
+                    <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">
                       Community image
                     </p>
                     <div className="flex flex-wrap items-center gap-3">
@@ -695,11 +695,11 @@ export function CommunitySettings({
                       the moment it matters. Same split as the personal profile
                       picture.
                     */}
-                    <p className="text-xs text-muted">
+                    <p className="text-body-sm text-on-surface-variant">
                       PNG, JPEG or WebP up to 1 MB. Everyone who can see this community can see the image.
                     </p>
                     {iconNotice ? (
-                      <p role="status" className="flex items-center gap-2 text-xs text-status-success">
+                      <p role="status" className="flex items-center gap-2 text-body-sm text-primary">
                         <Icon name="check" size="xs" />
                         {iconNotice}
                       </p>
@@ -754,10 +754,10 @@ export function CommunitySettings({
                 </Field>
               </div>
 
-              <div className="sticky bottom-0 z-sticky flex min-h-12 flex-col items-stretch gap-2 border-t border-border-subtle bg-surface-raised px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                <div className="min-w-0 text-xs text-muted" aria-live="polite">
+              <div className="sticky bottom-0 z-sticky flex min-h-12 flex-col items-stretch gap-2 border-t border-outline-variant bg-surface-container px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <div className="min-w-0 text-body-sm text-on-surface-variant" aria-live="polite">
                   {metadataNotice ? (
-                    <p role="status" className="flex items-center gap-2 text-status-success">
+                    <p role="status" className="flex items-center gap-2 text-primary">
                       <Icon name="check" size="xs" />
                       {metadataNotice}
                     </p>
@@ -778,7 +778,7 @@ export function CommunitySettings({
               </div>
 
               {metadataError != null ? (
-                <div className="border-t border-border-subtle p-4">
+                <div className="border-t border-outline-variant p-4">
                   <ErrorState
                     error={metadataError}
                     context={{ operation: 'save the community details', resource: 'community' }}
@@ -796,60 +796,60 @@ export function CommunitySettings({
               aria-labelledby="community-settings-people-heading"
               className="mb-6 flex min-h-0 flex-1 flex-col scroll-mt-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             >
-              <div className="rounded-panel border border-border-subtle bg-surface-raised p-3">
-                <p className="text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">Community people</p>
-                <h3 id="community-settings-people-heading" className="mt-1 text-md font-semibold text-primary">
+              <div className="rounded-xl border border-outline-variant bg-surface-container p-3">
+                <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">Community people</p>
+                <h3 id="community-settings-people-heading" className="mt-1 text-title-sm font-semibold text-on-surface">
                   People and roles
                 </h3>
 
                 <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                  <div className="rounded-control bg-surface-sunken px-3 py-2">
-                    <div className="flex items-center gap-2 text-accent">
+                  <div className="rounded-full bg-surface-container-lowest px-3 py-2">
+                    <div className="flex items-center gap-2 text-primary">
                       <Icon name="users" size="sm" />
-                      <span className="text-caption font-semibold lowercase tracking-eyebrow">Membership</span>
+                      <span className="text-label-sm font-semibold lowercase tracking-label-md">Membership</span>
                     </div>
-                    <p className="mt-1.5 text-sm font-semibold text-primary">
+                    <p className="mt-1.5 text-body-md font-semibold text-on-surface">
                       {community.memberCount} people
                     </p>
                   </div>
-                  <div className="rounded-control bg-surface-sunken px-3 py-2">
-                    <div className="flex items-center gap-2 text-status-success">
+                  <div className="rounded-full bg-surface-container-lowest px-3 py-2">
+                    <div className="flex items-center gap-2 text-primary">
                       <Icon name="activity" size="sm" />
-                      <span className="text-caption font-semibold lowercase tracking-eyebrow">Online now</span>
+                      <span className="text-label-sm font-semibold lowercase tracking-label-md">Online now</span>
                     </div>
-                    <p className="mt-1.5 text-sm font-semibold text-primary">{onlineMemberCount} available</p>
+                    <p className="mt-1.5 text-body-md font-semibold text-on-surface">{onlineMemberCount} available</p>
                   </div>
-                  <div className="rounded-control bg-surface-sunken px-3 py-2">
-                    <div className="flex items-center gap-2 text-accent">
+                  <div className="rounded-full bg-surface-container-lowest px-3 py-2">
+                    <div className="flex items-center gap-2 text-primary">
                       <Icon name="shieldCheck" size="sm" />
-                      <span className="text-caption font-semibold lowercase tracking-eyebrow">Leadership</span>
+                      <span className="text-label-sm font-semibold lowercase tracking-label-md">Leadership</span>
                     </div>
-                    <p className="mt-1.5 text-sm font-semibold text-primary">
+                    <p className="mt-1.5 text-body-md font-semibold text-on-surface">
                       {leadershipCount} verified role{leadershipCount !== 1 ? 's' : ''}
                     </p>
                   </div>
                 </div>
 
-                <div className="mt-2 flex items-start gap-3 rounded-control border border-border-subtle bg-surface-sunken px-3 py-2">
-                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-control bg-container-accent text-accent">
+                <div className="mt-2 flex items-start gap-3 rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-2">
+                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary-container text-primary">
                     <Icon name="shieldCheck" size="sm" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-primary">Verified actions only</p>
-                    <p className="mt-1 text-xs text-muted">
+                    <p className="text-body-md font-semibold text-on-surface">Verified actions only</p>
+                    <p className="mt-1 text-body-sm text-on-surface-variant">
                       Membership and moderation actions confirm before they run.
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-panel border border-border-subtle bg-surface-sunken">
-                <div className="flex items-center justify-between gap-4 border-b border-border-subtle bg-surface-raised px-4 py-3">
+              <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest">
+                <div className="flex items-center justify-between gap-4 border-b border-outline-variant bg-surface-container px-4 py-3">
                   <div>
-                    <h4 className="text-sm font-semibold text-primary">Current roster</h4>
-                    <p className="mt-0.5 text-xs text-muted">Search by display name or full account address.</p>
+                    <h4 className="text-body-md font-semibold text-on-surface">Current roster</h4>
+                    <p className="mt-0.5 text-body-sm text-on-surface-variant">Search by display name or full account address.</p>
                   </div>
-                  <p className="flex-shrink-0 font-mono text-xs text-muted">
+                  <p className="flex-shrink-0 text-body-sm text-on-surface-variant">
                     {communityMembers.length} in the community
                   </p>
                 </div>
@@ -874,9 +874,9 @@ export function CommunitySettings({
 
           {matrixMode && isOwnerOrAdmin && sectionVisible('discovery-access') && (
             <section id="community-settings-access" tabIndex={-1} aria-labelledby="community-settings-access-heading" className="mb-6 scroll-mt-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus">
-              <div className="rounded-panel border border-border-subtle bg-surface-raised p-4">
-                <p className="text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">Community access</p>
-                <h3 id="community-settings-access-heading" className="mt-1 text-md font-semibold text-primary">
+              <div className="rounded-xl border border-outline-variant bg-surface-container p-4">
+                <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">Community access</p>
+                <h3 id="community-settings-access-heading" className="mt-1 text-title-sm font-semibold text-on-surface">
                   Join requests
                 </h3>
               </div>
@@ -890,15 +890,15 @@ export function CommunitySettings({
                 />
               )}
               {accessNotice && (
-                <p role="status" className="mt-4 flex items-center gap-2 text-xs text-status-success">
+                <p role="status" className="mt-4 flex items-center gap-2 text-body-sm text-primary">
                   <Icon name="check" size="xs" />
                   {accessNotice}
                 </p>
               )}
 
-              <div className="mt-5 border-b border-border-subtle pb-2">
-                <h4 className="text-sm font-semibold text-primary">Who can join</h4>
-                <p className="mt-0.5 text-xs text-muted">
+              <div className="mt-5 border-b border-outline-variant pb-2">
+                <h4 className="text-body-md font-semibold text-on-surface">Who can join</h4>
+                <p className="mt-0.5 text-body-sm text-on-surface-variant">
                   Changing this does not publish the community anywhere.
                 </p>
               </div>
@@ -912,10 +912,10 @@ export function CommunitySettings({
                     ] as const).map(([value, label]) => (
                       <label
                         key={value}
-                        className={`cursor-pointer rounded-control border px-3 py-3 has-[input:focus-visible]:outline has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-focus ${
+                        className={`cursor-pointer rounded-full border px-3 py-3 has-[input:focus-visible]:outline has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-focus ${
                           accessSettings.joinRule === value
-                            ? 'border-accent bg-surface-selected'
-                            : 'border-border-subtle bg-surface-sunken'
+                            ? 'border-primary bg-secondary-container'
+                            : 'border-outline-variant bg-surface-container-lowest'
                         }`}
                       >
                         <input
@@ -926,36 +926,36 @@ export function CommunitySettings({
                           checked={accessSettings.joinRule === value}
                           onChange={() => void handleAccessChange(value)}
                         />
-                        <span className="block text-sm font-semibold text-primary">{label}</span>
+                        <span className="block text-body-md font-semibold text-on-surface">{label}</span>
                       </label>
                     ))}
                   </div>
-                  <p className="mt-2 text-xs text-muted">
+                  <p className="mt-2 text-body-sm text-on-surface-variant">
                     {accessSettings.discoverable
                       ? `Listed in the account service directory as ${accessSettings.alias ?? 'its published address'}.`
                       : 'Not listed in any directory.'}
                   </p>
                 </fieldset>
               ) : (
-                <p className="mt-3 text-xs text-muted">Checking who can join.</p>
+                <p className="mt-3 text-body-sm text-on-surface-variant">Checking who can join.</p>
               )}
 
-              <div className="mt-5 flex items-center justify-between gap-3 border-b border-border-subtle pb-2">
+              <div className="mt-5 flex items-center justify-between gap-3 border-b border-outline-variant pb-2">
                 <div>
-                  <h4 className="text-sm font-semibold text-primary">Pending requests</h4>
+                  <h4 className="text-body-md font-semibold text-on-surface">Pending requests</h4>
                 </div>
-                <span className="font-mono text-meta text-muted">{applications.length} waiting</span>
+                <span className="text-body-sm text-on-surface-variant">{applications.length} waiting</span>
               </div>
 
               {applications.length === 0 ? (
-                <div className="mt-3 rounded-panel border border-border-subtle bg-surface-sunken px-4 py-6 text-center">
-                  <Icon name="userPlus" size="lg" className="mx-auto text-muted" />
-                  <p className="mt-3 text-sm font-semibold text-primary">No pending requests</p>
+                <div className="mt-3 rounded-xl border border-outline-variant bg-surface-container-lowest px-4 py-6 text-center">
+                  <Icon name="userPlus" size="lg" className="mx-auto text-on-surface-variant" />
+                  <p className="mt-3 text-body-md font-semibold text-on-surface">No pending requests</p>
                 </div>
               ) : (
                 <div className="grid gap-3 py-3 md:grid-cols-2">
                   {applications.map((application) => (
-                    <article key={application.userId} className="rounded-panel border border-border-subtle bg-surface-sunken p-4">
+                    <article key={application.userId} className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4">
                       <div className="flex items-center gap-3">
                         <Avatar
                           name={application.displayName}
@@ -970,15 +970,15 @@ export function CommunitySettings({
                           shown beside it.
                         */}
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-primary">{application.displayName}</p>
-                          <p className="truncate font-mono text-meta text-muted">{application.userId}</p>
+                          <p className="truncate text-body-md font-semibold text-on-surface">{application.displayName}</p>
+                          <p className="truncate text-body-sm text-on-surface-variant">{application.userId}</p>
                         </div>
                       </div>
                       {application.reason && (
-                        <p className="mt-3 text-xs text-secondary">“{application.reason}”</p>
+                        <p className="mt-3 text-body-sm text-on-surface-variant">“{application.reason}”</p>
                       )}
                       {application.requestedAt && (
-                        <p className="mt-2 text-meta text-muted">
+                        <p className="mt-2 text-body-sm text-on-surface-variant">
                           Requested {new Date(application.requestedAt).toLocaleString()}
                         </p>
                       )}
@@ -1010,22 +1010,22 @@ export function CommunitySettings({
 
           {matrixMode && isOwnerOrAdmin && sectionVisible('moderation') && (
             <section id="community-settings-moderation" tabIndex={-1} aria-labelledby="community-settings-moderation-heading" className="mb-6 scroll-mt-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus">
-              <div className="rounded-panel border border-border-subtle bg-surface-raised p-4">
-                <p className="text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">Verified scope</p>
-                <h3 id="community-settings-moderation-heading" className="mt-1 text-md font-semibold text-primary">
+              <div className="rounded-xl border border-outline-variant bg-surface-container p-4">
+                <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">Verified scope</p>
+                <h3 id="community-settings-moderation-heading" className="mt-1 text-title-sm font-semibold text-on-surface">
                   Moderation outcomes
                 </h3>
 
-                <div className="mt-4 flex items-start gap-3 rounded-panel border border-border-subtle bg-surface-sunken p-4">
-                  <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-panel bg-container-accent text-accent">
+                <div className="mt-4 flex items-start gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-4">
+                  <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-primary-container text-primary">
                     <Icon name="shieldCheck" size="sm" />
                   </span>
                   <div className="min-w-0">
-                    <h4 className="text-sm font-semibold text-primary">Review each moderation result</h4>
-                    <p className="mt-1 text-xs text-muted">
+                    <h4 className="text-body-md font-semibold text-on-surface">Review each moderation result</h4>
+                    <p className="mt-1 text-body-sm text-on-surface-variant">
                       Mesh does not keep a complete administrator-action history across every account service.
                     </p>
-                    <p className="mt-2 text-xs text-secondary">
+                    <p className="mt-2 text-body-sm text-on-surface-variant">
                       The result shows what changed in each room.
                     </p>
                   </div>
@@ -1037,11 +1037,11 @@ export function CommunitySettings({
           {/* Rooms and room creation */}
           {isOwnerOrAdmin && sectionVisible('rooms-voice') && (
             <section id="community-settings-rooms" tabIndex={-1} aria-labelledby="community-settings-rooms-heading" className="mb-6 scroll-mt-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus">
-              <div className="rounded-panel border border-border-subtle bg-surface-raised p-4">
+              <div className="rounded-xl border border-outline-variant bg-surface-container p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <p className="text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">Community spaces</p>
-                    <h3 id="community-settings-rooms-heading" className="mt-1 text-md font-semibold text-primary">
+                    <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">Community spaces</p>
+                    <h3 id="community-settings-rooms-heading" className="mt-1 text-title-sm font-semibold text-on-surface">
                       Rooms and voice
                     </h3>
                   </div>
@@ -1058,20 +1058,20 @@ export function CommunitySettings({
                 </div>
 
                 <div className={`mt-4 grid gap-3 ${voiceRoutesEnabled ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                  <div className="rounded-control border border-border-subtle bg-surface-sunken px-3 py-3">
-                    <div className="flex items-center gap-2 text-accent">
+                  <div className="rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-3">
+                    <div className="flex items-center gap-2 text-primary">
                       <Icon name="hash" size="sm" />
-                      <span className="text-caption font-semibold lowercase tracking-eyebrow">Text rooms</span>
+                      <span className="text-label-sm font-semibold lowercase tracking-label-md">Text rooms</span>
                     </div>
-                    <p className="mt-2 font-mono text-base font-semibold text-primary">{textChannels.length}</p>
+                    <p className="mt-2 text-body-lg font-semibold text-on-surface">{textChannels.length}</p>
                   </div>
                   {voiceRoutesEnabled && (
-                    <div className="rounded-control border border-border-subtle bg-surface-sunken px-3 py-3">
-                      <div className="flex items-center gap-2 text-accent">
+                    <div className="rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-3">
+                      <div className="flex items-center gap-2 text-primary">
                         <Icon name="volume" size="sm" />
-                        <span className="text-caption font-semibold lowercase tracking-eyebrow">Voice rooms</span>
+                        <span className="text-label-sm font-semibold lowercase tracking-label-md">Voice rooms</span>
                       </div>
-                      <p className="mt-2 font-mono text-base font-semibold text-primary">{voiceChannels.length}</p>
+                      <p className="mt-2 text-body-lg font-semibold text-on-surface">{voiceChannels.length}</p>
                     </div>
                   )}
                 </div>
@@ -1086,13 +1086,13 @@ export function CommunitySettings({
                     transition={transitions.enter}
                     className="mt-4 overflow-hidden"
                   >
-                    <div className="rounded-panel border border-border-subtle bg-surface-sunken p-4">
+                    <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4">
                       <div className="mb-4 flex items-start gap-3">
-                        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-panel bg-container-accent text-accent">
+                        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-primary-container text-primary">
                           <Icon name="plus" size="sm" />
                         </span>
                         <div className="min-w-0">
-                          <h4 className="text-sm font-semibold text-primary">Create a room</h4>
+                          <h4 className="text-body-md font-semibold text-on-surface">Create a room</h4>
                         </div>
                       </div>
 
@@ -1111,7 +1111,7 @@ export function CommunitySettings({
                       />
 
                       <fieldset className="mt-4">
-                        <legend className="mb-2 block text-caption font-semibold lowercase tracking-eyebrow text-muted">
+                        <legend className="mb-2 block text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">
                           Room type
                         </legend>
                         <div className={`grid gap-2 ${voiceRoutesEnabled ? 'grid-cols-2' : 'grid-cols-1'}`}>
@@ -1162,18 +1162,18 @@ export function CommunitySettings({
                 )}
               </AnimatePresence>
 
-              <div className="mt-5 flex items-center justify-between gap-3 border-b border-border-subtle pb-2">
+              <div className="mt-5 flex items-center justify-between gap-3 border-b border-outline-variant pb-2">
                 <div>
-                  <h4 className="text-sm font-semibold text-primary">Current rooms</h4>
-                  <p className="mt-0.5 text-xs text-muted">Rename or remove a room from its menu in the navigation.</p>
+                  <h4 className="text-body-md font-semibold text-on-surface">Current rooms</h4>
+                  <p className="mt-0.5 text-body-sm text-on-surface-variant">Rename or remove a room from its menu in the navigation.</p>
                 </div>
-                <span className="font-mono text-meta text-muted">{listedChannels.length} total</span>
+                <span className="text-body-sm text-on-surface-variant">{listedChannels.length} total</span>
               </div>
 
               {listedChannels.length === 0 ? (
-                <div className="rounded-panel border border-border-subtle bg-surface-sunken px-4 py-6 text-center">
-                  <Icon name="hash" size="lg" className="mx-auto text-muted" />
-                  <p className="mt-3 text-sm font-semibold text-primary">Create the first room</p>
+                <div className="rounded-xl border border-outline-variant bg-surface-container-lowest px-4 py-6 text-center">
+                  <Icon name="hash" size="lg" className="mx-auto text-on-surface-variant" />
+                  <p className="mt-3 text-body-md font-semibold text-on-surface">Create the first room</p>
                 </div>
               ) : (
                 <div className={`grid gap-3 py-3${voiceRoutesEnabled ? ' md:grid-cols-2' : ''}`}>
@@ -1199,13 +1199,13 @@ export function CommunitySettings({
           {/* Custom emoji lives with the rest of community identity and customization */}
           {matrixMode && isOwnerOrAdmin && sectionVisible('general') && (
             <section id="community-settings-emoji" tabIndex={-1} aria-labelledby="community-settings-emoji-heading" className="mb-6 scroll-mt-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus">
-              <div className="rounded-panel border border-border-subtle bg-surface-raised p-4">
+              <div className="rounded-xl border border-outline-variant bg-surface-container p-4">
                 <div className="min-w-0">
-                  <p className="text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">Community expression</p>
-                  <h3 id="community-settings-emoji-heading" className="mt-1 text-md font-semibold text-primary">
+                  <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">Community expression</p>
+                  <h3 id="community-settings-emoji-heading" className="mt-1 text-title-sm font-semibold text-on-surface">
                     Custom emoji
                   </h3>
-                  <p className="mt-1 max-w-2xl text-sm text-muted">
+                  <p className="mt-1 max-w-2xl text-body-md text-on-surface-variant">
                     Visible to everyone here and not end to end encrypted. PNG, JPEG or WebP up to 512 KB.
                   </p>
                 </div>
@@ -1249,15 +1249,15 @@ export function CommunitySettings({
                 {serverEmoji.length > 0 && (
                   <ul className="mt-4 space-y-2">
                     {serverEmoji.map((emoji) => (
-                      <li key={emoji.shortcode} className="flex items-center gap-3 rounded-control border border-border-subtle bg-surface-sunken px-3 py-2">
+                      <li key={emoji.shortcode} className="flex items-center gap-3 rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-2">
                         <img src={emoji.imageUrl} alt="" className="h-7 w-7 flex-shrink-0 object-contain" />
-                        <span className="min-w-0 flex-1 truncate font-mono text-xs text-secondary">:{emoji.shortcode}:</span>
+                        <span className="min-w-0 flex-1 truncate text-body-sm text-on-surface-variant">:{emoji.shortcode}:</span>
                         <button
                           type="button"
                           onClick={() => handleEmojiRemove(emoji.shortcode)}
                           disabled={emojiBusy !== null}
                           aria-label={`Remove custom emoji ${emoji.shortcode}`}
-                          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-active hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50"
+                          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50"
                         >
                           <Icon name="x" size="xs" />
                         </button>
@@ -1270,28 +1270,28 @@ export function CommunitySettings({
           )}
 
           {sectionVisible('danger') && <section id="community-settings-danger" tabIndex={-1} aria-labelledby="community-settings-danger-heading" className="mb-6 scroll-mt-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus">
-            <div className="rounded-panel border border-border-subtle bg-surface-raised p-4">
-              <p className="text-caption font-semibold lowercase tracking-eyebrow text-status-danger">Sensitive controls</p>
-              <h3 id="community-settings-danger-heading" className="mt-1 text-md font-semibold text-primary">
+            <div className="rounded-xl border border-outline-variant bg-surface-container p-4">
+              <p className="text-label-sm font-semibold lowercase tracking-label-md text-error">Sensitive controls</p>
+              <h3 id="community-settings-danger-heading" className="mt-1 text-title-sm font-semibold text-on-surface">
                 Ownership and leaving
               </h3>
 
               <div className="mt-4 grid grid-cols-2 gap-3">
-                <div className="rounded-control border border-border-subtle bg-surface-sunken px-3 py-3">
-                  <div className="flex items-center gap-2 text-status-danger">
+                <div className="rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-3">
+                  <div className="flex items-center gap-2 text-error">
                     <Icon name="users" size="sm" />
-                    <span className="text-caption font-semibold lowercase tracking-eyebrow">Your role</span>
+                    <span className="text-label-sm font-semibold lowercase tracking-label-md">Your role</span>
                   </div>
-                  <p className="mt-2 text-sm font-semibold text-primary">
+                  <p className="mt-2 text-body-md font-semibold text-on-surface">
                     {isOwner ? 'Community owner' : community.role === 'admin' ? 'Administrator' : 'Member'}
                   </p>
                 </div>
-                <div className="rounded-control border border-border-subtle bg-surface-sunken px-3 py-3">
-                  <div className="flex items-center gap-2 text-status-danger">
+                <div className="rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-3">
+                  <div className="flex items-center gap-2 text-error">
                     <Icon name={matrixMode && isOwner ? 'lock' : 'triangleAlert'} size="sm" />
-                    <span className="text-caption font-semibold lowercase tracking-eyebrow">Exit state</span>
+                    <span className="text-label-sm font-semibold lowercase tracking-label-md">Exit state</span>
                   </div>
-                  <p className="mt-2 text-sm font-semibold text-primary">
+                  <p className="mt-2 text-body-md font-semibold text-on-surface">
                     {matrixMode && isOwner ? 'Locked for safety' : 'Available after review'}
                   </p>
                 </div>
@@ -1299,41 +1299,41 @@ export function CommunitySettings({
             </div>
 
             {matrixMode && isOwner ? (
-              <div className="mt-4 rounded-panel border border-border-subtle bg-surface-sunken p-4">
+              <div className="mt-4 rounded-xl border border-outline-variant bg-surface-container-lowest p-4">
                 <div className="flex items-start gap-3">
-                  <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-panel bg-container-danger text-status-danger">
+                  <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-error-container text-error">
                     <Icon name="shieldCheck" size="sm" />
                   </span>
                   <div className="min-w-0">
-                    <h4 className="text-sm font-semibold text-primary">
+                    <h4 className="text-body-md font-semibold text-on-surface">
                       You can&apos;t leave while you&apos;re the owner
                     </h4>
-                    <p className="mt-1 text-xs text-muted">
+                    <p className="mt-1 text-body-sm text-on-surface-variant">
                       Mesh doesn&apos;t support choosing a new owner yet.
                     </p>
                   </div>
                 </div>
 
-                <div className="mt-4 space-y-2 border-t border-border-subtle pt-4">
-                  <p className="flex items-start gap-2 text-xs text-secondary">
-                    <Icon name="check" size="xs" className="mt-0.5 flex-shrink-0 text-status-success" />
+                <div className="mt-4 space-y-2 border-t border-outline-variant pt-4">
+                  <p className="flex items-start gap-2 text-body-sm text-on-surface-variant">
+                    <Icon name="check" size="xs" className="mt-0.5 flex-shrink-0 text-primary" />
                     Nothing will be deleted or changed while the owner account stays.
                   </p>
                 </div>
 
-                <p role="status" className="mt-4 flex items-center gap-2 rounded-control border border-border-subtle bg-surface-base px-3 py-2 text-xs font-medium text-muted">
+                <p role="status" className="mt-4 flex items-center gap-2 rounded-full border border-outline-variant bg-surface px-3 py-2 text-body-sm font-medium text-on-surface-variant">
                   <Icon name="lock" size="xs" />
                   This owner account must stay for now.
                 </p>
               </div>
             ) : (
-              <div className="mt-4 rounded-panel border border-border-subtle bg-surface-sunken p-4">
+              <div className="mt-4 rounded-xl border border-outline-variant bg-surface-container-lowest p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <h4 className="text-sm font-semibold text-primary">
+                    <h4 className="text-body-md font-semibold text-on-surface">
                       {!matrixMode && isOwner ? 'Close this local community' : 'Leave this community'}
                     </h4>
-                    <p className="mt-1 text-xs text-muted">
+                    <p className="mt-1 text-body-sm text-on-surface-variant">
                       {!matrixMode && isOwner
                         ? 'Closes this local community for its members.'
                         : `This account will leave ${community.name} and all ${communityChannels.length} of its rooms.`}
@@ -1362,12 +1362,12 @@ export function CommunitySettings({
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: motionOffsets.tight }}
                       transition={transitions.enter}
-                      className="mt-4 rounded-panel border border-container-danger-line bg-container-danger p-4"
+                      className="mt-4 rounded-xl border border-error-container-line bg-error-container p-4"
                     >
-                      <h5 className="text-sm font-semibold text-primary">
+                      <h5 className="text-body-md font-semibold text-on-surface">
                         {!matrixMode && isOwner ? `Delete ${community.name}?` : `Leave ${community.name}?`}
                       </h5>
-                      <p className="mt-1 text-xs text-secondary">
+                      <p className="mt-1 text-body-sm text-on-surface-variant">
                         {!matrixMode && isOwner
                           ? 'This closes the local community for every member and cannot be undone from this screen.'
                           : 'You will lose access to every room on this account.'}
@@ -1427,9 +1427,9 @@ export function CommunitySettings({
             && activeSection
             && !isOwnerOrAdmin
             && ['rooms-voice', 'discovery-access', 'moderation'].includes(activeSection) && (
-              <section role="alert" className="rounded-panel border border-container-warning-line bg-container-warning p-4">
-                <h3 className="text-md font-semibold text-primary">Your community permissions changed</h3>
-                <p className="mt-1 text-sm text-secondary">
+              <section role="alert" className="rounded-xl border border-marker-container-line bg-marker-container p-4">
+                <h3 className="text-title-sm font-semibold text-on-surface">Your community permissions changed</h3>
+                <p className="mt-1 text-body-md text-on-surface-variant">
                   This section requires an owner or administrator role.
                 </p>
               </section>
@@ -1498,22 +1498,22 @@ function RoomInventoryGroup({
   emptyCopy: string
 }) {
   return (
-    <section aria-label={title} className="rounded-panel border border-border-subtle bg-surface-sunken p-3">
-      <div className="flex items-center gap-2 border-b border-border-subtle pb-2">
-        <Icon name={icon} size="sm" className="text-accent" />
-        <h5 className="min-w-0 flex-1 text-caption font-semibold lowercase tracking-eyebrow text-secondary">{title}</h5>
-        <span className="font-mono text-meta text-muted">{channels.length}</span>
+    <section aria-label={title} className="rounded-xl border border-outline-variant bg-surface-container-lowest p-3">
+      <div className="flex items-center gap-2 border-b border-outline-variant pb-2">
+        <Icon name={icon} size="sm" className="text-primary" />
+        <h5 className="min-w-0 flex-1 text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">{title}</h5>
+        <span className="text-body-sm text-on-surface-variant">{channels.length}</span>
       </div>
       {channels.length === 0 ? (
-        <p className="px-2 py-4 text-center text-xs text-muted">{emptyCopy}</p>
+        <p className="px-2 py-4 text-center text-body-sm text-on-surface-variant">{emptyCopy}</p>
       ) : (
         <ul className="space-y-1 pt-2">
           {channels.map((channel) => (
-            <li key={channel.id} className="flex min-h-10 items-center gap-2 rounded-control px-2">
-              <Icon name={icon} size="xs" className="flex-shrink-0 text-muted" />
-              <span className="min-w-0 flex-1 truncate text-sm font-medium text-secondary">{channel.name}</span>
+            <li key={channel.id} className="flex min-h-10 items-center gap-2 rounded-full px-2">
+              <Icon name={icon} size="xs" className="flex-shrink-0 text-on-surface-variant" />
+              <span className="min-w-0 flex-1 truncate text-body-md font-medium text-on-surface-variant">{channel.name}</span>
               {channel.unreadCount > 0 ? (
-                <span className="font-mono text-meta text-accent">{channel.unreadCount}</span>
+                <span className="text-body-sm text-primary">{channel.unreadCount}</span>
               ) : null}
             </li>
           ))}

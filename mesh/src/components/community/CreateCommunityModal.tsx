@@ -436,7 +436,7 @@ export function CreateCommunityModal({
       size="xl"
       className="mesh-community-tools-dialog"
     >
-      <div className={embedded ? 'mesh-form-card border border-border-subtle p-5 sm:p-6' : undefined}>
+      <div className={embedded ? 'mesh-form-card border border-outline-variant p-5 sm:p-6' : undefined}>
         {/* Tab switcher */}
         {!embedded && (
         <div
@@ -463,10 +463,10 @@ export function CreateCommunityModal({
                 setTab(t)
               }}
               onKeyDown={(event) => moveTabFocus(event, index)}
-              className={`relative flex min-h-12 items-center justify-center gap-2 rounded-control border px-4 py-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
+              className={`relative flex min-h-12 items-center justify-center gap-2 rounded-full border px-4 py-2 text-body-md font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
                 tab === t
-                  ? 'border-container-accent-line bg-container-accent text-primary'
-                  : 'border-border-subtle bg-surface-sunken text-muted hover:border-border-emphasis hover:bg-surface-hover hover:text-secondary'
+                  ? 'border-primary-container-line bg-primary-container text-on-surface'
+                  : 'border-outline-variant bg-surface-container-lowest text-on-surface-variant hover:border-outline hover:bg-surface-container-high hover:text-on-surface-variant'
               }`}
             >
               {/*
@@ -483,7 +483,7 @@ export function CreateCommunityModal({
               */}
               <span
                 aria-hidden="true"
-                className={`pointer-events-none absolute inset-x-0 bottom-0 origin-center border-b-bar border-accent transition-transform duration-fast ease-enter ${
+                className={`pointer-events-none absolute inset-x-0 bottom-0 origin-center border-b-bar border-primary transition-transform duration-fast ease-enter ${
                   tab === t ? 'scale-x-100' : 'scale-x-0'
                 }`}
               />
@@ -510,11 +510,11 @@ export function CreateCommunityModal({
               exit={{ opacity: 0, x: motionOffsets.panel }}
               transition={transitions.enter}
             >
-              <div className="mb-5 flex items-center justify-between gap-3 border-b border-border-subtle pb-3">
-                <p className="text-sm font-semibold text-secondary">
+              <div className="mb-5 flex items-center justify-between gap-3 border-b border-outline-variant pb-3">
+                <p className="text-body-md font-semibold text-on-surface-variant">
                   {createStep === 1 ? 'Name and image' : 'Access and starter rooms'}
                 </p>
-                <span className="rounded-control bg-surface-selected px-2.5 py-1 font-mono text-meta text-muted">
+                <span className="rounded-full bg-secondary-container px-2.5 py-1 text-body-sm text-on-surface-variant">
                   Step {createStep} of 2
                 </span>
               </div>
@@ -538,7 +538,7 @@ export function CreateCommunityModal({
                     error={communityNameError}
                     ref={claimPanelFocus}
                   />
-                  <div className="flex items-center gap-3 rounded-panel border border-border-subtle bg-surface-base p-3">
+                  <div className="flex items-center gap-3 rounded-xl border border-outline-variant bg-surface p-3">
                     <Avatar
                       color={pixelColorForSeed(communityName || 'new-community')}
                       size={44}
@@ -546,14 +546,14 @@ export function CreateCommunityModal({
                       variant="community"
                     />
                     <div>
-                      <p className="text-sm font-medium text-primary">Default community image</p>
-                      <p className="mt-0.5 text-xs text-muted">Replace it in community settings.</p>
+                      <p className="text-body-md font-medium text-on-surface">Default community image</p>
+                      <p className="mt-0.5 text-body-sm text-on-surface-variant">Replace it in community settings.</p>
                     </div>
                   </div>
                   <div>
                     <label
                       htmlFor="create-community-description"
-                      className="mb-1.5 block text-xs font-semibold lowercase text-muted"
+                      className="mb-1.5 block text-body-sm font-semibold lowercase text-on-surface-variant"
                     >
                       Description
                     </label>
@@ -570,17 +570,17 @@ export function CreateCommunityModal({
                       aria-describedby="create-community-description-supporting"
                       aria-invalid={communityDescriptionError ? true : undefined}
                       rows={2}
-                      className={`w-full resize-none rounded-control border bg-surface-base px-3 py-2 text-sm text-primary placeholder:text-muted focus:outline-none ${
+                      className={`w-full resize-none rounded-full border bg-surface px-3 py-2 text-body-md text-on-surface placeholder:text-on-surface-variant focus:outline-none ${
                         communityDescriptionError
-                          ? 'border-status-danger focus:border-status-danger'
-                          : 'border-border focus:border-accent'
+                          ? 'border-error focus:border-error'
+                          : 'border-outline focus:border-primary'
                       }`}
                     />
                     <p
                       id="create-community-description-supporting"
                       role={communityDescriptionError ? 'alert' : undefined}
-                      className={`mt-1.5 text-xs ${
-                        communityDescriptionError ? 'text-status-danger' : 'text-muted'
+                      className={`mt-1.5 text-body-sm ${
+                        communityDescriptionError ? 'text-error' : 'text-on-surface-variant'
                       }`}
                     >
                       {communityDescriptionError
@@ -594,7 +594,7 @@ export function CreateCommunityModal({
               ) : (
                 <div className="space-y-4">
                   <fieldset>
-                    <legend className="text-xs font-semibold lowercase tracking-eyebrow text-muted">Who can join</legend>
+                    <legend className="text-body-sm font-semibold lowercase tracking-label-md text-on-surface-variant">Who can join</legend>
                     <div className="mt-2 grid gap-2 sm:grid-cols-2">
                       {([
                         ['invite', 'Invitation only'],
@@ -604,10 +604,10 @@ export function CreateCommunityModal({
                           key={value}
                           // The radio itself is visually hidden, so the card has
                           // to carry the focus ring for it.
-                          className={`cursor-pointer rounded-control border px-3 py-3 has-[input:focus-visible]:outline has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-focus ${
+                          className={`cursor-pointer rounded-full border px-3 py-3 has-[input:focus-visible]:outline has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-focus ${
                             accessChoice === value
-                              ? 'border-accent bg-container-accent'
-                              : 'border-border-subtle bg-surface-sunken hover:bg-surface-hover'
+                              ? 'border-primary bg-primary-container'
+                              : 'border-outline-variant bg-surface-container-lowest hover:bg-surface-container-high'
                           }`}
                         >
                           <input
@@ -618,21 +618,21 @@ export function CreateCommunityModal({
                             onChange={() => setAccessChoice(value)}
                             className="sr-only"
                           />
-                          <span className="block text-sm font-semibold text-primary">{label}</span>
+                          <span className="block text-body-md font-semibold text-on-surface">{label}</span>
                         </label>
                       ))}
                     </div>
                   </fieldset>
                   <fieldset>
-                    <legend className="text-xs font-semibold lowercase tracking-eyebrow text-muted">Starter rooms</legend>
+                    <legend className="text-body-sm font-semibold lowercase tracking-label-md text-on-surface-variant">Starter rooms</legend>
                     <div className="mt-2 grid gap-2 sm:grid-cols-2">
                       {COMMUNITY_TEMPLATES.map((option) => (
                         <label
                           key={option.id}
-                          className={`cursor-pointer rounded-control border px-3 py-3 has-[input:focus-visible]:outline has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-focus ${
+                          className={`cursor-pointer rounded-full border px-3 py-3 has-[input:focus-visible]:outline has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-focus ${
                             template === option.id
-                              ? 'border-accent bg-container-accent'
-                              : 'border-border-subtle bg-surface-sunken hover:bg-surface-hover'
+                              ? 'border-primary bg-primary-container'
+                              : 'border-outline-variant bg-surface-container-lowest hover:bg-surface-container-high'
                           }`}
                         >
                           <input
@@ -643,20 +643,20 @@ export function CreateCommunityModal({
                             onChange={() => setTemplate(option.id)}
                             className="sr-only"
                           />
-                          <span className="block text-sm font-semibold text-primary">{option.label}</span>
+                          <span className="block text-body-md font-semibold text-on-surface">{option.label}</span>
                         </label>
                       ))}
                     </div>
-                    <div className="mt-2 rounded-control border border-border-subtle bg-surface-sunken px-3 py-3">
-                      <ul className="space-y-1 text-sm text-secondary">
+                    <div className="mt-2 rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-3">
+                      <ul className="space-y-1 text-body-md text-on-surface-variant">
                         {selectedTemplate.starterRooms.map((room) => <li key={room}>#{room}</li>)}
                       </ul>
-                      <p className="mt-2 text-xs text-muted">
+                      <p className="mt-2 text-body-sm text-on-surface-variant">
                         Mesh adds a voice room automatically when private calling is available.
                       </p>
                     </div>
                   </fieldset>
-                  <p className="text-xs text-muted">
+                  <p className="text-body-sm text-on-surface-variant">
                     Created with your current account service.
                   </p>
                 </div>
@@ -680,7 +680,7 @@ export function CreateCommunityModal({
               {createdCommunity && creationPhase === 'partial' && (
                 <div
                   role="status"
-                  className="mt-3 rounded-control border border-container-warning-line bg-container-warning px-3 py-2 text-sm text-secondary"
+                  className="mt-3 rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-md text-on-surface-variant"
                 >
                   {accessSettingFailed ? (
                     <>
@@ -688,7 +688,7 @@ export function CreateCommunityModal({
                         Community created, but who can join could not be set. It is invitation
                         only for now.
                       </p>
-                      <p className="mt-2 text-xs">
+                      <p className="mt-2 text-body-sm">
                         Retry, or set it in community settings under Access and discovery.
                       </p>
                     </>
@@ -696,11 +696,11 @@ export function CreateCommunityModal({
                     <>
                       <p>Community created. Some rooms still need attention.</p>
                       {missingStarterRooms.length > 0 && (
-                        <ul className="mt-2 list-disc pl-5 text-xs">
+                        <ul className="mt-2 list-disc pl-5 text-body-sm">
                           {missingStarterRooms.map((room) => <li key={room}>#{room}</li>)}
                         </ul>
                       )}
-                      <p className="mt-2 text-xs">Retry adds only the missing rooms.</p>
+                      <p className="mt-2 text-body-sm">Retry adds only the missing rooms.</p>
                     </>
                   )}
                 </div>
@@ -774,23 +774,23 @@ export function CreateCommunityModal({
               {joinStatus && (
                 <p
                   role="status"
-                  className="mt-2 rounded-control border border-container-success-line bg-container-success px-3 py-2 text-sm text-status-success"
+                  className="mt-2 rounded-full border border-primary-container-line bg-primary-container px-3 py-2 text-body-md text-primary"
                 >
                   {joinStatus}
                 </p>
               )}
 
               {reviewedInvite && (
-                <section className="mt-3 rounded-control border border-border-control bg-surface-sunken px-3 py-3" aria-labelledby="invitation-preview-heading">
-                  <h3 id="invitation-preview-heading" className="text-sm font-semibold text-primary">Destination ready to review</h3>
-                  <dl className="mt-2 space-y-2 text-xs">
-                    <div className="flex items-start justify-between gap-3"><dt className="text-muted">Community</dt><dd className="text-right text-secondary">Confirmed when you continue</dd></div>
-                    <div className="flex items-start justify-between gap-3"><dt className="text-muted">Access</dt><dd className="text-right text-secondary">Join or request approval</dd></div>
+                <section className="mt-3 rounded-full border border-outline bg-surface-container-lowest px-3 py-3" aria-labelledby="invitation-preview-heading">
+                  <h3 id="invitation-preview-heading" className="text-body-md font-semibold text-on-surface">Destination ready to review</h3>
+                  <dl className="mt-2 space-y-2 text-body-sm">
+                    <div className="flex items-start justify-between gap-3"><dt className="text-on-surface-variant">Community</dt><dd className="text-right text-on-surface-variant">Confirmed when you continue</dd></div>
+                    <div className="flex items-start justify-between gap-3"><dt className="text-on-surface-variant">Access</dt><dd className="text-right text-on-surface-variant">Join or request approval</dd></div>
                     {suggestedServiceLabel(reviewedInvite) && (
-                      <div className="flex items-start justify-between gap-3"><dt className="text-muted">Service suggested by this invitation</dt><dd className="text-right text-secondary">{suggestedServiceLabel(reviewedInvite)}</dd></div>
+                      <div className="flex items-start justify-between gap-3"><dt className="text-on-surface-variant">Service suggested by this invitation</dt><dd className="text-right text-on-surface-variant">{suggestedServiceLabel(reviewedInvite)}</dd></div>
                     )}
                   </dl>
-                  <p className="mt-3 text-xs text-muted">
+                  <p className="mt-3 text-body-sm text-on-surface-variant">
                     Mesh never switches your account service for you.
                   </p>
                 </section>
@@ -818,14 +818,14 @@ export function CreateCommunityModal({
               exit={{ opacity: 0, x: -motionOffsets.panel }}
               transition={transitions.enter}
             >
-              <section className="rounded-panel border border-border-subtle bg-surface-sunken px-4 py-5" aria-labelledby="find-community-heading">
-                <h3 id="find-community-heading" className="text-base font-semibold text-primary">Search public communities</h3>
+              <section className="rounded-xl border border-outline-variant bg-surface-container-lowest px-4 py-5" aria-labelledby="find-community-heading">
+                <h3 id="find-community-heading" className="text-body-lg font-semibold text-on-surface">Search public communities</h3>
                 {/*
                   Honest about the source: Mesh has no catalog of its own, and a
                   community that is not published stays invisible here however
                   well the search works.
                 */}
-                <p className="mt-2 text-sm text-secondary">
+                <p className="mt-2 text-body-md text-on-surface-variant">
                   Searches the public list
                   {directorySource ? ` published by ${directorySource}` : ' published by your account service'},
                   so unlisted communities do not appear.
@@ -863,17 +863,17 @@ export function CreateCommunityModal({
 
                 <div className="mt-4 max-h-64 space-y-2 overflow-y-auto" aria-live="polite">
                   {directoryResults.length > 0 && (
-                    <p className="text-caption text-muted">{directoryResults.length} result{directoryResults.length === 1 ? '' : 's'}</p>
+                    <p className="text-label-sm text-on-surface-variant">{directoryResults.length} result{directoryResults.length === 1 ? '' : 's'}</p>
                   )}
                   {directoryResults.map((entry) => (
-                    <div key={entry.id} className="rounded-panel bg-surface-base p-3">
+                    <div key={entry.id} className="rounded-xl bg-surface p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-primary">{entry.name}</p>
+                          <p className="truncate text-body-md font-semibold text-on-surface">{entry.name}</p>
                           {entry.description && (
-                            <p className="mt-1 line-clamp-2 text-xs text-muted">{entry.description}</p>
+                            <p className="mt-1 line-clamp-2 text-body-sm text-on-surface-variant">{entry.description}</p>
                           )}
-                          <p className="member-count mt-1 text-meta text-muted">
+                          <p className="member-count mt-1 text-body-sm text-on-surface-variant">
                             {entry.memberCount} member{entry.memberCount === 1 ? '' : 's'} · {describeJoinRule(entry.joinRule)}
                           </p>
                         </div>
@@ -886,12 +886,12 @@ export function CreateCommunityModal({
                         </Button>
                       </div>
                       {directoryStatus[entry.id] && (
-                        <p className="mt-2 text-xs text-green">{directoryStatus[entry.id]}</p>
+                        <p className="mt-2 text-body-sm text-primary">{directoryStatus[entry.id]}</p>
                       )}
                     </div>
                   ))}
                   {!isLoading && directoryResults.length === 0 && !directoryError && (
-                    <p className="py-3 text-center text-xs text-muted">
+                    <p className="py-3 text-center text-body-sm text-on-surface-variant">
                       {directorySearched
                         ? 'No listed community matched that search.'
                         : 'Search by community name or topic.'}
@@ -903,7 +903,7 @@ export function CreateCommunityModal({
                   <div className="mt-3">
                     <label
                       htmlFor="community-application-note"
-                      className="mb-1.5 block text-xs font-semibold lowercase text-muted"
+                      className="mb-1.5 block text-body-sm font-semibold lowercase text-on-surface-variant"
                     >
                       Application note (optional)
                     </label>
@@ -912,18 +912,18 @@ export function CreateCommunityModal({
                       value={applicationReason}
                       onChange={(event) => setApplicationReason(event.target.value)}
                       rows={2}
-                      className="w-full resize-none rounded-control border border-border bg-surface-base px-3 py-2 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                      className="w-full resize-none rounded-full border border-outline bg-surface px-3 py-2 text-body-md text-on-surface placeholder:text-on-surface-variant focus:border-primary focus:outline-none"
                       placeholder="Why would you like to join?"
                     />
-                    <p className="mt-1.5 text-xs text-muted">
+                    <p className="mt-1.5 text-body-sm text-on-surface-variant">
                       Sent only when a community asks you to apply.
                     </p>
                   </div>
                 )}
               </section>
 
-              <section className="mt-4 rounded-panel border border-border-subtle bg-surface-raised px-4 py-4" aria-labelledby="find-community-alternatives-heading">
-                <h3 id="find-community-alternatives-heading" className="text-sm font-semibold text-primary">Other ways in</h3>
+              <section className="mt-4 rounded-xl border border-outline-variant bg-surface-container px-4 py-4" aria-labelledby="find-community-alternatives-heading">
+                <h3 id="find-community-alternatives-heading" className="text-body-md font-semibold text-on-surface">Other ways in</h3>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   <Button variant="secondary" onClick={() => setTab('join')}>
                     Use an invitation
@@ -934,11 +934,11 @@ export function CreateCommunityModal({
                 </div>
               </section>
 
-              <details className="mt-4 rounded-control border border-border-subtle bg-surface-raised px-3">
-                <summary className="flex min-h-11 cursor-pointer items-center text-sm font-semibold text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus">
+              <details className="mt-4 rounded-full border border-outline-variant bg-surface-container px-3">
+                <summary className="flex min-h-11 cursor-pointer items-center text-body-md font-semibold text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus">
                   Advanced: use another directory
                 </summary>
-                <div className="space-y-3 border-t border-border-subtle py-3">
+                <div className="space-y-3 border-t border-outline-variant py-3">
                   <Input
                     label="Compatible directory address"
                     value={directoryServer}

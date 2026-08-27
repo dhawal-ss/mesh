@@ -588,8 +588,8 @@ export function ChannelSidebar() {
   if (!activeCommunity) {
     return (
       <div className="flex flex-col h-full">
-        <div className="flex h-conversation-header flex-shrink-0 items-center border-b border-border-subtle px-4">
-          <h2 className="text-sm font-semibold text-primary">Your communities</h2>
+        <div className="flex h-conversation-header flex-shrink-0 items-center border-b border-outline-variant px-4">
+          <h2 className="text-body-md font-semibold text-on-surface">Your communities</h2>
         </div>
         {/*
           The checklist mounts here as well as above the room list. It used to
@@ -643,14 +643,14 @@ export function ChannelSidebar() {
   return (
     <>
       <div className="flex flex-col h-full">
-        <div className="mesh-community-header flex h-shell-header flex-shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-3">
+        <div className="mesh-community-header flex h-shell-header flex-shrink-0 items-center justify-between gap-2 border-b border-outline-variant px-3">
           <span className="mesh-community-identity min-w-0 flex-1">
-            <span className="block truncate text-sm font-semibold text-primary">
+            <span className="block truncate text-body-md font-semibold text-on-surface">
               {activeCommunity.name}
             </span>
-            <span className="flex items-center gap-2 truncate text-caption text-muted">
+            <span className="flex items-center gap-2 truncate text-label-sm text-on-surface-variant">
               <span className="inline-flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-round bg-status-success" aria-hidden="true" />
+                <span className="h-1.5 w-1.5 rounded-round bg-primary" aria-hidden="true" />
                 {activeCommunity.memberCount ?? 1} members
               </span>
             </span>
@@ -658,7 +658,7 @@ export function ChannelSidebar() {
           <IconButton
             size="sm"
             aria-label={`Open settings for ${activeCommunity.name}`}
-            className="border border-border-subtle"
+            className="border border-outline-variant"
             onClick={() => navigate({
               kind: 'community-admin',
               communityId: activeCommunity.id,
@@ -698,7 +698,7 @@ export function ChannelSidebar() {
           {roomsUnavailable && (
             <div
               role="alert"
-              className="mb-2 rounded-control border border-container-warning-line bg-container-warning px-2 py-2 text-xs text-secondary"
+              className="mb-2 rounded-full border border-marker-container-line bg-marker-container px-2 py-2 text-body-sm text-on-surface-variant"
             >
               <p>
                 {activeRefresh?.status === 'stale'
@@ -707,7 +707,7 @@ export function ChannelSidebar() {
               </p>
               <button
                 type="button"
-                className="mt-1 min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+                className="mt-1 min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
                 onClick={() => activeCommunityId && requestCommunityRefresh(activeCommunityId)}
               >
                 Retry rooms
@@ -744,10 +744,10 @@ export function ChannelSidebar() {
                         >
                           <span
                             aria-hidden="true"
-                            className="mesh-disclosure-mark text-muted"
+                            className="mesh-disclosure-mark text-on-surface-variant"
                             data-collapsed={collapsed ? 'true' : 'false'}
                           />
-                          <span className="font-mono text-eyebrow font-medium uppercase text-content-secondary group-hover:text-content-primary">
+                          <span className="text-label-sm font-medium text-on-surface-variant group-hover:text-on-surface">
                             {entry.label}
                           </span>
                         </button>
@@ -910,7 +910,7 @@ export function ChannelSidebar() {
                             key={`${member.userId}:${member.deviceId}:${member.sessionId}`}
                             type="button"
                             onClick={joinChannel}
-                            className="flex min-h-6 w-full items-center gap-1.5 rounded-control px-1 py-0.5 text-left text-xs text-muted hover:bg-surface-hover hover:text-secondary"
+                            className="flex min-h-6 w-full items-center gap-1.5 rounded-full px-1 py-0.5 text-left text-body-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface-variant"
                           >
                             <Avatar
                               color="var(--avatar-violet)"
@@ -924,7 +924,7 @@ export function ChannelSidebar() {
                           </button>
                         ))}
                         {members.length > 8 && (
-                          <div className="member-count px-1 text-meta text-muted">
+                          <div className="member-count px-1 text-body-sm text-on-surface-variant">
                             +{members.length - 8} more
                           </div>
                         )}
@@ -972,13 +972,13 @@ export function ChannelSidebar() {
           )}
         </div>
 
-        <div className="mesh-community-shortcuts grid grid-cols-3 gap-1 border-t border-border-subtle p-2">
+        <div className="mesh-community-shortcuts grid grid-cols-3 gap-1 border-t border-outline-variant p-2">
           <button
             type="button"
             aria-haspopup="dialog"
             aria-expanded={inviteOpen}
             onClick={() => setInviteOpen(true)}
-            className="flex min-h-9 items-center justify-center gap-2 rounded-control text-xs font-medium text-secondary transition-colors hover:bg-surface-hover hover:text-primary"
+            className="flex min-h-9 items-center justify-center gap-2 rounded-full text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
           >
             <Icon name="userPlus" size="sm" />
             Invite
@@ -986,7 +986,7 @@ export function ChannelSidebar() {
           <button
             type="button"
             onClick={browseRooms}
-            className="flex min-h-9 items-center justify-center gap-2 rounded-control text-xs font-medium text-secondary transition-colors hover:bg-surface-hover hover:text-primary"
+            className="flex min-h-9 items-center justify-center gap-2 rounded-full text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
           >
             <Icon name="search" size="sm" />
             Browse
@@ -994,7 +994,7 @@ export function ChannelSidebar() {
           <button
             type="button"
             onClick={openMembers}
-            className="flex min-h-9 items-center justify-center gap-2 rounded-control text-xs font-medium text-secondary transition-colors hover:bg-surface-hover hover:text-primary"
+            className="flex min-h-9 items-center justify-center gap-2 rounded-full text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
           >
             <Icon name="users" size="sm" />
             Members

@@ -318,14 +318,14 @@ export function HomeSurface() {
 
   return (
     <section className="mesh-home-surface flex min-h-0 flex-1 flex-col overflow-hidden" aria-labelledby="mesh-home-heading">
-      <header className="mesh-route-header mesh-home-header flex flex-shrink-0 items-center gap-3 border-b border-border-subtle px-shell-gutter py-2">
+      <header className="mesh-route-header mesh-home-header flex flex-shrink-0 items-center gap-3 border-b border-outline-variant px-shell-gutter py-2">
         <div className="min-w-0 flex-1">
           <Eyebrow className="mesh-surface-kicker block">Start here</Eyebrow>
           <h1
             id="mesh-home-heading"
             data-mesh-route-heading
             tabIndex={-1}
-            className="mt-1 text-screen-sm font-semibold text-content-primary outline-none"
+            className="mt-1 text-display-sm font-semibold text-on-surface outline-none"
           >
             Home
           </h1>
@@ -333,11 +333,11 @@ export function HomeSurface() {
         <Button variant="outline" size="sm" onClick={openCommandPalette}>
           <Icon name="search" size="sm" />
           Jump to…
-          <span className="mesh-home-shortcut font-mono text-meta text-muted">Ctrl K</span>
+          <span className="mesh-home-shortcut text-body-sm text-on-surface-variant">Ctrl K</span>
         </Button>
       </header>
 
-      <div className="mesh-home-body min-h-0 flex-1 overflow-y-auto bg-surface-base pb-3 sm:pb-5">
+      <div className="mesh-home-body min-h-0 flex-1 overflow-y-auto bg-surface pb-3 sm:pb-5">
         {invites.length > 0 && (
           /* Titled apart from the saved-invitation section below, which already
              owns the name "Invitations": HomeSection derives its heading id
@@ -350,13 +350,13 @@ export function HomeSurface() {
                 <div
                   key={invite.roomId}
                   role="listitem"
-                  className="flex items-center gap-3 border-b border-border-subtle px-shell-gutter py-3"
+                  className="flex items-center gap-3 border-b border-outline-variant px-shell-gutter py-3"
                   aria-label={communityInviteLabel(invite)}
                 >
                   <Avatar color={invite.inviterAvatarColor} size={32} name={invite.name} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-semibold text-primary">{invite.name}</span>
-                    <span className="mt-0.5 block truncate text-sm text-muted">
+                    <span className="block truncate font-semibold text-on-surface">{invite.name}</span>
+                    <span className="mt-0.5 block truncate text-body-md text-on-surface-variant">
                       {invite.canAccept
                         ? `Invited by ${invite.inviterDisplayName}`
                         : `Invited by ${invite.inviterDisplayName}. Not end-to-end encrypted, so Mesh cannot join it.`}
@@ -459,10 +459,10 @@ export function HomeSurface() {
           {liveParties.map(({ channel, community, members }) => {
             const alreadyConnected = currentVoiceRoom === channel.id
             return (
-              <div key={channel.id} className="mesh-home-row flex items-center gap-3 border-b border-border-subtle">
+              <div key={channel.id} className="mesh-home-row flex items-center gap-3 border-b border-outline-variant">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold text-primary">{channel.name}</p>
-                  <p className="truncate text-meta text-muted">
+                  <p className="truncate font-semibold text-on-surface">{channel.name}</p>
+                  <p className="truncate text-body-sm text-on-surface-variant">
                     {community.name} · {members.length} in call
                   </p>
                 </div>
@@ -507,15 +507,15 @@ export function HomeSurface() {
           Live now section above, which has always been guarded this way.
         */}
         {pendingInvitation && <HomeSection title="Invitations" count={1}>
-          <div className="mesh-home-row flex items-center gap-3 border-b border-border-subtle">
-              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center border border-border-subtle text-content-secondary">
+          <div className="mesh-home-row flex items-center gap-3 border-b border-outline-variant">
+              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center border border-outline-variant text-on-surface-variant">
                 <Icon name="messageCircle" size="md" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold text-primary">
+                <p className="truncate font-semibold text-on-surface">
                   {pendingInvitation.communityName?.trim() || 'Saved community invitation'}
                 </p>
-                <p className="truncate text-meta text-muted">
+                <p className="truncate text-body-sm text-on-surface-variant">
                   Review the destination and choose where your account lives.
                 </p>
               </div>
@@ -564,7 +564,7 @@ export function HomeSurface() {
               "where was I". It is the only place the accent appears on this
               surface.
             */
-            className="mesh-home-feature grid gap-4 border-y border-rule border-border-structural px-shell-gutter py-6 text-left transition-colors hover:bg-surface-fill"
+            className="mesh-home-feature grid gap-4 border-y border-rule border-outline-variant px-shell-gutter py-6 text-left transition-colors hover:bg-state-hover"
             onClick={() => openRoute(featuredRecent.route)}
           >
             <Eyebrow accent className="mesh-home-feature-index">
@@ -591,29 +591,29 @@ export function HomeSurface() {
               "New activity" here rather than leaking content.
             */}
             <span className="mesh-home-feature-copy min-w-0">
-              <span className="mesh-home-feature-title block truncate text-lg font-semibold text-content-primary">
+              <span className="mesh-home-feature-title block truncate text-headline-md font-semibold text-on-surface">
                 {leadsWithMessage ? featuredRecent.preview : featuredRecent.title}
               </span>
               <span
                 data-home-feature-source
-                className="mt-1 block truncate text-support text-content-secondary"
+                className="mt-1 block truncate text-body-sm text-on-surface-variant"
               >
                 {leadsWithMessage ? featuredRecent.source : featuredRecent.detail}
               </span>
             </span>
-            <span className="mesh-home-feature-action inline-flex min-h-control-sm items-center gap-1.5 justify-self-start rounded-plane bg-accent px-3 font-mono text-chip font-semibold uppercase text-content-on-accent">
+            <span className="mesh-home-feature-action inline-flex min-h-control-sm items-center gap-1.5 justify-self-start rounded-full bg-primary px-3 text-label-md font-semibold text-on-primary">
               Open
               <Icon name="arrowRight" size="sm" />
             </span>
-            <span className="mesh-home-feature-meta flex items-center gap-3 font-mono text-count text-content-secondary">
+            <span className="mesh-home-feature-meta flex items-center gap-3 text-label-sm text-on-surface-variant">
               {featuredRecent.unreadMentions > 0 && (
-                <span className="text-status-danger">
+                <span className="text-error">
                   <span aria-hidden="true">@</span>
                   {Math.min(featuredRecent.unreadMentions, 999)}
                 </span>
               )}
               {featuredRecent.unreadCount > 0 && (
-                <span className="text-content-accent">{rowNumber(Math.min(featuredRecent.unreadCount, 999) - 1)} unread</span>
+                <span className="text-primary">{rowNumber(Math.min(featuredRecent.unreadCount, 999) - 1)} unread</span>
               )}
               {featuredRecent.lastOpenedAt !== null && (
                 <time dateTime={new Date(featuredRecent.lastOpenedAt).toISOString()}>
@@ -643,7 +643,7 @@ export function HomeSurface() {
             <button
               key={row.key}
               type="button"
-              className="mesh-home-row group flex w-full items-center gap-3 border-b border-rule border-border-row text-left transition-colors hover:bg-surface-fill"
+              className="mesh-home-row group flex w-full items-center gap-3 border-b border-rule border-outline-variant text-left transition-colors hover:bg-state-hover"
               onClick={() => openRoute(row.route)}
               aria-label={rowAccessibleName(row)}
             >
@@ -655,18 +655,18 @@ export function HomeSurface() {
               <span
                 data-home-index
                 aria-hidden="true"
-                className="w-row-index flex-none font-mono text-count font-semibold text-content-secondary transition-colors duration-instant group-hover:text-content-primary"
+                className="w-row-index flex-none text-label-sm font-semibold text-on-surface-variant transition-colors duration-instant group-hover:text-on-surface"
               >
                 {rowNumber(position + 1)}
               </span>
               <Icon
                 name={row.route.kind === 'direct' ? 'messageCircle' : row.route.kind === 'voice' ? 'volume' : 'hash'}
                 size="xs"
-                className="flex-none text-content-tertiary"
+                className="flex-none text-outline"
               />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-row font-medium text-content-primary">{row.title}</span>
-                <span className="block truncate text-support text-content-secondary">{row.detail}</span>
+                <span className="block truncate text-title-md font-medium text-on-surface">{row.title}</span>
+                <span className="block truncate text-body-sm text-on-surface-variant">{row.detail}</span>
               </span>
               {/*
                 Mentions and ordinary unreads stay separate indicators, and the
@@ -674,18 +674,18 @@ export function HomeSurface() {
                 distinction depends on colour. This matches ChannelItem.
               */}
               {row.unreadMentions > 0 && (
-                <span className="font-mono text-count font-semibold text-status-danger">
+                <span className="text-label-sm font-semibold text-error">
                   <span aria-hidden="true">@</span>
                   {Math.min(row.unreadMentions, 999)}
                 </span>
               )}
               {row.unreadCount > 0 && (
-                <span className="font-mono text-count font-semibold text-content-accent">
+                <span className="text-label-sm font-semibold text-primary">
                   {rowNumber(Math.min(row.unreadCount, 999) - 1)}
                 </span>
               )}
               {row.lastOpenedAt !== null && (
-                <time className="font-mono text-count text-content-secondary" dateTime={new Date(row.lastOpenedAt).toISOString()}>
+                <time className="text-label-sm text-on-surface-variant" dateTime={new Date(row.lastOpenedAt).toISOString()}>
                   {formatRecentTime(row.lastOpenedAt)}
                 </time>
               )}
@@ -704,7 +704,7 @@ export function HomeSurface() {
         prose: the account, its link state, and the number of servers and
         communities behind the ledger above.
       */}
-      <AmbientNote className="font-mono uppercase">
+      <AmbientNote className="">
         {[
           identity?.publicKey ?? null,
           LINK_PHASE_LABEL[linkPhase ?? 'online'],
@@ -762,7 +762,7 @@ function HomeSection({
         headingLevel={2}
         title={title}
         count={count}
-        className="border-b border-rule border-border-structural px-shell-gutter py-2"
+        className="border-b border-rule border-outline-variant px-shell-gutter py-2"
       />
       <div>{children}</div>
     </section>
@@ -780,9 +780,9 @@ function HomeEmpty({
   action?: React.ReactNode
 }) {
   return (
-    <div className="border-b border-border-subtle px-shell-gutter py-4">
-      <p className="font-semibold text-secondary">{title}</p>
-      {detail && <p className="mt-1 text-sm text-muted">{detail}</p>}
+    <div className="border-b border-outline-variant px-shell-gutter py-4">
+      <p className="font-semibold text-on-surface-variant">{title}</p>
+      {detail && <p className="mt-1 text-body-md text-on-surface-variant">{detail}</p>}
       {action ? <div className="mt-3">{action}</div> : null}
     </div>
   )

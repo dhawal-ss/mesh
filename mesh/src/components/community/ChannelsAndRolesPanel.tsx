@@ -54,11 +54,11 @@ export function ChannelsAndRolesPanel({
       closeLabel="Close channels and roles"
     >
       <fieldset className="space-y-2">
-        <legend className="text-sm font-semibold text-primary">Your sidebar</legend>
+        <legend className="text-body-md font-semibold text-on-surface">Your sidebar</legend>
         {channels.map((channel) => (
           <label
             key={channel.id}
-            className="flex min-h-11 items-start gap-3 rounded-control bg-surface-hover px-3 py-2"
+            className="flex min-h-11 items-start gap-3 rounded-full bg-surface-container-high px-3 py-2"
           >
             <input
               type="checkbox"
@@ -74,21 +74,21 @@ export function ChannelsAndRolesPanel({
               }}
             />
             <span>
-              <span className="block text-sm font-medium text-primary">{channel.label}</span>
-              <span className="block text-xs text-muted">{channel.description}</span>
+              <span className="block text-body-md font-medium text-on-surface">{channel.label}</span>
+              <span className="block text-body-sm text-on-surface-variant">{channel.description}</span>
             </span>
           </label>
         ))}
       </fieldset>
 
       <section className="mt-5" aria-labelledby="answer-roles-heading">
-        <h3 id="answer-roles-heading" className="text-sm font-semibold text-primary">
+        <h3 id="answer-roles-heading" className="text-body-md font-semibold text-on-surface">
           Roles from your answers
         </h3>
         {selection.roleTemplateIds.length === 0 ? (
-          <p className="mt-2 text-xs text-muted">Answer the questions above to add suggested roles.</p>
+          <p className="mt-2 text-body-sm text-on-surface-variant">Answer the questions above to add suggested roles.</p>
         ) : (
-          <ul className="mt-2 space-y-1 text-sm text-secondary">
+          <ul className="mt-2 space-y-1 text-body-md text-on-surface-variant">
             {selection.roleTemplateIds.map((roleId) => (
               <li key={roleId}>{roleLabels[roleId] ?? 'Community role'}</li>
             ))}
@@ -96,7 +96,7 @@ export function ChannelsAndRolesPanel({
         )}
       </section>
 
-      {error && <p role="alert" className="mt-4 text-sm text-status-danger">{error}</p>}
+      {error && <p role="alert" className="mt-4 text-body-md text-error">{error}</p>}
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
         <Button disabled={saving} onClick={() => void save()}>

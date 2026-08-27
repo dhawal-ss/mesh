@@ -42,7 +42,7 @@ export function ScopedErrorBoundary({
           role="alert"
           aria-live="assertive"
         >
-          <p className="text-xs text-muted">{description}</p>
+          <p className="text-body-sm text-on-surface-variant">{description}</p>
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
@@ -50,7 +50,7 @@ export function ScopedErrorBoundary({
                 onRetry?.()
                 resetError()
               }}
-              className="inline-flex min-h-8 items-center rounded-panel px-2 text-xs font-medium text-text-link transition-colors hover:bg-surface-hover hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="inline-flex min-h-8 items-center rounded-xl px-2 text-body-sm font-medium text-primary transition-colors hover:bg-surface-container-high hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             >
               Try again
             </button>
@@ -58,7 +58,7 @@ export function ScopedErrorBoundary({
               <button
                 type="button"
                 onClick={onDismiss}
-                className="inline-flex min-h-8 items-center rounded-panel px-2 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                className="inline-flex min-h-8 items-center rounded-xl px-2 text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               >
                 {dismissLabel}
               </button>
@@ -92,24 +92,24 @@ export function DialogErrorBoundary({
       fallback={(resetError) => (
         <Modal open={open} onClose={onClose} title={title}>
           <div role="alert" aria-live="assertive" className="space-y-3">
-            <p className="text-sm font-medium text-secondary">
+            <p className="text-body-md font-medium text-on-surface-variant">
               This settings panel could not be displayed.
             </p>
-            <p className="text-xs text-muted">
+            <p className="text-body-sm text-on-surface-variant">
               Your other conversations and controls are still available.
             </p>
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={resetError}
-                className="rounded-panel bg-accent px-3 py-1.5 text-xs font-medium text-content-on-accent hover:bg-accent-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                className="rounded-xl bg-primary px-3 py-1.5 text-body-sm font-medium text-on-primary hover:bg-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               >
                 Try again
               </button>
               <button
                 type="button"
                 onClick={onClose}
-                className="min-h-8 rounded-panel bg-surface-hover px-3 text-xs font-medium text-primary hover:bg-surface-active focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                className="min-h-8 rounded-xl bg-surface-container-high px-3 text-body-sm font-medium text-on-surface hover:bg-surface-container-highest focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               >
                 Close
               </button>

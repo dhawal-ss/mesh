@@ -222,8 +222,8 @@ describe('W2.3 primitive library', () => {
 
     expect(section?.className).toContain('py-5')
     expect(section?.className).not.toContain('py-10')
-    expect(title?.className).toContain('text-sm')
-    expect(description?.className).toContain('text-xs')
+    expect(title?.className).toContain('text-body-md')
+    expect(description?.className).toContain('text-body-sm')
     expect(icon?.parentElement?.className).toContain('h-6')
     expect(section?.getAttribute('aria-labelledby')).toBe(title?.id)
     expect(section?.getAttribute('aria-describedby')).toBe(description?.id)
@@ -253,12 +253,12 @@ describe('W2.3 primitive library', () => {
     const count = container.querySelector('span + span')
     expect(header?.className).toContain('min-h-8')
     // Quiet Structure's eyebrow: mono at 9.5px, not the 11px caption step.
-    // tracking-eyebrow rides on the type role now rather than being applied
+    // tracking-label-md rides on the type role now rather than being applied
     // beside it, so the class is gone and the 0.16em is not.
-    expect(header?.className).toContain('font-mono')
-    expect(header?.className).toContain('text-eyebrow')
-    expect(header?.className).toContain('text-content-secondary')
-    expect(count?.className).toContain('font-mono')
+    expect(header?.className).toContain('')
+    expect(header?.className).toContain('text-label-sm')
+    expect(header?.className).toContain('text-on-surface-variant')
+    expect(count?.className).toContain('')
     expect(count?.textContent).toBe('12')
     expect(container.querySelector('#rooms-heading')?.textContent).toBe('Rooms')
   })

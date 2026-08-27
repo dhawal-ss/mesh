@@ -124,24 +124,24 @@ function CommunityDeskSurface({ communityId }: { communityId: string }) {
   return (
     <section className="mesh-dm-landing flex min-h-0 flex-1 items-start overflow-y-auto" aria-labelledby="mesh-community-heading">
       <div className="mesh-dm-landing-inner w-full">
-        <header className="mesh-dm-landing-header grid gap-5 border-b border-border-subtle pb-7">
+        <header className="mesh-dm-landing-header grid gap-5 border-b border-outline-variant pb-7">
           <div>
-            <p className="font-mono text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">
+            <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">
               Community · {formatCommunityRole(community.role)}
             </p>
             <h1
               id="mesh-community-heading"
               data-mesh-route-heading
               tabIndex={-1}
-              className="mesh-dm-landing-title mt-3 font-semibold text-primary outline-none"
+              className="mesh-dm-landing-title mt-3 font-semibold text-on-surface outline-none"
             >
               {community.name}
             </h1>
-            <p className="mt-4 max-w-2xl text-sm text-secondary">
+            <p className="mt-4 max-w-2xl text-body-md text-on-surface-variant">
               {community.description || 'A place to talk, share, and spend time together.'}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-meta text-muted">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-body-sm text-on-surface-variant">
             <span>{community.memberCount} members</span>
             <span>{textRoomCount} {textRoomCount === 1 ? 'room' : 'rooms'}</span>
           </div>
@@ -150,22 +150,22 @@ function CommunityDeskSurface({ communityId }: { communityId: string }) {
         {featuredRoom ? (
           <button
             type="button"
-            className="mesh-dm-lead grid w-full gap-4 border-b border-border-subtle text-left"
+            className="mesh-dm-lead grid w-full gap-4 border-b border-outline-variant text-left"
             onClick={() => openTextRoom(featuredRoom)}
             aria-label={`Open room ${featuredRoom.name}`}
           >
-            <span className="mesh-dm-lead-index font-mono text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">
+            <span className="mesh-dm-lead-index text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">
               01 · {recentRooms.length > 0 ? 'Continue' : 'Start here'}
               {featuredRoom.unreadCount > 0 ? ` · ${featuredRoom.unreadCount} unread` : ''}
             </span>
-            <span className="flex h-12 w-12 items-center justify-center border border-border-subtle text-accent">
+            <span className="flex h-12 w-12 items-center justify-center border border-outline-variant text-primary">
               <Icon name="hash" size="lg" />
             </span>
             <span className="mesh-dm-lead-copy min-w-0">
-              <span className="mesh-dm-lead-title block truncate font-semibold text-primary">
+              <span className="mesh-dm-lead-title block truncate font-semibold text-on-surface">
                 {featuredRoom.name}
               </span>
-              <span className="mt-1 block max-w-2xl text-sm text-secondary">
+              <span className="mt-1 block max-w-2xl text-body-md text-on-surface-variant">
                 {featuredRoom.unreadCount > 0
                   ? `${featuredRoom.unreadCount} unread ${featuredRoom.unreadCount === 1 ? 'message' : 'messages'} waiting.`
                   : recentRooms.length > 0
@@ -173,15 +173,15 @@ function CommunityDeskSurface({ communityId }: { communityId: string }) {
                     : 'A good place to begin.'}
               </span>
             </span>
-            <span className="mesh-dm-lead-action flex items-center gap-3 font-semibold text-primary">
+            <span className="mesh-dm-lead-action flex items-center gap-3 font-semibold text-on-surface">
               Open room
               <Icon name="arrowRight" size="sm" />
             </span>
           </button>
         ) : (
-          <div className="border-b border-border-subtle py-8">
-            <p className="font-semibold text-primary">No rooms yet</p>
-            <p className="mt-1 text-sm text-muted">Rooms will appear here when they are added.</p>
+          <div className="border-b border-outline-variant py-8">
+            <p className="font-semibold text-on-surface">No rooms yet</p>
+            <p className="mt-1 text-body-md text-on-surface-variant">Rooms will appear here when they are added.</p>
           </div>
         )}
 
@@ -192,29 +192,29 @@ function CommunityDeskSurface({ communityId }: { communityId: string }) {
               headingLevel={2}
               title="More rooms"
               count={additionalRooms.length}
-              className="border-b border-border-subtle py-2"
+              className="border-b border-outline-variant py-2"
             />
             {additionalRooms.map((channel, index) => (
               <button
                 key={channel.id}
                 type="button"
-                className="mesh-dm-landing-row flex w-full items-center gap-3 border-b border-border-subtle text-left hover:bg-surface-hover"
+                className="mesh-dm-landing-row flex w-full items-center gap-3 border-b border-outline-variant text-left hover:bg-surface-container-high"
                 onClick={() => openTextRoom(channel)}
                 aria-label={`Open room ${channel.name}`}
               >
-                <span className="font-mono text-meta text-accent">{String(index + 2).padStart(2, '0')}</span>
-                <Icon name="hash" size="sm" className="text-muted" />
-                <span className="min-w-0 flex-1 truncate font-semibold text-primary">{channel.name}</span>
+                <span className="text-body-sm text-primary">{String(index + 2).padStart(2, '0')}</span>
+                <Icon name="hash" size="sm" className="text-on-surface-variant" />
+                <span className="min-w-0 flex-1 truncate font-semibold text-on-surface">{channel.name}</span>
                 {channel.unreadCount > 0 && (
-                  <span className="font-mono text-meta text-accent">{Math.min(channel.unreadCount, 999)}</span>
+                  <span className="text-body-sm text-primary">{Math.min(channel.unreadCount, 999)}</span>
                 )}
-                <Icon name="arrowRight" size="sm" className="text-muted" />
+                <Icon name="arrowRight" size="sm" className="text-on-surface-variant" />
               </button>
             ))}
             {hiddenRoomCount > 0 && (
               // The desk is a shortlist, not the room index. Saying so keeps the
               // room count in the header from reading as a miscount.
-              <p className="border-b border-border-subtle py-2 font-mono text-meta text-muted">
+              <p className="border-b border-outline-variant py-2 text-body-sm text-on-surface-variant">
                 {hiddenRoomCount} more {hiddenRoomCount === 1 ? 'room' : 'rooms'} in the room list
               </p>
             )}
@@ -234,7 +234,7 @@ function CommunityDeskSurface({ communityId }: { communityId: string }) {
                 <button
                   key={channel.id}
                   type="button"
-                  className="mesh-home-row flex w-full items-center gap-3 border-b border-border-subtle text-left hover:bg-surface-hover"
+                  className="mesh-home-row flex w-full items-center gap-3 border-b border-outline-variant text-left hover:bg-surface-container-high"
                   onClick={() => {
                     setActiveChannel(channel.id)
                     navigate({ kind: 'voice', communityId, roomId: channel.id })
@@ -242,10 +242,10 @@ function CommunityDeskSurface({ communityId }: { communityId: string }) {
                 >
                   <Icon name="volume" size="md" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-semibold text-primary">{channel.name}</span>
-                    <span className="block text-meta text-muted">{occupancy} in call</span>
+                    <span className="block truncate font-semibold text-on-surface">{channel.name}</span>
+                    <span className="block text-body-sm text-on-surface-variant">{occupancy} in call</span>
                   </span>
-                  <span className="font-semibold text-accent">Open</span>
+                  <span className="font-semibold text-primary">Open</span>
                 </button>
               )
             })}
@@ -400,7 +400,7 @@ function CommunitiesRouteSurface({ mode }: { mode: CommunitiesMode }) {
         id="mesh-communities-heading"
         title="Communities"
       />
-      <label className="border-b border-border-subtle bg-surface-sunken px-shell-gutter py-3 text-xs font-medium text-secondary md:hidden">
+      <label className="border-b border-outline-variant bg-surface-container-lowest px-shell-gutter py-3 text-body-sm font-medium text-on-surface-variant md:hidden">
         Community action
         <select
           value={currentEntry.key}
@@ -408,13 +408,13 @@ function CommunitiesRouteSurface({ mode }: { mode: CommunitiesMode }) {
             const next = COMMUNITY_MODES.find((entry) => entry.key === event.target.value)
             if (next) selectMode(next)
           }}
-          className="mt-1 block min-h-11 w-full rounded-control border border-border-control bg-surface-raised px-3 text-sm text-primary"
+          className="mt-1 block min-h-11 w-full rounded-full border border-outline bg-surface-container px-3 text-body-md text-on-surface"
         >
           {COMMUNITY_MODES.map((entry) => <option key={entry.key} value={entry.key}>{entry.title}</option>)}
         </select>
       </label>
       <div className="grid min-h-0 flex-1 md:grid-cols-route">
-        <nav className="mesh-route-navigation hidden min-h-0 border-r border-border-subtle bg-surface-sunken px-3 py-3 md:block" aria-label="Community actions">
+        <nav className="mesh-route-navigation hidden min-h-0 border-r border-outline-variant bg-surface-container-lowest px-3 py-3 md:block" aria-label="Community actions">
           <div role="tablist" aria-orientation="vertical" className="flex flex-col gap-1">
             {COMMUNITY_MODES.map((entry) => (
               <button
@@ -426,13 +426,13 @@ function CommunitiesRouteSurface({ mode }: { mode: CommunitiesMode }) {
                 aria-selected={currentEntry.key === entry.key}
                 aria-controls="mesh-communities-panel"
                 tabIndex={currentEntry.key === entry.key ? 0 : -1}
-                className={`mesh-route-tab min-h-11 rounded-control px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
-                  currentEntry.key === entry.key ? 'bg-container-accent text-primary' : 'text-secondary hover:bg-surface-hover hover:text-primary'
+                className={`mesh-route-tab min-h-11 rounded-full px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
+                  currentEntry.key === entry.key ? 'bg-primary-container text-on-surface' : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
                 }`}
                 onClick={() => selectMode(entry)}
                 onKeyDown={(event) => moveModeFocus(event, entry.key)}
               >
-                <span className="flex items-center gap-2 text-sm font-semibold"><Icon name={entry.icon} size="sm" />{entry.title}</span>
+                <span className="flex items-center gap-2 text-body-md font-semibold"><Icon name={entry.icon} size="sm" />{entry.title}</span>
               </button>
             ))}
           </div>
@@ -446,11 +446,11 @@ function CommunitiesRouteSurface({ mode }: { mode: CommunitiesMode }) {
         >
           <div className="mx-auto w-full max-w-3xl px-shell-gutter py-6">
             <div className="mb-5">
-              <p className="text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">Community action</p>
-              <h2 className="mt-1 text-title font-semibold text-primary">
+              <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">Community action</p>
+              <h2 className="mt-1 text-title-lg font-semibold text-on-surface">
                 {currentEntry.title}
               </h2>
-              <p className="mt-1 max-w-2xl text-sm text-muted">{currentEntry.detail}</p>
+              <p className="mt-1 max-w-2xl text-body-md text-on-surface-variant">{currentEntry.detail}</p>
             </div>
             <Suspense fallback={<SimpleSurface title={`Opening ${currentEntry.title}`} />}>
               <CreateCommunityModal
@@ -582,10 +582,10 @@ function YouRouteSurface({ section }: { section: YouSection }) {
         title="You"
         detail={identity?.displayName}
       />
-      <div className="border-b border-border-subtle bg-surface-sunken px-shell-gutter py-3 md:hidden">
+      <div className="border-b border-outline-variant bg-surface-container-lowest px-shell-gutter py-3 md:hidden">
         {currentPrimaryEntry ? (
           <>
-            <label htmlFor="mesh-you-section" className="block text-xs font-medium text-secondary">
+            <label htmlFor="mesh-you-section" className="block text-body-sm font-medium text-on-surface-variant">
               Settings section
             </label>
             <select
@@ -595,7 +595,7 @@ function YouRouteSurface({ section }: { section: YouSection }) {
                 const next = primaryYouSections.find((entry) => entry.section === event.target.value)
                 if (next) selectSection(next)
               }}
-              className="mt-1 block min-h-11 w-full rounded-control border border-border-control bg-surface-raised px-3 text-sm text-primary"
+              className="mt-1 block min-h-11 w-full rounded-full border border-outline bg-surface-container px-3 text-body-md text-on-surface"
             >
               {primaryYouSections.map((entry) => <option key={entry.section} value={entry.section}>{entry.title}</option>)}
             </select>
@@ -611,7 +611,7 @@ function YouRouteSurface({ section }: { section: YouSection }) {
         )}
       </div>
       <div className="grid min-h-0 flex-1 md:grid-cols-route">
-        <nav className="mesh-route-navigation hidden min-h-0 border-r border-border-subtle bg-surface-sunken px-3 py-3 md:block" aria-label="You sections">
+        <nav className="mesh-route-navigation hidden min-h-0 border-r border-outline-variant bg-surface-container-lowest px-3 py-3 md:block" aria-label="You sections">
           {!currentPrimaryEntry && (
             <Button
               variant="ghost"
@@ -633,13 +633,13 @@ function YouRouteSurface({ section }: { section: YouSection }) {
                 aria-selected={effectiveSection === entry.section}
                 aria-controls="mesh-you-panel"
                 tabIndex={effectiveSection === entry.section ? 0 : -1}
-                className={`mesh-route-tab min-h-11 rounded-control px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
-                  effectiveSection === entry.section ? 'bg-container-accent text-primary' : 'text-secondary hover:bg-surface-hover hover:text-primary'
+                className={`mesh-route-tab min-h-11 rounded-full px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
+                  effectiveSection === entry.section ? 'bg-primary-container text-on-surface' : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
                 }`}
                 onClick={() => selectSection(entry)}
                 onKeyDown={(event) => moveSectionFocus(event, entry.section)}
               >
-                <span className="block text-sm font-semibold">{entry.title}</span>
+                <span className="block text-body-md font-semibold">{entry.title}</span>
               </button>
             ))}
           </div>
@@ -769,7 +769,7 @@ function CommunityAdminRouteSurface({
           </Button>
         )}
       />
-      <label className="border-b border-border-subtle bg-surface-sunken px-shell-gutter py-3 text-xs font-medium text-secondary md:hidden">
+      <label className="border-b border-outline-variant bg-surface-container-lowest px-shell-gutter py-3 text-body-sm font-medium text-on-surface-variant md:hidden">
         Administration section
         <select
           value={section}
@@ -777,7 +777,7 @@ function CommunityAdminRouteSurface({
             const next = COMMUNITY_ADMIN_SECTIONS.find((entry) => entry.section === event.target.value)
             if (next) selectSection(next)
           }}
-          className="mt-1 block min-h-11 w-full rounded-control border border-border-control bg-surface-raised px-3 text-sm text-primary"
+          className="mt-1 block min-h-11 w-full rounded-full border border-outline bg-surface-container px-3 text-body-md text-on-surface"
         >
           {COMMUNITY_ADMIN_SECTIONS.map((entry) => (
             <option key={entry.section} value={entry.section}>{entry.title}</option>
@@ -785,7 +785,7 @@ function CommunityAdminRouteSurface({
         </select>
       </label>
       <div className="grid min-h-0 flex-1 md:grid-cols-route">
-        <nav className="mesh-route-navigation hidden min-h-0 overflow-y-auto border-r border-border-subtle bg-surface-sunken px-3 py-3 md:block" aria-label="Community administration sections">
+        <nav className="mesh-route-navigation hidden min-h-0 overflow-y-auto border-r border-outline-variant bg-surface-container-lowest px-3 py-3 md:block" aria-label="Community administration sections">
           <div role="tablist" aria-orientation="vertical" className="flex flex-col gap-1">
             {COMMUNITY_ADMIN_SECTIONS.map((entry) => (
               <button
@@ -797,13 +797,13 @@ function CommunityAdminRouteSurface({
                 aria-selected={section === entry.section}
                 aria-controls="mesh-community-admin-panel"
                 tabIndex={section === entry.section ? 0 : -1}
-                className={`mesh-route-tab min-h-11 rounded-control px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
-                  section === entry.section ? 'bg-container-accent text-primary' : 'text-secondary hover:bg-surface-hover hover:text-primary'
+                className={`mesh-route-tab min-h-11 rounded-full px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
+                  section === entry.section ? 'bg-primary-container text-on-surface' : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
                 }`}
                 onClick={() => selectSection(entry)}
                 onKeyDown={(event) => moveSectionFocus(event, entry.section)}
               >
-                <span className="block text-sm font-semibold">{entry.title}</span>
+                <span className="block text-body-md font-semibold">{entry.title}</span>
               </button>
             ))}
           </div>
@@ -860,17 +860,17 @@ function SurfaceHeader({
   action?: React.ReactNode
 }) {
   return (
-    <header className="mesh-route-header flex flex-shrink-0 items-center gap-3 border-b border-border-subtle px-shell-gutter py-2">
+    <header className="mesh-route-header flex flex-shrink-0 items-center gap-3 border-b border-outline-variant px-shell-gutter py-2">
       <div className="min-w-0 flex-1">
         <h1
           id={id}
           data-mesh-route-heading
           tabIndex={-1}
-          className="text-title font-semibold text-primary outline-none sm:truncate"
+          className="text-title-lg font-semibold text-on-surface outline-none sm:truncate"
         >
           {title}
         </h1>
-        {detail && <p className="text-meta text-muted sm:truncate">{detail}</p>}
+        {detail && <p className="text-body-sm text-on-surface-variant sm:truncate">{detail}</p>}
       </div>
       {action}
     </header>
@@ -894,7 +894,7 @@ function RuledSection({
         headingLevel={2}
         title={title}
         count={count}
-        className="border-b border-border-subtle px-shell-gutter py-2"
+        className="border-b border-outline-variant px-shell-gutter py-2"
       />
       {children}
     </section>
@@ -902,5 +902,5 @@ function RuledSection({
 }
 
 function RouteEmpty({ text }: { text: string }) {
-  return <p className="border-b border-border-subtle px-shell-gutter py-4 text-sm text-muted">{text}</p>
+  return <p className="border-b border-outline-variant px-shell-gutter py-4 text-body-md text-on-surface-variant">{text}</p>
 }

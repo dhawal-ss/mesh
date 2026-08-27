@@ -71,7 +71,7 @@ export function KitchenSink() {
   }, [density])
 
   return (
-    <ScrollArea className="h-screen bg-surface-sunken p-6 text-content">
+    <ScrollArea className="h-screen bg-surface-container-lowest p-6 text-on-surface">
       <motion.div
         aria-hidden="true"
         data-party-response-probe
@@ -82,8 +82,8 @@ export function KitchenSink() {
       />
       <header className="mx-auto mb-8 max-w-6xl">
         <Badge tone="accent">Development only</Badge>
-        <h1 className="mt-3 text-lg font-semibold">Mesh design-system kitchen sink</h1>
-        <p className="mt-1 text-sm text-content-secondary">
+        <h1 className="mt-3 text-headline-md font-semibold">Mesh design-system kitchen sink</h1>
+        <p className="mt-1 text-body-md text-on-surface-variant">
           Semantic primitives rendered across every supported theme.
         </p>
         <div className="mt-4 flex flex-wrap gap-2" aria-label="Accent presets">
@@ -108,7 +108,7 @@ export function KitchenSink() {
         ))}
 
         <Card className="space-y-5 p-5" variant="raised">
-          <h2 className="text-base font-semibold">Interactive overlays</h2>
+          <h2 className="text-body-lg font-semibold">Interactive overlays</h2>
           <div className="flex flex-wrap gap-2">
             <Button tone="accent" onClick={() => setDialogOpen(true)}>Open dialog</Button>
             <Button variant="outline" onClick={() => setSheetOpen(true)}>Open sheet</Button>
@@ -124,7 +124,7 @@ export function KitchenSink() {
               ]}
             />
             <Popover trigger={<Button variant="ghost">Popover</Button>}>
-              <p className="text-sm text-content-secondary">
+              <p className="text-body-md text-on-surface-variant">
                 Popovers inherit semantic overlay and focus tokens.
               </p>
             </Popover>
@@ -139,7 +139,7 @@ export function KitchenSink() {
               { id: 'delete', label: 'Delete', tone: 'danger' },
             ]}
           >
-            <div className="rounded-md border border-dashed border-border p-4 text-sm text-content-muted">
+            <div className="rounded-md border border-dashed border-outline p-4 text-body-md text-on-surface-variant">
               Right-click this region to test the context menu.
             </div>
           </ContextMenu>
@@ -160,8 +160,8 @@ export function KitchenSink() {
           <Tabs
             label="Example sections"
             items={[
-              { value: 'overview', label: 'Overview', content: <p className="text-sm text-content-secondary">Overview content</p> },
-              { value: 'details', label: 'Details', content: <p className="text-sm text-content-secondary">Detail content</p> },
+              { value: 'overview', label: 'Overview', content: <p className="text-body-md text-on-surface-variant">Overview content</p> },
+              { value: 'details', label: 'Details', content: <p className="text-body-md text-on-surface-variant">Detail content</p> },
             ]}
           />
         </Card>
@@ -180,7 +180,7 @@ export function KitchenSink() {
           title="Responsive sheet"
           description="Use sheets for narrow navigation and settings."
         >
-          <p className="text-sm text-content-secondary">Sheet content remains independently scrollable.</p>
+          <p className="text-body-md text-on-surface-variant">Sheet content remains independently scrollable.</p>
         </Sheet>
         <Command
           open={commandOpen}
@@ -198,15 +198,15 @@ export function KitchenSink() {
 
 function PrimitiveTheme({ theme }: { theme: typeof THEMES[number] }) {
   return (
-    <section data-theme={theme} className="rounded-panel border border-border-subtle bg-surface-base p-5">
+    <section data-theme={theme} className="rounded-xl border border-outline-variant bg-surface p-5">
       <div className="mb-5 flex items-center justify-between gap-4">
-        <h2 className="text-base font-semibold capitalize">{theme.replace('-', ' ')}</h2>
+        <h2 className="text-body-lg font-semibold capitalize">{theme.replace('-', ' ')}</h2>
         <Badge>{theme}</Badge>
       </div>
 
       <div className="space-y-6">
         <div className="space-y-3">
-          <h3 className="text-xs font-medium lowercase text-content-muted">Buttons</h3>
+          <h3 className="text-body-sm font-medium lowercase text-on-surface-variant">Buttons</h3>
           {BUTTON_VARIANTS.map((variant) => (
             <div key={variant} className="flex flex-wrap gap-2">
               {TONES.map((tone) => (

@@ -66,30 +66,30 @@ function MessageReportDialogContent({
       title="Report message"
     >
       <div className="space-y-4">
-        <p className="text-sm text-secondary">
+        <p className="text-body-md text-on-surface-variant">
           Your reason and a message reference go to your account service, not to community
           moderators.
         </p>
         {publicService ? (
-          <p className="text-sm text-secondary">
+          <p className="text-body-md text-on-surface-variant">
             For account or safety help,{' '}
             <a
               href={publicService.supportUrl}
               target="_blank"
               rel="noreferrer"
-              className="text-accent underline underline-offset-2"
+              className="text-primary underline underline-offset-2"
             >
               open {publicService.displayName} support
             </a>
             . Mesh does not operate this service.
           </p>
         ) : (
-          <p className="text-sm text-secondary">
+          <p className="text-body-md text-on-surface-variant">
             For account or safety help, use the support link from your account service. Mesh
             does not operate that service.
           </p>
         )}
-        <label className="block text-sm font-medium text-primary">
+        <label className="block text-body-md font-medium text-on-surface">
           Reason
           <textarea
             value={reason}
@@ -97,12 +97,12 @@ function MessageReportDialogContent({
             maxLength={500}
             rows={4}
             autoFocus
-            className="mt-2 w-full resize-y rounded-control border border-border bg-surface-sunken px-3 py-2 text-sm text-primary outline-none focus:border-accent"
+            className="mt-2 w-full resize-y rounded-full border border-outline bg-surface-container-lowest px-3 py-2 text-body-md text-on-surface outline-none focus:border-primary"
           />
         </label>
-        <p className="text-caption text-muted">{reason.length}/500 characters</p>
+        <p className="text-label-sm text-on-surface-variant">{reason.length}/500 characters</p>
         {error && (
-          <p role="alert" className="rounded-control bg-container-danger px-3 py-2 text-xs text-status-danger">
+          <p role="alert" className="rounded-full bg-error-container px-3 py-2 text-body-sm text-error">
             {error}
           </p>
         )}

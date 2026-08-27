@@ -161,7 +161,7 @@ export function VoiceControls({
         between them and Leave breaks out of the row as the only plane, because
         it is the only action here that pressing again does not undo.
       */}
-      <div className="flex w-full max-w-4xl items-center justify-center border-y border-rule border-border-structural">
+      <div className="flex w-full max-w-4xl items-center justify-center border-y border-rule border-outline-variant">
         <Tooltip
           content={
             inputMode === 'push-to-talk'
@@ -232,10 +232,10 @@ export function VoiceControls({
                   ? 'Unmute microphone'
                   : 'Mute microphone'
             }
-            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-plane border-l border-rule border-border-structural px-3 font-mono text-chip font-semibold uppercase transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
+            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-full border-l border-rule border-outline-variant px-3 text-label-md font-semibold transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
               isMuted && !isPushToTalking
-                ? 'bg-status-warning text-content-on-status'
-                : 'text-content-secondary hover:bg-surface-fill hover:text-content-primary'
+                ? 'bg-marker text-on-error'
+                : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
             }`}
           >
             <Icon name={isMuted && !isPushToTalking ? 'micOff' : 'mic'} size="sm" />
@@ -253,10 +253,10 @@ export function VoiceControls({
             onClick={() => setDeafened(!isDeafened)}
             aria-pressed={isDeafened}
             aria-label={isDeafened ? 'Turn incoming audio on' : 'Turn incoming audio off'}
-            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-plane border-l border-rule border-border-structural px-3 font-mono text-chip font-semibold uppercase transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
+            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-full border-l border-rule border-outline-variant px-3 text-label-md font-semibold transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
               isDeafened
-                ? 'bg-status-warning text-content-on-status'
-                : 'text-content-secondary hover:bg-surface-fill hover:text-content-primary'
+                ? 'bg-marker text-on-error'
+                : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
             }`}
           >
             <Icon name={isDeafened ? 'headphoneOff' : 'headphones'} size="sm" />
@@ -288,10 +288,10 @@ export function VoiceControls({
                   ? isCameraEnabled ? 'Stopping camera' : 'Starting camera'
                   : isCameraEnabled ? 'Turn camera off' : 'Turn camera on'
             }
-            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-plane border-l border-rule border-border-structural px-3 font-mono text-chip font-semibold uppercase transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
+            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-full border-l border-rule border-outline-variant px-3 text-label-md font-semibold transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
               isCameraEnabled
-                ? 'bg-accent text-content-on-accent'
-                : 'text-content-secondary hover:bg-surface-fill hover:text-content-primary'
+                ? 'bg-primary text-on-primary'
+                : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
             }`}
           >
             <Icon name={isCameraEnabled ? 'videoOff' : 'video'} size="sm" />
@@ -320,10 +320,10 @@ export function VoiceControls({
                   : isScreenSharing ? 'Stop sharing screen' : 'Share screen'
             }
             data-screen-sharing={isScreenSharing || undefined}
-            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-plane border-l border-rule border-border-structural px-3 font-mono text-chip font-semibold uppercase transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
+            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-full border-l border-rule border-outline-variant px-3 text-label-md font-semibold transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
               isScreenSharing
-                ? 'bg-accent text-content-on-accent'
-                : 'text-content-secondary hover:bg-surface-fill hover:text-content-primary'
+                ? 'bg-primary text-on-primary'
+                : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
             }`}
           >
             <Icon name={isScreenSharing ? 'screenShareOff' : 'screenShare'} size="sm" />
@@ -336,7 +336,7 @@ export function VoiceControls({
             <IconButton
               size="lg"
               aria-label="Open voice settings"
-              className="min-h-control-lg w-auto gap-1.5 rounded-plane border-l border-rule border-border-structural px-3 font-mono text-chip font-semibold uppercase text-content-secondary hover:bg-surface-fill hover:text-content-primary"
+              className="min-h-control-lg w-auto gap-1.5 rounded-full border-l border-rule border-outline-variant px-3 text-label-md font-semibold text-on-surface-variant hover:bg-state-hover hover:text-on-surface"
             >
               <Icon name="settings" size="sm" />
               <span aria-hidden="true">Settings</span>
@@ -349,21 +349,21 @@ export function VoiceControls({
           className="w-72 p-3"
         >
           <div className="space-y-3">
-            <label className="flex flex-col gap-1 text-meta text-muted">
+            <label className="flex flex-col gap-1 text-body-sm text-on-surface-variant">
               Talk mode
               <select
                 value={inputMode}
                 onChange={(event) =>
                   setInputMode(event.target.value as 'voice-activity' | 'push-to-talk')
                 }
-                className="h-control-md rounded-control border border-border bg-surface-sunken px-2 text-xs text-primary outline-none focus:border-accent"
+                className="h-control-md rounded-full border border-outline bg-surface-container-lowest px-2 text-body-sm text-on-surface outline-none focus:border-primary"
               >
                 <option value="voice-activity">Voice activity</option>
                 <option value="push-to-talk">Push to talk</option>
               </select>
             </label>
 
-            <div className="h-px bg-border-subtle" aria-hidden="true" />
+            <div className="h-px bg-outline-variant" aria-hidden="true" />
 
             <DeviceSelect
               label="Microphone"
@@ -388,8 +388,8 @@ export function VoiceControls({
             />
 
             <fieldset className="space-y-2">
-              <legend className="text-meta font-semibold text-primary">Audio cleanup</legend>
-              <p className="text-meta text-muted">Changes restart your microphone briefly.</p>
+              <legend className="text-body-sm font-semibold text-on-surface">Audio cleanup</legend>
+              <p className="text-body-sm text-on-surface-variant">Changes restart your microphone briefly.</p>
               <AudioProcessingToggle
                 label="Echo cancellation"
                 checked={audioProcessing.echoCancellation}
@@ -411,9 +411,9 @@ export function VoiceControls({
             </fieldset>
 
             <div className="space-y-1">
-              <span className="text-meta text-muted">Input level</span>
+              <span className="text-body-sm text-on-surface-variant">Input level</span>
               <div
-                className="h-trust-rail overflow-hidden rounded-plane bg-surface-fill-hover"
+                className="h-trust-rail overflow-hidden rounded-full bg-state-pressed"
                 role="meter"
                 aria-label="Microphone input level"
                 aria-valuemin={0}
@@ -421,7 +421,7 @@ export function VoiceControls({
                 aria-valuenow={Math.round(localAudioLevel * 100)}
               >
                 <div
-                  className="h-full rounded-plane bg-status-success transition-[width] duration-100"
+                  className="h-full rounded-full bg-primary transition-[width] duration-100"
                   data-design-token-exception="Live microphone level determines meter width."
                   style={{ width: `${Math.max(2, localAudioLevel * 100)}%` }}
                 />
@@ -429,17 +429,17 @@ export function VoiceControls({
             </div>
 
             {inputMode === 'push-to-talk' && (
-              <p className="text-meta text-muted">Hold Space while this view is focused to talk.</p>
+              <p className="text-body-sm text-on-surface-variant">Hold Space while this view is focused to talk.</p>
             )}
           </div>
         </Popover>
 
-        <div className="mx-0.5 h-6 w-px bg-border-subtle" aria-hidden="true" />
+        <div className="mx-0.5 h-6 w-px bg-outline-variant" aria-hidden="true" />
 
         <button
           type="button"
           onClick={onOpenMessages}
-          className="flex min-h-control-lg items-center gap-1.5 rounded-plane px-3 font-mono text-chip font-semibold uppercase text-content-secondary transition-colors hover:bg-surface-fill hover:text-content-primary"
+          className="flex min-h-control-lg items-center gap-1.5 rounded-full px-3 text-label-md font-semibold text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface"
           aria-label={`Open messages from ${roomName}`}
         >
           <Icon name="messageCircle" size="sm" />
@@ -458,7 +458,7 @@ export function VoiceControls({
               hairline cell. Leaving a call is the single action here that
               cannot be undone by pressing the same thing again.
             */
-            className="flex min-h-control-lg items-center justify-center gap-1.5 rounded-plane bg-status-danger px-3 font-mono text-chip font-semibold uppercase text-content-on-status transition-colors hover:bg-status-danger-hover disabled:opacity-60"
+            className="flex min-h-control-lg items-center justify-center gap-1.5 rounded-full bg-error px-3 text-label-md font-semibold text-on-error transition-colors hover:bg-error disabled:opacity-60"
           >
             <Icon name="phoneOff" size="sm" />
             <span className="hidden sm:inline">{leaving ? 'Leaving' : 'Leave'}</span>
@@ -467,7 +467,7 @@ export function VoiceControls({
       </div>
 
       {controlError && (
-        <p className="text-meta text-status-danger" role="alert">
+        <p className="text-body-sm text-error" role="alert">
           {controlError}
         </p>
       )}
@@ -487,7 +487,7 @@ function AudioProcessingToggle({
   onChange: () => void
 }) {
   return (
-    <label className="flex min-h-9 items-center justify-between gap-3 text-xs text-primary">
+    <label className="flex min-h-9 items-center justify-between gap-3 text-body-sm text-on-surface">
       {label}
       <input
         type="checkbox"
@@ -514,13 +514,13 @@ function DeviceSelect({
   onChange: (deviceId: string) => void
 }) {
   return (
-    <label className="flex min-w-0 flex-col gap-1 text-meta text-muted">
+    <label className="flex min-w-0 flex-col gap-1 text-body-sm text-on-surface-variant">
       {label}
       <select
         value={value ?? ''}
         disabled={devices.length === 0}
         onChange={(event) => onChange(event.target.value)}
-        className="h-control-md min-w-0 rounded-control border border-border bg-surface-sunken px-2 text-xs text-primary outline-none focus:border-accent disabled:opacity-60"
+        className="h-control-md min-w-0 rounded-full border border-outline bg-surface-container-lowest px-2 text-body-sm text-on-surface outline-none focus:border-primary disabled:opacity-60"
       >
         <option value="">{devices.length === 0 ? unavailableLabel : `Default ${label.toLowerCase()}`}</option>
         {devices.map((device) => (

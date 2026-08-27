@@ -232,7 +232,7 @@ describe('CommunityIcon notification context menu', () => {
     await openContextMenu(button)
 
     expect(button.getAttribute('aria-label')).toBe(`${community.name}, muted`)
-    expect(container.querySelector('.bg-accent')).toBeNull()
+    expect(container.querySelector('.bg-primary')).toBeNull()
     expect(document.body.textContent).not.toContain('Mute for 15 minutes')
 
     await act(async () => findMenuItem('Turn notifications back on')?.click())

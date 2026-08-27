@@ -40,9 +40,9 @@ describe('Avatar geometry: the circle is a person', () => {
 
   it('lets a caller keep overriding the shape', () => {
     act(() => {
-      root.render(<Avatar color="var(--avatar-blue)" name="Maya" seed="@maya:example.org" className="!rounded-panel" />)
+      root.render(<Avatar color="var(--avatar-blue)" name="Maya" seed="@maya:example.org" className="!rounded-xl" />)
     })
-    expect(avatar().className).toContain('!rounded-panel')
+    expect(avatar().className).toContain('!rounded-xl')
   })
 })
 

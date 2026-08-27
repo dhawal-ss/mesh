@@ -363,7 +363,7 @@ export function ContentArea() {
                   }
                 }}
               >
-                <label htmlFor="first-run-invite" className="text-xs font-medium text-secondary">
+                <label htmlFor="first-run-invite" className="text-body-sm font-medium text-on-surface-variant">
                   Have an invite link? Paste it here
                 </label>
                 <div className="mt-1 flex gap-2">
@@ -371,12 +371,12 @@ export function ContentArea() {
                     id="first-run-invite"
                     value={inviteDraft}
                     onChange={(event) => setInviteDraft(event.target.value)}
-                    className="h-control-md min-w-0 flex-1 rounded-control border border-border-subtle bg-surface-raised px-3 text-sm text-content outline-none focus:border-accent"
+                    className="h-control-md min-w-0 flex-1 rounded-full border border-outline-variant bg-surface-container px-3 text-body-md text-on-surface outline-none focus:border-primary"
                   />
                   <button
                     type="submit"
                     disabled={!inviteDraft.trim()}
-                    className="rounded-control bg-accent px-3 text-sm font-medium text-content-on-accent disabled:opacity-40"
+                    className="rounded-full bg-primary px-3 text-body-md font-medium text-on-primary disabled:opacity-40"
                   >
                     Join
                   </button>
@@ -559,8 +559,8 @@ function ChatViewLoadingFallback() {
       role="status"
       aria-label="Loading conversation"
     >
-      <div className="flex h-conversation-header flex-shrink-0 items-center border-b border-border-subtle px-4">
-        <span className="text-xs font-medium text-secondary">Loading conversation…</span>
+      <div className="flex h-conversation-header flex-shrink-0 items-center border-b border-outline-variant px-4">
+        <span className="text-body-sm font-medium text-on-surface-variant">Loading conversation…</span>
       </div>
       {/*
         * `MessageSkeleton` mirrors the real row: same gutter, same avatar
@@ -581,19 +581,19 @@ function ThreadPanelLoadingFallback({ onClose }: { onClose: () => void }) {
   return (
     <aside
       id="mesh-thread-panel"
-      className="mesh-secondary-pane flex min-h-0 flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-base"
+      className="mesh-secondary-pane flex min-h-0 flex-shrink-0 flex-col overflow-hidden border-l border-outline-variant bg-surface"
       aria-label="Loading thread"
       aria-busy="true"
       tabIndex={-1}
     >
-      <div className="flex h-conversation-header flex-shrink-0 items-center gap-3 border-b border-border-subtle bg-surface-raised px-4">
-        <span className="min-w-0 flex-1 text-xs font-medium text-secondary" role="status">
+      <div className="flex h-conversation-header flex-shrink-0 items-center gap-3 border-b border-outline-variant bg-surface-container px-4">
+        <span className="min-w-0 flex-1 text-body-sm font-medium text-on-surface-variant" role="status">
           Loading thread
         </span>
         <button
           type="button"
           onClick={onClose}
-          className="min-h-10 rounded-control px-2 text-xs font-medium text-muted hover:bg-surface-hover hover:text-primary"
+          className="min-h-10 rounded-full px-2 text-body-sm font-medium text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
         >
           Close
         </button>
@@ -617,7 +617,7 @@ function RoomContextLoadingFallback({
   return (
     <aside
       id="mesh-room-context-panel"
-      className="mesh-room-context-panel relative flex min-w-0 flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-sidebar"
+      className="mesh-room-context-panel relative flex min-w-0 flex-shrink-0 flex-col overflow-hidden border-l border-outline-variant bg-surface-container-low"
       data-design-token-exception="user-resizable-persisted-room-context-width"
       style={{
         '--mesh-room-context-width': `${panelWidth}px`,
@@ -626,9 +626,9 @@ function RoomContextLoadingFallback({
       aria-busy="true"
       tabIndex={-1}
     >
-      <div className="flex h-conversation-header flex-shrink-0 items-center gap-3 border-b border-border-subtle px-3">
+      <div className="flex h-conversation-header flex-shrink-0 items-center gap-3 border-b border-outline-variant px-3">
         <span
-          className="min-w-0 flex-1 text-xs font-medium text-secondary"
+          className="min-w-0 flex-1 text-body-sm font-medium text-on-surface-variant"
           role="status"
           aria-live="polite"
         >
@@ -636,13 +636,13 @@ function RoomContextLoadingFallback({
         </span>
         <button
           type="button"
-          className="min-h-11 min-w-11 rounded-control px-2 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+          className="min-h-11 min-w-11 rounded-full px-2 text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
           onClick={onClose}
         >
           Close
         </button>
       </div>
-      <div className="space-y-3 border-b border-border-subtle px-4 py-3" aria-hidden>
+      <div className="space-y-3 border-b border-outline-variant px-4 py-3" aria-hidden>
         <Skeleton width={92} height={12} />
         <Skeleton width="70%" height={10} />
       </div>
@@ -654,7 +654,7 @@ function RoomContextLoadingFallback({
 }
 
 /*
- * `bg-surface-raised` alone is the same value as the canvas behind it, so these
+ * `bg-surface-container` alone is the same value as the canvas behind it, so these
  * read as three invisible boxes until hover. The resting border is what makes
  * them look like the buttons they are.
  */
@@ -671,7 +671,7 @@ function FirstAction({
     <button
       type="button"
       onClick={onClick}
-      className="flex min-h-24 flex-col items-center justify-center gap-2 rounded-control border border-border-subtle bg-surface-raised p-3 text-sm font-medium text-content transition-colors hover:border-border hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+      className="flex min-h-24 flex-col items-center justify-center gap-2 rounded-full border border-outline-variant bg-surface-container p-3 text-body-md font-medium text-on-surface transition-colors hover:border-outline hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
     >
       <Icon name={icon} />
       {label}

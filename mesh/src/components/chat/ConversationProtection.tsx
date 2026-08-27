@@ -33,7 +33,7 @@ export function ConversationProtection({ roomId }: { roomId: string }) {
   if (state === 'checking') {
     return (
       <span
-        className="flex items-center gap-1 font-mono text-meta text-content-muted"
+        className="flex items-center gap-1 text-body-sm text-on-surface-variant"
         role="status"
         aria-live="polite"
       >
@@ -46,7 +46,7 @@ export function ConversationProtection({ roomId }: { roomId: string }) {
   if (state === 'protected') {
     return (
       <span
-        className="flex items-center gap-1 font-mono text-meta text-status-success"
+        className="flex items-center gap-1 text-body-sm text-primary"
         role="status"
         aria-label="This conversation is protected end to end"
       >
@@ -58,7 +58,7 @@ export function ConversationProtection({ roomId }: { roomId: string }) {
 
   return (
     <span
-      className="flex items-center gap-1 font-mono text-meta text-status-warning"
+      className="flex items-center gap-1 text-body-sm text-marker"
       role="alert"
     >
       <Icon name="triangleAlert" size="xs" />
@@ -66,7 +66,7 @@ export function ConversationProtection({ roomId }: { roomId: string }) {
       {state === 'unavailable' && (
         <button
           type="button"
-          className="ml-1 rounded-control underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+          className="ml-1 rounded-full underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
           onClick={() => void checkProtection()}
         >
           Check again

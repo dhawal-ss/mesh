@@ -134,40 +134,40 @@ export function InviteModal({
     <div className={matrixMode ? 'mesh-invite-grid grid gap-3 md:grid-cols-2' : 'mesh-invite-grid space-y-3'}>
       <section
         aria-label="Community invite link"
-        className="mesh-invite-section border-y border-border-subtle"
+        className="mesh-invite-section border-y border-outline-variant"
       >
         <div className="flex items-start gap-3">
-          <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-panel bg-container-accent text-accent">
+          <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-primary-container text-primary">
             <Icon name="userPlus" size="sm" />
           </span>
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-primary">Share a private invitation</h3>
+            <h3 className="text-body-md font-semibold text-on-surface">Share a private invitation</h3>
           </div>
         </div>
 
-        <div className="mesh-invite-destination mt-4 border-y border-border-subtle px-3 py-2">
-          <p className="text-caption font-semibold lowercase tracking-eyebrow text-muted">Destination</p>
-          <p className="mt-1 truncate text-sm font-medium text-primary">{communityName}</p>
-          <p className="mt-1 text-xs text-muted">
+        <div className="mesh-invite-destination mt-4 border-y border-outline-variant px-3 py-2">
+          <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">Destination</p>
+          <p className="mt-1 truncate text-body-md font-medium text-on-surface">{communityName}</p>
+          <p className="mt-1 text-body-sm text-on-surface-variant">
             Never moves or replaces their account.
           </p>
         </div>
 
         <div
-          className="mesh-invite-link mt-3 overflow-hidden border-y border-border-subtle"
+          className="mesh-invite-link mt-3 overflow-hidden border-y border-outline-variant"
           aria-live="polite"
         >
           {inviteLinkLoading && !inviteLink ? (
             <div className="flex items-center justify-center px-4 py-4">
-              <span className="text-sm text-muted">Preparing private link…</span>
+              <span className="text-body-md text-on-surface-variant">Preparing private link…</span>
             </div>
           ) : !inviteLink ? (
-            <p className="px-4 py-4 text-center text-sm text-muted">
+            <p className="px-4 py-4 text-center text-body-md text-on-surface-variant">
               Create a link only when you are ready to share it.
             </p>
           ) : (
             <div className="flex items-center gap-2 px-3 py-2.5">
-              <code className="flex-1 truncate font-mono text-sm text-secondary">
+              <code className="flex-1 truncate text-body-md text-on-surface-variant">
                 {inviteLink}
               </code>
             </div>
@@ -219,8 +219,8 @@ export function InviteModal({
         ) : null}
 
         <div className="mesh-invite-guidance mt-3 flex items-start gap-2 py-2">
-          <Icon name="shieldCheck" size="xs" className="mt-0.5 flex-shrink-0 text-status-success" />
-          <div className="space-y-1 text-xs text-muted">
+          <Icon name="shieldCheck" size="xs" className="mt-0.5 flex-shrink-0 text-primary" />
+          <div className="space-y-1 text-body-sm text-on-surface-variant">
             <p>
               {parseAdmissionCommunityInvite(inviteLink)
                 ? 'One person can use this private link within seven days.'
@@ -238,10 +238,10 @@ export function InviteModal({
       {matrixMode && (
         <section
           aria-label="Invite an existing account"
-          className="mesh-invite-section space-y-3 rounded-panel border border-border-subtle bg-surface-raised p-4"
+          className="mesh-invite-section space-y-3 rounded-xl border border-outline-variant bg-surface-container p-4"
         >
           <div>
-            <h3 className="text-sm font-semibold text-primary">Already on Mesh</h3>
+            <h3 className="text-body-md font-semibold text-on-surface">Already on Mesh</h3>
           </div>
           <Input
             label="Mesh username or account address"
@@ -263,7 +263,7 @@ export function InviteModal({
             {directInviteLoading ? 'Inviting…' : inviteSent ? 'Invite sent' : 'Send invite'}
           </Button>
           {inviteSent && (
-            <p className="text-center text-xs text-green">Invite sent.</p>
+            <p className="text-center text-body-sm text-primary">Invite sent.</p>
           )}
           {directInviteError != null && (
             <ErrorState
@@ -282,12 +282,12 @@ export function InviteModal({
     if (!isOpen) return null
     return (
       <section aria-labelledby="community-invitations-heading" className="mx-auto w-full max-w-2xl px-shell-gutter py-6">
-        <header className="mb-5 border-b border-border-subtle pb-4">
-          <h2 id="community-invitations-heading" className="text-md font-semibold text-primary">
+        <header className="mb-5 border-b border-outline-variant pb-4">
+          <h2 id="community-invitations-heading" className="text-title-sm font-semibold text-on-surface">
             Invitations for {communityName}
           </h2>
-          <p className="mt-1 text-sm text-secondary">{description}</p>
-          <p className="mt-2 text-xs text-muted">
+          <p className="mt-1 text-body-md text-on-surface-variant">{description}</p>
+          <p className="mt-2 text-body-sm text-on-surface-variant">
             An invitation never changes where someone keeps their account.
           </p>
         </header>

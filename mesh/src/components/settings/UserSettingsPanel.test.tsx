@@ -1238,11 +1238,11 @@ describe('UserSettingsPanel', () => {
         (candidate) => candidate.textContent?.trim() === label,
       )
       expect(group).toBeDefined()
-      expect(group?.className).toContain('text-md')
+      expect(group?.className).toContain('text-title-sm')
     }
 
     // Only the dialog title may use the 22px route step.
-    const titles = Array.from(document.body.querySelectorAll('[class*="text-title"]'))
+    const titles = Array.from(document.body.querySelectorAll('[class*="text-title-lg"]'))
     expect(titles).toHaveLength(1)
     expect(titles[0]?.textContent).toBe('User settings')
 

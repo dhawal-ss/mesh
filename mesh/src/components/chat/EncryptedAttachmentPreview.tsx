@@ -127,7 +127,7 @@ function clampAspectRatio(width: number, height: number): number {
 
 /** Shared by the two notices that offer a load, so the strings live once. */
 const NOTICE_BUTTON_CLASS =
-  'inline-flex min-h-control-sm items-center gap-1.5 rounded-control bg-surface-active px-2 font-medium text-primary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus'
+  'inline-flex min-h-control-sm items-center gap-1.5 rounded-full bg-surface-container-highest px-2 font-medium text-on-surface transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus'
 
 type PreviewPhase = 'loading' | 'ready' | 'failed'
 /** Why a preview is waiting for a tap instead of loading on its own. */
@@ -235,7 +235,7 @@ export function EncryptedAttachmentPreview({
   if (!previewsEnabled || !previewable) {
     return (
       <PreviewNotice style={frameStyle}>
-        <span className="inline-flex items-center gap-1.5 font-medium text-primary">
+        <span className="inline-flex items-center gap-1.5 font-medium text-on-surface">
           <Icon name="shieldCheck" size="xs" />
           Preview stays protected
         </span>
@@ -268,7 +268,7 @@ export function EncryptedAttachmentPreview({
   if (phase === 'failed') {
     return (
       <PreviewNotice style={frameStyle}>
-        <span className="inline-flex items-center gap-1.5 font-medium text-status-danger">
+        <span className="inline-flex items-center gap-1.5 font-medium text-error">
           <Icon name="triangleAlert" size="xs" aria-hidden="true" />
           Preview could not be opened
         </span>
@@ -335,7 +335,7 @@ function PreviewNotice({
 }) {
   return (
     <PreviewFrame style={style}>
-      <div className="flex max-w-sm flex-col items-center gap-2 px-4 text-center text-xs text-secondary">
+      <div className="flex max-w-sm flex-col items-center gap-2 px-4 text-center text-body-sm text-on-surface-variant">
         {children}
       </div>
     </PreviewFrame>
@@ -351,7 +351,7 @@ function PreviewFrame({
 }) {
   return (
     <div
-      className="relative flex max-h-shell-media w-full items-center justify-center overflow-hidden border-b border-border-subtle bg-surface-hover"
+      className="relative flex max-h-shell-media w-full items-center justify-center overflow-hidden border-b border-outline-variant bg-surface-container-high"
       data-design-token-exception="data-driven-thumbnail-aspect-ratio"
       data-protected-preview="true"
       style={style}

@@ -157,16 +157,16 @@ function DmMessageBoundary({
       scope="feature"
       fallback={(resetError) => (
         <div
-          className="mx-4 my-1 flex items-center gap-2 rounded-panel bg-container-danger px-3 py-2"
+          className="mx-4 my-1 flex items-center gap-2 rounded-xl bg-error-container px-3 py-2"
           role="alert"
         >
-          <p className="min-w-0 flex-1 text-xs text-muted">
+          <p className="min-w-0 flex-1 text-body-sm text-on-surface-variant">
             One message could not be displayed.
           </p>
           <button
             type="button"
             onClick={resetError}
-            className="min-h-8 rounded-control px-2 text-xs font-medium text-text-link hover:bg-surface-hover hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+            className="min-h-8 rounded-full px-2 text-body-sm font-medium text-primary hover:bg-surface-container-high hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             aria-label={`Retry message ${messageId}`}
           >
             Retry
@@ -207,9 +207,9 @@ function DmLanding() {
     return (
       <section className="mesh-dm-landing flex flex-1 items-start overflow-y-auto" aria-labelledby="mesh-dm-landing-heading">
         <div className="mesh-dm-landing-inner w-full">
-          <header className="mesh-dm-landing-header grid gap-4 border-b border-border-subtle pb-4">
+          <header className="mesh-dm-landing-header grid gap-4 border-b border-outline-variant pb-4">
             <div>
-              <h1 id="mesh-dm-landing-heading" data-mesh-route-heading tabIndex={-1} className="mesh-dm-landing-title font-semibold text-primary outline-none">
+              <h1 id="mesh-dm-landing-heading" data-mesh-route-heading tabIndex={-1} className="mesh-dm-landing-title font-semibold text-on-surface outline-none">
                 Direct messages
               </h1>
             </div>
@@ -230,9 +230,9 @@ function DmLanding() {
   return (
     <section className="mesh-dm-landing flex flex-1 items-start overflow-y-auto" aria-labelledby="mesh-dm-landing-heading">
       <div className="mesh-dm-landing-inner w-full">
-        <header className="mesh-dm-landing-header grid gap-4 border-b border-border-subtle pb-4">
+        <header className="mesh-dm-landing-header grid gap-4 border-b border-outline-variant pb-4">
           <div>
-            <h1 id="mesh-dm-landing-heading" data-mesh-route-heading tabIndex={-1} className="mesh-dm-landing-title font-semibold text-primary outline-none">
+            <h1 id="mesh-dm-landing-heading" data-mesh-route-heading tabIndex={-1} className="mesh-dm-landing-title font-semibold text-on-surface outline-none">
               Direct messages
             </h1>
           </div>
@@ -244,11 +244,11 @@ function DmLanding() {
 
         <button
           type="button"
-          className="mesh-dm-lead grid w-full gap-4 border-b border-border-subtle text-left"
+          className="mesh-dm-lead grid w-full gap-4 border-b border-outline-variant text-left"
           onClick={() => openConversation(featuredConversation.id)}
           aria-label={`Continue with ${featuredName}`}
         >
-          <span className="mesh-dm-lead-index font-mono text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">
+          <span className="mesh-dm-lead-index text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">
             01 · Continue{featuredConversation.unreadCount > 0 ? ` · ${featuredConversation.unreadCount} unread` : ''}
           </span>
           <Avatar
@@ -258,7 +258,7 @@ function DmLanding() {
             imageUrl={dmPrimaryPeer(featuredConversation).avatarUrl}
           />
           <span className="mesh-dm-lead-copy min-w-0">
-            <span className="mesh-dm-lead-title block truncate font-semibold text-primary">{featuredName}</span>
+            <span className="mesh-dm-lead-title block truncate font-semibold text-on-surface">{featuredName}</span>
             {/*
               The last message or nothing. The slot used to fall back to "Open
               your private conversation.", which described the card rather than
@@ -266,25 +266,25 @@ function DmLanding() {
               type where a reader looks for what was actually said.
             */}
             {featuredMessage?.content && (
-              <span className="mt-1 block max-w-2xl truncate text-sm text-secondary">
+              <span className="mt-1 block max-w-2xl truncate text-body-md text-on-surface-variant">
                 {featuredMessage.content}
               </span>
             )}
           </span>
-          <span className="mesh-dm-lead-action flex items-center gap-3 font-semibold text-primary">
+          <span className="mesh-dm-lead-action flex items-center gap-3 font-semibold text-on-surface">
             Open
             <Icon name="arrowRight" size="sm" />
           </span>
-          <time className="mesh-dm-lead-time font-mono text-meta text-muted" dateTime={featuredConversation.lastMessageAt ?? featuredConversation.createdAt}>
+          <time className="mesh-dm-lead-time text-body-sm text-on-surface-variant" dateTime={featuredConversation.lastMessageAt ?? featuredConversation.createdAt}>
             {formatDmLandingDate(featuredConversation.lastMessageAt ?? featuredConversation.createdAt)}
           </time>
         </button>
 
         {recentConversations.length > 0 && (
           <section className="mesh-dm-landing-recent" aria-labelledby="mesh-dm-recent-heading">
-            <div className="flex items-center justify-between border-b border-border-subtle py-2">
-              <h2 id="mesh-dm-recent-heading" className="text-caption font-semibold lowercase tracking-eyebrow text-secondary">Recent conversations</h2>
-              <span className="font-mono text-meta text-muted">{recentConversations.length}</span>
+            <div className="flex items-center justify-between border-b border-outline-variant py-2">
+              <h2 id="mesh-dm-recent-heading" className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">Recent conversations</h2>
+              <span className="text-body-sm text-on-surface-variant">{recentConversations.length}</span>
             </div>
             {recentConversations.slice(0, 5).map((conversation, index) => {
               const name = dmPrimaryPeer(conversation).displayName.trim() || 'Unknown account'
@@ -294,11 +294,11 @@ function DmLanding() {
                 <button
                   key={conversation.id}
                   type="button"
-                  className="mesh-dm-landing-row flex w-full items-center gap-3 border-b border-border-subtle text-left hover:bg-surface-hover"
+                  className="mesh-dm-landing-row flex w-full items-center gap-3 border-b border-outline-variant text-left hover:bg-surface-container-high"
                   onClick={() => openConversation(conversation.id)}
                   aria-label={`Open conversation with ${name}`}
                 >
-                  <span className="font-mono text-meta text-accent">{String(index + 2).padStart(2, '0')}</span>
+                  <span className="text-body-sm text-primary">{String(index + 2).padStart(2, '0')}</span>
                   <Avatar
                     color={dmPrimaryPeer(conversation).avatarColor}
                     size={36}
@@ -306,13 +306,13 @@ function DmLanding() {
                     imageUrl={dmPrimaryPeer(conversation).avatarUrl}
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-semibold text-primary">{name}</span>
+                    <span className="block truncate font-semibold text-on-surface">{name}</span>
                     {latestMessage?.content && (
-                      <span className="block truncate text-caption text-muted">{latestMessage.content}</span>
+                      <span className="block truncate text-label-sm text-on-surface-variant">{latestMessage.content}</span>
                     )}
                   </span>
-                  {conversation.unreadCount > 0 && <span className="font-mono text-meta text-accent">{Math.min(conversation.unreadCount, 999)}</span>}
-                  <time className="font-mono text-meta text-muted" dateTime={conversation.lastMessageAt ?? conversation.createdAt}>
+                  {conversation.unreadCount > 0 && <span className="text-body-sm text-primary">{Math.min(conversation.unreadCount, 999)}</span>}
+                  <time className="text-body-sm text-on-surface-variant" dateTime={conversation.lastMessageAt ?? conversation.createdAt}>
                     {formatDmLandingDate(conversation.lastMessageAt ?? conversation.createdAt)}
                   </time>
                 </button>
@@ -415,7 +415,7 @@ function DmVirtualMessageRow({
       */
       className={
         isHighlighted
-          ? 'animate-highlight border-l-bar border-accent bg-container-accent'
+          ? 'animate-highlight border-l-bar border-primary bg-primary-container'
           : 'border-l-bar border-transparent'
       }
     >
@@ -1317,7 +1317,7 @@ export function DmView() {
     <div className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div
-        className="mesh-conversation-header flex h-conversation-header flex-shrink-0 items-center border-b border-rule border-border-structural px-shell-gutter py-2"
+        className="mesh-conversation-header flex h-conversation-header flex-shrink-0 items-center border-b border-rule border-outline-variant px-shell-gutter py-2"
         data-tauri-drag-region
       >
         <Avatar
@@ -1329,7 +1329,7 @@ export function DmView() {
         />
         <span className="min-w-0">
           <h1
-            className="block truncate text-panel font-semibold text-content-primary outline-none"
+            className="block truncate text-title-lg font-semibold text-on-surface outline-none"
             data-mesh-route-heading
             tabIndex={-1}
           >
@@ -1341,7 +1341,7 @@ export function DmView() {
             every direct message was the norm restating itself.
           */}
           {peerIsRemote && (
-            <span className="mt-0.5 block truncate font-mono text-eyebrow uppercase text-content-secondary">
+            <span className="mt-0.5 block truncate text-label-sm text-on-surface-variant">
               {peerServer}
             </span>
           )}
@@ -1364,12 +1364,12 @@ export function DmView() {
                   pane: { kind: 'safety' },
                 })
               }}
-              className={`flex min-h-8 items-center gap-1.5 rounded-control px-2 text-caption font-medium transition-colors ${
+              className={`flex min-h-8 items-center gap-1.5 rounded-full px-2 text-label-sm font-medium transition-colors ${
                 safetyOpen
-                  ? 'bg-surface-selected text-primary'
+                  ? 'bg-secondary-container text-on-surface'
                   : trust.devicesNeedReview > 0 || trust.protection !== 'protected'
-                    ? 'bg-container-warning text-status-warning hover:bg-container-warning-hover'
-                    : 'text-muted hover:bg-surface-hover hover:text-primary'
+                    ? 'bg-marker-container text-marker hover:bg-marker-container-hover'
+                    : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
               }`}
               aria-controls="mesh-dm-safety-panel"
               aria-expanded={safetyOpen}
@@ -1399,11 +1399,11 @@ export function DmView() {
       ) : null}
 
       {matrixMode && !trust.loadingAccountTrust && trust.devicesNeedReview > 0 && (
-        <div className="flex min-h-10 items-center gap-2 border-b border-container-warning-line bg-container-warning px-4 py-1.5 text-xs text-secondary">
+        <div className="flex min-h-10 items-center gap-2 border-b border-marker-container-line bg-marker-container px-4 py-1.5 text-body-sm text-on-surface-variant">
           <Icon
             name="triangleAlert"
             size="sm"
-            className="flex-shrink-0 text-status-warning"
+            className="flex-shrink-0 text-marker"
           />
           <span className="min-w-0 flex-1">
             {trust.devicesNeedReview}{' '}
@@ -1412,7 +1412,7 @@ export function DmView() {
           <button
             type="button"
             onClick={(event) => openSecurityFrom(event.currentTarget)}
-            className="min-h-8 flex-shrink-0 rounded-control px-2 font-semibold text-status-warning hover:bg-container-warning-hover"
+            className="min-h-8 flex-shrink-0 rounded-full px-2 font-semibold text-marker hover:bg-marker-container-hover"
           >
             Review
           </button>
@@ -1422,12 +1422,12 @@ export function DmView() {
       {markReadError?.conversationId === activeConversationId && (
         <div
           role="alert"
-          className="flex flex-wrap items-center justify-between gap-2 border-b border-container-warning-line bg-container-warning px-4 py-2 text-xs text-secondary"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface-variant"
         >
           <span>This conversation could not be marked as read.</span>
           <button
             type="button"
-            className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+            className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
             onClick={() => void markConversationRead(activeConversationId)}
           >
             Retry read status
@@ -1439,7 +1439,7 @@ export function DmView() {
         <button
           type="button"
           onClick={() => void jumpToLatest()}
-          className="flex min-h-9 flex-shrink-0 items-center justify-center border-b border-border-subtle bg-status-info px-4 text-sm font-semibold text-content-on-status hover:bg-status-info-hover"
+          className="flex min-h-9 flex-shrink-0 items-center justify-center border-b border-outline-variant bg-primary px-4 text-body-md font-semibold text-on-error hover:bg-primary"
         >
           {hiddenNewerCount > 0
             ? `Jump to latest messages (${hiddenNewerCount} newer)`
@@ -1458,12 +1458,12 @@ export function DmView() {
       {olderLoadError !== null && (
         <div
           role="alert"
-          className="flex flex-wrap items-center justify-between gap-2 border-b border-container-warning-line bg-container-warning px-4 py-2 text-xs text-secondary"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface-variant"
         >
           <span>Earlier messages could not be loaded.</span>
           <button
             type="button"
-            className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+            className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
             onClick={() => void requestOlderMessages()}
           >
             Retry earlier messages
@@ -1474,14 +1474,14 @@ export function DmView() {
       {searchContextLimited && (
         <div
           role="status"
-          className="border-b border-container-warning-line bg-container-warning px-4 py-2 text-center text-xs text-secondary"
+          className="border-b border-marker-container-line bg-marker-container px-4 py-2 text-center text-body-sm text-on-surface-variant"
         >
           The surrounding messages could not be loaded.
         </div>
       )}
 
       {!hasMoreOlder && visibleChannelMessages.length > 0 && (
-        <div className="border-b border-border-subtle bg-surface-sunken px-4 py-2 text-center text-xs text-muted">
+        <div className="border-b border-outline-variant bg-surface-container-lowest px-4 py-2 text-center text-body-sm text-on-surface-variant">
           Beginning of this conversation
         </div>
       )}
@@ -1496,17 +1496,17 @@ export function DmView() {
         and it claims the feed role only while it actually owns messages.
       */}
       {showsMessageArticles ? null : (
-        <div className="flex-1 overflow-y-auto bg-surface-canvas py-5">
+        <div className="flex-1 overflow-y-auto bg-surface py-5">
         {showsLoadError ? (
           <div className="flex h-full items-center justify-center px-4">
             <div
               role="alert"
-              className="max-w-sm rounded-panel border border-container-warning-line bg-container-warning p-4 text-center text-sm text-secondary"
+              className="max-w-sm rounded-xl border border-marker-container-line bg-marker-container p-4 text-center text-body-md text-on-surface-variant"
             >
               <p>Messages could not be loaded.</p>
               <button
                 type="button"
-                className="mt-3 min-h-8 rounded-control px-3 font-semibold text-text-link hover:bg-surface-hover"
+                className="mt-3 min-h-8 rounded-full px-3 font-semibold text-primary hover:bg-surface-container-high"
                 onClick={() => void loadMessages(activeConversationId)
                   .then(() => markConversationRead(activeConversationId))
                   .catch(() => {})}
@@ -1568,7 +1568,7 @@ export function DmView() {
       <div
         ref={attachMessageLog}
         onScroll={(event) => handleDmScroll(event.currentTarget)}
-        className="flex flex-1 flex-col overflow-y-auto bg-surface-canvas py-5"
+        className="flex flex-1 flex-col overflow-y-auto bg-surface py-5"
         /*
           `feed`, not `log`. `log` implies aria-live="polite", which is wrong
           here: this container's children are inserted and removed by
@@ -1611,16 +1611,16 @@ export function DmView() {
                 the feed's aria-busy carries the loading state.
               */
               <div className="flex h-10 items-center justify-center gap-2 px-4">
-                <span className="h-px min-w-6 flex-1 bg-border-subtle" aria-hidden="true" />
+                <span className="h-px min-w-6 flex-1 bg-outline-variant" aria-hidden="true" />
                 <button
                   type="button"
                   aria-disabled={isLoadingOlder || undefined}
                   onClick={() => void requestOlderMessages(messageLogRef.current ?? undefined)}
-                  className="min-h-control-sm rounded-control px-2 text-caption font-medium text-content-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                  className="min-h-control-sm rounded-full px-2 text-label-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                 >
                   Load earlier messages
                 </button>
-                <span className="h-px min-w-6 flex-1 bg-border-subtle" aria-hidden="true" />
+                <span className="h-px min-w-6 flex-1 bg-outline-variant" aria-hidden="true" />
               </div>
             )}
             <div
@@ -1683,7 +1683,7 @@ export function DmView() {
                             role re-announces every time the row scrolls back
                             into view.
                           */
-                          <p className="mt-0.5 pl-11 text-right text-caption text-muted">
+                          <p className="mt-0.5 pl-11 text-right text-label-sm text-on-surface-variant">
                             Seen
                           </p>
                         )}
@@ -1701,12 +1701,12 @@ export function DmView() {
       {loadFailed && visibleChannelMessages.length > 0 && (
         <div
           role="alert"
-          className="mx-4 mb-2 flex flex-wrap items-center justify-between gap-2 rounded-control border border-container-warning-line bg-container-warning px-3 py-2 text-xs text-secondary"
+          className="mx-4 mb-2 flex flex-wrap items-center justify-between gap-2 rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-surface-variant"
         >
           <span>Could not refresh messages.</span>
           <button
             type="button"
-            className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+            className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
             onClick={() => void loadMessages(activeConversationId).catch(() => {})}
           >
             Retry
@@ -1715,21 +1715,21 @@ export function DmView() {
       )}
 
       {isBlocked && (
-        <div className="mx-4 mb-2 rounded-panel border border-container-danger-line bg-container-danger px-3 py-2 text-xs text-status-danger">
+        <div className="mx-4 mb-2 rounded-xl border border-error-container-line bg-error-container px-3 py-2 text-body-sm text-error">
           Messages from this user are blocked. Unblock {peerName} to send a message.
         </div>
       )}
       {blockSafetyUnavailable && (
         <div
           role={blockStatus === 'failed' ? 'alert' : 'status'}
-          className="mx-4 mb-2 rounded-panel border border-container-warning-line bg-container-warning px-3 py-2 text-xs text-secondary"
+          className="mx-4 mb-2 rounded-xl border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-surface-variant"
         >
           {blockStatus === 'failed' ? (
             <>
               <span>Sending is off until Mesh can check whether this account is blocked.</span>{' '}
               <button
                 type="button"
-                className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+                className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
                 onClick={() => {
                   if (!peerPublicKey) return
                   setBlockState({ peerPublicKey, status: 'loading', blocked: false })
@@ -1745,10 +1745,10 @@ export function DmView() {
         </div>
       )}
       {replyingTo && (
-        <div className="flex items-center justify-between gap-2 border-t border-border-subtle bg-surface-sunken px-4 py-2 text-xs text-secondary">
+        <div className="flex items-center justify-between gap-2 border-t border-outline-variant bg-surface-container-lowest px-4 py-2 text-body-sm text-on-surface-variant">
           <span>
             {threadReplyRoot && (
-              <span className="mr-1 font-semibold text-text-link">In thread ·</span>
+              <span className="mr-1 font-semibold text-primary">In thread ·</span>
             )}
             Replying to {replyingTo.authorDisplayName}:{' '}
             {replyingTo.content.slice(0, 80)}
@@ -1759,7 +1759,7 @@ export function DmView() {
               setReplyingTo(null)
               setThreadReplyRoot(null)
             }}
-            className="min-h-8 rounded-control px-2 text-muted hover:bg-surface-hover hover:text-primary"
+            className="min-h-8 rounded-full px-2 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
             aria-label="Cancel reply"
           >
             Cancel
@@ -1788,7 +1788,7 @@ export function DmView() {
         {sendingProtectionUnavailable && (
           <div
             role="status"
-            className="border-t border-container-warning-line bg-container-warning px-4 py-2 text-xs text-secondary"
+            className="border-t border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface-variant"
           >
             {trust.protection === 'checking'
               ? "Checking this conversation's protection before sending."
@@ -1800,7 +1800,7 @@ export function DmView() {
                     paused.
                     <button
                       type="button"
-                      className="ml-1 rounded-control underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                      className="ml-1 rounded-full underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                       onClick={() => trust.recheckProtection()}
                     >
                       Check again
@@ -1891,19 +1891,19 @@ function DmThreadPanelLoadingFallback({ onClose }: { onClose: () => void }) {
   return (
     <aside
       id="mesh-thread-panel"
-      className="mesh-secondary-pane flex min-h-0 flex-shrink-0 flex-col overflow-hidden border-l border-border-subtle bg-surface-base"
+      className="mesh-secondary-pane flex min-h-0 flex-shrink-0 flex-col overflow-hidden border-l border-outline-variant bg-surface"
       aria-label="Loading thread"
       aria-busy="true"
       tabIndex={-1}
     >
-      <div className="flex h-conversation-header flex-shrink-0 items-center gap-3 border-b border-border-subtle bg-surface-raised px-4">
-        <span className="min-w-0 flex-1 text-xs font-medium text-secondary" role="status">
+      <div className="flex h-conversation-header flex-shrink-0 items-center gap-3 border-b border-outline-variant bg-surface-container px-4">
+        <span className="min-w-0 flex-1 text-body-sm font-medium text-on-surface-variant" role="status">
           Loading thread
         </span>
         <button
           type="button"
           onClick={onClose}
-          className="min-h-10 rounded-control px-2 text-xs font-medium text-muted hover:bg-surface-hover hover:text-primary"
+          className="min-h-10 rounded-full px-2 text-body-sm font-medium text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
         >
           Close
         </button>

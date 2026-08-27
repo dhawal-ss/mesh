@@ -68,16 +68,16 @@ export function CommunityChecklist({
     if (!farewell) return null
     return (
       <section
-        className="mesh-community-checklist flex min-h-10 items-center gap-2 border-b border-border-subtle px-3 py-2"
+        className="mesh-community-checklist flex min-h-10 items-center gap-2 border-b border-outline-variant px-3 py-2"
         aria-label="Getting started"
       >
         <span
-          className="flex h-5 w-5 flex-none items-center justify-center rounded-control bg-container-success text-on-container-success"
+          className="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-primary-container text-on-primary-container"
           aria-hidden="true"
         >
           <Icon name="check" size="xs" />
         </span>
-        <p role="status" className="min-w-0 flex-1 text-xs font-medium text-content">
+        <p role="status" className="min-w-0 flex-1 text-body-sm font-medium text-on-surface">
           All set.
         </p>
       </section>
@@ -86,7 +86,7 @@ export function CommunityChecklist({
 
   return (
     <section
-      className="mesh-community-checklist border-b border-border-subtle px-3 py-2"
+      className="mesh-community-checklist border-b border-outline-variant px-3 py-2"
       aria-labelledby="community-checklist-heading"
     >
       <div className="flex min-h-8 items-center gap-1">
@@ -96,7 +96,7 @@ export function CommunityChecklist({
             aria-expanded={!collapsed}
             aria-controls="community-checklist-steps"
             onClick={() => onToggleCollapsed(!collapsed)}
-            className="flex min-h-8 w-full items-center gap-1.5 rounded-control px-1 text-caption font-semibold lowercase tracking-eyebrow text-content-secondary transition-[color] duration-fast hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+            className="flex min-h-8 w-full items-center gap-1.5 rounded-full px-1 text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant transition-[color] duration-fast hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
           >
             <span
               aria-hidden="true"
@@ -113,7 +113,7 @@ export function CommunityChecklist({
             */}
             <span
               aria-hidden="true"
-              className="ml-auto flex-none font-mono text-meta font-normal normal-case tracking-normal text-content-muted"
+              className="ml-auto flex-none text-body-sm font-normal normal-case tracking-normal text-on-surface-variant"
             >
               {done}/{total}
             </span>
@@ -134,9 +134,9 @@ export function CommunityChecklist({
           {steps.map((step) => (
             <li
               key={step.id}
-              className={`flex items-start gap-2 rounded-control py-1 pr-1 ${
+              className={`flex items-start gap-2 rounded-full py-1 pr-1 ${
                 step.next
-                  ? 'border-l-2 border-l-accent bg-surface-hover pl-1.5'
+                  ? 'border-l-2 border-l-primary bg-surface-container-high pl-1.5'
                   : 'border-l-2 border-l-transparent pl-1.5'
               }`}
             >
@@ -149,26 +149,26 @@ export function CommunityChecklist({
                     the state without colour on its own, so the colour here is
                     reinforcement rather than the message.
                   */
-                  <span className="flex h-4 w-4 items-center justify-center text-status-success motion-safe:transition-opacity motion-safe:duration-instant">
+                  <span className="flex h-4 w-4 items-center justify-center text-primary motion-safe:transition-opacity motion-safe:duration-instant">
                     <Icon name="check" size="xs" />
                   </span>
                 ) : (
                   <span
-                    className={`h-3 w-3 rounded-control border ${
+                    className={`h-3 w-3 rounded-full border ${
                       /*
                         The row already carries an accent rule and a raised
                         tint. Tinting the box as well made one suggested step
                         into three amber marks.
                       */
-                      'border-border-emphasis'
+                      'border-outline'
                     }`}
                   />
                 )}
               </span>
               <span className="min-w-0 flex-1">
                 <span
-                  className={`block text-xs ${
-                    step.complete ? 'text-content-muted' : 'font-medium text-content'
+                  className={`block text-body-sm ${
+                    step.complete ? 'text-on-surface-variant' : 'font-medium text-on-surface'
                   }`}
                 >
                   {step.label}
@@ -177,13 +177,13 @@ export function CommunityChecklist({
                   {step.complete ? 'Done' : step.next ? 'Next step' : 'Not done yet'}
                 </span>
                 {step.hint && (
-                  <span className="mt-0.5 block text-meta text-content-muted">{step.hint}</span>
+                  <span className="mt-0.5 block text-body-sm text-on-surface-variant">{step.hint}</span>
                 )}
                 {step.action && (
                   <button
                     type="button"
                     onClick={() => onStepAction(step.id)}
-                    className="mt-1 inline-flex min-h-8 items-center gap-1 rounded-control px-1 text-xs font-semibold text-accent transition-[background-color] duration-fast hover:bg-container-accent-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                    className="mt-1 inline-flex min-h-8 items-center gap-1 rounded-full px-1 text-body-sm font-semibold text-primary transition-[background-color] duration-fast hover:bg-primary-container-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                   >
                     {step.action}
                     <Icon name="arrowRight" size="xs" />

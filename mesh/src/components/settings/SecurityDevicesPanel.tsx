@@ -461,8 +461,8 @@ export function SecurityDevicesPanel({
   const groupLevel: HeadingLevel = embedded ? 4 : 3
   const subGroupLevel: HeadingLevel = embedded ? 5 : 4
   const groupClass = embedded
-    ? 'text-base font-semibold text-content-primary'
-    : 'text-md font-semibold text-content-primary'
+    ? 'text-body-lg font-semibold text-on-surface'
+    : 'text-title-sm font-semibold text-on-surface'
 
   const warningDevices = devices.filter((device) => device.newDevice || device.identityChanged)
   const revocableDevices = devices.filter((device) => !device.current)
@@ -504,13 +504,13 @@ export function SecurityDevicesPanel({
         )}
 
         <section
-          className="rounded-panel border border-border-subtle bg-surface-sunken p-4"
+          className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4"
           aria-labelledby="this-device-heading"
         >
           <GroupHeading level={groupLevel} id="this-device-heading" className={groupClass}>
             This device
           </GroupHeading>
-          <dl className="mt-3 space-y-2 text-sm">
+          <dl className="mt-3 space-y-2 text-body-md">
             <Row label="Account" value={status ? (status.userId ?? 'Not signed in') : 'Loading…'} />
             <Row
               label="Support code"
@@ -526,20 +526,20 @@ export function SecurityDevicesPanel({
             Kept as a disclosure, not a description: the row above reports a
             status value, which is not the same as stating what is protected.
           */}
-          <p className="mt-3 text-xs text-muted">
+          <p className="mt-3 text-body-sm text-on-surface-variant">
             Message contents stay protected in transit.
           </p>
         </section>
 
         <section
-          className="space-y-3 rounded-panel border border-border-subtle bg-surface-sunken p-4"
+          className="space-y-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-4"
           aria-labelledby="message-backup-heading"
         >
           <GroupHeading level={groupLevel} id="message-backup-heading" className={groupClass}>
             Message backup
           </GroupHeading>
           {loadingRecovery && !recoveryHealth && !recoveryError && (
-            <p role="status" className="text-xs text-muted">
+            <p role="status" className="text-body-sm text-on-surface-variant">
               Checking message backup…
             </p>
           )}
@@ -555,17 +555,17 @@ export function SecurityDevicesPanel({
           {recoveryAttentionNotice && (
             <p
               role="status"
-              className="mesh-security-notice border-l-2 border-container-warning-line p-3 text-xs text-secondary"
+              className="mesh-security-notice border-l-2 border-marker-container-line p-3 text-body-sm text-on-surface-variant"
             >
               {recoveryAttentionNotice}
             </p>
           )}
           {recoveryHealth && (
             <div
-              className={`mesh-security-status border-l-2 p-3 ${recoveryHealth.healthy ? 'border-container-success-line' : 'border-container-warning-line'}`}
+              className={`mesh-security-status border-l-2 p-3 ${recoveryHealth.healthy ? 'border-primary-container-line' : 'border-marker-container-line'}`}
             >
               <div className="flex items-center justify-between gap-3">
-                <p className="text-xs font-medium text-primary">
+                <p className="text-body-sm font-medium text-on-surface">
                   {recoveryHealth.healthy
                     ? 'Message backup is ready'
                     : 'Message backup needs attention'}
@@ -579,7 +579,7 @@ export function SecurityDevicesPanel({
                   Check again
                 </Button>
               </div>
-              <dl className="mt-2 space-y-1 text-xs">
+              <dl className="mt-2 space-y-1 text-body-sm">
                 <Row label="Backup setup" value={recoveryHealth.recoveryState} />
                 <Row label="Message copy" value={recoveryHealth.backupState} />
                 <Row
@@ -600,14 +600,14 @@ export function SecurityDevicesPanel({
                 />
               </dl>
               {recoveryHealth.warnings.length > 0 && (
-                <p className="mt-2 text-xs text-muted">
+                <p className="mt-2 text-body-sm text-on-surface-variant">
                   Mesh found a problem with this backup. Check again before relying on a new device.
                 </p>
               )}
             </div>
           )}
           {newRecovery ? (
-            <div className="mesh-security-notice border-l-2 border-container-warning-line p-3">
+            <div className="mesh-security-notice border-l-2 border-marker-container-line p-3">
               <BackupCodeScreen
                 backupCode={newRecovery.recoveryKey}
                 secureStorageState={newRecovery.secureStorageState}
@@ -654,8 +654,8 @@ export function SecurityDevicesPanel({
               >
                 Restore messages
               </Button>
-              <div className="space-y-2 border-t border-border-subtle pt-3">
-                <p className="text-xs text-muted">
+              <div className="space-y-2 border-t border-outline-variant pt-3">
+                <p className="text-body-sm text-on-surface-variant">
                   Check your backup code before you need it on another device.
                 </p>
                 <Input
@@ -680,7 +680,7 @@ export function SecurityDevicesPanel({
         </section>
 
         <section
-          className="space-y-3 rounded-panel border border-border-subtle bg-surface-sunken p-4"
+          className="space-y-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-4"
           aria-labelledby="device-list-heading"
         >
           <div className="flex items-start justify-between gap-3">
@@ -688,20 +688,20 @@ export function SecurityDevicesPanel({
               <GroupHeading level={groupLevel} id="device-list-heading" className={groupClass}>
                 Your devices
               </GroupHeading>
-              <p className="mt-1 text-xs text-muted">
+              <p className="mt-1 text-body-sm text-on-surface-variant">
                 Check a new device before using it for protected messages.
               </p>
             </div>
-            <span className="font-mono text-meta text-content-muted">
+            <span className="font-code text-body-sm text-on-surface-variant">
               {devices.length} {devices.length === 1 ? 'device' : 'devices'}
             </span>
           </div>
 
-          <details className="mesh-security-disclosure border border-border-subtle px-3">
-            <summary className="flex min-h-10 cursor-pointer items-center text-xs font-semibold text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus">
+          <details className="mesh-security-disclosure border border-outline-variant px-3">
+            <summary className="flex min-h-10 cursor-pointer items-center text-body-sm font-semibold text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus">
               Add another device
             </summary>
-            <div className="space-y-2 border-t border-border-subtle py-3 text-xs text-muted">
+            <div className="space-y-2 border-t border-outline-variant py-3 text-body-sm text-on-surface-variant">
               <ol className="list-decimal space-y-1 pl-5">
                 <li>Install and open Mesh on the other device.</li>
                 <li>Sign in there with the same account through {accountServiceName}.</li>
@@ -735,22 +735,22 @@ export function SecurityDevicesPanel({
             <section
               id="lost-device-workflow"
               aria-labelledby="lost-device-title"
-              className="mesh-security-danger-block space-y-3 border-l-2 border-container-warning-line p-3"
+              className="mesh-security-danger-block space-y-3 border-l-2 border-marker-container-line p-3"
             >
               <div>
                 <GroupHeading
                   level={subGroupLevel}
                   id="lost-device-title"
-                  className="text-sm font-semibold text-content-primary"
+                  className="text-body-md font-semibold text-on-surface"
                 >
                   Sign out a lost device
                 </GroupHeading>
-                <p id="revoke-device-description" className="mt-1 text-xs text-muted">
+                <p id="revoke-device-description" className="mt-1 text-body-sm text-on-surface-variant">
                   Signing out cannot delete messages, screenshots, or files already saved on it.
                 </p>
               </div>
 
-              <ol className="list-decimal space-y-2 pl-5 text-xs text-muted">
+              <ol className="list-decimal space-y-2 pl-5 text-body-sm text-on-surface-variant">
                 <li>Select the device you no longer control.</li>
                 <li>Check that your message backup is ready.</li>
                 <li>Sign it out. Only trust devices you still have.</li>
@@ -758,10 +758,10 @@ export function SecurityDevicesPanel({
 
               <div
                 role="status"
-                className={`mesh-security-status border-l-2 p-3 text-xs ${
+                className={`mesh-security-status border-l-2 p-3 text-body-sm ${
                   recoveryHealth?.healthy
-                    ? 'border-container-success-line text-secondary'
-                    : 'border-container-warning-line text-muted'
+                    ? 'border-primary-container-line text-on-surface-variant'
+                    : 'border-marker-container-line text-on-surface-variant'
                 }`}
               >
                 {recoveryHealth?.healthy
@@ -771,13 +771,13 @@ export function SecurityDevicesPanel({
 
               {revocableDevices.length > 0 ? (
                 <fieldset className="space-y-2">
-                  <legend className="text-xs font-medium text-primary">
+                  <legend className="text-body-sm font-medium text-on-surface">
                     Which device was lost?
                   </legend>
                   {revocableDevices.map((device) => (
                     <label
                       key={device.deviceId}
-                      className="flex cursor-pointer items-start gap-2 rounded-control bg-surface-hover p-2 text-xs text-secondary"
+                      className="flex cursor-pointer items-start gap-2 rounded-full bg-surface-container-high p-2 text-body-sm text-on-surface-variant"
                     >
                       <input
                         type="radio"
@@ -791,10 +791,10 @@ export function SecurityDevicesPanel({
                         className="mt-0.5 h-4 w-4 accent-accent"
                       />
                       <span>
-                        <span className="block font-medium text-primary">
+                        <span className="block font-medium text-on-surface">
                           {device.displayName || 'Unnamed device'}
                         </span>
-                        <span className="block break-all font-mono text-meta text-muted">
+                        <span className="block break-all font-code text-body-sm text-on-surface-variant">
                           {device.deviceId}
                         </span>
                       </span>
@@ -802,14 +802,14 @@ export function SecurityDevicesPanel({
                   ))}
                 </fieldset>
               ) : (
-                <div className="space-y-1 text-xs text-muted">
+                <div className="space-y-1 text-body-sm text-on-surface-variant">
                   <p>No other device is available to sign out.</p>
                   <AccountHelpLink action={accountHelp} serviceName={accountServiceName} />
                 </div>
               )}
 
               {lostDevice && (
-                <label className="flex cursor-pointer items-start gap-2 text-xs text-muted">
+                <label className="flex cursor-pointer items-start gap-2 text-body-sm text-on-surface-variant">
                   <input
                     type="checkbox"
                     checked={lostDeviceAcknowledged}
@@ -853,10 +853,10 @@ export function SecurityDevicesPanel({
           {warningDevices.length > 0 && (
             <div
               role="alert"
-              className="mesh-security-notice border-l-2 border-container-warning-line p-3"
+              className="mesh-security-notice border-l-2 border-marker-container-line p-3"
             >
-              <p className="text-xs font-medium text-primary">Is this you?</p>
-              <p className="mt-1 text-xs text-muted">
+              <p className="text-body-sm font-medium text-on-surface">Is this you?</p>
+              <p className="mt-1 text-body-sm text-on-surface-variant">
                 Trust the {warningDevices.length} new or changed sign-in
                 {warningDevices.length === 1 ? '' : 's'} you recognize, and sign out the rest.
               </p>
@@ -864,7 +864,7 @@ export function SecurityDevicesPanel({
           )}
 
           {loadingDevices && (
-            <p role="status" className="text-xs text-muted">
+            <p role="status" className="text-body-sm text-on-surface-variant">
               Loading registered devices…
             </p>
           )}
@@ -891,10 +891,10 @@ export function SecurityDevicesPanel({
                 key={device.deviceId}
                 className={`mesh-security-device-row border-b px-1 py-3 ${
                   device.identityChanged
-                    ? 'border-container-danger-line'
+                    ? 'border-error-container-line'
                     : device.newDevice
-                      ? 'border-container-warning-line'
-                      : 'border-border-subtle'
+                      ? 'border-marker-container-line'
+                      : 'border-outline-variant'
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -910,29 +910,29 @@ export function SecurityDevicesPanel({
                         }
                         label={`${device.displayName || 'Unnamed device'}: ${trustLabel(device)}`}
                       />
-                      <p className="truncate text-sm font-medium text-primary">
+                      <p className="truncate text-body-md font-medium text-on-surface">
                         {device.displayName || 'Unnamed device'}{' '}
-                        {device.current && <span className="text-accent">(this device)</span>}
+                        {device.current && <span className="text-primary">(this device)</span>}
                       </p>
                     </div>
-                    <p className="mt-1 break-all font-mono text-meta text-muted">
+                    <p className="mt-1 break-all font-code text-body-sm text-on-surface-variant">
                       {device.deviceId}
                     </p>
-                    <p className="mt-1 text-xs text-muted">
+                    <p className="mt-1 text-body-sm text-on-surface-variant">
                       {trustLabel(device)} · Last seen {formatLastSeen(device.lastSeenAt)}
                     </p>
                     {device.firstSeenAt && (
-                      <p className="mt-1 text-xs text-muted">
+                      <p className="mt-1 text-body-sm text-on-surface-variant">
                         First seen by Mesh {formatLastSeen(device.firstSeenAt)}
                       </p>
                     )}
                     {device.identityChanged && (
-                      <p className="mt-2 text-xs font-medium text-status-danger">
+                      <p className="mt-2 text-body-sm font-medium text-error">
                         This sign-in changed since you trusted it. Check it again or sign it out.
                       </p>
                     )}
                     {!device.identityChanged && device.newDevice && (
-                      <p className="mt-2 text-xs font-medium text-status-warning">
+                      <p className="mt-2 text-body-sm font-medium text-marker">
                         New sign-in. Is this you?
                       </p>
                     )}
@@ -969,12 +969,12 @@ export function SecurityDevicesPanel({
           </ul>
 
           {verification && (
-            <div className="mesh-security-verification space-y-3 border-l-2 border-container-accent-line p-3">
+            <div className="mesh-security-verification space-y-3 border-l-2 border-primary-container-line p-3">
               <div>
-                <GroupHeading level={subGroupLevel} className="text-sm font-semibold text-content-primary">
+                <GroupHeading level={subGroupLevel} className="text-body-md font-semibold text-on-surface">
                   Is this you?
                 </GroupHeading>
-                <p aria-live="polite" className="mt-1 text-xs text-muted">
+                <p aria-live="polite" className="mt-1 text-body-sm text-on-surface-variant">
                   {verificationMessage(verification)}
                 </p>
               </div>
@@ -983,12 +983,12 @@ export function SecurityDevicesPanel({
                   {verification.emojis.map((emoji, index) => (
                     <li
                       key={`${emoji.description}-${index}`}
-                      className="rounded-control bg-surface-sunken p-2 text-center"
+                      className="rounded-full bg-surface-container-lowest p-2 text-center"
                     >
-                      <span aria-hidden="true" className="block text-md">
+                      <span aria-hidden="true" className="block text-title-sm">
                         {emoji.symbol}
                       </span>
-                      <span className="mt-1 block text-caption text-muted">
+                      <span className="mt-1 block text-label-sm text-on-surface-variant">
                         {emoji.description}
                       </span>
                     </li>
@@ -998,12 +998,12 @@ export function SecurityDevicesPanel({
               {verification.phase === 'compare' &&
                 verification.emojis.length === 0 &&
                 verification.decimals && (
-                  <p className="font-mono text-lg tracking-widest text-primary">
+                  <p className="font-code text-headline-md tracking-widest text-on-surface">
                     {verification.decimals.join(' · ')}
                   </p>
                 )}
               {verification.phase === 'qr-show' && verification.qrSvg && (
-                <div className="mx-auto w-full max-w-64 rounded-panel bg-surface-qr p-3">
+                <div className="mx-auto w-full max-w-64 rounded-xl bg-surface-qr p-3">
                   <img
                     src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(verification.qrSvg)}`}
                     alt="Code to scan with your other device"
@@ -1089,16 +1089,16 @@ export function SecurityDevicesPanel({
           )}
 
           {revokeTarget && (
-            <div className="mesh-security-danger-block space-y-3 border-l-2 border-container-danger-line p-3">
+            <div className="mesh-security-danger-block space-y-3 border-l-2 border-error-container-line p-3">
               <div>
-                <GroupHeading level={subGroupLevel} className="text-sm font-semibold text-content-primary">
+                <GroupHeading level={subGroupLevel} className="text-body-md font-semibold text-on-surface">
                   Sign out {revokeTarget.displayName || revokeTarget.deviceId}?
                 </GroupHeading>
-                <p className="mt-1 text-xs text-muted">
+                <p className="mt-1 text-body-sm text-on-surface-variant">
                   Signing out cannot delete what is already saved on it. Mesh does not save the
                   password you enter.
                 </p>
-                <div className="mt-1 text-xs text-muted">
+                <div className="mt-1 text-body-sm text-on-surface-variant">
                   <AccountHelpLink action={accountHelp} serviceName={accountServiceName} />
                 </div>
               </div>
@@ -1136,21 +1136,21 @@ export function SecurityDevicesPanel({
         {error && (
           <p
             role="alert"
-            className="rounded-panel bg-container-danger px-3 py-2 text-sm text-status-danger"
+            className="rounded-xl bg-error-container px-3 py-2 text-body-md text-error"
           >
             {error}
           </p>
         )}
 
         <section
-          className="space-y-3 border-t border-border-subtle pt-4"
+          className="space-y-3 border-t border-outline-variant pt-4"
           aria-labelledby="personal-data-heading"
         >
           <div>
             <GroupHeading level={groupLevel} id="personal-data-heading" className={groupClass}>
               Your personal data
             </GroupHeading>
-            <p className="mt-1 text-xs text-muted">
+            <p className="mt-1 text-body-sm text-on-surface-variant">
               Saves messages you authored and their downloaded attachments, not other people's
               messages or account secrets.
             </p>
@@ -1173,11 +1173,11 @@ export function SecurityDevicesPanel({
           {exportResult && (
             <div
               role="status"
-              className="mesh-security-status border-l-2 border-container-success-line p-3"
+              className="mesh-security-status border-l-2 border-primary-container-line p-3"
             >
-              <p className="text-xs font-medium text-primary">Your export is ready</p>
-              <p className="mt-1 break-all font-mono text-meta text-muted">{exportResult.path}</p>
-              <p className="mt-2 text-xs text-muted">
+              <p className="text-body-sm font-medium text-on-surface">Your export is ready</p>
+              <p className="mt-1 break-all font-code text-body-sm text-on-surface-variant">{exportResult.path}</p>
+              <p className="mt-2 text-body-sm text-on-surface-variant">
                 {exportResult.messageCount} message
                 {exportResult.messageCount === 1 ? '' : 's'} across {exportResult.roomCount}{' '}
                 conversation
@@ -1186,13 +1186,13 @@ export function SecurityDevicesPanel({
                 {exportResult.mediaFileCount === 1 ? '' : 's'}.
               </p>
               {exportResult.warnings.length > 0 && (
-                <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-status-warning">
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-body-sm text-marker">
                   {exportResult.warnings.map((warning) => (
                     <li key={warning}>{warning}</li>
                   ))}
                 </ul>
               )}
-              <p className="mt-2 text-xs text-muted">
+              <p className="mt-2 text-body-sm text-on-surface-variant">
                 This folder contains readable conversation content.
               </p>
             </div>
@@ -1200,14 +1200,14 @@ export function SecurityDevicesPanel({
         </section>
 
         <section
-          className="space-y-3 border-t border-border-subtle pt-4"
+          className="space-y-3 border-t border-outline-variant pt-4"
           aria-labelledby="deactivate-account-heading"
         >
           <div>
             <GroupHeading level={groupLevel} id="deactivate-account-heading" className={groupClass}>
               Delete your Mesh account
             </GroupHeading>
-            <p className="mt-1 text-xs text-muted">
+            <p className="mt-1 text-body-sm text-on-surface-variant">
               This permanently disables the account. Messages already shared may remain in
               conversation history, backups, exports, or other people's files.
             </p>
@@ -1229,9 +1229,9 @@ export function SecurityDevicesPanel({
               Start account deletion
             </Button>
           ) : (
-            <div className="mesh-security-danger-block space-y-3 border-l-2 border-container-danger-line p-3">
-              <p className="text-xs font-medium text-status-danger">This cannot be undone.</p>
-              <p id="deactivation-description" className="text-xs text-muted">
+            <div className="mesh-security-danger-block space-y-3 border-l-2 border-error-container-line p-3">
+              <p className="text-body-sm font-medium text-error">This cannot be undone.</p>
+              <p id="deactivation-description" className="text-body-sm text-on-surface-variant">
                 Export anything you want to keep first. Mesh then removes this account's data from
                 this device.
               </p>
@@ -1256,7 +1256,7 @@ export function SecurityDevicesPanel({
                 onChange={setDeactivationPhrase}
                 autoComplete="off"
               />
-              <label className="flex cursor-pointer items-start gap-2 text-xs text-muted">
+              <label className="flex cursor-pointer items-start gap-2 text-body-sm text-on-surface-variant">
                 <input
                   type="checkbox"
                   checked={deactivationAcknowledged}
@@ -1266,7 +1266,7 @@ export function SecurityDevicesPanel({
                 I understand that shared copies may remain and that I will not be able to sign in
                 again.
               </label>
-              <div className="text-xs text-muted">
+              <div className="text-body-sm text-on-surface-variant">
                 <AccountHelpLink action={accountHelp} serviceName={accountServiceName} />
               </div>
               <div className="flex flex-wrap gap-2">
@@ -1302,7 +1302,7 @@ export function SecurityDevicesPanel({
         </section>
 
         <section
-          className="space-y-3 border-t border-border-subtle pt-4"
+          className="space-y-3 border-t border-outline-variant pt-4"
           aria-labelledby="account-device-heading"
         >
           <div>
@@ -1314,7 +1314,7 @@ export function SecurityDevicesPanel({
               group, so each consequence stays stated. The wording is tighter;
               nothing a person loses was dropped.
             */}
-            <p className="mt-1 text-xs text-muted">
+            <p className="mt-1 text-body-sm text-on-surface-variant">
               Sign out keeps downloaded messages here; removing the account deletes only this
               account's Mesh data saved here. Neither action deletes the account at its service or
               erases message history already shared.
@@ -1340,12 +1340,12 @@ export function SecurityDevicesPanel({
                 Remove account and local data
               </Button>
             ) : (
-              <div className="mesh-security-danger-block w-full space-y-3 border-l-2 border-container-danger-line p-3">
-                <p id="local-removal-description" className="text-xs text-muted">
+              <div className="mesh-security-danger-block w-full space-y-3 border-l-2 border-error-container-line p-3">
+                <p id="local-removal-description" className="text-body-sm text-on-surface-variant">
                   This cannot be undone. Mesh signs this device out and deletes its saved account
                   data.
                 </p>
-                <div className="text-xs text-muted">
+                <div className="text-body-sm text-on-surface-variant">
                   <AccountHelpLink action={accountHelp} serviceName={accountServiceName} />
                 </div>
                 <Input
@@ -1360,7 +1360,7 @@ export function SecurityDevicesPanel({
                   onChange={setLocalRemovalPhrase}
                   autoComplete="off"
                 />
-                <label className="flex cursor-pointer items-start gap-2 text-xs text-muted">
+                <label className="flex cursor-pointer items-start gap-2 text-body-sm text-on-surface-variant">
                   <input
                     type="checkbox"
                     checked={localRemovalAcknowledged}
@@ -1429,10 +1429,10 @@ function SecurityDevicesFrame({
     return (
       <section
         aria-labelledby="embedded-security-devices-heading"
-        className="mesh-security-frame mt-4 border-y border-border-subtle py-4"
+        className="mesh-security-frame mt-4 border-y border-outline-variant py-4"
       >
-        <header className="mesh-security-header mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-border-subtle pb-3">
-          <h3 id="embedded-security-devices-heading" className="text-md font-semibold text-content-primary">
+        <header className="mesh-security-header mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-outline-variant pb-3">
+          <h3 id="embedded-security-devices-heading" className="text-title-sm font-semibold text-on-surface">
             Safety and devices
           </h3>
           <Button variant="ghost" size="sm" onClick={onClose}>Close devices</Button>
@@ -1483,7 +1483,7 @@ function AccountHelpLink({
       href={action.href}
       target="_blank"
       rel="noreferrer noopener"
-      className="font-medium text-accent underline-offset-2 hover:underline"
+      className="font-medium text-primary underline-offset-2 hover:underline"
     >
       {action.label}
     </a>
@@ -1493,8 +1493,8 @@ function AccountHelpLink({
 function Row({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="grid grid-cols-device-code gap-3">
-      <dt className="text-muted">{label}</dt>
-      <dd className={`${mono ? 'break-all font-mono text-xs' : 'break-words'} text-secondary`}>{value}</dd>
+      <dt className="text-on-surface-variant">{label}</dt>
+      <dd className={`${mono ? 'break-all font-code text-body-sm' : 'break-words'} text-on-surface-variant`}>{value}</dd>
     </div>
   )
 }

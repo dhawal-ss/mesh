@@ -865,7 +865,7 @@ export function CommandPalette() {
             .map(([keys, description]) => (
             <div key={keys} className="flex items-center justify-between gap-4">
               <dt><Kbd>{keys}</Kbd></dt>
-              <dd className="text-right text-sm text-content-secondary">{description}</dd>
+              <dd className="text-right text-body-md text-on-surface-variant">{description}</dd>
             </div>
           ))}
         </dl>

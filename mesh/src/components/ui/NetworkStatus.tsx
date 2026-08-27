@@ -60,8 +60,8 @@ export function NetworkStatus({ matrixMode }: { matrixMode: boolean }) {
     <div
       className={
         matrixMode
-          ? 'flex max-w-full flex-col items-center gap-1 px-1 text-center text-caption text-muted'
-          : 'flex max-w-full items-center justify-center gap-1.5 px-1 text-center text-caption text-muted'
+          ? 'flex max-w-full flex-col items-center gap-1 px-1 text-center text-label-sm text-on-surface-variant'
+          : 'flex max-w-full items-center justify-center gap-1.5 px-1 text-center text-label-sm text-on-surface-variant'
       }
       /*
         Legacy keeps its live region: it is the only connection surface that

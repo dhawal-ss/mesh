@@ -102,7 +102,7 @@ export function VoiceDock() {
 
   return (
     <section
-      className="mesh-voice-dock flex flex-shrink-0 items-center gap-4 border-t border-border-subtle bg-surface-sunken px-4 py-3"
+      className="mesh-voice-dock flex flex-shrink-0 items-center gap-4 border-t border-outline-variant bg-surface-container-lowest px-4 py-3"
       aria-label={`Voice room ${voiceChannel?.name ?? 'Voice'}`}
       data-mesh-region
       tabIndex={-1}
@@ -110,20 +110,20 @@ export function VoiceDock() {
       <button
         type="button"
         onClick={openVoiceRoom}
-        className="mesh-voice-dock-room flex min-w-64 items-center gap-3 rounded-control px-2 py-1.5 text-left transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+        className="mesh-voice-dock-room flex min-w-64 items-center gap-3 rounded-full px-2 py-1.5 text-left transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
         aria-label={`Open voice room ${voiceChannel?.name ?? 'Voice'}`}
       >
-        <span className="mesh-voice-dock-room-icon flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-control border border-container-accent-line bg-container-accent text-accent">
+        <span className="mesh-voice-dock-room-icon flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-primary-container-line bg-primary-container text-primary">
           <Icon name="volume" size="sm" />
         </span>
         <span className="min-w-0">
-          <span className="block truncate text-base font-semibold text-primary">
+          <span className="block truncate text-body-lg font-semibold text-on-surface">
             {voiceChannel?.name ?? 'Voice'}
           </span>
-          <span className="mesh-voice-dock-status mt-0.5 flex items-center gap-1.5 text-caption text-muted">
+          <span className="mesh-voice-dock-status mt-0.5 flex items-center gap-1.5 text-label-sm text-on-surface-variant">
             <span
               className={`h-1.5 w-1.5 rounded-round ${
-                connectionState === 'connected' ? 'bg-status-success' : 'bg-status-warning'
+                connectionState === 'connected' ? 'bg-primary' : 'bg-marker'
               }`}
               aria-hidden="true"
             />
@@ -145,7 +145,7 @@ export function VoiceDock() {
                   never nudges the row. */}
               <span
                 className={`rounded-round p-0.5 ${
-                  participant.speaking ? 'bg-status-success' : 'bg-transparent'
+                  participant.speaking ? 'bg-primary' : 'bg-transparent'
                 }`}
               >
                 <Avatar
@@ -153,16 +153,16 @@ export function VoiceDock() {
                   size={42}
                   name={participant.displayName}
                   imageUrl={participant.avatarUrl}
-                  className="border-2 border-surface-sunken"
+                  className="border-2 border-surface-container-lowest"
                 />
               </span>
               {/* Screen-reader-only until the dock has room for it, never
                   removed: who is talking must stay readable at every width. */}
               <span className="mesh-voice-dock-participant-copy sr-only min-w-0">
-                <span className="block max-w-20 truncate text-caption font-medium text-secondary">
+                <span className="block max-w-20 truncate text-label-sm font-medium text-on-surface-variant">
                   {participant.displayName.split(' ')[0]}
                 </span>
-                <span className={`block text-2xs ${participant.speaking ? 'text-status-success' : 'text-muted'}`}>
+                <span className={`block text-label-sm ${participant.speaking ? 'text-primary' : 'text-on-surface-variant'}`}>
                   {participant.speaking ? 'Talking' : participant.isLocal ? 'You' : 'Listening'}
                 </span>
               </span>
@@ -170,16 +170,16 @@ export function VoiceDock() {
           </Tooltip>
         ))}
         {participants.length > 6 && (
-          <span className="text-caption text-muted">+{participants.length - 6}</span>
+          <span className="text-label-sm text-on-surface-variant">+{participants.length - 6}</span>
         )}
       </div>
 
-      <div className="mesh-voice-dock-controls ml-auto flex flex-shrink-0 items-center gap-2 border-l border-border-subtle pl-4">
+      <div className="mesh-voice-dock-controls ml-auto flex flex-shrink-0 items-center gap-2 border-l border-outline-variant pl-4">
         {connectionState === 'disconnected' ? (
           <button
             type="button"
             onClick={retryVoice}
-            className="flex min-h-11 items-center gap-2 rounded-control px-3 text-xs font-semibold text-accent transition-colors hover:bg-surface-hover"
+            className="flex min-h-11 items-center gap-2 rounded-full px-3 text-body-sm font-semibold text-primary transition-colors hover:bg-surface-container-high"
           >
             <Icon name="refresh" size="sm" />
             <span className="hidden sm:inline">Try again</span>
@@ -226,7 +226,7 @@ export function VoiceDock() {
         <button
           type="button"
           onClick={openVoiceRoom}
-          className="mesh-voice-dock-open hidden min-h-11 items-center gap-2 rounded-control px-3 text-xs font-semibold text-secondary transition-colors hover:bg-surface-hover hover:text-primary md:flex"
+          className="mesh-voice-dock-open hidden min-h-11 items-center gap-2 rounded-full px-3 text-body-sm font-semibold text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface md:flex"
           aria-label={`Open voice room ${voiceChannel?.name ?? 'Voice'}`}
         >
           <Icon name="panelRight" size="sm" />
@@ -235,7 +235,7 @@ export function VoiceDock() {
         <button
           type="button"
           onClick={leaveVoice}
-          className="flex min-h-11 items-center gap-2 rounded-control border border-container-danger-line px-4 text-xs font-semibold text-status-danger transition-colors hover:bg-container-danger-hover"
+          className="flex min-h-11 items-center gap-2 rounded-full border border-error-container-line px-4 text-body-sm font-semibold text-error transition-colors hover:bg-error-container-hover"
           aria-label={`Leave ${voiceChannel?.name ?? 'voice'}`}
         >
           <Icon name="phoneOff" size="sm" />
@@ -266,14 +266,14 @@ function VoiceDockButton({
         onClick={onClick}
         aria-label={label}
         aria-pressed={active}
-        className={`flex min-h-11 items-center justify-center gap-2 rounded-control px-3 transition-colors ${
+        className={`flex min-h-11 items-center justify-center gap-2 rounded-full px-3 transition-colors ${
           active
-            ? 'bg-container-warning text-status-warning'
-            : 'text-secondary hover:bg-surface-hover hover:text-primary'
+            ? 'bg-marker-container text-marker'
+            : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
         }`}
       >
         <Icon name={icon} size="sm" />
-        <span className="hidden text-xs font-semibold lg:inline">
+        <span className="hidden text-body-sm font-semibold lg:inline">
           {shortLabel ?? (label.startsWith('Unmute')
             ? 'Unmute'
             : label.startsWith('Mute')

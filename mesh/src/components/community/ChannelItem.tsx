@@ -331,20 +331,20 @@ export function ChannelItem({
           it carries aria-current above because a plane is a colour and a colour
           is never the only channel.
         */
-        className={`mesh-channel-item flex min-h-shell-channel-row min-w-0 flex-1 items-center gap-1.5 rounded-plane px-shell-gutter text-left transition-colors duration-instant ${
+        className={`mesh-channel-item flex min-h-shell-channel-row min-w-0 flex-1 items-center gap-1.5 rounded-full px-shell-gutter text-left transition-colors duration-instant ${
           active
-            ? 'mesh-channel-active bg-accent text-content-on-accent'
+            ? 'mesh-channel-active bg-primary text-on-primary'
             : hasUnread
-              ? 'text-content-primary hover:bg-surface-fill'
-              : 'text-content-secondary hover:bg-surface-fill hover:text-content-primary'
+              ? 'text-on-surface hover:bg-state-hover'
+              : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
         }`}
       >
         <span
           aria-hidden="true"
-          className={`w-row-index flex-none font-mono text-count font-semibold transition-colors duration-instant ${
+          className={`w-row-index flex-none text-label-sm font-semibold transition-colors duration-instant ${
             active
-              ? 'text-content-on-accent'
-              : 'text-content-secondary group-hover:text-content-primary'
+              ? 'text-on-primary'
+              : 'text-on-surface-variant group-hover:text-on-surface'
           }`}
         >
           {rowNumber(index)}
@@ -361,7 +361,7 @@ export function ChannelItem({
           className="flex-shrink-0"
         />
 
-        <span className={`truncate text-row ${active || hasUnread ? 'font-medium' : ''}`}>
+        <span className={`truncate text-title-md ${active || hasUnread ? 'font-medium' : ''}`}>
           {channel.name}
         </span>
 
@@ -372,7 +372,7 @@ export function ChannelItem({
           touch, a keyboard and a screenshot all show what the click will do.
         */}
         {!joined && (
-          <span className="ml-auto flex-shrink-0 pl-1 text-meta text-content-secondary">
+          <span className="ml-auto flex-shrink-0 pl-1 text-body-sm text-on-surface-variant">
             {joining ? 'Joining' : 'Join'}
           </span>
         )}
@@ -383,7 +383,7 @@ export function ChannelItem({
           screen there, so naming it again would be noise.
         */}
         {hasDraft && (
-          <span className="ml-auto flex-shrink-0 pl-1 font-mono text-meta text-content-secondary">
+          <span className="ml-auto flex-shrink-0 pl-1 text-body-sm text-on-surface-variant">
             Draft
           </span>
         )}
@@ -393,7 +393,7 @@ export function ChannelItem({
             name="pin"
             size="xs"
             aria-hidden="true"
-            className={`flex-shrink-0 ${active ? 'text-content-on-accent' : 'text-content-tertiary'}`}
+            className={`flex-shrink-0 ${active ? 'text-on-primary' : 'text-outline'}`}
           />
         )}
 
@@ -407,7 +407,7 @@ export function ChannelItem({
             name="bellOff"
             size="xs"
             aria-hidden="true"
-            className={`ml-auto flex-shrink-0 ${active ? 'text-content-on-accent' : 'text-content-tertiary'}`}
+            className={`ml-auto flex-shrink-0 ${active ? 'text-on-primary' : 'text-outline'}`}
           />
         )}
 
@@ -422,7 +422,7 @@ export function ChannelItem({
             name="triangleAlert"
             size="xs"
             aria-hidden="true"
-            className={`flex-shrink-0 text-status-danger ${isMuted ? '' : 'ml-auto'}`}
+            className={`flex-shrink-0 text-error ${isMuted ? '' : 'ml-auto'}`}
           />
         )}
 
@@ -449,8 +449,8 @@ export function ChannelItem({
               initial="initial"
               animate="animate"
               exit="exit"
-              className={`badge-count flex origin-right items-center gap-0.5 font-mono text-count font-semibold ${
-                trailingCount.mention ? 'text-status-danger' : 'text-content-accent'
+              className={`badge-count flex origin-right items-center gap-0.5 text-label-sm font-semibold ${
+                trailingCount.mention ? 'text-error' : 'text-primary'
               } ${isMuted || hasDraft ? '' : 'ml-auto'}`}
             >
               {trailingCount.mention && <span aria-hidden="true">@</span>}
@@ -472,7 +472,7 @@ export function ChannelItem({
               animate="animate"
               exit="exit"
               aria-hidden="true"
-              className={`h-1.5 w-1.5 flex-shrink-0 rounded-full bg-accent ${isMuted || hasDraft ? '' : 'ml-auto'}`}
+              className={`h-1.5 w-1.5 flex-shrink-0 rounded-full bg-primary ${isMuted || hasDraft ? '' : 'ml-auto'}`}
             />
           )}
         </AnimatePresence>
@@ -484,8 +484,8 @@ export function ChannelItem({
         trigger={(
           <button
             type="button"
-            className={`absolute right-1 flex min-h-8 w-8 flex-none items-center justify-center rounded-control opacity-0 transition-opacity hover:bg-surface-fill-hover group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
-              active ? 'text-content-on-accent' : 'text-content-tertiary hover:text-content-primary'
+            className={`absolute right-1 flex min-h-8 w-8 flex-none items-center justify-center rounded-full opacity-0 transition-opacity hover:bg-state-pressed group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
+              active ? 'text-on-primary' : 'text-outline hover:text-on-surface'
             }`}
             aria-label={`More actions for ${channel.name}`}
           >

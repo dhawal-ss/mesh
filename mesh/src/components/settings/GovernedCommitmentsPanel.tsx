@@ -80,10 +80,10 @@ export function GovernedCommitmentsPanel() {
   return (
     <section aria-labelledby={headingId} className="space-y-4">
       <div>
-        <h3 id={headingId} className="text-md font-semibold text-content-primary">
+        <h3 id={headingId} className="text-title-sm font-semibold text-on-surface">
           What Mesh commits to
         </h3>
-        <p className="mt-1 text-xs text-muted">
+        <p className="mt-1 text-body-sm text-on-surface-variant">
           How Mesh already behaves, not what it intends to do later.
         </p>
       </div>
@@ -102,12 +102,12 @@ export function GovernedCommitmentsPanel() {
 
       <section
         aria-labelledby={reportingId}
-        className="space-y-2 rounded-panel border border-border-subtle bg-surface-sunken p-4"
+        className="space-y-2 rounded-xl border border-outline-variant bg-surface-container-lowest p-4"
       >
-        <h4 id={reportingId} className="text-sm font-semibold text-primary">
+        <h4 id={reportingId} className="text-body-md font-semibold text-on-surface">
           If something goes wrong
         </h4>
-        <ul className="space-y-1.5 text-xs text-secondary">
+        <ul className="space-y-1.5 text-body-sm text-on-surface-variant">
           <li>Error reporting is off until you turn it on.</li>
           <li>
             While it is on, Mesh records the type of an error, when it happened, and which part of
@@ -145,12 +145,12 @@ function CommitmentList({
 }) {
   return (
     <section aria-labelledby={headingId} className="space-y-2">
-      <h4 id={headingId} className="text-sm font-semibold text-primary">{title}</h4>
+      <h4 id={headingId} className="text-body-md font-semibold text-on-surface">{title}</h4>
       <ul className="space-y-2">
         {commitments.map((commitment) => (
-          <li key={commitment.id} className="text-xs">
-            <span className="block font-medium text-secondary">{commitment.statement}</span>
-            <span className="block text-muted">{commitment.basis}</span>
+          <li key={commitment.id} className="text-body-sm">
+            <span className="block font-medium text-on-surface-variant">{commitment.statement}</span>
+            <span className="block text-on-surface-variant">{commitment.basis}</span>
           </li>
         ))}
       </ul>

@@ -22,16 +22,16 @@ export function DayDivider({ timestamp }: { timestamp: unknown }) {
   return (
     <div
       data-day-divider="true"
-      className="pointer-events-none sticky top-0 z-sticky flex w-full items-center gap-3 bg-surface-base px-4 py-2"
+      className="pointer-events-none sticky top-0 z-sticky flex w-full items-center gap-3 bg-surface px-4 py-2"
     >
-      <span aria-hidden="true" className="h-px flex-1 bg-border-subtle" />
+      <span aria-hidden="true" className="h-px flex-1 bg-outline-variant" />
       <time
         dateTime={iso}
-        className="rounded-panel bg-surface-base px-2 py-0.5 text-caption font-medium lowercase tracking-eyebrow text-content-muted"
+        className="rounded-xl bg-surface px-2 py-0.5 text-label-sm font-medium lowercase tracking-label-md text-on-surface-variant"
       >
         {label}
       </time>
-      <span aria-hidden="true" className="h-px flex-1 bg-border-subtle" />
+      <span aria-hidden="true" className="h-px flex-1 bg-outline-variant" />
     </div>
   )
 }

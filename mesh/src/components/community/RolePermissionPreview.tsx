@@ -77,12 +77,12 @@ export function RolePermissionPreview({
       <section
         aria-labelledby={headingId}
         aria-busy="true"
-        className="space-y-2 rounded-panel border border-border-subtle bg-surface-sunken p-4"
+        className="space-y-2 rounded-xl border border-outline-variant bg-surface-container-lowest p-4"
       >
-        <h3 id={headingId} className="text-sm font-semibold text-primary">
+        <h3 id={headingId} className="text-body-md font-semibold text-on-surface">
           Checking current permissions
         </h3>
-        <p className="text-xs text-muted" role="status" aria-live="polite">
+        <p className="text-body-sm text-on-surface-variant" role="status" aria-live="polite">
           Reading the community and each connected room…
         </p>
       </section>
@@ -93,13 +93,13 @@ export function RolePermissionPreview({
     return (
       <section
         aria-labelledby={headingId}
-        className="space-y-3 rounded-panel border border-container-warning-line bg-container-warning p-4"
+        className="space-y-3 rounded-xl border border-marker-container-line bg-marker-container p-4"
       >
         <div>
-          <h3 id={headingId} className="text-sm font-semibold text-primary">
+          <h3 id={headingId} className="text-body-md font-semibold text-on-surface">
             Unable to verify permissions
           </h3>
-          <p className="mt-1 text-xs text-muted" role="alert">
+          <p className="mt-1 text-body-sm text-on-surface-variant" role="alert">
             {evidence.message
               ?? 'Mesh could not read current permissions for every room.'}
           </p>
@@ -144,11 +144,11 @@ export function RolePermissionPreview({
   return (
     <section
       aria-labelledby={headingId}
-      className="space-y-3 rounded-panel border border-border-subtle bg-surface-sunken p-4"
+      className="space-y-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-4"
     >
       <div>
-        <h3 id={headingId} className="text-sm font-semibold text-primary">{title}</h3>
-        <p className="mt-1 text-xs text-muted">
+        <h3 id={headingId} className="text-body-md font-semibold text-on-surface">{title}</h3>
+        <p className="mt-1 text-body-sm text-on-surface-variant">
           {caption ?? (scope === 'room'
             ? 'Based on current permissions in this room.'
             : 'Based on current permissions in this community and its rooms.')}
@@ -156,21 +156,21 @@ export function RolePermissionPreview({
       </div>
 
       {hasUnknown ? (
-        <p className="text-xs text-status-warning" role="alert">
+        <p className="text-body-sm text-marker" role="alert">
           {scope === 'room'
             ? 'Mesh could not read this room’s permissions.'
             : "Mesh couldn't confirm permissions in every room."}
         </p>
       ) : hasPartial ? (
-        <p className="text-xs text-status-warning" role="status" aria-live="polite">
+        <p className="text-body-sm text-marker" role="status" aria-live="polite">
           Some permissions differ between rooms.
         </p>
       ) : scope === 'room' ? (
-        <p className="text-xs text-secondary" role="status" aria-live="polite">
+        <p className="text-body-sm text-on-surface-variant" role="status" aria-live="polite">
           Read from this room’s current permissions.
         </p>
       ) : (
-        <p className="text-xs text-secondary" role="status" aria-live="polite">
+        <p className="text-body-sm text-on-surface-variant" role="status" aria-live="polite">
           Verified across {roomCount} {roomCount === 1 ? 'room' : 'rooms'}.
         </p>
       )}
@@ -179,11 +179,11 @@ export function RolePermissionPreview({
         {permissions.map((permission) => {
           const metadata = getCommunityPermissionMetadata(permission.permissionId)
           return (
-            <li key={permission.permissionId} className="text-xs">
+            <li key={permission.permissionId} className="text-body-sm">
               <div className="flex items-start justify-between gap-3">
                 <span>
-                  <span className="block font-medium text-secondary">{metadata.label}</span>
-                  <span className="block text-muted">{metadata.description}</span>
+                  <span className="block font-medium text-on-surface-variant">{metadata.label}</span>
+                  <span className="block text-on-surface-variant">{metadata.description}</span>
                 </span>
                 <span className={aggregateTone(permission.status)}>
                   {aggregateLabel(permission.status, scope)}
@@ -196,12 +196,12 @@ export function RolePermissionPreview({
       </ul>
 
       {hasUnknown ? (
-        <ul className="space-y-1 border-t border-border-subtle pt-3 text-xs text-muted">
+        <ul className="space-y-1 border-t border-outline-variant pt-3 text-body-sm text-on-surface-variant">
           {evidence.projection.rooms
             .filter((room) => room.status !== 'loaded' && room.status !== 'matrix-default')
             .map((room) => (
               <li key={room.roomId}>
-                <span className="font-medium text-secondary">{room.roomName}:</span>{' '}
+                <span className="font-medium text-on-surface-variant">{room.roomName}:</span>{' '}
                 {room.failureReason ?? 'Permission state unavailable.'}
               </li>
             ))}
@@ -240,21 +240,21 @@ function TemplatePermissionPreview({
   return (
     <section
       aria-labelledby={headingId}
-      className="space-y-3 rounded-panel border border-border-subtle bg-surface-sunken p-4"
+      className="space-y-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-4"
     >
       <div>
-        <h3 id={headingId} className="text-sm font-semibold text-primary">
+        <h3 id={headingId} className="text-body-md font-semibold text-on-surface">
           {template.label} role preview
         </h3>
-        <p className="mt-1 text-xs text-muted">
+        <p className="mt-1 text-body-sm text-on-surface-variant">
           {subject} would receive the {template.label} role. {template.summary}
         </p>
       </div>
-      <p className="text-xs text-status-warning" role="status">
+      <p className="text-body-sm text-marker" role="status">
         This is a preview and has not been applied.
       </p>
       {comparison && (comparison.gained.length > 0 || comparison.lost.length > 0) ? (
-        <p className="text-xs text-secondary" role="status" aria-live="polite">
+        <p className="text-body-sm text-on-surface-variant" role="status" aria-live="polite">
           {comparison.gained.length > 0
             ? `Would gain ${comparison.gained.map((item) => item.label.toLowerCase()).join(', ')}.`
             : ''}
@@ -266,9 +266,9 @@ function TemplatePermissionPreview({
       ) : null}
       <ul className="space-y-1.5">
         {permissions.map((permission) => (
-          <li key={permission.id} className="flex justify-between gap-3 text-xs">
-            <span className="font-medium text-secondary">{permission.label}</span>
-            <span className={permission.granted ? 'text-status-success' : 'text-muted'}>
+          <li key={permission.id} className="flex justify-between gap-3 text-body-sm">
+            <span className="font-medium text-on-surface-variant">{permission.label}</span>
+            <span className={permission.granted ? 'text-primary' : 'text-on-surface-variant'}>
               {permission.granted ? 'Template grants' : 'Template does not grant'}
             </span>
           </li>
@@ -290,25 +290,25 @@ function PermissionRoomBreakdown({ permission }: { permission: CommunityPermissi
   if (!showSplit && permission.unreadableRooms.length === 0) return null
 
   return (
-    <dl className="mt-1.5 space-y-1 border-l border-border-subtle pl-2.5 text-micro">
+    <dl className="mt-1.5 space-y-1 border-l border-outline-variant pl-2.5 text-label-sm">
       {showSplit ? (
         <>
           <PermissionRoomLine
             term="Allowed in"
             rooms={permission.grantedRooms}
-            className="text-status-success"
+            className="text-primary"
           />
           <PermissionRoomLine
             term="Not allowed in"
             rooms={permission.deniedRooms}
-            className="text-muted"
+            className="text-on-surface-variant"
           />
         </>
       ) : null}
       <PermissionRoomLine
         term="Mesh could not read"
         rooms={permission.unreadableRooms}
-        className="text-status-warning"
+        className="text-marker"
       />
     </dl>
   )
@@ -327,7 +327,7 @@ function PermissionRoomLine({
   return (
     <div className="flex flex-wrap gap-x-1.5">
       <dt className={`font-medium ${className}`}>{term}:</dt>
-      <dd className="text-muted">{rooms.map((room) => room.roomName).join(', ')}</dd>
+      <dd className="text-on-surface-variant">{rooms.map((room) => room.roomName).join(', ')}</dd>
     </div>
   )
 }
@@ -351,11 +351,11 @@ function aggregateLabel(
 function aggregateTone(status: CommunityPermissionAggregateStatus) {
   switch (status) {
     case 'granted-everywhere':
-      return 'flex-shrink-0 text-status-success'
+      return 'flex-shrink-0 text-primary'
     case 'granted-some-rooms':
     case 'unknown':
-      return 'flex-shrink-0 text-status-warning'
+      return 'flex-shrink-0 text-marker'
     case 'not-granted':
-      return 'flex-shrink-0 text-muted'
+      return 'flex-shrink-0 text-on-surface-variant'
   }
 }

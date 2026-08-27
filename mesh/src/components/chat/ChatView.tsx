@@ -1895,7 +1895,7 @@ export function ChatView({
           truncated was the room name. The eyebrow and the actions share the
           top line instead, which is also where the mock puts them.
         */
-        className="mesh-conversation-header mesh-conversation-title-header flex min-w-0 flex-shrink-0 flex-col gap-1.5 border-b border-rule border-border-structural"
+        className="mesh-conversation-header mesh-conversation-title-header flex min-w-0 flex-shrink-0 flex-col gap-1.5 border-b border-rule border-outline-variant"
         data-tauri-drag-region
       >
         <div className="flex min-w-0 items-center justify-between gap-4">
@@ -1919,10 +1919,10 @@ export function ChatView({
                 onClick={() => onOpenContext('pins')}
                 aria-label="Show pinned messages"
                 aria-pressed={Boolean(isContextOpen && activeContextTab === 'pins')}
-                className={`flex h-8 items-center gap-1.5 rounded-control px-2 text-xs font-medium transition-colors ${
+                className={`flex h-8 items-center gap-1.5 rounded-full px-2 text-body-sm font-medium transition-colors ${
                   isContextOpen && activeContextTab === 'pins'
-                    ? 'bg-surface-selected text-primary'
-                    : 'text-muted hover:bg-surface-hover hover:text-secondary'
+                    ? 'bg-secondary-container text-on-surface'
+                    : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface-variant'
                 }`}
               >
                 <Icon name="pin" size="sm" />
@@ -1946,10 +1946,10 @@ export function ChatView({
                 }
                 aria-controls="mesh-room-context-panel"
                 aria-expanded={isContextOpen}
-                className={`flex h-8 items-center justify-center gap-1.5 rounded-control px-2 text-xs font-medium transition-colors ${
+                className={`flex h-8 items-center justify-center gap-1.5 rounded-full px-2 text-body-sm font-medium transition-colors ${
                   isContextOpen && activeContextTab === 'people'
-                    ? 'bg-surface-selected text-primary'
-                    : 'text-muted hover:bg-surface-hover hover:text-secondary'
+                    ? 'bg-secondary-container text-on-surface'
+                    : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface-variant'
                 }`}
               >
                 <Icon name="panelRight" size="sm" />
@@ -1972,7 +1972,7 @@ export function ChatView({
                   roomId: studioVoiceRoom.id,
                 })
               }}
-              className="ml-1 hidden min-h-9 items-center gap-2 rounded-control bg-accent px-3 text-xs font-semibold text-content-on-accent transition-colors hover:bg-accent-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus md:flex"
+              className="ml-1 hidden min-h-9 items-center gap-2 rounded-full bg-primary px-3 text-body-sm font-semibold text-on-primary transition-colors hover:bg-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus md:flex"
               aria-label={`${currentStudioParty ? 'Open' : 'Join'} voice room ${studioVoiceRoom.name}`}
             >
               <Icon name="volume" size="sm" />
@@ -1984,7 +1984,7 @@ export function ChatView({
 
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
           <h1
-            className="mesh-room-title min-w-0 truncate text-screen font-semibold text-content-primary outline-none"
+            className="mesh-room-title min-w-0 truncate text-headline-lg font-semibold text-on-surface outline-none"
             data-mesh-route-heading
             tabIndex={-1}
           >
@@ -2003,7 +2003,7 @@ export function ChatView({
               data-room-shape-chip
               onClick={() => setRoomShape(channel.id, 'conversation')}
               aria-label={`Reading ${channel.name} as ${roomShape}. Go back to the conversation.`}
-              className="flex flex-shrink-0 items-center gap-1.5 rounded-control border border-border-subtle px-2 py-0.5 font-mono text-meta lowercase tracking-eyebrow text-content-secondary hover:bg-surface-hover hover:text-content-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="flex flex-shrink-0 items-center gap-1.5 rounded-full border border-outline-variant px-2 py-0.5 text-body-sm lowercase tracking-label-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             >
               <Icon name={roomShape === 'event' ? 'calendar' : 'image'} size="xs" />
               {roomShape === 'event' ? 'Event' : 'Clips'}
@@ -2017,7 +2017,7 @@ export function ChatView({
             says nobody has decided yet, and a stand-in hides that.
           */}
           {roomDescription && (
-            <span className="hidden min-w-0 truncate text-support text-content-secondary lg:block">
+            <span className="hidden min-w-0 truncate text-body-sm text-on-surface-variant lg:block">
               {roomDescription}
             </span>
           )}
@@ -2028,22 +2028,22 @@ export function ChatView({
         <button
           type="button"
           onClick={() => onOpenContext('pins')}
-          className="mesh-pinned-message-bar flex h-shell-pin min-w-0 max-w-full flex-shrink-0 items-center gap-3 overflow-hidden border-b border-rule border-border-structural px-shell-gutter text-left transition-colors"
+          className="mesh-pinned-message-bar flex h-shell-pin min-w-0 max-w-full flex-shrink-0 items-center gap-3 overflow-hidden border-b border-rule border-outline-variant px-shell-gutter text-left transition-colors"
           aria-label={`Open pinned message from ${pinnedMessage.authorDisplayName}`}
         >
-          <Icon name="pin" size="xs" className="flex-shrink-0 text-status-warning" />
-          <span className="flex-none font-mono text-eyebrow font-medium uppercase text-status-warning">
+          <Icon name="pin" size="xs" className="flex-shrink-0 text-marker" />
+          <span className="flex-none text-label-sm font-medium text-marker">
             Pinned
           </span>
           <span className="mesh-pinned-message-copy flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden">
-            <span className="flex-shrink-0 text-support text-content-secondary">
+            <span className="flex-shrink-0 text-body-sm text-on-surface-variant">
               {pinnedMessage.authorDisplayName}
             </span>
-            <span className="min-w-0 truncate text-support text-content-body">
+            <span className="min-w-0 truncate text-body-sm text-on-surface">
               {pinnedMessage.content || 'Pinned attachment'}
             </span>
           </span>
-          <span className="mesh-pinned-message-action flex-shrink-0 font-mono text-chip font-semibold uppercase text-content-secondary">
+          <span className="mesh-pinned-message-action flex-shrink-0 text-label-md font-semibold text-on-surface-variant">
             View
           </span>
         </button>
@@ -2055,7 +2055,7 @@ export function ChatView({
           aria-live="polite"
           aria-label={`${trust.devicesNeedReview} ${trust.devicesNeedReview === 1 ? 'device needs' : 'devices need'} review. Open the room ledger.`}
           data-notice-tone="warning"
-          className="flex min-h-control-md flex-shrink-0 items-center gap-2 border-b border-container-warning-line bg-container-warning px-4 text-left text-xs text-status-warning transition-colors hover:bg-container-warning-hover"
+          className="flex min-h-control-md flex-shrink-0 items-center gap-2 border-b border-marker-container-line bg-marker-container px-4 text-left text-body-sm text-marker transition-colors hover:bg-marker-container-hover"
           onClick={() => onOpenContext?.('ledger')}
         >
           <Icon name="triangleAlert" size="sm" />
@@ -2070,12 +2070,12 @@ export function ChatView({
         <div
           role="alert"
           data-notice-tone="warning"
-          className="flex flex-wrap items-center justify-between gap-2 border-b border-container-warning-line bg-container-warning px-4 py-2 text-xs text-secondary"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface-variant"
         >
           <span>{activeRoomUpgradeError}</span>
           <button
             type="button"
-            className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+            className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
             onClick={() => setRoomUpgradeAttempt((attempt) => attempt + 1)}
           >
             Retry room status
@@ -2087,12 +2087,12 @@ export function ChatView({
         <div
           role="alert"
           data-notice-tone="warning"
-          className="flex flex-wrap items-center justify-between gap-2 border-b border-container-warning-line bg-container-warning px-4 py-2 text-xs text-secondary"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface-variant"
         >
           <span>This room could not be marked as read.</span>
           <button
             type="button"
-            className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+            className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
             onClick={() => void markChannelSeen().catch(() => {})}
           >
             Retry read status
@@ -2173,12 +2173,12 @@ export function ChatView({
               <div
                 role="alert"
                 data-notice-tone="warning"
-                className="max-w-sm rounded-panel border border-container-warning-line bg-container-warning p-4 text-center text-sm text-secondary"
+                className="max-w-sm rounded-xl border border-marker-container-line bg-marker-container p-4 text-center text-body-md text-on-surface-variant"
               >
                 <p>Messages could not be loaded.</p>
                 <button
                   type="button"
-                  className="mt-3 min-h-8 rounded-control px-3 font-semibold text-text-link hover:bg-surface-hover"
+                  className="mt-3 min-h-8 rounded-full px-3 font-semibold text-primary hover:bg-surface-container-high"
                   onClick={() => void loadLatestMessages().catch(() => {})}
                 >
                   Retry messages
@@ -2289,16 +2289,16 @@ export function ChatView({
                   focus); the feed's aria-busy carries the loading state.
                 */
                 <div className="flex h-10 items-center justify-center gap-2 px-4">
-                  <span className="h-px min-w-6 flex-1 bg-border-subtle" aria-hidden="true" />
+                  <span className="h-px min-w-6 flex-1 bg-outline-variant" aria-hidden="true" />
                   <button
                     type="button"
                     aria-disabled={isLoadingOlder || undefined}
                     onClick={() => void loadOlderHistory(messageLogRef.current)}
-                    className="min-h-control-sm rounded-control px-2 text-caption font-medium text-content-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                    className="min-h-control-sm rounded-full px-2 text-label-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                   >
                     Load earlier messages
                   </button>
-                  <span className="h-px min-w-6 flex-1 bg-border-subtle" aria-hidden="true" />
+                  <span className="h-px min-w-6 flex-1 bg-outline-variant" aria-hidden="true" />
                 </div>
               )}
               <div
@@ -2322,7 +2322,7 @@ export function ChatView({
                     data-loading-older="true"
                     className="pointer-events-none absolute inset-x-0 top-2 z-sticky flex justify-center"
                   >
-                    <span className="flex items-center gap-2 rounded-control border border-border-subtle bg-surface-raised px-3 py-1.5 text-caption font-medium text-secondary shadow-overlay">
+                    <span className="flex items-center gap-2 rounded-full border border-outline-variant bg-surface-container px-3 py-1.5 text-label-sm font-medium text-on-surface-variant shadow-elev-3">
                       <Spinner size={16} />
                       Loading earlier messages
                     </span>
@@ -2426,12 +2426,12 @@ export function ChatView({
         {activeLoadError != null && visibleMessages.length > 0 && (
           <div
             role="alert"
-            className="absolute inset-x-4 bottom-3 z-sticky flex flex-wrap items-center justify-between gap-2 rounded-control border border-container-warning-line bg-surface-overlay px-3 py-2 text-xs text-secondary shadow-overlay"
+            className="absolute inset-x-4 bottom-3 z-sticky flex flex-wrap items-center justify-between gap-2 rounded-full border border-marker-container-line bg-surface-container-high px-3 py-2 text-body-sm text-on-surface-variant shadow-elev-3"
           >
             <span>Could not refresh messages.</span>
             <button
               type="button"
-              className="min-h-8 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+              className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
               onClick={() => void loadLatestMessages().catch(() => {})}
             >
               Retry
@@ -2449,7 +2449,7 @@ export function ChatView({
           <button
             type="button"
             onClick={() => void jumpToLatest()}
-            className="absolute left-0 right-0 top-0 z-sticky flex items-center justify-center gap-1.5 border-y border-container-info-line bg-container-info px-4 py-1.5 text-sm font-medium text-on-container-info transition-colors hover:bg-container-info-hover"
+            className="absolute left-0 right-0 top-0 z-sticky flex items-center justify-center gap-1.5 border-y border-primary-container-line bg-primary-container px-4 py-1.5 text-body-md font-medium text-on-primary-container transition-colors hover:bg-primary-container-hover"
           >
             {hiddenNewerCount > 0 || isBrowsingOlder ? 'Jump to latest messages' : 'New messages'}
             <Icon name="chevronDown" size="sm" />
@@ -2460,19 +2460,19 @@ export function ChatView({
 
       {/* Reply bar */}
       {!roomUpgradeReady || roomUpgrade ? null : replyingTo && (
-        <div className="flex min-w-0 items-center gap-2 border-t border-border-subtle bg-surface-sunken px-4 py-2">
-          <Icon name="reply" size="sm" className="shrink-0 text-secondary" />
-          <span className="text-sm text-secondary">
-            Replying to <span className="font-medium text-primary">{replyingTo.authorDisplayName}</span>
+        <div className="flex min-w-0 items-center gap-2 border-t border-outline-variant bg-surface-container-lowest px-4 py-2">
+          <Icon name="reply" size="sm" className="shrink-0 text-on-surface-variant" />
+          <span className="text-body-md text-on-surface-variant">
+            Replying to <span className="font-medium text-on-surface">{replyingTo.authorDisplayName}</span>
           </span>
-          <span className="truncate text-sm text-muted flex-1">{replyingTo.content.slice(0, 100)}</span>
+          <span className="truncate text-body-md text-on-surface-variant flex-1">{replyingTo.content.slice(0, 100)}</span>
           <button
             onClick={() => {
               setReplyingTo(null)
               setThreadReplyRoot(null)
             }}
             aria-label="Cancel reply"
-            className="shrink-0 rounded-control p-1 text-muted transition-colors hover:text-primary"
+            className="shrink-0 rounded-full p-1 text-on-surface-variant transition-colors hover:text-on-surface"
           >
             <Icon name="x" size="sm" />
           </button>
@@ -2511,7 +2511,7 @@ export function ChatView({
             <div
               role="status"
               data-notice-tone="warning"
-              className="border-t border-container-warning-line bg-container-warning px-4 py-2 text-xs text-secondary"
+              className="border-t border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface-variant"
             >
               {trust?.protection === 'checking'
                 ? "Checking this room's protection before sending."
@@ -2527,7 +2527,7 @@ export function ChatView({
                       Mesh could not check this room&rsquo;s protection, so sending is paused.
                       <button
                         type="button"
-                        className="ml-1 rounded-control underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                        className="ml-1 rounded-full underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                         onClick={() => trust?.recheckProtection()}
                       >
                         Check again
@@ -2586,25 +2586,25 @@ export function RoomUpgradeSignpost({
 }: RoomUpgradeSignpostProps) {
   return (
     <div className="flex h-full items-center justify-center px-4 py-8">
-      <div className="w-full max-w-md rounded-panel border border-border-subtle bg-surface-raised p-6 text-center shadow-overlay">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-panel bg-surface-selected text-accent">
+      <div className="w-full max-w-md rounded-xl border border-outline-variant bg-surface-container p-6 text-center shadow-elev-3">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-secondary-container text-primary">
           <Icon name="refresh" size="lg" />
         </div>
-        <h2 className="text-base font-semibold text-primary">This room has moved</h2>
-        <p className="mt-2 text-sm text-muted">
-          <span className="font-medium text-secondary">#{roomName}</span> was replaced by a new room.
+        <h2 className="text-body-lg font-semibold text-on-surface">This room has moved</h2>
+        <p className="mt-2 text-body-md text-on-surface-variant">
+          <span className="font-medium text-on-surface-variant">#{roomName}</span> was replaced by a new room.
         </p>
-        {reason && <p className="mt-2 text-xs text-muted">{reason}</p>}
+        {reason && <p className="mt-2 text-body-sm text-on-surface-variant">{reason}</p>}
         <button
           type="button"
-          className="mt-5 inline-flex min-h-control-md items-center justify-center rounded-control bg-accent px-4 text-sm font-semibold text-content-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+          className="mt-5 inline-flex min-h-control-md items-center justify-center rounded-full bg-primary px-4 text-body-md font-semibold text-on-primary transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60"
           onClick={onFollow}
           disabled={isFollowing}
         >
           {isFollowing ? 'Opening new room...' : 'Go to new room'}
         </button>
         {error && (
-          <p className="mt-3 text-sm text-status-danger" role="alert">{error}</p>
+          <p className="mt-3 text-body-md text-error" role="alert">{error}</p>
         )}
       </div>
     </div>
@@ -2745,7 +2745,7 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
       */
       className={
         isHighlighted
-          ? 'animate-highlight border-l-bar border-accent bg-container-accent'
+          ? 'animate-highlight border-l-bar border-primary bg-primary-container'
           : 'border-l-bar border-transparent'
       }
     >
@@ -2753,14 +2753,14 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
         scope="feature"
         fallback={(resetError) => (
           <div
-            className="mx-4 my-1 flex min-w-0 items-center justify-between gap-3 rounded-panel border border-border-subtle bg-surface-sunken px-4 py-3"
+            className="mx-4 my-1 flex min-w-0 items-center justify-between gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest px-4 py-3"
             role="alert"
           >
-            <p className="text-xs text-muted">This message couldn't be displayed.</p>
+            <p className="text-body-sm text-on-surface-variant">This message couldn't be displayed.</p>
             <button
               type="button"
               onClick={resetError}
-              className="min-h-8 shrink-0 rounded-control px-2 text-xs font-medium text-text-link transition-colors hover:bg-surface-hover hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="min-h-8 shrink-0 rounded-full px-2 text-body-sm font-medium text-primary transition-colors hover:bg-surface-container-high hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             >
               Try again
             </button>
@@ -2797,10 +2797,10 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
  */
 function HistoryStartRow() {
   return (
-    <div className="flex h-10 items-center justify-center gap-2 px-4 text-caption text-content-muted">
-      <span className="h-px min-w-6 flex-1 bg-border-subtle" aria-hidden="true" />
+    <div className="flex h-10 items-center justify-center gap-2 px-4 text-label-sm text-on-surface-variant">
+      <span className="h-px min-w-6 flex-1 bg-outline-variant" aria-hidden="true" />
       <span>Beginning of this conversation</span>
-      <span className="h-px min-w-6 flex-1 bg-border-subtle" aria-hidden="true" />
+      <span className="h-px min-w-6 flex-1 bg-outline-variant" aria-hidden="true" />
     </div>
   )
 }
@@ -2838,15 +2838,15 @@ function HistoryGapRow({
 
   return (
     <div ref={rowRef} className="px-4 py-2">
-      <div className="flex items-center justify-between rounded-panel border border-border-subtle bg-surface-sunken px-4 py-2">
+      <div className="flex items-center justify-between rounded-xl border border-outline-variant bg-surface-container-lowest px-4 py-2">
         <div>
-          <p className="text-sm font-medium text-primary">
+          <p className="text-body-md font-medium text-on-surface">
             {hiddenCount} newer message{hiddenCount === 1 ? '' : 's'} hidden
           </p>
         </div>
         <button
           onClick={onJumpToLatest}
-          className="rounded-control bg-status-info px-3 py-1 text-sm font-medium text-content-on-status transition-colors hover:bg-status-info-hover"
+          className="rounded-full bg-primary px-3 py-1 text-body-md font-medium text-on-error transition-colors hover:bg-primary"
         >
           Jump to latest
         </button>

@@ -50,7 +50,7 @@ export function ClipsView({
             type="button"
             onClick={() => onOpenClip(clip.id)}
             aria-label={`Open the message ${clip.authorDisplayName} posted in #${channelName}`}
-            className="block w-full overflow-hidden rounded-control border border-border-subtle bg-surface-sunken text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+            className="block w-full overflow-hidden rounded-full border border-outline-variant bg-surface-container-lowest text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
           >
             {clip.attachments[0]?.thumbnail ? (
               <EncryptedAttachmentPreview
@@ -68,7 +68,7 @@ export function ClipsView({
                 is nothing to decrypt and nothing to show. The tile still names
                 the file rather than leaving a hole in the grid.
               */
-              <span className="flex items-center gap-2 px-3 py-6 text-sm text-content-secondary">
+              <span className="flex items-center gap-2 px-3 py-6 text-body-md text-on-surface-variant">
                 <Icon name="image" size="sm" />
                 <span className="min-w-0 truncate">{clip.attachments[0]?.filename}</span>
               </span>
@@ -76,19 +76,19 @@ export function ClipsView({
           </button>
 
           <figcaption className="mesh-clip-meta flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 pt-2">
-            <span className="min-w-0 truncate text-sm font-medium text-primary">
+            <span className="min-w-0 truncate text-body-md font-medium text-on-surface">
               {clip.authorDisplayName}
             </span>
-            <MessageTime value={clip.timestamp} className="font-mono text-meta text-content-secondary" />
+            <MessageTime value={clip.timestamp} className="text-body-sm text-on-surface-variant" />
             {clip.attachments.length > 1 && (
-              <span className="font-mono text-meta text-content-secondary">
+              <span className="text-body-sm text-on-surface-variant">
                 {clip.attachments.length} images
               </span>
             )}
             {clip.reactionCount > 0 && (
               <span
                 data-clip-reactions
-                className="font-mono text-meta text-accent"
+                className="text-body-sm text-primary"
               >
                 {clip.reactionCount} {clip.reactionCount === 1 ? 'reaction' : 'reactions'}
               </span>
@@ -96,7 +96,7 @@ export function ClipsView({
           </figcaption>
 
           {clip.caption.trim() && (
-            <p data-clip-caption className="mesh-clip-caption pt-1 text-sm text-secondary">
+            <p data-clip-caption className="mesh-clip-caption pt-1 text-body-md text-on-surface-variant">
               {clip.caption}
             </p>
           )}

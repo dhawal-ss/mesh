@@ -114,11 +114,11 @@ export function OnboardingFlow({
    * instead of clipping.
    */
   return (
-    <main className="mesh-onboarding-root flex min-h-screen justify-center overflow-y-auto bg-surface-sunken p-6">
+    <main className="mesh-onboarding-root flex min-h-screen justify-center overflow-y-auto bg-surface-container-lowest p-6">
       <motion.section
         aria-label="Set up Mesh"
         data-onboarding-shell
-        className="mesh-onboarding-shell mx-auto my-auto flex h-fit w-full max-w-onboarding-shell flex-col rounded-panel border border-border-subtle bg-surface-base px-8 py-10 shadow-overlay sm:px-12 sm:py-12"
+        className="mesh-onboarding-shell mx-auto my-auto flex h-fit w-full max-w-onboarding-shell flex-col rounded-xl border border-outline-variant bg-surface px-8 py-10 shadow-elev-3 sm:px-12 sm:py-12"
         variants={variants.screen}
         initial="initial"
         animate="animate"
@@ -150,7 +150,7 @@ export function OnboardingFlow({
                 <Eyebrow>
                   {initialPendingInvitation ? 'Invitation progress' : 'Setup progress'}
                 </Eyebrow>
-                <p className="font-mono text-eyebrow uppercase text-content-secondary" aria-live="polite">
+                <p className="text-label-sm text-on-surface-variant" aria-live="polite">
                   Step {currentIndex + 1} of {steps.length}
                 </p>
               </div>
@@ -171,15 +171,15 @@ export function OnboardingFlow({
                         * state.
                         */}
                       <span
-                        className={`block h-trust-rail w-full rounded-plane transition-colors duration-normal ${
-                          current ? 'bg-accent' : complete ? 'bg-accent-muted' : 'bg-surface-fill-hover'
+                        className={`block h-trust-rail w-full rounded-full transition-colors duration-normal ${
+                          current ? 'bg-primary' : complete ? 'bg-primary-container' : 'bg-state-pressed'
                         }`}
                       />
                       <span
-                        className={`sr-only font-mono text-eyebrow uppercase sm:not-sr-only sm:mt-2 sm:block sm:truncate ${
+                        className={`sr-only text-label-sm sm:not-sr-only sm:mt-2 sm:block sm:truncate ${
                           current
-                            ? 'font-medium text-content-primary'
-                            : 'text-content-secondary'
+                            ? 'font-medium text-on-surface'
+                            : 'text-on-surface-variant'
                         }`}
                       >
                         {STEP_LABELS[item]}
@@ -200,7 +200,7 @@ export function OnboardingFlow({
                   aria-label="Loading setup step"
                 >
                   <Spinner />
-                  <p className="text-sm font-semibold text-primary">
+                  <p className="text-body-md font-semibold text-on-surface">
                     {initialPendingInvitation
                       ? `Keeping ${invitationCommunity} ready`
                       : 'Opening account setup'}

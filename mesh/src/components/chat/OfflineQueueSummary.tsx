@@ -47,15 +47,15 @@ export function OfflineQueueSummary({
       ? `${announcedFailed} ${announcedFailed === 1 ? 'message could' : 'messages could'} not be sent.`
       : ''
     return (
-      <div className="flex min-h-10 items-center gap-2 border-t border-container-danger-line bg-container-danger px-4 text-caption text-secondary">
-        <Icon name="triangleAlert" size="xs" className="flex-shrink-0 text-status-danger" />
+      <div className="flex min-h-10 items-center gap-2 border-t border-error-container-line bg-error-container px-4 text-label-sm text-on-surface-variant">
+        <Icon name="triangleAlert" size="xs" className="flex-shrink-0 text-error" />
         <span className="min-w-0 flex-1 truncate">
-          <span className="font-semibold text-primary">{visibleCopy}.</span>
+          <span className="font-semibold text-on-surface">{visibleCopy}.</span>
         </span>
         <button
           type="button"
           onClick={onReviewFailed ?? onReview}
-          className="min-h-8 flex-shrink-0 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+          className="min-h-8 flex-shrink-0 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
         >
           Review
         </button>
@@ -78,15 +78,15 @@ export function OfflineQueueSummary({
     : ''
 
   return (
-    <div className="flex min-h-10 items-center gap-2 border-t border-border-subtle bg-surface-sunken px-4 text-caption text-secondary">
-      <Icon name="activity" size="xs" className="flex-shrink-0 text-status-warning" />
+    <div className="flex min-h-10 items-center gap-2 border-t border-outline-variant bg-surface-container-lowest px-4 text-label-sm text-on-surface-variant">
+      <Icon name="activity" size="xs" className="flex-shrink-0 text-marker" />
       <span className="min-w-0 flex-1 truncate">
-        <span className="font-semibold text-primary">{visibleCopy}.</span>
+        <span className="font-semibold text-on-surface">{visibleCopy}.</span>
       </span>
       <button
         type="button"
         onClick={onReview}
-        className="min-h-8 flex-shrink-0 rounded-control px-2 font-semibold text-text-link hover:bg-surface-hover"
+        className="min-h-8 flex-shrink-0 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
       >
         Review
       </button>

@@ -94,7 +94,7 @@ export function QueuedMessageSyncNotice({
   return (
     <div
       role={failed ? 'alert' : 'status'}
-      className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-container-warning-line bg-container-warning px-4 py-2 text-center text-xs text-content"
+      className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-marker-container-line bg-marker-container px-4 py-2 text-center text-body-sm text-on-surface"
     >
       <span>
         {failed
@@ -103,7 +103,7 @@ export function QueuedMessageSyncNotice({
       </span>
       <button
         type="button"
-        className="font-semibold text-accent hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        className="font-semibold text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
         onClick={onRetry}
         disabled={retrying}
       >
@@ -308,7 +308,7 @@ export function ConnectionBand({
         band out again every time that happened. The one polite announcement
         lives in the shell's permanent status region instead.
       */
-      className="mesh-notice-band flex flex-shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-xs text-content"
+      className="mesh-notice-band flex flex-shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-body-sm text-on-surface"
     >
       <Icon name={copy.icon} size="sm" className={`flex-shrink-0 ${connectionBandLeadTone[copy.tone]}`} />
       <span className="min-w-0">
@@ -822,7 +822,7 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
     */
     <TooltipProvider>
     <VoiceEngineProvider>
-      <div className="mesh-app-shell relative flex h-full flex-col overflow-hidden bg-surface-base text-content">
+      <div className="mesh-app-shell relative flex h-full flex-col overflow-hidden bg-surface text-on-surface">
       {/*
         Skip link. The room list is a flat list of buttons, so in a community
         with forty rooms it cost forty-plus Tab presses to reach the
@@ -837,7 +837,7 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
       <nav aria-label="Skip links">
         <a
           href="#mesh-conversation"
-          className="sr-only rounded-control bg-surface-overlay px-3 py-2 text-sm font-medium text-content shadow-overlay focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-tooltip"
+          className="sr-only rounded-full bg-surface-container-high px-3 py-2 text-body-md font-medium text-on-surface shadow-elev-3 focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-tooltip"
         >
           Skip to conversation
         </a>
@@ -849,7 +849,7 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
         */}
         <a
           href="#mesh-composer"
-          className="sr-only rounded-control bg-surface-overlay px-3 py-2 text-sm font-medium text-content shadow-overlay focus:not-sr-only focus:absolute focus:left-2 focus:top-14 focus:z-tooltip"
+          className="sr-only rounded-full bg-surface-container-high px-3 py-2 text-body-md font-medium text-on-surface shadow-elev-3 focus:not-sr-only focus:absolute focus:left-2 focus:top-14 focus:z-tooltip"
         >
           Skip to message composer
         </a>
@@ -883,19 +883,19 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
       {backupReminderDue && (
         <div
           role="status"
-          className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-container-warning-line bg-container-warning px-4 py-2 text-xs text-content"
+          className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface"
         >
           <span>Keep access to your protected messages. Finish setup in Your devices.</span>
           <button
             type="button"
-            className="font-semibold text-accent hover:underline"
+            className="font-semibold text-primary hover:underline"
             onClick={() => navigate({ kind: 'you', section: 'safety-devices' })}
           >
             Keep access
           </button>
           <button
             type="button"
-            className="text-content-secondary hover:text-content"
+            className="text-on-surface-variant hover:text-on-surface"
             aria-label="Dismiss message recovery reminder"
             onClick={dismissBackupReminder}
           >
@@ -912,7 +912,7 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
       {notificationSync.notificationModeFailureCount > 0 && (
         <div
           role="status"
-          className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-container-warning-line bg-container-warning px-4 py-2 text-xs text-content"
+          className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface"
         >
           <span>
             Mesh could not refresh notification choices for{' '}
@@ -922,7 +922,7 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
           </span>
           <button
             type="button"
-            className="font-semibold text-accent hover:underline"
+            className="font-semibold text-primary hover:underline"
             onClick={notificationSync.retryNotificationModeSync}
           >
             Try again
@@ -931,7 +931,7 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
       )}
       <div className="mesh-workspace-frame flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <nav
-          className="mesh-community-rail flex min-h-0 flex-shrink-0 flex-col items-center overflow-y-auto border-r border-rule border-border-structural bg-surface-rail pt-2"
+          className="mesh-community-rail flex min-h-0 flex-shrink-0 flex-col items-center overflow-y-auto border-r border-rule border-outline-variant bg-surface-container-lowest pt-2"
           aria-label="Communities and direct messages"
           data-mesh-region
           tabIndex={-1}
@@ -946,7 +946,7 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
           <div className="mt-auto flex flex-col items-center gap-1 pb-3">
             <button
               type="button"
-              className="flex h-11 w-11 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               aria-label="Send beta feedback"
               onClick={() => setFeedbackOpen(true)}
             >
@@ -977,7 +977,7 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
           ref={contextNavigationRef}
           id="mesh-context-sidebar"
           data-open={contextNavigationOpen ? 'true' : 'false'}
-          className="mesh-context-sidebar relative flex min-h-0 flex-shrink-0 flex-col border-r border-rule border-border-structural bg-surface-sidebar"
+          className="mesh-context-sidebar relative flex min-h-0 flex-shrink-0 flex-col border-r border-rule border-outline-variant bg-surface-container-low"
           data-design-token-exception="user-resizable-persisted-context-sidebar-width"
           style={{
             '--mesh-context-sidebar-width': `${contextSidebarWidth.width}px`,
@@ -992,13 +992,13 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
           aria-modal={drawerActive || undefined}
         >
           {drawerActive && (
-            <div className="flex min-h-11 flex-shrink-0 items-center justify-between border-b border-rule border-border-structural px-2">
-              <span className="min-w-0 truncate px-2 text-sm font-semibold text-secondary">
+            <div className="flex min-h-11 flex-shrink-0 items-center justify-between border-b border-rule border-outline-variant px-2">
+              <span className="min-w-0 truncate px-2 text-body-md font-semibold text-on-surface-variant">
                 {directRouteActive && directMessagesAvailable ? 'Conversations' : 'Rooms'}
               </span>
               <button
                 type="button"
-                className="flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
+                className="flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant"
                 aria-label={directRouteActive ? 'Close conversation navigation drawer' : 'Close room navigation drawer'}
                 onClick={() => closeNavigationDrawer()}
               >
@@ -1028,14 +1028,14 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
         <main
           id="mesh-conversation"
           tabIndex={-1}
-          className="mesh-workspace-main flex min-h-0 min-w-0 flex-1 flex-col bg-surface-base outline-none"
+          className="mesh-workspace-main flex min-h-0 min-w-0 flex-1 flex-col bg-surface outline-none"
           aria-label={activeConversationLabel}
           data-mesh-region
         >
           {roomNavigationVisible && <div className="mesh-compact-header">
             <button
               type="button"
-              className="flex h-8 items-center gap-2 rounded-control px-2 text-sm font-medium text-secondary hover:bg-surface-hover hover:text-primary"
+              className="flex h-8 items-center gap-2 rounded-full px-2 text-body-md font-medium text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
               aria-controls="mesh-context-sidebar"
               aria-expanded={contextNavigationOpen}
               aria-label={
@@ -1050,7 +1050,7 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
               <Icon name={contextNavigationOpen ? 'x' : 'menu'} size="sm" />
               {contextNavigationOpen ? 'Close' : directRouteActive ? 'Conversations' : 'Rooms'}
             </button>
-            <span className="truncate text-xs text-muted">
+            <span className="truncate text-body-sm text-on-surface-variant">
               {route.kind === 'direct' || route.kind === 'direct-list'
                 ? 'Direct messages'
                 : route.kind === 'community' || route.kind === 'community-admin'
@@ -1088,7 +1088,7 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
       </div>
       {voiceRoutesEnabled && <VoiceAudioSink />}
       {voiceRoutesEnabled && <div className="mesh-party-strip-row flex flex-shrink-0">
-        <div className="mesh-shell-strip-rail-spacer flex-shrink-0 border-r border-rule border-border-structural bg-surface-rail" aria-hidden="true" />
+        <div className="mesh-shell-strip-rail-spacer flex-shrink-0 border-r border-rule border-outline-variant bg-surface-container-lowest" aria-hidden="true" />
         <VoiceDock />
       </div>}
       {!roomNavigationVisible && <UserPanel controls={false} />}

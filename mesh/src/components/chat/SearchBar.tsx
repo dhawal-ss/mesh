@@ -360,7 +360,7 @@ export function SearchBar({
             setIsOpen(true)
           }
         }}
-        className={`flex h-8 items-center justify-center gap-1.5 rounded-control text-muted transition-colors hover:bg-surface-hover hover:text-secondary ${
+        className={`flex h-8 items-center justify-center gap-1.5 rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant ${
           label ? 'px-2' : 'w-8'
         }`}
         title="Search messages"
@@ -374,7 +374,7 @@ export function SearchBar({
         aria-haspopup="dialog"
       >
         <Icon name="search" size="sm" />
-        {label && <span className="hidden text-xs font-medium md:inline">{label}</span>}
+        {label && <span className="hidden text-body-sm font-medium md:inline">{label}</span>}
       </button>
 
       <AnimatePresence>
@@ -385,7 +385,7 @@ export function SearchBar({
             initial="initial"
             animate="animate"
             exit="exit"
-            className="mesh-search-popover absolute right-0 top-full z-popover mt-1 overflow-hidden rounded-panel border border-border-subtle bg-surface-overlay shadow-overlay"
+            className="mesh-search-popover absolute right-0 top-full z-popover mt-1 overflow-hidden rounded-xl border border-outline-variant bg-surface-container-high shadow-elev-3"
             /*
               Escape closes from the filter chips too, not only from the input
               that owns its own key handling.
@@ -395,8 +395,8 @@ export function SearchBar({
             }}
           >
             {/* Search input */}
-            <div className="flex items-center gap-2 border-b border-border-subtle px-3 py-2">
-              <Icon name="search" size="sm" className="flex-shrink-0 text-muted" />
+            <div className="flex items-center gap-2 border-b border-outline-variant px-3 py-2">
+              <Icon name="search" size="sm" className="flex-shrink-0 text-on-surface-variant" />
               <input
                 ref={inputRef}
                 type="text"
@@ -420,7 +420,7 @@ export function SearchBar({
                     ? `search-result-${visibleResults[activeResultIndex].id}`
                     : undefined
                 }
-                className="min-w-0 flex-1 bg-transparent text-sm text-primary outline-none placeholder:text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                className="min-w-0 flex-1 bg-transparent text-body-md text-on-surface outline-none placeholder:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                 onKeyDown={(e) => {
                   if (e.key === 'ArrowDown' && visibleResults.length > 0) {
                     e.preventDefault()
@@ -444,7 +444,7 @@ export function SearchBar({
               />
               {isSearching && (
                 <div
-                  className="h-3 w-3 flex-shrink-0 animate-spin rounded-round border border-muted border-t-primary"
+                  className="h-3 w-3 flex-shrink-0 animate-spin rounded-round border border-on-surface-variant border-t-on-surface"
                   role="status"
                   aria-label="Searching messages"
                 />
@@ -452,7 +452,7 @@ export function SearchBar({
               <button
                 type="button"
                 onClick={() => closeSearch()}
-                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-control text-muted hover:bg-surface-hover hover:text-primary"
+                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
                 aria-label="Close message search"
               >
                 <Icon name="x" size="sm" />
@@ -460,7 +460,7 @@ export function SearchBar({
             </div>
 
             {!isDirectScope && (
-              <label className="flex items-center gap-2 border-b border-border-subtle px-3 py-2 text-xs text-secondary">
+              <label className="flex items-center gap-2 border-b border-outline-variant px-3 py-2 text-body-sm text-on-surface-variant">
                 <input
                   type="checkbox"
                   checked={everywhere}
@@ -478,24 +478,24 @@ export function SearchBar({
                       setScopeReport(null)
                     }
                   }}
-                  className="h-3.5 w-3.5 rounded-control border-border-subtle accent-accent"
+                  className="h-3.5 w-3.5 rounded-full border-outline-variant accent-accent"
                 />
                 Search all communities
               </label>
             )}
 
             {completedQuery && results.length > 0 && !isSearching && !searchFailed && (
-              <div role="group" aria-label="Filter results by type" className="flex flex-wrap gap-1 border-b border-border-subtle px-3 py-1.5">
+              <div role="group" aria-label="Filter results by type" className="flex flex-wrap gap-1 border-b border-outline-variant px-3 py-1.5">
                 {RESULT_TABS.map((tab) => (
                   <button
                     key={tab.key}
                     type="button"
                     aria-pressed={resultTab === tab.key}
                     onClick={() => selectTab(tab.key)}
-                    className={`min-h-7 rounded-control border-b-bar px-2 text-xs font-medium transition-colors ${
+                    className={`min-h-7 rounded-full border-b-bar px-2 text-body-sm font-medium transition-colors ${
                       resultTab === tab.key
-                        ? 'border-accent bg-surface-selected text-primary'
-                        : 'border-transparent text-muted hover:bg-surface-hover hover:text-secondary'
+                        ? 'border-primary bg-secondary-container text-on-surface'
+                        : 'border-transparent text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface-variant'
                     }`}
                   >
                     {tab.label} ({resultCounts[tab.key]})
@@ -508,7 +508,7 @@ export function SearchBar({
             <div className="max-h-80 overflow-y-auto">
               {!query.trim() && (
                 <div className="px-3 py-3">
-                  <p className="mb-2 text-xs font-medium text-secondary">Filter your search</p>
+                  <p className="mb-2 text-body-sm font-medium text-on-surface-variant">Filter your search</p>
                   <div className="flex flex-wrap gap-1.5">
                     {FILTER_HINTS
                       .filter((hint) => !hint.roomsOnly || (!isDirectScope && !everywhere))
@@ -518,13 +518,13 @@ export function SearchBar({
                           type="button"
                           aria-label={hint.label}
                           onClick={() => applyFilterHint(hint.token)}
-                          className="min-h-8 rounded-control border border-border-subtle px-2 text-xs text-secondary transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                          className="min-h-8 rounded-full border border-outline-variant px-2 text-body-sm text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                         >
                           {hint.token}
                         </button>
                       ))}
                   </div>
-                  <p className="mt-2 text-meta text-muted">
+                  <p className="mt-2 text-body-sm text-on-surface-variant">
                     {isDirectScope
                       ? 'Example: from:me has:link'
                       : 'Example: from:me in:#general launch notes'}
@@ -534,13 +534,13 @@ export function SearchBar({
 
               {query.trim() && searchFailed && !isSearching && (
                 <div className="px-4 py-6 text-center">
-                  <Icon name="triangleAlert" size="sm" className="mx-auto mb-2 text-status-warning" />
-                  <p className="text-sm font-medium text-secondary">Search is temporarily unavailable</p>
-                  <p className="mt-1 text-xs text-muted">Check your connection.</p>
+                  <Icon name="triangleAlert" size="sm" className="mx-auto mb-2 text-marker" />
+                  <p className="text-body-md font-medium text-on-surface-variant">Search is temporarily unavailable</p>
+                  <p className="mt-1 text-body-sm text-on-surface-variant">Check your connection.</p>
                   <button
                     type="button"
                     onClick={() => void performSearch(query)}
-                    className="mt-3 min-h-8 rounded-control border border-border-subtle px-3 text-xs font-semibold text-secondary hover:bg-surface-hover hover:text-primary"
+                    className="mt-3 min-h-8 rounded-full border border-outline-variant px-3 text-body-sm font-semibold text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
                   >
                     Try again
                   </button>
@@ -553,7 +553,7 @@ export function SearchBar({
                 list that reads like an answer.
               */}
               {query.trim() && !completedQuery && !isSearching && !searchFailed && (
-                <p className="px-3 py-3 text-xs text-muted">
+                <p className="px-3 py-3 text-body-sm text-on-surface-variant">
                   {roomFilterHintLabel
                     ? `Add a word or another filter to search ${roomFilterHintLabel}.`
                     : 'Keep typing to search.'}
@@ -611,21 +611,21 @@ export function SearchBar({
                     role="option"
                     aria-selected={index === activeResultIndex}
                     onClick={() => handleResultClick(message)}
-                    className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors hover:bg-surface-hover ${index === activeResultIndex ? 'bg-surface-hover' : ''}`}
+                    className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors hover:bg-surface-container-high ${index === activeResultIndex ? 'bg-surface-container-high' : ''}`}
                   >
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-primary">{message.authorDisplayName}</span>
-                      <span className="text-xs text-muted">in {getResultLocation(message.channelId)}</span>
+                      <span className="text-body-md font-medium text-on-surface">{message.authorDisplayName}</span>
+                      <span className="text-body-sm text-on-surface-variant">in {getResultLocation(message.channelId)}</span>
                       {message.threadRootId && (
-                        <span className="rounded-control bg-surface-sunken px-1.5 py-0.5 text-meta font-medium text-secondary">
+                        <span className="rounded-full bg-surface-container-lowest px-1.5 py-0.5 text-body-sm font-medium text-on-surface-variant">
                           Thread reply
                         </span>
                       )}
-                      <span className="tnum ml-auto text-xs text-muted">
+                      <span className="tnum ml-auto text-body-sm text-on-surface-variant">
                         {formatFederatedTimestamp(message.timestamp, 'MMM d, HH:mm')}
                       </span>
                     </div>
-                    <p className="truncate text-sm text-secondary">{message.content.slice(0, 120)}</p>
+                    <p className="truncate text-body-md text-on-surface-variant">{message.content.slice(0, 120)}</p>
                   </button>
                 ))}
               </div>
@@ -639,7 +639,7 @@ export function SearchBar({
             {scopeSummary && (
               <p
                 id="message-search-scope"
-                className="border-t border-border-subtle px-3 py-2 text-meta text-muted"
+                className="border-t border-outline-variant px-3 py-2 text-body-sm text-on-surface-variant"
               >
                 {scopeSummary}
               </p>

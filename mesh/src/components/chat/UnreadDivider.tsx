@@ -30,17 +30,17 @@ export function UnreadDivider({ onMarkRead }: UnreadDividerProps) {
   return (
     <div data-unread-divider="true" className="flex h-10 items-center gap-3 px-4">
       <div className="flex min-w-0 flex-1 items-center gap-3">
-        <span aria-hidden="true" className="flex-1 border-t-bar border-container-accent-line" />
-        <span className="rounded-panel bg-surface-base px-2 py-0.5 text-caption font-semibold lowercase tracking-eyebrow text-accent">
+        <span aria-hidden="true" className="flex-1 border-t-bar border-primary-container-line" />
+        <span className="rounded-xl bg-surface px-2 py-0.5 text-label-sm font-semibold lowercase tracking-label-md text-primary">
           New messages
         </span>
-        <span aria-hidden="true" className="flex-1 border-t-bar border-container-accent-line" />
+        <span aria-hidden="true" className="flex-1 border-t-bar border-primary-container-line" />
       </div>
       {onMarkRead && (
         <button
           type="button"
           onClick={onMarkRead}
-          className="min-h-control-sm flex-shrink-0 rounded-control px-2 text-xs font-medium text-secondary transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+          className="min-h-control-sm flex-shrink-0 rounded-full px-2 text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
         >
           Mark as read
         </button>

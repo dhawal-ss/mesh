@@ -83,20 +83,20 @@ export function BackupCodeScreen({
     <section aria-labelledby={titleId} className="space-y-6">
       <header className="space-y-2">
         {!embedded && (
-          <p className="text-caption font-semibold lowercase tracking-eyebrow text-content-secondary">
+          <p className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">
             Protect your messages
           </p>
         )}
         {embedded ? (
-          <h3 id={titleId} className="text-base font-semibold text-content">
+          <h3 id={titleId} className="text-body-lg font-semibold text-on-surface">
             Save your backup code
           </h3>
         ) : (
-          <h1 id={titleId} className="text-lg font-semibold text-content">
+          <h1 id={titleId} className="text-headline-md font-semibold text-on-surface">
             Save your backup code
           </h1>
         )}
-        <p className="max-w-lg text-sm text-content-secondary">
+        <p className="max-w-lg text-body-md text-on-surface-variant">
           This code restores your protected messages on another device, and Mesh shows it only
           until you finish this step.
         </p>
@@ -105,10 +105,10 @@ export function BackupCodeScreen({
       {secureStorageState && (
         <div
           role="status"
-          className={`rounded-panel border px-3 py-3 text-sm ${
+          className={`rounded-xl border px-3 py-3 text-body-md ${
             secureStorageState === 'saved'
-              ? 'border-container-success-line bg-container-success text-content-secondary'
-              : 'border-container-warning-line bg-container-warning text-content-secondary'
+              ? 'border-primary-container-line bg-primary-container text-on-surface-variant'
+              : 'border-marker-container-line bg-marker-container text-on-surface-variant'
           }`}
         >
           {/*
@@ -135,7 +135,7 @@ export function BackupCodeScreen({
       <section aria-label="Your backup code" className="space-y-4">
         <output
           aria-label="Backup code"
-          className="block break-all rounded-panel border border-border-subtle bg-surface-sunken px-4 py-5 text-center font-mono text-base font-semibold tracking-wide text-content"
+          className="block break-all rounded-xl border border-outline-variant bg-surface-container-lowest px-4 py-5 text-center font-code text-body-lg font-semibold tracking-wide text-on-surface"
         >
           {backupCode}
         </output>
@@ -158,11 +158,11 @@ export function BackupCodeScreen({
             </Button>
           )}
         </div>
-        <p className="text-xs text-content-muted">
+        <p className="text-body-sm text-on-surface-variant">
           Mesh does not download an unprotected backup file, so keep a copied or printed code
           private.
         </p>
-        <p role="status" aria-live="polite" className="min-h-5 text-xs text-content-secondary">
+        <p role="status" aria-live="polite" className="min-h-5 text-body-sm text-on-surface-variant">
           {announcement}
         </p>
       </section>
@@ -190,10 +190,10 @@ export function BackupCodeScreen({
           }}
         >
           <fieldset className="space-y-3" aria-describedby={confirmationHelpId}>
-            <legend className="text-base font-semibold text-content">
+            <legend className="text-body-lg font-semibold text-on-surface">
               Confirm your backup code
             </legend>
-            <p id={confirmationHelpId} className="text-sm text-content-secondary">
+            <p id={confirmationHelpId} className="text-body-md text-on-surface-variant">
               Enter the three requested parts.
             </p>
             <div className="grid gap-3 sm:grid-cols-3">
@@ -201,7 +201,7 @@ export function BackupCodeScreen({
                 <label
                   key={segmentIndex}
                   htmlFor={`${generatedId}-segment-${segmentIndex}`}
-                  className="text-xs font-medium text-content-secondary"
+                  className="text-body-sm font-medium text-on-surface-variant"
                 >
                   Part {segmentIndex + 1}
                   <input
@@ -211,7 +211,7 @@ export function BackupCodeScreen({
                     autoCapitalize="characters"
                     spellCheck={false}
                     aria-invalid={attempted && !complete ? true : undefined}
-                    className="mt-1.5 block w-full rounded-md border border-border bg-surface-sunken px-3 py-2 font-mono text-sm uppercase text-content outline-none focus:border-accent"
+                    className="mt-1.5 block w-full rounded-md border border-outline bg-surface-container-lowest px-3 py-2 font-code text-body-md text-on-surface outline-none focus:border-primary"
                     onChange={(event) => {
                       setAttempted(false)
                       setAnswers((current) => ({
@@ -228,7 +228,7 @@ export function BackupCodeScreen({
           {attempted && !complete && (
             <p
               role="alert"
-              className="rounded-control border border-container-danger-line bg-container-danger px-3 py-2 text-sm text-status-danger"
+              className="rounded-full border border-error-container-line bg-error-container px-3 py-2 text-body-md text-error"
             >
               Those parts do not match your saved copy.
             </p>

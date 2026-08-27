@@ -38,7 +38,7 @@ describe('ReadyScreen', () => {
     expect(container.textContent).not.toContain('Account secured')
     expect(container.textContent?.toLowerCase()).not.toContain('recovery')
     expect(container.textContent).not.toContain('encrypted history restored')
-    expect(container.querySelector('.bg-accent')).toBeTruthy()
+    expect(container.querySelector('.bg-primary')).toBeTruthy()
     expect(container.querySelector('[role="status"]')?.textContent).toContain('Ready')
     expect(container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('100')
     expect(container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuetext')).toBe('Ready, 100%')

@@ -294,10 +294,10 @@ export function ReactionPicker({
       initial="initial"
       animate="animate"
       exit="exit"
-      className="mesh-emoji-picker flex w-72 flex-col overflow-hidden rounded-panel border border-border-subtle bg-surface-overlay shadow-overlay"
+      className="mesh-emoji-picker flex w-72 flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-high shadow-elev-3"
       aria-label={label}
     >
-      <div className="flex items-center gap-2 border-b border-border-subtle px-2.5">
+      <div className="flex items-center gap-2 border-b border-outline-variant px-2.5">
         <Icon name="search" size="sm" aria-hidden="true" />
         <input
           ref={searchRef}
@@ -310,7 +310,7 @@ export function ReactionPicker({
           placeholder="Search emoji"
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={handleSearchKeyDown}
-          className="h-9 flex-1 bg-transparent text-sm text-content placeholder:text-content-muted focus:outline-none"
+          className="h-9 flex-1 bg-transparent text-body-md text-on-surface placeholder:text-on-surface-variant focus:outline-none"
         />
       </div>
 
@@ -325,14 +325,14 @@ export function ReactionPicker({
         className="max-h-64 overflow-y-auto p-1.5"
       >
         {flat.length === 0 ? (
-          <p className="px-2 py-6 text-center text-xs text-content-muted">
+          <p className="px-2 py-6 text-center text-body-sm text-on-surface-variant">
             No emoji found.
           </p>
         ) : (
           sections.map((section) => (
             <section key={section.id} aria-label={section.label || undefined} className="mb-1.5 last:mb-0">
               {section.label && (
-                <h4 className="px-1 pb-1 pt-0.5 text-2xs font-semibold lowercase tracking-eyebrow text-content-muted">
+                <h4 className="px-1 pb-1 pt-0.5 text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">
                   {section.label}
                 </h4>
               )}
@@ -349,7 +349,7 @@ export function ReactionPicker({
                     title={entry.name}
                     onFocus={() => setActiveIndex(index)}
                     onClick={() => commit(entry)}
-                    className="flex h-8 w-8 items-center justify-center rounded-control text-md leading-none transition-colors hover:bg-surface-active focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus motion-safe:active:scale-95"
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-title-sm leading-none transition-colors hover:bg-surface-container-highest focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus motion-safe:active:scale-95"
                   >
                     {renderGlyph(entry, 'h-6 w-6')}
                   </button>
@@ -366,7 +366,7 @@ export function ReactionPicker({
           aria-label="Emoji categories"
           aria-orientation="horizontal"
           onKeyDown={handleTabKeyDown}
-          className="flex items-center gap-0.5 border-t border-border-subtle px-1.5 py-1"
+          className="flex items-center gap-0.5 border-t border-outline-variant px-1.5 py-1"
         >
           {sections.map((section, index) => (
             <button
@@ -380,7 +380,7 @@ export function ReactionPicker({
               title={section.label}
               onFocus={() => setActiveTab(index)}
               onClick={() => jumpToSection(index)}
-              className="flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-control text-sm leading-none transition-colors hover:bg-surface-active focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-full text-body-md leading-none transition-colors hover:bg-surface-container-highest focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             >
               {section.cells[0] ? renderGlyph(section.cells[0].entry, 'h-5 w-5') : null}
             </button>

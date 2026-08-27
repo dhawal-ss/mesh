@@ -162,7 +162,7 @@ describe('ProtectedImageLightbox', () => {
 
     const failure = container.querySelector('[role="alert"]')
     expect(failure?.textContent).toBe('The full image could not be loaded.')
-    expect(failure?.className).toContain('text-status-danger')
+    expect(failure?.className).toContain('text-error')
     expect(container.textContent).not.toContain('private transport detail')
 
     const retry = [...container.querySelectorAll('button')].find(

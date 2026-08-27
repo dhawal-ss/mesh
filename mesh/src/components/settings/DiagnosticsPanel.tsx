@@ -126,13 +126,13 @@ export function DiagnosticsPanel({
     >
       {!signalCheckEnabled && (
         <section
-          className="mesh-diagnostics-consent border-y border-border-subtle p-4"
+          className="mesh-diagnostics-consent border-y border-outline-variant p-4"
           aria-labelledby="signal-check-off-heading"
         >
-          <h3 id="signal-check-off-heading" className="text-sm font-semibold text-primary">
+          <h3 id="signal-check-off-heading" className="text-body-md font-semibold text-on-surface">
             Connection check is off
           </h3>
-          <p className="mt-2 text-xs text-muted">
+          <p className="mt-2 text-body-sm text-on-surface-variant">
             A check never shows account details, message content, or private local information.
           </p>
           <Button className="mt-3" size="sm" onClick={() => setSignalCheckEnabled(true)}>
@@ -142,7 +142,7 @@ export function DiagnosticsPanel({
       )}
       {signalCheckEnabled && (
       <>
-      <div className="mesh-diagnostics-toolbar mb-4 flex min-h-8 flex-wrap items-center justify-end gap-2 border-b border-border-subtle pb-3">
+      <div className="mesh-diagnostics-toolbar mb-4 flex min-h-8 flex-wrap items-center justify-end gap-2 border-b border-outline-variant pb-3">
         {(matrixStatus || diagnostics) && (
           <Button
             onClick={() => {
@@ -175,15 +175,15 @@ export function DiagnosticsPanel({
         {supportBundle && (
           <section
             aria-labelledby="support-bundle-title"
-            className="mesh-diagnostics-support mb-4 border-y border-border-subtle p-3"
+            className="mesh-diagnostics-support mb-4 border-y border-outline-variant p-3"
           >
-            <h3 id="support-bundle-title" className="text-sm font-semibold text-primary">
+            <h3 id="support-bundle-title" className="text-body-md font-semibold text-on-surface">
               Support bundle preview
             </h3>
-            <p className="mt-1 text-xs text-muted">
+            <p className="mt-1 text-body-sm text-on-surface-variant">
               Review every field before saving. Mesh never uploads this file.
             </p>
-            <pre className="mesh-diagnostics-bundle mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-control bg-surface-base p-3 text-meta text-secondary">
+            <pre className="mesh-diagnostics-bundle mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-full bg-surface p-3 text-body-sm text-on-surface-variant">
               {supportBundle}
             </pre>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -250,7 +250,7 @@ function DiagnosticsFrame({
     return (
       <section
         aria-labelledby="embedded-signal-check-heading"
-        className="mesh-diagnostics-frame mt-4 border-y border-border-subtle py-4"
+        className="mesh-diagnostics-frame mt-4 border-y border-outline-variant py-4"
         onKeyDown={(event) => {
           if (event.key !== 'Escape') return
           event.preventDefault()
@@ -258,12 +258,12 @@ function DiagnosticsFrame({
           onClose()
         }}
       >
-        <header className="mesh-diagnostics-header mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-border-subtle pb-3">
+        <header className="mesh-diagnostics-header mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-outline-variant pb-3">
           <div>
-            <h3 id="embedded-signal-check-heading" className="text-sm font-semibold text-primary">
+            <h3 id="embedded-signal-check-heading" className="text-body-md font-semibold text-on-surface">
               {title}
             </h3>
-            {description && <p className="mt-1 text-xs text-muted">{description}</p>}
+            {description && <p className="mt-1 text-body-sm text-on-surface-variant">{description}</p>}
           </div>
               <Button variant="ghost" size="sm" onClick={onClose}>Close connection check</Button>
         </header>
@@ -309,7 +309,7 @@ function MatrixDiagnosticsContent({
         <Section title="Warnings" tone="warning">
           <ul className="space-y-1.5">
             {data.warnings.map((_warning, index) => (
-              <li key={index} className="flex items-start gap-2 text-xs text-status-warning">
+              <li key={index} className="flex items-start gap-2 text-body-sm text-marker">
                 <Icon name="triangleAlert" size="xs" className="mt-0.5 flex-none" />
                 <span>A service check needs attention.</span>
               </li>
@@ -348,7 +348,7 @@ function MatrixDiagnosticsContent({
           />
         </Grid>
         {connected && data.warnings.length === 0 && (
-          <p className="mt-2 text-xs text-status-success">
+          <p className="mt-2 text-body-sm text-primary">
             Your Mesh account is connected and up to date.
           </p>
         )}
@@ -388,11 +388,11 @@ function MatrixDiagnosticsContent({
             warn={!data.voiceService.cspReady}
           />
         </Grid>
-        <details className="mesh-diagnostics-disclosure mt-3 rounded-control border border-border-subtle bg-surface-sunken px-3">
-          <summary className="flex min-h-8 cursor-pointer items-center text-xs font-medium text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus">
+        <details className="mesh-diagnostics-disclosure mt-3 rounded-full border border-outline-variant bg-surface-container-lowest px-3">
+          <summary className="flex min-h-8 cursor-pointer items-center text-body-sm font-medium text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus">
             Service details
           </summary>
-          <div className="space-y-2 border-t border-border-subtle py-3">
+          <div className="space-y-2 border-t border-outline-variant py-3">
             <DetailRow
               label="Call setup"
               value={data.voiceService.discoveryKey ? 'Configured' : 'Not configured'}
@@ -411,7 +411,7 @@ function MatrixDiagnosticsContent({
             />
           </div>
         </details>
-        <p className="mt-2 text-xs text-muted">
+        <p className="mt-2 text-body-sm text-on-surface-variant">
           Calling stays disabled until account access, media delivery, and call protection are
           verified.
         </p>
@@ -420,7 +420,7 @@ function MatrixDiagnosticsContent({
 
       {voiceCheckFailed && (
         <Section title="Private calling">
-          <p className="text-xs text-muted">
+          <p className="text-body-sm text-on-surface-variant">
             Mesh could not check private calling while this connection is down.
           </p>
           <Button className="mt-3" size="sm" variant="secondary" onClick={onRetry}>
@@ -463,7 +463,7 @@ function DiagnosticsContent({
         <Section title="Warnings" tone="warning">
           <ul className="space-y-1.5">
             {data.warnings.map((_warning, i) => (
-              <li key={i} className="flex items-start gap-2 text-xs text-status-warning">
+              <li key={i} className="flex items-start gap-2 text-body-sm text-marker">
                 <Icon name="triangleAlert" size="xs" className="mt-0.5 flex-none" />
                 <span>A service check needs attention.</span>
               </li>
@@ -505,7 +505,7 @@ function DiagnosticsContent({
           />
         </Grid>
         {!data.networkConnected && (
-          <p className="mesh-diagnostics-note mt-2 text-xs text-muted">
+          <p className="mesh-diagnostics-note mt-2 text-body-sm text-on-surface-variant">
             This device is offline from other Mesh users.
           </p>
         )}
@@ -542,16 +542,16 @@ function DiagnosticsContent({
           />
         </Grid>
         {!data.iceServerStatus.turnConfigured && (
-          <p className="mesh-diagnostics-note mt-2 text-xs text-status-warning">
+          <p className="mesh-diagnostics-note mt-2 text-body-sm text-marker">
             A backup call connection is not configured. Some calls may fail. Ask the community
             operator to check the call service.
           </p>
         )}
 
         {/* Reachability probe */}
-        <div className="mesh-diagnostics-test mt-3 border-t border-border-subtle pt-3">
+        <div className="mesh-diagnostics-test mt-3 border-t border-outline-variant pt-3">
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-caption font-semibold lowercase tracking-eyebrow text-muted">
+            <span className="text-label-sm font-semibold lowercase tracking-label-md text-on-surface-variant">
               Connection test
             </span>
             <Button
@@ -567,7 +567,7 @@ function DiagnosticsContent({
             </Button>
           </div>
           {probeResults === null && !probeLoading && (
-            <p id="ice-probe-description" className="text-xs text-muted">
+            <p id="ice-probe-description" className="text-body-sm text-on-surface-variant">
               Checks whether the call connection services are available.
             </p>
           )}
@@ -577,7 +577,7 @@ function DiagnosticsContent({
             </p>
           )}
           {probeResults !== null && probeResults.length === 0 && (
-            <p className="text-xs text-muted">No call connection services are configured.</p>
+            <p className="text-body-sm text-on-surface-variant">No call connection services are configured.</p>
           )}
           {probeResults !== null && probeResults.length > 0 && (
             <div className="space-y-1.5">
@@ -592,7 +592,7 @@ function DiagnosticsContent({
       {/* Downloads */}
       <Section title={`Downloads (${data.activeDownloadCount})`}>
         {data.downloadStats.length === 0 ? (
-          <p className="text-xs text-muted">No active downloads.</p>
+          <p className="text-body-sm text-on-surface-variant">No active downloads.</p>
         ) : (
           <div className="space-y-2">
             {data.downloadStats.map((stats) => (
@@ -617,8 +617,8 @@ function Section({
   return (
     <div className="mesh-diagnostics-section">
       <h3
-        className={`mb-2 text-caption font-semibold lowercase tracking-eyebrow ${
-          tone === 'warning' ? 'text-status-warning' : 'text-muted'
+        className={`mb-2 text-label-sm font-semibold lowercase tracking-label-md ${
+          tone === 'warning' ? 'text-marker' : 'text-on-surface-variant'
         }`}
       >
         {title}
@@ -635,8 +635,8 @@ function Grid({ children }: { children: React.ReactNode }) {
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="mesh-diagnostics-cell px-3 py-2">
-      <div className="text-caption lowercase tracking-eyebrow text-muted">{label}</div>
-      <div className="mt-0.5 break-all font-mono text-xs text-primary">{value}</div>
+      <div className="text-label-sm lowercase tracking-label-md text-on-surface-variant">{label}</div>
+      <div className="mt-0.5 break-all font-code text-body-sm text-on-surface">{value}</div>
     </div>
   )
 }
@@ -644,10 +644,10 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 function StatCell({ label, value, ok }: { label: string; value: string; ok?: boolean }) {
   return (
     <div className="mesh-diagnostics-cell px-3 py-2">
-      <div className="text-caption lowercase tracking-eyebrow text-muted">{label}</div>
+      <div className="text-label-sm lowercase tracking-label-md text-on-surface-variant">{label}</div>
       <div
-        className={`tnum mt-0.5 font-mono text-sm ${
-          ok === false ? 'text-status-danger' : ok === true ? 'text-status-success' : 'text-primary'
+        className={`tnum mt-0.5 font-code text-body-md ${
+          ok === false ? 'text-error' : ok === true ? 'text-primary' : 'text-on-surface'
         }`}
       >
         {value}
@@ -670,10 +670,10 @@ function StatusCell({
   const state = warn ? 'degraded' : ok ? 'connected' : 'disconnected'
   return (
     <div className="mesh-diagnostics-cell px-3 py-2">
-      <div className="text-caption lowercase tracking-eyebrow text-muted">{label}</div>
-      <div className="mt-0.5 flex items-center gap-1.5 text-sm">
+      <div className="text-label-sm lowercase tracking-label-md text-on-surface-variant">{label}</div>
+      <div className="mt-0.5 flex items-center gap-1.5 text-body-md">
         <StatusDot state={state} label={`${label}: ${value}`} />
-        <span className="text-primary">{value}</span>
+        <span className="text-on-surface">{value}</span>
       </div>
     </div>
   )
@@ -689,40 +689,40 @@ function DownloadCard({ stats }: { stats: SchedulerStats }) {
         ? 'Complete'
         : 'Active'
   const statusColor = stats.isFailed
-    ? 'text-status-danger'
+    ? 'text-error'
     : stats.isStalled
-      ? 'text-status-warning'
+      ? 'text-marker'
       : stats.isComplete
-        ? 'text-status-success'
-        : 'text-accent'
+        ? 'text-primary'
+        : 'text-primary'
   return (
     <div className="mesh-diagnostics-download px-3 py-2">
-      <div className="mb-1 flex items-center justify-between text-xs">
-        <span className="truncate font-mono text-muted" title={stats.fileHash}>
+      <div className="mb-1 flex items-center justify-between text-body-sm">
+        <span className="truncate font-code text-on-surface-variant" title={stats.fileHash}>
           {stats.fileHash.slice(0, 16)}…
         </span>
         <span className={statusColor}>{statusLabel}</span>
       </div>
-      <div className="mb-2 h-1 overflow-hidden rounded-panel bg-surface-active">
+      <div className="mb-2 h-1 overflow-hidden rounded-xl bg-surface-container-highest">
         <div
-          className="h-full bg-accent transition-all"
+          className="h-full bg-primary transition-all"
           data-design-token-exception="data-driven-diagnostic-progress-width"
           style={{ width: `${Math.round(progress * 100)}%` }}
         />
       </div>
-      <div className="grid grid-cols-4 gap-2 text-caption text-muted">
+      <div className="grid grid-cols-4 gap-2 text-label-sm text-on-surface-variant">
         <div>
-          <span className="text-secondary">{stats.receivedChunks}</span>/{stats.totalChunks}{' '}
+          <span className="text-on-surface-variant">{stats.receivedChunks}</span>/{stats.totalChunks}{' '}
           parts
         </div>
         <div>
-          <span className="text-secondary">{stats.inFlightChunks}</span> active
+          <span className="text-on-surface-variant">{stats.inFlightChunks}</span> active
         </div>
         <div>
-          <span className="text-secondary">{stats.seederCount}</span> sources
+          <span className="text-on-surface-variant">{stats.seederCount}</span> sources
         </div>
         <div>
-          <span className="text-secondary">{Math.round(stats.avgSeederRttMs)}ms</span> delay
+          <span className="text-on-surface-variant">{Math.round(stats.avgSeederRttMs)}ms</span> delay
         </div>
       </div>
     </div>
@@ -790,10 +790,10 @@ function ProbeRow({ result }: { result: IceServerProbeResult }) {
   const severity = probeSeverity(result.outcome)
   const outcomeColor =
     severity === 'success'
-      ? 'text-status-success'
+      ? 'text-primary'
       : severity === 'error'
-        ? 'text-status-danger'
-        : 'text-status-warning'
+        ? 'text-error'
+        : 'text-marker'
   const label = probeOutcomeLabel(result.outcome)
   const state = severity === 'success'
     ? 'connected'
@@ -801,17 +801,17 @@ function ProbeRow({ result }: { result: IceServerProbeResult }) {
       ? 'disconnected'
       : 'degraded'
   return (
-    <div className="mesh-diagnostics-probe px-2 py-1.5 text-meta">
+    <div className="mesh-diagnostics-probe px-2 py-1.5 text-body-sm">
       <div className="flex items-center gap-1.5">
         <StatusDot state={state} label={`${result.url}: ${label}`} />
-        <span className="truncate font-mono text-secondary" title={result.url}>
+        <span className="truncate font-code text-on-surface-variant" title={result.url}>
           {result.url}
         </span>
         <span className={`ml-auto ${outcomeColor}`} title={result.outcome}>
           {label}
         </span>
       </div>
-      <div className="mt-0.5 text-caption text-muted">
+      <div className="mt-0.5 text-label-sm text-on-surface-variant">
         {result.latencyMs !== null ? `Responded in ${result.latencyMs}ms.` : 'No response time is available.'}
       </div>
     </div>

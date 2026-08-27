@@ -342,13 +342,13 @@ describe('VoiceControls', () => {
 
     expect(
       container.querySelector<HTMLButtonElement>('button[aria-label="Unmute microphone"]')?.className,
-    ).toContain('bg-status-warning')
+    ).toContain('bg-marker')
     expect(
       container.querySelector<HTMLButtonElement>('button[aria-label="Turn incoming audio on"]')?.className,
-    ).toContain('bg-status-warning')
+    ).toContain('bg-marker')
     expect(
       container.querySelector<HTMLButtonElement>('button[aria-label="Turn camera off"]')?.className,
-    ).toContain('bg-accent')
+    ).toContain('bg-primary')
     /*
       Leave is a flat vermilion plane, and it is the only plane in the row.
 
@@ -361,13 +361,13 @@ describe('VoiceControls', () => {
       undo.
 
       The fill is asserted with an anchored prefix because the previous
-      assertion, a bare `bg-status-danger`, also matched the substring inside
-      `hover:bg-status-danger/10` and so passed for a button with no danger
+      assertion, a bare `bg-error`, also matched the substring inside
+      `hover:bg-error/10` and so passed for a button with no danger
       background in any state.
     */
     const leave = container.querySelector<HTMLButtonElement>('button[aria-label="Leave Studio"]')?.className
-    expect(leave?.split(/\s+/)).toContain('bg-status-danger')
-    expect(leave).toContain('text-content-on-status')
-    expect(leave).toContain('rounded-plane')
+    expect(leave?.split(/\s+/)).toContain('bg-error')
+    expect(leave).toContain('text-on-error')
+    expect(leave).toContain('rounded-full')
   })
 })
