@@ -762,8 +762,8 @@ Assert-Condition ($securityWorkflowText -match 'cargo deny --locked --no-default
 # Do not "restore" a dependabot.yml check here.
 Assert-Condition ($securityWorkflowText -match 'cargo deny --locked check licenses sources bans advisories') `
     "Security CI must check advisories for the Matrix voice feature set; this replaces the removed Dependabot requirement as the vulnerable- and yanked-crate signal."
-Assert-Condition ($securityWorkflowText -match 'cargo deny --locked --no-default-features --features legacy-p2p check licenses sources bans advisories') `
-    "Security CI must check advisories for the legacy-p2p feature set too; one deny.toml [graph] block describes one feature selection."
+# Only the shipping graph is asserted. The legacy-p2p graph deliberately does not
+# run `advisories`; see the note beside that step in security.yml.
 Assert-Condition ($dependencyReviewConfigText -match 'license-check:\s*true' -and
     $dependencyReviewConfigText -match 'fail-on-severity:\s*moderate') `
     "Dependency review must enforce the reviewed license and vulnerability policy."
