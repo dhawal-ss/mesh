@@ -1983,7 +1983,7 @@ export function ChatView({
             carries its own ink for the whole row, so nothing inside it names a
             colour of its own.
           */
-          className="mesh-pinned-message-bar mx-4 mt-2 flex min-h-shell-pin min-w-0 flex-shrink-0 items-center gap-3 overflow-hidden rounded-lg-inc bg-marker-container px-4 py-2 text-left text-on-marker-container transition-colors hover:bg-marker-container-hover"
+          className="mesh-pinned-message-bar mx-4 mt-2 flex min-h-shell-pin min-w-0 flex-shrink-0 items-center gap-3 overflow-hidden rounded-lg-inc bg-marker-container px-4 py-3 text-left text-on-marker-container transition-colors hover:bg-marker-container-hover"
           aria-label={`Open pinned message from ${pinnedMessage.authorDisplayName}`}
         >
           <Icon name="pin" size="sm" className="flex-shrink-0" />

@@ -518,12 +518,12 @@ export function DmSidebar() {
       </Modal>
 
       {/* Conversation search */}
-      <div className="mesh-dm-search-region py-2.5">
+      <div className="mesh-dm-search-region px-4 py-2">
         <label className="sr-only" htmlFor="dm-search">Find a conversation</label>
-        <div className="mesh-dm-search-shell flex min-h-9 items-center gap-2 border-y border-outline px-3">
+        <div className="mesh-dm-search-shell flex min-h-control-lg items-center gap-3 rounded-xl bg-surface-container-high px-4 focus-within:outline focus-within:outline-2 focus-within:outline-focus">
           <Icon
             name="search"
-            size="xs"
+            size="sm"
             className="flex-shrink-0 text-on-surface-variant"
           />
           <input
@@ -532,7 +532,7 @@ export function DmSidebar() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Find a conversation"
-            className="mesh-dm-search min-w-0 flex-1 bg-transparent text-body-sm text-on-surface placeholder:text-on-surface-variant"
+            className="mesh-dm-search min-w-0 flex-1 bg-transparent text-body-lg text-on-surface outline-none placeholder:text-on-surface-variant"
           />
         </div>
       </div>
@@ -691,7 +691,7 @@ const DmConversationRow = memo(function DmConversationRow({
           the secondary container plus aria-current, the same pill the room list
           uses, so a person moving between the two lists reads one selection.
         */
-        className={`mesh-dm-item group flex min-h-shell-occupant w-full items-center gap-3 rounded-full px-4 py-2 text-left transition-colors ${
+        className={`mesh-dm-item group flex min-h-shell-occupant w-full items-center gap-4 rounded-xl px-4 py-2 text-left transition-colors ${
           active
             ? 'bg-secondary-container text-on-secondary-container'
             : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'

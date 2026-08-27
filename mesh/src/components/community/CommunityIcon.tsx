@@ -205,12 +205,12 @@ export function CommunityIcon({
             */
             className={`group relative flex h-12 w-12 items-center justify-center overflow-hidden transition-all duration-normal focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
               active
-                ? 'rounded-lg bg-primary'
-                : 'rounded-round bg-surface-container-low hover:rounded-lg hover:bg-state-hover'
+                ? 'rounded-lg bg-primary-container'
+                : 'rounded-round bg-surface-container hover:rounded-lg hover:bg-state-hover'
             }`}
           >
             <Avatar
-              color={active ? 'var(--primary)' : pixelColorForSeed(community.id)}
+              color={active ? 'var(--on-primary-container)' : pixelColorForSeed(community.id)}
               seed={community.id}
               size={48}
               name={community.name}

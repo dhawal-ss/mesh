@@ -1433,7 +1433,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 
 .mesh-input {
   border-radius: var(--shape-lg);
-  background-color: var(--surface);
+  background-color: var(--surface-container-high);
   box-shadow: none;
 }
 
@@ -1450,7 +1450,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
   overflow: hidden;
   border: 1px solid var(--outline);
   border-radius: var(--shape-lg);
-  background-color: var(--surface);
+  background-color: var(--surface-container-high);
   box-shadow: var(--elev-3);
 }
 
@@ -1491,7 +1491,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 
 .mesh-onboarding-shell {
   border-color: var(--outline);
-  background-color: var(--surface);
+  background-color: var(--surface-container-low);
   border-radius: var(--shape-lg);
   box-shadow: none;
 }
@@ -1755,7 +1755,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 
 .mesh-composer-formatting {
   border-color: var(--outline-variant);
-  background: var(--surface);
+  background: var(--surface-container-highest);
 }
 
 .mesh-community-rail {
@@ -2184,17 +2184,17 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 }
 
 /*
- * A conversation row is a 72px pill, the same shape the room list uses. The
- * square corners and the transparent side borders this rule used to force were
- * Quiet Structure's structural plane, and the class list already says what the
- * row is now -- a rule that contradicts it makes the class a lie.
+ * A conversation row is 72px at the pane's own 28px radius rather than a pill:
+ * at that height a full radius rounds to 36px on each end and the row reads as
+ * a lozenge. Only the height is set here. The radius was restated in this rule
+ * as well and contradicted the class list, which is the exact failure the
+ * paragraph above it warns about.
  */
 .mesh-dm-item {
   min-height: var(--shell-occupant-row-height);
-  border-radius: var(--shape-full);
 }
 
-.mesh-dm-landing { background: var(--surface); }
+.mesh-dm-landing { background: var(--surface-container-low); }
 .mesh-dm-landing-inner { padding: clamp(20px, 3vw, 32px); }
 .mesh-dm-landing-header { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
 .mesh-dm-landing-title { max-width: none; font-size: var(--type-headline-md); line-height: var(--type-line-headline-md); letter-spacing: var(--type-track-display-lg); }
@@ -2226,7 +2226,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 }
 
 .mesh-room-context-header {
-  background: var(--surface);
+  background: var(--surface-container);
 }
 
 .mesh-room-context-tabs {
@@ -2334,7 +2334,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 .mesh-command-surface {
   border-bottom: 1px solid var(--outline-variant);
   border-radius: var(--shape-full);
-  background: var(--surface);
+  background: var(--surface-container-high);
   box-shadow: none;
   padding-inline: var(--command-band-padding);
 }
@@ -2512,7 +2512,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 }
 
 .mesh-dm-safety-header {
-  background: var(--surface);
+  background: var(--surface-container);
 }
 
 .mesh-dm-safety-body {
@@ -2565,7 +2565,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 
 .mesh-feedback-field {
   border-radius: var(--shape-lg);
-  background: var(--surface);
+  background: var(--surface-container-high);
 }
 
 .mesh-feedback-actions {
@@ -2700,11 +2700,15 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   padding-left: 0;
 }
 
+/*
+ * The snackbar's ground, radius and elevation are all in its class list --
+ * bg-surface-inverse, rounded-xs, shadow-elev-3 -- so this rule restated three
+ * things and contradicted two of them. It set the radius to 16px where the
+ * class says 4px, and it set the ground to the window tone under ink coloured
+ * for the inverse surface, which is near-black text on a near-black bar.
+ */
 .mesh-toast {
   border-color: var(--outline);
-  border-radius: var(--shape-lg);
-  background: var(--surface);
-  box-shadow: var(--elev-3);
 }
 
 .mesh-toast-icon {
@@ -2866,7 +2870,7 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
 .mesh-modal-loading {
   border-color: var(--outline);
   border-radius: var(--shape-lg);
-  background: var(--surface);
+  background: var(--surface-container-high);
   box-shadow: var(--elev-3);
   overflow: hidden;
 }
@@ -3239,7 +3243,7 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
     gap: 12px;
     border-bottom: 1px solid var(--outline-variant);
     padding: 0 10px;
-    background: var(--surface);
+    background: var(--surface-container);
   }
 
   .mesh-network-label {
