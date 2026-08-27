@@ -86,6 +86,28 @@ $matrixTree = Invoke-FeatureTree $shippingFeature $shippingTarget
 $matrixRuntimeTree = Invoke-FeatureTree $shippingFeature $shippingTarget "normal"
 $legacyTree = Invoke-FeatureTree ([string]$policy.engineeringVisibility.feature) ""
 
+# nonRuntimeBuildWarnings entries can be scoped to a host platform, but the
+# shipping tree above is always resolved for the Windows shipping target. A
+# Linux-host-only build-tool crate therefore never appears in it, so a
+# host-scoped expectation could never be satisfied and failed closed on every
+# Linux host. glib 0.18.5 is exactly that case: ten occurrences in the
+# Linux-target tree, none in the Windows one.
+#
+# Resolving the host's own tree makes the actual set answer the same question
+# the expectation asks. Where host and shipping target agree, this is the same
+# tree and nothing changes.
+$hostTarget = switch ($hostPlatform) {
+    "windows" { "x86_64-pc-windows-msvc" }
+    "linux" { "x86_64-unknown-linux-gnu" }
+    "macos" { "aarch64-apple-darwin" }
+    default { throw "Unsupported dependency-policy host platform." }
+}
+$hostBuildTree = if ($hostTarget -eq $shippingTarget) {
+    $matrixTree
+} else {
+    Invoke-FeatureTree $shippingFeature $hostTarget
+}
+
 if ($matrixTree -match '(?m)(^|[ (])libp2p v') {
     throw "Matrix release dependency tree unexpectedly contains libp2p."
 }
@@ -180,8 +202,12 @@ foreach ($warningProperty in $audit.warnings.PSObject.Properties) {
             if (@($policy.denyWarningKindsInShipping) -contains $warningProperty.Name) {
                 throw "Matrix shipping runtime contains denied $($warningProperty.Name) warning: $warningKey."
             }
-        } elseif (($matrixTree -match $pattern) -and
+        } elseif ((($matrixTree -match $pattern) -or ($hostBuildTree -match $pattern)) -and
             (@($policy.denyWarningKindsInShipping) -contains $warningProperty.Name)) {
+            # Build-tool warnings are judged against the shipping tree and the
+            # host's own tree. The shipping *runtime* check above is unchanged
+            # and still decides on the Windows graph alone, so nothing here can
+            # let a host-only crate be treated as shipping.
             $actualBuildWarningKeys += $warningKey
         }
     }
@@ -216,6 +242,7 @@ $report = [ordered]@{
     cargoLockSha256 = (Get-FileHash -LiteralPath $lockPath -Algorithm SHA256).Hash.ToLowerInvariant()
     policySha256 = (Get-FileHash -LiteralPath $policyPath -Algorithm SHA256).Hash.ToLowerInvariant()
     hostPlatform = $hostPlatform
+    hostBuildTarget = $hostTarget
     shippingFeature = $shippingFeature
     shippingTarget = $shippingTarget
     matrixReleaseVulnerabilityCount = 0
