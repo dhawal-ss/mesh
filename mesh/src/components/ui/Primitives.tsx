@@ -392,7 +392,7 @@ export function SectionHeader({
   return (
     <div
       className={clsx(
-        'flex min-h-8 items-center gap-2 font-code text-label-sm font-medium text-on-surface-variant',
+        'flex min-h-8 items-center gap-2 text-label-lg font-medium text-primary',
         className,
       )}
       {...props}
@@ -406,7 +406,7 @@ export function SectionHeader({
         {title}
       </span>
       {count !== undefined && (
-        <span className="ml-auto flex-none font-code text-label-sm font-semibold normal-case text-on-surface-variant">
+        <span className="ml-auto flex-none text-label-lg font-medium text-on-surface-variant">
           {count}
         </span>
       )}

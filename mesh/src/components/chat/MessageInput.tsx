@@ -1133,7 +1133,7 @@ function MessageInputContent({
                 type="button"
                 disabled={disabled || isUploading || isStaging}
                 aria-label="Attach file"
-                className="mb-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded text-on-surface-variant transition-colors hover:text-on-surface-variant disabled:opacity-40"
+                className="mb-1 flex h-control-md w-control-md flex-shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-40"
               >
                 <Icon name="circlePlus" />
               </button>
@@ -1236,7 +1236,7 @@ function MessageInputContent({
                 disabled={disabled || isUploading || isStaging}
                 aria-label="Open emoji picker"
                 aria-expanded={emojiPickerOpen}
-                className="mb-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-40"
+                className="mb-1 flex h-control-md w-control-md flex-shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Icon name="smile" />
               </button>

@@ -725,7 +725,7 @@ export function ChannelSidebar() {
                             className="mesh-disclosure-mark text-on-surface-variant"
                             data-collapsed={collapsed ? 'true' : 'false'}
                           />
-                          <span className="text-label-sm font-medium text-on-surface-variant group-hover:text-on-surface">
+                          <span className="text-label-lg font-medium text-primary group-hover:text-on-surface">
                             {entry.label}
                           </span>
                         </button>

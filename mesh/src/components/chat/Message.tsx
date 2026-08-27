@@ -717,7 +717,7 @@ export const MessageComponent = memo(function MessageComponent({
                 area. Painting the name with a hashed colour put roughly two in
                 five authors below AA on the dark canvas.
               */
-              <span className="mesh-message-meta mb-1 flex flex-wrap items-baseline gap-x-1.5 text-label-sm text-on-surface-variant">
+              <span className="mesh-message-meta mb-1 flex flex-wrap items-baseline gap-x-1.5 text-body-sm font-medium text-on-surface-variant">
                 <span id={resolvedAuthorNameId}>{message.authorDisplayName}</span>
                 <span aria-hidden="true">&middot;</span>
                 <MessageTime value={message.timestamp} className="tnum" />

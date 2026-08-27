@@ -2048,7 +2048,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   border-radius: var(--shape-lg-inc);
   background: var(--surface-container-high);
   color: var(--on-surface);
-  padding: 8px 12px;
+  padding: 12px 16px;
 }
 
 /*

@@ -244,7 +244,7 @@ describe('W2.3 primitive library', () => {
     expect(container.querySelector('button')?.textContent).toBe('Home')
   })
 
-  it('renders one section header contract with a trailing mono count', () => {
+  it('renders one section header contract with a trailing count', () => {
     act(() => {
       root.render(<SectionHeader id="rooms-heading" title="Rooms" count={12} />)
     })
@@ -252,13 +252,13 @@ describe('W2.3 primitive library', () => {
     const header = container.firstElementChild
     const count = container.querySelector('span + span')
     expect(header?.className).toContain('min-h-8')
-    // Quiet Structure's eyebrow: mono at 9.5px, not the 11px caption step.
-    // tracking-label-md rides on the type role now rather than being applied
-    // beside it, so the class is gone and the 0.16em is not.
-    expect(header?.className).toContain('')
-    expect(header?.className).toContain('text-label-sm')
-    expect(header?.className).toContain('text-on-surface-variant')
-    expect(count?.className).toContain('')
+    // A section label is the reference's own: label-large in the primary
+    // colour. It was the 11px caption step in the code family, which is what
+    // was left of Quiet Structure's mono eyebrow after the size floor lifted.
+    expect(header?.className).toContain('text-label-lg')
+    expect(header?.className).toContain('text-primary')
+    expect(header?.className).not.toContain('font-code')
+    expect(count?.className).toContain('text-on-surface-variant')
     expect(count?.textContent).toBe('12')
     expect(container.querySelector('#rooms-heading')?.textContent).toBe('Rooms')
   })
