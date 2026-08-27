@@ -13,7 +13,7 @@ describe('pixelColorForSeed', () => {
     expect(pixelColorForSeed('!lantern:mesh.test')).toBe(
       pixelColorForSeed('!lantern:mesh.test'),
     )
-    expect(pixelColorForSeed('!lantern:mesh.test')).toMatch(/^var\(--avatar-/)
+    expect(pixelColorForSeed('!lantern:mesh.test')).toMatch(/^var\(--mark-/)
   })
 
   it('reveals default marks from top to bottom on hover and keyboard focus', () => {

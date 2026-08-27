@@ -33,10 +33,10 @@ import { showToast } from '../ui/Toast'
 import { EmptyState, SectionHeader } from '../ui/Primitives'
 
 const PARTICIPANT_COLORS = [
-  'var(--avatar-violet)',
-  'var(--avatar-orange)',
-  'var(--avatar-emerald)',
-  'var(--avatar-cyan)',
+  'var(--mark-azure-pale)',
+  'var(--mark-amber)',
+  'var(--mark-white)',
+  'var(--mark-slate)',
 ] as const
 
 /**

@@ -1,14 +1,14 @@
 export const DEFAULT_AVATAR_COLORS = [
-  'var(--avatar-sand)',
-  'var(--avatar-blue)',
-  'var(--avatar-green)',
-  'var(--avatar-red)',
-  'var(--avatar-violet)',
-  'var(--avatar-orange)',
-  'var(--avatar-pink)',
-  'var(--avatar-emerald)',
-  'var(--avatar-yellow)',
-  'var(--avatar-cyan)',
+  'var(--mark-sky)',
+  'var(--mark-azure)',
+  'var(--mark-amber-pale)',
+  'var(--mark-coral)',
+  'var(--mark-azure-pale)',
+  'var(--mark-amber)',
+  'var(--mark-coral-pale)',
+  'var(--mark-white)',
+  'var(--mark-silver)',
+  'var(--mark-slate)',
 ] as const
 
 export type OnboardingProfile = {

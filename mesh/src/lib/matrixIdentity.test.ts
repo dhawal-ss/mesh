@@ -19,7 +19,7 @@ describe('Matrix identity presentation', () => {
     const first = matrixIdentity('@alice:example.org')
     const second = matrixIdentity('@alice:example.org')
 
-    expect(first?.avatarColor).toMatch(/^var\(--avatar-[^)]+\)$/)
+    expect(first?.avatarColor).toMatch(/^var\(--mark-[^)]+\)$/)
     expect(second?.avatarColor).toBe(first?.avatarColor)
   })
 
@@ -62,7 +62,7 @@ describe('Matrix identity presentation', () => {
     expect(resolveSenderIdentity(null, null)).toEqual({
       publicKey: '',
       displayName: 'You',
-      avatarColor: 'var(--avatar-blue)',
+      avatarColor: 'var(--mark-azure)',
     })
   })
 })

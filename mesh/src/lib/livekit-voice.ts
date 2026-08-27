@@ -190,12 +190,12 @@ function connectionState(state: ConnectionState): VoiceConnectionState {
 
 function participantColor(identity: string): string {
   const palette = [
-    'var(--avatar-coral)',
-    'var(--avatar-gold)',
-    'var(--avatar-mint)',
-    'var(--avatar-sky)',
-    'var(--avatar-lilac)',
-    'var(--avatar-sand)',
+    'var(--mark-coral)',
+    'var(--mark-amber)',
+    'var(--mark-amber-pale)',
+    'var(--mark-sky)',
+    'var(--mark-azure-pale)',
+    'var(--mark-sky)',
   ]
   let hash = 0
   for (let index = 0; index < identity.length; index += 1) {

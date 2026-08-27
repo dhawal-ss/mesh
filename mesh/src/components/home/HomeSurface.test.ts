@@ -261,7 +261,7 @@ describe('communityInviteLabel', () => {
     name: 'Aurora Collective',
     inviterUserId: '@lena:mesh.test',
     inviterDisplayName: 'Lena',
-    inviterAvatarColor: 'var(--avatar-sand)',
+    inviterAvatarColor: 'var(--mark-sky)',
     canAccept: true,
   }
 

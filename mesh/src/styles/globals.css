@@ -235,16 +235,6 @@
    * discipline as the rest of the palette rather than ten stock hues, so a
    * hashed mark still reads as belonging to this product.
    */
-  --ref-avatar-sand: #E3C79A;
-  --ref-avatar-blue: #7FC0FF;
-  --ref-avatar-green: #9FD8A8;
-  --ref-avatar-red: #FF8F80;
-  --ref-avatar-violet: #C7B8F0;
-  --ref-avatar-orange: #F2B183;
-  --ref-avatar-pink: #EFA8C4;
-  --ref-avatar-emerald: #8ED3B4;
-  --ref-avatar-yellow: #FFD24A;
-  --ref-avatar-cyan: #8FCFD8;
   /*
    * Identity tints, drawn from the three families and nothing else.
    *
@@ -400,16 +390,6 @@
   --marker-container-active: var(--ref-amber-40-layer);
   --marker-container-line: rgb(var(--marker-rgb) / 0.78);
 
-  --avatar-sand: var(--ref-avatar-sand);
-  --avatar-blue: var(--ref-avatar-blue);
-  --avatar-green: var(--ref-avatar-green);
-  --avatar-red: var(--ref-avatar-red);
-  --avatar-violet: var(--ref-avatar-violet);
-  --avatar-orange: var(--ref-avatar-orange);
-  --avatar-pink: var(--ref-avatar-pink);
-  --avatar-emerald: var(--ref-avatar-emerald);
-  --avatar-yellow: var(--ref-avatar-yellow);
-  --avatar-cyan: var(--ref-avatar-cyan);
   --mark-azure: var(--ref-mark-azure);
   --mark-azure-pale: var(--ref-mark-azure-pale);
   --mark-sky: var(--ref-mark-sky);
@@ -918,16 +898,6 @@
   --mark-white: var(--ref-white);
   --mark-silver: var(--ref-white);
   --mark-slate: var(--ref-white);
-  --avatar-sand: var(--ref-white);
-  --avatar-blue: var(--ref-white);
-  --avatar-green: var(--ref-white);
-  --avatar-red: var(--ref-white);
-  --avatar-violet: var(--ref-white);
-  --avatar-orange: var(--ref-white);
-  --avatar-pink: var(--ref-white);
-  --avatar-emerald: var(--ref-white);
-  --avatar-yellow: var(--ref-white);
-  --avatar-cyan: var(--ref-white);
   --on-avatar-rgb: var(--ref-black-rgb);
   --on-avatar: var(--ref-black);
 }

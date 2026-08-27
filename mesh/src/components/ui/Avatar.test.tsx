@@ -25,14 +25,14 @@ describe('Avatar geometry: the circle is a person', () => {
 
   it('draws a person as a circle', () => {
     act(() => {
-      root.render(<Avatar color="var(--avatar-blue)" name="Maya" seed="@maya:example.org" />)
+      root.render(<Avatar color="var(--mark-azure)" name="Maya" seed="@maya:example.org" />)
     })
     expect(avatar().className).toContain('rounded-round')
   })
 
   it('draws a community as a square, because a community is not a person', () => {
     act(() => {
-      root.render(<Avatar color="var(--avatar-blue)" name="Bauhaus" variant="community" seed="!room:example.org" />)
+      root.render(<Avatar color="var(--mark-azure)" name="Bauhaus" variant="community" seed="!room:example.org" />)
     })
     expect(avatar().className).toContain('rounded-lg')
     expect(avatar().className).not.toContain('rounded-round')
@@ -40,7 +40,7 @@ describe('Avatar geometry: the circle is a person', () => {
 
   it('lets a caller keep overriding the shape', () => {
     act(() => {
-      root.render(<Avatar color="var(--avatar-blue)" name="Maya" seed="@maya:example.org" className="!rounded-xl" />)
+      root.render(<Avatar color="var(--mark-azure)" name="Maya" seed="@maya:example.org" className="!rounded-xl" />)
     })
     expect(avatar().className).toContain('!rounded-xl')
   })
@@ -63,7 +63,7 @@ describe('Avatar pixel defaults', () => {
 
   it('uses the profile pixel mark when no custom image exists', () => {
     act(() => {
-      root.render(<Avatar color="var(--avatar-violet)" name="Taylor" />)
+      root.render(<Avatar color="var(--mark-azure-pale)" name="Taylor" />)
     })
 
     expect(container.querySelector('.mesh-pixel-avatar-default')).not.toBeNull()
@@ -75,7 +75,7 @@ describe('Avatar pixel defaults', () => {
     act(() => {
       root.render(
         <Avatar
-          color="var(--avatar-emerald)"
+          color="var(--mark-white)"
           name="Field Notes"
           variant="community"
         />,
@@ -89,7 +89,7 @@ describe('Avatar pixel defaults', () => {
     act(() => {
       root.render(
         <Avatar
-          color="var(--avatar-violet)"
+          color="var(--mark-azure-pale)"
           name="Taylor"
           imageUrl="https://example.test/taylor.png"
         />,
@@ -106,7 +106,7 @@ describe('Avatar pixel defaults', () => {
     act(() => {
       root.render(
         <Avatar
-          color="var(--avatar-violet)"
+          color="var(--mark-azure-pale)"
           name="Taylor"
           imageUrl="https://example.test/missing.png"
         />,
@@ -163,7 +163,7 @@ describe('Avatar with a Matrix picture', () => {
 
     await act(async () => {
       root.render(
-        <Avatar color="var(--avatar-violet)" name="Taylor" imageUrl="mxc://example.org/taylor" />,
+        <Avatar color="var(--mark-azure-pale)" name="Taylor" imageUrl="mxc://example.org/taylor" />,
       )
     })
 
@@ -178,7 +178,7 @@ describe('Avatar with a Matrix picture', () => {
 
     await act(async () => {
       root.render(
-        <Avatar color="var(--avatar-violet)" name="Taylor" imageUrl="mxc://example.org/taylor" />,
+        <Avatar color="var(--mark-azure-pale)" name="Taylor" imageUrl="mxc://example.org/taylor" />,
       )
     })
     // The effect starts the load; the bytes land a microtask later.
@@ -195,7 +195,7 @@ describe('Avatar with a Matrix picture', () => {
 
     await act(async () => {
       root.render(
-        <Avatar color="var(--avatar-violet)" name="Taylor" imageUrl="mxc://example.org/taylor" />,
+        <Avatar color="var(--mark-azure-pale)" name="Taylor" imageUrl="mxc://example.org/taylor" />,
       )
     })
 
@@ -210,7 +210,7 @@ describe('Avatar with a Matrix picture', () => {
 
     await act(async () => {
       root.render(
-        <Avatar color="var(--avatar-violet)" name="Taylor" imageUrl="mxc://example.org/taylor" />,
+        <Avatar color="var(--mark-azure-pale)" name="Taylor" imageUrl="mxc://example.org/taylor" />,
       )
     })
     await act(async () => {
@@ -246,7 +246,7 @@ describe('Avatar with a Matrix picture', () => {
 
     await act(async () => {
       root.render(
-        <Avatar color="var(--avatar-violet)" name="Taylor" imageUrl="mxc://example.org/taylor" />,
+        <Avatar color="var(--mark-azure-pale)" name="Taylor" imageUrl="mxc://example.org/taylor" />,
       )
     })
     await act(async () => {
@@ -272,7 +272,7 @@ describe('Avatar with a Matrix picture', () => {
 
     await act(async () => {
       root.render(
-        <Avatar color="var(--avatar-violet)" name="Taylor" imageUrl="mxc://example.org/taylor" />,
+        <Avatar color="var(--mark-azure-pale)" name="Taylor" imageUrl="mxc://example.org/taylor" />,
       )
     })
     await act(async () => {
@@ -296,7 +296,7 @@ describe('Avatar with a Matrix picture', () => {
 
     await act(async () => {
       root.render(
-        <Avatar color="var(--avatar-violet)" name="Taylor" imageUrl="blob:caller-made-this" />,
+        <Avatar color="var(--mark-azure-pale)" name="Taylor" imageUrl="blob:caller-made-this" />,
       )
     })
 
@@ -322,7 +322,7 @@ describe('Avatar identity form', () => {
 
   function markFor(seed: string) {
     act(() => {
-      root.render(<Avatar color="var(--avatar-blue)" name="Taylor" seed={seed} />)
+      root.render(<Avatar color="var(--mark-azure)" name="Taylor" seed={seed} />)
     })
     return container.querySelector<HTMLElement>('.mesh-pixel-mark')
       ?.getAttribute('style') ?? ''
@@ -342,7 +342,7 @@ describe('Avatar identity form', () => {
 
   it('falls back to the variant glyph when the caller has no identity to seed with', () => {
     act(() => {
-      root.render(<Avatar color="var(--avatar-blue)" name="Taylor" />)
+      root.render(<Avatar color="var(--mark-azure)" name="Taylor" />)
     })
 
     const mark = container.querySelector<HTMLElement>('.mesh-pixel-mark')

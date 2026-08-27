@@ -114,7 +114,7 @@ const people = [
   ['@pixelpanda:mesh.test', 'PixelPanda', '#6fcf97', 'member', true],
   ['@sam:mesh.test', 'Sam Lee', '#f2c14e', 'member', true],
   ['@zoe:mesh.test', 'Zoe', '#8e7dff', 'member', false],
-  ['@taylor:mesh.test', 'Taylor', 'var(--avatar-cyan)', 'member', true],
+  ['@taylor:mesh.test', 'Taylor', 'var(--mark-slate)', 'member', true],
 ].map(([publicKey, displayName, avatarColor, role, online]) => ({
   publicKey,
   displayName,
@@ -224,14 +224,14 @@ const timeline: Message[] = [
 const directConversations = [
   {
     id: '!dm-maya:mesh.test',
-    peers: [{ userId: '@maya:mesh.test', displayName: 'Maya Chen', avatarColor: 'var(--avatar-violet)' }],
+    peers: [{ userId: '@maya:mesh.test', displayName: 'Maya Chen', avatarColor: 'var(--mark-azure-pale)' }],
     lastMessageAt: '2026-08-01T15:06:00.000Z',
     unreadCount: 1,
     createdAt: '2026-07-25T00:00:00.000Z',
   },
   {
     id: '!dm-rohan:mesh.test',
-    peers: [{ userId: '@rohan:mesh.test', displayName: 'Rohan', avatarColor: 'var(--avatar-orange)' }],
+    peers: [{ userId: '@rohan:mesh.test', displayName: 'Rohan', avatarColor: 'var(--mark-amber)' }],
     lastMessageAt: '2026-08-01T14:18:00.000Z',
     unreadCount: 0,
     createdAt: '2026-07-27T00:00:00.000Z',

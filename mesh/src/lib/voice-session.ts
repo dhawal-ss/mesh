@@ -210,12 +210,12 @@ export function shortVoiceLabel(publicKey: string): string {
 
 export function voiceColorForKey(publicKey: string): string {
   const palette = [
-    'var(--avatar-orange)',
-    'var(--avatar-blue)',
-    'var(--avatar-green)',
-    'var(--avatar-sand)',
-    'var(--avatar-violet)',
-    'var(--avatar-cyan)',
+    'var(--mark-amber)',
+    'var(--mark-azure)',
+    'var(--mark-amber-pale)',
+    'var(--mark-sky)',
+    'var(--mark-azure-pale)',
+    'var(--mark-slate)',
   ]
   let hash = 0
   for (let index = 0; index < publicKey.length; index += 1) {

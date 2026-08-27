@@ -34,17 +34,25 @@ export const PIXEL_MARK_FORMS = [
   corners, ladder, blocks, frame, spark, notch,
 ] as const
 
+/*
+  Ten tints, all of them already in the palette.
+
+  Azure, coral and amber at their light and pale steps plus three neutrals.
+  The set this replaced was a rainbow -- two greens, a violet, a pink, a cyan,
+  an orange and a sand -- and none of those hues appears anywhere else in the
+  product, so a mark wearing one was the loudest thing on the screen.
+*/
 const AVATAR_TOKENS = [
-  'var(--avatar-sand)',
-  'var(--avatar-blue)',
-  'var(--avatar-green)',
-  'var(--avatar-red)',
-  'var(--avatar-violet)',
-  'var(--avatar-orange)',
-  'var(--avatar-pink)',
-  'var(--avatar-emerald)',
-  'var(--avatar-yellow)',
-  'var(--avatar-cyan)',
+  'var(--mark-azure)',
+  'var(--mark-azure-pale)',
+  'var(--mark-sky)',
+  'var(--mark-coral)',
+  'var(--mark-coral-pale)',
+  'var(--mark-amber)',
+  'var(--mark-amber-pale)',
+  'var(--mark-white)',
+  'var(--mark-silver)',
+  'var(--mark-slate)',
 ] as const
 
 /**

@@ -889,7 +889,7 @@ export function ChannelSidebar() {
                             className="flex min-h-6 w-full items-center gap-1.5 rounded-full px-1 py-0.5 text-left text-body-sm text-on-surface-variant hover:bg-state-hover hover:text-on-surface-variant"
                           >
                             <Avatar
-                              color="var(--avatar-violet)"
+                              color="var(--mark-azure-pale)"
                               size={16}
                               name={member.displayName || member.userId}
                               imageUrl={member.avatarUrl}

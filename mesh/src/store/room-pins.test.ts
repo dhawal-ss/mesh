@@ -15,7 +15,7 @@ const message: Message = {
   channelId: '!room:example.org',
   authorPublicKey: '@alice:example.org',
   authorDisplayName: 'Alice',
-  authorAvatarColor: 'var(--avatar-sand)',
+  authorAvatarColor: 'var(--mark-sky)',
   content: 'Pinned reference',
   attachments: [],
   reactions: {},

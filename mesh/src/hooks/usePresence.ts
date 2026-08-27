@@ -85,7 +85,7 @@ export function usePresence() {
       byPublicKey.set(identity.publicKey, {
         publicKey: identity.publicKey,
         displayName: identity.displayName || 'You',
-        avatarColor: identity.avatarColor || 'var(--avatar-sand)',
+        avatarColor: identity.avatarColor || 'var(--mark-sky)',
         role: activeCommunity.role,
         online: true,
         lastSeen: new Date().toISOString(),
