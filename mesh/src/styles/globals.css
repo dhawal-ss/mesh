@@ -245,6 +245,29 @@
   --ref-avatar-emerald: #8ED3B4;
   --ref-avatar-yellow: #FFD24A;
   --ref-avatar-cyan: #8FCFD8;
+  /*
+   * Identity tints, drawn from the three families and nothing else.
+   *
+   * The ten above are a rainbow -- two greens, a violet, a pink, a cyan, an
+   * orange and a sand, none of which exist anywhere else in this palette. A
+   * mark tinted in a hue the system never uses is the loudest thing on a
+   * surface whose whole argument is that colour is scarce. These ten are the
+   * same azure, coral and amber the rest of the product spends, at their light
+   * and pale steps, plus three neutrals: identity varies by tone within the
+   * palette rather than by inventing hues outside it. Form still carries
+   * identity first -- 18 masks against 2 fills -- so the tint is the third
+   * channel, not the first.
+   */
+  --ref-mark-azure: #7FC0FF;
+  --ref-mark-azure-pale: #CFE8FF;
+  --ref-mark-sky: #D6E7FA;
+  --ref-mark-coral: #FF8F80;
+  --ref-mark-coral-pale: #FFDAD4;
+  --ref-mark-amber: #FFD24A;
+  --ref-mark-amber-pale: #FFEFC2;
+  --ref-mark-white: #F5F5F8;
+  --ref-mark-silver: #C6C6CE;
+  --ref-mark-slate: #8E8E99;
 
   /*
    * Tier 2: Material 3 semantic roles. Feature code uses this tier.
@@ -387,6 +410,16 @@
   --avatar-emerald: var(--ref-avatar-emerald);
   --avatar-yellow: var(--ref-avatar-yellow);
   --avatar-cyan: var(--ref-avatar-cyan);
+  --mark-azure: var(--ref-mark-azure);
+  --mark-azure-pale: var(--ref-mark-azure-pale);
+  --mark-sky: var(--ref-mark-sky);
+  --mark-coral: var(--ref-mark-coral);
+  --mark-coral-pale: var(--ref-mark-coral-pale);
+  --mark-amber: var(--ref-mark-amber);
+  --mark-amber-pale: var(--ref-mark-amber-pale);
+  --mark-white: var(--ref-mark-white);
+  --mark-silver: var(--ref-mark-silver);
+  --mark-slate: var(--ref-mark-slate);
   --on-avatar-rgb: var(--ref-n-0-rgb);
   --on-avatar: var(--ref-n-0);
 
@@ -875,6 +908,16 @@
   --marker-container-hover: var(--marker-container);
   --marker-container-active: var(--marker-container);
   /* Keep initials readable when high contrast switches avatar text to black. */
+  --mark-azure: var(--ref-white);
+  --mark-azure-pale: var(--ref-white);
+  --mark-sky: var(--ref-white);
+  --mark-coral: var(--ref-white);
+  --mark-coral-pale: var(--ref-white);
+  --mark-amber: var(--ref-white);
+  --mark-amber-pale: var(--ref-white);
+  --mark-white: var(--ref-white);
+  --mark-silver: var(--ref-white);
+  --mark-slate: var(--ref-white);
   --avatar-sand: var(--ref-white);
   --avatar-blue: var(--ref-white);
   --avatar-green: var(--ref-white);
