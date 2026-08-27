@@ -88,6 +88,34 @@ sign, and attest authority must be retired immediately in the next reviewed
 source state. The rotation is incomplete until that retirement is reviewed and
 the permanent read-only validators pass again.
 
+### The next rotation must re-sign both images
+
+Both currently published images were signed from a branch that no longer
+exists. Reading the sigstore bundles attached to each published digest gives
+the certificate subject for both:
+
+```
+https://github.com/dhawal-ss/mesh/.github/workflows/container-candidates.yml@refs/heads/beta/production-readiness-2026-08
+```
+
+Both certificates were issued on 2026-08-10. The accepted signer identity has
+since been narrowed to `refs/heads/main` in the five `cosign verify` flags and
+in both policy files, because that beta branch is gone and `main` is the only
+branch on origin.
+
+The consequence is that **the published digests no longer satisfy the accepted
+identity**, and `cosign verify` fails for both until they are rebuilt and
+re-signed from `main`. This is not a separate defect to chase: the same
+rotation is already required to clear the fixable High findings, and
+`container-candidates.yml` now triggers only on `main`, so a rebuild there
+produces a certificate that matches. Do not widen the regexp back to make the
+old signatures verify — that would re-accept a signer identity that cannot be
+produced any more.
+
+Order the work as one rotation: rebuild both images from `main`, confirm the
+scan is clean, re-sign, publish, then update `publishedDigest` in
+`infra/container-candidates/candidate-policy.json` in the same reviewed change.
+
 For a rotation:
 
 1. In a protected-branch source change, review and fix the exact source tag and
