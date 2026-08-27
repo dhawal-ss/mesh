@@ -348,7 +348,6 @@ $rustDependencyPolicyPath = Join-Path $repoRoot "scripts/rust-dependency-policy.
 $cargoDenyPath = Join-Path $tauriRoot "deny.toml"
 $operatorSmokePath = Join-Path $repoRoot "scripts/operator-smoke.ps1"
 $operationsContractCheckerPath = Join-Path $repoRoot "scripts/check-operations-contract.mjs"
-$dependabotPath = Join-Path $gitRoot ".github/dependabot.yml"
 $dependencyReviewConfigPath = Join-Path $gitRoot ".github/dependency-review-config.yml"
 $codeownersPath = Join-Path $gitRoot ".github/CODEOWNERS"
 $securityPolicyPath = Join-Path $gitRoot "SECURITY.md"
@@ -399,7 +398,6 @@ $rustDependencyPolicyText = Read-Utf8Text $rustDependencyPolicyPath
 $cargoDenyText = Read-Utf8Text $cargoDenyPath
 $operatorSmokeText = Read-Utf8Text $operatorSmokePath
 $operationsContractCheckerText = Read-Utf8Text $operationsContractCheckerPath
-$dependabotText = Read-Utf8Text $dependabotPath
 $dependencyReviewConfigText = Read-Utf8Text $dependencyReviewConfigPath
 $codeownersText = Read-Utf8Text $codeownersPath
 $securityPolicyText = Read-Utf8Text $securityPolicyPath
@@ -751,10 +749,21 @@ foreach ($shippedTriple in @(
 }
 Assert-Condition ($securityWorkflowText -match 'cargo deny --locked --no-default-features --features legacy-p2p check licenses sources') `
     "Security CI must run the license and source policy for the legacy-p2p feature set as well; one deny.toml [graph] block describes one feature selection, so libp2p's graph is otherwise never checked."
-Assert-Condition ($dependabotText -match 'package-ecosystem:\s*github-actions' -and
-    $dependabotText -match 'package-ecosystem:\s*npm' -and
-    $dependabotText -match 'package-ecosystem:\s*cargo') `
-    "Dependabot must cover workflows, npm, and Cargo on a schedule."
+# Dependency automation is deliberately not Dependabot here, and .github/dependabot.yml
+# is deliberately absent -- 978f827 removed it. Dependabot only reports by opening pull
+# requests from dependabot/* branches, and this project is single-branch: main is the
+# only branch on origin and stays that way. Requiring the file back would reintroduce
+# exactly the branches the removal was for.
+#
+# What the assertion was actually protecting -- knowing about vulnerable and yanked
+# crates -- is covered in place by the Security workflow's cargo-deny run, asserted
+# just below. That is branch-free and blocks the merge instead of filing a PR.
+#
+# Do not "restore" a dependabot.yml check here.
+Assert-Condition ($securityWorkflowText -match 'cargo deny --locked check licenses sources bans advisories') `
+    "Security CI must check advisories for the Matrix voice feature set; this replaces the removed Dependabot requirement as the vulnerable- and yanked-crate signal."
+Assert-Condition ($securityWorkflowText -match 'cargo deny --locked --no-default-features --features legacy-p2p check licenses sources bans advisories') `
+    "Security CI must check advisories for the legacy-p2p feature set too; one deny.toml [graph] block describes one feature selection."
 Assert-Condition ($dependencyReviewConfigText -match 'license-check:\s*true' -and
     $dependencyReviewConfigText -match 'fail-on-severity:\s*moderate') `
     "Dependency review must enforce the reviewed license and vulnerability policy."

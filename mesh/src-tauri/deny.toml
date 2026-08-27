@@ -67,3 +67,27 @@ multiple-versions = "warn"
 # A wildcard requirement means the next `cargo update` can pull in a version
 # nobody reviewed, which defeats the point of pinning the lockfile.
 wildcards = "deny"
+
+[advisories]
+# Vulnerabilities and unsound advisories are always errors in cargo-deny and
+# are not configurable here.
+#
+# Yanked crates must fail the build. That is NOT the default: with no
+# [advisories] section cargo-deny does not fail on a yank, and that silence is
+# exactly how the yanked chacha20 0.10.1 sat in Cargo.lock while
+# `cargo deny check advisories` reported nothing. The only thing that caught it
+# was check-matrix-release-dependencies.ps1.
+yanked = "deny"
+# Scope the unmaintained check to crates Mesh actually chooses.
+#
+# The default ("all") walks the whole transitive graph, which here is 20
+# findings Mesh cannot act on: ten gtk-rs GTK3 binding crates and six unic-*
+# crates reached through tauri, plus bitmaps, derivative, fxhash,
+# proc-macro-error and proc-macro-error2. RustSec records "No safe upgrade is
+# available!" for them -- they are upstream archival notices, not defects here,
+# and failing every merge on them trains people to ignore this gate.
+#
+# This narrows which crates the unmaintained check considers. It is not an
+# advisory ignore: `ignore` is deliberately empty, so a vulnerability or a yank
+# in any of those same crates still fails the build.
+unmaintained = "workspace"

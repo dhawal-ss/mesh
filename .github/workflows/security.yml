@@ -96,10 +96,10 @@ jobs:
       # Checking only matrix-voice left libp2p's whole graph unexamined.
       - name: Enforce Matrix voice license, source and ban policy
         working-directory: mesh/src-tauri
-        run: cargo deny --locked check licenses sources bans
+        run: cargo deny --locked check licenses sources bans advisories
       - name: Enforce experimental LAN license, source and ban policy
         working-directory: mesh/src-tauri
-        run: cargo deny --locked --no-default-features --features legacy-p2p check licenses sources bans
+        run: cargo deny --locked --no-default-features --features legacy-p2p check licenses sources bans advisories
       - name: Record Matrix voice unsafe-code inventory
         working-directory: mesh/src-tauri
         # cargo-geiger 0.13.0 (the latest release; 0.12.0 reproduces identically)
