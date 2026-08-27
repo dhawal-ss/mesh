@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { Avatar } from '../ui/Avatar'
 import { serverName, serverRelation } from '../../lib/trust'
-import { AmbientNote } from '../ui/QuietStructure'
+import { AmbientCard } from '../ui/Primitives'
 import { useActiveCommunity, useCommunityStore } from '../../store/communities'
 import { useIdentityStore } from '../../store/identity'
 import { useMembershipStore } from '../../store/membership'
@@ -616,7 +616,7 @@ export function MemberList({
           screen rather than describing one that is not.
         */}
         {hasRemoteMembers && (
-          <AmbientNote>Ringed marks are on another server</AmbientNote>
+          <AmbientCard>Ringed marks are on another server</AmbientCard>
         )}
       </div>
       <Modal

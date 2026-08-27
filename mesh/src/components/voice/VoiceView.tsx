@@ -15,7 +15,7 @@ import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 import { AsyncStatus } from '../ui/AsyncStatus'
 import { VoiceControls } from './VoiceControls'
-import { AmbientNote, Eyebrow } from '../ui/QuietStructure'
+import { AmbientCard, SectionLabel } from '../ui/Primitives'
 import { VoicePeerGrid } from './VoicePeerGrid'
 
 interface VoiceViewProps {
@@ -143,11 +143,11 @@ export function VoiceView({
     >
       <header className="mesh-conversation-title-header flex flex-none flex-col gap-1.5 border-b border-rule border-outline-variant">
         <span className="min-w-0 flex-1">
-          <Eyebrow className="block truncate">
+          <SectionLabel className="block truncate">
             {connectedOccupancy > 0
               ? `Voice room · ${connectedOccupancy} in call`
               : `Voice room · ${voiceLifecycleLabel(lifecycle, channelName)}`}
-          </Eyebrow>
+          </SectionLabel>
           <h1
             id="mesh-voice-heading"
             className="mt-1 truncate text-headline-lg font-semibold text-on-surface outline-none"
@@ -280,7 +280,7 @@ export function VoiceView({
         server, and that is the single fact this screen owes a person who is
         wondering where their microphone is going.
       */}
-      <AmbientNote>Media relayed peer to peer</AmbientNote>
+      <AmbientCard>Media relayed peer to peer</AmbientCard>
     </section>
   )
 }

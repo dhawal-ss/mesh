@@ -28,7 +28,7 @@ import { copyText, matrixRoomPermalink } from '../../lib/notifications'
 import { formatFederatedTimestamp } from '../../lib/federated-time'
 import { showToast } from '../ui/Toast'
 import { Icon } from '../ui/Icon'
-import { Eyebrow } from '../ui/QuietStructure'
+import { SectionLabel } from '../ui/Primitives'
 import { MemberList } from './MemberList'
 import { RolePermissionPreview, type RolePermissionEvidence } from './RolePermissionPreview'
 import { scopeCommunityPermissionProjectionToRoom } from '../../lib/community-permissions'
@@ -305,7 +305,7 @@ export function RoomContextPanel({
           */}
           {(channel.topic ?? '').trim() ? (
             <section className="mx-3 mt-3 rounded-xl bg-surface-container-lowest px-3 py-3">
-              <Eyebrow className="block">About this room</Eyebrow>
+              <SectionLabel className="block">About this room</SectionLabel>
               <p className="mt-1 whitespace-pre-line text-body-sm text-on-surface-variant">
                 {(channel.topic ?? '').trim()}
               </p>
@@ -323,11 +323,11 @@ export function RoomContextPanel({
             <span className="text-display-sm font-semibold text-on-surface">
               {members.length}
             </span>
-            <Eyebrow>
+            <SectionLabel>
               {members.length === 1 ? 'Person here' : 'People here'}
               {' \u00b7 '}
               {members.filter((member) => member.online).length} online
-            </Eyebrow>
+            </SectionLabel>
           </div>
           {trust.matrixMode ? (
             <div className="px-1">

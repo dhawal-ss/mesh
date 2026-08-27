@@ -42,7 +42,6 @@ import { shouldGroupMessage } from '../../lib/message-grouping'
 import type { RoomTrustSnapshot } from '../../hooks/useRoomTrust'
 import type { RoomContextTab } from '../community/RoomContextPanel'
 import { RoomTrustSummary } from './RoomTrustSummary'
-import { AmbientNote } from '../ui/QuietStructure'
 import { serverReach } from '../../lib/trust'
 import { EmptyState } from '../ui/Primitives'
 import { ClipsView } from './ClipsView'
@@ -185,16 +184,15 @@ export function ChatView({
   const setActiveCommunity = useCommunityStore((state) => state.setActiveCommunity)
   const communityMembers = useCommunityMembers(channel.communityId)
   /*
-    The one ambient line this screen is allowed.
+    The sentence the app bar's assist chip carries.
 
     It counts servers rather than people, so it does not change every time
-    somebody joins from a server already in the room, and it is rendered only
-    when the room is actually protected. Saying "encrypted" while the
-    protection probe is still running, or while it has told us the room is not
-    encrypted, would be the one kind of lie this whole vocabulary exists to
-    make impossible.
+    somebody joins from a server already in the room, and it is null unless the
+    room is actually protected. Saying "encrypted" while the protection probe is
+    still running, or while it has told us the room is not encrypted, would be
+    the one kind of lie this whole vocabulary exists to make impossible.
   */
-  const ambientNote = useMemo(() => {
+  const encryptionLabel = useMemo(() => {
     if (!matrixMode || trust?.protection !== 'protected') return null
     const reach = serverReach(communityMembers.map((member) => member.publicKey))
     if (reach <= 1) return 'Encrypted'
@@ -1895,7 +1893,7 @@ export function ChatView({
 
         <div className="ml-auto flex min-w-0 flex-shrink-0 items-center gap-1">
           {matrixMode && trust && onOpenContext && (
-            <RoomTrustSummary trust={trust} onOpenContext={onOpenContext} />
+            <RoomTrustSummary trust={trust} encryptionLabel={encryptionLabel} onOpenContext={onOpenContext} />
           )}
 
           <SearchBar label="Find" onNavigateToMessage={handleNavigateToMessage} />
@@ -2518,7 +2516,6 @@ export function ChatView({
               }))
             }}
           />
-          {ambientNote && <AmbientNote confirmed>{ambientNote}</AmbientNote>}
         </section>
       )}
     </div>

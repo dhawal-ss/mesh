@@ -13,6 +13,7 @@ import {
 } from 'react'
 import clsx from 'clsx'
 import type { UiSize, UiTone } from './Button'
+import { Icon, type IconName } from './Icon'
 import { PixelMark, type PixelMarkVariant } from './PixelMark'
 
 export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
@@ -618,5 +619,166 @@ export function Card({
       style={style}
       {...props}
     />
+  )
+}
+
+/* -------------------------------------------------------------------------
+   What survives of the Quiet Structure vocabulary
+   -------------------------------------------------------------------------
+
+   Four of its eight primitives had a job that outlived the system they were
+   built for, and they live here now because that is what they turned out to
+   be: widgets, not a vocabulary. The other four are gone. The trust rail is a
+   badge on the sender's mark; the row number is a gutter no list has any more;
+   the state tick is the icon below; the segmented control had no call site at
+   all, because the one screen that needs one built its own. */
+
+export interface SectionLabelProps extends HTMLAttributes<HTMLSpanElement> {
+  /**
+   * Tints the label with the primary colour.
+   *
+   * Reserved for a section that is a destination rather than a heading. If
+   * every label is tinted then the tint has stopped pointing at anything.
+   */
+  accent?: boolean
+  /**
+   * Renders as a heading at this level.
+   *
+   * Omit where the section already has its own heading element and this is
+   * only its visible label.
+   */
+  headingLevel?: 2 | 3 | 4
+}
+
+/**
+ * The section label: label-large, sentence case.
+ *
+ * It was a 9.5px mono uppercase eyebrow at 0.16em. Nothing in this contract is
+ * uppercased and nothing informational sits below 11px, so what is left is a
+ * label role at the size a person can read.
+ */
+export function SectionLabel({ accent, headingLevel, className, ...props }: SectionLabelProps) {
+  return (
+    <span
+      role={headingLevel ? 'heading' : undefined}
+      aria-level={headingLevel}
+      className={clsx(
+        'text-label-lg',
+        accent ? 'text-primary' : 'text-on-surface-variant',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+export interface StateIconProps {
+  state: 'ok' | 'pending' | 'warning' | 'danger'
+  /** The word. A colour is never the only channel. */
+  label: string
+  className?: string
+}
+
+const STATE_ICON: Record<StateIconProps['state'], { name: IconName, tone: string, spin?: boolean }> = {
+  ok: { name: 'check', tone: 'bg-surface-container-highest text-on-surface' },
+  pending: { name: 'loader', tone: 'bg-surface-container-highest text-on-surface-variant', spin: true },
+  warning: { name: 'triangleAlert', tone: 'bg-marker-container text-on-marker-container' },
+  danger: { name: 'circleX', tone: 'bg-error-container text-on-error-container' },
+}
+
+/**
+ * A state as a glyph in a 32px circle.
+ *
+ * It was a 2px bar the width of a trust rail, which meant the only difference
+ * between "done" and "failed" was its colour. A glyph in a tonal circle says
+ * it in shape as well, and `label` says it in words either way.
+ *
+ * There is no green: a healthy state is the norm and the norm gets the neutral
+ * container, which is what keeps coral meaning something.
+ */
+export function StateIcon({ state, label, className }: StateIconProps) {
+  const { name, tone, spin } = STATE_ICON[state]
+  return (
+    <span
+      role="img"
+      data-state={state}
+      aria-label={label}
+      className={clsx('flex h-8 w-8 flex-none items-center justify-center rounded-full', tone, className)}
+    >
+      <Icon name={name} size="sm" className={spin ? 'animate-spin' : undefined} aria-hidden="true" />
+    </span>
+  )
+}
+
+export interface InlineErrorProps {
+  tone?: 'marker' | 'error'
+  /** The one action that answers it, if there is one. */
+  action?: ReactNode
+  children: ReactNode
+  className?: string
+}
+
+/**
+ * The only text a message is allowed to gain, and the third federation carrier.
+ *
+ * Reserved for an unverified device, an undecryptable event, a failed
+ * federation send and a withheld key. Never for "encrypted OK", "verified", or
+ * the origin server: the first is the app bar's chip, the second is nothing at
+ * all, and the third is the badge on the sender's mark.
+ *
+ * It was one mono line and a dot. A tonal card is what an exception looks like
+ * in this contract, and it is the only place coral appears in the timeline.
+ */
+export function InlineError({ tone = 'error', action, children, className }: InlineErrorProps) {
+  return (
+    <div
+      role="note"
+      className={clsx(
+        'mt-1 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-body-sm',
+        tone === 'marker'
+          ? 'bg-marker-container text-on-marker-container'
+          : 'bg-error-container text-on-error-container',
+        className,
+      )}
+    >
+      <Icon name={tone === 'marker' ? 'triangleAlert' : 'circleX'} size="sm" className="flex-none" aria-hidden="true" />
+      <span className="min-w-0 flex-1">{children}</span>
+      {action}
+    </div>
+  )
+}
+
+export interface AmbientCardProps extends HTMLAttributes<HTMLDivElement> {
+  /**
+   * Prefixes the card with a shield.
+   *
+   * Used where the card is a statement about encryption rather than a legend
+   * about the marks on the screen.
+   */
+  confirmed?: boolean
+  children: ReactNode
+}
+
+/**
+ * One card per screen. Never one per message.
+ *
+ * It was an 11px caption pinned to the bottom rule of a pane. There is no
+ * bottom rule now, so it is a tonal card in the flow -- still the least
+ * prominent of the three carriers, and still the only one that uses words when
+ * nothing is wrong.
+ */
+export function AmbientCard({ confirmed, className, children, ...props }: AmbientCardProps) {
+  return (
+    <div
+      className={clsx(
+        'mx-4 mb-2 flex items-center gap-2 rounded-lg bg-surface-container px-3 py-2',
+        'text-body-sm text-on-surface-variant',
+        className,
+      )}
+      {...props}
+    >
+      {confirmed ? <Icon name="shieldCheck" size="sm" className="flex-none" aria-hidden="true" /> : null}
+      <span className="min-w-0 truncate">{children}</span>
+    </div>
   )
 }

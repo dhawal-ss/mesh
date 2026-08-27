@@ -281,12 +281,16 @@ describe('HomeSurface', () => {
     expect(support?.textContent).toBe('Lantern Guild')
   })
 
-  it('numbers the continuation target and the index as one sequence', async () => {
+  /*
+    The numbering is gone with the gutter it sat in. A numeral said where a row
+    was in a list somebody can already see, cost 34px of every label, and made
+    two adjacent lists read as one sequence -- which is what this asserted. A
+    Material 3 list item leads with a glyph or a mark instead.
+  */
+  it('leads its rows with a name rather than a position', async () => {
     const home = await renderHome()
 
-    const numerals = Array.from(home.querySelectorAll('[data-home-index]'))
-      .map((node) => (node.textContent ?? '').replace(/[^0-9]/g, ''))
-
-    expect(numerals).toEqual(['01', '02', '03'])
+    expect(home.querySelectorAll('[data-home-index]')).toHaveLength(0)
+    expect(home.textContent).toContain('Lantern Guild')
   })
 })

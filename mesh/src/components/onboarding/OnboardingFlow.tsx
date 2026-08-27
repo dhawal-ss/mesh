@@ -3,7 +3,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { MatrixAccountScreen, type MatrixAccountOutcome } from './MatrixAccountScreen'
 import { Spinner } from '../ui/Spinner'
 import { PixelMark } from '../ui/PixelMark'
-import { Eyebrow } from '../ui/QuietStructure'
+import { SectionLabel } from '../ui/Primitives'
 import { variants } from '../../lib/motion'
 import { DEFAULT_AVATAR_COLORS, type OnboardingFlowProps, type OnboardingProfile } from './types'
 import { InvitationDestinationCard } from './InvitationConfirmation'
@@ -147,9 +147,9 @@ export function OnboardingFlow({
           {showProgress ? (
             <div className="mb-4 flex-none">
               <div className="flex items-center justify-between gap-4">
-                <Eyebrow>
+                <SectionLabel>
                   {initialPendingInvitation ? 'Invitation progress' : 'Setup progress'}
-                </Eyebrow>
+                </SectionLabel>
                 <p className="text-label-sm text-on-surface-variant" aria-live="polite">
                   Step {currentIndex + 1} of {steps.length}
                 </p>

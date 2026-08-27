@@ -12,7 +12,7 @@ import {
 import { sequenceCardProps, type SequenceCardPosition } from '../ui/SequenceCard'
 import { Icon, type IconName } from '../ui/Icon'
 import { PixelMark } from '../ui/PixelMark'
-import { AmbientNote, Eyebrow, StateTick, rowNumber } from '../ui/QuietStructure'
+import { AmbientCard, SectionLabel, StateIcon } from '../ui/Primitives'
 import { Avatar } from '../ui/Avatar'
 import type {
   AppearanceAccent,
@@ -457,13 +457,13 @@ export function UserSettingsPanel({
               {identity.displayName}
             </span>
           </div>
-          <Eyebrow className="mb-2 block px-shell-gutter">Settings</Eyebrow>
+          <SectionLabel className="mb-2 block px-shell-gutter">Settings</SectionLabel>
           <div
             role="tablist"
             aria-label="User settings"
             className="flex min-w-0 flex-col overflow-y-auto"
           >
-          {visibleSettingsTabs.map(([id, label], position) => (
+          {visibleSettingsTabs.map(([id, label]) => (
             <button
               key={id}
               ref={(element) => { tabRefs.current[id] = element ?? undefined }}
@@ -493,16 +493,6 @@ export function UserSettingsPanel({
               onClick={() => activateTab(id)}
               onKeyDown={(event) => navigateTabs(event, id)}
             >
-              <span
-                aria-hidden="true"
-                className={`w-row-index flex-none text-label-sm font-semibold transition-colors duration-instant ${
-                  activeTab === id
-                    ? 'text-on-primary'
-                    : 'text-on-surface-variant group-hover:text-on-surface'
-                }`}
-              >
-                {rowNumber(position)}
-              </span>
               <Icon name={settingsTabIcon(id)} size="xs" className="flex-none" />
               {label}
             </button>
@@ -830,7 +820,7 @@ export function UserSettingsPanel({
               })}
             </div>
             <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-label-sm text-on-surface-variant">
-              <StateTick state="ok" label="Unchanged" />
+              <StateIcon state="ok" label="Unchanged" />
               Status colors stay consistent. Connected, warning, and destructive actions do not change with your accent.
             </p>
           </fieldset>
@@ -840,9 +830,9 @@ export function UserSettingsPanel({
             on the device rather than on the account, and that is worth saying
             once at the bottom rather than beside each control.
           */}
-          <AmbientNote className="-mx-shell-gutter mt-2">
+          <AmbientCard className="-mx-shell-gutter mt-2">
             Appearance is stored on this device only
-          </AmbientNote>
+          </AmbientCard>
 
           <div className="space-y-2 border-t border-rule border-outline-variant pt-4">
             <SectionHeader title="Sidebar" headingLevel={4} />

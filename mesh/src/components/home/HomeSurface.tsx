@@ -27,7 +27,7 @@ import {
 import { Avatar } from '../ui/Avatar'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
-import { AmbientNote, Eyebrow, rowNumber } from '../ui/QuietStructure'
+import { AmbientCard, SectionLabel } from '../ui/Primitives'
 import { serverReach } from '../../lib/trust'
 import { showToast } from '../ui/Toast'
 import { EmptyState, SectionHeader } from '../ui/Primitives'
@@ -320,7 +320,7 @@ export function HomeSurface() {
     <section className="mesh-home-surface flex min-h-0 flex-1 flex-col overflow-hidden" aria-labelledby="mesh-home-heading">
       <header className="mesh-route-header mesh-home-header flex flex-shrink-0 items-center gap-3 border-b border-outline-variant px-shell-gutter py-2">
         <div className="min-w-0 flex-1">
-          <Eyebrow className="mesh-surface-kicker block">Start here</Eyebrow>
+          <SectionLabel className="mesh-surface-kicker block">Start here</SectionLabel>
           <h1
             id="mesh-home-heading"
             data-mesh-route-heading
@@ -567,14 +567,7 @@ export function HomeSurface() {
             className="mesh-home-feature grid gap-4 border-y border-rule border-outline-variant px-shell-gutter py-6 text-left transition-colors hover:bg-state-hover"
             onClick={() => openRoute(featuredRecent.route)}
           >
-            <Eyebrow accent className="mesh-home-feature-index">
-              {/*
-                One index treatment across every ruled list. This card is 01, so
-                the rows below continue the same sequence rather than starting a
-                second one. The numeral is aria-hidden and this line sets its own
-                accessible text, so nothing is spoken twice.
-              */}
-              <span data-home-index aria-hidden="true">{rowNumber(0)} · </span>
+            <SectionLabel accent className="mesh-home-feature-index">
               {featuredRecent.lastOpenedAt === null ? 'Waiting' : 'Continue'}
               {featuredRecent.route.kind === 'direct'
                 ? ' · Direct message'
@@ -583,7 +576,7 @@ export function HomeSurface() {
                   : featuredRecent.route.kind === 'community'
                     ? ' · Community'
                     : ''}
-            </Eyebrow>
+            </SectionLabel>
             {/*
               The lead carries what was said, not what the room is called.
               `preview` is the same string `detail` is built from, already
@@ -613,7 +606,7 @@ export function HomeSurface() {
                 </span>
               )}
               {featuredRecent.unreadCount > 0 && (
-                <span className="text-primary">{rowNumber(Math.min(featuredRecent.unreadCount, 999) - 1)} unread</span>
+                <span className="text-primary">{Math.min(featuredRecent.unreadCount, 999)} unread</span>
               )}
               {featuredRecent.lastOpenedAt !== null && (
                 <time dateTime={new Date(featuredRecent.lastOpenedAt).toISOString()}>
@@ -639,7 +632,7 @@ export function HomeSurface() {
               title={featuredRecent ? 'You are caught up' : 'Open a conversation'}
               detail={featuredRecent ? 'More recent rooms and direct messages will collect here.' : 'Rooms and direct messages you open will appear here.'}
             />
-          ) : remainingRecentRows.map((row, position) => (
+          ) : remainingRecentRows.map((row) => (
             <button
               key={row.key}
               type="button"
@@ -652,13 +645,6 @@ export function HomeSurface() {
                 told apart by where they are, and the type glyph beside the name
                 still says what kind of thing each one is.
               */}
-              <span
-                data-home-index
-                aria-hidden="true"
-                className="w-row-index flex-none text-label-sm font-semibold text-on-surface-variant transition-colors duration-instant group-hover:text-on-surface"
-              >
-                {rowNumber(position + 1)}
-              </span>
               <Icon
                 name={row.route.kind === 'direct' ? 'messageCircle' : row.route.kind === 'voice' ? 'volume' : 'hash'}
                 size="xs"
@@ -681,7 +667,7 @@ export function HomeSurface() {
               )}
               {row.unreadCount > 0 && (
                 <span className="text-label-sm font-semibold text-primary">
-                  {rowNumber(Math.min(row.unreadCount, 999) - 1)}
+                  {Math.min(row.unreadCount, 999)}
                 </span>
               )}
               {row.lastOpenedAt !== null && (
@@ -704,7 +690,7 @@ export function HomeSurface() {
         prose: the account, its link state, and the number of servers and
         communities behind the ledger above.
       */}
-      <AmbientNote className="">
+      <AmbientCard className="">
         {[
           identity?.publicKey ?? null,
           LINK_PHASE_LABEL[linkPhase ?? 'online'],
@@ -717,7 +703,7 @@ export function HomeSurface() {
           })(),
           `${joinedCommunities.length} ${joinedCommunities.length === 1 ? 'community' : 'communities'}`,
         ].filter(Boolean).join(' \u00b7 ')}
-      </AmbientNote>
+      </AmbientCard>
     </section>
   )
 }

@@ -4,7 +4,7 @@ import { motionDurations, motionOffsets, transitions } from '../../lib/motion'
 import { describeError } from '../../lib/errors'
 import { Button } from '../ui/Button'
 import type { OnboardingFlowProps } from './types'
-import { Eyebrow, StateTick, rowNumber } from '../ui/QuietStructure'
+import { SectionLabel, StateIcon } from '../ui/Primitives'
 
 type IdentityScreenProps = Pick<OnboardingFlowProps, 'onGenerateIdentity'> & {
   backendKind?: 'matrix' | 'legacy-p2p'
@@ -64,7 +64,7 @@ export function IdentityScreen({ onGenerateIdentity, onNext }: IdentityScreenPro
   return (
     <div className="space-y-8">
       <div className="space-y-2">
-        <Eyebrow className="block">Step 1 of 3</Eyebrow>
+        <SectionLabel className="block">Step 1 of 3</SectionLabel>
         {/*
           The one poster-scale heading in the product. The file has said so in a
           comment since it was written; this is the size that makes it true.
@@ -107,13 +107,7 @@ export function IdentityScreen({ onGenerateIdentity, onNext }: IdentityScreenPro
               animate={{ opacity: 1, y: 0 }}
               transition={{ ...transitions.enter, delay: index * motionDurations.press }}
             >
-              <span
-                aria-hidden="true"
-                className="w-row-index flex-none text-label-sm font-semibold text-on-surface-variant"
-              >
-                {rowNumber(index)}
-              </span>
-              <StateTick
+              <StateIcon
                 state={stepState}
                 label={stepState === 'ok' ? 'Done' : stepState === 'danger' ? 'Failed' : stepState === 'warning' ? 'Running' : 'Waiting'}
               />

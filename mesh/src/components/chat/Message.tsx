@@ -34,7 +34,7 @@ import { retainStructuredMentionUserIds } from '../../lib/structured-mentions'
 import { Button } from '../ui/Button'
 import { Tooltip } from '../ui/Tooltip'
 import { Modal, setNextModalRestoreFocusTarget } from '../ui/Modal'
-import { ExceptionLine } from '../ui/QuietStructure'
+import { InlineError } from '../ui/Primitives'
 import { eventTrust, serverName, trustBadgeLabel } from '../../lib/trust'
 
 interface MessageProps {
@@ -1206,30 +1206,31 @@ function UndecryptableMessageNotice({
   const copy = undecryptableCopy(reason)
 
   /*
-    An exception speaks, but it speaks briefly.
+    The third federation carrier: a coral card, inline in the timeline, only
+    when something is wrong.
 
-    This used to be a bordered warning card with a title, a body sentence and a
-    button, which is more chrome than the message it stands in for. Quiet
-    Structure gives an exception one mono line and a dot; the sentence that
-    explains it moves into the tooltip, where the rail already keeps the server
-    and key detail, and the way out stays a link rather than a framed action.
+    An exception is the one thing in this contract that gets a card of its own,
+    and this is the only place coral appears in a conversation. It says what
+    happened, what to do about it, and carries the one action that answers it.
+    The sentence used to hide in a tooltip, which is not a place somebody
+    reading a message they cannot open thinks to look.
   */
   return (
-    <div className="mt-1 max-w-xl" data-undecryptable-message="true" role="note">
-      <Tooltip side="right" content={<p className="max-w-xs font-normal">{copy.body}</p>}>
-        <span className="inline-flex">
-          <ExceptionLine>{copy.title}</ExceptionLine>
-        </span>
-      </Tooltip>
-      {showSecurityHelp && (
-        <button
-          type="button"
-          onClick={onOpenSecurity}
-          className="mt-1 min-h-control-sm rounded-full text-label-md font-semibold text-on-surface-variant underline-offset-4 transition-colors hover:text-on-surface hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
-        >
-          Review security
-        </button>
-      )}
+    <div className="max-w-xl" data-undecryptable-message="true">
+      <InlineError
+        action={showSecurityHelp ? (
+          <button
+            type="button"
+            onClick={onOpenSecurity}
+            className="min-h-control-sm rounded-full px-2 text-label-lg underline underline-offset-4 hover:no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+          >
+            Review security
+          </button>
+        ) : undefined}
+      >
+        <span className="block">{copy.title}</span>
+        <span className="block opacity-80">{copy.body}</span>
+      </InlineError>
     </div>
   )
 }

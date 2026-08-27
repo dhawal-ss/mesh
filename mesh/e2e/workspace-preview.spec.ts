@@ -13,10 +13,10 @@ test('workspace preview keeps the direct-message journey healthy', async ({ page
     exact: true,
   })
   await expect(mayaConversation).toBeVisible()
-  // Counts are zero-padded mono numerals now, so a column of conversations
-  // reads as a column of numbers rather than a scatter of lozenges at
-  // different widths. The row's accessible name still says "1 unread message".
-  await expect(mayaConversation.locator('.badge-count')).toHaveText('01')
+  // The zero-padded numeral belonged to a row whose leading gutter was also a
+  // numeral; with that gutter gone, the count is a plain number again. The
+  // row's accessible name still says "1 unread message".
+  await expect(mayaConversation.locator('.badge-count')).toHaveText('1')
   await mayaConversation.click()
 
   await expect(page.getByRole('feed', { name: 'Messages with Maya Chen', exact: true })).toBeVisible()

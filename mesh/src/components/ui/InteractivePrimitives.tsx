@@ -9,7 +9,6 @@ import {
   Tabs as TabsPrimitive,
 } from 'radix-ui'
 import clsx from 'clsx'
-import { rowNumber } from './QuietStructure'
 import { motion } from '../../lib/lazy-motion'
 import { transitions, variants } from '../../lib/motion'
 import type { UiSize, UiTone } from './Button'
@@ -805,9 +804,7 @@ export function Combobox({
                     >
                       {option.group}
                       {' \u00b7 '}
-                      {rowNumber(
-                        visibleFiltered.filter((entry) => entry.group === option.group).length - 1,
-                      )}
+                      {visibleFiltered.filter((entry) => entry.group === option.group).length}
                     </p>
                   ) : null}
                   <button
@@ -829,22 +826,6 @@ export function Combobox({
                         : 'hover:bg-state-hover',
                     )}
                   >
-                    {/*
-                      Numbered continuously across groups, not within them, so
-                      the number is a jump target rather than a position inside
-                      a section nobody is counting.
-                    */}
-                    <span
-                      aria-hidden="true"
-                      className={clsx(
-                        'w-row-index flex-none text-label-sm font-semibold',
-                        index === resolvedActiveIndex
-                          ? 'text-on-primary'
-                          : 'text-on-surface-variant group-hover:text-on-surface',
-                      )}
-                    >
-                      {rowNumber(index)}
-                    </span>
                     {option.icon ? (
                       <span className="flex flex-none" aria-hidden="true">
                         {option.icon}

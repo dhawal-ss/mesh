@@ -53,20 +53,42 @@ describe('RoomTrustSummary', () => {
     vi.unstubAllGlobals()
   })
 
-  it('keeps successful protocol assurance out of normal room chrome', async () => {
+  /*
+    Changed deliberately. This chip is the one place a healthy room says it is
+    encrypted, and it says it once per screen: the caption pinned to the bottom
+    of the timeline that used to carry the sentence is gone, and the member
+    count it showed here is a click away behind Details. What is still true is
+    that no service topology reaches the chrome.
+  */
+  it('states encryption once, in the app bar, without exposing service topology', async () => {
     const onOpenContext = vi.fn()
     await act(async () => {
-      root.render(<RoomTrustSummary trust={protectedRoom} onOpenContext={onOpenContext} />)
+      root.render(
+        <RoomTrustSummary
+          trust={protectedRoom}
+          encryptionLabel={'Encrypted · 3 servers carry this room'}
+          onOpenContext={onOpenContext}
+        />,
+      )
     })
 
-    expect(container.textContent).toBe('9 members')
-    expect(container.textContent).not.toContain('Encrypted')
+    expect(container.textContent).toBe('Encrypted · 3 servers carry this room')
     expect(container.textContent).not.toContain('service')
 
     await act(async () => {
       container.querySelector<HTMLButtonElement>('button')?.click()
     })
-    expect(onOpenContext).toHaveBeenCalledWith('people')
+    expect(onOpenContext).toHaveBeenCalledWith('ledger')
+  })
+
+  it('renders nothing while the room protection is still unknown', async () => {
+    await act(async () => {
+      root.render(
+        <RoomTrustSummary trust={protectedRoom} encryptionLabel={null} onOpenContext={vi.fn()} />,
+      )
+    })
+
+    expect(container.querySelector('button')).toBeNull()
   })
 
   it('keeps a privacy problem actionable without exposing service topology', async () => {
@@ -75,6 +97,7 @@ describe('RoomTrustSummary', () => {
       root.render(
         <RoomTrustSummary
           trust={{ ...protectedRoom, protection: 'unencrypted' }}
+          encryptionLabel={null}
           onOpenContext={onOpenContext}
         />,
       )

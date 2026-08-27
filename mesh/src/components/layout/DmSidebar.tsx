@@ -3,7 +3,7 @@ import { useDmStore } from '../../store/dms'
 import * as bridge from '../../lib/bridge'
 import { formatShortDate } from '../../lib/message-time'
 import { Avatar } from '../ui/Avatar'
-import { AmbientNote, rowNumber } from '../ui/QuietStructure'
+import { AmbientCard } from '../ui/Primitives'
 import { serverName, serverRelation } from '../../lib/trust'
 import { UserPanel } from './UserPanel'
 import { registerPoll } from '../../lib/scheduler'
@@ -590,7 +590,7 @@ export function DmSidebar() {
               paddingBottom: `${bottomSpacerHeight}px`,
             }}
           >
-            {visibleConversations.map((conversation, visibleIndex) => {
+            {visibleConversations.map((conversation) => {
               const conversationMessages = messagesByConversation[conversation.id] ?? []
               const latestMessage = conversationMessages[conversationMessages.length - 1]
 
@@ -607,7 +607,6 @@ export function DmSidebar() {
                     slice. A number that renumbered on scroll would be worse
                     than no number.
                   */
-                  index={visibleRange.start + visibleIndex}
                   ownUserId={ownUserId}
                   onSelect={handleSelect}
                 />
@@ -637,9 +636,9 @@ export function DmSidebar() {
         screen still says only one thing.
       */}
       {hasRemotePeers && (
-        <AmbientNote>
+        <AmbientCard>
           Ringed marks are on another server · every conversation here is encrypted
-        </AmbientNote>
+        </AmbientCard>
       )}
       <ScopedErrorBoundary
         name="User controls"
@@ -657,7 +656,6 @@ const DmConversationRow = memo(function DmConversationRow({
   active,
   latestContent,
   matrixMode,
-  index,
   ownUserId,
   onSelect,
 }: {
@@ -665,7 +663,6 @@ const DmConversationRow = memo(function DmConversationRow({
   active: boolean
   latestContent: string | null
   matrixMode: boolean
-  index: number
   ownUserId: string | null
   onSelect: (conversationId: string) => Promise<void>
 }) {
@@ -698,14 +695,6 @@ const DmConversationRow = memo(function DmConversationRow({
           : ''}`}
         aria-current={active ? 'page' : undefined}
       >
-        <span
-          aria-hidden="true"
-          className={`w-row-index flex-none text-label-sm font-semibold transition-colors duration-instant ${
-            active ? 'text-on-primary' : 'text-on-surface-variant group-hover:text-on-surface'
-          }`}
-        >
-          {rowNumber(index)}
-        </span>
         <Avatar
           color={peer.avatarColor}
           size={26}
@@ -725,7 +714,7 @@ const DmConversationRow = memo(function DmConversationRow({
             )}
             {conversation.unreadCount > 0 && !active && (
               <span className="badge-count flex-shrink-0 text-label-sm font-semibold text-primary">
-                {conversation.unreadCount > 99 ? '99+' : rowNumber(conversation.unreadCount - 1)}
+                {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
               </span>
             )}
           </div>
