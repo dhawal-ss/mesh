@@ -422,6 +422,7 @@ export default {
       },
       gridTemplateColumns: {
         route: 'var(--route-surface-columns)',
+        settings: 'var(--settings-drawer-width) minmax(0, 1fr)',
         'device-code': 'var(--device-code-columns)',
         'invitation-confirmation': 'var(--invitation-confirmation-columns)',
       },

@@ -489,7 +489,7 @@ function VoicePreJoinDeviceCheck({
           {channelName} is connecting without one. Allow access in system settings.
         </p>
       </div>
-      <dl className="grid w-full max-w-xs grid-cols-device-check gap-x-3 gap-y-1 text-left text-xs text-content-secondary">
+      <dl className="grid w-full max-w-xs grid-cols-device-code gap-x-3 gap-y-1 text-left text-body-sm text-on-surface-variant">
         <dt className="font-medium text-content">Speaker</dt>
         <dd>{hasSpeaker ? 'Ready' : 'No speaker detected'}</dd>
         <dt className="font-medium text-content">Camera</dt>

@@ -77,7 +77,7 @@ export function EventView({
         */}
         <h2
           data-event-name
-          className="mt-1 border-b-bar border-border-strong pb-2 text-display font-display text-primary"
+          className="mt-1 border-b-bar border-border-strong pb-2 text-display-lg text-primary"
         >
           #{channelName}
         </h2>

@@ -3163,54 +3163,56 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
   :root {
     --ref-size-11: 12px;
     --ref-size-12: 13px;
-    --ref-size-14: 14px;
     --ref-size-14: 15px;
-    --ref-size-16: 16px;
-    --ref-size-16: 19px;
-    --ref-size-22: 23px;
+    --ref-size-16: 17px;
+    --ref-size-22: 24px;
     --ref-size-28: 30px;
-    --type-line-label-sm: calc(16px * var(--text-scale));
-    --type-line-body-md: calc(19px * var(--text-scale));
-    --type-line-body-lg: calc(22px * var(--text-scale));
-    --line-height-prose: calc(24px * var(--text-scale));
-    --message-gutter: 72px;
-    --settings-drawer-width: 480px;
-    --route-surface-columns: 280px minmax(0, 1fr);
+    --ref-size-32: 34px;
+    --ref-size-45: 48px;
+    --ref-size-57: 60px;
+    --type-line-label-sm: calc(17px * var(--text-scale));
+    --type-line-label-md: calc(17px * var(--text-scale));
+    --type-line-body-sm: calc(17px * var(--text-scale));
+    --type-line-body-md: calc(21px * var(--text-scale));
+    --type-line-body-lg: calc(26px * var(--text-scale));
+    --type-line-title-md: calc(26px * var(--text-scale));
+    --type-line-title-lg: calc(30px * var(--text-scale));
+    --line-height-prose: calc(26px * var(--text-scale));
+    --settings-drawer-width: 340px;
     --voice-tile-min-height: 220px;
-    --shell-rail-width: 68px;
-    --shell-list-width: 296px;
-    --shell-roster-width: 336px;
-    --shell-header-height: 60px;
+    --shell-rail-width: 96px;
+    --shell-list-width: 380px;
+    --shell-roster-width: 440px;
+    --shell-header-height: 68px;
     --shell-composer-height: 56px;
     --shell-strip-height: 80px;
     --shell-media-max-height: 540px;
-    --shell-conversation-padding: 24px;
-    --shell-channel-row-height: 38px;
-    --shell-occupant-row-height: 44px;
+    --shell-channel-row-height: 60px;
+    --shell-occupant-row-height: 76px;
     --shell-message-padding-block: 5px;
     --shell-media-max-width: 1120px;
   }
 
   :root[data-density='compact'] {
-    --density-control-sm: 34px;
-    --density-control-md: 34px;
-    --density-control-lg: 42px;
+    --density-control-sm: 36px;
+    --density-control-md: 44px;
+    --density-control-lg: 52px;
     --density-panel-gap: 14px;
     --message-group-gap: 14px;
   }
 
   :root[data-density='default'] {
-    --density-control-sm: 34px;
-    --density-control-md: 38px;
-    --density-control-lg: 46px;
+    --density-control-sm: 44px;
+    --density-control-md: 52px;
+    --density-control-lg: 60px;
     --density-panel-gap: 18px;
     --message-group-gap: 14px;
   }
 
   :root[data-density='comfortable'] {
-    --density-control-sm: 38px;
-    --density-control-md: 42px;
-    --density-control-lg: 50px;
+    --density-control-sm: 52px;
+    --density-control-md: 60px;
+    --density-control-lg: 68px;
     --density-panel-gap: 22px;
     --message-group-gap: 22px;
   }
@@ -3234,54 +3236,56 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
   :root {
     --ref-size-11: 13px;
     --ref-size-12: 14px;
-    --ref-size-14: 15px;
     --ref-size-14: 16px;
-    --ref-size-16: 17px;
-    --ref-size-16: 20px;
+    --ref-size-16: 18px;
     --ref-size-22: 25px;
     --ref-size-28: 32px;
-    --type-line-label-sm: calc(18px * var(--text-scale));
-    --type-line-body-md: calc(21px * var(--text-scale));
-    --type-line-body-lg: calc(24px * var(--text-scale));
-    --line-height-prose: calc(26px * var(--text-scale));
-    --message-gutter: 80px;
-    --settings-drawer-width: 560px;
-    --route-surface-columns: 320px minmax(0, 1fr);
+    --ref-size-32: 37px;
+    --ref-size-45: 52px;
+    --ref-size-57: 66px;
+    --type-line-label-sm: calc(19px * var(--text-scale));
+    --type-line-label-md: calc(19px * var(--text-scale));
+    --type-line-body-sm: calc(19px * var(--text-scale));
+    --type-line-body-md: calc(23px * var(--text-scale));
+    --type-line-body-lg: calc(28px * var(--text-scale));
+    --type-line-title-md: calc(28px * var(--text-scale));
+    --type-line-title-lg: calc(32px * var(--text-scale));
+    --line-height-prose: calc(28px * var(--text-scale));
+    --settings-drawer-width: 380px;
     --voice-tile-min-height: 260px;
-    --shell-rail-width: 72px;
-    --shell-list-width: 336px;
-    --shell-roster-width: 384px;
-    --shell-header-height: 64px;
+    --shell-rail-width: 104px;
+    --shell-list-width: 420px;
+    --shell-roster-width: 480px;
+    --shell-header-height: 72px;
     --shell-composer-height: 60px;
     --shell-strip-height: 88px;
     --shell-media-max-height: 720px;
-    --shell-conversation-padding: 28px;
-    --shell-channel-row-height: 42px;
-    --shell-occupant-row-height: 48px;
+    --shell-channel-row-height: 64px;
+    --shell-occupant-row-height: 80px;
     --shell-message-padding-block: 6px;
     --shell-media-max-width: 1440px;
   }
 
   :root[data-density='compact'] {
-    --density-control-sm: 36px;
-    --density-control-md: 36px;
-    --density-control-lg: 44px;
+    --density-control-sm: 40px;
+    --density-control-md: 48px;
+    --density-control-lg: 56px;
     --density-panel-gap: 16px;
     --message-group-gap: 16px;
   }
 
   :root[data-density='default'] {
-    --density-control-sm: 36px;
-    --density-control-md: 40px;
-    --density-control-lg: 48px;
+    --density-control-sm: 48px;
+    --density-control-md: 56px;
+    --density-control-lg: 64px;
     --density-panel-gap: 20px;
     --message-group-gap: 16px;
   }
 
   :root[data-density='comfortable'] {
-    --density-control-sm: 40px;
-    --density-control-md: 44px;
-    --density-control-lg: 52px;
+    --density-control-sm: 56px;
+    --density-control-md: 64px;
+    --density-control-lg: 72px;
     --density-panel-gap: 24px;
     --message-group-gap: 24px;
   }

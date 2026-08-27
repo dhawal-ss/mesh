@@ -66,10 +66,10 @@ describe('design-system primitives', () => {
     const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8')
 
     expect(css).toContain('@media (min-width: 2560px) and (min-height: 1200px)')
-    expect(css).toContain('--shell-channel-width: 296px')
+    expect(css).toContain('--shell-list-width: 380px')
     expect(css).toContain('--shell-media-max-width: 1120px')
     expect(css).toContain('@media (min-width: 3200px) and (min-height: 1800px)')
-    expect(css).toContain('--shell-channel-width: 336px')
+    expect(css).toContain('--shell-list-width: 420px')
     expect(css).toContain('--shell-media-max-width: 1440px')
   })
 })

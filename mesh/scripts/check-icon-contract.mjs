@@ -47,12 +47,12 @@ const rendererSource = await readFile(centralRenderer, 'utf8')
 if (!/\babsoluteStrokeWidth\b/.test(rendererSource)) {
   errors.push('src/components/ui/Icon.tsx must opt into Lucide absoluteStrokeWidth')
 }
-if (!/size === ['"]lg['"] \? 1\.75 : 1\.5/.test(rendererSource)) {
-  errors.push('src/components/ui/Icon.tsx must render 14–20px icons at 1.5px and 24px icons at 1.75px')
+if (!/size === ['"]lg['"] \? 2\.25 : 2/.test(rendererSource)) {
+  errors.push('src/components/ui/Icon.tsx must render 20-24px icons at 2px and 40px icons at 2.25px')
 }
 
-if (!/sm:\s*16[\s\S]*md:\s*18/.test(rendererSource)) {
-  errors.push('src/components/ui/Icon.tsx must keep 16px utility and 18px primary Party Room icons')
+if (!/sm:\s*20[\s\S]*md:\s*24[\s\S]*lg:\s*40/.test(rendererSource)) {
+  errors.push('src/components/ui/Icon.tsx must keep the Material 3 sizes: 20px dense, 24px default, 40px alone')
 }
 
 for (const filePath of await componentFiles(componentsRoot)) {
@@ -69,5 +69,5 @@ if (errors.length > 0) {
 }
 
 console.log(
-  'Icon contract check passed: production components use the central 16px and 18px absolute-stroke Icon renderer without inline SVG.',
+  'Icon contract check passed: production components use the central 20/24/40px absolute-stroke Icon renderer without inline SVG.',
 )

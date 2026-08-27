@@ -4,10 +4,11 @@ import { Icon } from './Icon'
 
 describe('Icon', () => {
   it.each([
-    ['xs', 14, 1.5],
-    ['sm', 16, 1.5],
-    ['md', 18, 1.5],
-    ['lg', 24, 1.75],
+    ['sm', 20, 2],
+    ['md', 24, 2],
+    ['lg', 40, 2.25],
+    // Scaffolding. `xs` was the 14px step and now resolves to the dense one.
+    ['xs', 20, 2],
   ] as const)('locks the %s size to %spx with a %spx optical stroke', (size, pixels, opticalStroke) => {
     const markup = renderToStaticMarkup(<Icon name="settings" size={size} />)
     const coordinateStroke = Number(markup.match(/stroke-width="([^"]+)"/)?.[1])

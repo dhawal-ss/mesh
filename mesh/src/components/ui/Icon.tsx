@@ -15,6 +15,7 @@ import Compass from 'lucide-react/dist/esm/icons/compass.mjs'
 import HeadphoneOff from 'lucide-react/dist/esm/icons/headphone-off.mjs'
 import Headphones from 'lucide-react/dist/esm/icons/headphones.mjs'
 import House from 'lucide-react/dist/esm/icons/house.mjs'
+import Globe from 'lucide-react/dist/esm/icons/globe.mjs'
 import Hash from 'lucide-react/dist/esm/icons/hash.mjs'
 import Image from 'lucide-react/dist/esm/icons/image.mjs'
 import Inbox from 'lucide-react/dist/esm/icons/inbox.mjs'
@@ -68,6 +69,7 @@ const ICONS = {
   headphoneOff: HeadphoneOff,
   headphones: Headphones,
   home: House,
+  globe: Globe,
   hash: Hash,
   image: Image,
   inbox: Inbox,
@@ -103,11 +105,20 @@ const ICONS = {
   x: X,
 } satisfies Record<string, LucideIcon>
 
+/*
+  Material 3 target sizes. 24 is the default glyph, 20 is the dense one, and 40
+  is the one that sits alone in a 56px circular control.
+
+  The 14px and 18px steps are retired: both existed to fit the ruled geometry
+  this contract replaced, and both are below what M3 asks of a glyph inside a
+  48px target. `xs` survives as scaffolding pointed at 20 so the call sites
+  still compile while they are migrated.
+*/
 const ICON_SIZES = {
-  xs: 14,
-  sm: 16,
-  md: 18,
-  lg: 24,
+  sm: 20,
+  md: 24,
+  lg: 40,
+  xs: 20,
 } as const
 
 export type IconName = keyof typeof ICONS
@@ -134,7 +145,7 @@ export function Icon({
     <Glyph
       {...props}
       size={ICON_SIZES[size]}
-      strokeWidth={size === 'lg' ? 1.75 : 1.5}
+      strokeWidth={size === 'lg' ? 2.25 : 2}
       absoluteStrokeWidth
       focusable="false"
       aria-hidden={isDecorative || undefined}
