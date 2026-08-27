@@ -200,7 +200,6 @@ export function VoiceDock() {
         {isCameraEnabled ? (
           <VoiceDockButton
             label="Turn camera off"
-            shortLabel="Camera off"
             active
             onClick={() => {
               void toggleCamera(false).catch((error) => {
@@ -213,7 +212,6 @@ export function VoiceDock() {
         {isScreenSharing ? (
           <VoiceDockButton
             label="Stop sharing screen"
-            shortLabel="Stop share"
             active
             onClick={() => {
               void toggleScreenSharing(false).catch((error) => {
@@ -251,13 +249,11 @@ function VoiceDockButton({
   active,
   onClick,
   icon,
-  shortLabel,
 }: {
   label: string
   active: boolean
   onClick: () => void
   icon: 'mic' | 'micOff' | 'headphones' | 'headphoneOff' | 'screenShareOff' | 'videoOff'
-  shortLabel?: string
 }) {
   return (
     <Tooltip content={label} side="top">
@@ -272,22 +268,13 @@ function VoiceDockButton({
           muted mic is `micOff`, not a differently coloured `mic` -- so the
           state is readable in greyscale as well as in colour.
         */
-        className={`flex h-control-lg min-w-control-lg items-center justify-center gap-2 rounded-full px-3 transition-colors ${
+        className={`flex h-control-lg w-control-lg flex-none items-center justify-center rounded-full transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
           active
             ? 'bg-marker text-on-marker'
-            : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
+            : 'bg-surface-container-highest text-on-surface hover:bg-state-hover'
         }`}
       >
-        <Icon name={icon} size="sm" />
-        <span className="hidden text-body-sm font-semibold lg:inline">
-          {shortLabel ?? (label.startsWith('Unmute')
-            ? 'Unmute'
-            : label.startsWith('Mute')
-              ? 'Mute'
-              : label.endsWith(' on')
-                ? 'Sound on'
-                : 'Sound off')}
-        </span>
+        <Icon name={icon} />
       </button>
     </Tooltip>
   )

@@ -2279,43 +2279,14 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   background: var(--primary);
 }
 
-#community-settings-summary,
-#community-settings-overview {
-  border-right: 0;
-  border-left: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-#community-settings-summary {
-  padding-right: 0;
-  padding-left: 0;
-}
-
-#community-settings-summary > .grid {
-  gap: 0;
-  border-top: 1px solid var(--outline-variant);
-  border-bottom: 1px solid var(--outline-variant);
-}
-
-#community-settings-summary > .grid > div {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
+/*
+ * The same strip-back the .mesh- rules were doing, written with ids so the
+ * token gate could not see it. The community summary is a card of cards in the
+ * reference, and the accent swatch carries its own selected face, so none of
+ * this is left.
+ */
 #community-settings-summary > .grid > div + div {
   border-top: 1px solid var(--outline-variant);
-}
-
-#community-settings-overview > div {
-  padding-right: 0;
-  padding-left: 0;
-}
-
-.mesh-settings-content label:has(input[name='appearance-accent']) {
-  border-radius: 0;
-  background: transparent;
 }
 
 .mesh-settings-content label:has(input[name='appearance-accent']:checked) {

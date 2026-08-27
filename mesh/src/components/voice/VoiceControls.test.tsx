@@ -350,24 +350,22 @@ describe('VoiceControls', () => {
       container.querySelector<HTMLButtonElement>('button[aria-label="Turn camera off"]')?.className,
     ).toContain('bg-primary')
     /*
-      Leave is a flat vermilion plane, and it is the only plane in the row.
+      Leave is the tonal error container, and it is the only control in the
+      toolbar that keeps its word.
 
-      It used to carry its tone in ink and a rule instead, on the reasoning
-      that a solid red button would read as the primary action. That reasoning
-      belonged to a row of five circular fills competing for attention. Under
-      Quiet Structure the other controls are hairline cells with mono labels
-      and no fill at all, so nothing is competing, and the plane is precisely
-      how this system marks the one action here that pressing again does not
-      undo.
+      The full-strength coral is reserved for a failure. Hanging up is a
+      choice, so it takes the container rather than the fill, and what marks it
+      out among five circular controls is that it is the one carrying a label
+      at all.
 
-      The fill is asserted with an anchored prefix because the previous
-      assertion, a bare `bg-error`, also matched the substring inside
-      `hover:bg-error/10` and so passed for a button with no danger
+      The fill is asserted against the split class list rather than as a
+      substring, because a bare `bg-error` also matches inside
+      `hover:bg-error/10` and would pass for a button with no danger
       background in any state.
     */
     const leave = container.querySelector<HTMLButtonElement>('button[aria-label="Leave Studio"]')?.className
-    expect(leave?.split(/\s+/)).toContain('bg-error')
-    expect(leave).toContain('text-on-error')
+    expect(leave?.split(/\s+/)).toContain('bg-error-container')
+    expect(leave).toContain('text-on-error-container')
     expect(leave).toContain('rounded-full')
   })
 })

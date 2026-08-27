@@ -157,11 +157,13 @@ export function VoiceControls({
       </span>
 
       {/*
-        A hairline row, not a tray of floating circles. The cells share one rule
-        between them and Leave breaks out of the row as the only plane, because
-        it is the only action here that pressing again does not undo.
+        The Material 3 floating toolbar: 56px circles on an elevated pill,
+        rather than a row of labelled cells sharing one hairline. Each control
+        keeps its accessible name and its tooltip, and the glyph changes with
+        the state -- a muted microphone is `micOff`, not a differently coloured
+        `mic` -- so nothing here is carried by colour alone.
       */}
-      <div className="flex w-full max-w-4xl items-center justify-center border-y border-outline-variant">
+      <div className="mesh-voice-toolbar flex max-w-full items-center gap-2 overflow-x-auto rounded-full bg-surface-container-high p-3 shadow-elev-4">
         <Tooltip
           content={
             inputMode === 'push-to-talk'
@@ -232,14 +234,13 @@ export function VoiceControls({
                   ? 'Unmute microphone'
                   : 'Mute microphone'
             }
-            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-full border-l border-outline-variant px-3 text-label-md font-semibold transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
+            className={`flex h-control-lg w-control-lg flex-none items-center justify-center rounded-full transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-40 ${
               isMuted && !isPushToTalking
-                ? 'bg-marker text-on-error'
-                : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
+                ? 'bg-marker text-on-marker'
+                : 'bg-surface-container-highest text-on-surface hover:bg-state-hover'
             }`}
           >
             <Icon name={isMuted && !isPushToTalking ? 'micOff' : 'mic'} size="sm" />
-            <span aria-hidden="true">{isMuted && !isPushToTalking ? 'Mic off' : 'Mic on'}</span>
           </motion.button>
         </Tooltip>
 
@@ -253,14 +254,13 @@ export function VoiceControls({
             onClick={() => setDeafened(!isDeafened)}
             aria-pressed={isDeafened}
             aria-label={isDeafened ? 'Turn incoming audio on' : 'Turn incoming audio off'}
-            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-full border-l border-outline-variant px-3 text-label-md font-semibold transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
+            className={`flex h-control-lg w-control-lg flex-none items-center justify-center rounded-full transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-40 ${
               isDeafened
-                ? 'bg-marker text-on-error'
-                : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
+                ? 'bg-marker text-on-marker'
+                : 'bg-surface-container-highest text-on-surface hover:bg-state-hover'
             }`}
           >
             <Icon name={isDeafened ? 'headphoneOff' : 'headphones'} size="sm" />
-            <span aria-hidden="true">Audio</span>
           </motion.button>
         </Tooltip>
 
@@ -288,14 +288,13 @@ export function VoiceControls({
                   ? isCameraEnabled ? 'Stopping camera' : 'Starting camera'
                   : isCameraEnabled ? 'Turn camera off' : 'Turn camera on'
             }
-            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-full border-l border-outline-variant px-3 text-label-md font-semibold transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
+            className={`flex h-control-lg w-control-lg flex-none items-center justify-center rounded-full transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-40 ${
               isCameraEnabled
                 ? 'bg-primary text-on-primary'
-                : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
+                : 'bg-surface-container-highest text-on-surface hover:bg-state-hover'
             }`}
           >
             <Icon name={isCameraEnabled ? 'videoOff' : 'video'} size="sm" />
-            <span aria-hidden="true">Camera</span>
           </button>
         </Tooltip>
 
@@ -320,14 +319,13 @@ export function VoiceControls({
                   : isScreenSharing ? 'Stop sharing screen' : 'Share screen'
             }
             data-screen-sharing={isScreenSharing || undefined}
-            className={`flex min-h-control-lg items-center justify-center gap-1.5 rounded-full border-l border-outline-variant px-3 text-label-md font-semibold transition-colors first:border-l-0 disabled:cursor-not-allowed disabled:opacity-40 ${
+            className={`flex h-control-lg w-control-lg flex-none items-center justify-center rounded-full transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-40 ${
               isScreenSharing
                 ? 'bg-primary text-on-primary'
-                : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
+                : 'bg-surface-container-highest text-on-surface hover:bg-state-hover'
             }`}
           >
             <Icon name={isScreenSharing ? 'screenShareOff' : 'screenShare'} size="sm" />
-            <span aria-hidden="true">Share</span>
           </button>
         </Tooltip>
 
@@ -336,10 +334,9 @@ export function VoiceControls({
             <IconButton
               size="lg"
               aria-label="Open voice settings"
-              className="min-h-control-lg w-auto gap-1.5 rounded-full border-l border-outline-variant px-3 text-label-md font-semibold text-on-surface-variant hover:bg-state-hover hover:text-on-surface"
+              className="h-control-lg w-control-lg flex-none rounded-full bg-surface-container-highest text-on-surface hover:bg-state-hover"
             >
               <Icon name="settings" size="sm" />
-              <span aria-hidden="true">Settings</span>
             </IconButton>
           }
           label="Voice settings"
@@ -434,16 +431,15 @@ export function VoiceControls({
           </div>
         </Popover>
 
-        <div className="mx-0.5 h-6 w-px bg-outline-variant" aria-hidden="true" />
+        <div className="mx-1 h-10 w-px flex-none bg-outline-variant" aria-hidden="true" />
 
         <button
           type="button"
           onClick={onOpenMessages}
-          className="flex min-h-control-lg items-center gap-1.5 rounded-full px-3 text-label-md font-semibold text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface"
+          className="flex h-control-lg w-control-lg flex-none items-center justify-center rounded-full bg-surface-container-highest text-on-surface transition-colors hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
           aria-label={`Open messages from ${roomName}`}
         >
-          <Icon name="messageCircle" size="sm" />
-          <span className="hidden sm:inline">Messages</span>
+          <Icon name="messageCircle" />
         </button>
 
         <Tooltip content={`Leave ${roomName}`} side="top">
@@ -454,14 +450,16 @@ export function VoiceControls({
             onClick={onLeave}
             aria-label={`Leave ${roomName}`}
             /*
-              The one plane in the control row, and the only one that is not a
-              hairline cell. Leaving a call is the single action here that
-              cannot be undone by pressing the same thing again.
+              The one control in the toolbar that keeps its word, because it is
+              the single action here that pressing again does not undo. It is
+              the tonal error container rather than the full-strength coral:
+              the loudest red in the palette is reserved for a failure, and
+              hanging up is a choice rather than one.
             */
-            className="flex min-h-control-lg items-center justify-center gap-1.5 rounded-full bg-error px-3 text-label-md font-semibold text-on-error transition-colors hover:bg-error disabled:opacity-60"
+            className="flex min-h-control-lg flex-none items-center justify-center gap-2.5 rounded-full bg-error-container px-6 text-label-lg text-on-error-container transition-colors hover:bg-error-container-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-60"
           >
-            <Icon name="phoneOff" size="sm" />
-            <span className="hidden sm:inline">{leaving ? 'Leaving' : 'Leave'}</span>
+            <Icon name="phoneOff" />
+            <span>{leaving ? 'Leaving' : 'Leave'}</span>
           </motion.button>
         </Tooltip>
       </div>
